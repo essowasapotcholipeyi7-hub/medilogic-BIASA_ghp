@@ -1,0 +1,399 @@
+{% extends "base.html" %}
+
+{% block title %}Reçu Patient #{{ vente_id }}{% endblock %}
+
+{% block extra_css %}
+{% set format = request.args.get('format', 'A4') %}
+
+{% if format == '80mm' %}
+<style>
+    @media print {
+        @page {
+            size: 80mm auto;
+            margin: 3mm;
+        }
+        
+        body {
+            width: 80mm;
+            font-size: 8px;
+            background: white;
+        }
+        
+        * {
+            color: black !important;
+            font-weight: bold !important;
+        }
+        
+        body, div, p, span, strong, b, td, th, li, .text-muted, .small, h1, h2, h3, h4, h5, h6 {
+            color: black !important;
+            font-weight: bold !important;
+        }
+        
+        .text-danger, .text-success, .text-primary, .text-warning, .text-info {
+            color: black !important;
+        }
+        
+        .badge, .bg-primary, .bg-success, .bg-warning, .bg-danger, .bg-info {
+            background: black !important;
+            color: white !important;
+        }
+        
+        .container {
+            width: 100%;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .card {
+            border: none !important;
+            box-shadow: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        
+        .card-body {
+            padding: 3px !important;
+        }
+        
+        .row {
+            margin: 0 !important;
+        }
+        
+        .col-7, .col-5 {
+            width: 100%;
+            text-align: center;
+        }
+        
+        h1, h2, h3, h4 {
+            margin: 2px 0;
+            font-size: 10px;
+        }
+        
+        table {
+            font-size: 7px;
+        }
+        
+        table td, table th {
+            padding: 2px 1px !important;
+        }
+        
+        .text-end, .text-start, .text-center {
+            text-align: center !important;
+        }
+        
+        .no-print {
+            display: none !important;
+        }
+        
+        hr {
+            margin: 3px 0;
+            border-top: 1px solid black !important;
+        }
+        
+        .d-flex {
+            display: block !important;
+            text-align: center;
+        }
+        
+        img {
+            max-height: 30px !important;
+            filter: grayscale(100%) contrast(150%) brightness(80%) !important;
+            -webkit-filter: grayscale(100%) contrast(150%) brightness(80%) !important;
+        }
+        
+        i, .fas, .far, .fab {
+            display: none !important;
+        }
+        
+        .icone-ok { color: #28a745; }
+        .icone-ko { color: #dc3545; }
+    }
+    
+    .icone-ok { color: #28a745; font-weight: bold; }
+    .icone-ko { color: #dc3545; font-weight: bold; }
+    .icone-warning { color: #ffc107; font-weight: bold; }
+    
+    @media screen {
+        body {
+            background: #e9ecef;
+        }
+        .card {
+            max-width: 400px;
+            margin: 20px auto;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+    }
+</style>
+{% else %}
+<style>
+    @media print {
+        @page {
+            size: A4;
+            margin: 10mm;
+        }
+    }
+    
+    .icone-ok { color: #28a745; font-weight: bold; }
+    .icone-ko { color: #dc3545; font-weight: bold; }
+    .icone-warning { color: #ffc107; font-weight: bold; }
+    
+    .statut-pris-en-charge {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-weight: 600;
+        display: inline-block;
+    }
+    .statut-amu-ok { background: #d4edda; color: #155724; }
+    .statut-amu-ko { background: #f8d7da; color: #721c24; }
+    .statut-cac-ok { background: #d1ecf1; color: #0c5460; }
+    .statut-cac-ko { background: #f8d7da; color: #721c24; }
+</style>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card" id="recuContenu">
+            <div class="card-body" style="font-family: 'Segoe UI', Arial, sans-serif;">
+                <!-- En-tête professionnel -->
+                <div class="row" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; margin: -20px -20px 20px -20px; padding: 20px; border-radius: 10px 10px 0 0;">
+                    <div class="col-7">
+                        <div class="d-flex align-items-center gap-3">
+                            {% if structure_logo %}
+                            <img src="{{ structure_logo }}" alt="Logo" style="max-height: 80px; max-width: 150px; background: white; padding: 5px; border-radius: 8px;">
+                            {% endif %}
+                            <div>
+                                <h2 style="margin: 0;">{{ structure_nom or "Medilogic-GHP" }}</h2>
+                                <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.9;">
+                                    <i class="fas fa-map-marker-alt"></i> {{ structure_adresse or "" }}<br>
+                                    <i class="fas fa-phone"></i> {{ structure_telephone or "" }} | 
+                                    <i class="fas fa-envelope"></i> {{ structure_email or "" }}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-5 text-end">
+                        <h1 style="font-size: 16px; margin: 0;">REÇU</h1>
+                        <p style="margin: 5px 0 0 0;">N° {{ "%06d" % vente_id }}</p>
+                        <p>Date: {{ date_actuelle or "" }}</p>
+                    </div>
+                </div>
+                <hr>
+
+                <!-- ===== INFOS PATIENT AVEC DOUBLE ASSURANCE ===== -->
+                <div class="mb-3">
+                    <strong>Patient :</strong> {{ patient_nom }}<br>
+                    
+                    <!-- 🔥 Assurance principale -->
+                    <strong>Assurance principale :</strong> {{ type_assurance }} ({{ taux_assurance }}%)<br>
+                    {% if numero_assure and numero_assure != '' %}
+                    <strong>N° Assuré :</strong> {{ numero_assure }}<br>
+                    {% endif %}
+                    
+                    <!-- 🔥 Assurance complémentaire (uniquement si appliquée) -->
+                    {% if assurance2_appliquee and assurance2_appliquee == true %}
+                        {% if assurance2_nom and assurance2_nom != '' and assurance2_nom != 'Aucune' %}
+                        <strong>Assurance complémentaire :</strong> {{ assurance2_nom }} 
+                        ({{ taux_assurance2 }}%)
+                        {# 🔥 AFFICHER L'INDICATION DE MODIFICATION #}
+                        {% if taux_modifie and taux_modifie == true %}
+                        <span style="color: #856404; background: #fff3cd; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: bold;">
+                            ⚠️ Taux exceptionnel
+                        </span>
+                        {% endif %}
+                        <br>
+                        {% if numero_assure2 and numero_assure2 != '' %}
+                        <strong>N° Assuré 2 :</strong> {{ numero_assure2 }}<br>
+                        {% endif %}
+                        {# 🔥 AFFICHER LE TAUX ORIGINAL EN RÉFÉRENCE #}
+                        {% if taux_modifie and taux_modifie == true and taux_original and taux_original > 0 %}
+                        <span style="color: #6c757d; font-size: 10px;">
+                            <i class="fas fa-info-circle"></i> Taux habituel: {{ taux_original }}%
+                        </span>
+                        <br>
+                        {% endif %}
+                        {% endif %}
+                    {% endif %}
+                    
+                    <strong>Paiement :</strong> {{ mode_paiement }}<br>
+                </div>
+                
+                <!-- ===== TABLEAU DES ARTICLES AVEC ICÔNES ===== -->
+                <table style="width:100%; border-collapse: collapse; font-size: 12px;">
+                    <thead>
+                        <tr style="background:#f8f9fa; border-bottom: 2px solid #dee2e6;">
+                            <th style="padding:8px; text-align:left; width:30%;">Article</th>
+                            <th style="padding:8px; text-align:center; width:8%;">Qté</th>
+                            <th style="padding:8px; text-align:right; width:15%;">Prix</th>
+                            <th style="padding:8px; text-align:right; width:15%;">PBR</th>
+                            <th style="padding:8px; text-align:right; width:17%;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for article in articles %}
+                        <tr style="border-bottom:1px solid #eee;">
+                            <td style="padding:8px; font-weight:500;">
+                                <!-- 🔥 ICÔNE DE PRISE EN CHARGE À CÔTÉ DU NOM -->
+                                {% if article.prise_en_charge_amu and article.prise_en_charge_cac %}
+                                    <span class="icone-ok">✅</span>
+                                {% elif article.prise_en_charge_amu and not article.prise_en_charge_cac %}
+                                    <span class="icone-warning">⚠️</span>
+                                {% elif not article.prise_en_charge_amu and article.prise_en_charge_cac %}
+                                    <span class="icone-warning">⚠️</span>
+                                {% else %}
+                                    <span class="icone-ko">❌</span>
+                                {% endif %}
+                                {{ article.nom }}
+                            </td>
+                            <td style="text-align:center;">{{ article.quantite }}</td>
+                            <td style="text-align:right;">{{ article.prix_unitaire|default(0)|round(0)|int }} F</td>
+                            <td style="text-align:right;">
+                                {% if article.pbr and article.pbr > 0 %}
+                                    {{ article.pbr|round(0)|int }} F
+                                {% else %}
+                                    <span style="color:#6c757d;">-</span>
+                                {% endif %}
+                            </td>
+                            <td style="text-align:right; font-weight:600;">{{ article.total|default(0)|round(0)|int }} F</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+                <hr>
+
+                <!-- ===== LÉGENDE DES ICÔNES ===== -->
+                <div style="font-size: 9px; color: #6c757d; margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;">
+                    <span><span class="icone-ok">✅</span> AMU & CAC</span>
+                    <span><span class="icone-warning">⚠️</span> Partiel</span>
+                    <span><span class="icone-ko">❌</span> Non pris en charge</span>
+                </div>
+                
+                <!-- ===== TOTAUX AVEC DOUBLE ASSURANCE ET PBR ===== -->
+                <div style="margin-top:10px;">
+                    <div style="display:flex; justify-content:space-between;">
+                        <span>Sous-total clinique :</span>
+                        <span><strong>{{ sous_total|default(0)|round(0)|int }} FCFA</strong></span>
+                    </div>
+                    
+                    <!-- 🔥 BASE REMBOURSEMENT (PBR) - UNIQUEMENT SI PATIENT ASSURÉ -->
+                    {% if base_remboursement and base_remboursement > 0 and taux_assurance > 0 %}
+                    <div style="display:flex; justify-content:space-between; color:#6c757d; font-size: 0.95em; border-top:1px dashed #ddd; padding-top:3px; margin-top:3px;">
+                        <span>Base remboursement (PBR AMU) :</span>
+                        <span><strong>{{ base_remboursement|default(0)|round(0)|int }} FCFA</strong></span>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- 🔥 Prise en charge principale -->
+                    {% if prise_en_charge > 0 %}
+                    <div style="display:flex; justify-content:space-between; color:#28a745;">
+                        <span>Prise en charge ({{ taux_assurance }}%) :</span>
+                        <span>- {{ prise_en_charge|default(0)|round(0)|int }} FCFA</span>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- 🔥 Prise en charge complémentaire (uniquement si appliquée) -->
+                    {% if assurance2_appliquee and assurance2_appliquee == true and prise_en_charge2 and prise_en_charge2 > 0 %}
+                    <div style="display:flex; justify-content:space-between; {% if taux_modifie and taux_modifie == true %}color:#856404;{% else %}color:#17a2b8;{% endif %}">
+                        <span>
+                            Prise en charge {{ assurance2_nom }} ({{ taux_assurance2 }}%)
+                            {% if taux_modifie and taux_modifie == true %}
+                            <span style="font-size: 9px; background: #fff3cd; padding: 0px 4px; border-radius: 3px;">
+                                ⚠️ exceptionnel
+                            </span>
+                            {% endif %}
+                        </span>
+                        <span>- {{ prise_en_charge2|default(0)|round(0)|int }} FCFA</span>
+                    </div>
+                    {# 🔥 AFFICHER LE TAUX ORIGINAL DANS LE RÉCAPITULATIF #}
+                    {% if taux_modifie and taux_modifie == true and taux_original and taux_original > 0 %}
+                    <div style="display:flex; justify-content:space-between; color:#6c757d; font-size: 10px; padding-left: 20px;">
+                        <span><i class="fas fa-arrow-right"></i> Taux habituel:</span>
+                        <span>{{ taux_original }}%</span>
+                    </div>
+                    {% endif %}
+                    {% endif %}
+                    
+                    <!-- 🔥 NET À PAYER -->
+                    <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:8px; padding-top:8px; border-top:2px solid #ddd;">
+                        <span>NET À PAYER :</span>
+                        <span style="color:#dc3545;">{{ net_a_payer|default(0)|round(0)|int }} FCFA</span>
+                    </div>
+                    
+                    <!-- 🔥 MONTANT DONNÉ ET RENDU -->
+                    {% if montant_donne and montant_donne > 0 %}
+                    <div style="display:flex; justify-content:space-between; margin-top:4px; padding-top:4px; border-top:1px dashed #ddd;">
+                        <span>Montant donné :</span>
+                        <span><strong>{{ montant_donne|round(0)|int }} FCFA</strong></span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; color:#28a745; font-weight:bold; margin-top:4px; padding-top:4px; border-top:1px dashed #28a745;">
+                        <span>Rendu au patient :</span>
+                        <span><strong>{{ rendu|default(0)|round(0)|int }} FCFA</strong></span>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- 🔥 RESTE À PAYER (si paiement partiel) -->
+                    {% if reste_a_payer and reste_a_payer > 0 %}
+                    <div style="display:flex; justify-content:space-between; margin-top:4px; padding-top:4px; border-top:2px solid #dc3545; background: #fff3cd; padding: 5px 10px; border-radius: 5px;">
+                        <span style="font-weight:bold; color:#856404;">
+                            <i class="fas fa-exclamation-triangle"></i> RESTE À PAYER :
+                        </span>
+                        <span style="font-weight:bold; color:#dc3545; font-size: 1.1em;">
+                            {{ reste_a_payer|default(0)|round(0)|int }} FCFA
+                        </span>
+                    </div>
+                    <div style="font-size: 10px; color: #856404; margin-top: 3px; text-align: center;">
+                        <i class="fas fa-info-circle"></i> 
+                        Une facture a été créée pour le solde restant. 
+                        N° Facture : {% if numero_facture %}{{ numero_facture }}{% else %}en cours{% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+
+                <div class="text-muted small mt-2">
+                    <i class="fas fa-user-check"></i> Vendu par : {{ nom_caissier }}
+                </div>
+
+                <hr>
+                <div class="text-center small text-muted">
+                    Merci de votre visite !
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-3 no-print">
+            <button onclick="window.print()" class="btn btn-primary btn-sm">Imprimer</button>
+            <button onclick="telechargerPDF()" class="btn btn-success btn-sm">PDF</button>
+            <button onclick="fermerOuRediriger()" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function telechargerPDF() {
+    const element = document.getElementById('recuContenu');
+    const nomFichier = '{{ nom_fichier }}' || `recu_${Date.now()}`;
+    const format = '{{ request.args.get("format", "A4") }}';
+    
+    const opt = {
+        margin: [0.5, 0.5, 0.5, 0.5],
+        filename: `${nomFichier}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'in', format: format === '80mm' ? [2.8346, 11.6929] : 'a4', orientation: 'portrait' }
+    };
+    html2pdf().set(opt).from(element).save();
+}
+
+function fermerOuRediriger() {
+    window.close();
+    setTimeout(function() {
+        if (!window.closed) {
+            window.location.href = "{{ url_for('dashboard') }}";
+        }
+    }, 500);
+}
+</script>
+{% endblock %}

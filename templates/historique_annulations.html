@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+
+{% block title %}Historique des annulations{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        {% include 'sidebar_menu.html' %}
+    </div>
+
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-ban"></i> Historique des annulations</h5>
+                <button class="btn btn-light btn-sm" onclick="window.print()">
+                    <i class="fas fa-print"></i> Imprimer
+                </button>
+            </div>
+            <div class="card-body">
+                <!-- BARRE DE RECHERCHE ET FILTRES -->
+                <div class="row mb-3 g-2">
+                    <div class="col-md-4">
+                        <div class="input-group">
+                            <span class="input-group-text bg-white">
+                                <i class="fas fa-search text-danger"></i>
+                            </span>
+                            <input type="text" id="searchAnnulation" class="form-control" 
+                                   placeholder="Rechercher..." 
+                                   onkeyup="filtrerAnnulations()">
+                            <button class="btn btn-outline-secondary" onclick="clearSearch()" type="button">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <select id="filterType" class="form-control" onchange="filtrerAnnulations()">
+                            <option value="tous">Tous les types</option>
+                            <option value="actes">Actes médicaux</option>
+                            <option value="pharmacie">Pharmacie</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <input type="date" id="filterDateDebut" class="form-control" placeholder="Date début" onchange="filtrerAnnulations()">
+                    </div>
+                    <div class="col-md-2">
+                        <input type="date" id="filterDateFin" class="form-control" placeholder="Date fin" onchange="filtrerAnnulations()">
+                    </div>
+                </div>
+                
+                <!-- STATS RAPIDES -->
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <button class="btn btn-sm btn-secondary" onclick="resetFilters()">
+                            <i class="fas fa-sync-alt"></i> Réinitialiser
+                        </button>
+                        <span class="ms-3 text-muted">
+                            <i class="fas fa-chart-simple"></i> 
+                            <span id="resultCount">{{ annulations|length }}</span> annulation(s)
+                        </span>
+                        <span class="ms-3 text-danger">
+                            <i class="fas fa-money-bill-wave"></i> 
+                            Total: <span id="totalAnnule">{{ annulations|sum(attribute='ancien_net_a_payer')|round(0)|int }}</span> FCFA
+                        </span>
+                    </div>
+                </div>
+
+                <!-- TABLEAU DES ANNULATIONS -->
+                {% if annulations %}
+                <div class="table-responsive">
+                    <table class="table table-hover" id="annulationsTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>ID Annulation</th>
+                                <th>Vente N°</th>
+                                <th>Type</th>
+                                <th>Patient</th>
+                                <th>Montant annulé</th>
+                                <th>Motif</th>
+                                <th>Annulé par</th>
+                                <th>Date annulation</th>
+                            </tr>
+                        </thead>
+                        <tbody id="annulationsBody">
+                            {% for a in annulations %}
+                            <tr data-id="{{ a.id }}" 
+                                data-vente-id="{{ a.vente_id }}"
+                                data-type="{{ a.vente_type }}" 
+                                data-patient="{{ a.patient_nom|lower if a.patient_nom else '' }}" 
+                                data-motif="{{ a.motif|lower if a.motif else '' }}" 
+                                data-annuleur="{{ a.annule_par_nom|lower if a.annule_par_nom else '' }}"
+                                data-date="{{ a.date_annulation[:10] if a.date_annulation else '' }}"
+                                data-montant="{{ a.ancien_net_a_payer }}">
+                                <td>{{ a.id }}</td>
+                                <td><span class="badge bg-secondary">#{{ a.vente_id }}</span></td>
+                                <td>
+                                    {% if a.vente_type == 'actes' %}
+                                        <span class="badge bg-primary">🏥 Acte</span>
+                                    {% else %}
+                                        <span class="badge bg-success">💊 Pharmacie</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ a.patient_nom or '-' }}</td>
+                                <td class="text-danger fw-bold">{{ (a.ancien_net_a_payer or 0)|round(0)|int }} FCFA</td>
+                                <td><small>{{ a.motif or 'Annulation manuelle' }}</small></td>
+                                <td><i class="fas fa-user-circle"></i> {{ a.annule_par_nom or 'Admin' }}</td>
+                                <td><small>{{ a.date_annulation[:16] if a.date_annulation else '-' }}</small></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr class="fw-bold">
+                                <td colspan="4" class="text-end">Total annulé :</td>
+                                <td class="text-danger" id="footerTotal">
+                                    {{ annulations|sum(attribute='ancien_net_a_payer')|round(0)|int }} FCFA
+                                </td>
+                                <td colspan="3"></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
+                    <p class="text-muted">Aucune annulation enregistrée</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Bouton retour -->
+        <div class="mt-3">
+            <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Retour au tableau de bord
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+function filtrerAnnulations() {
+    const searchTerm = document.getElementById('searchAnnulation').value.toLowerCase().trim();
+    const filterType = document.getElementById('filterType').value;
+    const dateDebut = document.getElementById('filterDateDebut').value;
+    const dateFin = document.getElementById('filterDateFin').value;
+    
+    const rows = document.querySelectorAll('#annulationsBody tr');
+    let visibleCount = 0;
+    let totalVisible = 0;
+    
+    rows.forEach(row => {
+        if (row.cells.length < 2) return;
+        
+        let visible = true;
+        // 🔥 ICI : récupérer la valeur brute (non modifiée)
+        let type = row.getAttribute('data-type') || '';
+        const patient = row.getAttribute('data-patient') || '';
+        const motif = row.getAttribute('data-motif') || '';
+        const annuleur = row.getAttribute('data-annuleur') || '';
+        const dateVente = row.getAttribute('data-date') || '';
+        const montant = parseFloat(row.getAttribute('data-montant')) || 0;
+        
+        // 🔥 Afficher la valeur réelle dans la console pour debug
+        console.log('Type réel:', type, 'Filtre demandé:', filterType);
+        
+        // Filtre par type - gérer les deux cas possibles
+        if (filterType !== 'tous') {
+            if (filterType === 'pharmacie') {
+                // Accepter 'pharmacie' ou 'pharma'
+                if (type !== 'pharmacie' && type !== 'pharma') {
+                    visible = false;
+                }
+            } else if (type !== filterType) {
+                visible = false;
+            }
+        }
+        
+        // Filtre par date
+        if (visible && (dateDebut || dateFin)) {
+            if (dateVente) {
+                const date = new Date(dateVente);
+                if (dateDebut) {
+                    const debut = new Date(dateDebut);
+                    if (date < debut) visible = false;
+                }
+                if (dateFin && visible) {
+                    const fin = new Date(dateFin);
+                    fin.setHours(23, 59, 59);
+                    if (date > fin) visible = false;
+                }
+            }
+        }
+        
+        // Filtre global
+        if (visible && searchTerm) {
+            const texteComplet = `${patient} ${motif} ${annuleur}`.toLowerCase();
+            if (!texteComplet.includes(searchTerm)) {
+                visible = false;
+            }
+        }
+        
+        row.style.display = visible ? '' : 'none';
+        if (visible) {
+            visibleCount++;
+            totalVisible += montant;
+        }
+    });
+    
+    document.getElementById('resultCount').innerText = visibleCount;
+    document.getElementById('totalAnnule').innerText = totalVisible.toLocaleString();
+    document.getElementById('footerTotal').innerHTML = totalVisible.toLocaleString() + ' FCFA';
+}
+function clearSearch() {
+    document.getElementById('searchAnnulation').value = '';
+    filtrerAnnulations();
+}
+
+function resetFilters() {
+    document.getElementById('searchAnnulation').value = '';
+    document.getElementById('filterType').value = 'tous';
+    document.getElementById('filterDateDebut').value = '';
+    document.getElementById('filterDateFin').value = '';
+    filtrerAnnulations();
+}
+
+// Initialisation
+document.addEventListener('DOMContentLoaded', function() {
+    // S'assurer que le footer total est correct
+    const footerTotal = document.getElementById('footerTotal');
+    if (footerTotal && footerTotal.innerText === '0 FCFA') {
+        const total = {{ annulations|sum(attribute='ancien_net_a_payer')|default(0) }};
+        if (total > 0) {
+            footerTotal.innerHTML = total.toLocaleString() + ' FCFA';
+        }
+    }
+});
+</script>
+
+<style>
+    #annulationsTable tbody tr:hover {
+        background-color: #fff0f0;
+        cursor: pointer;
+    }
+    .badge {
+        font-size: 0.75rem;
+        padding: 5px 10px;
+    }
+    input[type="date"]::-webkit-calendar-picker-indicator {
+        cursor: pointer;
+    }
+    .table-responsive {
+        max-height: 550px;
+        overflow-y: auto;
+    }
+</style>
+{% endblock %}

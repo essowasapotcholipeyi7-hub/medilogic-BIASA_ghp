@@ -1,0 +1,753 @@
+{% extends "base.html" %}
+
+{% block title %}Statistiques des ventes{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stats-card {
+        border-radius: 20px;
+        transition: all 0.3s ease;
+        cursor: pointer;
+    }
+    .stats-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+    }
+    .filter-bar {
+        background: #f8f9fa;
+        border-radius: 15px;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+    .table-responsive {
+        max-height: 550px;
+        overflow-y: auto;
+    }
+    .nav-tabs .nav-link {
+        border-radius: 12px;
+        padding: 10px 20px;
+        margin-right: 8px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    .nav-tabs .nav-link.active {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        border: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        {% include 'sidebar_menu.html' %}
+    </div>
+
+    <div class="col-md-9">
+        <!-- Onglets -->
+        <ul class="nav nav-tabs mb-4" id="statsTab" role="tablist">
+            <li class="nav-item">
+                <button class="nav-link active" id="ventes-tab" data-bs-toggle="tab" data-bs-target="#ventes" type="button" role="tab">
+                    <i class="fas fa-chart-line"></i> Ventes
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" id="assurances-tab" data-bs-toggle="tab" data-bs-target="#assurances" type="button" role="tab">
+                    <i class="fas fa-shield-alt"></i> Assurances
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content">
+
+            <!-- ========== ONGLET VENTES ========== -->
+            <div class="tab-pane fade show active" id="ventes" role="tabpanel">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h5><i class="fas fa-chart-bar"></i> Statistiques des ventes</h5>
+                    </div>
+                    <div class="card-body">
+
+                        <!-- Cartes recap -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-3">
+                                <div class="card stats-card border-0 shadow-sm bg-success bg-opacity-10">
+                                    <div class="card-body text-center">
+                                        <h3 class="text-success" id="totalVentes">0</h3>
+                                        <small class="text-muted">Total ventes</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card stats-card border-0 shadow-sm bg-info bg-opacity-10">
+                                    <div class="card-body text-center">
+                                        <h3 class="text-info" id="totalCA">0 FCFA</h3>
+                                        <small class="text-muted">Chiffre d'affaires</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card stats-card border-0 shadow-sm bg-warning bg-opacity-10">
+                                    <div class="card-body text-center">
+                                        <h3 class="text-warning" id="totalActes">0</h3>
+                                        <small class="text-muted">Actes</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card stats-card border-0 shadow-sm bg-danger bg-opacity-10">
+                                    <div class="card-body text-center">
+                                        <h3 class="text-danger" id="totalPharma">0</h3>
+                                        <small class="text-muted">Pharmacie</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Filtres -->
+                        <div class="filter-bar">
+                            <div class="row g-2">
+                                <div class="col-md-2">
+                                    <label class="form-label small">Date debut</label>
+                                    <input type="date" id="filtreDateDebut" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small">Date fin</label>
+                                    <input type="date" id="filtreDateFin" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small">Heure debut</label>
+                                    <input type="time" id="filtreHeureDebut" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small">Heure fin</label>
+                                    <input type="time" id="filtreHeureFin" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small">Type</label>
+                                    <select id="filtreType" class="form-control form-control-sm" onchange="appliquerFiltres()">
+                                        <option value="tous">Tous</option>
+                                        <option value="actes">Actes</option>
+                                        <option value="pharmacie">Pharmacie</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small">Statut paiement</label>
+                                    <select id="filtreStatutPaiement" class="form-control form-control-sm" onchange="appliquerFiltres()">
+                                        <option value="tous">Tous</option>
+                                        <option value="total">✅ Total</option>
+                                        <option value="partiel">⚠️ Partiel</option>
+                                        <option value="impaye">❌ Impayé</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="row mt-2 g-2">
+                                <div class="col-md-3">
+                                    <label class="form-label small">Patient</label>
+                                    <input type="text" id="filtrePatient" class="form-control form-control-sm" 
+                                           placeholder="Nom du patient" onkeyup="appliquerFiltres()">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small">Vendeur</label>
+                                    <input type="text" id="filtreVendeur" class="form-control form-control-sm" 
+                                           placeholder="Nom du vendeur" onkeyup="appliquerFiltres()">
+                                </div>
+                                <div class="col-md-6 d-flex gap-2">
+                                    <button class="btn btn-primary btn-sm" onclick="appliquerFiltres()">
+                                        <i class="fas fa-search"></i> Filtrer
+                                    </button>
+                                    <button class="btn btn-secondary btn-sm" onclick="resetFiltres()">
+                                        <i class="fas fa-sync-alt"></i> Reset
+                                    </button>
+                                    <button class="btn btn-success btn-sm" onclick="exporterCSV()">
+                                        <i class="fas fa-file-excel"></i> Export
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tableau -->
+                        <div class="table-responsive">
+                            <table class="table table-hover table-sm" id="ventesStatsTable">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Date</th>
+                                        <th>Heure</th>
+                                        <th>Patient</th>
+                                        <th>Type</th>
+                                        <th>Détail</th>
+                                        <th>PBR</th>
+                                        <th>Net à payer</th>
+                                        <th>Payé</th>
+                                        <th>Reste</th>
+                                        <th>Statut paiement</th>
+                                        <th>Assurances</th>
+                                        <th>Vendeur</th>
+                                        <th>Statut</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ventesStatsList">
+                                    <tr><td colspan="14" class="text-center">Chargement...</td></tr>
+                                </tbody>
+                                <tfoot class="table-light">
+                                    <tr class="fw-bold">
+                                        <td colspan="8" class="text-end">Total encaissé :</td>
+                                        <td id="totalPayeFooter">0 FCFA</td>
+                                        <td id="totalResteFooter">0 FCFA</td>
+                                        <td colspan="4"></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== ONGLET ASSURANCES ========== -->
+            <div class="tab-pane fade" id="assurances" role="tabpanel">
+                <div class="card">
+                    <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                        <h5><i class="fas fa-shield-alt"></i> Suivi des assurances</h5>
+                        <div>
+                            <button class="btn btn-light btn-sm me-2" onclick="genererFactures()">
+                                <i class="fas fa-file-invoice"></i> Generer factures
+                            </button>
+                            <button class="btn btn-light btn-sm" onclick="rafraichirFactures()">
+                                <i class="fas fa-sync-alt"></i> Rafraichir
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Filtres -->
+                        <div class="filter-bar">
+                            <div class="row g-2">
+                                <div class="col-md-4">
+                                    <label class="form-label small">Selectionner le mois</label>
+                                    <input type="month" id="factureMois" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label small">&nbsp;</label>
+                                    <button class="btn btn-primary btn-sm w-100" onclick="chargerFactures()">
+                                        <i class="fas fa-search"></i> Voir les factures
+                                    </button>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label small">&nbsp;</label>
+                                    <button class="btn btn-success btn-sm w-100" onclick="genererFactures()">
+                                        <i class="fas fa-calculator"></i> Generer factures du mois
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="alert alert-info mt-3 mb-0 small">
+                                <i class="fas fa-info-circle"></i> Les factures sont generees automatiquement a partir des ventes (actes + pharmacie) des patients assures.
+                            </div>
+                        </div>
+
+                        <!-- Cartes recap assurances -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-4">
+                                <div class="card bg-warning bg-opacity-10 border-0">
+                                    <div class="card-body text-center">
+                                        <h4 class="text-warning" id="totalAFacturer">0 FCFA</h4>
+                                        <small class="text-muted">A facturer</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card bg-success bg-opacity-10 border-0">
+                                    <div class="card-body text-center">
+                                        <h4 class="text-success" id="totalDejaPaye">0 FCFA</h4>
+                                        <small class="text-muted">Deja rembourse</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card bg-danger bg-opacity-10 border-0">
+                                    <div class="card-body text-center">
+                                        <h4 class="text-danger" id="totalRestantDu">0 FCFA</h4>
+                                        <small class="text-muted">Reste a percevoir</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Tableau factures -->
+                        <div class="table-responsive">
+                            <table class="table table-hover" id="facturesTable">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Mois</th>
+                                        <th>Assurance</th>
+                                        <th>Type</th>
+                                        <th>Montant total</th>
+                                        <th>Rembourse</th>
+                                        <th>Reste</th>
+                                        <th>Statut</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="facturesList">
+                                    <tr><td colspan="8" class="text-center">Selectionnez un mois</td></tr>
+                                </tbody>
+                                <tfoot class="table-light">
+                                    <tr class="fw-bold">
+                                        <td colspan="3" class="text-end">Total :</td>
+                                        <td id="totalFacturesFooter">0 FCFA</td>
+                                        <td id="totalRembourseFooter">0 FCFA</td>
+                                        <td id="totalResteFooter">0 FCFA</td>
+                                        <td colspan="2"></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Paiement Assurance -->
+<div class="modal fade" id="paiementModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">Enregistrer un remboursement assurance</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="paiementForm">
+                    <input type="hidden" id="paiementFactureId">
+                    <div class="mb-3">
+                        <label class="form-label">Assurance</label>
+                        <input type="text" class="form-control" id="paiementAssurance" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Mois de reference</label>
+                        <input type="text" class="form-control" id="paiementMois" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Montant total de la facture</label>
+                        <input type="text" class="form-control" id="paiementTotal" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Deja rembourse</label>
+                        <input type="text" class="form-control" id="paiementDeja" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Montant du remboursement (FCFA)</label>
+                        <input type="number" class="form-control" id="paiementMontant" required min="1">
+                        <small class="text-muted" id="paiementResteHint"></small>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-success" onclick="enregistrerPaiement()">Valider remboursement</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ========== VARIABLES GLOBALES ==========
+let toutesLesVentes = [];
+
+// ========== ONGLET VENTES ==========
+function chargerVentes() {
+    const ventesList = document.getElementById('ventesStatsList');
+    if (!ventesList) return;
+    
+    fetch('/api/ventes/all')
+        .then(response => response.json())
+        .then(ventes => {
+            console.log("Ventes reçues:", ventes.length);
+            toutesLesVentes = ventes;
+            
+            if (ventes.length === 0) {
+                ventesList.innerHTML = '<tr><td colspan="14" class="text-center">Aucune vente enregistree</td></tr>';
+                return;
+            }
+            
+            afficherVentes(ventes);
+            updateStats(ventes);
+        })
+        .catch(error => {
+            console.error('Erreur:', error);
+            ventesList.innerHTML = '<tr><td colspan="14" class="text-center text-danger">Erreur de chargement</td></tr>';
+        });
+}
+
+function afficherVentes(ventes) {
+    const tbody = document.getElementById('ventesStatsList');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    
+    let totalPaye = 0;
+    let totalReste = 0;
+    let totalActes = 0;
+    let totalPharma = 0;
+    
+    ventes.forEach(vente => {
+        const montantDonne = vente.montant_donne || 0;
+        const resteAPayer = vente.reste_a_payer || 0;
+        const netAPayer = vente.net_a_payer || 0;
+        const pbr = vente.base_remboursement || 0;
+        
+        totalPaye += montantDonne;
+        totalReste += resteAPayer;
+        
+        if (vente.type === 'actes') totalActes++;
+        else if (vente.type === 'pharmacie' || vente.type === 'pharma') totalPharma++;
+        
+        const row = tbody.insertRow();
+        
+        let dateStr = '', heureStr = '';
+        if (vente.date_vente) {
+            try {
+                const dateObj = new Date(vente.date_vente);
+                if (!isNaN(dateObj.getTime())) {
+                    dateStr = dateObj.toLocaleDateString('fr-FR');
+                    heureStr = dateObj.toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'});
+                }
+            } catch(e) {}
+        }
+        
+        // 🔥 Déterminer le statut de paiement
+        var statutPaiement = '';
+        var statutBadge = '';
+        if (resteAPayer > 0 && montantDonne === 0) {
+            statutPaiement = '❌ Impayé';
+            statutBadge = 'bg-dark';
+        } else if (resteAPayer > 0 && montantDonne > 0) {
+            statutPaiement = '⚠️ Partiel';
+            statutBadge = 'bg-warning';
+        } else {
+            statutPaiement = '✅ Total';
+            statutBadge = 'bg-success';
+        }
+        
+        // 🔥 Assurances
+        var assurance1 = vente.assurance_nom || vente.type_assurance || 'Non assuré';
+        if (assurance1 === 'amu_cnss') assurance1 = 'AMU-CNSS';
+        else if (assurance1 === 'amu_inam') assurance1 = 'AMU-INAM';
+        else if (assurance1 === 'non_assure') assurance1 = 'Non assuré';
+        
+        var assurance2 = vente.assurance2_nom || '';
+        var assurancesText = assurance1;
+        if (assurance2 && assurance2 !== '' && assurance2 !== 'Aucune') {
+            assurancesText += ' + ' + assurance2 + ' (' + (vente.taux_assurance2 || 0) + '%)';
+        }
+        
+        row.insertCell(0).innerHTML = vente.ID || '-';
+        row.insertCell(1).innerHTML = dateStr || '-';
+        row.insertCell(2).innerHTML = heureStr || '-';
+        row.insertCell(3).innerHTML = vente.patient_nom || '-';
+        
+        const typeCell = row.insertCell(4);
+        typeCell.innerHTML = (vente.type === 'actes') ? '<span class="badge bg-primary">Acte</span>' : '<span class="badge bg-success">Pharmacie</span>';
+        
+        row.insertCell(5).innerHTML = vente.detail || '-';
+        row.insertCell(6).innerHTML = (pbr > 0 ? Math.round(pbr).toLocaleString('fr-FR') + ' F' : '-');
+        row.insertCell(7).innerHTML = Math.round(netAPayer).toLocaleString('fr-FR') + ' F';
+        row.insertCell(8).innerHTML = '<span style="color:#28a745;font-weight:bold;">' + Math.round(montantDonne).toLocaleString('fr-FR') + ' F</span>';
+        row.insertCell(9).innerHTML = '<span style="color:#dc3545;font-weight:bold;">' + Math.round(resteAPayer).toLocaleString('fr-FR') + ' F</span>';
+        row.insertCell(10).innerHTML = '<span class="badge ' + statutBadge + '">' + statutPaiement + '</span>';
+        row.insertCell(11).innerHTML = assurancesText;
+        row.insertCell(12).innerHTML = vente.created_by_nom || '-';
+        
+        const statutCell = row.insertCell(13);
+        const statut = vente.statut || 'validee';
+        statutCell.innerHTML = (statut === 'annulee') ? '<span class="badge bg-danger">Annulee</span>' : '<span class="badge bg-success">Validee</span>';
+    });
+    
+    const totalPayeFooter = document.getElementById('totalPayeFooter');
+    const totalResteFooter = document.getElementById('totalResteFooter');
+    if (totalPayeFooter) totalPayeFooter.innerHTML = Math.round(totalPaye).toLocaleString('fr-FR') + ' FCFA';
+    if (totalResteFooter) totalResteFooter.innerHTML = Math.round(totalReste).toLocaleString('fr-FR') + ' FCFA';
+}
+function updateStats(ventes) {
+    let totalMontant = 0;
+    let totalActes = 0;
+    let totalPharma = 0;
+    
+    ventes.forEach(vente => {
+        totalMontant += (vente.montant_donne || 0);
+        if (vente.type === 'actes') totalActes++;
+        else if (vente.type === 'pharmacie' || vente.type === 'pharma') totalPharma++;
+    });
+    
+    const totalVentesEl = document.getElementById('totalVentes');
+    const totalCAEl = document.getElementById('totalCA');
+    const totalActesEl = document.getElementById('totalActes');
+    const totalPharmaEl = document.getElementById('totalPharma');
+    
+    if (totalVentesEl) totalVentesEl.innerHTML = ventes.length;
+    if (totalCAEl) totalCAEl.innerHTML = Math.round(totalMontant).toLocaleString('fr-FR') + ' FCFA';
+    if (totalActesEl) totalActesEl.innerHTML = totalActes;
+    if (totalPharmaEl) totalPharmaEl.innerHTML = totalPharma;
+}
+
+function appliquerFiltres() {
+    if (toutesLesVentes.length === 0) return;
+    
+    const dateDebut = document.getElementById('filtreDateDebut')?.value || '';
+    const dateFin = document.getElementById('filtreDateFin')?.value || '';
+    const heureDebut = document.getElementById('filtreHeureDebut')?.value || '';
+    const heureFin = document.getElementById('filtreHeureFin')?.value || '';
+    const filtrePatient = document.getElementById('filtrePatient')?.value.toLowerCase().trim() || '';
+    const filtreVendeur = document.getElementById('filtreVendeur')?.value.toLowerCase().trim() || '';
+    const filtreType = document.getElementById('filtreType')?.value || 'tous';
+    const filtreStatutPaiement = document.getElementById('filtreStatutPaiement')?.value || 'tous';
+    
+    const ventesFiltrees = toutesLesVentes.filter(vente => {
+        let dateVente = '', heureVente = '';
+        if (vente.date_vente) {
+            dateVente = vente.date_vente.split('T')[0] || vente.date_vente.split(' ')[0];
+            heureVente = vente.date_vente.split('T')[1]?.substring(0, 5) || vente.date_vente.split(' ')[1]?.substring(0, 5);
+        }
+        
+        const patient = (vente.patient_nom || '').toLowerCase();
+        const vendeur = (vente.created_by_nom || '').toLowerCase();
+        const type = vente.type;
+        
+        // 🔥 Filtre statut paiement
+        const reste = vente.reste_a_payer || 0;
+        const montantDonne = vente.montant_donne || 0;
+        const netAPayer = vente.net_a_payer || 0;
+        
+        if (dateDebut && dateFin && dateVente) {
+            if (dateVente < dateDebut || dateVente > dateFin) return false;
+        }
+        if (heureDebut && heureFin && heureVente) {
+            if (heureVente < heureDebut || heureVente > heureFin) return false;
+        }
+        if (filtrePatient && !patient.includes(filtrePatient)) return false;
+        if (filtreVendeur && !vendeur.includes(filtreVendeur)) return false;
+        
+        if (filtreType !== 'tous') {
+            if (filtreType === 'pharmacie') {
+                if (type !== 'pharmacie' && type !== 'pharma') return false;
+            } else if (type !== filtreType) {
+                return false;
+            }
+        }
+        
+        if (filtreStatutPaiement !== 'tous') {
+            if (filtreStatutPaiement === 'total') {
+                if (reste > 0 || montantDonne < netAPayer) return false;
+            } else if (filtreStatutPaiement === 'partiel') {
+                if (reste <= 0 || montantDonne >= netAPayer) return false;
+            } else if (filtreStatutPaiement === 'impaye') {
+                if (montantDonne > 0) return false;
+            }
+        }
+        
+        return true;
+    });
+    
+    afficherVentes(ventesFiltrees);
+}
+
+function resetFiltres() {
+    const fields = ['filtreDateDebut', 'filtreDateFin', 'filtreHeureDebut', 'filtreHeureFin', 'filtrePatient', 'filtreVendeur'];
+    fields.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    const filtreType = document.getElementById('filtreType');
+    const filtreStatutPaiement = document.getElementById('filtreStatutPaiement');
+    if (filtreType) filtreType.value = 'tous';
+    if (filtreStatutPaiement) filtreStatutPaiement.value = 'tous';
+    
+    if (toutesLesVentes.length > 0) {
+        afficherVentes(toutesLesVentes);
+        updateStats(toutesLesVentes);
+    }
+}
+
+function exporterCSV() {
+    const rows = document.querySelectorAll('#ventesStatsList tr');
+    let csvContent = "ID;Date;Heure;Patient;Type;Detail;PBR;Net a payer;Paye;Reste;Statut paiement;Assurances;Vendeur;Statut\n";
+    
+    rows.forEach(row => {
+        const cells = row.cells;
+        if (cells.length > 1 && cells[0].innerText !== 'Chargement...') {
+            csvContent += `"${cells[0].innerText}";"${cells[1].innerText}";"${cells[2].innerText}";"${cells[3].innerText}";"${cells[4].innerText}";"${cells[5].innerText}";"${cells[6].innerText}";"${cells[7].innerText}";"${cells[8].innerText}";"${cells[9].innerText}";"${cells[10].innerText}";"${cells[11].innerText}";"${cells[12].innerText}";"${cells[13].innerText}"\n`;
+        }
+    });
+    
+    const blob = new Blob(["\uFEFF" + csvContent], {type: 'text/csv;charset=utf-8;'});
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'statistiques_ventes.csv';
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
+
+// ========== ASSURANCES ==========
+function genererFactures() {
+    const moisInput = document.getElementById('factureMois');
+    if (!moisInput) return;
+    let mois = moisInput.value;
+    
+    if (!mois) {
+        alert('Veuillez selectionner un mois');
+        return;
+    }
+    
+    if (confirm(`Generer les factures pour le mois de ${mois} ?`)) {
+        fetch('/api/assurances/generer_factures', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({mois_reference: mois})
+        })
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                alert(`Factures generees !\n${result.total_ventes} ventes traitees`);
+                chargerFactures();
+            } else {
+                alert('Erreur: ' + result.error);
+            }
+        })
+        .catch(error => alert('Erreur: ' + error));
+    }
+}
+
+function chargerFactures() {
+    const mois = document.getElementById('factureMois')?.value;
+    if (!mois) {
+        alert('Veuillez selectionner un mois');
+        return;
+    }
+    
+    fetch(`/api/assurances/factures?mois=${mois}`)
+        .then(r => r.json())
+        .then(factures => {
+            const tbody = document.getElementById('facturesList');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+            
+            let totalMontantFactures = 0;
+            let totalRembourseAll = 0;
+            let totalRestant = 0;
+            
+            factures.forEach(f => {
+                const montantTotal = parseFloat(f.montant_total) || 0;
+                const montantRembourse = parseFloat(f.montant_rembourse) || 0;
+                const reste = montantTotal - montantRembourse;
+                
+                totalMontantFactures += montantTotal;
+                totalRembourseAll += montantRembourse;
+                totalRestant += reste;
+                
+                let assuranceText = f.assurance;
+                if (f.assurance === 'amu_cnss') assuranceText = 'AMU-CNSS';
+                if (f.assurance === 'amu_inam') assuranceText = 'AMU-INAM';
+                
+                const typeAssurance = f.type_assurance || 'principale';
+                const typeLabel = typeAssurance === 'principale' ? 'Principale' : 'Complémentaire';
+                const typeBadge = typeAssurance === 'principale' ? 'bg-primary' : 'bg-info';
+                
+                let statutText = '', statutClass = '';
+                if (f.statut === 'en_attente') { statutText = 'En attente'; statutClass = 'bg-warning'; }
+                else if (f.statut === 'payee') { statutText = 'Payee'; statutClass = 'bg-success'; }
+                else if (f.statut === 'partielle') { statutText = 'Partielle'; statutClass = 'bg-info'; }
+                
+                const row = tbody.insertRow();
+                row.insertCell(0).innerHTML = f.mois_reference;
+                row.insertCell(1).innerHTML = assuranceText;
+                row.insertCell(2).innerHTML = `<span class="badge ${typeBadge}">${typeLabel}</span>`;
+                row.insertCell(3).innerHTML = Math.round(montantTotal).toLocaleString('fr-FR') + ' FCFA';
+                row.insertCell(4).innerHTML = Math.round(montantRembourse).toLocaleString('fr-FR') + ' FCFA';
+                row.insertCell(5).innerHTML = '<span class="text-danger">' + Math.round(reste).toLocaleString('fr-FR') + ' FCFA</span>';
+                row.insertCell(6).innerHTML = `<span class="badge ${statutClass}">${statutText}</span>`;
+                
+                const actionCell = row.insertCell(7);
+                if (f.statut !== 'payee') {
+                    actionCell.innerHTML = `<button class="btn btn-sm btn-success" onclick='showPaiementModal(${f.id}, "${assuranceText}", "${f.mois_reference}", ${montantTotal}, ${montantRembourse})'>Encaisser</button>`;
+                } else {
+                    actionCell.innerHTML = '<span class="badge bg-success">Regle</span>';
+                }
+            });
+            
+            const totalAFacturer = document.getElementById('totalAFacturer');
+            const totalDejaPaye = document.getElementById('totalDejaPaye');
+            const totalRestantDu = document.getElementById('totalRestantDu');
+            const totalFacturesFooter = document.getElementById('totalFacturesFooter');
+            const totalRembourseFooter = document.getElementById('totalRembourseFooter');
+            const totalResteFooter = document.getElementById('totalResteFooter');
+            
+            if (totalAFacturer) totalAFacturer.innerHTML = Math.round(totalRestant).toLocaleString('fr-FR') + ' FCFA';
+            if (totalDejaPaye) totalDejaPaye.innerHTML = Math.round(totalRembourseAll).toLocaleString('fr-FR') + ' FCFA';
+            if (totalRestantDu) totalRestantDu.innerHTML = Math.round(totalRestant).toLocaleString('fr-FR') + ' FCFA';
+            if (totalFacturesFooter) totalFacturesFooter.innerHTML = Math.round(totalMontantFactures).toLocaleString('fr-FR') + ' FCFA';
+            if (totalRembourseFooter) totalRembourseFooter.innerHTML = Math.round(totalRembourseAll).toLocaleString('fr-FR') + ' FCFA';
+            if (totalResteFooter) totalResteFooter.innerHTML = Math.round(totalRestant).toLocaleString('fr-FR') + ' FCFA';
+        })
+        .catch(error => console.error('Erreur:', error));
+}
+
+function showPaiementModal(id, assurance, mois, total, deja) {
+    const modal = document.getElementById('paiementModal');
+    if (!modal) return;
+    
+    document.getElementById('paiementFactureId').value = id;
+    document.getElementById('paiementAssurance').value = assurance;
+    document.getElementById('paiementMois').value = mois;
+    document.getElementById('paiementTotal').value = Math.round(total).toLocaleString() + ' FCFA';
+    document.getElementById('paiementDeja').value = Math.round(deja).toLocaleString() + ' FCFA';
+    const reste = total - deja;
+    document.getElementById('paiementMontant').value = reste;
+    document.getElementById('paiementResteHint').innerHTML = `Reste: ${Math.round(reste).toLocaleString()} FCFA`;
+    new bootstrap.Modal(modal).show();
+}
+
+function enregistrerPaiement() {
+    const id = document.getElementById('paiementFactureId').value;
+    const montant = parseFloat(document.getElementById('paiementMontant').value);
+    
+    if (!montant || montant <= 0) {
+        alert('Montant valide requis');
+        return;
+    }
+    
+    if (confirm(`Confirmer le remboursement de ${montant.toLocaleString()} FCFA ?`)) {
+        fetch(`/api/assurances/factures/${id}/payer`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({montant: montant})
+        })
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                alert(`Remboursement enregistre !`);
+                bootstrap.Modal.getInstance(document.getElementById('paiementModal')).hide();
+                chargerFactures();
+            } else {
+                alert('Erreur: ' + result.error);
+            }
+        })
+        .catch(error => alert('Erreur: ' + error));
+    }
+}
+
+function rafraichirFactures() {
+    chargerFactures();
+}
+
+// ========== INITIALISATION ==========
+document.addEventListener('DOMContentLoaded', function() {
+    const factureMois = document.getElementById('factureMois');
+    if (factureMois) {
+        const now = new Date();
+        const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        factureMois.value = currentMonth;
+    }
+    chargerVentes();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Global{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
+    <h4><i class="fas fa-globe"></i> Administration Globale</h4>
+    <div>
+        <span class="badge bg-light text-dark me-2">{{ structures|length }} structures</span>
+        <a href="{{ url_for('admin_logout') }}" class="btn btn-sm btn-light">
+            <i class="fas fa-sign-out-alt"></i> Déconnexion
+        </a>
+    </div>
+</div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ID</th>
+                        <th>Structure</th>
+                        <th>Propriétaire</th>
+                        <th>Email</th>
+                        <th>Téléphone</th>
+                        <th>Date inscription</th>
+                        <th>Statut</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for structure in structures %}
+                    <tr>
+                        <td><strong>{{ structure.ID }}</strong></td>
+                        <td>{{ structure.nom }}</td>
+                        <td>{{ structure.proprietaire if structure.proprietaire else '-' }}</td>
+                        <td>{{ structure.email }}</td>
+                        <td>{{ structure.telephone }}</td>
+                        <td>{{ structure.date_inscription[:10] if structure.date_inscription else '-' }}</td>
+                        <td>
+                            {% if structure.statut == 'active' %}
+                                <span class="badge bg-success">✅ Activée</span>
+                            {% elif structure.statut == 'pending' %}
+                                <span class="badge bg-warning">⏳ En attente</span>
+                            {% elif structure.statut == 'suspended' %}
+                                <span class="badge bg-danger">❌ Suspendue</span>
+                            {% elif structure.statut == 'disponible' %}
+                                <span class="badge bg-info">📋 Disponible</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ structure.statut }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm" role="group">
+                                {% if structure.statut == 'pending' %}
+                                <a href="{{ url_for('activate_structure', structure_id=structure.ID) }}" class="btn btn-sm btn-success" title="Activer">
+                                    <i class="fas fa-check"></i>
+                                </a>
+                                {% elif structure.statut == 'active' %}
+                                <a href="{{ url_for('suspend_structure', structure_id=structure.ID) }}" class="btn btn-sm btn-warning" title="Suspendre">
+                                    <i class="fas fa-pause"></i>
+                                </a>
+                                {% elif structure.statut == 'suspended' %}
+                                <a href="{{ url_for('activate_structure', structure_id=structure.ID) }}" class="btn btn-sm btn-success" title="Réactiver">
+                                    <i class="fas fa-play"></i>
+                                </a>
+                                {% endif %}
+                                
+                                <!-- Bouton Réinitialiser mot de passe -->
+                                <button class="btn btn-sm btn-info" onclick="showResetPasswordModal({{ structure.ID }}, '{{ structure.nom }}')" title="Réinitialiser mot de passe">
+                                    <i class="fas fa-key"></i>
+                                </button>
+                                
+                                <a href="#" onclick="confirmDelete({{ structure.ID }})" class="btn btn-sm btn-danger" title="Supprimer">
+                                    <i class="fas fa-trash"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="text-center">Aucune structure inscrite</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Réinitialisation mot de passe -->
+<div class="modal fade" id="resetPasswordModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="fas fa-key"></i> Réinitialiser le mot de passe</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Structure : <strong id="resetStructureNom"></strong></p>
+                <p>Voulez-vous réinitialiser le mot de passe de cette structure ?</p>
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle"></i> Le nouveau mot de passe sera : <strong id="newPassword">medilogic2026</strong>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Ou saisissez un mot de passe personnalisé :</label>
+                    <input type="text" class="form-control" id="customPassword" placeholder="Laisser vide pour utiliser le mot de passe par défaut">
+                    <small class="text-muted">Minimum 6 caractères</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-info" onclick="resetPassword()">Réinitialiser</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let resetStructureId = null;
+
+function showResetPasswordModal(id, nom) {
+    resetStructureId = id;
+    document.getElementById('resetStructureNom').innerText = nom;
+    document.getElementById('customPassword').value = '';
+    new bootstrap.Modal(document.getElementById('resetPasswordModal')).show();
+}
+
+function resetPassword() {
+    let customPassword = document.getElementById('customPassword').value;
+    let password = customPassword || 'medilogic2026';
+    
+    if (password.length < 6) {
+        alert('Le mot de passe doit contenir au moins 6 caractères');
+        return;
+    }
+    
+    fetch(`/admin/reset_password/${resetStructureId}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({password: password})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if(data.success) {
+            alert(`Mot de passe réinitialisé avec succès !\nNouveau mot de passe : ${password}`);
+            bootstrap.Modal.getInstance(document.getElementById('resetPasswordModal')).hide();
+        } else {
+            alert('Erreur: ' + data.error);
+        }
+    });
+}
+
+function confirmDelete(id) {
+    if(confirm('Êtes-vous sûr de vouloir supprimer cette structure ? Cette action est irréversible.')) {
+        window.location.href = '/admin/delete/' + id;
+    }
+}
+</script>
+{% endblock %}

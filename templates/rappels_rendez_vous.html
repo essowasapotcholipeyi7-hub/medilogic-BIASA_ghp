@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+
+{% block title %}Rappels Rendez-vous{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        {% include 'sidebar_menu.html' %}
+    </div>
+
+    <div class="col-md-9">
+        <!-- Statistiques des rappels -->
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <div class="card text-center border-warning">
+                    <div class="card-body">
+                        <h3 id="statsMoins7">0</h3>
+                        <small>À moins de 7 jours</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card text-center border-danger">
+                    <div class="card-body">
+                        <h3 id="statsDepasses">0</h3>
+                        <small>Rendez-vous dépassés</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card text-center border-success">
+                    <div class="card-body">
+                        <h3 id="statsAujourdhui">0</h3>
+                        <small>Aujourd'hui</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RENDEZ-VOUS À MOINS DE 7 JOURS -->
+<div class="card mb-3">
+    <div class="card-header bg-warning text-white">
+        <h5><i class="fas fa-hourglass-half"></i> Rendez-vous dans les 7 jours</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Patient</th>
+                        <th>Téléphone</th>
+                        <th>Date</th>
+                        <th>Heure</th>
+                        <th>Motif</th>
+                        <th>Jours restants</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="moins7List">
+                    {% for rdv in moins_7_jours %}
+                    <tr>
+                        <td>{{ rdv.patient_nom }}</td>
+                        <td>{{ rdv.patient_telephone }}</td>
+                        <td>{{ rdv.date_rendez_vous }}</td>
+                        <td>{{ rdv.heure_rendez_vous }}</td>
+                        <td>{{ rdv.motif }}</td>
+                        <td>
+                            <span class="badge bg-warning">{{ rdv.jours_restants }} jours</span>
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-info" onclick="envoyerRappelManuel({{ rdv.ID }}, {{ rdv.jours_restants }}, '{{ rdv.date_rendez_vous }}', '{{ rdv.heure_rendez_vous }}', '{{ rdv.patient_nom }}', '{{ rdv.patient_telephone }}', '{{ rdv.motif }}')">
+                                <i class="fab fa-whatsapp"></i> Rappeler
+                            </button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="text-center">Aucun rendez-vous dans les 7 jours</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+        <!-- Rendez-vous dépassés -->
+        <div class="card">
+            <div class="card-header bg-danger text-white">
+                <h5><i class="fas fa-exclamation-triangle"></i> Rendez-vous dépassés</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Patient</th>
+                                <th>Téléphone</th>
+                                <th>Date prévue</th>
+                                <th>Heure</th>
+                                <th>Motif</th>
+                                <th>Retard</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="depassesList">
+                            {% for rdv in depasses %}
+                            <tr>
+                                <td>{{ rdv.patient_nom }}</td>
+                                <td>{{ rdv.patient_telephone }}</td>
+                                <td>{{ rdv.date_rendez_vous }}</td>
+                                <td>{{ rdv.heure_rendez_vous }}</td>
+                                <td>{{ rdv.motif }}</td>
+                                <td>
+                                    <span class="badge bg-danger">{{ rdv.jours_depasse }} jours</span>
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-warning" onclick="annulerRendezVous({{ rdv.ID }})">
+                                        <i class="fas fa-times"></i> Annuler
+                                    </button>
+                                    <button class="btn btn-sm btn-info" onclick="reporterRendezVous({{ rdv.ID }})">
+                                        <i class="fas fa-calendar-alt"></i> Reporter
+                                    </button>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="7" class="text-center">Aucun rendez-vous dépassé</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function envoyerRappelManuel(rdvId, joursRestants, dateRdv, heureRdv, patientNom, patientTel, motif) {
+    // 🔥 Récupérer directement depuis localStorage ou fetch
+    let structureNom = localStorage.getItem('structureNom') || 'Notre établissement';
+    let structureTel = localStorage.getItem('structureTelephone');
+    
+    // Si pas de numéro, faire un fetch
+    if (!structureTel || structureTel === 'Non renseigné') {
+        fetch('/api/structure/infos')
+            .then(response => response.json())
+            .then(data => {
+                structureTel = data.telephone || 'Non disponible';
+                localStorage.setItem('structureTelephone', structureTel);
+                envoyerMessage(joursRestants, dateRdv, heureRdv, patientNom, patientTel, motif, structureNom, structureTel);
+            });
+    } else {
+        envoyerMessage(joursRestants, dateRdv, heureRdv, patientNom, patientTel, motif, structureNom, structureTel);
+    }
+}
+
+function envoyerMessage(joursRestants, dateRdv, heureRdv, patientNom, patientTel, motif, structureNom, structureTel) {
+    let message = "";
+    
+    if (joursRestants === 0) {
+        message = `🔔 *RAPPEL DE RENDEZ-VOUS - AUJOURD'HUI* 🔔%0A%0A`;
+        message += `🏥 *${structureNom}*%0A`;
+        message += `📞 ${structureTel}%0A%0A`;
+        message += `Bonjour *${patientNom}*,%0A%0A`;
+        message += `Nous vous rappelons votre rendez-vous *AUJOURD'HUI* à *${heureRdv}* !%0A%0A`;
+        message += `📅 Date : *${dateRdv}*%0A`;
+        message += `⏰ Heure : *${heureRdv}*%0A`;
+        message += `📋 Motif : *${motif}*%0A%0A`;
+        message += `📞 Contact : ${structureTel}%0A%0A`;
+        message += `À très vite ! 🏥`;
+    } 
+    else if (joursRestants === 1) {
+        message = `🔔 *RAPPEL DE RENDEZ-VOUS - DEMAIN* 🔔%0A%0A`;
+        message += `🏥 *${structureNom}*%0A`;
+        message += `📞 ${structureTel}%0A%0A`;
+        message += `Bonjour *${patientNom}*,%0A%0A`;
+        message += `Nous vous rappelons votre rendez-vous de *DEMAIN* :%0A`;
+        message += `📅 Date : *${dateRdv}*%0A`;
+        message += `⏰ Heure : *${heureRdv}*%0A`;
+        message += `📋 Motif : *${motif}*%0A%0A`;
+        message += `📞 Contact : ${structureTel}%0A%0A`;
+        message += `Merci de votre ponctualité ! 🙏`;
+    } 
+    else {
+        message = `🔔 *RAPPEL DE RENDEZ-VOUS (J-${joursRestants})* 🔔%0A%0A`;
+        message += `🏥 *${structureNom}*%0A`;
+        message += `📞 ${structureTel}%0A%0A`;
+        message += `Bonjour *${patientNom}*,%0A%0A`;
+        message += `Nous vous rappelons votre rendez-vous dans *${joursRestants} jours* :%0A`;
+        message += `📅 Date : *${dateRdv}*%0A`;
+        message += `⏰ Heure : *${heureRdv}*%0A`;
+        message += `📋 Motif : *${motif}*%0A%0A`;
+        message += `📞 Contact : ${structureTel}%0A%0A`;
+        message += `Merci de votre confiance ! 🙏`;
+    }
+    
+    let tel = patientTel.toString().replace(/\s/g, '').replace(/^\+/, '');
+    if (!tel.startsWith('228') && !tel.startsWith('229') && !tel.startsWith('221')) {
+        tel = '228' + tel;
+    }
+    
+    const whatsappUrl = `https://wa.me/${tel}?text=${message}`;
+    window.open(whatsappUrl, '_blank');
+}
+function annulerRendezVous(id) {
+    if (confirm('Annuler ce rendez-vous ?')) {
+        fetch('/api/rendez_vous/' + id + '/annuler', {method: 'POST'})
+            .then(function() { location.reload(); });
+    }
+}
+
+function reporterRendezVous(id) {
+    // Demander la nouvelle date et heure
+    let nouvelleDate = prompt("📅 Nouvelle date du rendez-vous (format: YYYY-MM-DD)\nExemple: 2026-05-15");
+    if (!nouvelleDate) return;
+    
+    let nouvelleHeure = prompt("⏰ Nouvelle heure (format: HH:MM)\nExemple: 14:30");
+    if (!nouvelleHeure) return;
+    
+    let motif = prompt("📋 Motif (optionnel - laisser vide pour garder le même)", "");
+    
+    // Confirmation
+    if (!confirm(`Reporter le rendez-vous au ${nouvelleDate} à ${nouvelleHeure} ?`)) return;
+    
+    // Envoyer la requête
+    fetch('/api/rendez_vous/reporter', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            rdv_id: id,
+            nouvelle_date: nouvelleDate,
+            nouvelle_heure: nouvelleHeure,
+            motif: motif,
+            envoyer_rappel: true  // 🔥 Envoyer un WhatsApp au patient
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(`✅ Rendez-vous reporté au ${nouvelleDate} à ${nouvelleHeure}`);
+            if (data.whatsapp_url) {
+                if (confirm("📱 Envoyer un message WhatsApp au patient ?")) {
+                    window.open(data.whatsapp_url, '_blank');
+                }
+            }
+            location.reload();
+        } else {
+            alert("❌ Erreur: " + data.error);
+        }
+    })
+    .catch(error => {
+        console.error("Erreur:", error);
+        alert("Erreur lors du report");
+    });
+}
+
+// Mettre à jour les stats
+fetch('/api/rappels/stats')
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+        document.getElementById('statsMoins7').innerText = data.moins_7 || 0;
+        document.getElementById('statsDepasses').innerText = data.depasses || 0;
+        document.getElementById('statsAujourdhui').innerText = data.aujourdhui || 0;
+    });
+</script>
+{% endblock %}

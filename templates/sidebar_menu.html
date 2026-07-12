@@ -1,0 +1,183 @@
+<div class="sidebar" style="max-height: calc(100vh - 100px); overflow-y: auto;">
+    <h5 class="mb-3"><i class="fas fa-chart-line"></i> Menu</h5>
+    <div class="nav flex-column">
+        <!-- Principal -->
+        <a class="nav-link" href="{{ url_for('dashboard') }}">
+            <i class="fas fa-tachometer-alt"></i> Tableau de bord
+        </a>
+        <a class="nav-link" href="{{ url_for('patients') }}">
+            <i class="fas fa-users"></i> Patients
+        </a>
+<li class="nav-item">
+    <a class="nav-link" href="{{ url_for('prescriptions_recues') }}">
+        <i class="fas fa-prescription-bottle me-2 text-success"></i>
+        Prescriptions reçues
+        <span class="badge bg-danger ms-1" id="prescriptionBadge">0</span>
+    </a>
+</li>
+        <a class="nav-link" href="{{ url_for('actes_vente') }}">
+            <i class="fas fa-stethoscope"></i> LABO/RADIO/Actes & Vente
+        </a>
+        <a class="nav-link" href="{{ url_for('pharma_vente') }}">
+            <i class="fas fa-pills"></i> Pharmacie
+        </a>
+<!-- Dans sidebar_menu.html -->
+<a class="nav-link" href="{{ url_for('factures') }}">
+    <i class="fas fa-file-invoice"></i> Factures clients
+</a>
+        <!-- Référentiels AMU avec sous-menu -->
+        <div class="dropdown">
+            <a class="nav-link dropdown-toggle" href="#" id="amuDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="fas fa-database"></i> Référentiels AMU
+            </a>
+            <ul class="dropdown-menu" aria-labelledby="amuDropdown">
+                <li>
+                    <a class="dropdown-item" href="https://referentiels.amu.tg/#/providers" target="_blank">
+                        <i class="fas fa-hospital"></i> AMU-CNSS
+                    </a>
+                </li>
+                <li>
+                    <a class="dropdown-item" href="https://prestaplus.inam.tg/Vue/index.php" target="_blank">
+                        <i class="fas fa-file-invoice"></i> AMU-INAM
+                    </a>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Historique et Rendez-vous -->
+        <a class="nav-link" href="{{ url_for('historique_ventes') }}">
+            <i class="fas fa-history"></i> Historique
+        </a>
+        <a class="nav-link" href="{{ url_for('rendez_vous') }}">
+            <i class="fas fa-calendar-alt"></i> Rendez-vous
+        </a>
+        <a class="nav-link" href="{{ url_for('rappels_rendez_vous') }}">
+            <i class="fas fa-bell"></i> Rappels
+        </a>
+
+        <!-- ============================================ -->
+        <!-- FACTURES PROFORMA -->
+        <!-- ============================================ -->
+        <a class="nav-link {% if request.endpoint == 'proformas' %}active{% endif %}" href="{{ url_for('proformas') }}">
+            <i class="fas fa-file-invoice"></i> Factures Proforma
+            <span class="badge bg-warning text-dark float-end" id="proformaBadge" style="display:none;">0</span>
+        </a>
+
+        <!-- Dans sidebar_menu.html pour afficher le bon menu -->
+        {% if session.role in ['admin', 'medecin', 'paramedical'] %}
+            <a class="nav-link" href="{{ url_for('consultation') }}">
+                <i class="fas fa-stethoscope"></i> Consultation & Prise en charge
+            </a>
+        {% endif %}
+
+<!-- Dans sidebar_menu.html -->
+{% if session.role in ['admin', 'comptable', 'gestionnaire', 'pharmacien'] %}
+<li class="nav-item">
+    <a class="nav-link" href="{{ url_for('gestion_stock') }}">
+        <i class="fas fa-boxes"></i> Gestion des stocks
+    </a>
+</li>
+{% endif %}
+
+        <!-- ============================================ -->
+        <!-- ADMINISTRATION -->
+        <!-- ============================================ -->
+        {% if session.is_admin %}
+        <a class="nav-link" href="{{ url_for('admin_finances') }}">
+            <i class="fas fa-coins"></i> Finances
+        </a>
+        <a class="nav-link" href="{{ url_for('statistiques_ventes') }}">
+            <i class="fas fa-chart-bar"></i> Statistiques ventes/assurances
+        </a>
+        <a class="nav-link" href="{{ url_for('historique_annulations') }}">
+            <i class="fas fa-ban"></i> Annulations
+        </a>
+        <a class="nav-link" href="{{ url_for('admin_structure') }}">
+            <i class="fas fa-cog"></i> Administration
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+// ============================================
+// LOADER
+// ============================================
+function showLoader() {
+    let loader = document.getElementById('loaderOverlay');
+    if (!loader) {
+        loader = document.createElement('div');
+        loader.id = 'loaderOverlay';
+        loader.className = 'loader-overlay';
+        loader.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center;';
+        loader.innerHTML = '<div class="loader" style="width: 50px; height: 50px; border: 5px solid #f3f3f3; border-top: 5px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite;"></div>';
+        document.body.appendChild(loader);
+        
+        if (!document.querySelector('#loaderStyle')) {
+            const style = document.createElement('style');
+            style.id = 'loaderStyle';
+            style.textContent = '@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }';
+            document.head.appendChild(style);
+        }
+    }
+    loader.style.display = 'flex';
+}
+
+function hideLoader() {
+    const loader = document.getElementById('loaderOverlay');
+    if (loader) {
+        loader.style.display = 'none';
+    }
+}
+
+// ============================================
+// COMPTER LES PROFORMAS EN ATTENTE
+// ============================================
+function chargerProformaBadge() {
+    fetch('/api/proformas/count')
+        .then(response => response.json())
+        .then(data => {
+            const badge = document.getElementById('proformaBadge');
+            if (badge) {
+                if (data.en_attente > 0) {
+                    badge.textContent = data.en_attente;
+                    badge.style.display = 'inline-block';
+                } else {
+                    badge.style.display = 'none';
+                }
+            }
+        })
+        .catch(() => {
+            const badge = document.getElementById('proformaBadge');
+            if (badge) badge.style.display = 'none';
+        });
+}
+
+// ============================================
+// LOADER SUR LES LIENS DU MENU
+// ============================================
+document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+    link.addEventListener('click', function(e) {
+        const href = this.getAttribute('href');
+        if (href === '#' || href === 'javascript:void(0)' || this.getAttribute('target') === '_blank') {
+            return;
+        }
+        showLoader();
+    });
+});
+
+// ============================================
+// INITIALISATION
+// ============================================
+document.addEventListener('DOMContentLoaded', function() {
+    hideLoader();
+    chargerProformaBadge();
+});
+
+// Rafraîchir le badge toutes les 60 secondes
+setInterval(chargerProformaBadge, 60000);
+
+window.addEventListener('load', function() {
+    hideLoader();
+});
+</script>

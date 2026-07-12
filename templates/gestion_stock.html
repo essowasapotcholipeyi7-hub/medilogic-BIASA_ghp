@@ -1,0 +1,893 @@
+{% extends "base.html" %}
+
+{% block title %}Gestion des actes et produits{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        {% include 'sidebar_menu.html' %}
+    </div>
+
+    <div class="col-md-9">
+        <ul class="nav nav-tabs mb-3" id="gestionTab" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="actes-tab" data-bs-toggle="tab" data-bs-target="#actes" type="button" role="tab">
+                    <i class="fas fa-stethoscope"></i> Actes médicaux
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="gestion-produits-tab" data-bs-toggle="tab" data-bs-target="#gestionProduits" type="button" role="tab">
+                    <i class="fas fa-boxes"></i> Produits & stocks
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="stats-produits-tab" data-bs-toggle="tab" data-bs-target="#statsProduits" type="button" role="tab">
+                    <i class="fas fa-chart-bar"></i> Statistiques
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="lunetterie-tab" data-bs-toggle="tab" data-bs-target="#lunetterie" type="button" role="tab">
+                    <i class="fas fa-glasses"></i> Lunetterie
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content">
+
+            <!-- ========== ONGLET ACTES MÉDICAUX ========== -->
+            <div class="tab-pane fade show active" id="actes" role="tabpanel">
+                <div class="card">
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                        <h5><i class="fas fa-stethoscope"></i> Catalogue des actes</h5>
+                        <button class="btn btn-light btn-sm" onclick="showAddActeModal()">
+                            <i class="fas fa-plus"></i> Nouvel acte
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                <input type="text" id="searchActe" class="form-control" placeholder="Rechercher par nom..." onkeyup="filterActes()">
+                                <button class="btn btn-outline-secondary" onclick="clearSearchActe()">✖</button>
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-hover" id="actesTable">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Code</th>
+                                        <th>Nom</th>
+                                        <th>Prix (FCFA)</th>
+                                        <th>PBR (FCFA)</th>
+                                        <th>Description</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="actesList">
+                                    {% for acte in actes %}
+                                    <tr class="acte-row">
+                                        <td>{{ acte.ID }}</td>
+                                        <td><span class="badge bg-secondary">ACT-{{ acte.ID }}</span></td>
+                                        <td><strong>{{ acte.nom }}</strong></td>
+                                        <td>{{ acte.prix }} FCFA</td>
+                                        <td>{{ acte.pbr or acte.prix }} FCFA</td>
+                                        <td>{{ acte.description or '-' }}</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-warning" onclick='editActe({{ acte.ID }}, "{{ acte.nom|replace("'", "\\'") }}", {{ acte.prix }}, {{ acte.pbr or acte.prix }}, "{{ acte.description|replace("'", "\\'")|default('') }}")'>
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-danger" onclick="deleteActe({{ acte.ID }})">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr>
+                                        <td colspan="7" class="text-center">Aucun acte</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== ONGLET PRODUITS & STOCKS ========== -->
+            <div class="tab-pane fade" id="gestionProduits" role="tabpanel">
+                <div class="card">
+                    <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                        <h5><i class="fas fa-boxes"></i> Gestion des produits & stocks</h5>
+                        <div>
+                            <button class="btn btn-light btn-sm me-2" onclick="showAddProduitModal()">
+                                <i class="fas fa-plus"></i> Nouveau produit
+                            </button>
+                            <button class="btn btn-light btn-sm" onclick="exporterProduitsCSV()">
+                                <i class="fas fa-file-excel"></i> Exporter
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-3">
+                                <div class="card bg-light border-0 shadow-sm">
+                                    <div class="card-body text-center">
+                                        <h6 class="text-primary" id="totalProduitsCard">0</h6>
+                                        <small class="text-muted">Total produits</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-success bg-opacity-10 border-0 shadow-sm">
+                                    <div class="card-body text-center">
+                                        <h6 class="text-success" id="valeurStockCard">0 FCFA</h6>
+                                        <small class="text-muted">Valeur du stock</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-danger bg-opacity-10 border-0 shadow-sm">
+                                    <div class="card-body text-center">
+                                        <h6 class="text-danger" id="produitsPerimesCard">0</h6>
+                                        <small class="text-muted">Produits périmés</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-warning bg-opacity-10 border-0 shadow-sm">
+                                    <div class="card-body text-center">
+                                        <h6 class="text-warning" id="stockAlerteCard">0</h6>
+                                        <small class="text-muted">Stock bas</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                <input type="text" id="searchProduitAdmin" class="form-control" placeholder="Rechercher un produit..." onkeyup="filterProduitsAdmin()">
+                                <button class="btn btn-outline-secondary" onclick="clearSearchProduitAdmin()">✖</button>
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-hover">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Nom</th>
+                                        <th>Prix vente</th>
+                                        <th>Prix achat</th>
+                                        <th>PBR</th>
+                                        <th>Stock</th>
+                                        <th>Seuil</th>
+                                        <th>Péremption</th>
+                                        <th>Lot</th>
+                                        <th>Marge</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="produitsAdminList">
+                                    <tr><td colspan="10" class="text-center">Chargement...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== ONGLET STATISTIQUES ========== -->
+            <div class="tab-pane fade" id="statsProduits" role="tabpanel">
+                <div class="card">
+                    <div class="card-header bg-info text-white">
+                        <h5><i class="fas fa-chart-bar"></i> Statistiques des produits</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-3">
+                                <div class="card bg-light border-0 shadow-sm">
+                                    <div class="card-body text-center">
+                                        <h4 class="text-primary" id="statTotalProduits">0</h4>
+                                        <small class="text-muted">Total produits</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-success bg-opacity-10 border-0 shadow-sm">
+                                    <div class="card-body text-center">
+                                        <h4 class="text-success" id="statValeurStock">0 FCFA</h4>
+                                        <small class="text-muted">Valeur du stock</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-danger bg-opacity-10 border-0 shadow-sm">
+                                    <div class="card-body text-center">
+                                        <h4 class="text-danger" id="statPerimes">0</h4>
+                                        <small class="text-muted">Produits périmés</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-warning bg-opacity-10 border-0 shadow-sm">
+                                    <div class="card-body text-center">
+                                        <h4 class="text-warning" id="statBientotPerimes">0</h4>
+                                        <small class="text-muted">Bientôt périmés</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Top 10 produits par marge -->
+                        <div class="card mt-3">
+                            <div class="card-header bg-success text-white">
+                                <h6><i class="fas fa-chart-line"></i> Top 10 produits par marge</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>#</th>
+                                                <th>Produit</th>
+                                                <th>Prix vente</th>
+                                                <th>Prix achat</th>
+                                                <th>Marge unitaire</th>
+                                                <th>Stock</th>
+                                                <th>Marge totale</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="topMargeList">
+                                            <tr><td colspan="7" class="text-center">Chargement...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Produits périmés -->
+                        <div class="card mt-3">
+                            <div class="card-header bg-danger text-white">
+                                <h6><i class="fas fa-calendar-times"></i> Produits périmés ou bientôt périmés</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>Produit</th>
+                                                <th>Date péremption</th>
+                                                <th>Stock</th>
+                                                <th>Statut</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="peremptionList">
+                                            <tr><td colspan="4" class="text-center">Chargement...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+
+<!-- Modal Acte -->
+<div class="modal fade" id="acteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="acteModalTitle">Ajouter un acte</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="acteForm">
+                    <input type="hidden" id="acteId">
+                    <div class="mb-3">
+                        <label class="form-label">Nom</label>
+                        <input type="text" class="form-control" id="acteNom" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Code</label>
+                        <input type="text" class="form-control" id="acteCode" placeholder="ACT-XXX">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Prix (FCFA)</label>
+                        <input type="number" class="form-control" id="actePrix" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">PBR (FCFA)</label>
+                        <input type="number" class="form-control" id="actePBR" placeholder="Prix de Base de Remboursement">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" id="acteDescription" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-primary" onclick="saveActe()">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Produit -->
+<div class="modal fade" id="produitModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="produitModalTitle">Ajouter un produit</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="produitForm">
+                    <input type="hidden" id="produitId">
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Nom *</label>
+                            <input type="text" class="form-control" id="produitNom" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Unité</label>
+                            <select class="form-control" id="produitUnite">
+                                <option value="unité">Unité</option>
+                                <option value="comprimé">Comprimé</option>
+                                <option value="gélule">Gélule</option>
+                                <option value="sachet">Sachet</option>
+                                <option value="boîte">Boîte</option>
+                                <option value="flacon">Flacon</option>
+                                <option value="ampoule">Ampoule</option>
+                                <option value="sirop">Sirop</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Prix vente (FCFA) *</label>
+                            <input type="number" class="form-control" id="produitPrixVente" required>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Prix achat (FCFA)</label>
+                            <input type="number" class="form-control" id="produitPrixAchat" value="0">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">PBR (FCFA)</label>
+                            <input type="number" class="form-control" id="produitPBR" placeholder="Prix de Base de Remboursement">
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Stock initial</label>
+                            <input type="number" class="form-control" id="produitStock" value="0">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Seuil d'alerte</label>
+                            <input type="number" class="form-control" id="produitSeuil" value="10">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Lot</label>
+                            <input type="text" class="form-control" id="produitLot" placeholder="Numéro de lot">
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-12 mb-3">
+                            <label class="form-label">Date de péremption</label>
+                            <input type="date" class="form-control" id="produitDatePeremption">
+                            <small class="text-muted">Format: YYYY-MM-DD</small>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-success" onclick="saveProduit()">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Approvisionnement Produit -->
+<div class="modal fade" id="approModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title"><i class="fas fa-truck"></i> Approvisionnement</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="approProduitId">
+                <div class="mb-3">
+                    <label class="form-label">Produit</label>
+                    <input type="text" class="form-control" id="approProduitNom" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Quantité à ajouter</label>
+                    <input type="number" class="form-control" id="approQuantite" min="1">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-warning" onclick="validerApprovisionnement()">Approvisionner</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== LOADER OVERLAY ===== -->
+<div id="loaderOverlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;">
+    <div class="spinner-border text-light" style="width:3rem;height:3rem;"></div>
+    <div class="text-white mt-2">Chargement...</div>
+</div>
+
+<script>
+// ========== FILTRES ACTES ==========
+function filterActes() {
+    const filter = document.getElementById('searchActe').value.toLowerCase();
+    const rows = document.querySelectorAll('#actesTable tbody tr');
+    rows.forEach(row => {
+        const text = row.innerText.toLowerCase();
+        row.style.display = text.includes(filter) ? '' : 'none';
+    });
+}
+
+function clearSearchActe() { 
+    document.getElementById('searchActe').value = ''; 
+    filterActes(); 
+}
+
+// ========== GESTION PRODUITS ==========
+let tousLesProduits = [];
+
+function chargerProduitsAdmin() {
+    fetch('/api/produits')
+        .then(r => r.json())
+        .then(data => { 
+            tousLesProduits = data; 
+            afficherProduitsAdmin(data); 
+            updateStats(data);
+        })
+        .catch(error => {
+            console.error('Erreur:', error);
+            document.getElementById('produitsAdminList').innerHTML = '<tr><td colspan="10" class="text-center text-danger">Erreur de chargement</td></tr>';
+        });
+}
+
+function afficherProduitsAdmin(produits) {
+    const tbody = document.getElementById('produitsAdminList');
+    tbody.innerHTML = '';
+    
+    if (!produits || produits.length === 0) { 
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center">Aucun produit</td></tr>'; 
+        return; 
+    }
+    
+    produits.forEach(p => {
+        const stockClass = p.quantite_stock <= p.seuil_alerte ? 'text-danger fw-bold' : '';
+        const marge = (p.prix_vente || 0) - (p.prix_achat || 0);
+        const margeClass = marge > 0 ? 'text-success' : 'text-danger';
+        
+        let peremptionClass = '';
+        let peremptionText = p.date_peremption || '-';
+        if (p.date_peremption) {
+            const today = new Date();
+            const perempDate = new Date(p.date_peremption);
+            if (perempDate < today) {
+                peremptionClass = 'text-danger fw-bold';
+                peremptionText += ' ⚠️ PÉRIMÉ';
+            } else if ((perempDate - today) / (1000 * 60 * 60 * 24) < 30) {
+                peremptionClass = 'text-warning';
+                peremptionText += ' ⚠️ Bientôt';
+            }
+        }
+        
+        tbody.innerHTML += `
+            <tr>
+                <td><strong>${p.nom}</strong></td>
+                <td>${parseInt(p.prix_vente || 0).toLocaleString()} F</td>
+                <td>${parseInt(p.prix_achat || 0).toLocaleString()} F</td>
+                <td>${parseInt(p.pbr || p.prix_vente || 0).toLocaleString()} F</td>
+                <td class="${stockClass}">${p.quantite_stock || 0}</td>
+                <td>${p.seuil_alerte || 10}</td>
+                <td class="${peremptionClass}">${peremptionText}</td>
+                <td>${p.lot || '-'}</td>
+                <td class="${margeClass}">${marge.toLocaleString()} F</td>
+                <td>
+                    <button class="btn btn-sm btn-info" onclick="approvisionner(${p.id}, '${p.nom.replace(/'/g, "\\'")}')" title="Approvisionner">
+                        <i class="fas fa-truck"></i>
+                    </button>
+                    <button class="btn btn-sm btn-warning" onclick="modifierProduit(${p.id})" title="Modifier">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="supprimerProduit(${p.id})" title="Supprimer">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+}
+
+function filterProduitsAdmin() {
+    const search = document.getElementById('searchProduitAdmin').value.toLowerCase();
+    const filtered = tousLesProduits.filter(p => p.nom.toLowerCase().includes(search));
+    afficherProduitsAdmin(filtered);
+}
+
+function clearSearchProduitAdmin() { 
+    document.getElementById('searchProduitAdmin').value = ''; 
+    afficherProduitsAdmin(tousLesProduits); 
+}
+
+function updateStats(produits) {
+    let total = produits.length;
+    let valeurStock = 0;
+    let perimes = 0;
+    let bientotPerimes = 0;
+    let stockAlerte = 0;
+    let topMarge = [];
+    
+    const today = new Date();
+    const dateLimite = new Date();
+    dateLimite.setDate(dateLimite.getDate() + 30);
+    
+    produits.forEach(p => {
+        valeurStock += (p.prix_achat || 0) * (p.quantite_stock || 0);
+        
+        if (p.quantite_stock <= p.seuil_alerte) stockAlerte++;
+        
+        if (p.date_peremption) {
+            const perempDate = new Date(p.date_peremption);
+            if (perempDate < today) {
+                perimes++;
+            } else if (perempDate <= dateLimite) {
+                bientotPerimes++;
+            }
+        }
+        
+        const marge = (p.prix_vente || 0) - (p.prix_achat || 0);
+        if (marge > 0 && p.quantite_stock > 0) {
+            topMarge.push({
+                nom: p.nom,
+                prix_vente: p.prix_vente,
+                prix_achat: p.prix_achat,
+                marge: marge,
+                stock: p.quantite_stock,
+                marge_totale: marge * p.quantite_stock
+            });
+        }
+    });
+    
+    topMarge.sort((a, b) => b.marge_totale - a.marge_totale);
+    topMarge = topMarge.slice(0, 10);
+    
+    // Cartes
+    document.getElementById('totalProduitsCard').textContent = total;
+    document.getElementById('valeurStockCard').textContent = Math.round(valeurStock).toLocaleString() + ' FCFA';
+    document.getElementById('produitsPerimesCard').textContent = perimes;
+    document.getElementById('stockAlerteCard').textContent = stockAlerte;
+    
+    // Statistiques
+    document.getElementById('statTotalProduits').textContent = total;
+    document.getElementById('statValeurStock').textContent = Math.round(valeurStock).toLocaleString() + ' FCFA';
+    document.getElementById('statPerimes').textContent = perimes;
+    document.getElementById('statBientotPerimes').textContent = bientotPerimes;
+    
+    // Top marge
+    const topMargeList = document.getElementById('topMargeList');
+    if (topMarge.length > 0) {
+        topMargeList.innerHTML = topMarge.map((p, i) => `
+            <tr>
+                <td>${i + 1}</td>
+                <td><strong>${p.nom}</strong></td>
+                <td>${p.prix_vente.toLocaleString()} F</td>
+                <td>${p.prix_achat.toLocaleString()} F</td>
+                <td class="text-success">${p.marge.toLocaleString()} F</td>
+                <td>${p.stock}</td>
+                <td class="text-success fw-bold">${p.marge_totale.toLocaleString()} F</td>
+            </tr>
+        `).join('');
+    } else {
+        topMargeList.innerHTML = '<tr><td colspan="7" class="text-center">Aucune donnée</td></tr>';
+    }
+    
+    // Produits périmés/bientôt périmés
+    const peremptionList = document.getElementById('peremptionList');
+    const produitsPerimes = produits.filter(p => {
+        if (!p.date_peremption) return false;
+        const perempDate = new Date(p.date_peremption);
+        return perempDate <= dateLimite;
+    });
+    
+    if (produitsPerimes.length > 0) {
+        peremptionList.innerHTML = produitsPerimes.map(p => {
+            const perempDate = new Date(p.date_peremption);
+            const estPerime = perempDate < today;
+            const joursRestants = Math.ceil((perempDate - today) / (1000 * 60 * 60 * 24));
+            return `
+                <tr>
+                    <td><strong>${p.nom}</strong></td>
+                    <td>${p.date_peremption}</td>
+                    <td>${p.quantite_stock}</td>
+                    <td>
+                        ${estPerime ? '<span class="badge bg-danger">Périmé</span>' : `<span class="badge bg-warning">${joursRestants} jours restants</span>`}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    } else {
+        peremptionList.innerHTML = '<tr><td colspan="4" class="text-center text-success">✅ Aucun produit périmé ou bientôt périmé</td></tr>';
+    }
+}
+
+function exporterProduitsCSV() {
+    if (!tousLesProduits || tousLesProduits.length === 0) {
+        alert('Aucun produit à exporter');
+        return;
+    }
+    
+    let csvContent = "Nom;Prix vente;Prix achat;PBR;Stock;Seuil;Unité;Péremption;Lot;Marge\n";
+    tousLesProduits.forEach(p => {
+        const marge = (p.prix_vente || 0) - (p.prix_achat || 0);
+        csvContent += `"${p.nom}";${p.prix_vente || 0};${p.prix_achat || 0};${p.pbr || p.prix_vente || 0};${p.quantite_stock || 0};${p.seuil_alerte || 10};${p.unite || 'unité'};${p.date_peremption || ''};${p.lot || ''};${marge}\n`;
+    });
+    
+    const blob = new Blob(["\uFEFF" + csvContent], {type: 'text/csv;charset=utf-8;'});
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'produits.csv';
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
+
+// ========== ACTES ==========
+function showAddActeModal() {
+    document.getElementById('acteModalTitle').innerText = 'Ajouter un acte';
+    document.getElementById('acteId').value = '';
+    document.getElementById('acteForm').reset();
+    document.getElementById('actePBR').value = '';
+    new bootstrap.Modal(document.getElementById('acteModal')).show();
+}
+
+function editActe(id, nom, prix, pbr, description) {
+    document.getElementById('acteModalTitle').innerText = "Modifier l'acte";
+    document.getElementById('acteId').value = id;
+    document.getElementById('acteNom').value = nom;
+    document.getElementById('actePrix').value = prix;
+    document.getElementById('actePBR').value = pbr || prix;
+    document.getElementById('acteDescription').value = description || '';
+    new bootstrap.Modal(document.getElementById('acteModal')).show();
+}
+
+function saveActe() {
+    const data = {
+        id: document.getElementById('acteId').value,
+        nom: document.getElementById('acteNom').value,
+        code: document.getElementById('acteCode').value,
+        prix: parseInt(document.getElementById('actePrix').value),
+        pbr: parseInt(document.getElementById('actePBR').value) || parseInt(document.getElementById('actePrix').value),
+        description: document.getElementById('acteDescription').value
+    };
+    
+    if (!data.nom || !data.prix) {
+        alert('Veuillez remplir tous les champs obligatoires');
+        return;
+    }
+    
+    showLoader();
+    
+    fetch('/api/admin/actes', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(data => { 
+        hideLoader();
+        if(data.success) {
+            alert('Acte enregistré');
+            location.reload();
+        } else {
+            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+        }
+    });
+}
+
+function deleteActe(id) {
+    if (confirm('Supprimer cet acte ?')) {
+        showLoader();
+        fetch(`/api/admin/actes/${id}`, { method: 'DELETE' })
+            .then(r => r.json())
+            .then(data => { 
+                hideLoader();
+                if(data.success) {
+                    alert('Acte supprimé');
+                    location.reload();
+                } else {
+                    alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+                }
+            });
+    }
+}
+
+// ========== PRODUITS ==========
+function showAddProduitModal() {
+    document.getElementById('produitModalTitle').innerText = 'Ajouter un produit';
+    document.getElementById('produitId').value = '';
+    document.getElementById('produitForm').reset();
+    document.getElementById('produitStock').value = '0';
+    document.getElementById('produitSeuil').value = '10';
+    document.getElementById('produitUnite').value = 'unité';
+    document.getElementById('produitPrixAchat').value = '0';
+    document.getElementById('produitDatePeremption').value = '';
+    document.getElementById('produitLot').value = '';
+    new bootstrap.Modal(document.getElementById('produitModal')).show();
+}
+
+function modifierProduit(id) {
+    const p = tousLesProduits.find(p => p.id == id);
+    if (!p) return;
+    document.getElementById('produitModalTitle').innerText = 'Modifier le produit';
+    document.getElementById('produitId').value = p.id;
+    document.getElementById('produitNom').value = p.nom;
+    document.getElementById('produitPrixVente').value = p.prix_vente || 0;
+    document.getElementById('produitPrixAchat').value = p.prix_achat || 0;
+    document.getElementById('produitPBR').value = p.pbr || p.prix_vente || 0;
+    document.getElementById('produitStock').value = p.quantite_stock || 0;
+    document.getElementById('produitSeuil').value = p.seuil_alerte || 10;
+    document.getElementById('produitUnite').value = p.unite || 'unité';
+    document.getElementById('produitDatePeremption').value = p.date_peremption || '';
+    document.getElementById('produitLot').value = p.lot || '';
+    new bootstrap.Modal(document.getElementById('produitModal')).show();
+}
+
+function saveProduit() {
+    const id = document.getElementById('produitId').value;
+    const produit = {
+        nom: document.getElementById('produitNom').value,
+        prix_vente: parseFloat(document.getElementById('produitPrixVente').value),
+        prix_achat: parseFloat(document.getElementById('produitPrixAchat').value) || 0,
+        pbr: parseFloat(document.getElementById('produitPBR').value) || parseFloat(document.getElementById('produitPrixVente').value),
+        quantite_stock: parseInt(document.getElementById('produitStock').value) || 0,
+        seuil_alerte: parseInt(document.getElementById('produitSeuil').value) || 10,
+        unite: document.getElementById('produitUnite').value,
+        date_peremption: document.getElementById('produitDatePeremption').value || '',
+        lot: document.getElementById('produitLot').value || ''
+    };
+    
+    if (!produit.nom || !produit.prix_vente) {
+        alert('Veuillez remplir tous les champs obligatoires (Nom et Prix vente)');
+        return;
+    }
+    
+    const url = id ? `/api/admin/produits/${id}` : '/api/admin/produits';
+    const method = id ? 'PUT' : 'POST';
+    
+    showLoader();
+    
+    fetch(url, { 
+        method: method, 
+        headers: {'Content-Type': 'application/json'}, 
+        body: JSON.stringify(produit) 
+    })
+    .then(r => r.json())
+    .then(data => {
+        hideLoader();
+        if (data.success) {
+            alert(id ? '✓ Produit modifié' : '✓ Produit ajouté');
+            bootstrap.Modal.getInstance(document.getElementById('produitModal')).hide();
+            chargerProduitsAdmin();
+        } else {
+            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => {
+        hideLoader();
+        alert('Erreur: ' + error);
+    });
+}
+
+function approvisionner(id, nom) {
+    document.getElementById('approProduitId').value = id;
+    document.getElementById('approProduitNom').value = nom;
+    document.getElementById('approQuantite').value = '';
+    new bootstrap.Modal(document.getElementById('approModal')).show();
+}
+
+function validerApprovisionnement() {
+    const id = document.getElementById('approProduitId').value;
+    const quantite = parseInt(document.getElementById('approQuantite').value);
+    
+    if (!quantite || quantite <= 0) { 
+        alert('Veuillez entrer une quantité valide'); 
+        return; 
+    }
+    
+    showLoader();
+    
+    fetch(`/api/produits/${id}/approvisionner`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({quantite: quantite})
+    })
+    .then(r => r.json())
+    .then(data => {
+        hideLoader();
+        if (data.success) {
+            alert(`✓ ${quantite} unité(s) ajoutée(s) au stock`);
+            bootstrap.Modal.getInstance(document.getElementById('approModal')).hide();
+            chargerProduitsAdmin();
+        } else {
+            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+        }
+    });
+}
+
+function supprimerProduit(id) {
+    if (confirm('Supprimer définitivement ce produit ?')) {
+        showLoader();
+        fetch(`/api/admin/produits/${id}`, { method: 'DELETE' })
+            .then(r => r.json())
+            .then(data => {
+                hideLoader();
+                if (data.success) {
+                    alert('Produit supprimé');
+                    chargerProduitsAdmin();
+                } else {
+                    alert('Erreur: ' + data.error);
+                }
+            });
+    }
+}
+
+
+// ========== LOADER ==========
+function showLoader(message) {
+    var loader = document.getElementById('loaderOverlay');
+    if (!loader) {
+        loader = document.createElement('div');
+        loader.id = 'loaderOverlay';
+        loader.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;';
+        loader.innerHTML = '<div class="spinner-border text-light" style="width:3rem;height:3rem;"></div><div class="text-white mt-2">Chargement...</div>';
+        document.body.appendChild(loader);
+    }
+    if (message) {
+        const msgEl = loader.querySelector('.text-white');
+        if (msgEl) msgEl.textContent = message;
+    }
+    loader.style.display = 'flex';
+}
+
+function hideLoader() {
+    var loader = document.getElementById('loaderOverlay');
+    if (loader) loader.style.display = 'none';
+}
+
+// ========== INITIALISATION ==========
+document.addEventListener('DOMContentLoaded', function() {
+    chargerProduitsAdmin();    
+    // Ajouter un bouton pour la remise en masse dans l'onglet lunetterie
+    const lunetterieTab = document.getElementById('lunetterie');
+    if (lunetterieTab) {
+        const headerDiv = lunetterieTab.querySelector('.card-header');
+        if (headerDiv) {
+            const btnGroup = headerDiv.querySelector('div');
+            if (btnGroup) {
+                const remiseBtn = document.createElement('button');
+                remiseBtn.className = 'btn btn-warning btn-sm me-2';
+                remiseBtn.innerHTML = '<i class="fas fa-tags"></i> Remise en masse';
+                remiseBtn.onclick = showRemiseMasseModal;
+                btnGroup.insertBefore(remiseBtn, btnGroup.firstChild);
+            }
+        }
+    }
+});
+</script>
+{% endblock %}

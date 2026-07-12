@@ -1,0 +1,300 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center align-items-center min-vh-75">
+    <div class="col-md-5 col-lg-4">
+        <div class="card border-0 shadow-2xl rounded-4 overflow-hidden">
+            <!-- Bandeau décoratif animé en haut -->
+            <div class="bg-gradient-primary p-4 text-center position-relative overflow-hidden">
+                <div class="position-absolute top-0 start-0 w-100 h-100 opacity-10 bg-pattern"></div>
+                <i class="fas fa-stethoscope fa-4x text-white mb-2 animate-float"></i>
+                <h4 class="text-white mb-0 fw-bold">Medilogic-GHP</h4>
+                <p class="text-white-50 small mb-0">Système de Gestion Hospitalière, Pharmacie & Lunetterie</p>
+            </div>
+            
+            <div class="card-body p-4 p-md-5">
+                <div class="text-center mb-4">
+                    <div class="icon-circle bg-primary-soft mx-auto mb-3">
+                        <i class="fas fa-user-md text-primary fa-2x"></i>
+                    </div>
+                    <h3 class="fw-bold text-gray-800">Connexion</h3>
+                    <p class="text-muted small">Accédez à votre espace sécurisé</p>
+                </div>
+                
+                <form method="POST">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-gray-700 small">
+                            <i class="fas fa-envelope text-primary me-1"></i>Adresse email
+                        </label>
+                        <div class="input-group input-group-lg rounded-pill overflow-hidden shadow-sm">
+                            <span class="input-group-text bg-white border-end-0 text-primary">
+                                <i class="fas fa-envelope"></i>
+                            </span>
+                            <input type="email" class="form-control border-start-0" 
+                                   id="email" name="email" 
+                                   placeholder="exemple@hopital.com" required>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold text-gray-700 small">
+                            <i class="fas fa-lock text-primary me-1"></i>Mot de passe
+                        </label>
+                        <div class="input-group input-group-lg rounded-pill overflow-hidden shadow-sm">
+                            <span class="input-group-text bg-white border-end-0 text-primary">
+                                <i class="fas fa-lock"></i>
+                            </span>
+                            <input type="password" class="form-control border-start-0" 
+                                   id="password" name="password" 
+                                   placeholder="••••••••" required>
+                            <span class="input-group-text bg-white border-start-0 cursor-pointer" 
+                                  onclick="togglePassword()">
+                                <i class="fas fa-eye-slash text-muted" id="toggleIcon"></i>
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div class="form-check mb-4">
+                        <input class="form-check-input" type="checkbox" id="remember">
+                        <label class="form-check-label text-muted small" for="remember">
+                            Se souvenir de moi
+                        </label>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary btn-lg w-100 rounded-pill mb-3 shadow-sm">
+                        <i class="fas fa-sign-in-alt me-2"></i>Se connecter
+                        <span class="spinner-border spinner-border-sm d-none ms-2" id="loading"></span>
+                    </button>
+                    
+                    <div class="text-center mt-4 pt-2 border-top">
+                        <a href="{{ url_for('register') }}" class="text-decoration-none small">
+                            <i class="fas fa-building me-1"></i>Nouvelle structure ? <strong>Inscrivez-vous</strong>
+                        </a>
+                    </div>
+                    
+                    <div class="text-center mt-3">
+                        <a href="#" class="text-muted text-decoration-none small" data-bs-toggle="modal" data-bs-target="#forgotModal">
+                            <i class="fas fa-question-circle me-1"></i>Mot de passe oublié ?
+                        </a>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Pied de page avec stats -->
+            <div class="bg-gradient-footer p-3 text-center">
+                <div class="row small g-2">
+                    <div class="col-4">
+                        <i class="fas fa-hospital-user text-primary"></i>
+                        <span class="text-muted ms-1">1000+</span>
+                        <span class="text-muted d-block fs-10">Patients</span>
+                    </div>
+                    <div class="col-4">
+                        <i class="fas fa-calendar-check text-success"></i>
+                        <span class="text-muted ms-1">500+</span>
+                        <span class="text-muted d-block fs-10">Rendez-vous</span>
+                    </div>
+                    <div class="col-4">
+                        <i class="fas fa-smile text-warning"></i>
+                        <span class="text-muted ms-1">98%</span>
+                        <span class="text-muted d-block fs-10">Satisfaction</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Mot de passe oublié -->
+<div class="modal fade" id="forgotModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4">
+            <div class="modal-header bg-gradient-primary text-white border-0">
+                <h5 class="modal-title">
+                    <i class="fas fa-key me-2"></i>Réinitialisation
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <p class="text-muted small">Entrez votre email pour recevoir un lien de réinitialisation</p>
+                <input type="email" class="form-control rounded-pill" placeholder="votre@email.com">
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-light rounded-pill" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary rounded-pill" onclick="alert('Fonctionnalité en développement')">
+                    Envoyer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Animations et styles modernes */
+.min-vh-75 {
+    min-height: 75vh;
+}
+
+.bg-gradient-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.bg-gradient-footer {
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+}
+
+.bg-primary-soft {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+}
+
+.bg-pattern {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 320'%3E%3Cpath fill='%23ffffff' fill-opacity='0.1' d='M0,96L48,112C96,128,192,160,288,160C384,160,480,128,576,122.7C672,117,768,139,864,154.7C960,171,1056,181,1152,165.3C1248,149,1344,107,1392,85.3L1440,64L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z'%3E%3C/path%3E%3C/svg%3E");
+    background-repeat: repeat-x;
+    background-position: bottom;
+    background-size: contain;
+}
+
+.shadow-2xl {
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.icon-circle {
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+}
+
+.form-control {
+    border: none;
+    padding: 12px 15px;
+    font-size: 0.95rem;
+    transition: all 0.3s ease;
+}
+
+.input-group-text {
+    border: none;
+    padding: 0 15px;
+}
+
+.form-control:focus {
+    box-shadow: none;
+    background-color: #f8f9fa;
+}
+
+.cursor-pointer {
+    cursor: pointer;
+}
+
+.cursor-pointer:hover {
+    background-color: #f8f9fa;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+}
+
+.btn-primary:active {
+    transform: translateY(0);
+}
+
+.form-check-input:checked {
+    background-color: #667eea;
+    border-color: #667eea;
+}
+
+/* Animation flottante */
+@keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+}
+
+.animate-float {
+    animation: float 3s ease-in-out infinite;
+}
+
+.fs-10 {
+    font-size: 0.7rem;
+}
+
+.text-gray-700 {
+    color: #4a5568;
+}
+
+.text-gray-800 {
+    color: #2d3748;
+}
+
+/* Effet de verre sur la carte */
+.card {
+    backdrop-filter: blur(10px);
+    background: rgba(255, 255, 255, 0.95);
+}
+
+/* Animation d'apparition */
+.card {
+    animation: fadeInUp 0.6s ease-out;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .card-body {
+        padding: 1.5rem !important;
+    }
+    
+    .icon-circle {
+        width: 60px;
+        height: 60px;
+    }
+    
+    .fa-4x {
+        font-size: 2.5rem;
+    }
+}
+</style>
+
+<script>
+function togglePassword() {
+    const passwordInput = document.getElementById('password');
+    const toggleIcon = document.getElementById('toggleIcon');
+    
+    if (passwordInput.type === 'password') {
+        passwordInput.type = 'text';
+        toggleIcon.classList.remove('fa-eye-slash');
+        toggleIcon.classList.add('fa-eye');
+    } else {
+        passwordInput.type = 'password';
+        toggleIcon.classList.remove('fa-eye');
+        toggleIcon.classList.add('fa-eye-slash');
+    }
+}
+
+// Animation de chargement sur soumission du formulaire
+document.querySelector('form').addEventListener('submit', function(e) {
+    const btn = this.querySelector('button[type="submit"]');
+    const spinner = btn.querySelector('#loading');
+    spinner.classList.remove('d-none');
+    btn.disabled = true;
+});
+</script>
+{% endblock %}

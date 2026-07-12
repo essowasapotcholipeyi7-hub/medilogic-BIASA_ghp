@@ -1,0 +1,419 @@
+{% extends "base.html" %}
+
+{% block title %}Tableau de bord{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card {
+        transition: all 0.3s ease;
+        cursor: pointer;
+        border-radius: 20px;
+        overflow: hidden;
+        border: none;
+    }
+    .stat-card:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 20px 35px rgba(0,0,0,0.15);
+    }
+    .stat-icon {
+        width: 60px;
+        height: 60px;
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 12px auto;
+    }
+    .stat-value {
+        font-size: 2rem;
+        font-weight: 800;
+        margin-bottom: 4px;
+    }
+    .stat-label {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #6c757d;
+        font-weight: 600;
+    }
+    .stat-sub {
+        font-size: 0.7rem;
+        color: #adb5bd;
+        margin-top: 5px;
+    }
+    .activity-item {
+        transition: all 0.2s ease;
+        border-left: 3px solid transparent;
+    }
+    .activity-item:hover {
+        background-color: #f8f9fa;
+        border-left-color: #667eea;
+        transform: translateX(5px);
+    }
+    .quick-action-btn {
+        transition: all 0.3s ease;
+        border-radius: 15px !important;
+    }
+    .quick-action-btn:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+    }
+    .badge-ca {
+        font-size: 0.7rem;
+        padding: 4px 8px;
+        border-radius: 20px;
+    }
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    .loading-pulse {
+        animation: pulse 1.5s ease-in-out infinite;
+    }
+    .bg-gradient-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .rounded-top-4 {
+        border-top-left-radius: 1rem !important;
+        border-top-right-radius: 1rem !important;
+    }
+    .btn-outline-secondary:hover {
+        background-color: #6c757d;
+        color: white;
+    }
+    .list-group-item {
+        transition: all 0.2s ease;
+    }
+    .list-group-item:hover {
+        background-color: #f8f9fa;
+        transform: translateX(2px);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        {% include 'sidebar_menu.html' %}
+    </div>
+
+    <!-- Contenu principal -->
+    <div class="col-md-9">
+        <!-- 7 cartes statistiques modernes -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-3 col-6">
+                <div class="card stat-card shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="stat-icon bg-primary bg-opacity-10 mx-auto">
+                            <i class="fas fa-users fa-2x text-primary"></i>
+                        </div>
+                        <div class="stat-value text-primary" id="totalPatients">0</div>
+                        <div class="stat-label">Patients</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="card stat-card shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="stat-icon bg-success bg-opacity-10 mx-auto">
+                            <i class="fas fa-stethoscope fa-2x text-success"></i>
+                        </div>
+                        <div class="stat-value text-success" id="actesToday">0</div>
+                        <div class="stat-label">Actes</div>
+                        <div class="stat-sub">aujourd'hui</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="card stat-card shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="stat-icon bg-info bg-opacity-10 mx-auto">
+                            <i class="fas fa-pills fa-2x text-info"></i>
+                        </div>
+                        <div class="stat-value text-info" id="pharmaToday">0</div>
+                        <div class="stat-label">Pharmacie</div>
+                        <div class="stat-sub">aujourd'hui</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="card stat-card shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="stat-icon bg-warning bg-opacity-10 mx-auto">
+                            <i class="fas fa-hand-holding-usd fa-2x text-warning"></i>
+                        </div>
+                        <div class="stat-value text-warning" id="caNet">0</div>
+                        <div class="stat-label">À payer (patient)</div>
+                        <div class="stat-sub">Net perçu</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 🔥 NOUVELLE LIGNE : STATISTIQUES DES ASSURANCES -->
+        {% if session.is_admin %}
+        <div class="row g-3 mb-4">
+            <div class="col-md-4 col-6">
+                <div class="card stat-card shadow-sm border border-success">
+                    <div class="card-body text-center">
+                        <div class="stat-icon bg-success bg-opacity-10 mx-auto">
+                            <i class="fas fa-shield-alt fa-2x text-success"></i>
+                        </div>
+                        <div class="stat-value text-success" id="totalPriseEnCharge">0</div>
+                        <div class="stat-label">Prise en charge</div>
+                        <div class="stat-sub">Assurance principale</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 col-6">
+                <div class="card stat-card shadow-sm border border-info">
+                    <div class="card-body text-center">
+                        <div class="stat-icon bg-info bg-opacity-10 mx-auto">
+                            <i class="fas fa-plus-circle fa-2x text-info"></i>
+                        </div>
+                        <div class="stat-value text-info" id="totalPriseEnCharge2">0</div>
+                        <div class="stat-label">Prise en charge</div>
+                        <div class="stat-sub">Assurance complémentaire</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 col-6">
+                <div class="card stat-card shadow-sm border border-danger">
+                    <div class="card-body text-center">
+                        <div class="stat-icon bg-danger bg-opacity-10 mx-auto">
+                            <i class="fas fa-chart-line fa-2x text-danger"></i>
+                        </div>
+                        <div class="stat-value text-danger" id="caBrut">0</div>
+                        <div class="stat-label">Total facturé</div>
+                        <div class="stat-sub">Avec assurances</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        <!-- Activités récentes -->
+        <div class="card shadow-sm border-0 rounded-4">
+            <div class="card-header bg-gradient-primary text-white d-flex justify-content-between align-items-center rounded-top-4 border-0">
+                <span><i class="fas fa-chart-bar me-2"></i> Activités récentes</span>
+                <a href="{{ url_for('historique_ventes') }}" class="btn btn-sm btn-light rounded-pill">
+                    <i class="fas fa-eye"></i> Voir tout
+                </a>
+            </div>
+            <div class="card-body p-0" id="activitiesContainer">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary loading-pulse" role="status">
+                        <span class="visually-hidden">Chargement...</span>
+                    </div>
+                    <p class="text-muted mt-2">Chargement des activités...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Boutons action rapide -->
+        <div class="row g-3 mt-2">
+            <div class="col-md-3 col-6">
+                <a href="{{ url_for('actes_vente') }}" class="btn btn-primary w-100 quick-action-btn py-3 rounded-3 shadow-sm">
+                    <i class="fas fa-stethoscope fa-lg d-block mb-2"></i>
+                    <span class="fw-semibold">Nouvel acte</span>
+                </a>
+            </div>
+            <div class="col-md-3 col-6">
+                <a href="{{ url_for('pharma_vente') }}" class="btn btn-success w-100 quick-action-btn py-3 rounded-3 shadow-sm">
+                    <i class="fas fa-pills fa-lg d-block mb-2"></i>
+                    <span class="fw-semibold">Vente pharmacie</span>
+                </a>
+            </div>
+            <div class="col-md-3 col-6">
+                <a href="{{ url_for('patients') }}" class="btn btn-info w-100 quick-action-btn py-3 rounded-3 shadow-sm text-white">
+                    <i class="fas fa-user-plus fa-lg d-block mb-2"></i>
+                    <span class="fw-semibold">Nouveau patient</span>
+                </a>
+            </div>
+            <div class="col-md-3 col-6">
+                <a href="{{ url_for('historique_ventes') }}" class="btn btn-secondary w-100 quick-action-btn py-3 rounded-3 shadow-sm">
+                    <i class="fas fa-history fa-lg d-block mb-2"></i>
+                    <span class="fw-semibold">Historique</span>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal pour la réimpression -->
+<div class="modal fade" id="printModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow-lg">
+            <div class="modal-header bg-gradient-primary text-white border-0 rounded-top-4">
+                <h5 class="modal-title"><i class="fas fa-print me-2"></i> Choisir le document</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+               <div class="mb-3">
+                    <label class="form-label fw-semibold">Format d'impression</label>
+                    <select id="printFormat" class="form-control">
+                        <option value="80mm" selected>🎫 Format Ticket (80mm)</option>
+                        <option value="A4">📄 Format A4</option>
+                    </select>
+                </div>
+                <div class="row g-2" id="printOptions"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentVenteId = null;
+let currentVenteType = null;
+
+function reimprimer(venteId, type) {
+    currentVenteId = venteId;
+    currentVenteType = type;
+    
+    const options = [
+        { label: 'Reçu Patient', action: 'recu_client', class: 'btn-outline-primary' },
+        { label: 'Reçu Structure (copie)', action: 'recu_structure', class: 'btn-outline-secondary' },
+        { label: 'Reçu Patient + Tiers Payant', action: 'les_deux_recus', class: 'btn-outline-info' },
+        { label: 'Facture Patient', action: 'facture_client', class: 'btn-outline-success' },
+        { label: 'Facture Structure (archive)', action: 'facture_structure', class: 'btn-outline-danger' },
+        { label: 'Les deux (Patient + Structure)', action: 'les_deux', class: 'btn-outline-info' }
+    ];
+    
+    const container = document.getElementById('printOptions');
+    container.innerHTML = options.map(opt => `
+        <div class="col-12 mb-2">
+            <button class="btn ${opt.class} w-100 text-start py-2 rounded-3" onclick="printDocument('${opt.action}')">
+                ${opt.label}
+            </button>
+        </div>
+    `).join('');
+    
+    new bootstrap.Modal(document.getElementById('printModal')).show();
+}
+function printDocument(action) {
+    const format = document.getElementById('printFormat').value;
+    let url = '';
+    
+    if (action === 'recu_client') {
+        url = `/recu/${currentVenteId}/${currentVenteType}?format=${format}`;
+    } else if (action === 'recu_structure') {
+        url = `/recu_structure/${currentVenteId}/${currentVenteType}?format=${format}`;
+    } else if (action === 'les_deux_recus') {
+        window.open(`/recu/${currentVenteId}/${currentVenteType}?format=${format}`, '_blank');
+        window.open(`/recu_structure/${currentVenteId}/${currentVenteType}?format=${format}`, '_blank');
+        bootstrap.Modal.getInstance(document.getElementById('printModal')).hide();
+        return;
+    } else if (action === 'facture_client') {
+        url = `/facture/${currentVenteId}/${currentVenteType}?format=${format}`;
+    } else if (action === 'facture_structure') {
+        url = `/facture_structure/${currentVenteId}/${currentVenteType}?format=${format}`;
+    } else if (action === 'les_deux') {
+        window.open(`/recu/${currentVenteId}/${currentVenteType}?format=${format}`, '_blank');
+        window.open(`/recu_structure/${currentVenteId}/${currentVenteType}?format=${format}`, '_blank');
+        bootstrap.Modal.getInstance(document.getElementById('printModal')).hide();
+        return;
+    }
+    
+    window.open(url, '_blank');
+    bootstrap.Modal.getInstance(document.getElementById('printModal')).hide();
+}
+
+// ========== CHARGEMENT DES DONNÉES DU DASHBOARD ==========
+function chargerDashboard() {
+    // Charger le nombre de patients
+    fetch('/api/patients/count')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('totalPatients').innerText = data.total || 0;
+        })
+        .catch(err => console.error('Erreur patients:', err));
+    
+    // Charger les statistiques des ventes
+    fetch('/api/ventes/stats')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('actesToday').innerText = data.actes_today || 0;
+            document.getElementById('pharmaToday').innerText = data.pharma_today || 0;
+            document.getElementById('caNet').innerHTML = (data.ca_net_today || 0).toLocaleString();
+            document.getElementById('caBrut').innerHTML = (data.ca_brut_today || 0).toLocaleString();
+        })
+        .catch(err => console.error('Erreur stats:', err));
+    
+    // 🔥 Charger les statistiques des assurances
+    fetch('/api/assurances/stats')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('totalPriseEnCharge').innerHTML = (data.total_prise_en_charge || 0).toLocaleString();
+            document.getElementById('totalPriseEnCharge2').innerHTML = (data.total_prise_en_charge2 || 0).toLocaleString();
+        })
+        .catch(err => console.error('Erreur assurances:', err));
+    
+    // Charger les activités récentes
+    fetch('/api/activites/recentes')
+        .then(r => r.json())
+        .then(activites => {
+            const container = document.getElementById('activitiesContainer');
+            
+            if (!activites || activites.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-5">
+                        <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                        <p class="text-muted">Aucune activité récente</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = `<div class="list-group list-group-flush">`;
+            activites.forEach(act => {
+                const dateObj = new Date(act.date);
+                const dateStr = dateObj.toLocaleString('fr-FR');
+                const bgClass = act.type === 'actes' ? 'primary' : 'success';
+                const iconClass = act.type === 'actes' ? 'stethoscope' : 'pills';
+                
+                html += `
+                    <div class="list-group-item list-group-item-action activity-item border-0">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="rounded-circle p-2 bg-${bgClass} bg-opacity-10">
+                                    <i class="fas fa-${iconClass} fa-fw text-${bgClass}"></i>
+                                </div>
+                                <div>
+                                    <strong class="text-dark">${act.patient_nom || 'Patient'}</strong>
+                                    <div class="small text-muted">
+                                        <i class="far fa-clock me-1"></i> ${dateStr}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-end">
+                                <div class="fw-bold text-success">${Math.round(act.montant).toLocaleString()} FCFA</div>
+                                <button class="btn btn-sm btn-outline-secondary rounded-pill mt-1" onclick="reimprimer(${act.id}, '${act.type}')">
+                                    <i class="fas fa-print me-1"></i> Réimprimer
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += `</div>`;
+            container.innerHTML = html;
+        })
+        .catch(err => {
+            console.error('Erreur activités:', err);
+            document.getElementById('activitiesContainer').innerHTML = `
+                <div class="text-center py-5">
+                    <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
+                    <p class="text-danger">Erreur de chargement des activités</p>
+                </div>
+            `;
+        });
+}
+
+// Initialisation
+document.addEventListener('DOMContentLoaded', function() {
+    chargerDashboard();
+});
+
+// Rafraîchissement automatique toutes les 30 secondes
+setInterval(chargerDashboard, 30000);
+</script>
+{% endblock %}

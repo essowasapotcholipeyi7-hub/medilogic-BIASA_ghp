@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mes rendez-vous - {{ structure_nom }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .card {
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .header-logo {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 15px 15px 0 0;
+        }
+        .table {
+            margin-bottom: 0;
+        }
+        .table th {
+            background-color: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <!-- En-tête avec le nom de l'hôpital -->
+                <div class="card mb-3">
+                    <div class="header-logo text-center">
+                        <i class="fas fa-hospital-user fa-3x mb-2"></i>
+                        <h2>{{ structure_nom }}</h2>
+                        <p class="mb-0">
+                            <i class="fas fa-map-marker-alt"></i> {{ structure_adresse }}<br>
+                            <i class="fas fa-phone"></i> {{ structure_telephone }}
+                        </p>
+                    </div>
+                    <div class="card-body text-center">
+                        <h4><i class="fas fa-calendar-alt"></i> Mes rendez-vous</h4>
+                        <p>Bonjour <strong>{{ patient.nom }} {{ patient.prenom }}</strong></p>
+                        <p>Assurance: {{ patient.type_assurance }} ({{ patient.taux_prise_charge }}%)</p>
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle"></i> Consultation uniquement<br>
+                            <small>Pour modifier un rendez-vous, veuillez contacter l'établissement.</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Liste des rendez-vous -->
+                <div class="card">
+                    <div class="card-header bg-info text-white">
+                        <h5><i class="fas fa-list"></i> Mes rendez-vous à venir</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if rendez_vous %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Heure</th>
+                                        <th>Motif</th>
+                                        <th>Statut</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for rdv in rendez_vous %}
+                                    <tr>
+                                        <td>{{ rdv.date_rendez_vous }}</td>
+                                        <td>{{ rdv.heure_rendez_vous }}</td>
+                                        <td>{{ rdv.motif }}</td>
+                                        <td>
+                                            {% if rdv.statut == 'confirme' %}
+                                                <span class="badge bg-success">Confirmé</span>
+                                            {% elif rdv.statut == 'programme' %}
+                                                <span class="badge bg-warning">Programmé</span>
+                                            {% elif rdv.statut == 'annule' %}
+                                                <span class="badge bg-danger">Annulé</span>
+                                            {% elif rdv.statut == 'reporte' %}
+                                                <span class="badge bg-info">Reporté</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">{{ rdv.statut }}</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="text-center py-4">
+                            <i class="fas fa-calendar-times fa-3x text-muted mb-3"></i>
+                            <p class="text-muted">Vous n'avez aucun rendez-vous programmé.</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Contact -->
+                <div class="card mt-3">
+                    <div class="card-body text-center">
+                        <i class="fas fa-phone-alt text-primary fa-2x mb-2"></i>
+                        <h5>Besoin d'aide ?</h5>
+                        <p class="mb-0">Pour modifier ou annuler un rendez-vous, veuillez nous contacter :</p>
+                        <h4 class="text-primary mt-2">
+                            <i class="fab fa-whatsapp"></i> {{ structure_telephone }}
+                        </h4>
+                        <small class="text-muted">Ou par téléphone au même numéro</small>
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="text-center mt-3 mb-4">
+                    <small class="text-white-50">© {{ structure_nom }} - Tous droits réservés</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

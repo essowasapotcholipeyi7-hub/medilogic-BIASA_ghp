@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Medilogic-GHP - {% block title %}Gestion Hospitalière, Pharmacie & Lunetterie{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+body {
+    background: linear-gradient(135deg, #e3f2fd 0%, #e8f0fe 100%) !important;
+    min-height: 100vh;
+}
+.main-content {
+    background-color: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(10px);
+    padding: 20px;
+    border-radius: 15px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+}
+        
+        /* Navbar moderne avec effet glass */
+        .navbar {
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            padding: 12px 0;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+        
+        .navbar-brand {
+            font-size: 1.6rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.5px;
+        }
+        
+        .navbar-brand i {
+            background: none;
+            -webkit-text-fill-color: #667eea;
+            margin-right: 8px;
+        }
+        
+        /* Cartes modernes avec effet glass */
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 24px;
+            border: none;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+        }
+        
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.12);
+        }
+        
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 16px 24px;
+            font-weight: 600;
+        }
+        
+        /* Boutons modernes */
+        .btn {
+            border-radius: 12px;
+            padding: 8px 20px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            border: none;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .btn::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+        
+        .btn:hover::after {
+            width: 200%;
+            height: 200%;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+        
+        .btn-success:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(56, 239, 125, 0.4);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+        }
+        
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(235, 51, 73, 0.4);
+        }
+        
+        .btn-warning {
+            background: linear-gradient(135deg, #f8961e 0%, #f3722c 100%);
+            color: white;
+        }
+        
+        .btn-info {
+            background: linear-gradient(135deg, #4cc9f0 0%, #4361ee 100%);
+            color: white;
+        }
+        
+        /* Sidebar moderne avec fond sombre */
+        .sidebar {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-radius: 24px;
+            padding: 20px;
+            position: sticky;
+            top: 90px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+            backdrop-filter: blur(10px);
+        }
+        
+        .sidebar h5 {
+            color: rgba(255,255,255,0.6);
+            font-size: 0.7rem;
+            letter-spacing: 2px;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .sidebar .nav-link {
+            color: rgba(255,255,255,0.7);
+            padding: 12px 16px;
+            margin: 6px 0;
+            border-radius: 14px;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+        
+        .sidebar .nav-link:hover {
+            background: rgba(255,255,255,0.1);
+            color: white;
+            transform: translateX(5px);
+        }
+        
+        .sidebar .nav-link.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        
+        .sidebar .nav-link i {
+            margin-right: 12px;
+            width: 22px;
+            text-align: center;
+        }
+        
+        /* Dropdown dans sidebar */
+        .sidebar .dropdown-toggle {
+            background: transparent !important;
+            color: rgba(255,255,255,0.7) !important;
+        }
+        
+        .sidebar .dropdown-menu {
+            background: #1a1a2e;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 14px;
+            margin-top: 8px;
+        }
+        
+        .sidebar .dropdown-item {
+            color: rgba(255,255,255,0.7);
+            border-radius: 10px;
+            padding: 8px 16px;
+        }
+        
+        .sidebar .dropdown-item:hover {
+            background: rgba(102, 126, 234, 0.3);
+            color: white;
+        }
+        
+        /* Bandeau patient */
+        #selectedPatientBadge {
+            background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+            border-left: 5px solid #28a745;
+            border-radius: 16px;
+            animation: slideDown 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.2);
+        }
+        
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        /* Badges */
+        .badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-weight: 500;
+        }
+        
+        /* Alertes */
+        .alert {
+            border-radius: 16px;
+            border: none;
+            padding: 14px 20px;
+            backdrop-filter: blur(10px);
+        }
+        
+        /* Tables */
+        .table {
+            border-radius: 16px;
+            overflow: hidden;
+        }
+        
+        .table thead th {
+            background: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+            font-weight: 600;
+            color: #4a5568;
+        }
+        
+        /* Scrollbar personnalisée */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #5a67d8;
+        }
+        
+        /* Loader spinner amélioré */
+        .loader-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(4px);
+            z-index: 9999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .loader {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(255,255,255,0.3);
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        .loader-text {
+            margin-top: 15px;
+            color: white;
+            font-size: 14px;
+            font-weight: 500;
+            text-align: center;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar {
+                position: static;
+                margin-bottom: 20px;
+            }
+            
+            .navbar-brand {
+                font-size: 1.3rem;
+            }
+            
+            .btn {
+                padding: 6px 14px;
+                font-size: 0.85rem;
+            }
+            
+            h1, h2, h3 {
+                font-size: 1.2rem;
+            }
+            
+            #selectedPatientBadge .row {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            #selectedPatientBadge .col-md-4 {
+                margin-top: 10px;
+            }
+            
+            #selectedPatientBadge .text-end {
+                text-align: center !important;
+            }
+        }
+        
+        /* Styles impression */
+        @media print {
+            body {
+                background: white;
+                margin: 0;
+                padding: 0;
+            }
+            
+            .navbar, .sidebar, .btn, .no-print, 
+            #selectedPatientBadge, .alert,
+            button, .nav-link, .card-header .btn,
+            .btn-primary, .btn-success, .btn-warning, .btn-danger,
+            a[onclick], .ms-auto, .float-end, .sidebar,
+            .loader-overlay {
+                display: none !important;
+            }
+            
+            .card {
+                box-shadow: none;
+                border: 1px solid #ddd;
+                margin: 0;
+                padding: 0;
+                transform: none;
+            }
+            
+            .container {
+                padding: 0;
+                margin: 0;
+                width: 100%;
+                max-width: 100%;
+            }
+            
+            @page {
+                margin: 1.5cm;
+                size: A4;
+            }
+        }
+        
+        /* Animation fade in */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.4s ease-out;
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+
+<!-- Navbar moderne -->
+<nav class="navbar navbar-expand-lg">
+    <div class="container">
+        <a class="navbar-brand" href="{{ url_for('dashboard' if session.user_id else 'index') }}">
+            <i class="fas fa-heartbeat"></i> Medilogic<span style="color: #667eea;">-GHP</span>
+        </a>
+        
+        <!-- 🔥 AFFICHAGE DU NOM DE LA STRUCTURE (centré) 🔥 -->
+        {% if session.user_id and session.structure_nom %}
+        <div class="mx-auto">
+            <div class="d-none d-md-block" style="background: linear-gradient(135deg, #667eea15, #764ba215); padding: 6px 16px; border-radius: 30px;">
+                <i class="fas fa-building me-1" style="color: #667eea;"></i>
+                <span style="font-weight: 600; font-size: 14px; color: #4a5568;">{{ session.structure_nom }}</span>
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if session.user_id %}
+        <div class="ms-auto d-flex align-items-center gap-3">
+            <!-- Horloge temps réel -->
+            <div class="d-none d-md-block" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); padding: 8px 18px; border-radius: 40px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                <div id="horloge" class="d-flex align-items-center gap-2">
+                    <i class="fas fa-calendar-alt text-primary"></i>
+                    <span id="dateActuelle" style="font-size: 13px; font-weight: 500; color: #4a5568;"></span>
+                    <i class="fas fa-clock text-primary ms-1"></i>
+                    <span id="heureActuelle" style="font-size: 13px; font-weight: 700; background: linear-gradient(135deg, #667eea, #764ba2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;"></span>
+                </div>
+            </div>
+            
+            <!-- Version mobile simplifiée -->
+            <div class="d-md-none">
+                <div id="horlogeMobile" style="background: #f8f9fa; padding: 5px 12px; border-radius: 30px;">
+                    <span id="heureMobile" style="font-size: 12px; font-weight: 600; color: #667eea;"></span>
+                </div>
+            </div>
+            
+            <div class="dropdown">
+                <button class="btn btn-light rounded-pill dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                    <i class="fas fa-user-circle"></i> {{ session.user_name|default('Utilisateur') }}
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" href="{{ url_for('dashboard') }}"><i class="fas fa-tachometer-alt"></i> Tableau de bord</a></li>
+                    <li><a class="dropdown-item" href="{{ url_for('historique_ventes') }}"><i class="fas fa-history"></i> Historique</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item" href="{{ url_for('rendez_vous') }}"><i class="fas fa-calendar-alt"></i> Rendez-vous</a></li>
+                    <li><a class="dropdown-item text-danger" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Déconnexion</a></li>
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</nav>
+    <!-- BANDEAU PATIENT SÉLECTIONNÉ -->
+    {% if session.user_id %}
+    <div class="container mt-3">
+        <div id="selectedPatientBadge" class="alert py-3 mb-0 fade-in" style="display:none;">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <i class="fas fa-user-check text-success fa-lg"></i> 
+                    <strong class="ms-1">Patient actuel :</strong> 
+                    <span id="currentPatientName" class="fw-bold ms-1">-</span>
+                    <span class="badge bg-info text-white ms-2" id="currentPatientAssurance">-</span>
+                    <span class="badge bg-warning text-dark ms-1" id="currentPatientTaux">-</span>
+                </div>
+                <div class="col-md-4 text-end">
+                    <button onclick="clearSelectedPatient()" class="btn btn-sm btn-outline-danger me-2 rounded-pill">
+                        <i class="fas fa-times-circle"></i> Désélectionner
+                    </button>
+                    <a href="{{ url_for('patients') }}" class="btn btn-sm btn-outline-primary rounded-pill">
+                        <i class="fas fa-exchange-alt"></i> Changer
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+    // Horloge temps réel
+    function updateHorloge() {
+        const maintenant = new Date();
+        const jours = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+        const mois = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+        const jourSemaine = jours[maintenant.getDay()];
+        const moisNom = mois[maintenant.getMonth()];
+        const jour = maintenant.getDate();
+        const annee = maintenant.getFullYear();
+        const dateFormatee = `${jourSemaine} ${jour} ${moisNom} ${annee}`;
+        
+        let heures = maintenant.getHours();
+        let minutes = maintenant.getMinutes();
+        let secondes = maintenant.getSeconds();
+        heures = heures < 10 ? '0' + heures : heures;
+        minutes = minutes < 10 ? '0' + minutes : minutes;
+        secondes = secondes < 10 ? '0' + secondes : secondes;
+        const heureFormatee = `${heures}:${minutes}:${secondes}`;
+        
+        const dateElement = document.getElementById('dateActuelle');
+        const heureElement = document.getElementById('heureActuelle');
+        const heureMobile = document.getElementById('heureMobile');
+        
+        if (dateElement) dateElement.textContent = dateFormatee;
+        if (heureElement) heureElement.textContent = heureFormatee;
+        if (heureMobile) heureMobile.textContent = `${heures}:${minutes}`;
+    }
+    
+    setInterval(updateHorloge, 1000);
+    updateHorloge();
+    
+    // Stocker les infos de la structure
+    {% if session.structure_nom %}
+    localStorage.setItem('structureNom', '{{ session.structure_nom }}');
+    {% endif %}
+    {% if session.structure_id %}
+    localStorage.setItem('structureId', '{{ session.structure_id }}');
+    {% endif %}
+    {% if session.structure_telephone %}
+    localStorage.setItem('structureTelephone', '{{ session.structure_telephone }}');
+    {% endif %}
+    {% if session.structure_logo %}
+    localStorage.setItem('structureLogo', '{{ session.structure_logo }}');
+    {% endif %}
+    {% if session.structure_email %}
+    localStorage.setItem('structureEmail', '{{ session.structure_email }}');
+    {% endif %}
+    
+    // Récupérer le nom de la structure
+    function getStructureNom(callback) {
+        let nom = localStorage.getItem('structureNom');
+        if (nom) {
+            callback(nom);
+            return;
+        }
+        fetch('/api/structure/nom')
+            .then(response => response.json())
+            .then(data => {
+                let nom = data.nom || 'Notre établissement';
+                localStorage.setItem('structureNom', nom);
+                callback(nom);
+            })
+            .catch(() => callback('Notre établissement'));
+    }
+    
+// Charger les infos de la structure au démarrage
+function chargerInfosStructure() {
+    fetch('/api/structure/infos')
+        .then(response => response.json())
+        .then(data => {
+            if (data.nom) {
+                localStorage.setItem('structureNom', data.nom);
+            }
+            if (data.telephone) {
+                localStorage.setItem('structureTelephone', data.telephone);
+            }
+            if (data.logo_url) {
+                localStorage.setItem('structureLogo', data.logo_url);
+            }
+            if (data.email) {
+                localStorage.setItem('structureEmail', data.email);
+            }
+            console.log('Infos structure chargées:', data);
+        })
+        .catch(err => console.error('Erreur chargement infos structure:', err));
+}
+
+// Appeler au chargement de la page
+if (window.location.pathname !== '/login' && window.location.pathname !== '/') {
+    chargerInfosStructure();
+}    
+    // Chargement du patient sélectionné
+    function loadSelectedPatient() {
+        let patientId = sessionStorage.getItem('selectedPatientId');
+        let patientName = sessionStorage.getItem('selectedPatientName');
+        let assurance = sessionStorage.getItem('selectedPatientAssurance');
+        let taux = sessionStorage.getItem('selectedPatientTaux');
+        
+        if (!patientId || patientId === 'null' || patientId === 'undefined') {
+            patientId = localStorage.getItem('selectedPatientId');
+            patientName = localStorage.getItem('selectedPatientName');
+            assurance = localStorage.getItem('selectedPatientAssurance');
+            taux = localStorage.getItem('selectedPatientTaux');
+        }
+        
+        if (patientId && patientId !== 'null' && patientId !== 'undefined') {
+            let badge = document.getElementById('selectedPatientBadge');
+            if (badge) badge.style.display = 'block';
+            let nameSpan = document.getElementById('currentPatientName');
+            if (nameSpan) nameSpan.innerText = patientName || 'Patient';
+            
+            let assuranceText = 'Non assuré';
+            if (assurance === 'amu_cnss') {
+                assuranceText = 'AMU-CNSS';
+            } else if (assurance === 'amu_inam') {
+                assuranceText = 'AMU-INAM';
+            } else if (assurance === 'autre') {
+                assuranceText = 'Autre assurance';
+            } else if (assurance && assurance !== 'non_assure' && assurance !== 'null') {
+                assuranceText = assurance;
+            }
+            
+            let assuranceSpan = document.getElementById('currentPatientAssurance');
+            if (assuranceSpan) assuranceSpan.innerText = assuranceText;
+            
+            let tauxSpan = document.getElementById('currentPatientTaux');
+            if (tauxSpan) tauxSpan.innerText = (taux || 0) + '%';
+        } else {
+            let badge = document.getElementById('selectedPatientBadge');
+            if (badge) badge.style.display = 'none';
+        }
+    }
+    
+    function clearSelectedPatient() {
+        sessionStorage.removeItem('selectedPatientId');
+        sessionStorage.removeItem('selectedPatientName');
+        sessionStorage.removeItem('selectedPatientAssurance');
+        sessionStorage.removeItem('selectedPatientTaux');
+        localStorage.removeItem('selectedPatientId');
+        localStorage.removeItem('selectedPatientName');
+        localStorage.removeItem('selectedPatientAssurance');
+        localStorage.removeItem('selectedPatientTaux');
+        let badge = document.getElementById('selectedPatientBadge');
+        if (badge) badge.style.display = 'none';
+        location.reload();
+    }
+    
+    document.addEventListener('DOMContentLoaded', loadSelectedPatient);
+    
+    // Loader functions améliorées
+    function showLoader(message = 'Chargement en cours...') {
+        let loader = document.getElementById('loaderOverlay');
+        if (!loader) {
+            loader = document.createElement('div');
+            loader.id = 'loaderOverlay';
+            loader.className = 'loader-overlay';
+            loader.innerHTML = `
+                <div class="text-center">
+                    <div class="loader"></div>
+                    <div class="loader-text">${message}</div>
+                </div>
+            `;
+            document.body.appendChild(loader);
+        }
+        loader.style.display = 'flex';
+        const loaderText = loader.querySelector('.loader-text');
+        if (loaderText) loaderText.textContent = message;
+    }
+    
+    function hideLoader() {
+        const loader = document.getElementById('loaderOverlay');
+        if (loader) loader.style.display = 'none';
+    }
+    
+    // Afficher le loader avant de quitter la page
+    window.addEventListener('beforeunload', function() {
+        showLoader();
+    });
+    
+    // Intercepter les clics sur les liens
+    document.addEventListener('click', function(e) {
+        const link = e.target.closest('a');
+        if (link && link.href && !link.target && link.hostname === window.location.hostname) {
+            if (!link.href.includes('javascript:') && !link.href.includes('#')) {
+                showLoader('Navigation en cours...');
+            }
+        }
+    });
+    </script>
+    {% endif %}
+
+    <div class="container mt-4">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show shadow-sm fade-in" role="alert">
+                        <i class="fas fa-{{ 'check-circle' if category == 'success' else 'exclamation-triangle' if category == 'danger' else 'info-circle' }} me-2"></i>
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

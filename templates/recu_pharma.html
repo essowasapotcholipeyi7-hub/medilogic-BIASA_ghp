@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reçu - Pharmacie</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .recu {
+            max-width: 400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: #10b981;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .header h2 {
+            margin: 0;
+            font-size: 18px;
+        }
+        .header p {
+            margin: 5px 0 0;
+            font-size: 12px;
+            opacity: 0.8;
+        }
+        .body {
+            padding: 20px;
+        }
+        .info {
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #ddd;
+            font-size: 12px;
+        }
+        .info p {
+            margin: 5px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 12px;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            background: #f0f0f0;
+        }
+        .total {
+            text-align: right;
+            font-weight: bold;
+            font-size: 14px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 2px solid #10b981;
+        }
+        .footer {
+            background: #f8f9fa;
+            padding: 15px;
+            text-align: center;
+            font-size: 10px;
+            color: #666;
+        }
+        .prescription {
+            background: #fef3c7;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-size: 11px;
+            text-align: center;
+        }
+        @media print {
+            body { background: white; padding: 0; margin: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="recu">
+        <div class="header">
+            <h2>{{ structure_nom }}</h2>
+            <p>Pharmacie | Tél: {{ structure_telephone }}</p>
+        </div>
+        <div class="body">
+            <div class="info">
+                <p><strong>REÇU - PHARMACIE</strong></p>
+                <p>N° {{ vente_id }} | {{ date_actuelle }}</p>
+                <p>Patient : <strong>{{ patient_nom }}</strong></p>
+                <p>Assurance : {{ type_assurance }} ({{ taux_assurance }}%)</p>
+                <p>N° Assuré : {{ numero_assure if numero_assure else '-' }}</p>
+                <p>Paiement : {{ mode_paiement }}</p>
+            </div>
+            
+            <table>
+                <thead>
+                    <tr>
+                        <th>Produit</th>
+                        <th>Qté</th>
+                        <th>P.U.</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for article in articles %}
+                    <tr>
+                        <td>{{ article.nom }}</td
+                        <td>{{ article.quantite }}</td
+                        <td>{{ article.prix_unitaire|round(0)|int }} FCFA</td
+                        <td>{{ article.total|round(0)|int }} FCFA</td
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            
+            <div class="total">
+                Sous-total: {{ sous_total|round(0)|int }} FCFA<br>
+                Prise en charge ({{ taux_assurance }}%): {{ prise_en_charge|round(0)|int }} FCFA<br>
+                <strong>NET À PAYER: {{ net_a_payer|round(0)|int }} FCFA</strong>
+            </div>
+        </div>
+        <div class="footer">
+            <p>Merci de votre visite !</p>
+            <p>Médicaments délivrés sur ordonnance</p>
+        </div>
+    </div>
+    <script>setTimeout(function() { window.print(); }, 500);</script>
+</body>
+</html>

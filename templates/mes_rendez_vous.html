@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+
+{% block title %}Mes rendez-vous{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        <div class="sidebar">
+            <h5 class="mb-3"><i class="fas fa-chart-line"></i> Menu</h5>
+            <div class="nav flex-column">
+                <a class="nav-link" href="{{ url_for('dashboard') }}"><i class="fas fa-tachometer-alt"></i> Tableau de bord</a>
+                <a class="nav-link" href="{{ url_for('patients') }}"><i class="fas fa-users"></i> Patients</a>
+                <a class="nav-link" href="{{ url_for('actes_vente') }}"><i class="fas fa-stethoscope"></i> Actes & Vente</a>
+                <a class="nav-link" href="{{ url_for('pharma_vente') }}"><i class="fas fa-pills"></i> Pharmacie</a>
+                <a class="nav-link" href="{{ url_for('historique_ventes') }}"><i class="fas fa-history"></i> Historique</a>
+                <a class="nav-link active" href="{{ url_for('mes_rendez_vous') }}"><i class="fas fa-calendar-alt"></i> Mes rendez-vous</a>
+                <a class="nav-link" href="{{ url_for('admin_structure') }}"><i class="fas fa-cog"></i> Administration</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-9">
+        <!-- Message de bienvenue -->
+        <div class="alert alert-info">
+            <i class="fas fa-user-circle"></i> <strong>{{ patient_info.nom }} {{ patient_info.prenom }}</strong> - 
+            Assurance: {{ patient_info.type_assurance }} ({{ patient_info.taux_prise_charge }}%)
+        </div>
+
+        <!-- Statistiques des rendez-vous -->
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <div class="card text-center border-primary">
+                    <div class="card-body">
+                        <h3 id="statsAujourdhui">0</h3>
+                        <small>Aujourd'hui</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card text-center border-warning">
+                    <div class="card-body">
+                        <h3 id="statsSemaine">0</h3>
+                        <small>Cette semaine</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card text-center border-info">
+                    <div class="card-body">
+                        <h3 id="statsTotal">0</h3>
+                        <small>Total rendez-vous</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Formulaire pour nouveau rendez-vous -->
+        <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+                <h5><i class="fas fa-plus"></i> Prendre un rendez-vous</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <label class="form-label">Date souhaitée</label>
+                        <input type="date" class="form-control" id="dateRendezVous" min="{{ today }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Heure souhaitée</label>
+                        <input type="time" class="form-control" id="heureRendezVous">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Motif</label>
+                        <select class="form-control" id="motif">
+                            <option value="Consultation">Consultation</option>
+                            <option value="Consultation spécialiste">Consultation spécialiste</option>
+                            <option value="Examen médical">Examen médical</option>
+                            <option value="Analyse">Analyse</option>
+                            <option value="Vaccination">Vaccination</option>
+                            <option value="Suivi">Suivi</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">&nbsp;</label>
+                        <button class="btn btn-primary w-100" onclick="demanderRendezVous()">
+                            <i class="fas fa-calendar-plus"></i> Demander
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Liste des rendez-vous du patient -->
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5><i class="fas fa-list"></i> Mes rendez-vous</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Date</th>
+                                <th>Heure</th>
+                                <th>Motif</th>
+                                <th>Statut</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rendezVousList">
+                            {% for rdv in mes_rendez_vous %}
+                            <tr data-id="{{ rdv.ID }}">
+                                <td>{{ rdv.ID }}<\/td>
+                                <td>{{ rdv.date_rendez_vous }}<\/td>
+                                <td>{{ rdv.heure_rendez_vous }}<\/td>
+                                <td>{{ rdv.motif }}<\/td>
+                                <td>
+                                    {% if rdv.statut == 'confirme' %}
+                                        <span class="badge bg-success">Confirmé</span>
+                                    {% elif rdv.statut == 'programme' %}
+                                        <span class="badge bg-warning">Programmé</span>
+                                    {% elif rdv.statut == 'annule' %}
+                                        <span class="badge bg-danger">Annulé</span>
+                                    {% elif rdv.statut == 'reporte' %}
+                                        <span class="badge bg-info">Reporté</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ rdv.statut }}</span>
+                                    {% endif %}
+                                 <\/td>
+                                <td>
+                                    {% if rdv.statut == 'programme' %}
+                                    <button class="btn btn-sm btn-danger" onclick="annulerRendezVous({{ rdv.ID }})">
+                                        <i class="fas fa-times"></i> Annuler
+                                    </button>
+                                    {% elif rdv.statut == 'confirme' %}
+                                    <button class="btn btn-sm btn-warning" onclick="reporterRendezVous({{ rdv.ID }})">
+                                        <i class="fas fa-calendar-alt"></i> Reporter
+                                    </button>
+                                    {% else %}
+                                    <span class="text-muted">-</span>
+                                    {% endif %}
+                                 <\/td>
+                              </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="6" class="text-center">Aucun rendez-vous<\/td>
+                             </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Reporter -->
+<div class="modal fade" id="reporterModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title">Reporter mon rendez-vous</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Nouvelle date</label>
+                    <input type="date" class="form-control" id="nouvelleDate">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Nouvelle heure</label>
+                    <input type="time" class="form-control" id="nouvelleHeure">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Message (optionnel)</label>
+                    <textarea class="form-control" id="messageReport" rows="2" placeholder="Raison du report..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-warning" onclick="validerReport()">Demander le report</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+var currentRdvId = null;
+
+function demanderRendezVous() {
+    var date = document.getElementById('dateRendezVous').value;
+    var heure = document.getElementById('heureRendezVous').value;
+    var motif = document.getElementById('motif').value;
+    
+    if (!date || !heure) {
+        alert('Veuillez remplir la date et l\'heure');
+        return;
+    }
+    
+    fetch('/api/patient/rendez_vous', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            date: date,
+            heure: heure,
+            motif: motif
+        })
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+        if (data.success) {
+            alert('Demande de rendez-vous envoyée !');
+            location.reload();
+        } else {
+            alert('Erreur: ' + data.error);
+        }
+    });
+}
+
+function annulerRendezVous(id) {
+    if (confirm('Annuler ce rendez-vous ?')) {
+        fetch('/api/patient/rendez_vous/' + id + '/annuler', {method: 'POST'})
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (data.success) location.reload();
+            else alert('Erreur');
+        });
+    }
+}
+
+function reporterRendezVous(id) {
+    currentRdvId = id;
+    new bootstrap.Modal(document.getElementById('reporterModal')).show();
+}
+
+function validerReport() {
+    var nouvelleDate = document.getElementById('nouvelleDate').value;
+    var nouvelleHeure = document.getElementById('nouvelleHeure').value;
+    var message = document.getElementById('messageReport').value;
+    
+    if (!nouvelleDate || !nouvelleHeure) {
+        alert('Veuillez entrer la nouvelle date et heure');
+        return;
+    }
+    
+    fetch('/api/patient/rendez_vous/reporter', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            rdv_id: currentRdvId,
+            nouvelle_date: nouvelleDate,
+            nouvelle_heure: nouvelleHeure,
+            message: message
+        })
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+        if (data.success) {
+            alert('Demande de report envoyée !');
+            location.reload();
+        } else {
+            alert('Erreur: ' + data.error);
+        }
+    });
+}
+
+// Mettre à jour les stats
+function updateStats() {
+    var rows = document.querySelectorAll('#rendezVousList tr');
+    var today = new Date().toISOString().split('T')[0];
+    var todayCount = 0;
+    var weekCount = 0;
+    
+    for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        if (row.cells.length < 6) continue;
+        var date = row.cells[1].innerText;
+        if (date === today) todayCount++;
+        if (date >= today) weekCount++;
+    }
+    
+    document.getElementById('statsAujourdhui').innerText = todayCount;
+    document.getElementById('statsSemaine').innerText = weekCount;
+    document.getElementById('statsTotal').innerText = rows.length;
+}
+
+updateStats();
+</script>
+{% endblock %}

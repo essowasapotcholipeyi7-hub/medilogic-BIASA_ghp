@@ -1,0 +1,1786 @@
+{% extends "base.html" %}
+
+{% block title %}Pharmacie - Vente{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        {% include 'sidebar_menu.html' %}
+    </div>
+
+    <div class="col-md-9">
+        <!-- Info patient sélectionné -->
+        <div class="alert alert-info" id="patientInfo" style="display:none;">
+            <div class="row align-items-center">
+                <div class="col-md-3">
+                    <strong><i class="fas fa-user"></i> Patient :</strong> <span id="selectedPatientName"></span>
+                </div>
+                <div class="col-md-3">
+                    <strong><i class="fas fa-shield-alt"></i> Assurance :</strong> <span id="selectedAssurance"></span> (<span id="selectedTaux"></span>%)
+                </div>
+                <div class="col-md-4">
+                    <strong><i class="fas fa-plus-circle"></i> CAC :</strong> 
+                    <span id="selectedAssurance2Display">Aucune</span> (<span id="selectedTaux2Display">0%</span>)
+                    <span class="badge bg-success ms-1" id="cacActiveBadge" style="display:none;">Active</span>
+                </div>
+                <div class="col-md-2 text-end">
+                    <button class="btn btn-sm btn-warning" onclick="changePatient()">
+                        <i class="fas fa-exchange-alt"></i> Changer
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Message si aucun patient sélectionné -->
+        <div class="alert alert-warning" id="noPatientAlert">
+            <i class="fas fa-exclamation-triangle"></i> 
+            Veuillez d'abord sélectionner un patient dans la <a href="{{ url_for('patients') }}">liste des patients</a>
+        </div>
+
+        <!-- Carte de suivi des stocks -->
+        <div class="card mb-3">
+            <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-boxes"></i> Suivi des stocks</h5>
+                <button class="btn btn-light btn-sm" onclick="chargerStocks()">
+                    <i class="fas fa-sync-alt"></i> Actualiser
+                </button>
+            </div>
+            <div class="card-body" id="stockAlertList">
+                <div class="text-center">Chargement des stocks...</div>
+            </div>
+        </div>
+
+        <!-- Vente de produits -->
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5><i class="fas fa-pills"></i> Vente de produits</h5>
+            </div>
+            <div class="card-body">
+                <!-- Barre de recherche -->
+                <div class="row mb-3">
+                    <div class="col-md-6 mx-auto">
+                        <div class="input-group">
+                            <span class="input-group-text bg-white border-end-0">
+                                <i class="fas fa-search text-success"></i>
+                            </span>
+                            <input type="text" id="searchProduitInput" class="form-control border-start-0" 
+                                   placeholder="Rechercher un produit..." 
+                                   onkeyup="filterProduits()">
+                            <button class="btn btn-outline-secondary" onclick="clearProduitSearch()" type="button">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="text-muted small mt-1">
+                            <i class="fas fa-info-circle"></i> <span id="produitResultCount">0</span> produit(s) trouvé(s)
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <label class="form-label">Sélectionner un produit</label>
+                        <select class="form-control" id="produitSelect" size="8">
+                            <option value="">-- Choisir un produit --</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Quantité</label>
+                        <input type="number" class="form-control" id="quantite" value="1" min="1">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">&nbsp;</label>
+                        <button class="btn btn-success w-100" onclick="ajouterProduit()">
+                            <i class="fas fa-cart-plus"></i> Ajouter
+                        </button>
+                    </div>
+                </div>
+
+                <hr>
+
+                <div class="row mt-3">
+                    <div class="col-md-12">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="avecOrdonnance">
+                            <label class="form-check-label" for="avecOrdonnance">
+                                <i class="fas fa-file-prescription"></i> Avec ordonnance médicale
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <hr>
+
+                <div class="row mb-2">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-shopping-cart"></i> Panier des produits</h6>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <button class="btn btn-sm btn-danger" onclick="viderPanier()">
+                            <i class="fas fa-trash-alt"></i> Vider le panier
+                        </button>
+                        <span id="panierBadge" class="badge bg-primary rounded-pill ms-2" style="display:none;">0</span>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-bordered" id="panierTable">
+                        <thead class="table-dark">
+                            <tr>
+                                <th style="width: 30%">Produit</th>
+                                <th style="width: 15%" class="text-center">Prix clinique (FCFA)</th>
+                                <th style="width: 15%" class="text-center">PBR (FCFA)</th>
+                                <th style="width: 15%" class="text-center">Quantité</th>
+                                <th style="width: 15%" class="text-end">Total (FCFA)</th>
+                                <th style="width: 10%" class="text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="panierBody">
+                            <tr><td colspan="6" class="text-center">Aucun produit dans le panier</td></tr>
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr>
+                                <th colspan="4" class="text-end">Sous-total clinique :</th>
+                                <th id="sousTotal" class="text-end">0 FCFA</th>
+                                <th></th>
+                            </tr>
+                            <tr>
+                                <th colspan="4" class="text-end text-primary">Base remboursement (PBR) :</th>
+                                <th id="baseRemboursement" class="text-end text-primary">0 FCFA</th>
+                                <th></th>
+                            </tr>
+                            <tr>
+                                <th colspan="4" class="text-end text-success">Prise en charge (assurance) :</th>
+                                <th id="priseEnCharge" class="text-end text-success">0 FCFA</th>
+                                <th></th>
+                            </tr>
+                            <tr id="priseEnCharge2Row" style="display:none;">
+                                <th colspan="4" class="text-end text-info">Prise en charge complémentaire :</th>
+                                <th id="priseEnCharge2" class="text-end text-info">0 FCFA</th>
+                                <th></th>
+                            </tr>
+                            <tr>
+                                <th colspan="4" class="text-end text-danger">À payer par le patient :</th>
+                                <th id="netAPayer" class="text-end text-danger">0 FCFA</th>
+                                <th></th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                <!-- Assurance complémentaire -->
+                <div class="row mt-2">
+                    <div class="col-md-12">
+                        <div class="form-check form-switch d-flex align-items-center gap-3">
+                            <input class="form-check-input" type="checkbox" id="toggleAssurance2" 
+                                   style="width: 50px; height: 25px; cursor: pointer;"
+                                   onchange="toggleAssuranceComplementaire()">
+                            <label class="form-check-label fw-semibold" for="toggleAssurance2" id="labelAssurance2">
+                                <i class="fas fa-plus-circle text-success"></i> 
+                                Assurance complémentaire : <span id="assurance2NomDisplay">Aucune</span>
+                                <span class="badge bg-info" id="assurance2TauxDisplay">0%</span>
+                            </label>
+                            <div id="assurance2TauxEdit" style="display:none;" class="ms-3">
+                                <div class="input-group input-group-sm" style="width: 200px;">
+                                    <span class="input-group-text"><i class="fas fa-edit"></i></span>
+                                    <input type="number" id="assurance2TauxTemp" class="form-control form-control-sm" 
+                                           value="0" min="0" max="100" step="1"
+                                           placeholder="Taux %" style="width: 70px;">
+                                    <button class="btn btn-sm btn-outline-success" onclick="appliquerTauxTemp()">
+                                        <i class="fas fa-check"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="resetTauxTemp()">
+                                        <i class="fas fa-undo"></i>
+                                    </button>
+                                </div>
+                                <small class="text-muted d-block mt-1">
+                                    <i class="fas fa-info-circle"></i> Taux par défaut: <span id="assurance2TauxDefaut">0</span>%
+                                    <span class="badge bg-warning text-dark ms-1" id="tauxTempBadge" style="display:none;">Modifié</span>
+                                </small>
+                            </div>
+                        </div>
+                        <div class="small text-muted mt-1" id="assurance2Info">
+                            <i class="fas fa-info-circle"></i> 
+                            L'assurance complémentaire s'applique sur le reste à charge après l'assurance principale.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mt-3">
+                    <div class="col-md-2">
+                        <label class="form-label">Mode de paiement</label>
+                        <select class="form-control" id="modePaiement">
+                            <option value="especes">💰 Espèces</option>
+                            <option value="carte">💳 Carte bancaire</option>
+                            <option value="Moov_money">📱 FLOOZ</option>
+                            <option value="Mixx_By_Yas">📱 MIXX By YAS</option>
+                            <option value="cheque">📝 Chèque</option>
+                        </select>
+                    </div>
+
+                    <div class="col-md-2">
+                        <label class="form-label" style="color: #dc3545; font-weight: bold;">
+                            Montant donné
+                            <span style="background: #dc3545; color: white; font-size: 10px; padding: 2px 8px; border-radius: 20px; margin-left: 5px;">
+                                OBLIGATOIRE
+                            </span>
+                        </label>
+                        <input type="number" class="form-control" id="montantDonne" 
+                               value="0" min="0" step="100"
+                               oninput="calculerRendu()"
+                               placeholder="Ex: 5000"
+                               style="border-color: #dc3545; border-width: 2px; background-color: #fff5f5;">
+                        <small style="color: #dc3545; font-size: 10px; font-weight: 600; display: block; margin-top: 3px;">
+                            <i class="fas fa-exclamation-circle"></i> 
+                            Saisir 0 si le patient ne paye pas
+                        </small>
+                    </div>                    
+                    
+                    <div class="col-md-2">
+                        <label class="form-label">Rendu au patient (FCFA)</label>
+                        <input type="text" class="form-control" id="montantRendu" 
+                               value="0 fr" readonly
+                               style="font-weight: bold; color: #28a745; background: #f0f8f0;">
+                    </div>
+
+                    <div class="col-md-2">
+                        <label class="form-label">Type de document</label>
+                        <select class="form-control" id="typeDocument">
+                            <option value="recu_client">📄 Reçu Patient</option>
+                            <option value="recu_structure">📋 Reçu Structure (copie)</option>
+                            <option value="facture_client">📑 Facture Patient</option>
+                            <option value="facture_structure">🗄️ Facture Structure (archive)</option>
+                            <option value="les_deux">📄+📑 Les deux</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Format(choisir 80mm/A4)</label>
+                        <select class="form-control" id="formatImpression">
+                            <option value="80mm" selected>🎫 Format Ticket (80mm)</option>
+                            <option value="A4">📄 Format A4</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Taux prise en charge (%)</label>
+                        <input type="number" class="form-control" id="tauxVente" value="{{ patientTaux }}" step="5" min="0" max="100" onchange="calculerTotal(); calculerRendu();">
+                    </div>
+                    <div class="col-md-12 mt-2">
+                        <button class="btn btn-primary w-100" onclick="finaliserVente()" id="finaliserBtn" disabled>
+                            <i class="fas fa-receipt"></i> Finaliser
+                        </button>
+                        <button class="btn btn-warning w-100" onclick="creerProforma()" id="proformaBtn" disabled>
+                            <i class="fas fa-file-invoice"></i> Proforma
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bouton flottant pour revenir aux prescriptions reçues -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1050;">
+    <a href="/prescriptions-recues" class="btn btn-success btn-lg rounded-circle shadow" 
+       style="width: 70px; height: 70px; display: flex; align-items: center; justify-content: center; font-size: 28px;">
+        <i class="fas fa-prescription-bottle"></i>
+    </a>
+    <span class="badge bg-danger position-absolute top-0 start-0" id="prescriptionBadgeFloat" style="font-size: 14px;">0</span>
+</div>
+
+<!-- Modal de progression -->
+<div class="modal fade" id="progressModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body text-center p-4">
+                <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status">
+                    <span class="visually-hidden">Chargement...</span>
+                </div>
+                <h5 id="progressTitle">Traitement en cours...</h5>
+                <p id="progressMessage" class="text-muted mb-0">Veuillez patienter</p>
+                <div class="progress mt-3" style="height: 5px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+#panierTable th,
+#panierTable td {
+    vertical-align: middle !important;
+    padding: 12px 8px !important;
+}
+#panierTable .form-control-sm {
+    font-size: 0.875rem;
+    padding: 0.25rem 0.5rem;
+}
+#panierTable .input-group {
+    flex-wrap: nowrap;
+}
+#panierTable .btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+}
+#panierTable tfoot td,
+#panierTable tfoot th {
+    font-size: 1rem;
+    padding: 10px 8px !important;
+}
+@media (max-width: 768px) {
+    #panierTable {
+        font-size: 0.8rem;
+    }
+    #panierTable .form-control-sm {
+        width: 60px !important;
+        font-size: 0.75rem;
+    }
+    #panierTable .btn-sm {
+        padding: 0.2rem 0.35rem;
+        min-width: 25px;
+    }
+}
+</style>
+
+<script>
+// ============================================
+// VARIABLES GLOBALES
+// ============================================
+let panier = [];
+let patientId = null;
+let patientTaux = 0;
+let patientName = '';
+let produitsList = [];
+let patientAssurance = '';
+let patientAssurance2 = '';
+let patientTaux2 = 0;
+let patientTaux2Original = 0;
+let tauxTempModifie = false;
+let tauxTempValeur = 0;
+let assurance2Active = false;
+let assurance2Nom = '';
+let assurance2Taux = 0;
+
+// ============================================
+// FONCTIONS DE PROGRESSION
+// ============================================
+function showProgress(title, message) {
+    document.getElementById('progressTitle').innerText = title || 'Traitement en cours...';
+    document.getElementById('progressMessage').innerHTML = message || 'Veuillez patienter';
+    const progressBar = document.querySelector('#progressModal .progress-bar');
+    if (progressBar) progressBar.style.width = '0%';
+    const modal = new bootstrap.Modal(document.getElementById('progressModal'));
+    modal.show();
+}
+
+function updateProgress(percent, message) {
+    const progressBar = document.querySelector('#progressModal .progress-bar');
+    if (progressBar) progressBar.style.width = percent + '%';
+    if (message) document.getElementById('progressMessage').innerHTML = message;
+}
+
+function hideProgress() {
+    const modal = bootstrap.Modal.getInstance(document.getElementById('progressModal'));
+    if (modal) modal.hide();
+}
+
+// ============================================
+// GESTION PATIENT
+// ============================================
+function checkSelectedPatient() {
+    patientId = sessionStorage.getItem('selectedPatientId') || localStorage.getItem('selectedPatientId');
+    patientName = sessionStorage.getItem('selectedPatientName') || localStorage.getItem('selectedPatientName');
+    patientAssurance = sessionStorage.getItem('selectedPatientAssurance') || localStorage.getItem('selectedPatientAssurance');
+    patientTaux = parseFloat(sessionStorage.getItem('selectedPatientTaux') || localStorage.getItem('selectedPatientTaux') || 0);
+    patientAssurance2 = sessionStorage.getItem('selectedPatientAssurance2') || localStorage.getItem('selectedPatientAssurance2') || '';
+    patientTaux2 = parseFloat(sessionStorage.getItem('selectedPatientTaux2') || localStorage.getItem('selectedPatientTaux2') || 0);
+    patientTaux2Original = patientTaux2;
+    
+    if (patientId && patientId !== 'null' && patientId !== 'undefined' && patientId !== '') {
+        document.getElementById('selectedPatientName').innerText = patientName || 'Patient';
+        
+        let assuranceText = 'Non assuré';
+        if (patientAssurance === 'amu_cnss') assuranceText = 'AMU-CNSS';
+        else if (patientAssurance === 'amu_inam') assuranceText = 'AMU-INAM';
+        else if (patientAssurance && patientAssurance !== 'non_assure') assuranceText = patientAssurance;
+        
+        document.getElementById('selectedAssurance').innerHTML = assuranceText;
+        document.getElementById('selectedTaux').innerHTML = patientTaux;
+        
+        const assurance2Display = document.getElementById('selectedAssurance2Display');
+        const taux2Display = document.getElementById('selectedTaux2Display');
+        const cacBadge = document.getElementById('cacActiveBadge');
+        
+        if (patientAssurance2 && patientAssurance2 !== '' && patientAssurance2 !== 'Aucune' && patientTaux2 > 0) {
+            assurance2Display.textContent = patientAssurance2;
+            taux2Display.textContent = patientTaux2 + '%';
+            cacBadge.style.display = 'inline-block';
+        } else {
+            assurance2Display.textContent = 'Aucune';
+            taux2Display.textContent = '0%';
+            cacBadge.style.display = 'none';
+        }
+        
+        document.getElementById('patientInfo').style.display = 'block';
+        document.getElementById('noPatientAlert').style.display = 'none';
+        
+        const tauxVenteInput = document.getElementById('tauxVente');
+        if (tauxVenteInput) {
+            tauxVenteInput.value = patientTaux;
+        }
+        
+        checkAssuranceComplementaire();
+        console.log('Patient chargé:', { patientId, patientName, patientTaux, patientAssurance2, patientTaux2 });
+    } else {
+        document.getElementById('patientInfo').style.display = 'none';
+        document.getElementById('noPatientAlert').style.display = 'block';
+        document.getElementById('finaliserBtn').disabled = true;
+        console.log('Aucun patient sélectionné');
+    }
+}
+
+function changePatient() {
+    window.location.href = "/patients";
+}
+
+// ============================================
+// CHARGEMENT DES PRODUITS
+// ============================================
+function chargerProduits() {
+    console.log('🔄 Chargement des produits...');
+    
+    const select = document.getElementById('produitSelect');
+    if (!select) {
+        console.error('❌ Select non trouvé !');
+        return;
+    }
+    
+    select.innerHTML = '<option value="">⏳ Chargement...</option>';
+    
+    fetch('/api/produits')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Erreur HTTP: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('📊 Produits reçus:', data.length);
+            produitsList = data || [];
+            
+            select.innerHTML = '';
+            
+            const defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.textContent = '-- Choisir un produit --';
+            select.appendChild(defaultOption);
+            
+            if (produitsList.length > 0) {
+                produitsList.forEach(p => {
+                    const option = document.createElement('option');
+                    option.value = p.id;
+                    
+                    // 🔥 INFORMATIONS PRINCIPALES
+                    option.setAttribute('data-prix', p.prix_vente || 0);
+                    option.setAttribute('data-pbr', p.pbr || p.prix_vente || 0);
+                    option.setAttribute('data-nom', (p.nom || '').replace(/'/g, "\\'"));
+                    option.setAttribute('data-stock', p.quantite_stock || 0);
+                    
+                    // 🔥 NOUVELLES COLONNES POUR LE STOCK
+                    option.setAttribute('data-prix-achat', p.prix_achat || 0);
+                    option.setAttribute('data-date-peremption', p.date_peremption || '');
+                    option.setAttribute('data-lot', p.lot || '');
+                    
+                    // 🔥 PRISE EN CHARGE AMU
+                    option.setAttribute('data-prise-en-charge-amu', p.prise_en_charge_amu !== false);
+                    option.setAttribute('data-commentaire-amu', p.commentaire_amu || '');
+                    
+                    // 🔥 PRISE EN CHARGE CAC
+                    option.setAttribute('data-prise-en-charge-cac', p.prise_en_charge_cac !== false);
+                    option.setAttribute('data-commentaire-cac', p.commentaire_cac || '');
+                    
+                    // 🔥 AFFICHAGE
+                    const prixDisplay = (p.prix_vente || 0).toLocaleString();
+                    const pbrDisplay = (p.pbr || p.prix_vente || 0).toLocaleString();
+                    const stockDisplay = p.quantite_stock || 0;
+                    const marge = (p.prix_vente || 0) - (p.prix_achat || 0);
+                    
+                    // 🔥 INDICATEUR DE PÉREMPTION
+                    let peremptionIndicator = '';
+                    if (p.date_peremption) {
+                        const today = new Date();
+                        const perempDate = new Date(p.date_peremption);
+                        if (perempDate < today) {
+                            peremptionIndicator = ' 🔴 PÉRIMÉ';
+                        } else if ((perempDate - today) / (1000 * 60 * 60 * 24) < 30) {
+                            peremptionIndicator = ' ⚠️ Bientôt périmé';
+                        }
+                    }
+                    
+                    let label = `${p.nom} - ${prixDisplay} FCFA`;
+                    label += ` (PBR: ${pbrDisplay})`;
+                    label += ` [Stock: ${stockDisplay}]`;
+                    if (marge > 0) {
+                        label += ` (Marge: ${marge.toLocaleString()} F)`;
+                    }
+                    label += peremptionIndicator;
+                    
+                    // 🔥 INDICATEUR DE PRISE EN CHARGE
+                    if (p.prise_en_charge_amu === false && p.prise_en_charge_cac === false) {
+                        label = `🚫 ${label} - NON PRIS EN CHARGE (AMU & CAC)`;
+                    } else if (p.prise_en_charge_amu === false) {
+                        label = `⚠️ ${label} - NON PRIS EN CHARGE AMU`;
+                    } else if (p.prise_en_charge_cac === false) {
+                        label = `⚠️ ${label} - NON PRIS EN CHARGE CAC`;
+                    }
+                    
+                    option.textContent = label;
+                    select.appendChild(option);
+                });
+                
+                console.log(`✅ ${select.options.length - 1} produits chargés`);
+            } else {
+                select.innerHTML = '<option value="">-- Aucun produit disponible --</option>';
+            }
+            
+            // 🔥 FORCER L'AFFICHAGE
+            for (let i = 0; i < select.options.length; i++) {
+                select.options[i].style.display = '';
+            }
+            
+            const countEl = document.getElementById('produitResultCount');
+            if (countEl) countEl.textContent = produitsList.length;
+            
+            chargerStocks();
+            filterProduits();
+        })
+        .catch(error => {
+            console.error('❌ Erreur chargement produits:', error);
+            select.innerHTML = '<option value="">-- Erreur de chargement --</option>';
+            document.getElementById('produitResultCount').textContent = '❌';
+            alert('Erreur de chargement des produits. Vérifie la console (F12).');
+        });
+}
+
+function chargerStocks() {
+    fetch('/api/produits')
+        .then(response => response.json())
+        .then(produits => {
+            const container = document.getElementById('stockAlertList');
+            container.innerHTML = '';
+            
+            if (!produits || produits.length === 0) {
+                container.innerHTML = '<div class="alert alert-warning text-center mb-0">⚠️ Aucun produit enregistré</div>';
+                return;
+            }
+            
+            const stockFaible = produits.filter(p => (p.quantite_stock || 0) <= (p.seuil_alerte || 10));
+            
+            if (stockFaible.length === 0) {
+                container.innerHTML = '<div class="alert alert-success text-center mb-0">✅ Tous les stocks sont suffisants</div>';
+                return;
+            }
+            
+            let html = '<div class="row">';
+            stockFaible.forEach(p => {
+                const stockClass = (p.quantite_stock || 0) <= 5 ? 'danger' : 'warning';
+                const urgence = (p.quantite_stock || 0) <= 5 ? '<br><span class="fw-bold text-danger">⚠️ Commande urgente !</span>' : '';
+                html += `
+                    <div class="col-md-4 mb-2">
+                        <div class="alert alert-${stockClass} p-2 small mb-0">
+                            <strong><i class="fas fa-exclamation-triangle"></i> ${p.nom}</strong><br>
+                            📦 Stock: <strong>${p.quantite_stock || 0}</strong> unités
+                            ${urgence}
+                            <div class="mt-2">
+                                <button class="btn btn-sm btn-outline-dark" onclick="reapprovisionner(${p.id}, '${p.nom.replace(/'/g, "\\'")}')">
+                                    <i class="fas fa-truck"></i> Réapprovisionner
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        })
+        .catch(error => {
+            console.error('❌ Erreur stocks:', error);
+            document.getElementById('stockAlertList').innerHTML = '<div class="alert alert-danger text-center mb-0">❌ Erreur de chargement des stocks</div>';
+        });
+}
+
+function reapprovisionner(id, nom) {
+    const quantite = prompt(`Quantité à ajouter pour ${nom} :`, "50");
+    if (quantite && !isNaN(quantite) && parseInt(quantite) > 0) {
+        showProgress('Approvisionnement', `Ajout de ${quantite} ${nom} au stock...`);
+        
+        fetch(`/api/produits/${id}/approvisionner`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({quantite: parseInt(quantite)})
+        })
+        .then(r => r.json())
+        .then(data => {
+            hideProgress();
+            if (data.success) {
+                alert(`✅ ${quantite} ${nom} ajouté(s) au stock`);
+                chargerProduits();
+            } else {
+                alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+            }
+        })
+        .catch(error => {
+            hideProgress();
+            alert('Erreur: ' + error);
+        });
+    }
+}
+
+// ============================================
+// RECHERCHE
+// ============================================
+function filterProduits() {
+    const searchTerm = document.getElementById('searchProduitInput').value.toLowerCase().trim();
+    const select = document.getElementById('produitSelect');
+    const options = select.options;
+    let visibleCount = 0;
+    
+    for (let i = 1; i < options.length; i++) {
+        const option = options[i];
+        const text = option.text.toLowerCase();
+        
+        if (searchTerm === '' || text.includes(searchTerm)) {
+            option.style.display = '';
+            visibleCount++;
+        } else {
+            option.style.display = 'none';
+        }
+    }
+    
+    document.getElementById('produitResultCount').innerText = visibleCount;
+} 
+
+function clearProduitSearch() {
+    document.getElementById('searchProduitInput').value = '';
+    filterProduits();
+}
+
+// ============================================
+// GESTION PANIER
+// ============================================
+function ajouterProduit() {
+    const select = document.getElementById('produitSelect');
+    const produitId = select.value;
+    const selectedOption = select.options[select.selectedIndex];
+    
+    if (!produitId) {
+        alert('Veuillez sélectionner un produit');
+        return;
+    }
+    
+    const produitNom = selectedOption.getAttribute('data-nom');
+    const produitPrix = parseFloat(selectedOption.getAttribute('data-prix'));
+    const produitPBR = parseFloat(selectedOption.getAttribute('data-pbr')) || produitPrix;
+    const produitStock = parseInt(selectedOption.getAttribute('data-stock'));
+    const priseEnChargeAMU = selectedOption.getAttribute('data-prise-en-charge-amu') === 'true';
+    const commentaireAMU = selectedOption.getAttribute('data-commentaire-amu') || '';
+    const priseEnChargeCAC = selectedOption.getAttribute('data-prise-en-charge-cac') === 'true';
+    const commentaireCAC = selectedOption.getAttribute('data-commentaire-cac') || '';
+    
+    // 🔥 RÉCUPÉRER LA DATE DE PÉREMPTION
+    const datePeremption = selectedOption.getAttribute('data-date-peremption') || '';
+    
+    let quantite = parseInt(document.getElementById('quantite').value);
+    if (isNaN(quantite) || quantite < 1) quantite = 1;
+    
+    if (quantite > produitStock) {
+        alert(`Stock insuffisant ! Stock disponible: ${produitStock}`);
+        return;
+    }
+    
+    // 🔥 VÉRIFICATION DE LA PÉREMPTION
+    if (datePeremption) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const perempDate = new Date(datePeremption);
+        perempDate.setHours(0, 0, 0, 0);
+        
+        if (perempDate < today) {
+            alert(`❌ Le produit "${produitNom}" est PÉRIMÉ depuis le ${datePeremption}.\n\nImpossible de l'ajouter au panier.`);
+            return;  // 🔥 BLOQUÉ
+        }
+        
+        // 🔥 ALERTE SI PÉREMPTION DANS MOINS DE 7 JOURS
+        const joursRestants = Math.ceil((perempDate - today) / (1000 * 60 * 60 * 24));
+        if (joursRestants <= 7 && joursRestants > 0) {
+            if (!confirm(`⚠️ Attention ! Le produit "${produitNom}" expire dans ${joursRestants} jour(s) (${datePeremption}).\n\nVoulez-vous quand même l'ajouter au panier ?`)) {
+                return;
+            }
+        }
+    }
+    
+    // Vérification de la prise en charge
+    const isAMU = patientAssurance && patientAssurance !== 'non_assure';
+    const isCAC = assurance2Active && patientAssurance2 && patientAssurance2 !== 'Aucune';
+    
+    // Logique de prise en charge
+    let peutAjouter = true;
+    let messageAlerte = '';
+    
+    if (isAMU && !priseEnChargeAMU && isCAC && !priseEnChargeCAC) {
+        // Ni AMU ni CAC ne prennent en charge
+        peutAjouter = false;
+        messageAlerte = `❌ Le produit "${produitNom}" n'est pas pris en charge par l'assurance principale (${patientAssurance}) ni par l'assurance complémentaire (${patientAssurance2}).\n\nLe patient devrait payer la totalité du prix.\n\nVoulez-vous quand même ajouter le produit ?`;
+    } else if (isAMU && !priseEnChargeAMU && isCAC && priseEnChargeCAC) {
+        // AMU ne prend pas en charge, mais CAC oui
+        messageAlerte = `ℹ️ Le produit "${produitNom}" n'est pas pris en charge par ${patientAssurance} (AMU).\n\nEn revanche, il est pris en charge par ${patientAssurance2} (CAC).\n\nLe patient devra payer la différence après la CAC.\n\nVoulez-vous continuer ?`;
+    } else if (!isAMU && isCAC && !priseEnChargeCAC) {
+        // Patient non assuré AMU, mais CAC ne prend pas en charge
+        messageAlerte = `ℹ️ Le produit "${produitNom}" n'est pas pris en charge par ${patientAssurance2} (CAC).\n\nLe patient n'a pas d'assurance principale, il devra payer la totalité.\n\nVoulez-vous continuer ?`;
+    }
+    
+    if (!peutAjouter) {
+        if (!confirm(messageAlerte)) {
+            return;
+        }
+    } else if (messageAlerte) {
+        if (!confirm(messageAlerte)) {
+            return;
+        }
+    }
+    
+    // Ajouter au panier
+    const indexExistant = panier.findIndex(item => item.id == produitId);
+    
+    if (indexExistant !== -1) {
+        const nouvelleQte = panier[indexExistant].quantite + quantite;
+        if (nouvelleQte > panier[indexExistant].stock_max) {
+            alert(`Stock maximum disponible pour ${produitNom}: ${panier[indexExistant].stock_max}`);
+            return;
+        }
+        panier[indexExistant].quantite = nouvelleQte;
+        panier[indexExistant].total = panier[indexExistant].prix * nouvelleQte;
+        panier[indexExistant].pbr_total = panier[indexExistant].pbr * nouvelleQte;
+        panier[indexExistant].prise_en_charge_amu = priseEnChargeAMU;
+        panier[indexExistant].prise_en_charge_cac = priseEnChargeCAC;
+        panier[indexExistant].commentaire_amu = commentaireAMU;
+        panier[indexExistant].commentaire_cac = commentaireCAC;
+        panier[indexExistant].date_peremption = datePeremption;  // 🔥 SAUVEGARDER LA DATE
+    } else {
+        panier.push({
+            id: parseInt(produitId),
+            nom: produitNom,
+            prix: produitPrix,
+            pbr: produitPBR,
+            prix_reel: produitPrix,
+            quantite: quantite,
+            total: produitPrix * quantite,
+            pbr_total: produitPBR * quantite,
+            stock_max: produitStock,
+            prise_en_charge_amu: priseEnChargeAMU,
+            commentaire_amu: commentaireAMU,
+            prise_en_charge_cac: priseEnChargeCAC,
+            commentaire_cac: commentaireCAC,
+            date_peremption: datePeremption  // 🔥 SAUVEGARDER LA DATE
+        });
+    }
+    
+    afficherPanier();
+    document.getElementById('produitSelect').selectedIndex = 0;
+    document.getElementById('quantite').value = '1';
+    
+    const btn = document.querySelector('.btn-success');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-check"></i> Ajouté !';
+    setTimeout(() => {
+        btn.innerHTML = originalText;
+    }, 1000);
+}
+function modifierPrix(index, nouveauPrix) {
+    const prix = parseFloat(nouveauPrix);
+    if (isNaN(prix) || prix <= 0) {
+        alert('Veuillez entrer un prix valide');
+        afficherPanier();
+        return;
+    }
+    if (index >= 0 && index < panier.length) {
+        panier[index].prix = prix;
+        panier[index].prix_reel = prix;
+        panier[index].total = prix * panier[index].quantite;
+        afficherPanier();
+    }
+}
+
+function modifierQuantite(index, nouvelleQuantite) {
+    let qte = parseInt(nouvelleQuantite);
+    if (isNaN(qte) || qte < 1) qte = 1;
+    if (index >= 0 && index < panier.length) {
+        if (qte > panier[index].stock_max) {
+            alert(`Stock maximum: ${panier[index].stock_max}`);
+            afficherPanier();
+            return;
+        }
+        panier[index].quantite = qte;
+        panier[index].total = panier[index].prix * qte;
+        panier[index].pbr_total = panier[index].pbr * qte;
+        afficherPanier();
+    }
+}
+
+function afficherPanier() {
+    const tbody = document.getElementById('panierBody');
+    tbody.innerHTML = '';
+    
+    if (panier.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center">Aucun produit dans le panier</td></tr>';
+        document.getElementById('finaliserBtn').disabled = true;
+        document.getElementById('proformaBtn').disabled = true;
+        document.getElementById('sousTotal').innerHTML = '0 FCFA';
+        document.getElementById('baseRemboursement').innerHTML = '0 FCFA';
+        document.getElementById('priseEnCharge').innerHTML = '0 FCFA';
+        document.getElementById('priseEnCharge2').innerHTML = '0 FCFA';
+        document.getElementById('netAPayer').innerHTML = '0 FCFA';
+        document.getElementById('priseEnCharge2Row').style.display = 'none';
+        updatePanierBadge();
+        return;
+    }
+    
+    let sousTotal = 0;
+    let pbrTotal = 0;
+    
+    panier.forEach((item, index) => {
+        const prix = item.prix;
+        const pbr = item.pbr || item.prix;
+        const total = prix * item.quantite;
+        const pbrTotalItem = pbr * item.quantite;
+        sousTotal += total;
+        pbrTotal += pbrTotalItem;
+        
+        const row = tbody.insertRow();
+        
+        const cellNom = row.insertCell(0);
+        cellNom.innerHTML = `<strong>${item.nom}</strong>`;
+        cellNom.style.verticalAlign = 'middle';
+        
+        const cellPrix = row.insertCell(1);
+        cellPrix.className = 'text-center';
+        cellPrix.style.verticalAlign = 'middle';
+        cellPrix.innerHTML = `
+            <input type="number" class="form-control form-control-sm text-center" 
+                   value="${prix}" style="width: 100px; display: inline-block;"
+                   onchange="modifierPrix(${index}, this.value)">
+        `;
+        
+        const cellPBR = row.insertCell(2);
+        cellPBR.className = 'text-center';
+        cellPBR.style.verticalAlign = 'middle';
+        cellPBR.innerHTML = `<span class="badge bg-primary">${pbr.toLocaleString()} F</span>`;
+        
+        const cellQte = row.insertCell(3);
+        cellQte.className = 'text-center';
+        cellQte.style.verticalAlign = 'middle';
+        cellQte.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: center; gap: 5px;">
+                <button class="btn btn-sm btn-secondary" onclick="modifierQuantite(${index}, ${item.quantite - 1})" style="width: 30px;">-</button>
+                <input type="text" class="form-control text-center" value="${item.quantite}" 
+                       style="width: 60px; display: inline-block; text-align: center;"
+                       onchange="modifierQuantite(${index}, this.value)">
+                <button class="btn btn-sm btn-secondary" onclick="modifierQuantite(${index}, ${item.quantite + 1})" style="width: 30px;">+</button>
+            </div>
+        `;
+        
+        const cellTotal = row.insertCell(4);
+        cellTotal.className = 'text-end fw-bold';
+        cellTotal.style.verticalAlign = 'middle';
+        cellTotal.innerHTML = `${total.toLocaleString()} FCFA`;
+        
+        const cellAction = row.insertCell(5);
+        cellAction.className = 'text-center';
+        cellAction.style.verticalAlign = 'middle';
+        cellAction.innerHTML = `
+            <button class="btn btn-sm btn-danger" onclick="supprimerProduit(${index})" title="Supprimer">
+                <i class="fas fa-trash"></i>
+            </button>
+        `;
+    });
+    
+    document.getElementById('baseRemboursement').innerHTML = pbrTotal.toLocaleString() + ' FCFA';
+    document.getElementById('finaliserBtn').disabled = false;
+    document.getElementById('proformaBtn').disabled = false;
+    calculerTotal();
+    updatePanierBadge();
+    calculerRendu();
+}
+
+function supprimerProduit(index) {
+    if (index >= 0 && index < panier.length) {
+        panier.splice(index, 1);
+        afficherPanier();
+    }
+}
+
+function viderPanier() {
+    if (panier.length > 0 && confirm('Vider complètement le panier ?')) {
+        panier = [];
+        afficherPanier();
+    }
+}
+
+function updatePanierBadge() {
+    const totalItems = panier.reduce((sum, item) => sum + item.quantite, 0);
+    const badge = document.getElementById('panierBadge');
+    if (badge) {
+        if (totalItems > 0) {
+            badge.style.display = 'inline-block';
+            badge.innerText = totalItems;
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+}
+
+// ============================================
+// CALCULER LES TOTAUX (LOGIQUE CORRIGÉE)
+// ============================================
+function calculerTotal() {
+    let sousTotal = 0;
+    let pbrTotalAMU = 0;
+    let sousTotalAMU = 0;
+    let pbrTotalCAC = 0;
+    
+    for (const item of panier) {
+        const prix = item.prix;
+        const pbr = item.pbr || item.prix;
+        const total = prix * item.quantite;
+        
+        sousTotal += total;
+        
+        // Calcul pour AMU
+        if (item.prise_en_charge_amu) {
+            sousTotalAMU += total;
+            let basePBR = Math.min(prix, pbr);
+            pbrTotalAMU += basePBR * item.quantite;
+        }
+        
+        // Calcul pour CAC
+        if (item.prise_en_charge_cac) {
+            let basePBR = Math.min(prix, pbr);
+            pbrTotalCAC += basePBR * item.quantite;
+        }
+    }
+    
+    // Assurance principale
+    let tauxPrincipal = parseFloat(document.getElementById('tauxVente').value);
+    if (isNaN(tauxPrincipal)) {
+        tauxPrincipal = patientTaux || 0;
+    }
+    
+    let baseRemboursement = Math.min(sousTotalAMU, pbrTotalAMU);
+    let priseEnCharge = 0;
+    if (baseRemboursement > 0 && tauxPrincipal > 0) {
+        priseEnCharge = (baseRemboursement * tauxPrincipal) / 100;
+    }
+    
+    // Reste après AMU
+    let resteApresAMU = sousTotal - priseEnCharge;
+    if (resteApresAMU < 0) resteApresAMU = 0;
+    
+    // Assurance complémentaire (CAC)
+    let priseEnCharge2 = 0;
+    let baseCAC = 0;
+    
+    if (assurance2Active && patientAssurance2 && patientAssurance2 !== 'Aucune') {
+        let tauxComplementaire = tauxTempModifie ? tauxTempValeur : (patientTaux2Original || 0);
+        
+        if (tauxComplementaire > 0) {
+            // Calcul de la base CAC (reste après AMU pour les produits pris en charge par CAC)
+            for (const item of panier) {
+                if (item.prise_en_charge_cac) {
+                    const prix = item.prix;
+                    const total = prix * item.quantite;
+                    
+                    if (item.prise_en_charge_amu) {
+                        // Produit pris en charge par AMU : la base CAC est le reste après AMU
+                        const pbr = item.pbr || item.prix;
+                        let basePBR = Math.min(prix, pbr);
+                        let baseAMU = basePBR * item.quantite;
+                        let priseAMU = (baseAMU * tauxPrincipal) / 100;
+                        let reste = total - priseAMU;
+                        if (reste > 0) {
+                            baseCAC += reste;
+                        }
+                    } else {
+                        // Produit non pris en charge par AMU : la base CAC est le total
+                        baseCAC += total;
+                    }
+                }
+            }
+            
+            if (baseCAC > 0) {
+                priseEnCharge2 = (baseCAC * tauxComplementaire) / 100;
+                if (priseEnCharge2 > resteApresAMU) {
+                    priseEnCharge2 = resteApresAMU;
+                }
+            }
+        }
+    }
+    
+    // Net à payer
+    let netAPayer = sousTotal - priseEnCharge - priseEnCharge2;
+    if (netAPayer < 0) netAPayer = 0;
+    
+    // Mise à jour de l'affichage
+    document.getElementById('sousTotal').innerHTML = sousTotal.toLocaleString() + ' FCFA';
+    document.getElementById('baseRemboursement').innerHTML = baseRemboursement.toLocaleString() + ' FCFA';
+    document.getElementById('priseEnCharge').innerHTML = priseEnCharge.toLocaleString() + ' FCFA';
+    document.getElementById('netAPayer').innerHTML = netAPayer.toLocaleString() + ' FCFA';
+    
+    // Prise en charge complémentaire
+    const priseEnCharge2El = document.getElementById('priseEnCharge2');
+    const priseEnCharge2Row = document.getElementById('priseEnCharge2Row');
+    if (priseEnCharge2El && priseEnCharge2 > 0 && assurance2Active) {
+        const tauxAffiche = tauxTempModifie ? `${tauxTempValeur}%` : `${patientTaux2Original}%`;
+        const modifText = tauxTempModifie ? ' 🔄' : '';
+        priseEnCharge2El.innerHTML = `${patientAssurance2} (${tauxAffiche}) : - ${priseEnCharge2.toLocaleString()} FCFA${modifText}`;
+        priseEnCharge2Row.style.display = 'table-row';
+    } else {
+        priseEnCharge2Row.style.display = 'none';
+    }
+    
+    // Sauvegarder les valeurs pour finaliserVente
+    window._calculs = {
+        sousTotal,
+        baseRemboursement,
+        priseEnCharge,
+        priseEnCharge2,
+        netAPayer,
+        baseCAC,
+        resteApresAMU
+    };
+}
+
+// ============================================
+// CALCUL DU RENDU
+// ============================================
+function calculerRendu() {
+    calculerTotal();
+    
+    const netAPayer = window._calculs?.netAPayer || 0;
+    const montantDonne = parseFloat(document.getElementById('montantDonne').value) || 0;
+    
+    let rendu = 0;
+    let resteAPayer = 0;
+    
+    if (montantDonne > netAPayer) {
+        rendu = montantDonne - netAPayer;
+        resteAPayer = 0;
+    } else if (montantDonne < netAPayer) {
+        rendu = 0;
+        resteAPayer = netAPayer - montantDonne;
+    } else {
+        rendu = 0;
+        resteAPayer = 0;
+    }
+    
+    const renduElement = document.getElementById('montantRendu');
+    
+    if (montantDonne < netAPayer) {
+        renduElement.value = '⚠️ ' + resteAPayer.toLocaleString() + ' fr manquant';
+        renduElement.style.color = '#dc3545';
+        renduElement.style.background = '#fde8e8';
+    } else if (rendu === 0 && montantDonne === netAPayer) {
+        renduElement.value = '✅ 0 fr (juste)';
+        renduElement.style.color = '#28a745';
+        renduElement.style.background = '#f0f8f0';
+    } else if (rendu > 0) {
+        renduElement.value = rendu.toLocaleString() + ' fr';
+        renduElement.style.color = '#28a745';
+        renduElement.style.background = '#f0f8f0';
+    } else {
+        renduElement.value = '0 fr';
+        renduElement.style.color = '#28a745';
+        renduElement.style.background = '#f0f8f0';
+    }
+    
+    // Sauvegarder pour finaliser
+    window._paiement = {
+        montantDonne,
+        rendu,
+        resteAPayer,
+        netAPayer
+    };
+}
+
+// ============================================
+// ASSURANCE COMPLÉMENTAIRE
+// ============================================
+function checkAssuranceComplementaire() {
+    assurance2Nom = sessionStorage.getItem('selectedPatientAssurance2') || localStorage.getItem('selectedPatientAssurance2') || '';
+    assurance2Taux = parseFloat(sessionStorage.getItem('selectedPatientTaux2') || localStorage.getItem('selectedPatientTaux2') || 0);
+    patientTaux2Original = assurance2Taux;
+    patientTaux2 = assurance2Taux;
+    
+    const toggle = document.getElementById('toggleAssurance2');
+    const label = document.getElementById('assurance2NomDisplay');
+    const tauxDisplay = document.getElementById('assurance2TauxDisplay');
+    const tauxEdit = document.getElementById('assurance2TauxEdit');
+    const tauxDefaut = document.getElementById('assurance2TauxDefaut');
+    const tauxTempInput = document.getElementById('assurance2TauxTemp');
+    const badgeTemp = document.getElementById('tauxTempBadge');
+    const info = document.getElementById('assurance2Info');
+    
+    if (assurance2Nom && assurance2Nom !== '' && assurance2Nom !== 'Aucune' && assurance2Taux > 0) {
+        toggle.disabled = false;
+        label.textContent = assurance2Nom;
+        tauxDisplay.textContent = assurance2Taux + '%';
+        info.style.display = 'block';
+        
+        tauxEdit.style.display = 'block';
+        tauxDefaut.textContent = assurance2Taux;
+        tauxTempInput.value = assurance2Taux;
+        
+        restaurerTauxTemp();
+        
+        if (!tauxTempModifie) {
+            badgeTemp.style.display = 'none';
+            tauxDisplay.className = 'badge bg-info';
+        }
+        
+        toggle.checked = true;
+        assurance2Active = true;
+    } else {
+        toggle.disabled = true;
+        toggle.checked = false;
+        label.textContent = 'Aucune';
+        tauxDisplay.textContent = '0%';
+        info.style.display = 'none';
+        tauxEdit.style.display = 'none';
+        assurance2Active = false;
+        tauxTempModifie = false;
+        localStorage.removeItem('tauxTempValeur');
+        localStorage.removeItem('tauxTempModifie');
+    }
+    
+    if (panier.length > 0) {
+        calculerTotal();
+        calculerRendu();
+    }
+}
+
+function toggleAssuranceComplementaire() {
+    const toggle = document.getElementById('toggleAssurance2');
+    assurance2Active = toggle.checked;
+    if (panier.length > 0) {
+        calculerTotal();
+        calculerRendu();
+    }
+    updateAssurance2Display();
+}
+
+function updateAssurance2Display() {
+    const info = document.getElementById('assurance2Info');
+    if (info) {
+        if (assurance2Active && assurance2Nom && assurance2Nom !== 'Aucune') {
+            const tauxAffiche = tauxTempModifie ? `${tauxTempValeur}%` : `${assurance2Taux}%`;
+            const modifText = tauxTempModifie ? ' (modifié)' : '';
+            info.innerHTML = `<i class="fas fa-check-circle text-success"></i> 
+                Assurance complémentaire <strong>${assurance2Nom}</strong> appliquée (${tauxAffiche})${modifText}`;
+            info.className = 'small text-success mt-1';
+        } else {
+            info.innerHTML = `<i class="fas fa-info-circle"></i> 
+                L'assurance complémentaire n'est pas appliquée pour cette vente.`;
+            info.className = 'small text-muted mt-1';
+        }
+    }
+}
+
+// ============================================
+// GESTION DU TAUX TEMPORAIRE
+// ============================================
+function sauvegarderTauxTemp() {
+    if (tauxTempModifie) {
+        localStorage.setItem('tauxTempValeur', tauxTempValeur.toString());
+        localStorage.setItem('tauxTempModifie', 'true');
+    } else {
+        localStorage.removeItem('tauxTempValeur');
+        localStorage.removeItem('tauxTempModifie');
+    }
+}
+
+function restaurerTauxTemp() {
+    const savedTemp = localStorage.getItem('tauxTempValeur');
+    const savedModifie = localStorage.getItem('tauxTempModifie');
+    if (savedModifie === 'true' && savedTemp) {
+        tauxTempModifie = true;
+        tauxTempValeur = parseFloat(savedTemp);
+        patientTaux2 = tauxTempValeur;
+        
+        const badge = document.getElementById('tauxTempBadge');
+        if (badge) {
+            badge.style.display = 'inline-block';
+            badge.textContent = `Modifié (${tauxTempValeur}%)`;
+        }
+        const tauxDisplay = document.getElementById('assurance2TauxDisplay');
+        if (tauxDisplay) {
+            tauxDisplay.textContent = tauxTempValeur + '%';
+            tauxDisplay.className = 'badge bg-warning text-dark';
+        }
+        document.getElementById('assurance2TauxTemp').value = tauxTempValeur;
+    }
+}
+
+function appliquerTauxTemp() {
+    const input = document.getElementById('assurance2TauxTemp');
+    const valeur = parseFloat(input.value);
+    const tauxOriginal = patientTaux2Original || 0;
+    
+    if (isNaN(valeur) || valeur < 0) {
+        alert('Veuillez entrer un taux valide (0-100)');
+        input.value = tauxOriginal;
+        return;
+    }
+    
+    if (valeur > 100) {
+        alert('Le taux ne peut pas dépasser 100%');
+        input.value = tauxOriginal;
+        return;
+    }
+    
+    if (valeur === tauxOriginal) {
+        resetTauxTemp();
+        return;
+    }
+    
+    tauxTempModifie = true;
+    tauxTempValeur = valeur;
+    patientTaux2 = valeur;
+    
+    sauvegarderTauxTemp();
+    
+    const badge = document.getElementById('tauxTempBadge');
+    badge.style.display = 'inline-block';
+    badge.textContent = `Modifié (${valeur}%)`;
+    
+    const tauxDisplay = document.getElementById('assurance2TauxDisplay');
+    tauxDisplay.textContent = valeur + '%';
+    tauxDisplay.className = 'badge bg-warning text-dark';
+    
+    document.getElementById('assurance2TauxDefaut').textContent = tauxOriginal;
+    
+    console.log(`Taux temporaire appliqué: ${valeur}% (original: ${tauxOriginal}%)`);
+    
+    if (panier.length > 0) {
+        calculerTotal();
+        calculerRendu();
+    }
+    updateAssurance2Display();
+}
+
+function resetTauxTemp() {
+    const tauxOriginal = patientTaux2Original || 0;
+    
+    tauxTempModifie = false;
+    tauxTempValeur = tauxOriginal;
+    patientTaux2 = tauxOriginal;
+    
+    localStorage.removeItem('tauxTempValeur');
+    localStorage.removeItem('tauxTempModifie');
+    
+    const badge = document.getElementById('tauxTempBadge');
+    badge.style.display = 'none';
+    
+    const tauxDisplay = document.getElementById('assurance2TauxDisplay');
+    tauxDisplay.textContent = tauxOriginal + '%';
+    tauxDisplay.className = 'badge bg-info';
+    
+    document.getElementById('assurance2TauxDefaut').textContent = tauxOriginal;
+    document.getElementById('assurance2TauxTemp').value = tauxOriginal;
+    
+    console.log(`Taux réinitialisé à: ${tauxOriginal}%`);
+    
+    if (panier.length > 0) {
+        calculerTotal();
+        calculerRendu();
+    }
+    updateAssurance2Display();
+}
+
+// ============================================
+// FINALISER LA VENTE
+// ============================================
+function finaliserVente() {
+    if (panier.length === 0) {
+        alert('Le panier est vide');
+        return;
+    }
+    
+    const patientId = sessionStorage.getItem('selectedPatientId') || localStorage.getItem('selectedPatientId');
+    const patientNom = sessionStorage.getItem('selectedPatientName') || localStorage.getItem('selectedPatientName');
+    
+    if (!patientId || patientId === 'null') {
+        alert('Veuillez sélectionner un patient');
+        return;
+    }
+    
+    // Récupérer les calculs
+    const { sousTotal, baseRemboursement, priseEnCharge, priseEnCharge2, netAPayer } = window._calculs || { sousTotal: 0, baseRemboursement: 0, priseEnCharge: 0, priseEnCharge2: 0, netAPayer: 0 };
+    const { montantDonne, rendu, resteAPayer } = window._paiement || { montantDonne: 0, rendu: 0, resteAPayer: 0 };
+    
+    // ⭐⭐⭐ NOUVELLE CONDITION : VÉRIFICATION SI MONTANT DONNÉ = 0 ⭐⭐⭐
+    if (montantDonne === 0 && netAPayer > 0) {
+        // Demander à l'utilisateur de confirmer en tapant "000"
+        const confirmation = prompt(
+            `⚠️ ATTENTION !\n\n` +
+            `Le montant donné est de 0 FCFA.\n` +
+            `Net à payer : ${netAPayer.toLocaleString()} FCFA\n\n` +
+            `Pour confirmer que le patient n'a vraiment rien donné,\n` +
+            `tapez "000" dans le champ ci-dessous :\n\n` +
+            `(Si c'est une erreur, annulez et saisissez le bon montant)`
+        );
+        
+        // Si l'utilisateur annule ou ne tape pas "000"
+        if (confirmation !== "000") {
+            alert('❌ Opération annulée. Veuillez saisir le montant donné par le patient.');
+            document.getElementById('montantDonne').focus();
+            document.getElementById('montantDonne').select();
+            return;
+        }
+        
+        // Confirmation supplémentaire
+        if (!confirm(`⚠️ DERNIÈRE CONFIRMATION :\n\nLe patient ${patientNom} n'a donné AUCUN argent (0 FCFA).\nLe reste à payer est de ${resteAPayer.toLocaleString()} FCFA.\n\nVoulez-vous vraiment continuer ?`)) {
+            document.getElementById('montantDonne').focus();
+            return;
+        }
+    }
+    
+    // Vérifier si le patient a donné assez d'argent (mais pas 0)
+    if (montantDonne > 0 && montantDonne < netAPayer) {
+        if (!confirm(`⚠️ Le patient a donné ${montantDonne.toLocaleString()} FCFA mais le net à payer est de ${netAPayer.toLocaleString()} FCFA.\n\nIl reste ${resteAPayer.toLocaleString()} FCFA à payer.\n\nVoulez-vous continuer ?`)) {
+            document.getElementById('montantDonne').focus();
+            return;
+        }
+    }
+    
+    // Confirmation de la vente
+    let confirmationMsg = `📊 RÉCAPITULATIF DE LA VENTE\n\n`;
+    confirmationMsg += `👤 Patient: ${patientNom}\n`;
+    confirmationMsg += `🏥 Assurance principale: ${patientAssurance || 'Non assuré'} (${patientTaux}%)\n`;
+    if (assurance2Active && patientAssurance2) {
+        const tauxAffiche = tauxTempModifie ? `${tauxTempValeur}% (modifié)` : `${patientTaux2}%`;
+        confirmationMsg += `🏥 Assurance complémentaire: ${patientAssurance2} (${tauxAffiche}) - APPLIQUÉE\n`;
+    }
+    confirmationMsg += `\n💰 Sous-total: ${sousTotal.toLocaleString()} FCFA\n`;
+    confirmationMsg += `📊 Base remboursement: ${baseRemboursement.toLocaleString()} FCFA\n`;
+    confirmationMsg += `🎯 Prise en charge principale: ${priseEnCharge.toLocaleString()} FCFA\n`;
+    if (priseEnCharge2 > 0) {
+        confirmationMsg += `🎯 Prise en charge complémentaire: ${priseEnCharge2.toLocaleString()} FCFA\n`;
+    }
+    confirmationMsg += `💵 Net à payer: ${netAPayer.toLocaleString()} FCFA\n`;
+    confirmationMsg += `💶 Montant donné: ${montantDonne.toLocaleString()} FCFA\n`;
+    if (rendu > 0) {
+        confirmationMsg += `🔄 Rendu: ${rendu.toLocaleString()} FCFA\n`;
+    }
+    if (resteAPayer > 0) {
+        confirmationMsg += `⚠️ Reste à payer: ${resteAPayer.toLocaleString()} FCFA\n`;
+    }
+    confirmationMsg += `\nConfirmer la vente ?`;
+    
+    if (!confirm(confirmationMsg)) {
+        return;
+    }
+    
+    // Préparer les données
+    const produitsDetails = panier.map(item => ({
+        id: item.id,
+        nom: item.nom,
+        prix_reel: item.prix,
+        pbr: item.pbr || item.prix,
+        quantite: item.quantite,
+        total: item.total,
+        prise_en_charge_amu: item.prise_en_charge_amu !== false,
+        prise_en_charge_cac: item.prise_en_charge_cac !== false
+    }));
+    
+    const venteData = {
+        patient_id: parseInt(patientId),
+        patient_nom: patientNom,
+        produits: produitsDetails,
+        sous_total: sousTotal,
+        base_remboursement: baseRemboursement,
+        prise_en_charge: priseEnCharge,
+        prise_en_charge2: priseEnCharge2,
+        net_a_payer: netAPayer,
+        mode_paiement: document.getElementById('modePaiement').value,
+        avec_ordonnance: document.getElementById('avecOrdonnance').checked,
+        taux_assurance: patientTaux,
+        assurance2_nom: assurance2Active ? (patientAssurance2 || '') : '',
+        taux_assurance2: assurance2Active ? (tauxTempModifie ? tauxTempValeur : patientTaux2) : 0,
+        assurance2_active: assurance2Active,
+        assurance_nom: patientAssurance || 'non_assure',
+        montant_donne: montantDonne,
+        rendu: rendu,
+        reste_a_payer: resteAPayer,
+        type_document: document.getElementById('typeDocument').value,
+        format_impression: document.getElementById('formatImpression').value
+    };
+    
+    console.log('📦 Données de vente:', JSON.stringify(venteData, null, 2));
+    console.log('💰 Reste à payer:', resteAPayer);
+    
+    showProgress('Finalisation de la vente', 'Enregistrement en cours...');
+    
+    // ============================================
+    // 1. ENVOI DE LA VENTE
+    // ============================================
+    fetch('/api/ventes/pharma', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(venteData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!data.success) {
+            hideProgress();
+            alert('❌ Erreur: ' + (data.error || 'Erreur inconnue'));
+            return;
+        }
+        
+        console.log(`✅ Vente enregistrée avec ID: ${data.vente_id}`);
+        
+        // ============================================
+        // 2. CRÉATION AUTOMATIQUE DE FACTURE SI RESTE À PAYER > 0
+        // ============================================
+        if (resteAPayer > 0) {
+            console.log(`📋 Création d'une facture pour le reste à payer: ${resteAPayer} FCFA`);
+            
+            const dateEcheance = new Date();
+            dateEcheance.setDate(dateEcheance.getDate() + 7);
+            const dateEcheanceStr = dateEcheance.toISOString().split('T')[0];
+            
+            fetch('/api/factures/creer_automatique', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    vente_id: data.vente_id,
+                    date_echeance: dateEcheanceStr,
+                    mode_paiement: venteData.mode_paiement,
+                    montant_paye: montantDonne,
+                    reste_a_payer: resteAPayer,
+                    notes: `Paiement partiel pharmacie: ${montantDonne} FCFA payé, reste ${resteAPayer} FCFA`
+                })
+            })
+            .then(r => r.json())
+            .then(factureData => {
+                console.log('📄 Réponse facture:', factureData);
+                if (factureData.success) {
+                    console.log(`✅ Facture créée: ${factureData.numero_facture} (ID: ${factureData.facture_id})`);
+                    sessionStorage.setItem('lastFactureId', factureData.facture_id);
+                    sessionStorage.setItem('lastFactureNumero', factureData.numero_facture);
+                } else {
+                    console.error('❌ Erreur création facture:', factureData.error);
+                }
+                hideProgress();
+                redirigerApresVente(data.vente_id);
+            })
+            .catch(error => {
+                console.error('❌ Erreur fetch facture:', error);
+                hideProgress();
+                redirigerApresVente(data.vente_id);
+            });
+        } else {
+            // Paiement total, pas de facture nécessaire
+            console.log('✅ Paiement total, pas de facture nécessaire');
+            hideProgress();
+            redirigerApresVente(data.vente_id);
+        }
+    })
+    .catch(error => {
+        hideProgress();
+        console.error('❌ Erreur:', error);
+        alert('❌ Erreur: ' + error);
+    });
+}
+
+// ============================================
+// FONCTION DE REDIRECTION (NOUVELLE)
+// ============================================
+function redirigerApresVente(venteId) {
+    const typeDoc = document.getElementById('typeDocument').value;
+    const format = document.getElementById('formatImpression').value;
+    
+    console.log(`🔗 Redirection vers: type=${typeDoc}, format=${format}, vente=${venteId}`);
+    
+    // Vider le panier
+    panier = [];
+    afficherPanier();
+    
+    if (typeDoc === 'les_deux') {
+        window.open(`/recu/${venteId}/pharma?format=${format}`, '_blank');
+        window.open(`/recu_structure/${venteId}/pharma?format=${format}`, '_blank');
+        window.location.href = '/dashboard';
+        return;
+    }
+    
+    let baseUrl = '';
+    if (typeDoc === 'recu_client') {
+        baseUrl = `/recu/${venteId}/pharma`;
+    } else if (typeDoc === 'recu_structure') {
+        baseUrl = `/recu_structure/${venteId}/pharma`;
+    } else if (typeDoc === 'facture_client') {
+        baseUrl = `/facture/${venteId}/pharma`;
+    } else if (typeDoc === 'facture_structure') {
+        baseUrl = `/facture_structure/${venteId}/pharma`;
+    } else {
+        baseUrl = `/recu/${venteId}/pharma`;
+    }
+    
+    window.location.href = `${baseUrl}?format=${format}`;
+}
+// ============================================
+// CRÉER PROFORMA
+// ============================================
+function creerProforma() {
+    if (panier.length === 0) {
+        alert('Le panier est vide');
+        return;
+    }
+    
+    const patientId = sessionStorage.getItem('selectedPatientId') || localStorage.getItem('selectedPatientId');
+    const patientNom = sessionStorage.getItem('selectedPatientName') || localStorage.getItem('selectedPatientName');
+    
+    if (!patientId || patientId === 'null') {
+        alert('Veuillez sélectionner un patient');
+        return;
+    }
+    
+    const produitsDetails = panier.map(item => ({
+        nom: item.nom,
+        type: 'produit',
+        quantite: item.quantite,
+        prix_unitaire: item.prix,
+        total: item.total,
+        pbr: item.pbr || item.prix
+    }));
+    
+    const { sousTotal, netAPayer } = window._calculs || { sousTotal: 0, netAPayer: 0 };
+    
+    const proformaData = {
+        patient_id: parseInt(patientId),
+        patient_nom: patientNom,
+        assurance_nom: patientAssurance || 'Non assuré',
+        taux_assurance: patientTaux,
+        assurance2_nom: assurance2Active ? (patientAssurance2 || '') : '',
+        taux_assurance2: assurance2Active ? (tauxTempModifie ? tauxTempValeur : patientTaux2) : 0,
+        articles: produitsDetails,
+        type: 'mixte',
+        notes: document.getElementById('avecOrdonnance').checked ? 'Avec ordonnance' : ''
+    };
+    
+    console.log('📦 Données proforma:', JSON.stringify(proformaData, null, 2));
+    
+    showProgress('Création de la proforma', 'Enregistrement en cours...');
+    
+    fetch('/api/proformas', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(proformaData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideProgress();
+        
+        if (data.success) {
+            alert(`✅ Proforma #${data.numero} créée !\nNet à payer: ${data.net_a_payer.toLocaleString()} FCFA`);
+            
+            if (confirm('Imprimer la proforma ?')) {
+                window.open(`/proforma/${data.id}/print`, '_blank');
+            }
+            
+            // Vider le panier
+            panier = [];
+            afficherPanier();
+            chargerProformaBadge();
+            
+        } else {
+            alert('❌ Erreur: ' + (data.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => {
+        hideProgress();
+        alert('❌ Erreur: ' + error);
+    });
+}
+
+function chargerProformaBadge() {
+    fetch('/api/proformas/count')
+        .then(response => response.json())
+        .then(data => {
+            const badge = document.getElementById('proformaBadge');
+            if (badge) {
+                if (data.en_attente > 0) {
+                    badge.textContent = data.en_attente;
+                    badge.style.display = 'inline-block';
+                } else {
+                    badge.style.display = 'none';
+                }
+            }
+        })
+        .catch(() => {});
+}
+
+// ============================================
+// INITIALISATION
+// ============================================
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Initialisation de la page pharmacie...');
+    
+    chargerProduits();
+    checkSelectedPatient();
+    chargerProformaBadge();
+    
+    const montantDonneInput = document.getElementById('montantDonne');
+    if (montantDonneInput) {
+        montantDonneInput.addEventListener('input', calculerRendu);
+    }
+    
+    const tauxVenteInput = document.getElementById('tauxVente');
+    if (tauxVenteInput) {
+        tauxVenteInput.addEventListener('change', function() {
+            calculerTotal();
+            calculerRendu();
+        });
+        tauxVenteInput.addEventListener('input', function() {
+            calculerTotal();
+            calculerRendu();
+        });
+    }
+    
+    const toggleAssurance = document.getElementById('toggleAssurance2');
+    if (toggleAssurance) {
+        toggleAssurance.addEventListener('change', function() {
+            assurance2Active = this.checked;
+            calculerTotal();
+            calculerRendu();
+        });
+    }
+    
+    setTimeout(() => {
+        calculerRendu();
+    }, 500);
+});
+
+// ============================================
+// ⭐ CHARGEMENT AUTOMATIQUE DES PRESCRIPTIONS (PHARMA) - VERSION CORRIGÉE
+// ============================================
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('=== CHARGEMENT AUTOMATIQUE PHARMA ===');
+    
+    const articlesAuto = {{ articles_auto|tojson|safe }};
+    console.log('📦 Articles reçus du backend:', articlesAuto);
+    console.log('📦 Nombre d\'articles:', articlesAuto ? articlesAuto.length : 0);
+    
+    if (articlesAuto && articlesAuto.length > 0) {
+        console.log(`📦 ${articlesAuto.length} prescription(s) pharmaceutiques à charger automatiquement`);
+        
+        setTimeout(function() {
+            const select = document.getElementById('produitSelect');
+            console.log('🔍 Select trouvé:', select);
+            
+            if (!select) {
+                console.error('❌ Select produitSelect non trouvé !');
+                return;
+            }
+            
+            console.log(`📋 Nombre d'options dans le select: ${select.options.length}`);
+            
+            let articlesCharges = 0;
+            
+            // ⭐ Fonction récursive pour ajouter les articles un par un
+            function ajouterArticleSuivant(index) {
+                if (index >= articlesAuto.length) {
+                    console.log(`📊 ${articlesCharges} produits chargés automatiquement sur ${articlesAuto.length}`);
+                    
+                    if (typeof afficherPanier === 'function') {
+                        console.log('🔄 Mise à jour du panier...');
+                        afficherPanier();
+                    }
+                    
+                    if (articlesCharges > 0) {
+                        showToastPharma(`✅ ${articlesCharges} prescription(s) pharmaceutiques chargée(s) automatiquement`, 'success');
+                    }
+                    return;
+                }
+                
+                const article = articlesAuto[index];
+                console.log(`🔍 Traitement de l'article ${index + 1}/${articlesAuto.length}: ${article.nom}`);
+                
+                let trouve = false;
+                for (let i = 0; i < select.options.length; i++) {
+                    const option = select.options[i];
+                    if (String(option.value) === String(article.id)) {
+                        console.log(`✅ Produit trouvé: ${option.text}`);
+                        
+                        select.selectedIndex = i;
+                        const quantiteInput = document.getElementById('quantite');
+                        if (quantiteInput) {
+                            quantiteInput.value = article.quantite || 1;
+                        }
+                        
+                        try {
+                            ajouterProduit();
+                            articlesCharges++;
+                            console.log(`✅ Produit ajouté au panier: ${article.nom}`);
+                        } catch (e) {
+                            console.error(`❌ Erreur lors de l'appel de ajouterProduit():`, e);
+                        }
+                        
+                        trouve = true;
+                        break;
+                    }
+                }
+                
+                if (!trouve) {
+                    console.warn(`⚠️ Produit ID ${article.id} - ${article.nom} non trouvé dans la liste`);
+                }
+                
+                // ⭐ Attendre avant de passer au suivant
+                setTimeout(function() {
+                    ajouterArticleSuivant(index + 1);
+                }, 300);
+            }
+            
+            ajouterArticleSuivant(0);
+            
+        }, 1000);
+    } else {
+        console.log('ℹ️ Aucun article à charger automatiquement');
+    }
+});
+
+function showToastPharma(message, type = 'success') {
+    if (typeof showToast === 'function') {
+        showToast(message, type);
+        return;
+    }
+    
+    const container = document.querySelector('.toast-container') || (() => {
+        const c = document.createElement('div');
+        c.className = 'toast-container position-fixed top-0 end-0 p-3';
+        c.style.zIndex = '9999';
+        document.body.appendChild(c);
+        return c;
+    })();
+    
+    const toast = document.createElement('div');
+    const bgColor = type === 'success' ? 'bg-success' : type === 'warning' ? 'bg-warning' : 'bg-info';
+    toast.className = `toast show ${bgColor} text-white`;
+    toast.innerHTML = `
+        <div class="toast-body d-flex justify-content-between align-items-center">
+            <span><i class="fas fa-${type === 'success' ? 'check-circle' : 'info-circle'} me-2"></i>${message}</span>
+            <button type="button" class="btn-close btn-close-white" onclick="this.closest('.toast').remove()"></button>
+        </div>
+    `;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 5000);
+}
+</script>
+{% endblock %}

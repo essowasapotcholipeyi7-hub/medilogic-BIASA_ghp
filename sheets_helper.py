@@ -1,0 +1,724 @@
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from config import Config
+import json
+import os
+import time
+import sys
+import base64
+from functools import lru_cache
+from threading import Timer
+from datetime import datetime
+
+def get_credentials_info():
+    """Récupère les credentials Google Sheets depuis une variable env (Render) ou un fichier (local)."""
+    # 1. Variable d'environnement (PRIORITAIRE pour Render)
+    creds_env = os.environ.get('GOOGLE_CREDENTIALS')
+    if creds_env:
+        try:
+            # Décoder le Base64 que vous allez mettre sur Render
+            creds_json = base64.b64decode(creds_env).decode('utf-8')
+            return json.loads(creds_json)
+        except Exception as e:
+            print(f"⚠️ Erreur lors du décodage de GOOGLE_CREDENTIALS: {e}", file=sys.stderr)
+
+    # 2. Fallback sur le fichier local (pour votre environnement de développement)
+    local_creds_path = 'credentials.json'
+    if os.path.exists(local_creds_path):
+        with open(local_creds_path, 'r') as f:
+            print("ℹ️ Utilisation des credentials depuis le fichier local.", file=sys.stderr)
+            return json.load(f)
+
+    raise Exception("Aucun credential Google Sheets trouvé (variable GOOGLE_CREDENTIALS ou fichier credentials.json).")
+
+class SheetsHelper:
+    def __init__(self):
+        self.scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+        self.structure_prefix = None
+        self.structure_id = None
+        self._prix_cache = {}  # ⭐ Cache pour les prix
+        self._cache_duration = 300  # 5 minute
+        
+        # CACHE pour réduire les appels API
+        self._cache = {}
+        self._cache_duration = 10  # secondes
+        self._batch_operations = []
+        self._batch_timer = None
+        self.enabled = True
+        self.spreadsheet_id = Config.SPREADSHEET_ID
+
+
+        
+        try:
+            if Config.SPREADSHEET_ID:
+                # Récupère les credentials (variable env ou fichier)
+                credentials_info = get_credentials_info()
+                creds = ServiceAccountCredentials.from_json_keyfile_dict(credentials_info, self.scope)
+                self.client = gspread.authorize(creds)
+                self.spreadsheet = self.client.open_by_key(Config.SPREADSHEET_ID)
+                print("✅ Connexion à Google Sheets réussie !")
+                self.init_structures_sheet()
+            else:
+                raise Exception("SPREADSHEET_ID manquant")
+        except Exception as e:
+            print(f"⚠️ Erreur: {e}")
+            raise e
+    
+
+    def init_structures_sheet(self):
+        """Crée la feuille structures si elle n'existe pas"""
+        try:
+            worksheet = self.spreadsheet.worksheet("structures")
+        except:
+            worksheet = self.spreadsheet.add_worksheet(title="structures", rows=1000, cols=20)
+            headers = ["ID", "nom", "email", "telephone", "adresse", "mot_de_passe", "statut", "token", "date_inscription", "proprietaire", "date_occupation"]
+            worksheet.append_row(headers)
+            print("✅ Feuille 'structures' créée")
+
+    def get_medicamentos(self, structure_id):
+        """
+        Récupère les médicaments depuis Google Sheets
+        Feuille : struct_{structure_id}_produits
+        """
+        try:
+            if not self.enabled:
+                print("⚠️ Google Sheets désactivé")
+                return []
+            
+            if not structure_id:
+                print("⚠️ structure_id manquant")
+                return []
+            
+            # Récupérer la feuille
+            spreadsheet = self.client.open_by_key(self.spreadsheet_id)
+            sheet_name = f"struct_{structure_id}_produits"
+            
+            print(f"📄 Recherche de la feuille: {sheet_name}")
+            
+            try:
+                worksheet = spreadsheet.worksheet(sheet_name)
+            except Exception as e:
+                print(f"❌ Feuille '{sheet_name}' non trouvée: {e}")
+                return []
+            
+            # Récupérer toutes les lignes
+            records = worksheet.get_all_records()
+            
+            result = []
+            for row in records:
+                # Vérifier que le médicament a un nom
+                if not row.get('nom'):
+                    continue
+                
+                # Gérer les valeurs NULL
+                quantite_stock = row.get('quantite_stock')
+                if quantite_stock == '' or quantite_stock is None:
+                    quantite_stock = 0
+                
+                # Récupérer la valeur de prise_en_charge_amu (booléen)
+                prise_amu = row.get('prise_en_charge_amu')
+                if isinstance(prise_amu, str):
+                    prise_amu = prise_amu.upper() in ['TRUE', 'OUI', '1']
+                else:
+                    prise_amu = bool(prise_amu)
+                
+                # Récupérer la valeur de prise_en_charge_cac (booléen)
+                prise_cac = row.get('prise_en_charge_cac')
+                if isinstance(prise_cac, str):
+                    prise_cac = prise_cac.upper() in ['TRUE', 'OUI', '1']
+                else:
+                    prise_cac = bool(prise_cac)
+                
+                result.append({
+                    'ID': row.get('ID'),
+                    'nom': row.get('nom', ''),
+                    'prix_vente': float(row.get('prix_vente', 0)) if row.get('prix_vente') else 0,
+                    'pbr': float(row.get('pbr', 0)) if row.get('pbr') else 0,
+                    'prix_achat': float(row.get('prix_achat', 0)) if row.get('prix_achat') else 0,
+                    'quantite_stock': int(quantite_stock),
+                    'seuil_alerte': int(row.get('seuil_alerte', 10)) if row.get('seuil_alerte') else 10,
+                    'unite': row.get('unite', ''),
+                    'date_peremption': row.get('date_peremption', ''),
+                    'lot': row.get('lot', ''),
+                    'structure_id': structure_id,
+                    'prise_en_charge_amu': prise_amu,
+                    'commentaire_amu': row.get('commentaire_amu', ''),
+                    'prise_en_charge_cac': prise_cac,
+                    'commentaire_cac': row.get('commentaire_cac', '')
+                })
+            
+            print(f"✅ {len(result)} médicaments récupérés depuis {sheet_name}")
+            return result
+            
+        except Exception as e:
+            print(f"❌ Erreur get_medicamentos: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+
+    def get_prix_produit(self, structure_id, nom_produit):
+        """
+        Récupère le prix d'un produit avec cache
+        """
+        if not nom_produit:
+            return {'prix': 0, 'pbr': 0, 'unite': 'unité', 'trouve': False}
+        
+        # ⭐ Vérifier le cache
+        cache_key = f"produit_{structure_id}_{nom_produit.lower().strip()}"
+        if cache_key in self._prix_cache:
+            cached_data, timestamp = self._prix_cache[cache_key]
+            if time.time() - timestamp < self._cache_duration:
+                print(f"💾 Cache hit: {nom_produit}")
+                return cached_data
+        
+        # ⭐ Recherche dans Sheets
+        produits = self.get_medicamentos(structure_id)
+        result = {'prix': 0, 'pbr': 0, 'unite': 'unité', 'trouve': False}
+        
+        for p in produits:
+            nom = p.get('nom', '')
+            if nom and nom.lower().strip() == nom_produit.lower().strip():
+                result = {
+                    'prix': p.get('prix_vente', 0),
+                    'pbr': p.get('pbr', 0),
+                    'unite': p.get('unite', 'unité'),
+                    'trouve': True
+                }
+                break
+        
+        # ⭐ Mettre en cache
+        self._prix_cache[cache_key] = (result, time.time())
+        print(f"💾 Cache store: {nom_produit}")
+        return result
+    
+    def get_prix_acte(self, structure_id, nom_acte):
+        """
+        Récupère le prix d'un acte avec cache
+        """
+        if not nom_acte:
+            return {'prix': 0, 'pbr': 0, 'trouve': False}
+        
+        # ⭐ Vérifier le cache
+        cache_key = f"acte_{structure_id}_{nom_acte.lower().strip()}"
+        if cache_key in self._prix_cache:
+            cached_data, timestamp = self._prix_cache[cache_key]
+            if time.time() - timestamp < self._cache_duration:
+                print(f"💾 Cache hit: {nom_acte}")
+                return cached_data
+        
+        # ⭐ Recherche dans Sheets
+        actes = self.get_all_records('actes', use_prefix=True)
+        result = {'prix': 0, 'pbr': 0, 'trouve': False}
+        
+        for a in actes:
+            nom = a.get('nom', '')
+            if nom and nom.lower().strip() == nom_acte.lower().strip():
+                result = {
+                    'prix': float(a.get('prix', 0)),
+                    'pbr': float(a.get('pbr', 0)),
+                    'trouve': True
+                }
+                break
+        
+        # ⭐ Mettre en cache
+        self._prix_cache[cache_key] = (result, time.time())
+        print(f"💾 Cache store: {nom_acte}")
+        return result
+    
+    def clear_prix_cache(self):
+        """Vide le cache des prix"""
+        self._prix_cache = {}
+        print("🧹 Cache des prix vidé")
+
+    
+    def set_structure(self, structure_id, structure_nom=None):
+        """Définit la structure active - FORMAT: struct_ID"""
+        self.structure_id = structure_id
+        self.structure_prefix = f"struct_{structure_id}"
+        print(f"📍 Structure active: {self.structure_prefix}")
+    
+    def get_sheet_name(self, base_name):
+        """Retourne le nom de la feuille avec préfixe struct_ID"""
+        if self.structure_prefix:
+            return f"{self.structure_prefix}_{base_name}"
+        return base_name
+    
+    # ============================================
+    # MÉTHODES AVEC CACHE
+    # ============================================
+    def get_all_records(self, base_name, use_prefix=True, force_refresh=False):
+        """Récupère tous les enregistrements avec cache"""
+        sheet_name = self.get_sheet_name(base_name) if use_prefix else base_name
+        
+        # Vérifier le cache
+        if not force_refresh and sheet_name in self._cache:
+            cached_data, timestamp = self._cache[sheet_name]
+            if time.time() - timestamp < self._cache_duration:
+                return cached_data
+        
+        # Sinon, aller chercher dans Google Sheets
+        try:
+            worksheet = self.spreadsheet.worksheet(sheet_name)
+            data = worksheet.get_all_records()
+            # Mettre en cache
+            self._cache[sheet_name] = (data, time.time())
+            return data
+        except Exception as e:
+            print(f"⚠️ Feuille {sheet_name} non trouvée: {e}")
+            return []
+    
+    def get_all_records_with_headers(self, base_name, use_prefix=True, force_refresh=False):
+        """Récupère tous les enregistrements avec les en-têtes"""
+        sheet_name = self.get_sheet_name(base_name) if use_prefix else base_name
+        
+        # Vérifier le cache
+        cache_key = f"{sheet_name}_headers"
+        if not force_refresh and cache_key in self._cache:
+            cached_data, timestamp = self._cache[cache_key]
+            if time.time() - timestamp < self._cache_duration:
+                return cached_data
+        
+        try:
+            worksheet = self.spreadsheet.worksheet(sheet_name)
+            headers = worksheet.row_values(1)
+            records = worksheet.get_all_records()
+            
+            result = {
+                'headers': headers,
+                'records': records,
+                'rows': worksheet.get_all_values()
+            }
+            
+            # Mettre en cache
+            self._cache[cache_key] = (result, time.time())
+            return result
+        except Exception as e:
+            print(f"⚠️ Feuille {sheet_name} non trouvée: {e}")
+            return {'headers': [], 'records': [], 'rows': []}
+    
+    def get_record_by_id(self, base_name, id_value, id_column='ID', use_prefix=True):
+        """Récupère un enregistrement par son ID"""
+        records = self.get_all_records(base_name, use_prefix)
+        for record in records:
+            if str(record.get(id_column, '')) == str(id_value):
+                return record
+        return None
+    
+    def find_records(self, base_name, filters, use_prefix=True):
+        """Recherche des enregistrements avec des filtres"""
+        records = self.get_all_records(base_name, use_prefix)
+        results = []
+        for record in records:
+            match = True
+            for key, value in filters.items():
+                if str(record.get(key, '')) != str(value):
+                    match = False
+                    break
+            if match:
+                results.append(record)
+        return results
+    
+    # ============================================
+    # MÉTHODES POUR LES LUNETTES AVEC PRISE EN CHARGE
+    # ============================================
+    def get_all_lunettes(self, force_refresh=False):
+        """Récupère toutes les lunettes avec leurs infos de prise en charge"""
+        records = self.get_all_records('lunettes', use_prefix=True, force_refresh=force_refresh)
+        
+        result = []
+        for record in records:
+            # Prix avec remise
+            remise = float(record.get('remise', 0)) if record.get('remise') else 0
+            prix_vente = float(record.get('prix_vente', 0)) if record.get('prix_vente') else 0
+            prix_avec_remise = prix_vente - (prix_vente * remise / 100)
+            
+            # 🔥 PRISE EN CHARGE AMU
+            prise_amu_raw = record.get('prise_en_charge_amu')
+            if prise_amu_raw is None or prise_amu_raw == '':
+                prise_amu = True
+            elif isinstance(prise_amu_raw, str):
+                prise_amu = prise_amu_raw.lower() in ['true', 'oui', 'yes', '1', 'vrai', 't']
+            else:
+                prise_amu = bool(prise_amu_raw)
+            
+            # 🔥 PRISE EN CHARGE CAC
+            prise_cac_raw = record.get('prise_en_charge_cac')
+            if prise_cac_raw is None or prise_cac_raw == '':
+                prise_cac = True
+            elif isinstance(prise_cac_raw, str):
+                prise_cac = prise_cac_raw.lower() in ['true', 'oui', 'yes', '1', 'vrai', 't']
+            else:
+                prise_cac = bool(prise_cac_raw)
+            
+            result.append({
+                'ID': record.get('ID'),
+                'code': record.get('code', ''),
+                'nom': record.get('nom', ''),
+                'categorie': record.get('categorie', ''),
+                'marque': record.get('marque', ''),
+                'modele': record.get('modele', ''),
+                'type_verres': record.get('type_verres', ''),
+                'couleur': record.get('couleur', ''),
+                'prix_achat': float(record.get('prix_achat', 0)),
+                'prix_vente': prix_vente,
+                'prix_avec_remise': prix_avec_remise,
+                'remise': remise,
+                'quantite_stock': int(record.get('quantite_stock', 0)),
+                'seuil_alerte': int(record.get('seuil_alerte', 5)),
+                'fournisseur': record.get('fournisseur', ''),
+                'description': record.get('description', ''),
+                'structure_id': record.get('structure_id'),
+                'created_at': record.get('created_at'),
+                # 🔥 NOUVELLES COLONNES
+                'prise_en_charge_amu': prise_amu,
+                'commentaire_amu': record.get('commentaire_amu', ''),
+                'prise_en_charge_cac': prise_cac,
+                'commentaire_cac': record.get('commentaire_cac', '')
+            })
+        
+        return result
+    
+    def get_lunettes_by_categorie(self, categorie, force_refresh=False):
+        """Récupère les lunettes par catégorie"""
+        all_lunettes = self.get_all_lunettes(force_refresh)
+        return [l for l in all_lunettes if l.get('categorie', '').lower() == categorie.lower()]
+    
+    def get_lunettes_by_marque(self, marque, force_refresh=False):
+        """Récupère les lunettes par marque"""
+        all_lunettes = self.get_all_lunettes(force_refresh)
+        return [l for l in all_lunettes if l.get('marque', '').lower() == marque.lower()]
+    
+    def appliquer_remise_masse(self, type_remise, valeur, categorie=None):
+        """
+        Applique une remise en masse sur les lunettes
+        
+        Args:
+            type_remise: 'pourcentage' ou 'fixe'
+            valeur: Valeur de la remise
+            categorie: Catégorie cible (None pour toutes)
+        
+        Returns:
+            int: Nombre de lunettes modifiées
+        """
+        sheet_name = self.get_sheet_name('lunettes')
+        
+        try:
+            worksheet = self.spreadsheet.worksheet(sheet_name)
+            headers = worksheet.row_values(1)
+            
+            # Trouver les index des colonnes
+            id_col = headers.index('ID') + 1
+            categorie_col = headers.index('categorie') + 1 if 'categorie' in headers else None
+            remise_col = headers.index('remise') + 1 if 'remise' in headers else None
+            
+            if remise_col is None:
+                # Ajouter la colonne remise si elle n'existe pas
+                headers.append('remise')
+                worksheet.update_row(1, headers)
+                remise_col = len(headers)
+                print("✅ Colonne 'remise' ajoutée")
+            
+            # Récupérer toutes les lignes
+            all_rows = worksheet.get_all_values()
+            
+            # Parcourir les lignes à partir de la ligne 2 (après l'en-tête)
+            modified_count = 0
+            
+            for i in range(1, len(all_rows)):
+                row = all_rows[i]
+                if len(row) < remise_col:
+                    # Étendre la ligne si nécessaire
+                    row.extend([''] * (remise_col - len(row)))
+                
+                # Vérifier si la ligne est vide
+                if not row or not row[0]:
+                    continue
+                
+                # Vérifier la catégorie si spécifiée
+                if categorie and categorie_col:
+                    row_categorie = row[categorie_col - 1] if len(row) > categorie_col - 1 else ''
+                    if row_categorie.lower() != categorie.lower():
+                        continue
+                
+                # Appliquer la remise
+                if type_remise == 'pourcentage':
+                    # Conversion en pourcentage (déjà en %)
+                    nouvelle_remise = valeur
+                else:
+                    # Remise fixe: calculer en pourcentage par rapport au prix
+                    prix_col = headers.index('prix_vente') + 1 if 'prix_vente' in headers else None
+                    if prix_col and len(row) > prix_col - 1:
+                        prix = float(row[prix_col - 1]) if row[prix_col - 1] else 0
+                        if prix > 0:
+                            nouvelle_remise = (valeur / prix) * 100
+                        else:
+                            nouvelle_remise = 0
+                    else:
+                        nouvelle_remise = 0
+                
+                # Mettre à jour la cellule
+                worksheet.update_cell(i + 1, remise_col, nouvelle_remise)
+                modified_count += 1
+            
+            # Vider le cache
+            self.clear_cache(sheet_name)
+            return modified_count
+            
+        except Exception as e:
+            print(f"❌ Erreur application remise en masse: {e}")
+            import traceback
+            traceback.print_exc()
+            return 0
+    
+    # ============================================
+    # MÉTHODES DE MANIPULATION DES DONNÉES
+    # ============================================
+    def clear_cache(self, sheet_name=None):
+        """Vide le cache (toutes ou une feuille spécifique)"""
+        if sheet_name:
+            # Supprimer les clés qui commencent par sheet_name
+            keys_to_delete = [k for k in self._cache.keys() if k.startswith(sheet_name)]
+            for key in keys_to_delete:
+                del self._cache[key]
+        else:
+            self._cache.clear()
+    
+    def add_record(self, base_name, data, use_prefix=True):
+        """Ajoute un enregistrement et vide le cache"""
+        try:
+            sheet_name = self.get_sheet_name(base_name) if use_prefix else base_name
+            
+            try:
+                worksheet = self.spreadsheet.worksheet(sheet_name)
+                
+                # 🔥 Récupérer les en-têtes
+                headers = worksheet.row_values(1)
+                
+                # 🔥 Ajuster les données au nombre de colonnes
+                while len(data) < len(headers):
+                    data.append('')
+                if len(data) > len(headers):
+                    data = data[:len(headers)]
+                
+                # 🔥 Trouver la première ligne vide dans la colonne A
+                col_a_values = worksheet.col_values(1)
+                next_row = len(col_a_values) + 1
+                
+                # Parcourir pour trouver la première ligne vide après l'en-tête
+                for i in range(1, len(col_a_values)):
+                    if col_a_values[i] == '':
+                        next_row = i + 1
+                        break
+                
+                # 🔥 Insérer à la ligne trouvée (et non append)
+                worksheet.insert_row(data, next_row)
+                
+            except Exception as e:
+                # La feuille n'existe pas, la créer
+                print(f"⚠️ Feuille {sheet_name} non trouvée, création...")
+                headers = [f"col_{i}" for i in range(len(data))]
+                worksheet = self.spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=20)
+                worksheet.append_row(headers)
+                worksheet.append_row(data)
+            
+            # 🔥 Vider le cache pour cette feuille
+            self.clear_cache(sheet_name)
+            return True
+        except Exception as e:
+            print(f"❌ Erreur ajout à {sheet_name}: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def update_record(self, base_name, row_num, data, use_prefix=True):
+        """Met à jour un enregistrement et vide le cache"""
+        try:
+            sheet_name = self.get_sheet_name(base_name) if use_prefix else base_name
+            worksheet = self.spreadsheet.worksheet(sheet_name)
+            for col, value in enumerate(data, start=1):
+                worksheet.update_cell(row_num, col, value)
+            
+            # 🔥 Vider le cache pour cette feuille
+            self.clear_cache(sheet_name)
+            return True
+        except Exception as e:
+            print(f"❌ Erreur mise à jour: {e}")
+            return False
+    
+    def update_record_by_id(self, base_name, id_value, updates, id_column='ID', use_prefix=True):
+        """Met à jour un enregistrement par son ID"""
+        sheet_name = self.get_sheet_name(base_name) if use_prefix else base_name
+        
+        try:
+            worksheet = self.spreadsheet.worksheet(sheet_name)
+            headers = worksheet.row_values(1)
+            
+            # Trouver l'index de la colonne ID
+            if id_column not in headers:
+                print(f"❌ Colonne {id_column} non trouvée")
+                return False
+            
+            id_col_index = headers.index(id_column) + 1
+            
+            # Trouver la ligne avec l'ID
+            col_values = worksheet.col_values(id_col_index)
+            row_num = None
+            
+            for i in range(1, len(col_values)):
+                if str(col_values[i]) == str(id_value):
+                    row_num = i + 1
+                    break
+            
+            if row_num is None:
+                print(f"❌ Enregistrement avec {id_column}={id_value} non trouvé")
+                return False
+            
+            # Préparer les données à mettre à jour
+            current_row = worksheet.row_values(row_num)
+            
+            for key, value in updates.items():
+                if key in headers:
+                    col_index = headers.index(key) + 1
+                    # Mettre à jour la cellule
+                    worksheet.update_cell(row_num, col_index, value)
+            
+            # Vider le cache
+            self.clear_cache(sheet_name)
+            return True
+            
+        except Exception as e:
+            print(f"❌ Erreur mise à jour par ID: {e}")
+            return False
+    
+    def delete_record(self, base_name, row_num, use_prefix=True):
+        """Supprime un enregistrement et vide le cache"""
+        try:
+            sheet_name = self.get_sheet_name(base_name) if use_prefix else base_name
+            worksheet = self.spreadsheet.worksheet(sheet_name)
+            worksheet.delete_row(row_num)
+            
+            # 🔥 Vider le cache pour cette feuille
+            self.clear_cache(sheet_name)
+            return True
+        except Exception as e:
+            print(f"❌ Erreur suppression: {e}")
+            return False
+    
+    def delete_record_by_id(self, base_name, id_value, id_column='ID', use_prefix=True):
+        """Supprime un enregistrement par son ID"""
+        sheet_name = self.get_sheet_name(base_name) if use_prefix else base_name
+        
+        try:
+            worksheet = self.spreadsheet.worksheet(sheet_name)
+            headers = worksheet.row_values(1)
+            
+            # Trouver l'index de la colonne ID
+            if id_column not in headers:
+                print(f"❌ Colonne {id_column} non trouvée")
+                return False
+            
+            id_col_index = headers.index(id_column) + 1
+            
+            # Trouver la ligne avec l'ID
+            col_values = worksheet.col_values(id_col_index)
+            row_num = None
+            
+            for i in range(1, len(col_values)):
+                if str(col_values[i]) == str(id_value):
+                    row_num = i + 1
+                    break
+            
+            if row_num is None:
+                print(f"❌ Enregistrement avec {id_column}={id_value} non trouvé")
+                return False
+            
+            # Supprimer la ligne
+            worksheet.delete_row(row_num)
+            
+            # Vider le cache
+            self.clear_cache(sheet_name)
+            return True
+            
+        except Exception as e:
+            print(f"❌ Erreur suppression par ID: {e}")
+            return False
+    
+    # ============================================
+    # MÉTHODES DE BATCH
+    # ============================================
+    def add_batch(self, base_name, data, use_prefix=True):
+        """Ajoute une opération au lot"""
+        sheet_name = self.get_sheet_name(base_name) if use_prefix else base_name
+        self._batch_operations.append((sheet_name, data))
+    
+    def execute_batch(self):
+        """Exécute toutes les opérations en lot"""
+        if not self._batch_operations:
+            return
+        
+        try:
+            # Grouper par feuille
+            grouped = {}
+            for sheet_name, data in self._batch_operations:
+                if sheet_name not in grouped:
+                    grouped[sheet_name] = []
+                grouped[sheet_name].append(data)
+            
+            # Exécuter chaque groupe
+            for sheet_name, rows in grouped.items():
+                try:
+                    worksheet = self.spreadsheet.worksheet(sheet_name)
+                    for row in rows:
+                        worksheet.append_row(row)
+                    self.clear_cache(sheet_name)
+                except:
+                    # Si la feuille n'existe pas, créer
+                    headers = [f"col_{i}" for i in range(len(rows[0]))]
+                    worksheet = self.spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=20)
+                    worksheet.append_row(headers)
+                    for row in rows:
+                        worksheet.append_row(row)
+            
+            self._batch_operations = []
+        except Exception as e:
+            print(f"❌ Erreur batch: {e}")
+    
+    # ============================================
+    # INITIALISATION DES FEUILLES
+    # ============================================
+    def init_structure_sheets(self, structure_id, structure_nom=None):
+        """Initialise toutes les feuilles pour une nouvelle structure"""
+        self.set_structure(structure_id)
+        
+        sheets_config = {
+            'patients': ["ID", "nom", "prenom", "telephone", "adresse", "date_naissance", "type_assurance", "taux_prise_charge", "numero_assure", "assurance2_nom", "taux_assurance2", "numero_assure2", "personne_a_prevenir_nom", "personne_a_prevenir_telephone", "personne_a_prevenir_relation", "structure_id", "created_at"],
+            'actes': ["ID", "nom", "prix", "pbr", "description", "structure_id", "created_at"],
+            'produits': ["ID", "nom", "prix_vente", "prix_achat", "pbr", "quantite_stock", "seuil_alerte", "unite", "date_peremption", "lot", "structure_id", "created_at"],
+            'ventes_actes': ["ID", "patient_id", "patient_nom", "acte_id", "acte_nom", "prix", "quantite", "total", "taux_assurance", "prise_en_charge", "net_a_payer", "mode_paiement", "date", "structure_id"],
+            'ventes_pharma': ["ID", "patient_id", "patient_nom", "produit_id", "produit_nom", "prix", "pbr", "quantite", "total", "taux_assurance", "prise_en_charge", "prise_en_charge2", "net_a_payer", "mode_paiement", "avec_ordonnance", "date", "structure_id"],
+            'ventes_lunettes': ["ID", "patient_id", "patient_nom", "lunette_id", "lunette_nom", "marque", "modele", "prix", "remise", "prix_avec_remise", "quantite", "total", "taux_assurance", "prise_en_charge", "prise_en_charge2", "net_a_payer", "mode_paiement", "date", "structure_id"],
+            'users': ["ID", "nom", "email", "mot_de_passe", "role", "structure_id", "created_at"],
+            'lunettes': ["ID", "code", "nom", "categorie", "marque", "modele", "type_verres", "couleur", "prix_achat", "prix_vente", "remise", "quantite_stock", "seuil_alerte", "fournisseur", "description", "structure_id", "created_at", "prise_en_charge_amu", "commentaire_amu", "prise_en_charge_cac", "commentaire_cac"],
+            'factures': ["ID", "numero_facture", "patient_id", "patient_nom", "net_a_payer", "montant_paye", "reste_a_payer", "statut", "date_creation", "date_echeance", "mode_paiement", "assurance_nom", "taux_assurance", "assurance2_nom", "taux_assurance2", "remise", "notes", "structure_id"],
+            'paiements': ["ID", "facture_id", "montant", "mode_paiement", "date_paiement", "notes", "created_by", "structure_id"]
+        }
+        
+        for sheet_name, headers in sheets_config.items():
+            full_name = self.get_sheet_name(sheet_name)
+            self.get_or_create_worksheet(full_name, headers)
+        
+        print(f"✅ Toutes les feuilles créées pour structure {structure_id}")
+    
+    def get_or_create_worksheet(self, sheet_name, headers):
+        """Récupère ou crée une feuille"""
+        try:
+            worksheet = self.spreadsheet.worksheet(sheet_name)
+            return worksheet
+        except:
+            worksheet = self.spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=25)
+            worksheet.append_row(headers)
+            print(f"✅ Feuille créée: {sheet_name}")
+            return worksheet
+
+# Instance globale
+sheets_helper = SheetsHelper()

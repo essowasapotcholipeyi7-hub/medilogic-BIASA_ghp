@@ -1,0 +1,480 @@
+{% extends "base.html" %}
+
+{% block title %}Facture #{{ facture.numero_facture }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-file-invoice"></i> Facture #{{ facture.numero_facture }}</h5>
+                <div>
+                    <button class="btn btn-light btn-sm" onclick="ouvrirChoixFormat({{ facture.id }})">
+                        <i class="fas fa-print"></i> Imprimer
+                    </button>
+                    <a href="{{ url_for('factures') }}" class="btn btn-light btn-sm">
+                        <i class="fas fa-arrow-left"></i> Retour
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- Infos générales -->
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <h6>📋 Informations patient</h6>
+                        <p>
+                            <strong>Nom :</strong> {{ facture.patient_nom }}<br>
+                            <strong>Téléphone :</strong> {{ facture.patient_telephone or 'Non renseigné' }}<br>
+                            <strong>Date d'émission :</strong> {{ facture.date_emission.strftime('%d/%m/%Y %H:%M') if facture.date_emission else '-' }}<br>
+                            <strong>Date d'échéance :</strong> {{ facture.date_echeance.strftime('%d/%m/%Y') if facture.date_echeance else '-' }}
+                        </p>
+                        {% if facture.assurance_nom and facture.assurance_nom != 'non_assure' %}
+                        <p>
+                            <strong>Assurance :</strong> {{ facture.assurance_nom }} ({{ facture.taux_assurance }}%)<br>
+                            {% if facture.assurance2_nom and facture.assurance2_nom != 'Aucune' %}
+                            <strong>CAC :</strong> {{ facture.assurance2_nom }} ({{ facture.taux_assurance2 }}%)
+                            {% endif %}
+                        </p>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <h6>📊 Statut</h6>
+                        <span class="badge bg-{{ facture.statut_color }}" style="font-size: 14px; padding: 8px 20px;">
+                            {{ facture.statut_label }}
+                        </span>
+                        <br><br>
+                        {% if facture.reste_a_payer > 0 %}
+                        <h4 class="text-danger">{{ facture.reste_a_payer|round(0)|int }} FCFA</h4>
+                        <small class="text-muted">Reste à payer</small>
+                        {% else %}
+                        <h4 class="text-success">✅ Payée</h4>
+                        <small class="text-muted">Facture entièrement réglée</small>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Articles -->
+                <h6>📦 Articles</h6>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 50%;">Article</th>
+                                <th style="width: 15%; text-align: center;">Qté</th>
+                                <th style="width: 17%; text-align: right;">Prix unitaire</th>
+                                <th style="width: 18%; text-align: right;">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% set articles = facture.articles|from_json if facture.articles is string else facture.articles %}
+                            {% for article in articles %}
+                            <tr>
+                                <td>
+                                    <strong>{{ article.nom }}</strong>
+                                    {% if article.type %}
+                                    <span class="badge bg-secondary ms-1">{{ article.type }}</span>
+                                    {% endif %}
+                                </td>
+                                <td style="text-align: center;">{{ article.quantite|default(1) }}</td>
+                                <td style="text-align: right;">
+                                    {% set prix = article.prix_unitaire|default(article.prix|default(article.prix_reel|default(article.prix_vente|default(0)))) %}
+                                    {{ prix|round(0)|int }} F
+                                </td>
+                                <td style="text-align: right;">
+                                    {% set prix = article.prix_unitaire|default(article.prix|default(article.prix_reel|default(article.prix_vente|default(0)))) %}
+                                    {% set total = prix * (article.quantite|default(1)) %}
+                                    <strong>{{ total|round(0)|int }} F</strong>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr>
+                                <th colspan="3" class="text-end">Sous-total</th>
+                                <th class="text-end">{{ facture.sous_total|default(0)|round(0)|int }} FCFA</th>
+                            </tr>
+                            {% if facture.prise_en_charge > 0 %}
+                            <tr>
+                                <th colspan="3" class="text-end text-success">
+                                    Prise en charge ({{ facture.taux_assurance }}%)
+                                </th>
+                                <th class="text-end text-success">- {{ facture.prise_en_charge|default(0)|round(0)|int }} FCFA</th>
+                            </tr>
+                            {% endif %}
+                            {% if facture.prise_en_charge2 > 0 %}
+                            <tr>
+                                <th colspan="3" class="text-end text-info">
+                                    Prise en charge CAC ({{ facture.taux_assurance2 }}%)
+                                </th>
+                                <th class="text-end text-info">- {{ facture.prise_en_charge2|default(0)|round(0)|int }} FCFA</th>
+                            </tr>
+                            {% endif %}
+                            <tr style="font-weight: bold; font-size: 1.1em; border-top: 2px solid #000;">
+                                <th colspan="3" class="text-end">NET À PAYER</th>
+                                <th class="text-end">{{ facture.net_a_payer|default(0)|round(0)|int }} FCFA</th>
+                            </tr>
+                            <tr style="color: #28a745; font-weight: bold;">
+                                <th colspan="3" class="text-end">Déjà payé</th>
+                                <th class="text-end">{{ facture.montant_paye|default(0)|round(0)|int }} FCFA</th>
+                            </tr>
+                            {% if facture.reste_a_payer > 0 %}
+                            <tr style="color: #dc3545; font-weight: bold; font-size: 1.2em; border-top: 2px solid #dc3545;">
+                                <th colspan="3" class="text-end">RESTE À PAYER</th>
+                                <th class="text-end">{{ facture.reste_a_payer|default(0)|round(0)|int }} FCFA</th>
+                            </tr>
+                            {% else %}
+                            <tr style="color: #28a745; font-weight: bold; font-size: 1.2em; border-top: 2px solid #28a745;">
+                                <th colspan="3" class="text-end">✅ FACTURE PAYÉE</th>
+                                <th class="text-end">✓</th>
+                            </tr>
+                            {% endif %}
+                        </tfoot>
+                    </table>
+                </div>
+
+                <!-- Historique des paiements -->
+                {% if paiements and paiements|length > 0 %}
+                <h6 class="mt-4">📜 Historique des paiements</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Montant</th>
+                                <th>Mode</th>
+                                <th>Notes</th>
+                                <th>Par</th>
+                                <th>Reçu</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in paiements %}
+                            <tr>
+                                <td>{{ p.date_paiement.strftime('%d/%m/%Y %H:%M') if p.date_paiement else '-' }}</td>
+                                <td><strong style="color:#28a745;">{{ p.montant|round(0)|int }} FCFA</strong></td>
+                                <td>
+                                    {% set modes = {'especes': '💰 Espèces', 'carte': '💳 Carte', 'Moov_money': '📱 FLOOZ', 'Mixx_By_Yas': '📱 MIXX', 'orange_money': '📱 Orange Money', 'mtn_money': '📱 MTN Money', 'cheque': '📝 Chèque'} %}
+                                    {{ modes[p.mode_paiement]|default(p.mode_paiement|default('Espèces')) }}
+                                </td>
+                                <td>{{ p.notes or '-' }}</td>
+                                <td>{{ p.created_by or '-' }}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="imprimerRecuPaiement({{ p.id }})" title="Imprimer le reçu">
+                                        <i class="fas fa-print"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr>
+                                <th colspan="5" class="text-end">Total payé</th>
+                                <th><strong>{{ facture.montant_paye|default(0)|round(0)|int }} FCFA</strong></th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                {% endif %}
+
+                <!-- Notes -->
+                {% if facture.notes %}
+                <div class="alert alert-info mt-3">
+                    <strong><i class="fas fa-info-circle"></i> Notes :</strong> {{ facture.notes }}
+                </div>
+                {% endif %}
+
+                <!-- Actions -->
+                <div class="mt-4">
+                    <div class="btn-group">
+                        {% if facture.statut != 'payee' and facture.statut != 'annulee' and facture.reste_a_payer > 0 %}
+                        <button class="btn btn-success" onclick="ouvrirPaiement({{ facture.id }})">
+                            <i class="fas fa-money-bill-wave"></i> Enregistrer un paiement
+                        </button>
+                        <button class="btn btn-danger" onclick="annulerFacture({{ facture.id }})">
+                            <i class="fas fa-times"></i> Annuler la facture
+                        </button>
+                        {% endif %}
+                        <button class="btn btn-outline-secondary" onclick="ouvrirChoixFormat({{ facture.id }})">
+                            <i class="fas fa-print"></i> Imprimer
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Paiement -->
+<div class="modal fade" id="paiementModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-money-bill-wave"></i> Enregistrer un paiement</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label>Facture</label>
+                    <input type="text" class="form-control" id="factureNumero" value="{{ facture.numero_facture }}" readonly>
+                </div>
+                <div class="mb-3">
+                    <label>Patient</label>
+                    <input type="text" class="form-control" id="facturePatient" value="{{ facture.patient_nom }}" readonly>
+                </div>
+                <div class="mb-3">
+                    <label>Reste à payer</label>
+                    <input type="text" class="form-control" id="factureReste" value="{{ facture.reste_a_payer|round(0)|int }} FCFA" readonly style="font-weight:bold; color:#dc3545;">
+                </div>
+                <div class="mb-3">
+                    <label>Montant à payer *</label>
+                    <input type="number" class="form-control" id="montantPaiement" min="1" step="100" required>
+                    <small class="text-muted">Montant maximum: <span id="montantMaxDisplay">{{ facture.reste_a_payer|round(0)|int }}</span> FCFA</small>
+                </div>
+                <div class="mb-3">
+                    <label>Mode de paiement</label>
+                    <select class="form-control" id="modePaiement">
+                        <option value="especes">💰 Espèces</option>
+                        <option value="carte">💳 Carte bancaire</option>
+                        <option value="Moov_money">📱 FLOOZ</option>
+                        <option value="Mixx_By_Yas">📱 MIXX By YAS</option>
+                        <option value="orange_money">📱 Orange Money</option>
+                        <option value="mtn_money">📱 MTN Money</option>
+                        <option value="cheque">📝 Chèque</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label>Notes</label>
+                    <textarea class="form-control" id="notesPaiement" rows="2" placeholder="Commentaires sur le paiement..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-success" onclick="confirmerPaiement({{ facture.id }})">
+                    <i class="fas fa-check"></i> Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Choix Format Impression -->
+<div class="modal fade" id="printFormatModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-print"></i> Choisir le format</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-grid gap-3">
+                    <button class="btn btn-outline-secondary btn-lg p-3" onclick="imprimerFacture('80mm')">
+                        <i class="fas fa-receipt fa-2x d-block mb-2"></i>
+                        <strong>Format Ticket</strong><br>
+                        <small class="text-muted">80mm - Noir & Blanc</small>
+                    </button>
+                    <button class="btn btn-outline-primary btn-lg p-3" onclick="imprimerFacture('A4')">
+                        <i class="fas fa-file-pdf fa-2x d-block mb-2"></i>
+                        <strong>Format A4</strong><br>
+                        <small class="text-muted">Standard - Couleur</small>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de progression -->
+<div class="modal fade" id="progressModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body text-center p-4">
+                <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status">
+                    <span class="visually-hidden">Chargement...</span>
+                </div>
+                <h5 id="progressTitle">Traitement en cours...</h5>
+                <p id="progressMessage" class="text-muted mb-0">Veuillez patienter</p>
+                <div class="progress mt-3" style="height: 5px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.table th, .table td {
+    vertical-align: middle !important;
+}
+.table tfoot th {
+    font-weight: bold;
+}
+.btn-group .btn {
+    margin-right: 5px;
+}
+</style>
+
+<script>
+// ============================================
+// FONCTIONS DE PROGRESSION
+// ============================================
+function showProgress(title, message) {
+    document.getElementById('progressTitle').innerText = title || 'Traitement en cours...';
+    document.getElementById('progressMessage').innerHTML = message || 'Veuillez patienter';
+    const progressBar = document.querySelector('#progressModal .progress-bar');
+    if (progressBar) progressBar.style.width = '0%';
+    const modal = new bootstrap.Modal(document.getElementById('progressModal'));
+    modal.show();
+}
+
+function updateProgress(percent, message) {
+    const progressBar = document.querySelector('#progressModal .progress-bar');
+    if (progressBar) progressBar.style.width = percent + '%';
+    if (message) document.getElementById('progressMessage').innerHTML = message;
+}
+
+function hideProgress() {
+    const modal = bootstrap.Modal.getInstance(document.getElementById('progressModal'));
+    if (modal) modal.hide();
+}
+
+// ============================================
+// GESTION DU PAIEMENT
+// ============================================
+function ouvrirPaiement(factureId) {
+    const reste = {{ facture.reste_a_payer }};
+    document.getElementById('montantPaiement').value = reste;
+    document.getElementById('montantPaiement').max = reste;
+    document.getElementById('montantMaxDisplay').textContent = reste.toLocaleString();
+    new bootstrap.Modal(document.getElementById('paiementModal')).show();
+}
+
+function confirmerPaiement(factureId) {
+    const montant = parseFloat(document.getElementById('montantPaiement').value);
+    const modePaiement = document.getElementById('modePaiement').value;
+    const notes = document.getElementById('notesPaiement').value;
+    
+    if (!montant || montant <= 0) {
+        alert('Veuillez saisir un montant valide');
+        return;
+    }
+    
+    const reste = {{ facture.reste_a_payer }};
+    if (montant > reste) {
+        alert(`Le montant (${montant.toLocaleString()} FCFA) dépasse le reste à payer (${reste.toLocaleString()} FCFA)`);
+        return;
+    }
+    
+    const confirmMsg = `📋 CONFIRMATION DE PAIEMENT\n\n`;
+    confirmMsg += `Facture: {{ facture.numero_facture }}\n`;
+    confirmMsg += `Patient: {{ facture.patient_nom }}\n`;
+    confirmMsg += `Montant: ${montant.toLocaleString()} FCFA\n`;
+    confirmMsg += `Mode: ${modePaiement}\n`;
+    confirmMsg += `Reste après paiement: ${(reste - montant).toLocaleString()} FCFA\n\n`;
+    confirmMsg += `Confirmer ce paiement ?`;
+    
+    if (!confirm(confirmMsg)) {
+        return;
+    }
+    
+    showProgress('Enregistrement du paiement', 'Traitement en cours...');
+    
+    fetch(`/api/factures/${factureId}/paiement`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            montant: montant,
+            mode_paiement: modePaiement,
+            notes: notes
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideProgress();
+        
+        if (data.success) {
+            alert(`✅ Paiement enregistré !\nMontant: ${montant.toLocaleString()} FCFA\nReste: ${data.reste_a_payer.toLocaleString()} FCFA`);
+            
+            bootstrap.Modal.getInstance(document.getElementById('paiementModal')).hide();
+            
+            // Imprimer le reçu
+            if (data.statut === 'payee') {
+                if (confirm('Facture entièrement payée. Voulez-vous imprimer la facture ?')) {
+                    ouvrirChoixFormat(factureId);
+                }
+            } else {
+                if (confirm('Voulez-vous imprimer le reçu de paiement ?')) {
+                    imprimerRecuPaiement(data.paiement_id);
+                }
+            }
+            
+            location.reload();
+        } else {
+            alert('❌ Erreur: ' + (data.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => {
+        hideProgress();
+        alert('❌ Erreur: ' + error);
+    });
+}
+
+// ============================================
+// ANNULATION FACTURE
+// ============================================
+function annulerFacture(factureId) {
+    const motif = prompt('📝 Motif de l\'annulation :\n\n(Optionnel - laissez vide si aucun motif)');
+    if (motif === null) return; // Annulé par l'utilisateur
+    
+    const msg = `⚠️ ANNULATION DE LA FACTURE\n\n`;
+    msg += `N°: {{ facture.numero_facture }}\n`;
+    msg += `Patient: {{ facture.patient_nom }}\n`;
+    msg += `Reste à payer: {{ facture.reste_a_payer|round(0)|int }} FCFA\n\n`;
+    msg += `Êtes-vous sûr de vouloir annuler cette facture ?\n`;
+    msg += `Cette action est irréversible.`;
+    
+    if (!confirm(msg)) return;
+    
+    showProgress('Annulation de la facture', 'Traitement en cours...');
+    
+    fetch(`/api/factures/${factureId}/annuler`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ motif: motif || 'Annulation manuelle' })
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideProgress();
+        if (data.success) {
+            alert('✅ Facture annulée avec succès');
+            location.reload();
+        } else {
+            alert('❌ Erreur: ' + (data.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => {
+        hideProgress();
+        alert('❌ Erreur: ' + error);
+    });
+}
+
+// ============================================
+// IMPRESSION
+// ============================================
+function ouvrirChoixFormat(factureId) {
+    window.open(`/facture/print/${factureId}?format=80mm&print=true`, '_blank');
+}
+
+function imprimerFacture(format) {
+    const factureId = {{ facture.id }};
+    bootstrap.Modal.getInstance(document.getElementById('printFormatModal')).hide();
+    window.open(`/facture/print/${factureId}?format=${format}`, '_blank');
+}
+
+function imprimerRecuPaiement(paiementId) {
+    window.open(`/facture/recu_paiement/${paiementId}?format=80mm&print=true`, '_blank');
+}
+</script>
+{% endblock %}

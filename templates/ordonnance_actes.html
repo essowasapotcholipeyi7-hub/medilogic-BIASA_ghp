@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Ordonnance actes - {{ num_ordonnance }}</title>
+    <style>
+        /* ===== STYLES COMMUNS ===== */
+        * { font-family: 'Segoe UI', Arial, sans-serif; }
+        body { margin: 0 auto; background: white; color: #1a1a2e; }
+        
+        /* ===== FORMAT A4 ===== */
+        .format-a4 {
+            max-width: 210mm;
+            padding: 20px;
+        }
+        .format-a4 .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #007bff; padding-bottom: 15px; margin-bottom: 20px; }
+        .format-a4 .header-left .nom { font-size: 22px; font-weight: bold; color: #007bff; }
+        .format-a4 .header-left .infos { font-size: 12px; color: #555; }
+        .format-a4 .header-right { text-align: right; background: #cce5ff; padding: 10px 15px; border-radius: 8px; border: 2px solid #007bff; }
+        .format-a4 .header-right .numero { font-size: 18px; font-weight: bold; color: #007bff; }
+        .format-a4 .patient-box { background: #f0f7ff; border-left: 4px solid #3498db; padding: 12px 15px; margin: 15px 0; border-radius: 4px; }
+        .format-a4 .badge-actes { display: inline-block; background: #cce5ff; color: #004085; padding: 8px 20px; border-radius: 20px; font-weight: bold; font-size: 14px; }
+        .format-a4 .tableau { width: 100%; border-collapse: collapse; margin: 10px 0; border-radius: 8px; overflow: hidden; }
+        .format-a4 .tableau th { background: #007bff; color: white; padding: 10px 12px; text-align: left; font-size: 13px; }
+        .format-a4 .tableau td { padding: 8px 12px; border-bottom: 1px solid #e9ecef; font-size: 13px; }
+        .format-a4 .tableau tr:nth-child(even) { background: #f8f9fa; }
+        .format-a4 .tableau .text-end { text-align: right; }
+        .format-a4 .total-box { background: #cce5ff; border-radius: 8px; padding: 10px 15px; margin: 10px 0; border: 1px solid #007bff; }
+        .format-a4 .total-box .prix { font-size: 16px; font-weight: bold; color: #007bff; }
+        .format-a4 .medecin-box { margin-top: 30px; border-top: 2px solid #e9ecef; padding-top: 20px; display: flex; justify-content: space-between; }
+        .format-a4 .signature { border-top: 1px solid #007bff; width: 250px; padding-top: 5px; font-style: italic; color: #666; margin-top: 5px; }
+        .format-a4 .footer { margin-top: 30px; text-align: center; font-size: 11px; color: #888; border-top: 1px solid #eee; padding-top: 15px; }
+
+        /* ===== FORMAT 80mm (TICKET) ===== */
+        .format-80mm {
+            width: 80mm;
+            padding: 5px;
+            font-size: 9px;
+        }
+        .format-80mm .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 5px; margin-bottom: 5px; }
+        .format-80mm .header .nom { font-size: 13px; font-weight: bold; }
+        .format-80mm .header .infos { font-size: 8px; color: #555; }
+        .format-80mm .numero { text-align: center; font-size: 10px; font-weight: bold; margin: 5px 0; }
+        .format-80mm .patient-box { font-size: 9px; margin: 3px 0; padding: 3px; background: #f8f9fa; border-radius: 3px; }
+        .format-80mm .badge-actes { display: block; text-align: center; font-weight: bold; margin: 5px 0; font-size: 10px; }
+        .format-80mm .tableau { width: 100%; border-collapse: collapse; margin: 5px 0; }
+        .format-80mm .tableau th, .format-80mm .tableau td { border: 1px solid #000; padding: 2px 3px; font-size: 8px; text-align: left; }
+        .format-80mm .tableau th { background: #eee; text-align: center; }
+        .format-80mm .tableau .text-end { text-align: right; }
+        .format-80mm .total-box { text-align: right; font-weight: bold; margin: 5px 0; padding: 3px; background: #cce5ff; border-radius: 3px; }
+        .format-80mm .medecin-box { border-top: 1px dashed #000; padding-top: 5px; margin-top: 5px; font-size: 8px; }
+        .format-80mm .signature { margin-top: 3px; font-style: italic; }
+        .format-80mm .footer { text-align: center; font-size: 7px; border-top: 1px dashed #000; padding-top: 3px; margin-top: 5px; }
+
+        /* ===== BOUTON DE FORMAT ===== */
+        .format-selector {
+            text-align: center;
+            margin: 15px 0;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+        .format-selector .btn {
+            padding: 10px 25px;
+            margin: 0 5px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .format-selector .btn-a4 { background: #007bff; color: white; }
+        .format-selector .btn-a4.active { background: #0056b3; box-shadow: 0 0 0 2px #007bff; }
+        .format-selector .btn-80mm { background: #28a745; color: white; }
+        .format-selector .btn-80mm.active { background: #1e7e34; box-shadow: 0 0 0 2px #28a745; }
+        .format-selector .btn-close { background: #dc3545; color: white; }
+        .format-selector .btn-print { background: #6c757d; color: white; }
+        .format-selector .btn:hover { opacity: 0.85; }
+
+        .hidden { display: none !important; }
+
+        @media print {
+            .format-selector { display: none !important; }
+            body { margin: 0; padding: 0; }
+            .format-a4 { padding: 0; }
+            .format-80mm { padding: 0; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SÉLECTEUR DE FORMAT (visible à l'écran) -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="format-selector no-print">
+    <span style="font-weight:bold; margin-right:15px;"> Format :</span>
+    <button class="btn btn-a4" onclick="setFormat('A4')"> A4 (Couleur)</button>
+    <button class="btn btn-80mm active" onclick="setFormat('80mm')"> Ticket 80mm</button>
+    <span style="margin:0 10px; color:#ccc;">|</span>
+    <button class="btn btn-print" onclick="window.print()">🖨️ Imprimer</button>
+    <button class="btn btn-close" onclick="window.close()">❌ Fermer</button>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- FORMAT A4 -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="formatA4" class="format-a4">
+    <div class="header">
+        <div class="header-left">
+            <div class="nom"> {{ structure.nom or 'Établissement médical' }}</div>
+            <div class="infos">{{ structure.adresse or '' }} | 📞 {{ structure.telephone or '' }}</div>
+        </div>
+        <div class="header-right">
+            <div class="numero">N° {{ num_ordonnance }}</div>
+            <div style="font-size:11px; color:#666;">Prescriptions d'actes</div>
+            <div style="font-size:11px; color:#666;">{{ now.strftime('%d/%m/%Y %H:%M') }}</div>
+        </div>
+    </div>
+
+<!-- Dans la section patient -->
+<div class="patient-box">
+    <div style="display:flex; flex-wrap:wrap; gap:10px 30px;">
+        <div><span style="font-weight:bold;">👤 Patient :</span> <strong>{{ patient.nom }} {{ patient.prenom }}</strong></div>
+        <div><span style="font-weight:bold;"> Tél :</span> {{ patient.telephone or 'Non renseigné' }}</div>
+        <div><span style="font-weight:bold;"> Assurance :</span> {{ patient.type_assurance or 'Non assuré' }}
+            {% if patient.taux_prise_charge %}({{ patient.taux_prise_charge }}%){% endif %}</div>
+        {% if patient.assurance2_nom %}
+        <div><span style="font-weight:bold;"> CAC :</span> {{ patient.assurance2_nom }}
+            {% if patient.taux_assurance2 %}({{ patient.taux_assurance2 }}%){% endif %}</div>
+        {% endif %}
+        {% if patient.numero_assure %}
+        <div><span style="font-weight:bold;"> N° Assuré :</span> {{ patient.numero_assure }}</div>
+        {% endif %}
+    </div>
+</div>
+
+    <div style="text-align:center; margin:15px 0;">
+        <span class="badge-actes"> PRESCRIPTIONS D'ACTES</span>
+    </div>
+
+    <table class="tableau">
+        <thead>
+            <tr>
+                <th style="width:50%;">Acte</th>
+                <th style="width:20%;">Prescripteur</th>
+                <th style="width:15%;">Date</th>
+                <th style="width:15%;">Prix</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in prescriptions %}
+            <tr>
+                <td><strong>{{ p.medicament }}</strong></td>
+                <td>{{ p.prescripteur or '-' }}</td>
+                <td>{{ p.date_prescription.strftime('%d/%m/%Y') if p.date_prescription else '-' }}</td>
+                <td class="text-end">{{ (p.prix_total or 0)|int|format_currency }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr style="font-weight:bold; background:#e9ecef;">
+                <td colspan="3" class="text-end">Total :</td>
+                <td class="text-end text-primary">{{ total|int|format_currency }}</td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <div class="medecin-box">
+        <div>
+            <div style="font-weight:bold;"> Prescripteur</div>
+            <div style="font-size:16px; font-weight:600; margin-top:5px;">{{ prescriptions[0].prescripteur or 'Médecin' }}</div>
+        </div>
+        <div style="text-align:right;">
+            <div style="font-weight:bold;">Signature</div>
+            <div class="signature">____________________</div>
+            <div style="font-size:11px; color:#888; margin-top:5px;">Cachet du médecin</div>
+        </div>
+    </div>
+
+    <div class="footer">
+         Ordonnance valable 7 jours • {{ now.strftime('%d/%m/%Y %H:%M') }}
+        <br>Ce document est une prescription médicale
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- FORMAT 80mm (TICKET) -->
+<!-- ═══════════════════════════════════════════ -->
+<div id="format80mm" class="format-80mm">
+    <div class="header">
+        <div class="nom"> {{ structure.nom or 'Établissement' }}</div>
+        <div class="infos">{{ structure.adresse or '' }}</div>
+    </div>
+    <div class="numero">ACTES N° {{ num_ordonnance }}</div>
+    
+    <div class="patient-box">
+        <strong>Patient :</strong> {{ patient.nom }} {{ patient.prenom }}<br>
+        <strong>Tél :</strong> {{ patient.telephone or '-' }}<br>
+        <strong>Assurance :</strong> {{ patient.type_assurance or 'Non assuré' }}
+    </div>
+    <hr style="border-top:1px dashed #000; margin:3px 0;">
+
+    <div class="badge-actes"> ACTES</div>
+
+    <table class="tableau">
+        <thead><tr><th>Acte</th><th style="text-align:right;">Prix</th></tr></thead>
+        <tbody>
+            {% for p in prescriptions %}
+            <tr>
+                <td>{{ p.medicament }}</td>
+                <td style="text-align:right;">{{ (p.prix_total or 0)|int|format_currency }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="total-box">Total : {{ total|int|format_currency }}</div>
+
+    <div class="medecin-box">
+        <strong>Prescripteur :</strong> {{ prescriptions[0].prescripteur or 'Médecin' }}<br>
+        <strong>Date :</strong> {{ now.strftime('%d/%m/%Y') }}
+        <div class="signature">Signature : ____________________</div>
+    </div>
+
+    <div class="footer">Ordonnance valable 7 jours • {{ now.strftime('%d/%m/%Y %H:%M') }}</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SCRIPT DE BASCULE -->
+<!-- ═══════════════════════════════════════════ -->
+<script>
+function setFormat(format) {
+    const a4 = document.getElementById('formatA4');
+    const _80mm = document.getElementById('format80mm');
+    const btns = document.querySelectorAll('.format-selector .btn-a4, .format-selector .btn-80mm');
+    
+    if (format === 'A4') {
+        a4.style.display = 'block';
+        _80mm.style.display = 'none';
+        btns.forEach(b => b.classList.remove('active'));
+        document.querySelector('.format-selector .btn-a4').classList.add('active');
+    } else {
+        a4.style.display = 'none';
+        _80mm.style.display = 'block';
+        btns.forEach(b => b.classList.remove('active'));
+        document.querySelector('.format-selector .btn-80mm').classList.add('active');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const format = '{{ format }}' || '80mm';
+    setFormat(format === 'A4' ? 'A4' : '80mm');
+});
+</script>
+</body>
+</html>

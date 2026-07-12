@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FACTURE PROFORMA #{{ proforma.id }}</title>
+    <style>
+        /* ===== STYLES POUR L'IMPRESSION ===== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+            background: white;
+            padding: 20px;
+            color: #1a1a2e;
+        }
+        
+        .facture-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 25px 30px;
+            border: 1px solid #e9ecef;
+            border-radius: 12px;
+            page-break-inside: avoid;
+        }
+        
+        /* ===== EN-TÊTE ===== */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .logo-container {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 28px;
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+        
+        .logo-container img {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+        }
+        
+        .header-title h1 {
+            font-size: 20px;
+            font-weight: 800;
+            color: #1a1a2e;
+        }
+        
+        .header-title .sous-titre {
+            font-size: 12px;
+            color: #6c757d;
+            font-weight: 500;
+        }
+        
+        .header-right {
+            text-align: right;
+            flex-shrink: 0;
+        }
+        
+        .header-right .badge-proforma {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 4px 16px;
+            border-radius: 30px;
+            font-weight: 700;
+            font-size: 12px;
+            display: inline-block;
+            margin-bottom: 5px;
+        }
+        
+        .header-right .numero {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1a1a2e;
+        }
+        
+        .header-right .date {
+            color: #6c757d;
+            font-size: 11px;
+        }
+        
+        /* ===== STRUCTURE INFO ===== */
+        .structure-info {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 10px 15px;
+            margin-bottom: 15px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .structure-info .nom {
+            font-weight: 700;
+            font-size: 16px;
+            color: #1a1a2e;
+        }
+        
+        .structure-info .details {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 25px;
+            margin-top: 3px;
+            font-size: 12px;
+            color: #4a5568;
+        }
+        
+        .structure-info .details i {
+            color: #667eea;
+            width: 16px;
+        }
+        
+        /* ===== PATIENT INFO AVEC DOUBLE ASSURANCE ===== */
+        .patient-info {
+            display: flex;
+            justify-content: space-between;
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 10px 15px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .patient-info .label {
+            font-size: 10px;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+        
+        .patient-info .value {
+            font-weight: 600;
+            font-size: 14px;
+            color: #1a1a2e;
+        }
+        
+        .patient-info .assurance-badge {
+            background: #28a745;
+            color: white;
+            padding: 3px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            display: inline-block;
+        }
+        
+        .patient-info .assurance-badge-complementaire {
+            background: #17a2b8;
+            color: white;
+            padding: 3px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            display: inline-block;
+        }
+        
+        .patient-info .assurance-badge-modifie {
+            background: #856404;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 20px;
+            font-size: 9px;
+            font-weight: 600;
+            display: inline-block;
+            margin-left: 5px;
+        }
+        
+        .patient-info .taux-modifie-info {
+            color: #856404;
+            font-size: 10px;
+            font-weight: 500;
+            background: #fff3cd;
+            padding: 1px 6px;
+            border-radius: 3px;
+            display: inline-block;
+            margin-left: 5px;
+        }
+        
+        /* ===== TABLEAU ===== */
+        .articles-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+            font-size: 12px;
+        }
+        
+        .articles-table thead th {
+            background: #1a1a2e;
+            color: white;
+            padding: 8px 10px;
+            text-align: left;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .articles-table thead th:last-child {
+            text-align: right;
+        }
+        
+        .articles-table tbody td {
+            padding: 6px 10px;
+            border-bottom: 1px solid #e9ecef;
+            font-size: 12px;
+        }
+        
+        .articles-table tbody td:last-child {
+            text-align: right;
+            font-weight: 600;
+        }
+        
+        .articles-table tbody tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+        
+        /* ===== TOTAUX AVEC DOUBLE ASSURANCE ===== */
+        .totaux {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 10px;
+            padding-top: 12px;
+            border-top: 2px solid #e9ecef;
+        }
+        
+        .totaux .totaux-box {
+            width: 300px;
+        }
+        
+        .totaux .ligne {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            font-size: 13px;
+        }
+        
+        .totaux .ligne.principale {
+            color: #28a745;
+        }
+        
+        .totaux .ligne.complementaire {
+            color: #17a2b8;
+        }
+        
+        .totaux .ligne.complementaire-modifie {
+            color: #856404;
+        }
+        
+        .totaux .ligne.total {
+            font-size: 18px;
+            font-weight: 800;
+            color: #dc3545;
+            border-top: 2px solid #dc3545;
+            padding-top: 8px;
+            margin-top: 4px;
+        }
+        
+        .totaux .ligne .taux-original {
+            font-size: 10px;
+            color: #6c757d;
+            font-weight: 400;
+        }
+        
+        /* ===== FOOTER ===== */
+        .footer {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 2px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        .signature-section {
+            flex: 1;
+            min-width: 200px;
+        }
+        
+        .signature-section .signature-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: #4a5568;
+            margin-bottom: 8px;
+        }
+        
+        .signature-section .signature-line {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .signature-section .signature-line .ligne {
+            flex: 1;
+            border-bottom: 2px solid #1a1a2e;
+            min-width: 100px;
+            height: 30px;
+        }
+        
+        .signature-section .signature-line .cachet {
+            font-size: 10px;
+            color: #6c757d;
+            text-align: center;
+            padding: 4px 12px;
+            border: 2px dashed #6c757d;
+            border-radius: 6px;
+            min-width: 70px;
+        }
+        
+        .footer-right {
+            text-align: right;
+            font-size: 11px;
+            color: #6c757d;
+            flex-shrink: 0;
+        }
+        
+        .footer-right .mention {
+            font-size: 9px;
+            color: #adb5bd;
+            margin-top: 3px;
+        }
+        
+        /* ===== CONDITIONS ===== */
+        .conditions {
+            margin-top: 12px;
+            font-size: 10px;
+            color: #6c757d;
+            padding: 10px 12px;
+            background: #f8f9fa;
+            border-radius: 6px;
+        }
+        
+        .conditions strong {
+            color: #1a1a2e;
+        }
+        
+        .notes {
+            margin-top: 10px;
+            padding: 8px 12px;
+            background: #fff3cd;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+        
+        /* ===== BADGE MODIFIE ===== */
+        .badge-modifie {
+            background: #fff3cd;
+            color: #856404;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: bold;
+            display: inline-block;
+        }
+        
+        /* ===== PRINT ===== */
+        @media print {
+            body {
+                padding: 10px;
+            }
+            .facture-container {
+                border: none;
+                padding: 15px;
+            }
+            .no-print {
+                display: none !important;
+            }
+        }
+        
+        /* ===== ÉCRAN ===== */
+        @media screen {
+            body {
+                background: #e9ecef;
+            }
+            .facture-container {
+                box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            }
+        }
+        
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 600px) {
+            .header {
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+            }
+            .header-left {
+                flex-direction: column;
+                align-items: center;
+            }
+            .header-right {
+                text-align: center;
+                margin-top: 10px;
+            }
+            .patient-info {
+                flex-direction: column;
+                text-align: center;
+            }
+            .patient-info div:last-child {
+                text-align: center;
+            }
+            .footer {
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+            }
+            .footer-right {
+                text-align: center;
+            }
+            .signature-section .signature-line {
+                justify-content: center;
+            }
+            .totaux {
+                justify-content: center;
+            }
+            .totaux .totaux-box {
+                width: 100%;
+            }
+            .structure-info .details {
+                flex-direction: column;
+                gap: 3px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="facture-container">
+        <!-- ===== EN-TÊTE ===== -->
+        <div class="header">
+            <div class="header-left">
+                <div class="logo-container">
+                    {% if logo_url %}
+                    <img src="{{ logo_url }}" alt="Logo">
+                    {% else %}
+                    <i class="fas fa-heartbeat"></i>
+                    {% endif %}
+                </div>
+                <div class="header-title">
+                    <h1>{{ structure.nom or 'Medilogic-GHP' }}</h1>
+                    <div class="sous-titre">FACTURE PROFORMA</div>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="badge-proforma">PROFORMA</div>
+                <div class="numero">#{{ proforma.numero_proforma or proforma.id }}</div>
+                <div class="date">Date : {{ proforma.created_at.strftime('%d/%m/%Y à %H:%M') if proforma.created_at else '-' }}</div>
+            </div>
+        </div>
+        
+        <!-- ===== STRUCTURE INFO ===== -->
+        <div class="structure-info">
+            <div class="nom">{{ structure.nom or 'Medilogic-GHP' }}</div>
+            <div class="details">
+                <span><i class="fas fa-map-marker-alt"></i> {{ structure.adresse or 'Adresse non renseignée' }}</span>
+                <span><i class="fas fa-phone"></i> {{ structure.telephone or 'Tél non renseigné' }}</span>
+                <span><i class="fas fa-envelope"></i> {{ structure.email or 'Email non renseigné' }}</span>
+            </div>
+        </div>
+        
+        <!-- ===== PATIENT INFO AVEC DOUBLE ASSURANCE ===== -->
+        <div class="patient-info">
+            <div>
+                <div class="label">Patient</div>
+                <div class="value">{{ proforma.patient_nom }}</div>
+                <div style="font-size:12px; color:#6c757d;">Tél : {{ proforma.patient_telephone or 'Non renseigné' }}</div>
+            </div>
+            <div>
+                <div class="label">Assurance principale</div>
+                <div class="value">
+                    {% if proforma.assurance_nom and proforma.assurance_nom != 'Non assuré' %}
+                    <span class="assurance-badge">{{ proforma.assurance_nom }}</span>
+                    <div style="font-size:12px; color:#6c757d; margin-top:3px;">
+                        Taux : {{ proforma.taux_assurance }}% 
+                        {% if proforma.numero_assure %} - N° {{ proforma.numero_assure }}{% endif %}
+                    </div>
+                    {% else %}
+                    <span class="assurance-badge" style="background:#dc3545;">Non assuré</span>
+                    {% endif %}
+                </div>
+            </div>
+            <!-- 🔥 ASSURANCE COMPLÉMENTAIRE -->
+            <div>
+                <div class="label">Assurance complémentaire</div>
+                <div class="value">
+                    {% if assurance2_active and assurance2_nom and assurance2_nom != '' and assurance2_nom != 'Aucune' %}
+                    <span class="assurance-badge-complementaire">{{ assurance2_nom }}</span>
+                    <div style="font-size:12px; color:#6c757d; margin-top:3px;">
+                        Taux : {{ taux_assurance2|default(0) }}%
+                        {% if taux_modifie %}
+                        <span class="badge-modifie">
+                            ⚠️ Taux exceptionnel (habituel: {{ taux_original|default(0) }}%)
+                        </span>
+                        {% endif %}
+                    </div>
+                    {% else %}
+                    <span style="color: #6c757d; font-size: 12px;">Aucune</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- ===== TABLEAU DES ARTICLES ===== -->
+        <table class="articles-table">
+            <thead>
+                <tr>
+                    <th style="width:5%;">N°</th>
+                    <th style="width:35%;">Désignation</th>
+                    <th style="width:15%;">Type</th>
+                    <th style="width:10%; text-align:center;">Qté</th>
+                    <th style="width:15%; text-align:right;">Prix unit.</th>
+                    <th style="width:20%; text-align:right;">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for article in proforma.articles %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>{{ article.nom }}</td>
+                    <td>
+                        <span style="font-size:10px; padding:2px 8px; border-radius:20px; background:{% if article.type == 'acte' %}#e3f2fd; color:#1565c0;{% else %}#e8f5e9; color:#2e7d32;{% endif %}">
+                            {{ 'Acte' if article.type == 'acte' else 'Produit' }}
+                        </span>
+                    </td>
+                    <td style="text-align:center;">{{ article.quantite }}</td>
+                    <td style="text-align:right;">{{ article.prix_unitaire|round(0)|int }} F</td>
+                    <td style="text-align:right; font-weight:600;">{{ article.total|round(0)|int }} F</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        
+        <!-- ===== TOTAUX AVEC DOUBLE ASSURANCE ===== -->
+        <div class="totaux">
+            <div class="totaux-box">
+                <div class="ligne">
+                    <span>Sous-total</span>
+                    <span>{{ proforma.sous_total|round(0)|int }} FCFA</span>
+                </div>
+                
+                <!-- 🔥 PRISE EN CHARGE PRINCIPALE -->
+                <div class="ligne principale">
+                    <span>Prise en charge ({{ proforma.taux_assurance }}%)</span>
+                    <span>- {{ proforma.prise_en_charge|round(0)|int }} FCFA</span>
+                </div>
+                
+                <!-- 🔥 PRISE EN CHARGE COMPLÉMENTAIRE -->
+                {% if assurance2_active and assurance2_nom and assurance2_nom != '' and assurance2_nom != 'Aucune' and prise_en_charge2 and prise_en_charge2 > 0 %}
+                <div class="ligne {% if taux_modifie %}complementaire-modifie{% else %}complementaire{% endif %}">
+                    <span>
+                        Prise en charge {{ assurance2_nom }} ({{ taux_assurance2|default(0) }}%)
+                        {% if taux_modifie %}
+                        <span class="badge-modifie" style="font-size:9px;">
+                            ⚠️ exceptionnel
+                        </span>
+                        {% endif %}
+                    </span>
+                    <span>- {{ prise_en_charge2|round(0)|int }} FCFA</span>
+                </div>
+                
+                <!-- 🔥 AFFICHER LE TAUX ORIGINAL SI MODIFIÉ -->
+                {% if taux_modifie and taux_original and taux_original > 0 %}
+                <div class="ligne" style="font-size:10px; color:#6c757d; padding-left:20px;">
+                    <span><i class="fas fa-arrow-right"></i> Taux habituel:</span>
+                    <span>{{ taux_original }}%</span>
+                </div>
+                {% endif %}
+                {% endif %}
+                
+                <!-- 🔥 NET À PAYER -->
+                <div class="ligne total">
+                    <span>Net à payer</span>
+                    <span>{{ proforma.net_a_payer|round(0)|int }} FCFA</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- ===== NOTES ===== -->
+        {% if proforma.notes %}
+        <div class="notes">
+            <strong>📝 Notes :</strong> {{ proforma.notes }}
+        </div>
+        {% endif %}
+        
+        <!-- ===== CONDITIONS ===== -->
+        <div class="conditions">
+            <strong>NB :</strong> Le montant net à payer peut varier en fonction des prestations réellement effectuées.
+            Cette proforma est valable 7 jours.
+            {% if assurance2_active and assurance2_nom and taux_modifie %}
+            <br><strong>⚠️ Taux exceptionnel :</strong> Le taux de l'assurance complémentaire a été modifié pour cette proforma.
+            {% endif %}
+        </div>
+        
+        <!-- ===== FOOTER AVEC SIGNATURE ===== -->
+        <div class="footer">
+            <div class="signature-section">
+                <div class="signature-title">Cachet et signature de la structure</div>
+                <div class="signature-line">
+                    <div class="ligne"></div>
+                    <div class="cachet">
+                        <i class="fas fa-stamp"></i> Cachet
+                    </div>
+                </div>
+                <div style="margin-top:5px; font-size:11px; color:#6c757d;">
+                    Date : {{ proforma.created_at.strftime('%d/%m/%Y') if proforma.created_at else '-' }}
+                </div>
+            </div>
+            
+            <div class="footer-right">
+                <div>Expire le : {{ proforma.expires_at.strftime('%d/%m/%Y') if proforma.expires_at else '7 jours' }}</div>
+                <div class="mention">Document non valable pour paiement</div>
+                <div class="mention">Émis par {{ proforma.created_by or 'System' }}</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ===== BOUTONS ===== -->
+    <div style="text-align:center; margin-top:20px;" class="no-print">
+        <button onclick="window.print()" style="padding:10px 35px; background:#667eea; color:white; border:none; border-radius:10px; font-size:15px; cursor:pointer;">
+            <i class="fas fa-print"></i> Imprimer
+        </button>
+        <button onclick="fermerOuRediriger()" style="padding:10px 35px; background:#6c757d; color:white; border:none; border-radius:10px; font-size:15px; cursor:pointer; margin-left:10px;">
+            <i class="fas fa-times"></i> Fermer
+        </button>
+    </div>
+    
+    <script>
+    function fermerOuRediriger() {
+        window.close();
+        setTimeout(function() {
+            if (!window.closed) {
+                window.location.href = "{{ url_for('proformas') }}";
+            }
+        }, 500);
+    }
+    </script>
+</body>
+</html>

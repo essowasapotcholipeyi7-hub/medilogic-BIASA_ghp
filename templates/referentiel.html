@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Référentiel{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        <div class="sidebar">
+            <h5 class="mb-3"><i class="fas fa-chart-line"></i> Menu</h5>
+            <div class="nav flex-column">
+                <a class="nav-link" href="{{ url_for('dashboard') }}"><i class="fas fa-tachometer-alt"></i> Tableau de bord</a>
+                <a class="nav-link" href="{{ url_for('patients') }}"><i class="fas fa-users"></i> Patients</a>
+                <a class="nav-link" href="{{ url_for('actes_vente') }}"><i class="fas fa-stethoscope"></i> Actes & Vente</a>
+                <a class="nav-link" href="{{ url_for('pharma_vente') }}"><i class="fas fa-pills"></i> Pharmacie</a>
+                <a class="nav-link" href="{{ url_for('historique_ventes') }}"><i class="fas fa-history"></i> Historique</a>
+                <a class="nav-link" href="{{ url_for('rendez_vous') }}"><i class="fas fa-calendar-alt"></i> Rendez-vous</a>
+                <a class="nav-link" href="{{ url_for('rappels_rendez_vous') }}"><i class="fas fa-bell"></i> Rappels</a>
+                {% if session.is_admin %}
+                <a class="nav-link" href="{{ url_for('admin_structure') }}"><i class="fas fa-cog"></i> Administration</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-database"></i> {{ titre }}</h5>
+                <a href="{{ url }}" target="_blank" class="btn btn-sm btn-light">
+                    <i class="fas fa-external-link-alt"></i> Ouvrir dans un nouvel onglet
+                </a>
+            </div>
+            <div class="card-body p-0">
+                <iframe src="{{ url }}" 
+                        style="width: 100%; height: 600px; border: none;"
+                        title="{{ titre }}">
+                </iframe>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

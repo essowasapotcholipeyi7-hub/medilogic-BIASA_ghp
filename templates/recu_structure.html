@@ -1,0 +1,316 @@
+{% extends "base.html" %}
+
+{% block title %}Copie Reçu #{{ vente_id }}{% endblock %}
+
+{% block extra_css %}
+{% set format = request.args.get('format', 'A4') %}
+
+{% if format == '80mm' %}
+<style>
+    @media print {
+        @page {
+            size: 80mm auto;
+            margin: 3mm;
+        }
+        
+        body {
+            width: 80mm;
+            font-size: 9px;
+            background: white;
+        }
+        
+        /* TOUT en NOIR et GRAS */
+        * {
+            color: black !important;
+            font-weight: bold !important;
+        }
+        
+        body, div, p, span, strong, b, td, th, li, .text-muted, .small {
+            color: black !important;
+            font-weight: bold !important;
+        }
+        
+        .text-danger, .text-success, .text-primary, .text-warning {
+            color: black !important;
+        }
+        
+        .badge, .bg-primary, .bg-success, .bg-warning, .bg-danger {
+            background: black !important;
+            color: white !important;
+        }
+        
+        .container {
+            width: 100%;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .card {
+            border: none !important;
+            box-shadow: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        
+        .card-body {
+            padding: 5px !important;
+        }
+        
+        .row {
+            margin: 0 !important;
+        }
+        
+        .col-7, .col-5, .col-6 {
+            width: 100%;
+            text-align: center;
+        }
+        
+        h1, h2, h3, h4, h5 {
+            margin: 3px 0;
+            font-size: 11px;
+        }
+        
+        table {
+            font-size: 8px;
+        }
+        
+        table td, table th {
+            padding: 3px 2px !important;
+        }
+        
+        .no-print {
+            display: none !important;
+        }
+        
+        hr {
+            margin: 5px 0;
+            border-top: 1px solid black !important;
+        }
+        
+        .d-flex {
+            display: block !important;
+            text-align: center;
+        }
+        
+        img {
+            max-height: 40px !important;
+            filter: grayscale(100%) contrast(150%) brightness(80%) !important;
+            -webkit-filter: grayscale(100%) contrast(150%) brightness(80%) !important;
+        }        
+        i, .fas, .far, .fab {
+            display: none !important;
+        }
+    }
+    
+    @media screen {
+        body {
+            background: #e9ecef;
+        }
+        .card {
+            max-width: 400px;
+            margin: 20px auto;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+    }
+</style>
+{% else %}
+<style>
+    @media print {
+        @page {
+            size: A4;
+            margin: 10mm;
+        }
+    }
+</style>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card" id="recuContenu">
+            <div class="card-body">
+                <!-- En-tête professionnel -->
+                <div class="row" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; margin: -20px -20px 20px -20px; padding: 20px; border-radius: 10px 10px 0 0;">
+                    <div class="col-7">
+                        <div class="d-flex align-items-center gap-3">
+                            {% if structure_logo %}
+                            <img src="{{ structure_logo }}" alt="Logo" style="max-height: 80px; max-width: 150px; background: white; padding: 5px; border-radius: 8px;">
+                            {% endif %}
+                            <div>
+                                <h2 style="margin: 0;">{{ structure_nom or "Medilogic-GHP" }}</h2>
+                                <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.9;">
+                                    <i class="fas fa-map-marker-alt"></i> {{ structure_adresse or "" }}<br>
+                                    <i class="fas fa-phone"></i> {{ structure_telephone or "" }} | 
+                                    <i class="fas fa-envelope"></i> {{ structure_email or "" }}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-5 text-end">
+                        <h1 style="font-size: 18px; margin: 0;">REÇU STRUCTURE</h1>
+                        <p style="margin: 5px 0 0 0;">N° {{ "%06d" % vente_id }}</p>
+                        <p>Date: {{ date_actuelle or "" }}</p>
+                    </div>
+                </div>
+                <hr>
+
+<!-- ===== INFOS PATIENT AVEC DOUBLE ASSURANCE ===== -->
+<div class="row mb-4">
+    <div class="col-6">
+        <div style="border-left: 4px solid #667eea; padding-left: 15px;">
+            <h5>Facturé à :</h5>
+            <p style="margin: 0;">
+                <strong>{{ patient_nom or "Patient" }}</strong><br>
+                Tél: {{ patient_telephone or "Non renseigné" }}
+            </p>
+        </div>
+    </div>
+    <div class="col-6">
+        <div style="border-left: 4px solid #28a745; padding-left: 15px;">
+            <h5>Informations assurance :</h5>
+            <p style="margin: 0;">
+                <!-- 🔥 Assurance principale -->
+                <strong>Assurance principale :</strong> {{ type_assurance or "Non assuré" }}<br>
+                Taux de prise en charge: {{ taux_assurance|default(0) }}%<br>
+                {% if numero_assure and numero_assure != '' %}
+                N° Assuré: {{ numero_assure }}<br>
+                {% endif %}
+                
+                <!-- 🔥 Assurance complémentaire (uniquement si appliquée) -->
+                {% if assurance2_appliquee and assurance2_appliquee == true %}
+                    {% if assurance2_nom and assurance2_nom != '' and assurance2_nom != 'Aucune' %}
+                    <strong>Assurance complémentaire :</strong> {{ assurance2_nom }}<br>
+                    Taux de prise en charge: {{ taux_assurance2|default(0) }}%
+                    {# 🔥 AFFICHER L'INDICATION DE MODIFICATION #}
+                    {% if taux_modifie and taux_modifie == true %}
+                    <span style="color: #856404; background: #fff3cd; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: bold; display: inline-block;">
+                        ⚠️ Exceptionnel
+                    </span>
+                    {% endif %}
+                    <br>
+                    {% if numero_assure2 and numero_assure2 != '' %}
+                    N° Assuré 2: {{ numero_assure2 }}<br>
+                    {% endif %}
+                    {# 🔥 AFFICHER LE TAUX ORIGINAL EN RÉFÉRENCE #}
+                    {% if taux_modifie and taux_modifie == true and taux_original and taux_original > 0 %}
+                    <span style="color: #6c757d; font-size: 9px;">
+                        <i class="fas fa-info-circle"></i> Taux habituel: {{ taux_original }}%
+                    </span>
+                    <br>
+                    {% endif %}
+                    {% endif %}
+                {% endif %}
+                
+                <strong>Vendu par :</strong> {{ nom_caissier }}
+            </p>
+        </div>
+    </div>
+</div>
+<hr>
+
+                <!-- ===== TABLEAU DES ARTICLES ===== -->
+                <table style="width:100%; font-size:11px; border:1px solid #ddd; border-collapse:collapse;">
+                    <thead>
+                        <tr style="background:#f1f1f1;">
+                            <th style="padding:5px; text-align:left; width:50%;">Article</th>
+                            <th style="padding:5px; text-align:center; width:15%;">Qté</th>
+                            <th style="padding:5px; text-align:right; width:15%;">P.U.</th>
+                            <th style="padding:5px; text-align:right; width:20%;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for article in articles %}
+                        <tr>
+                            <td style="padding:4px;">{{ article.nom }}</td>
+                            <td style="text-align:center;">{{ article.quantite }}</td>
+                            <td style="text-align:right;">{{ article.prix_unitaire|default(0)|round(0)|int }} F</td>
+                            <td style="text-align:right;">{{ article.total|default(0)|round(0)|int }} F</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+                <!-- ===== TOTAUX AVEC DOUBLE ASSURANCE ===== -->
+                <div class="mt-2">
+                    <div><strong>Sous-total:</strong> {{ sous_total|default(0)|round(0)|int }} FCFA</div>
+                    
+                    {% if prise_en_charge > 0 %}
+                    <div style="color:#28a745;">
+                        <strong>Prise en charge ({{ taux_assurance }}%):</strong> - {{ prise_en_charge|default(0)|round(0)|int }} FCFA
+                    </div>
+                    {% endif %}
+                    
+                    <!-- 🔥 Prise en charge complémentaire (si existe) -->
+                    {% if assurance2_nom and assurance2_nom != '' and assurance2_nom != 'Aucune' and prise_en_charge2 and prise_en_charge2 > 0 %}
+                    <div style="{% if taux_modifie and taux_modifie == true %}color:#856404;{% else %}color:#17a2b8;{% endif %}">
+                        <strong>
+                            Prise en charge {{ assurance2_nom }} ({{ taux_assurance2 }}%)
+                            {% if taux_modifie and taux_modifie == true %}
+                            <span style="font-size: 9px; background: #fff3cd; padding: 0px 4px; border-radius: 3px;">
+                                ⚠️ exceptionnel
+                            </span>
+                            {% endif %}
+                        </strong>
+                        <span>- {{ prise_en_charge2|default(0)|round(0)|int }} FCFA</span>
+                        {# 🔥 AFFICHER LE TAUX ORIGINAL DANS LE RÉCAPITULATIF #}
+                        {% if taux_modifie and taux_modifie == true and taux_original and taux_original > 0 %}
+                        <br>
+                        <span style="color: #6c757d; font-size: 9px; padding-left: 20px;">
+                            <i class="fas fa-arrow-right"></i> Taux habituel: {{ taux_original }}%
+                        </span>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    
+                    <div style="font-weight:bold; font-size:1.1em; margin-top:5px; padding-top:5px; border-top:2px solid #ddd;">
+                        <strong>NET PAYÉ:</strong> {{ net_a_payer|default(0)|round(0)|int }} FCFA
+                    </div>
+                </div>
+
+                <div class="text-muted small mt-2">
+                    <i class="fas fa-user-check"></i> Vendu par : {{ nom_caissier }}
+                </div>
+
+                <div class="text-center mt-2 small">
+                    Document généré le {{ date_actuelle }}
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-3 no-print">
+            <button onclick="window.print()" class="btn btn-primary btn-sm">Imprimer</button>
+            <button onclick="telechargerPDF()" class="btn btn-success btn-sm">PDF</button>
+            <button onclick="fermerOuRediriger()" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function telechargerPDF() {
+    const element = document.getElementById('recuContenu');
+    const format = '{{ request.args.get("format", "A4") }}';
+    
+    const opt = {
+        margin: [0.5, 0.5, 0.5, 0.5],
+        filename: 'copie_recu_{{ vente_id }}.pdf',
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'in', format: format === '80mm' ? [2.8346, 11.6929] : 'a4', orientation: 'portrait' }
+    };
+    html2pdf().set(opt).from(element).save();
+}
+
+function fermerOuRediriger() {
+    // Essayer de fermer la fenêtre
+    window.close();
+    
+    // Si la fenêtre n'est pas fermée après 500ms, rediriger
+    setTimeout(function() {
+        if (!window.closed) {
+            window.location.href = "{{ url_for('dashboard') }}";
+        }
+    }, 500);
+}
+</script>
+{% endblock %}

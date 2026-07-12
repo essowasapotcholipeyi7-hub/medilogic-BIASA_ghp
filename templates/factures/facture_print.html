@@ -1,0 +1,736 @@
+<!-- templates/factures/facture_print.html -->
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facture #{{ facture.numero_facture }}</title>
+    <!-- html2pdf pour l'export PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    
+    <style>
+        /* ============================================
+           STYLES DE BASE (identiques pour tous les formats)
+           ============================================ */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background: white;
+            padding: 10px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 15px;
+        }
+        
+        /* En-tête */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #000;
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .header h2 {
+            font-size: 18px;
+            margin: 0;
+            color: #000;
+        }
+        
+        .header .badge-facture {
+            background: #000;
+            color: white !important;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 14px;
+            display: inline-block;
+        }
+        
+        /* Tableau */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+            font-size: 12px;
+        }
+        
+        table th {
+            background: #f0f0f0;
+            border: 1px solid #000;
+            padding: 6px 4px;
+            text-align: left;
+            font-weight: bold;
+        }
+        
+        table td {
+            border: 1px solid #000;
+            padding: 5px 4px;
+        }
+        
+        table td:first-child {
+            text-align: left;
+        }
+        
+        table td:nth-child(2) {
+            text-align: center;
+        }
+        
+        table td:nth-child(3),
+        table td:nth-child(4) {
+            text-align: right;
+        }
+        
+        /* Totaux */
+        .totaux {
+            margin: 10px 0;
+            padding: 10px 0;
+            border-top: 2px solid #000;
+        }
+        
+        .ligne {
+            display: flex;
+            justify-content: space-between;
+            padding: 3px 0;
+            font-size: 12px;
+        }
+        
+        .ligne.total {
+            font-weight: bold;
+            font-size: 14px;
+            border-top: 2px solid #000;
+            padding-top: 8px;
+            margin-top: 5px;
+        }
+        
+        .ligne.paye {
+            border-top: 1px dashed #000;
+            padding-top: 8px;
+            margin-top: 5px;
+            font-weight: bold;
+            font-size: 13px;
+        }
+        
+        .ligne.reste {
+            border-top: 1px dashed #000;
+            padding-top: 5px;
+            margin-top: 5px;
+            font-weight: bold;
+            font-size: 13px;
+        }
+        
+        /* Statut */
+        .statut-container {
+            text-align: center;
+            margin-top: 10px;
+            padding: 5px;
+        }
+        
+        .statut {
+            display: inline-block;
+            padding: 4px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 12px;
+            border: 1px solid #000;
+        }
+        
+        .statut-paye { background: #d4edda; color: #155724; }
+        .statut-partiel { background: #cce5ff; color: #004085; }
+        .statut-en_attente { background: #fff3cd; color: #856404; }
+        .statut-en_retard { background: #f8d7da; color: #721c24; }
+        .statut-impayee { background: #f8d7da; color: #721c24; }
+        .statut-annulee { background: #e2e3e5; color: #383d41; }
+        
+        /* Footer */
+        .footer {
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px solid #000;
+            text-align: center;
+            font-size: 10px;
+        }
+        
+        /* Historique paiements */
+        .historique {
+            margin-top: 10px;
+            font-size: 10px;
+        }
+        
+        .historique .ligne-histo {
+            display: flex;
+            justify-content: space-between;
+            padding: 2px 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        /* Boutons (non imprimés) */
+        .no-print {
+            text-align: center;
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .no-print button {
+            padding: 10px 25px;
+            margin: 0 5px;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .btn-print {
+            background: #007bff;
+            color: white;
+        }
+        
+        .btn-pdf {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .btn-close {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn-back {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-print:hover, .btn-pdf:hover, .btn-close:hover, .btn-back:hover {
+            opacity: 0.8;
+        }
+
+        /* ============================================
+           STYLES POUR LE FORMAT 80mm (NOIR & BLANC)
+           ============================================ */
+        {% set format = request.args.get('format', '80mm') %}
+        
+        {% if format == '80mm' %}
+        @media print, screen {
+            @page {
+                size: 80mm auto;
+                margin: 2mm 3mm;
+            }
+            
+            body {
+                width: 80mm;
+                font-size: 7px !important;
+                background: white !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            
+            .container {
+                width: 100%;
+                max-width: 100%;
+                padding: 3px !important;
+                margin: 0 !important;
+            }
+            
+            /* TOUT en NOIR et GRAS pour le format 80mm */
+            * {
+                color: black !important;
+                font-weight: bold !important;
+            }
+            
+            body, div, p, span, strong, b, td, th, li,
+            h1, h2, h3, h4, h5, h6,
+            .text-muted, .small, .text-danger, .text-success,
+            .text-primary, .text-warning, .text-info {
+                color: black !important;
+                font-weight: bold !important;
+            }
+            
+            /* Supprimer TOUTES les couleurs de fond */
+            .statut, .statut-paye, .statut-partiel, 
+            .statut-en_attente, .statut-en_retard, 
+            .statut-impayee, .statut-annulee,
+            .badge, .bg-primary, .bg-success, .bg-warning, .bg-danger,
+            .bg-info, .bg-light, .table-light, .table-dark,
+            .header, .footer, .totaux {
+                background: white !important;
+                color: black !important;
+                border-color: black !important;
+            }
+            
+            .header .badge-facture {
+                background: black !important;
+                color: white !important;
+                border: 1px solid black !important;
+            }
+            
+            /* Tableaux en noir */
+            table {
+                border-color: black !important;
+                font-size: 6px !important;
+            }
+            
+            table th {
+                background: white !important;
+                border: 1px solid black !important;
+                color: black !important;
+                font-size: 6px !important;
+                padding: 2px 2px !important;
+            }
+            
+            table td {
+                border: 1px solid black !important;
+                color: black !important;
+                font-size: 6px !important;
+                padding: 2px 2px !important;
+            }
+            
+            .header {
+                border-bottom: 1px solid black !important;
+                padding-bottom: 5px !important;
+                margin-bottom: 5px !important;
+            }
+            
+            .header h2 {
+                font-size: 11px !important;
+            }
+            
+            .header .badge-facture {
+                font-size: 8px !important;
+                padding: 2px 8px !important;
+            }
+            
+            .header p {
+                font-size: 6px !important;
+                margin: 0 !important;
+            }
+            
+            .totaux {
+                border-top: 1px solid black !important;
+                padding-top: 5px !important;
+                margin-top: 5px !important;
+            }
+            
+            .ligne {
+                font-size: 7px !important;
+                padding: 2px 0 !important;
+            }
+            
+            .ligne.total {
+                font-size: 8px !important;
+                border-top: 1px solid black !important;
+                padding-top: 4px !important;
+                margin-top: 3px !important;
+            }
+            
+            .ligne.paye,
+            .ligne.reste {
+                font-size: 8px !important;
+                padding-top: 4px !important;
+                margin-top: 3px !important;
+            }
+            
+            .statut {
+                font-size: 7px !important;
+                padding: 2px 10px !important;
+                border: 1px solid black !important;
+            }
+            
+            .footer {
+                font-size: 6px !important;
+                margin-top: 8px !important;
+                padding-top: 5px !important;
+            }
+            
+            .historique {
+                font-size: 6px !important;
+            }
+            
+            .historique .ligne-histo {
+                font-size: 6px !important;
+                padding: 1px 0 !important;
+            }
+            
+            /* Masquer les icônes */
+            i, .fas, .far, .fab, .fa, .fa-solid,
+            .fa-regular, .fa-light, .fa-duotone {
+                display: none !important;
+            }
+            
+            /* Cacher les images */
+            img {
+                display: none !important;
+            }
+            
+            /* Cacher les boutons à l'impression */
+            @media print {
+                .no-print {
+                    display: none !important;
+                }
+            }
+            
+            /* À l'écran, les boutons restent visibles */
+            @media screen {
+                .no-print {
+                    display: flex !important;
+                    justify-content: center;
+                    gap: 8px;
+                    flex-wrap: wrap;
+                    padding: 10px !important;
+                    background: #f8f9fa !important;
+                    border-top: 1px solid #ddd !important;
+                    margin-top: 10px !important;
+                    border-radius: 0 !important;
+                }
+                
+                .no-print button {
+                    padding: 8px 15px !important;
+                    font-size: 11px !important;
+                    border-radius: 4px !important;
+                }
+            }
+        }
+        {% else %}
+        /* ============================================
+           FORMAT A4
+           ============================================ */
+        @media print {
+            @page {
+                size: A4;
+                margin: 10mm;
+            }
+            
+            .no-print {
+                display: none !important;
+            }
+            
+            body {
+                background: white !important;
+                padding: 0 !important;
+            }
+            
+            .container {
+                box-shadow: none !important;
+                border: none !important;
+                padding: 10px !important;
+            }
+            
+            .statut {
+                border: 1px solid #000;
+            }
+        }
+        
+        /* Style A4 à l'écran */
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            max-width: 800px;
+        }
+        
+        .header {
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .header h2 {
+            color: #1a1a2e;
+        }
+        
+        .header .badge-facture {
+            background: #667eea;
+            color: white !important;
+            padding: 4px 15px;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        
+        table th {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px;
+        }
+        
+        table td {
+            border: 1px solid #dee2e6;
+            padding: 8px 10px;
+        }
+        
+        .totaux {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            max-width: 350px;
+            margin-left: auto;
+        }
+        
+        .ligne.total {
+            font-size: 18px;
+            border-top: 2px solid #dc3545;
+            padding-top: 10px;
+            margin-top: 10px;
+            color: #dc3545;
+        }
+        
+        .ligne.paye {
+            border-top: 1px dashed #28a745;
+            color: #28a745;
+        }
+        
+        .ligne.reste {
+            border-top: 1px dashed #dc3545;
+            color: #dc3545;
+        }
+        
+        .statut {
+            padding: 6px 20px;
+            font-size: 14px;
+            border: 1px solid #000;
+        }
+        
+        .footer {
+            color: #6c757d;
+            font-size: 11px;
+        }
+        {% endif %}
+    </style>
+</head>
+<body>
+    <div class="container" id="factureContenu">
+        <!-- En-tête -->
+        <div class="header">
+            <div>
+                <h2>{{ structure.nom or 'Medilogic-GHP' }}</h2>
+                <p style="margin: 2px 0; font-size: 10px;">
+                    {{ structure.adresse or '' }}<br>
+                    Tél: {{ structure.telephone or '' }}
+                </p>
+            </div>
+            <div style="text-align: right;">
+                <span class="badge-facture">FACTURE</span>
+                <p style="margin: 2px 0; font-weight: bold; font-size: 12px;">N° {{ facture.numero_facture }}</p>
+                <p style="margin: 0; font-size: 10px;">{{ date_actuelle }}</p>
+            </div>
+        </div>
+
+        <!-- Infos patient -->
+        <div style="margin-bottom: 10px; font-size: 11px;">
+            <strong>Patient :</strong> {{ facture.patient_nom }}<br>
+            <strong>Téléphone :</strong> {{ facture.patient_telephone or 'Non renseigné' }}<br>
+            <strong>Échéance :</strong> {{ facture.date_echeance.strftime('%d/%m/%Y') if facture.date_echeance else '-' }}
+            {% if facture.assurance_nom and facture.assurance_nom != 'non_assure' %}
+            <br><strong>Assurance :</strong> {{ facture.assurance_nom }} ({{ facture.taux_assurance }}%)
+            {% if facture.assurance2_nom and facture.assurance2_nom != 'Aucune' %}
+            <br><strong>CAC :</strong> {{ facture.assurance2_nom }} ({{ facture.taux_assurance2 }}%)
+            {% endif %}
+            {% endif %}
+        </div>
+
+        <!-- Articles -->
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 50%; text-align: left;">Article</th>
+                    <th style="width: 15%; text-align: center;">Qté</th>
+                    <th style="width: 17%; text-align: right;">Prix</th>
+                    <th style="width: 18%; text-align: right;">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for article in articles %}
+                <tr>
+                    <td>
+                        <strong>{{ article.nom }}</strong>
+                        {% if article.type %}
+                        <span style="font-size: 0.8em; opacity: 0.7;">({{ article.type }})</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align: center;">{{ article.quantite|default(1) }}</td>
+                    <td style="text-align: right;">
+                        {% set prix = article.prix_unitaire|default(article.prix|default(article.prix_reel|default(article.prix_vente|default(0)))) %}
+                        {{ prix|round(0)|int }} F
+                    </td>
+                    <td style="text-align: right;">
+                        {% set prix = article.prix_unitaire|default(article.prix|default(article.prix_reel|default(article.prix_vente|default(0)))) %}
+                        {% set total = prix * (article.quantite|default(1)) %}
+                        <strong>{{ total|round(0)|int }} F</strong>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Totaux -->
+        <div class="totaux">
+            <div class="ligne">
+                <span>Sous-total</span>
+                <span>{{ facture.sous_total|default(0)|round(0)|int }} FCFA</span>
+            </div>
+            
+            {% if facture.prise_en_charge > 0 %}
+            <div class="ligne" style="font-weight: bold;">
+                <span>Prise en charge ({{ facture.taux_assurance }}%)</span>
+                <span>- {{ facture.prise_en_charge|default(0)|round(0)|int }} FCFA</span>
+            </div>
+            {% endif %}
+            
+            {% if facture.prise_en_charge2 > 0 %}
+            <div class="ligne" style="font-weight: bold;">
+                <span>Prise en charge CAC ({{ facture.taux_assurance2 }}%)</span>
+                <span>- {{ facture.prise_en_charge2|default(0)|round(0)|int }} FCFA</span>
+            </div>
+            {% endif %}
+            
+            <div class="ligne total">
+                <span>NET À PAYER</span>
+                <span>{{ facture.net_a_payer|default(0)|round(0)|int }} FCFA</span>
+            </div>
+            
+            <div class="ligne paye">
+                <span>✅ Montant payé</span>
+                <span>{{ facture.montant_paye|default(0)|round(0)|int }} FCFA</span>
+            </div>
+            
+            {% if facture.reste_a_payer > 0 %}
+            <div class="ligne reste">
+                <span>⏳ Reste à payer</span>
+                <span>{{ facture.reste_a_payer|default(0)|round(0)|int }} FCFA</span>
+            </div>
+            {% else %}
+            <div class="ligne" style="border-top: 1px solid #000; padding-top: 5px; margin-top: 5px; font-weight: bold;">
+                <span>✅ Facture entièrement payée</span>
+                <span>✓</span>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Statut -->
+        <div class="statut-container">
+            {% set statut_labels = {
+                'en_attente': 'En attente de paiement',
+                'partielle': 'Paiement partiel',
+                'payee': '✅ Facture payée',
+                'en_retard': '⚠️ En retard de paiement',
+                'impayee': '⚠️ Impayée',
+                'annulee': 'Annulée'
+            } %}
+            <span class="statut statut-{{ facture.statut }}">
+                {{ statut_labels.get(facture.statut, facture.statut) }}
+            </span>
+        </div>
+
+        <!-- Historique des paiements -->
+        {% if paiements and paiements|length > 0 %}
+        <div class="historique">
+            <strong>Historique des paiements :</strong>
+            {% for p in paiements %}
+            <div class="ligne-histo">
+                <span>{{ p.date_paiement.strftime('%d/%m/%Y %H:%M') if p.date_paiement else p.date if p.date else '-' }}</span>
+                <span>{{ p.montant|round(0)|int }} FCFA</span>
+                <span>{{ p.mode_paiement or p.mode or 'Espèces' }}</span>
+                {% if p.notes %}
+                <span style="opacity:0.7;">{{ p.notes }}</span>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Notes -->
+        {% if facture.notes %}
+        <div style="margin-top: 8px; font-size: 10px; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+            <strong>📝 Notes :</strong> {{ facture.notes }}
+        </div>
+        {% endif %}
+
+        <!-- Pied de page -->
+        <div class="footer">
+            Merci de votre confiance !<br>
+            {{ structure.nom or 'Medilogic-GHP' }}
+        </div>
+    </div>
+
+    <!-- Boutons (non imprimés) -->
+    <div class="no-print">
+        <button class="btn-print" onclick="window.print()">🖨️ Imprimer</button>
+        <button class="btn-pdf" onclick="telechargerPDF()">📄 PDF</button>
+        <button class="btn-back" onclick="retour()">⬅️ Retour</button>
+        <button class="btn-close" onclick="fermer()">✖ Fermer</button>
+    </div>
+
+    <script>
+    function telechargerPDF() {
+        const element = document.getElementById('factureContenu');
+        const format = '{{ request.args.get("format", "80mm") }}';
+        
+        const opt = {
+            margin: format === '80mm' ? [0.15, 0.15, 0.15, 0.15] : [0.5, 0.5, 0.5, 0.5],
+            filename: 'facture_{{ facture.numero_facture }}.pdf',
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { 
+                scale: 2,
+                useCORS: true,
+                logging: false
+            },
+            jsPDF: { 
+                unit: 'in', 
+                format: format === '80mm' ? [2.8346, 11] : 'a4', 
+                orientation: 'portrait' 
+            },
+            pagebreak: { mode: 'avoid-all' }
+        };
+        
+        html2pdf().set(opt).from(element).save();
+    }
+    
+    function retour() {
+        // Fermer l'onglet s'il a été ouvert par window.open
+        if (window.opener) {
+            window.close();
+        } else {
+            // Sinon rediriger vers la page des factures
+            window.location.href = "{{ url_for('factures') }}";
+        }
+    }
+    
+    function fermer() {
+        window.close();
+        // Si la fenêtre ne se ferme pas, rediriger
+        setTimeout(() => { 
+            if (!window.closed) {
+                window.location.href = "{{ url_for('factures') }}";
+            }
+        }, 500);
+    }
+    
+    // Impression automatique si demandé
+    document.addEventListener('DOMContentLoaded', function() {
+        {% if request.args.get('print', 'false') == 'true' %}
+        setTimeout(function() {
+            window.print();
+        }, 500);
+        {% endif %}
+        
+        // Si l'onglet a été ouvert par window.open, afficher un message
+        if (window.opener) {
+            console.log('📄 Cette page a été ouverte dans un nouvel onglet.');
+            console.log('🔙 Cliquez sur "Retour" pour fermer cet onglet.');
+        }
+    });
+    </script>
+</body>
+</html>

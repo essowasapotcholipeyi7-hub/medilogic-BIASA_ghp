@@ -1,0 +1,882 @@
+{% extends "base.html" %}
+
+{% block title %}Administration - Gestion financière{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card-finance {
+        border-radius: 20px;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        overflow: hidden;
+    }
+    .stat-card-finance:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+    }
+    .stat-icon-finance {
+        width: 50px;
+        height: 50px;
+        border-radius: 15px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .nav-tabs .nav-link {
+        border-radius: 12px;
+        padding: 10px 20px;
+        margin-right: 8px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    .nav-tabs .nav-link.active {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        border: none;
+    }
+    .nav-tabs .nav-link:hover:not(.active) {
+        background: #f0f0f0;
+        transform: translateY(-2px);
+    }
+    .filter-bar {
+        background: #f8f9fa;
+        border-radius: 15px;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+    .motif-badge {
+        padding: 8px 15px;
+        border-radius: 25px;
+        font-size: 0.8rem;
+        font-weight: 500;
+    }
+    .motif-salaire { background: #e3f2fd; color: #1565c0; }
+    .motif-assurance { background: #e8f5e9; color: #2e7d32; }
+    .motif-reparation { background: #fff3e0; color: #e65100; }
+    .motif-fourniture { background: #f3e5f5; color: #6a1b9a; }
+    .motif-autres { background: #eceff1; color: #455a64; }
+    .stat-card {
+        border-radius: 20px;
+        transition: all 0.3s ease;
+        cursor: pointer;
+    }
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        {% include 'sidebar_menu.html' %}
+    </div>
+
+    <div class="col-md-9">
+        <ul class="nav nav-tabs mb-4" id="financeTab" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="depenses-tab" data-bs-toggle="tab" data-bs-target="#depenses" type="button" role="tab">
+                    Dépenses
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="rapports-tab" data-bs-toggle="tab" data-bs-target="#rapports" type="button" role="tab">
+                    Rapports
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content">
+
+            <!-- ONGLET DÉPENSES -->
+            <div class="tab-pane fade show active" id="depenses" role="tabpanel">
+                <div class="card">
+                    <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
+                        <h5>Dépenses</h5>
+                        <button class="btn btn-light btn-sm" onclick="showAddDepenseModal()">
+                            Ajouter une dépense
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-4">
+                                <div class="card stat-card-finance border-0 shadow-sm">
+                                    <div class="card-body text-center">
+                                        <div class="stat-icon-finance bg-success bg-opacity-10 mx-auto mb-2">
+                                            <i class="fas fa-arrow-up text-success fa-2x"></i>
+                                        </div>
+                                        <h5 class="text-success" id="soldeActuel">{{ (total_recettes - total_depenses)|round(0)|int }} FCFA</h5>
+                                        <small class="text-muted">Solde actuel</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card stat-card-finance border-0 shadow-sm">
+                                    <div class="card-body text-center">
+                                        <div class="stat-icon-finance bg-danger bg-opacity-10 mx-auto mb-2">
+                                            <i class="fas fa-chart-line text-danger fa-2x"></i>
+                                        </div>
+                                        <h5 class="text-danger" id="totalDepenses">{{ total_depenses|round(0)|int }} FCFA</h5>
+                                        <small class="text-muted">Total dépenses</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card stat-card-finance border-0 shadow-sm">
+                                    <div class="card-body text-center">
+                                        <div class="stat-icon-finance bg-warning bg-opacity-10 mx-auto mb-2">
+                                            <i class="fas fa-percent text-warning fa-2x"></i>
+                                        </div>
+                                        <h5 class="text-warning" id="tauxDepenses">
+                                            {% if total_recettes > 0 %}
+                                                {{ ((total_depenses / total_recettes) * 100)|round(1) }}%
+                                            {% else %}
+                                                0%
+                                            {% endif %}
+                                        </h5>
+                                        <small class="text-muted">Taux de dépenses</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Filtres dépenses -->
+                        <div class="filter-bar">
+                            <div class="row g-2">
+                                <div class="col-md-3">
+                                    <label class="form-label small">Date début</label>
+                                    <input type="date" id="depensesDateDebut" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small">Date fin</label>
+                                    <input type="date" id="depensesDateFin" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small">&nbsp;</label>
+                                    <button class="btn btn-primary btn-sm w-100" onclick="filtrerDepenses()">
+                                        <i class="fas fa-search"></i> Appliquer
+                                    </button>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small">Recherche motif</label>
+                                    <input type="text" id="searchMotif" class="form-control form-control-sm" 
+                                           placeholder="Salaire, assurance, reparation..." 
+                                           onkeyup="filtrerDepenses()">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small">Filtre motif</label>
+                                    <select id="filtreMotif" class="form-control form-control-sm" onchange="filtrerDepenses()">
+                                        <option value="">Tous les motifs</option>
+                                        <option value="salaire">Salaire personnel</option>
+                                        <option value="assurance">Versement assurance</option>
+                                        <option value="reparation">Réparation clinique</option>
+                                        <option value="fourniture">Fourniture médicale</option>
+                                        <option value="eau">Eau</option>
+                                        <option value="electricite">Electricite</option>
+                                        <option value="internet">Internet</option>
+                                        <option value="loyer">Loyer</option>
+                                        <option value="materiel">Matériel informatique</option>
+                                        <option value="transport">Transport</option>
+                                        <option value="communication">Communication</option>
+                                        <option value="autres">Autres</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="row mt-2">
+                                <div class="col-md-12">
+                                    <button class="btn btn-secondary btn-sm" onclick="resetFiltresDepenses()">
+                                        <i class="fas fa-sync-alt"></i> Réinitialiser
+                                    </button>
+                                    <span class="ms-3 text-muted">
+                                        <span id="depensesResultCount">0</span> dépense(s) trouvée(s)
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="table-responsive">
+                            <table class="table table-hover" id="depensesTable">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Date</th>
+                                        <th>Motif</th>
+                                        <th>Montant (FCFA)</th>
+                                        <th>Description</th>
+                                        <th>Enregistré par</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="depensesList">
+                                    {% for d in depenses %}
+                                    <tr>
+                                        <td>{{ d.id }}</td>
+                                        <td>{{ d.date_depense.strftime('%Y-%m-%d %H:%M') if d.date_depense else '-' }}</td>
+                                        <td>
+                                            <span class="motif-badge 
+                                                {% if d.motif == 'salaire' %}motif-salaire
+                                                {% elif d.motif == 'assurance' %}motif-assurance
+                                                {% elif d.motif == 'reparation' %}motif-reparation
+                                                {% elif d.motif == 'fourniture' %}motif-fourniture
+                                                {% else %}motif-autres{% endif %}">
+                                                {% if d.motif == 'salaire' %}Salaire
+                                                {% elif d.motif == 'assurance' %}Assurance
+                                                {% elif d.motif == 'reparation' %}Reparation
+                                                {% elif d.motif == 'fourniture' %}Fourniture
+                                                {% elif d.motif == 'eau' %}Eau
+                                                {% elif d.motif == 'electricite' %}Electricite
+                                                {% elif d.motif == 'internet' %}Internet
+                                                {% elif d.motif == 'loyer' %}Loyer
+                                                {% elif d.motif == 'materiel' %}Matériel
+                                                {% elif d.motif == 'transport' %}Transport
+                                                {% elif d.motif == 'communication' %}Communication
+                                                {% else %}{{ d.motif_personnalise or 'Autres' }}{% endif %}
+                                            </span>
+                                        </td>
+                                        <td class="text-danger fw-bold">{{ d.montant|round(0)|int }} FCFA</td>
+                                        <td>{{ d.description or '-' }}</td>
+                                        <td>{{ d.created_by_nom or '-' }}</td>
+                                    </tr>
+                                    {% else %}
+                                    <tr>
+                                        <td colspan="6" class="text-center">Aucune dépense</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                                <tfoot class="table-light">
+                                    <tr class="fw-bold">
+                                        <td colspan="3" class="text-end">Total dépenses :</td>
+                                        <td class="text-danger" id="totalDepensesFilter">{{ total_depenses|round(0)|int }} FCFA</td>
+                                        <td colspan="2"></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ONGLET RAPPORTS -->
+            <div class="tab-pane fade" id="rapports" role="tabpanel">
+                <div class="card">
+                    <div class="card-header bg-info text-white">
+                        <h5>Rapports financiers</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="filter-bar">
+                            <div class="row g-2">
+                                <div class="col-md-4">
+                                    <label class="form-label small">Date début</label>
+                                    <input type="date" id="rapportDateDebut" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label small">Date fin</label>
+                                    <input type="date" id="rapportDateFin" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-4 d-flex align-items-end">
+                                    <button class="btn btn-primary btn-sm w-100" onclick="genererRapport()">
+                                        Générer
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 4 cartes statistiques -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-3">
+                                <div class="card stat-card border-0 shadow-sm">
+                                    <div class="card-body text-center">
+                                        <div class="rounded-3 p-2 mb-2 bg-success bg-opacity-10 mx-auto" style="width: 50px; height: 50px;">
+                                            <i class="fas fa-arrow-up text-success fa-2x"></i>
+                                        </div>
+                                        <div class="stat-value text-success" id="rapportTotalRecettes">0</div>
+                                        <div class="stat-label">Total Recettes</div>
+                                        <div class="stat-sub">FCFA</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card stat-card border-0 shadow-sm">
+                                    <div class="card-body text-center">
+                                        <div class="rounded-3 p-2 mb-2 bg-danger bg-opacity-10 mx-auto" style="width: 50px; height: 50px;">
+                                            <i class="fas fa-arrow-down text-danger fa-2x"></i>
+                                        </div>
+                                        <div class="stat-value text-danger" id="rapportTotalDepenses">0</div>
+                                        <div class="stat-label">Total Dépenses</div>
+                                        <div class="stat-sub">FCFA</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card stat-card border-0 shadow-sm">
+                                    <div class="card-body text-center">
+                                        <div class="rounded-3 p-2 mb-2 bg-primary bg-opacity-10 mx-auto" style="width: 50px; height: 50px;">
+                                            <i class="fas fa-wallet text-primary fa-2x"></i>
+                                        </div>
+                                        <div class="stat-value text-primary" id="rapportSolde">0</div>
+                                        <div class="stat-label">Solde</div>
+                                        <div class="stat-sub">FCFA</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card stat-card border-0 shadow-sm">
+                                    <div class="card-body text-center">
+                                        <div class="rounded-3 p-2 mb-2 bg-info bg-opacity-10 mx-auto" style="width: 50px; height: 50px;">
+                                            <i class="fas fa-chart-line text-info fa-2x"></i>
+                                        </div>
+                                        <div class="stat-value text-info" id="rapportMarge">0</div>
+                                        <div class="stat-label">Marge</div>
+                                        <div class="stat-sub">%</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Détail des recettes et nombre de transactions -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <div class="card bg-light border-0">
+                                    <div class="card-body">
+                                        <h6 class="text-muted">Détail des recettes</h6>
+                                        <div class="row mt-2">
+                                            <div class="col-6">
+                                                <span class="text-primary">Actes médicaux</span>
+                                                <h4 class="text-primary" id="rapportRecettesActes">0 FCFA</h4>
+                                            </div>
+                                            <div class="col-6">
+                                                <span class="text-success">Pharmacie</span>
+                                                <h4 class="text-success" id="rapportRecettesPharma">0 FCFA</h4>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card bg-light border-0">
+                                    <div class="card-body">
+                                        <h6 class="text-muted">Nombre de transactions</h6>
+                                        <div class="row mt-2">
+                                            <div class="col-6">
+                                                <span class="text-primary">Ventes actes</span>
+                                                <h4 class="text-primary" id="rapportNbActes">0</h4>
+                                            </div>
+                                            <div class="col-6">
+                                                <span class="text-success">Ventes pharmacie</span>
+                                                <h4 class="text-success" id="rapportNbPharma">0</h4>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 🔥 RECETTES PAR SOURCE ET DEPENSES PAR MOTIF -->
+                        <div class="row mt-3">
+                            <div class="col-md-6">
+                                <div class="card bg-light border-0">
+                                    <div class="card-body">
+                                        <h6 class="text-muted">Recettes par source</h6>
+                                        <div id="recettesParSource">
+                                            <span class="spinner-border spinner-border-sm"></span> Chargement...
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card bg-light border-0">
+                                    <div class="card-body">
+                                        <h6 class="text-muted">Depenses par motif</h6>
+                                        <div id="depensesParMotif">
+                                            <span class="spinner-border spinner-border-sm"></span> Chargement...
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Dépenses par motif -->
+                        <div class="card mt-3">
+                            <div class="card-header bg-secondary text-white">
+                                <h6>Dépenses par motif</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-hover table-sm" id="rapportMotifsTable">
+                                        <thead class="table-dark">
+                                            <tr>
+                                                <th>Motif</th>
+                                                <th class="text-end">Montant (FCFA)</th>
+                                                <th class="text-end">%</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="rapportMotifsList">
+                                            <tr>
+                                                <td colspan="3" class="text-center text-muted py-4">
+                                                    <i class="fas fa-chart-pie me-2"></i>Sélectionnez une période
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                        <tfoot class="table-light">
+                                            <tr class="fw-bold">
+                                                <td class="text-end">TOTAL</td>
+                                                <td class="text-end text-danger" id="totalDepensesFooter">0 FCFA</td>
+                                                <td class="text-end">100%</td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Boutons export -->
+                        <div class="mt-3 text-end">
+                            <button class="btn btn-secondary btn-sm" onclick="exporterRapport()">
+                                Exporter en CSV
+                            </button>
+                            <button class="btn btn-info btn-sm" onclick="imprimerRapport()">
+                                Imprimer
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Ajouter Dépense -->
+<div class="modal fade" id="addDepenseModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">Ajouter une dépense</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="depenseForm">
+                    <div class="mb-3">
+                        <label class="form-label">Montant (FCFA) *</label>
+                        <input type="number" class="form-control" id="depenseMontant" required min="1">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Motif *</label>
+                        <select class="form-control" id="depenseMotif" onchange="toggleMotifPersonnalise()">
+                            <option value="salaire">Salaire personnel</option>
+                            <option value="assurance">Versement part assurance</option>
+                            <option value="reparation">Réparation de la clinique</option>
+                            <option value="fourniture">Fourniture médicale</option>
+                            <option value="eau">Eau</option>
+                            <option value="electricite">Electricite</option>
+                            <option value="internet">Internet</option>
+                            <option value="loyer">Loyer</option>
+                            <option value="materiel">Matériel informatique</option>
+                            <option value="transport">Transport</option>
+                            <option value="communication">Communication</option>
+                            <option value="autres">Autres (à préciser)</option>
+                        </select>
+                    </div>
+                    <div class="mb-3" id="motifPersonnaliseDiv" style="display:none;">
+                        <label class="form-label">Précisez le motif</label>
+                        <input type="text" class="form-control" id="depenseMotifPersonnalise" placeholder="Ex: Achat de matériel, Formation, etc...">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description (optionnel)</label>
+                        <textarea class="form-control" id="depenseDescription" rows="2"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-danger" onclick="saveDepense()">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ============================================
+// VARIABLES GLOBALES
+// ============================================
+let toutesLesVentes = [];
+
+// ============================================
+// LOADER
+// ============================================
+function showLoader(message) {
+    var loader = document.getElementById('loaderOverlay');
+    if (!loader) {
+        loader = document.createElement('div');
+        loader.id = 'loaderOverlay';
+        loader.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;';
+        loader.innerHTML = '<div class="spinner-border text-light" style="width:3rem;height:3rem;"></div><div class="text-white mt-2" id="loaderMessage">Chargement...</div>';
+        document.body.appendChild(loader);
+    }
+    loader.style.display = 'flex';
+    var msg = document.getElementById('loaderMessage');
+    if (msg) msg.textContent = message || 'Chargement...';
+}
+
+function hideLoader() {
+    var loader = document.getElementById('loaderOverlay');
+    if (loader) loader.style.display = 'none';
+}
+
+// ============================================
+// DEPENSES
+// ============================================
+function showAddDepenseModal() {
+    document.getElementById('depenseForm').reset();
+    document.getElementById('motifPersonnaliseDiv').style.display = 'none';
+    new bootstrap.Modal(document.getElementById('addDepenseModal')).show();
+}
+
+function toggleMotifPersonnalise() {
+    const motif = document.getElementById('depenseMotif').value;
+    const div = document.getElementById('motifPersonnaliseDiv');
+    div.style.display = motif === 'autres' ? 'block' : 'none';
+}
+
+function saveDepense() {
+    const montant = document.getElementById('depenseMontant').value;
+    if (!montant || montant <= 0) {
+        alert('Veuillez entrer un montant valide');
+        return;
+    }
+    
+    const motif = document.getElementById('depenseMotif').value;
+    const motifPersonnalise = document.getElementById('depenseMotifPersonnalise').value;
+    
+    const data = {
+        montant: parseFloat(montant),
+        motif: motif,
+        motif_personnalise: motif === 'autres' ? motifPersonnalise : '',
+        description: document.getElementById('depenseDescription').value
+    };
+    
+    showLoader('Enregistrement...');
+    
+    fetch('/api/finances/depenses', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(data => {
+        hideLoader();
+        if (data.success) {
+            alert('✅ Dépense enregistrée avec succès');
+            location.reload();
+        } else {
+            alert('❌ Erreur: ' + data.error);
+        }
+    })
+    .catch(() => { hideLoader(); alert('❌ Erreur'); });
+}
+
+function filtrerDepenses() {
+    const dateDebut = document.getElementById('depensesDateDebut').value;
+    const dateFin = document.getElementById('depensesDateFin').value;
+    const searchMotif = document.getElementById('searchMotif').value.toLowerCase().trim();
+    const motif = document.getElementById('filtreMotif').value;
+    
+    const rows = document.querySelectorAll('#depensesList tr');
+    let visibleCount = 0;
+    let totalVisible = 0;
+    
+    rows.forEach(row => {
+        if (row.cells.length < 2) return;
+        
+        let visible = true;
+        const dateCell = row.cells[1]?.innerText || '';
+        const motifCell = row.cells[2]?.innerText || '';
+        const descriptionCell = row.cells[4]?.innerText || '';
+        const montant = parseFloat(row.cells[3]?.innerText?.replace(' FCFA', '').replace(/\s/g, '')) || 0;
+        
+        if (dateDebut && dateFin && dateCell) {
+            const date = new Date(dateCell.split(' ')[0]);
+            const debut = new Date(dateDebut);
+            const fin = new Date(dateFin);
+            fin.setHours(23, 59, 59);
+            if (date < debut || date > fin) visible = false;
+        }
+        
+        if (visible && motif) {
+            if (!motifCell.toLowerCase().includes(motif.toLowerCase())) visible = false;
+        }
+        
+        if (visible && searchMotif) {
+            const texteRecherche = `${motifCell} ${descriptionCell}`.toLowerCase();
+            if (!texteRecherche.includes(searchMotif)) visible = false;
+        }
+        
+        row.style.display = visible ? '' : 'none';
+        if (visible) {
+            visibleCount++;
+            totalVisible += montant;
+        }
+    });
+    
+    document.getElementById('totalDepensesFilter').innerHTML = totalVisible.toLocaleString() + ' FCFA';
+    document.getElementById('depensesResultCount').innerHTML = visibleCount;
+}
+
+function resetFiltresDepenses() {
+    document.getElementById('depensesDateDebut').value = '';
+    document.getElementById('depensesDateFin').value = '';
+    document.getElementById('searchMotif').value = '';
+    document.getElementById('filtreMotif').value = '';
+    filtrerDepenses();
+}
+
+// ============================================
+// SOLDE ET FINANCES
+// ============================================
+function chargerSolde() {
+    fetch('/api/finances/stats')
+        .then(response => {
+            if (!response.ok) throw new Error('Erreur HTTP: ' + response.status);
+            return response.json();
+        })
+        .then(data => {
+            const totalRecettes = data.total_recettes || 0;
+            const totalDepenses = data.total_depenses || 0;
+            const solde = totalRecettes - totalDepenses;
+            const taux = totalRecettes > 0 ? ((totalDepenses / totalRecettes) * 100).toFixed(1) : 0;
+            
+            // Mettre à jour les cartes
+            const soldeElement = document.getElementById('soldeActuel');
+            const totalDepensesElement = document.getElementById('totalDepenses');
+            const tauxElement = document.getElementById('tauxDepenses');
+            
+            if (soldeElement) soldeElement.innerHTML = Math.round(solde).toLocaleString('fr-FR') + ' FCFA';
+            if (totalDepensesElement) totalDepensesElement.innerHTML = Math.round(totalDepenses).toLocaleString('fr-FR') + ' FCFA';
+            if (tauxElement) tauxElement.innerHTML = taux + '%';
+            
+            // Mettre à jour aussi les totaux dans les filtres
+            const totalDepensesFilter = document.getElementById('totalDepensesFilter');
+            if (totalDepensesFilter) totalDepensesFilter.innerHTML = Math.round(totalDepenses).toLocaleString('fr-FR') + ' FCFA';
+        })
+        .catch(error => {
+            console.error('Erreur chargerSolde:', error);
+        });
+}
+
+function chargerDetailFinances() {
+    // Recettes par source
+    fetch('/api/finances/recettes/source')
+        .then(r => r.json())
+        .then(data => {
+            const container = document.getElementById('recettesParSource');
+            if (container) {
+                if (data && data.length) {
+                    container.innerHTML = data.map(s => {
+                        let label = s.source;
+                        if (label === 'patients') label = 'Patients';
+                        else if (label === 'assurance') label = 'Assurances';
+                        else if (label === 'autres') label = 'Autres';
+                        return `
+                            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
+                                <span class="fw-semibold">${label}</span>
+                                <span class="text-success fw-bold">${Math.round(s.total).toLocaleString('fr-FR')} FCFA</span>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    container.innerHTML = '<p class="text-muted mb-0">Aucune recette</p>';
+                }
+            }
+        })
+        .catch(err => {
+            console.error('Erreur:', err);
+            const container = document.getElementById('recettesParSource');
+            if (container) container.innerHTML = '<p class="text-danger">Erreur chargement</p>';
+        });
+    
+    // Depenses par motif
+    fetch('/api/finances/depenses/motif')
+        .then(r => r.json())
+        .then(data => {
+            const container = document.getElementById('depensesParMotif');
+            if (container) {
+                if (data && data.length) {
+                    container.innerHTML = data.map(d => {
+                        let motifLabel = d.motif;
+                        if (motifLabel === 'salaire') motifLabel = 'Salaires';
+                        else if (motifLabel === 'reparation') motifLabel = 'Reparations';
+                        else if (motifLabel === 'fourniture') motifLabel = 'Fournitures';
+                        else if (motifLabel === 'assurance') motifLabel = 'Assurances';
+                        else if (motifLabel === 'eau') motifLabel = 'Eau';
+                        else if (motifLabel === 'electricite') motifLabel = 'Electricite';
+                        else if (motifLabel === 'internet') motifLabel = 'Internet';
+                        else if (motifLabel === 'loyer') motifLabel = 'Loyer';
+                        else motifLabel = motifLabel.charAt(0).toUpperCase() + motifLabel.slice(1);
+                        
+                        return `
+                            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
+                                <span class="fw-semibold">${motifLabel}</span>
+                                <span class="text-danger fw-bold">${Math.round(d.total).toLocaleString('fr-FR')} FCFA</span>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    container.innerHTML = '<p class="text-muted mb-0">Aucune depense</p>';
+                }
+            }
+        })
+        .catch(err => {
+            console.error('Erreur:', err);
+            const container = document.getElementById('depensesParMotif');
+            if (container) container.innerHTML = '<p class="text-danger">Erreur chargement</p>';
+        });
+}
+
+// ============================================
+// RAPPORTS
+// ============================================
+function genererRapport() {
+    let dateDebut = document.getElementById('rapportDateDebut').value;
+    let dateFin = document.getElementById('rapportDateFin').value;
+    
+    // Si les dates sont vides, prendre le mois en cours
+    if (!dateDebut || !dateFin) {
+        const today = new Date();
+        const lastMonth = new Date();
+        lastMonth.setMonth(today.getMonth() - 1);
+        dateDebut = lastMonth.toISOString().split('T')[0];
+        dateFin = today.toISOString().split('T')[0];
+        document.getElementById('rapportDateDebut').value = dateDebut;
+        document.getElementById('rapportDateFin').value = dateFin;
+    }
+    
+    let url = `/api/finances/stats?date_debut=${dateDebut}&date_fin=${dateFin}`;
+    let detailUrl = `/api/finances/recettes/detail?date_debut=${dateDebut}&date_fin=${dateFin}`;
+    
+    showLoader('Génération du rapport...');
+    
+    // Appel pour les stats
+    fetch(url)
+        .then(response => response.json())
+        .then(stats => {
+            // Mettre à jour les cartes
+            document.getElementById('rapportTotalRecettes').innerHTML = Math.round(stats.total_recettes || 0).toLocaleString('fr-FR');
+            document.getElementById('rapportTotalDepenses').innerHTML = Math.round(stats.total_depenses || 0).toLocaleString('fr-FR');
+            document.getElementById('rapportSolde').innerHTML = Math.round((stats.total_recettes - stats.total_depenses) || 0).toLocaleString('fr-FR');
+            
+            const marge = stats.total_recettes > 0 ? ((stats.total_recettes - stats.total_depenses) / stats.total_recettes * 100) : 0;
+            document.getElementById('rapportMarge').innerHTML = marge.toFixed(1);
+            
+            // Dépenses par motif
+            const tbody = document.getElementById('rapportMotifsList');
+            if (stats.depenses_par_motif && stats.depenses_par_motif.length > 0) {
+                let totalDepenses = 0;
+                tbody.innerHTML = stats.depenses_par_motif.map(m => {
+                    let motifNom = m.motif_nom || m.motif;
+                    if (motifNom === 'salaire') motifNom = 'Salaires';
+                    else if (motifNom === 'reparation') motifNom = 'Reparations';
+                    else if (motifNom === 'fourniture') motifNom = 'Fournitures';
+                    else if (motifNom === 'assurance') motifNom = 'Assurances';
+                    else motifNom = motifNom.charAt(0).toUpperCase() + motifNom.slice(1);
+                    
+                    const montant = m.total;
+                    totalDepenses += montant;
+                    const pourcentage = stats.total_depenses > 0 ? ((montant / stats.total_depenses) * 100).toFixed(1) : 0;
+                    return `
+                        <tr>
+                            <td>${motifNom}</td>
+                            <td class="text-end text-danger">${Math.round(montant).toLocaleString('fr-FR')} FCFA</td>
+                            <td class="text-end">${pourcentage}%</td>
+                        </tr>
+                    `;
+                }).join('');
+                document.getElementById('totalDepensesFooter').innerHTML = Math.round(totalDepenses).toLocaleString('fr-FR') + ' FCFA';
+            } else {
+                tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-4">Aucune dépense</td></tr>';
+                document.getElementById('totalDepensesFooter').innerHTML = '0 FCFA';
+            }
+            
+            return fetch(detailUrl);
+        })
+        .then(response => response.json())
+        .then(recettesDetail => {
+            let recettesActes = 0;
+            let recettesPharma = 0;
+            let nbActes = 0;
+            let nbPharma = 0;
+            
+            if (recettesDetail && recettesDetail.length) {
+                recettesDetail.forEach(item => {
+                    if (item.type === 'actes') {
+                        recettesActes = item.total_recettes || 0;
+                        nbActes = item.nombre_ventes || 0;
+                    } else if (item.type === 'pharmacie' || item.type === 'pharma') {
+                        recettesPharma = item.total_recettes || 0;
+                        nbPharma = item.nombre_ventes || 0;
+                    }
+                });
+            }
+            
+            document.getElementById('rapportRecettesActes').innerHTML = Math.round(recettesActes).toLocaleString('fr-FR') + ' FCFA';
+            document.getElementById('rapportRecettesPharma').innerHTML = Math.round(recettesPharma).toLocaleString('fr-FR') + ' FCFA';
+            document.getElementById('rapportNbActes').innerHTML = nbActes;
+            document.getElementById('rapportNbPharma').innerHTML = nbPharma;
+            
+            hideLoader();
+        })
+        .catch(error => {
+            hideLoader();
+            console.error('Erreur:', error);
+            alert('Erreur lors de la génération du rapport');
+        });
+}
+
+function exporterRapport() {
+    const dateDebut = document.getElementById('rapportDateDebut').value;
+    const dateFin = document.getElementById('rapportDateFin').value;
+    
+    if (!dateDebut || !dateFin) {
+        alert('Veuillez sélectionner une période avant d\'exporter');
+        return;
+    }
+    
+    const url = `/api/finances/export/csv?date_debut=${dateDebut}&date_fin=${dateFin}`;
+    window.open(url, '_blank');
+}
+
+function imprimerRapport() {
+    window.print();
+}
+
+// ============================================
+// INITIALISATION
+// ============================================
+document.addEventListener('DOMContentLoaded', function() {
+    chargerSolde();
+    chargerDetailFinances();
+    
+    // Définir les dates par défaut pour le rapport
+    const today = new Date();
+    const lastMonth = new Date();
+    lastMonth.setMonth(today.getMonth() - 1);
+    
+    const dateDebut = document.getElementById('rapportDateDebut');
+    const dateFin = document.getElementById('rapportDateFin');
+    
+    if (dateDebut) dateDebut.value = lastMonth.toISOString().split('T')[0];
+    if (dateFin) dateFin.value = today.toISOString().split('T')[0];
+    
+    // Générer automatiquement le rapport au chargement
+    setTimeout(function() {
+        genererRapport();
+    }, 500);
+});
+
+// Régénérer quand on clique sur l'onglet Rapports
+const rapportsTab = document.getElementById('rapports-tab');
+if (rapportsTab) {
+    rapportsTab.addEventListener('click', function() {
+        genererRapport();
+    });
+}
+</script>
+{% endblock %}

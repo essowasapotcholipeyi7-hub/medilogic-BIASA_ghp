@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Consultation & Prise en charge{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        {% include 'sidebar_menu.html' %}
+    </div>
+    
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5><i class="fas fa-stethoscope"></i> Consultation & Prise en charge</h5>
+            </div>
+            <div class="card-body text-center py-5">
+                <div class="mb-4" style="font-size: 80px; color: #667eea;">
+                    <i class="fas fa-hospital-user"></i>
+                </div>
+                
+                <h3 class="mb-3">Application de Consultation</h3>
+                <p class="text-muted mb-4" style="max-width: 500px; margin: 0 auto;">
+                    Accédez à l'application de consultation et prise en charge des patients.
+                    Elle s'ouvrira dans un nouvel onglet.
+                </p>
+                
+                <a href="https://gestion-patients-1-olej.onrender.com/" 
+                   target="_blank" 
+                   class="btn btn-primary btn-lg px-5 py-3">
+                    <i class="fas fa-stethoscope me-2"></i>
+                    Lancer la consultation
+                    <i class="fas fa-external-link-alt ms-2"></i>
+                </a>
+                
+                <div class="mt-4">
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle"></i> 
+                        L'application s'ouvre dans un nouvel onglet pour une meilleure expérience.
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

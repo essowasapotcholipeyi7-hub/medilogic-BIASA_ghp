@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+
+{% block title %}Facture #{{ vente_id }}{% endblock %}
+
+{% block extra_css %}
+{% set format = request.args.get('format', 'A4') %}
+
+{% if format == '80mm' %}
+<style>
+    @media print {
+        @page {
+            size: 80mm auto;
+            margin: 3mm;
+        }
+        
+        body {
+            width: 80mm;
+            font-size: 8px;
+            background: white;
+        }
+        
+        /* TOUT en NOIR et GRAS */
+        * {
+            color: black !important;
+            font-weight: bold !important;
+        }
+        
+        .container {
+            width: 100%;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .card {
+            border: none !important;
+            box-shadow: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        
+        .card-body {
+            padding: 5px !important;
+        }
+        
+        .row {
+            margin: 0 !important;
+        }
+        
+        .col-7, .col-5, .col-6 {
+            width: 100%;
+            text-align: center;
+        }
+        
+        h1, h2, h3, h4, h5 {
+            margin: 3px 0;
+            font-size: 10px;
+        }
+        
+        table {
+            font-size: 7px;
+        }
+        
+        table td, table th {
+            padding: 2px 1px !important;
+        }
+        
+        .text-end, .text-start, .text-center {
+            text-align: center !important;
+        }
+        
+        .no-print {
+            display: none !important;
+        }
+        
+        hr {
+            margin: 3px 0;
+            border-top: 1px solid black !important;
+        }
+        
+        img {
+            max-height: 40px !important;
+            filter: grayscale(100%) contrast(150%) brightness(80%) !important;
+            -webkit-filter: grayscale(100%) contrast(150%) brightness(80%) !important;
+        }        
+        i, .fas, .far, .fab {
+            display: none !important;
+        }
+        
+        /* Cacher le bloc des totaux colorés */
+        .bg-light, .bg-warning, .bg-danger {
+            background: white !important;
+        }
+    }
+    
+    @media screen {
+        body {
+            background: #e9ecef;
+        }
+        .card {
+            max-width: 400px;
+            margin: 20px auto;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+    }
+</style>
+{% else %}
+<style>
+    @media print {
+        @page {
+            size: A4;
+            margin: 10mm;
+        }
+    }
+</style>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow-lg" id="factureContenu">
+            <div class="card-body" style="font-family: 'Segoe UI', Arial, sans-serif;">
+
+                <!-- En-tête professionnel -->
+                <div class="row" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; margin: -20px -20px 20px -20px; padding: 20px; border-radius: 10px 10px 0 0;">
+                    <div class="col-7">
+                        <div class="d-flex align-items-center gap-3">
+                            {% if structure_logo %}
+                            <img src="{{ structure_logo }}" alt="Logo" style="max-height: 80px; max-width: 150px; background: white; padding: 5px; border-radius: 8px;">
+                            {% endif %}
+                            <div>
+                                <h2 style="margin: 0;">{{ structure_nom or "Medilogic-GHP" }}</h2>
+                                <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.9;">
+                                    <i class="fas fa-map-marker-alt"></i> {{ structure_adresse or "" }}<br>
+                                    <i class="fas fa-phone"></i> {{ structure_telephone or "" }} | 
+                                    <i class="fas fa-envelope"></i> {{ structure_email or "" }}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-5 text-end">
+                        <h1 style="font-size: 18px; margin: 0;">FACTURE</h1>
+                        <p style="margin: 5px 0 0 0;">N° {{ "%06d" % vente_id }}</p>
+                        <p>Date: {{ date_actuelle or "" }}</p>
+                    </div>
+                </div>
+
+<!-- ===== INFOS PATIENT AVEC DOUBLE ASSURANCE ===== -->
+<div class="mb-3">
+    <strong>Patient :</strong> {{ patient_nom }}<br>
+    
+    <!-- 🔥 Assurance principale -->
+    <strong>Assurance principale :</strong> {{ type_assurance }} ({{ taux_assurance }}%)<br>
+    {% if numero_assure and numero_assure != '' %}
+    <strong>N° Assuré :</strong> {{ numero_assure }}<br>
+    {% endif %}
+    
+    <!-- 🔥 Assurance complémentaire (uniquement si appliquée) -->
+    {% if assurance2_appliquee and assurance2_appliquee == true %}
+        {% if assurance2_nom and assurance2_nom != '' and assurance2_nom != 'Aucune' %}
+        <strong>Assurance complémentaire :</strong> {{ assurance2_nom }} 
+        ({{ taux_assurance2 }}%)
+        {# 🔥 AFFICHER L'INDICATION DE MODIFICATION #}
+        {% if taux_modifie and taux_modifie == true %}
+        <span style="color: #856404; background: #fff3cd; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: bold;">
+            ⚠️ Taux exceptionnel
+        </span>
+        {% endif %}
+        <br>
+        {% if numero_assure2 and numero_assure2 != '' %}
+        <strong>N° Assuré 2 :</strong> {{ numero_assure2 }}<br>
+        {% endif %}
+        {# 🔥 AFFICHER LE TAUX ORIGINAL EN RÉFÉRENCE #}
+        {% if taux_modifie and taux_modifie == true and taux_original and taux_original > 0 %}
+        <span style="color: #6c757d; font-size: 10px;">
+            <i class="fas fa-info-circle"></i> Taux habituel: {{ taux_original }}%
+        </span>
+        <br>
+        {% endif %}
+        {% endif %}
+    {% endif %}
+    
+    <strong>Paiement :</strong> {{ mode_paiement }}<br>
+</div>
+
+                <!-- Détails facture -->
+                <table style="width:100%; border-collapse: collapse; margin: 20px 0;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6; width: 50%;">Désignation</th>
+                            <th style="padding: 12px; text-align: center; border-bottom: 2px solid #dee2e6; width: 15%;">Qté</th>
+                            <th style="padding: 12px; text-align: right; border-bottom: 2px solid #dee2e6; width: 15%;">Prix unitaire</th>
+                            <th style="padding: 12px; text-align: right; border-bottom: 2px solid #dee2e6; width: 20%;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for article in articles %}
+                        <tr style="border-bottom: 1px solid #dee2e6;">
+                            <td style="padding: 10px;">{{ article.nom }}</td>
+                            <td style="padding: 10px; text-align: center;">{{ article.quantite }}</td>
+                            <td style="padding: 10px; text-align: right;">{{ article.prix_unitaire|default(0)|round(0)|int }} FCFA</td>
+                            <td style="padding: 10px; text-align: right;">{{ article.total|default(0)|round(0)|int }} FCFA</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+<!-- ===== TOTAUX AVEC DOUBLE ASSURANCE ===== -->
+<div style="margin-top:10px;">
+    <div style="display:flex; justify-content:space-between;">
+        <span>Sous-total :</span>
+        <span><strong>{{ sous_total|default(0)|round(0)|int }} FCFA</strong></span>
+    </div>
+    
+    <!-- 🔥 Prise en charge principale -->
+    {% if prise_en_charge > 0 %}
+    <div style="display:flex; justify-content:space-between; color:#28a745;">
+        <span>Prise en charge ({{ taux_assurance }}%) :</span>
+        <span>- {{ prise_en_charge|default(0)|round(0)|int }} FCFA</span>
+    </div>
+    {% endif %}
+    
+    <!-- 🔥 Prise en charge complémentaire (uniquement si appliquée) -->
+    {% if assurance2_appliquee and assurance2_appliquee == true and prise_en_charge2 and prise_en_charge2 > 0 %}
+    <div style="display:flex; justify-content:space-between; {% if taux_modifie and taux_modifie == true %}color:#856404;{% else %}color:#17a2b8;{% endif %}">
+        <span>
+            Prise en charge {{ assurance2_nom }} ({{ taux_assurance2 }}%)
+            {% if taux_modifie and taux_modifie == true %}
+            <span style="font-size: 9px; background: #fff3cd; padding: 0px 4px; border-radius: 3px;">
+                ⚠️ exceptionnel
+            </span>
+            {% endif %}
+        </span>
+        <span>- {{ prise_en_charge2|default(0)|round(0)|int }} FCFA</span>
+    </div>
+    {# 🔥 AFFICHER LE TAUX ORIGINAL DANS LE RÉCAPITULATIF #}
+    {% if taux_modifie and taux_modifie == true and taux_original and taux_original > 0 %}
+    <div style="display:flex; justify-content:space-between; color:#6c757d; font-size: 10px; padding-left: 20px;">
+        <span><i class="fas fa-arrow-right"></i> Taux habituel:</span>
+        <span>{{ taux_original }}%</span>
+    </div>
+    {% endif %}
+    {% endif %}
+    
+    <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:8px; padding-top:8px; border-top:2px solid #ddd;">
+        <span>NET À PAYER :</span>
+        <span style="color:#dc3545;">{{ net_a_payer|default(0)|round(0)|int }} FCFA</span>
+    </div>
+</div>
+                <!-- Mode de paiement -->
+                <div class="text-end mt-3">
+                    <span style="background: #e9ecef; padding: 5px 15px; border-radius: 20px;">
+                        <i class="fas fa-credit-card"></i> Paiement : {{ mode_paiement or "Espèces" }}
+                    </span>
+                </div>
+
+                <hr class="mt-4">
+                <div class="text-center text-muted" style="font-size: 11px;">
+                    Merci de votre confiance ! Règlement à réception de facture.<br>
+                    {{ structure_nom or "Medilogic-GHP" }}
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-3 no-print">
+            <button onclick="window.print()" class="btn btn-primary"><i class="fas fa-print"></i> Imprimer</button>
+            <button onclick="telechargerPDF()" class="btn btn-success"><i class="fas fa-download"></i> PDF</button>
+            <button onclick="fermerOuRediriger()" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function telechargerPDF() {
+    const element = document.getElementById('factureContenu');
+    const nomFichier = '{{ nom_fichier }}' || `facture_${Date.now()}`;
+    const format = '{{ request.args.get("format", "A4") }}';
+    
+    const opt = {
+        margin: [0.5, 0.5, 0.5, 0.5],
+        filename: `${nomFichier}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'in', format: format === '80mm' ? [2.8346, 11.6929] : 'a4', orientation: 'portrait' }
+    };
+    html2pdf().set(opt).from(element).save();
+}
+
+function fermerOuRediriger() {
+    // Essayer de fermer la fenêtre
+    window.close();
+    
+    // Si la fenêtre n'est pas fermée après 500ms, rediriger
+    setTimeout(function() {
+        if (!window.closed) {
+            window.location.href = "{{ url_for('dashboard') }}";
+        }
+    }, 500);
+}
+</script>
+{% endblock %}

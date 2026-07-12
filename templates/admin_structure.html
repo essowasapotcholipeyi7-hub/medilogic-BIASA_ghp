@@ -1,0 +1,903 @@
+{% extends "base.html" %}
+
+{% block title %}Administration Structure{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        {% include 'sidebar_menu.html' %}
+    </div>
+
+    <div class="col-md-9">
+        <!-- Onglets -->
+        <ul class="nav nav-tabs mb-3" id="adminTab" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="users-tab" data-bs-toggle="tab" data-bs-target="#users" type="button" role="tab">
+                    <i class="fas fa-users"></i> Utilisateurs
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="actes-tab" data-bs-toggle="tab" data-bs-target="#actes" type="button" role="tab">
+                    <i class="fas fa-stethoscope"></i> Actes médicaux
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="gestion-produits-tab" data-bs-toggle="tab" data-bs-target="#gestionProduits" type="button" role="tab">
+                    <i class="fas fa-boxes"></i> Produits & stocks
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="structure-tab" data-bs-toggle="tab" data-bs-target="#structure" type="button" role="tab">
+                    <i class="fas fa-building"></i> Ma structure
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content">
+
+            <!-- ========== ONGLET UTILISATEURS ========== -->
+            <div class="tab-pane fade show active" id="users" role="tabpanel">
+                <div class="card">
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                        <h5><i class="fas fa-users"></i> Gestion des utilisateurs</h5>
+                        <button class="btn btn-light btn-sm" onclick="showAddUserModal()">
+                            <i class="fas fa-plus"></i> Nouvel utilisateur
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Nom</th>
+                                        <th>Email</th>
+                                        <th>Rôle</th>
+                                        <th>Statut</th>
+                                        <th>Date création</th>
+                                        <th>Actions</th>
+                                        <th>Dernière connexion</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="usersList">
+                                    {% for user in users %}
+                                    <tr>
+                                        <td>{{ user.ID }}</td>
+                                        <td>{{ user.nom }}</td>
+                                        <td>{{ user.email }}</td>
+                                        <td>
+                                            {% if user.role == 'admin' %}
+                                                <span class="badge bg-danger">Administrateur</span>
+                                            {% elif user.role == 'medecin' %}
+                                                <span class="badge bg-primary">Médecin</span>
+                                            {% elif user.role == 'paramedical' %}
+                                                <span class="badge bg-warning text-dark">Paramédical</span>
+                                            {% elif user.role == 'pharmacien' %}
+                                                <span class="badge bg-success">Pharmacien</span>
+                                            {% elif user.role == 'caissier' %}
+                                                <span class="badge bg-info">Caissier</span>
+                                            {% elif user.role == 'secretaire' %}
+                                                <span class="badge bg-secondary">Secrétaire</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">{{ user.role }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            {% if user.actif == 'oui' or user.actif == 'true' or user.actif == '1' %}
+                                                <span class="badge bg-success" id="statutBadge{{ user.ID }}">Actif</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary" id="statutBadge{{ user.ID }}">Inactif</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ user.created_at[:10] if user.created_at else '-' }}</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-warning" onclick="toggleUserStatus({{ user.ID }}, '{{ user.actif }}')" title="Activer/Désactiver">
+                                                <i class="fas fa-power-off"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-danger" onclick="deleteUser({{ user.ID }})" title="Supprimer">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-info" onclick='editUser({{ user.ID }}, "{{ user.nom }}", "{{ user.email }}", "{{ user.role }}", "{{ user.actif }}")' title="Modifier">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                        </td>
+                                        <td>{{ user.derniere_connexion or '-' }}</td>
+                                    </tr>
+                                    {% else %}
+                                    <tr>
+                                        <td colspan="7" class="text-center">Aucun utilisateur</td>
+                                     </tr>
+                                    {% endfor %}
+                                </tbody>
+                             </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== ONGLET ACTES MÉDICAUX ========== -->
+            <div class="tab-pane fade" id="actes" role="tabpanel">
+                <div class="card">
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                        <h5><i class="fas fa-stethoscope"></i> Catalogue des actes</h5>
+                        <button class="btn btn-light btn-sm" onclick="showAddActeModal()">
+                            <i class="fas fa-plus"></i> Nouvel acte
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                <input type="text" id="searchActe" class="form-control" placeholder="Rechercher par nom..." onkeyup="filterActes()">
+                                <button class="btn btn-outline-secondary" onclick="clearSearchActe()">✖</button>
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-hover" id="actesTable">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Code</th>
+                                        <th>Nom</th>
+                                        <th>Prix (FCFA)</th>
+                                        <th>PBR (FCFA)</th>
+                                        <th>Description</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="actesList">
+                                    {% for acte in actes %}
+                                    <tr class="acte-row">
+                                        <td>{{ acte.ID }}</td>
+                                        <td><span class="badge bg-secondary">ACT-{{ acte.ID }}</span></td>
+                                        <td><strong>{{ acte.nom }}</strong></td>
+                                        <td>{{ acte.prix }} FCFA</td>
+                                        <td>{{ acte.pbr or acte.prix }} FCFA</td>
+                                        <td>{{ acte.description or '-' }}</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-warning" onclick='editActe({{ acte.ID }}, "{{ acte.nom|replace("'", "\\'") }}", {{ acte.prix }}, {{ acte.pbr or acte.prix }}, "{{ acte.description|replace("'", "\\'")|default('') }}")'>
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-danger" onclick="deleteActe({{ acte.ID }})">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr>
+                                        <td colspan="7" class="text-center">Aucun acte</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+<!-- ========== ONGLET PRODUITS & STOCKS ========== -->
+<div class="tab-pane fade" id="gestionProduits" role="tabpanel">
+    <div class="card">
+        <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+            <h5><i class="fas fa-boxes"></i> Gestion des produits & stocks</h5>
+            <button class="btn btn-light btn-sm" onclick="showAddProduitModal()">
+                <i class="fas fa-plus"></i> Nouveau produit
+            </button>
+        </div>
+        <div class="card-body">
+            <div class="mb-3">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                    <input type="text" id="searchProduitAdmin" class="form-control" placeholder="Rechercher un produit..." onkeyup="filterProduitsAdmin()">
+                    <button class="btn btn-outline-secondary" onclick="clearSearchProduitAdmin()">✖</button>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Nom</th>
+                            <th>Prix vente</th>
+                            <th>Prix achat</th>
+                            <th>PBR</th>
+                            <th>Stock</th>
+                            <th>Seuil</th>
+                            <th>Péremption</th>
+                            <th>Lot</th>
+                            <th>Marge</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="produitsAdminList">
+                        <tr><td colspan="10" class="text-center">Chargement...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+            <!-- ========== ONGLET MA STRUCTURE ========== -->
+            <div class="tab-pane fade" id="structure" role="tabpanel">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h5><i class="fas fa-building"></i> Informations de ma structure</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="structureForm">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Nom de la structure</label>
+                                    <input type="text" class="form-control" id="structureNom" value="{{ structure_info.get('nom', '') if structure_info else '' }}">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Email</label>
+                                    <input type="email" class="form-control" id="structureEmail" value="{{ structure_info.get('email', '') if structure_info else '' }}">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Téléphone</label>
+                                    <input type="tel" class="form-control" id="structureTelephone" value="{{ structure_info.get('telephone', '') if structure_info else '' }}">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Adresse</label>
+                                    <input type="text" class="form-control" id="structureAdresse" value="{{ structure_info.get('adresse', '') if structure_info else '' }}">
+                                </div>
+                                <div class="col-md-12 mb-3">
+                                    <label class="form-label">Logo URL</label>
+                                    <input type="text" class="form-control" id="structureLogo" value="{{ structure_info.get('logo_url', '') if structure_info else '' }}" placeholder="https://...">
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Mettre à jour</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Utilisateur -->
+<div class="modal fade" id="userModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="userModalTitle">Ajouter un utilisateur</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="userForm">
+                    <input type="hidden" id="userId">
+                    <div class="mb-3">
+                        <label class="form-label">Nom complet</label>
+                        <input type="text" class="form-control" id="userNom" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-control" id="userEmail" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Mot de passe</label>
+                        <input type="password" class="form-control" id="userPassword" placeholder="Laisser vide pour ne pas changer">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Rôle</label>
+                        <select class="form-control" id="userRole">
+                            <option value="caissier">Caissier</option>
+                            <option value="secretaire">Secretaire</option>
+                            <option value="medecin">Médecin</option>
+                            <option value="paramedical">Paramédical</option>
+                            <option value="pharmacien">Pharmacien</option>
+                            <option value="admin">Administrateur</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Statut</label>
+                        <select class="form-control" id="userActif">
+                            <option value="oui">Actif</option>
+                            <option value="non">Inactif</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-primary" onclick="saveUser()">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Acte -->
+<div class="modal fade" id="acteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="acteModalTitle">Ajouter un acte</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="acteForm">
+                    <input type="hidden" id="acteId">
+                    <div class="mb-3">
+                        <label class="form-label">Nom</label>
+                        <input type="text" class="form-control" id="acteNom" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Code</label>
+                        <input type="text" class="form-control" id="acteCode" placeholder="ACT-XXX">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Prix (FCFA)</label>
+                        <input type="number" class="form-control" id="actePrix" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">PBR (FCFA)</label>
+                        <input type="number" class="form-control" id="actePBR" placeholder="Prix de Base de Remboursement">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" id="acteDescription" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-primary" onclick="saveActe()">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Produit -->
+<div class="modal fade" id="produitModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="produitModalTitle">Ajouter un produit</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="produitForm">
+                    <input type="hidden" id="produitId">
+                    
+                    <!-- Informations générales -->
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Nom *</label>
+                            <input type="text" class="form-control" id="produitNom" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Unité</label>
+                            <select class="form-control" id="produitUnite">
+                                <option value="unité">Unité</option>
+                                <option value="comprimé">Comprimé</option>
+                                <option value="gélule">Gélule</option>
+                                <option value="sachet">Sachet</option>
+                                <option value="boîte">Boîte</option>
+                                <option value="flacon">Flacon</option>
+                                <option value="ampoule">Ampoule</option>
+                                <option value="sirop">Sirop</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- Prix et PBR -->
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Prix vente (FCFA) *</label>
+                            <input type="number" class="form-control" id="produitPrixVente" required>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Prix achat (FCFA)</label>
+                            <input type="number" class="form-control" id="produitPrixAchat" value="0">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">PBR (FCFA)</label>
+                            <input type="number" class="form-control" id="produitPBR" placeholder="Prix de Base de Remboursement">
+                        </div>
+                    </div>
+                    
+                    <!-- Stock et seuil -->
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Stock initial</label>
+                            <input type="number" class="form-control" id="produitStock" value="0">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Seuil d'alerte</label>
+                            <input type="number" class="form-control" id="produitSeuil" value="10">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Lot</label>
+                            <input type="text" class="form-control" id="produitLot" placeholder="Numéro de lot">
+                        </div>
+                    </div>
+                    
+                    <!-- Péremption -->
+                    <div class="row">
+                        <div class="col-md-12 mb-3">
+                            <label class="form-label">Date de péremption</label>
+                            <input type="date" class="form-control" id="produitDatePeremption">
+                            <small class="text-muted">Format: YYYY-MM-DD</small>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-success" onclick="saveProduit()">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Approvisionnement -->
+<div class="modal fade" id="approModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title"><i class="fas fa-truck"></i> Approvisionnement</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="approProduitId">
+                <div class="mb-3">
+                    <label class="form-label">Produit</label>
+                    <input type="text" class="form-control" id="approProduitNom" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Quantité à ajouter</label>
+                    <input type="number" class="form-control" id="approQuantite" min="1">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-warning" onclick="validerApprovisionnement()">Approvisionner</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ========== FILTRES ACTES ==========
+function filterActes() {
+    const filter = document.getElementById('searchActe').value.toLowerCase();
+    const rows = document.querySelectorAll('#actesTable tbody tr');
+    rows.forEach(row => {
+        const text = row.innerText.toLowerCase();
+        row.style.display = text.includes(filter) ? '' : 'none';
+    });
+}
+
+function clearSearchActe() { 
+    document.getElementById('searchActe').value = ''; 
+    filterActes(); 
+}
+
+// ========== GESTION PRODUITS & STOCKS ==========
+let tousLesProduits = [];
+
+function chargerProduitsAdmin() {
+    fetch('/api/produits')
+        .then(r => r.json())
+        .then(data => { 
+            tousLesProduits = data; 
+            afficherProduitsAdmin(data); 
+        })
+        .catch(error => {
+            console.error('Erreur:', error);
+            document.getElementById('produitsAdminList').innerHTML = '<tr><td colspan="10" class="text-center text-danger">Erreur de chargement</td></tr>';
+        });
+}
+
+function afficherProduitsAdmin(produits) {
+    const tbody = document.getElementById('produitsAdminList');
+    tbody.innerHTML = '';
+    
+    if (!produits || produits.length === 0) { 
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center">Aucun produit</td></tr>'; 
+        return; 
+    }
+    
+    produits.forEach(p => {
+        const stockClass = p.quantite_stock <= p.seuil_alerte ? 'text-danger fw-bold' : '';
+        const marge = (p.prix_vente || 0) - (p.prix_achat || 0);
+        const margeClass = marge > 0 ? 'text-success' : 'text-danger';
+        
+        let peremptionClass = '';
+        let peremptionText = p.date_peremption || '-';
+        if (p.date_peremption) {
+            const today = new Date();
+            const perempDate = new Date(p.date_peremption);
+            if (perempDate < today) {
+                peremptionClass = 'text-danger fw-bold';
+                peremptionText += ' ⚠️ PÉRIMÉ';
+            } else if ((perempDate - today) / (1000 * 60 * 60 * 24) < 30) {
+                peremptionClass = 'text-warning';
+                peremptionText += ' ⚠️ Bientôt';
+            }
+        }
+        
+        tbody.innerHTML += `
+            <tr>
+                <td><strong>${p.nom}</strong></td>
+                <td>${parseInt(p.prix_vente || 0).toLocaleString()} F</td>
+                <td>${parseInt(p.prix_achat || 0).toLocaleString()} F</td>
+                <td>${parseInt(p.pbr || p.prix_vente || 0).toLocaleString()} F</td>
+                <td class="${stockClass}">${p.quantite_stock || 0}</td>
+                <td>${p.seuil_alerte || 10}</td>
+                <td class="${peremptionClass}">${peremptionText}</td>
+                <td>${p.lot || '-'}</td>
+                <td class="${margeClass}">${marge.toLocaleString()} F</td>
+                <td>
+                    <button class="btn btn-sm btn-info" onclick="approvisionner(${p.id}, '${p.nom.replace(/'/g, "\\'")}')" title="Approvisionner">
+                        <i class="fas fa-truck"></i>
+                    </button>
+                    <button class="btn btn-sm btn-warning" onclick="modifierProduit(${p.id})" title="Modifier">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="supprimerProduit(${p.id})" title="Supprimer">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+}
+
+function filterProduitsAdmin() {
+    const search = document.getElementById('searchProduitAdmin').value.toLowerCase();
+    const filtered = tousLesProduits.filter(p => p.nom.toLowerCase().includes(search));
+    afficherProduitsAdmin(filtered);
+}
+
+function clearSearchProduitAdmin() { 
+    document.getElementById('searchProduitAdmin').value = ''; 
+    afficherProduitsAdmin(tousLesProduits); 
+}
+
+function showAddProduitModal() {
+    document.getElementById('produitModalTitle').innerText = 'Ajouter un produit';
+    document.getElementById('produitId').value = '';
+    document.getElementById('produitForm').reset();
+    document.getElementById('produitStock').value = '0';
+    document.getElementById('produitSeuil').value = '10';
+    document.getElementById('produitUnite').value = 'unité';
+    document.getElementById('produitPrixAchat').value = '0';
+    document.getElementById('produitDatePeremption').value = '';
+    document.getElementById('produitLot').value = '';
+    new bootstrap.Modal(document.getElementById('produitModal')).show();
+}
+
+function modifierProduit(id) {
+    const p = tousLesProduits.find(p => p.id == id);
+    if (!p) return;
+    document.getElementById('produitModalTitle').innerText = 'Modifier le produit';
+    document.getElementById('produitId').value = p.id;
+    document.getElementById('produitNom').value = p.nom;
+    document.getElementById('produitPrixVente').value = p.prix_vente || 0;
+    document.getElementById('produitPrixAchat').value = p.prix_achat || 0;
+    document.getElementById('produitPBR').value = p.pbr || p.prix_vente || 0;
+    document.getElementById('produitStock').value = p.quantite_stock || 0;
+    document.getElementById('produitSeuil').value = p.seuil_alerte || 10;
+    document.getElementById('produitUnite').value = p.unite || 'unité';
+    document.getElementById('produitDatePeremption').value = p.date_peremption || '';
+    document.getElementById('produitLot').value = p.lot || '';
+    new bootstrap.Modal(document.getElementById('produitModal')).show();
+}
+
+function saveProduit() {
+    const id = document.getElementById('produitId').value;
+    const produit = {
+        nom: document.getElementById('produitNom').value,
+        prix_vente: parseFloat(document.getElementById('produitPrixVente').value),
+        prix_achat: parseFloat(document.getElementById('produitPrixAchat').value) || 0,
+        pbr: parseFloat(document.getElementById('produitPBR').value) || parseFloat(document.getElementById('produitPrixVente').value),
+        quantite_stock: parseInt(document.getElementById('produitStock').value) || 0,
+        seuil_alerte: parseInt(document.getElementById('produitSeuil').value) || 10,
+        unite: document.getElementById('produitUnite').value,
+        date_peremption: document.getElementById('produitDatePeremption').value || '',
+        lot: document.getElementById('produitLot').value || ''
+    };
+    
+    if (!produit.nom || !produit.prix_vente) {
+        alert('Veuillez remplir tous les champs obligatoires (Nom et Prix vente)');
+        return;
+    }
+    
+    const url = id ? `/api/admin/produits/${id}` : '/api/admin/produits';
+    const method = id ? 'PUT' : 'POST';
+    
+    showLoader();
+    
+    fetch(url, { 
+        method: method, 
+        headers: {'Content-Type': 'application/json'}, 
+        body: JSON.stringify(produit) 
+    })
+    .then(r => r.json())
+    .then(data => {
+        hideLoader();
+        if (data.success) {
+            alert(id ? '✓ Produit modifié' : '✓ Produit ajouté');
+            bootstrap.Modal.getInstance(document.getElementById('produitModal')).hide();
+            chargerProduitsAdmin();
+            if (typeof chargerProduits === 'function') chargerProduits();
+        } else {
+            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => {
+        hideLoader();
+        alert('Erreur: ' + error);
+    });
+}
+
+function approvisionner(id, nom) {
+    document.getElementById('approProduitId').value = id;
+    document.getElementById('approProduitNom').value = nom;
+    document.getElementById('approQuantite').value = '';
+    new bootstrap.Modal(document.getElementById('approModal')).show();
+}
+
+function validerApprovisionnement() {
+    const id = document.getElementById('approProduitId').value;
+    const quantite = parseInt(document.getElementById('approQuantite').value);
+    
+    if (!quantite || quantite <= 0) { 
+        alert('Veuillez entrer une quantité valide'); 
+        return; 
+    }
+    
+    fetch(`/api/produits/${id}/approvisionner`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({quantite: quantite})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert(`✓ ${quantite} unité(s) ajoutée(s) au stock`);
+            bootstrap.Modal.getInstance(document.getElementById('approModal')).hide();
+            chargerProduitsAdmin();
+            if (typeof chargerProduits === 'function') chargerProduits();
+        } else {
+            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+        }
+    });
+}
+
+function supprimerProduit(id) {
+    if (confirm('Supprimer définitivement ce produit ?')) {
+        fetch(`/api/admin/produits/${id}`, { method: 'DELETE' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Produit supprimé');
+                    chargerProduitsAdmin();
+                    if (typeof chargerProduits === 'function') chargerProduits();
+                } else {
+                    alert('Erreur: ' + data.error);
+                }
+            });
+    }
+}
+// ========== GESTION ACTES ==========
+function showAddActeModal() {
+    document.getElementById('acteModalTitle').innerText = 'Ajouter un acte';
+    document.getElementById('acteId').value = '';
+    document.getElementById('acteForm').reset();
+    document.getElementById('actePBR').value = '';
+    new bootstrap.Modal(document.getElementById('acteModal')).show();
+}
+
+function editActe(id, nom, prix, pbr, description) {
+    document.getElementById('acteModalTitle').innerText = "Modifier l'acte";
+    document.getElementById('acteId').value = id;
+    document.getElementById('acteNom').value = nom;
+    document.getElementById('actePrix').value = prix;
+    document.getElementById('actePBR').value = pbr || prix;
+    document.getElementById('acteDescription').value = description || '';
+    new bootstrap.Modal(document.getElementById('acteModal')).show();
+}
+
+function saveActe() {
+    const data = {
+        id: document.getElementById('acteId').value,
+        nom: document.getElementById('acteNom').value,
+        code: document.getElementById('acteCode').value,
+        prix: parseInt(document.getElementById('actePrix').value),
+        pbr: parseInt(document.getElementById('actePBR').value) || parseInt(document.getElementById('actePrix').value),
+        description: document.getElementById('acteDescription').value
+    };
+    
+    if (!data.nom || !data.prix) {
+        alert('Veuillez remplir tous les champs obligatoires');
+        return;
+    }
+    
+    fetch('/api/admin/actes', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(data => { 
+        if(data.success) {
+            location.reload();
+        } else {
+            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+        }
+    });
+}
+
+function deleteActe(id) {
+    if (confirm('Supprimer cet acte ?')) {
+        fetch(`/api/admin/actes/${id}`, { method: 'DELETE' })
+            .then(r => r.json())
+            .then(data => { 
+                if(data.success) {
+                    location.reload();
+                } else {
+                    alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+                }
+            });
+    }
+}
+
+// ========== GESTION UTILISATEURS ==========
+function showAddUserModal() {
+    document.getElementById('userModalTitle').innerText = 'Ajouter un utilisateur';
+    document.getElementById('userId').value = '';
+    document.getElementById('userForm').reset();
+    document.getElementById('userActif').value = 'oui';
+    new bootstrap.Modal(document.getElementById('userModal')).show();
+}
+
+function editUser(id, nom, email, role, actif) {
+    document.getElementById('userModalTitle').innerText = 'Modifier un utilisateur';
+    document.getElementById('userId').value = id;
+    document.getElementById('userNom').value = nom;
+    document.getElementById('userEmail').value = email;
+    document.getElementById('userPassword').value = '';
+    document.getElementById('userRole').value = role;
+    document.getElementById('userActif').value = actif === 'oui' ? 'oui' : 'non';
+    new bootstrap.Modal(document.getElementById('userModal')).show();
+}
+
+function saveUser() {
+    const data = {
+        id: document.getElementById('userId').value,
+        nom: document.getElementById('userNom').value,
+        email: document.getElementById('userEmail').value,
+        password: document.getElementById('userPassword').value,
+        role: document.getElementById('userRole').value,
+        actif: document.getElementById('userActif').value
+    };
+    
+    if (!data.nom || !data.email) {
+        alert('Veuillez remplir tous les champs obligatoires');
+        return;
+    }
+    
+    showLoader();
+    
+    fetch('/api/admin/users', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(data => {
+        hideLoader();
+        if (data.success) {
+            alert(data.id ? 'Utilisateur modifié' : 'Utilisateur ajouté');
+            location.reload();
+        } else {
+            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => {
+        hideLoader();
+        alert('Erreur: ' + error);
+    });
+}
+
+function toggleUserStatus(userId, actuel) {
+    const nouveauStatut = (actuel === 'oui' || actuel === 'true' || actuel === '1') ? 'non' : 'oui';
+    const message = nouveauStatut === 'oui' ? 'activer' : 'désactiver';
+    
+    if (confirm(`Voulez-vous ${message} cet utilisateur ?`)) {
+        showLoader();
+        
+        fetch(`/api/admin/users/${userId}/toggle`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({actif: nouveauStatut})
+        })
+        .then(r => r.json())
+        .then(data => {
+            hideLoader();
+            if (data.success) {
+                alert(`Utilisateur ${message} avec succès`);
+                location.reload();
+            } else {
+                alert('Erreur: ' + data.error);
+            }
+        })
+        .catch(error => {
+            hideLoader();
+            alert('Erreur: ' + error);
+        });
+    }
+}
+
+function deleteUser(id) {
+    if (confirm('Supprimer cet utilisateur ?')) {
+        showLoader();
+        
+        fetch(`/api/admin/users/${id}`, { method: 'DELETE' })
+            .then(r => r.json())
+            .then(data => {
+                hideLoader();
+                if (data.success) {
+                    alert('Utilisateur supprimé');
+                    location.reload();
+                } else {
+                    alert('Erreur: ' + data.error);
+                }
+            });
+    }
+}
+
+// ========== GESTION STRUCTURE ==========
+document.getElementById('structureForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const data = {
+        nom: document.getElementById('structureNom').value,
+        email: document.getElementById('structureEmail').value,
+        telephone: document.getElementById('structureTelephone').value,
+        adresse: document.getElementById('structureAdresse').value,
+        logo_url: document.getElementById('structureLogo').value
+    };
+    
+    fetch('/api/admin/structure', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(data => { 
+        if(data.success) {
+            alert('✓ Structure mise à jour');
+            location.reload();
+        } else {
+            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+        }
+    });
+});
+
+// ========== LOADER ==========
+function showLoader() {
+    var loader = document.getElementById('loaderOverlay');
+    if (!loader) {
+        loader = document.createElement('div');
+        loader.id = 'loaderOverlay';
+        loader.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;';
+        loader.innerHTML = '<div class="spinner-border text-light" style="width:3rem;height:3rem;"></div><div class="text-white mt-2">Chargement...</div>';
+        document.body.appendChild(loader);
+    }
+    loader.style.display = 'flex';
+}
+
+function hideLoader() {
+    var loader = document.getElementById('loaderOverlay');
+    if (loader) loader.style.display = 'none';
+}
+
+// Initialisation
+document.addEventListener('DOMContentLoaded', function() {
+    chargerProduitsAdmin();
+});
+</script>
+{% endblock %}

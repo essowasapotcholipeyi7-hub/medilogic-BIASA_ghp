@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Facture #{{ vente_id }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card" id="factureContenu">
+            <div class="card-body" style="font-size: 12px;">
+                <!-- En-tête -->
+                <div class="row mb-3">
+                    <div class="col-6">
+                        <h5 style="font-size: 16px; margin:0;">{{ structure_nom or "Medilogic-GHP" }}</h5>
+                        <p style="margin:0; font-size: 10px;">
+                            {{ structure_adresse or "" }}<br>
+                            Tél: {{ structure_telephone or "" }}<br>
+                            Email: {{ structure_email or "" }}
+                        </p>
+                    </div>
+                    <div class="col-6 text-end">
+                        <h4 style="font-size: 18px; color:#28a745;">FACTURE</h4>
+                        <p style="margin:0; font-size: 11px;">
+                            N°: {{ "%06d" % vente_id }}<br>
+                            Date: {{ date_actuelle or "" }}
+                        </p>
+                    </div>
+                </div>
+
+                <hr style="margin: 5px 0;">
+
+                <!-- Infos patient -->
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <strong>Patient :</strong> {{ patient_nom or "Patient" }}<br>
+                        <strong>Assurance :</strong> {{ type_assurance or "Non assuré" }} ({{ taux_assurance|default(0) }}%)<br>
+                        {% if numero_assure and numero_assure != '' %}
+                        <strong>N° Assuré :</strong> {{ numero_assure }}<br>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <hr style="margin: 5px 0;">
+
+                <!-- Tableau des articles -->
+                <table class="table table-sm table-bordered" style="font-size: 11px;">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Désignation</th>
+                            <th class="text-center" width="60">Qté</th>
+                            <th class="text-end" width="100">P.U.</th>
+                            <th class="text-end" width="100">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for article in articles %}
+                        <tr>
+                            <td>{{ article.nom }}</td>
+                            <td class="text-center">{{ article.quantite }}</td>
+                            <td class="text-end">{{ article.prix_unitaire|default(0)|round(0)|int }} F</td>
+                            <td class="text-end">{{ article.total|default(0)|round(0)|int }} F</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        {% set sous_total_val = sous_total|default(0) %}
+                        {% set prise_en_charge_val = prise_en_charge|default(0) %}
+                        {% set net_a_payer_val = net_a_payer|default(0) %}
+                        
+                        <tr style="background-color: #f8f9fa;">
+                            <th colspan="3" class="text-end">SOUS-TOTAL :</th>
+                            <th class="text-end">{{ sous_total_val|round(0)|int }} FCFA</th>
+                        </tr>
+                        {% if prise_en_charge_val > 0 %}
+                        <tr style="background-color: #d4edda;">
+                            <th colspan="3" class="text-end">PRISE EN CHARGE ({{ taux_assurance|default(0) }}%) :</th>
+                            <th class="text-end">- {{ prise_en_charge_val|round(0)|int }} FCFA</th>
+                        </tr>
+                        {% endif %}
+                        <tr style="background-color: #cce5ff;">
+                            <th colspan="3" class="text-end">NET À PAYER :</th>
+                            <th class="text-end">{{ net_a_payer_val|round(0)|int }} FCFA</th>
+                        </tr>
+                    </tfoot>
+                </table>
+
+                <!-- Mode de paiement -->
+                <div class="row mt-2">
+                    <div class="col-12">
+                        <strong>Mode de paiement :</strong> {{ mode_paiement or "Espèces" }}
+                    </div>
+                </div>
+
+                <!-- Mentions -->
+                <hr style="margin: 5px 0;">
+                <div class="row mt-2">
+                    <div class="col-12 text-center" style="font-size: 10px;">
+                        Merci de votre confiance !<br>
+                        {{ structure_nom or "Medilogic-GHP" }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Boutons -->
+        <div class="text-center mt-3 no-print">
+            <button onclick="window.print()" class="btn btn-sm btn-primary">
+                <i class="fas fa-print"></i> Imprimer
+            </button>
+            <button onclick="telechargerPDF()" class="btn btn-sm btn-success">
+                <i class="fas fa-download"></i> PDF
+            </button>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-secondary">
+                <i class="fas fa-arrow-left"></i> Retour
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+function telechargerPDF() {
+    const element = document.getElementById('factureContenu');
+    const opt = {
+        margin: [0.3, 0.3, 0.3, 0.3],
+        filename: 'facture_{{ vente_id }}.pdf',
+        image: { type: 'jpeg', quality: 0.95 },
+        html2canvas: { scale: 2, letterRendering: true },
+        jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
+    };
+    html2pdf().set(opt).from(element).save();
+}
+</script>
+{% endblock %}

@@ -1,0 +1,948 @@
+{% extends "base.html" %}
+
+{% block title %}Prescriptions reçues{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- ⭐ PANIER FLOTTANT -->
+    <div id="panierFloating" class="position-fixed bottom-0 end-0 p-3" style="z-index: 1050; display: none;">
+        <div class="card shadow-lg border-0" style="min-width: 280px; border-radius: 15px;">
+            <div class="card-header bg-success text-white rounded-top d-flex justify-content-between align-items-center">
+                <h6 class="mb-0"><i class="fas fa-shopping-cart me-2"></i>Mon panier</h6>
+                <span class="badge bg-light text-dark" id="panierCount">0</span>
+            </div>
+            <div class="card-body">
+                <div id="panierContent">
+                    <p class="text-muted small mb-1">Total: <strong id="panierTotal">0 FCFA</strong></p>
+                    <div id="panierItems" class="small" style="max-height: 150px; overflow-y: auto;"></div>
+                </div>
+                <button class="btn btn-success btn-sm w-100 mt-2" onclick="finaliserPanier()">
+                    <i class="fas fa-receipt me-1"></i> Finaliser
+                </button>
+                <button class="btn btn-danger btn-sm w-100 mt-1" onclick="viderPanier()">
+                    <i class="fas fa-trash me-1"></i> Vider tout
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ⭐ EN-TÊTE -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3">
+            <i class="fas fa-prescription-bottle me-2 text-success"></i>
+            Prescriptions reçues
+            <span class="badge bg-success ms-2" id="totalBadge">{{ prescriptions_pharma|length + prescriptions_actes|length }}</span>
+        </h1>
+        <div>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left me-1"></i> Retour
+            </a>
+            <button class="btn btn-outline-primary" onclick="rafraichirPrescriptions()">
+                <i class="fas fa-sync me-1"></i> Rafraîchir
+            </button>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════ -->
+    <!-- BARRE DE RECHERCHE -->
+    <!-- ═══════════════════════════════════════════ -->
+    <div class="row mb-4">
+        <div class="col-md-6 mx-auto">
+            <div class="input-group">
+                <span class="input-group-text bg-white border-end-0">
+                    <i class="fas fa-search text-primary"></i>
+                </span>
+                <input type="text" id="searchPrescriptionInput" class="form-control border-start-0" 
+                       placeholder="Rechercher par nom ou prénom du patient..." 
+                       onkeyup="filterPrescriptions()">
+                <button class="btn btn-outline-secondary" onclick="clearSearchPrescription()" type="button">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="text-muted small mt-1">
+                <i class="fas fa-info-circle"></i> <span id="prescriptionResultCount">0</span> patient(s) trouvé(s)
+            </div>
+        </div>
+    </div>
+
+    <!-- Onglets -->
+    <ul class="nav nav-tabs mb-4" id="prescriptionTabs" role="tablist">
+        <li class="nav-item">
+            <a class="nav-link active" id="pharma-tab" data-bs-toggle="tab" href="#pharma" role="tab">
+                <i class="fas fa-pills me-1 text-success"></i> Pharmacie
+                <span class="badge bg-success ms-1" id="pharmaCount">{{ prescriptions_pharma|length }}</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="actes-tab" data-bs-toggle="tab" href="#actes" role="tab">
+                <i class="fas fa-stethoscope me-1 text-primary"></i> Actes
+                <span class="badge bg-primary ms-1" id="actesCount">{{ prescriptions_actes|length }}</span>
+            </a>
+        </li>
+        <li class="nav-item ms-auto">
+            <button class="btn btn-outline-success btn-sm" onclick="togglePanier()">
+                <i class="fas fa-shopping-cart me-1"></i> Panier
+                <span class="badge bg-success ms-1" id="panierBadge">0</span>
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content">
+        <!-- ═══════════════════════════════════════════ -->
+        <!-- PHARMACIE -->
+        <!-- ═══════════════════════════════════════════ -->
+        <div class="tab-pane fade show active" id="pharma" role="tabpanel">
+            <div class="card">
+                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-pills me-2"></i>Prescriptions pharmaceutiques</h5>
+                    <div>
+                        <button class="btn btn-light btn-sm me-1" onclick="ajouterToutGroupe('pharma')" title="Tout ajouter au panier">
+                            <i class="fas fa-cart-plus me-1 text-success"></i> Tout ajouter
+                        </button>
+                        <span class="badge bg-light text-dark">{{ prescriptions_pharma|length }}</span>
+                    </div>
+                </div>
+                <div class="card-body" id="pharmaBody">
+                    {% if prescriptions_pharma %}
+                        {% set grouped = prescriptions_pharma|groupby('patient_id') %}
+                        {% for patient_id, items in grouped %}
+                        {% set patient_nom = items[0].patient_nom %}
+                        {% set patient_prenom = items[0].patient_prenom %}
+                        <div class="card mb-3 border-success" data-patient-id="{{ patient_id }}">
+                            <div class="card-header bg-success bg-opacity-10 d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong><i class="fas fa-user me-2"></i>{{ patient_nom }} {{ patient_prenom }}</strong>
+                                    <span class="badge bg-secondary ms-2">{{ items|length }} prescription(s)</span>
+                                </div>
+                                <div>
+                                    <button class="btn btn-sm btn-success" onclick="ajouterPanierGroupe({{ items|map(attribute='id')|list|tojson }})" title="Tout ajouter au panier">
+                                        <i class="fas fa-cart-plus me-1"></i> Panier
+                                    </button>
+                                    <button class="btn btn-sm btn-info" onclick="imprimerMedicaments({{ patient_id }})" title="Imprimer toutes les prescriptions médicamenteuses">
+                                        <i class="fas fa-print me-1"></i> Imprimer
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-hover table-striped mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Médicament</th>
+                                                <th>Dosage</th>
+                                                <th>Qté</th>
+                                                <th>Prix unitaire</th>
+                                                <th>Total</th>
+                                                <th>Prescripteur</th>
+                                                <th>Date</th>
+                                                <th>Statut</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for p in items %}
+                                            <tr id="presc-row-{{ p.id }}" data-type="pharma" data-patient="{{ patient_id }}" data-patient-nom="{{ patient_nom }}" data-patient-prenom="{{ patient_prenom }}">
+                                                <td><strong>{{ p.medicament }}</strong></td>
+                                                <td>{{ p.dosage or '-' }}</td>
+                                                <td>{{ p.quantite or '1' }}</td>
+                                                <td class="text-end">{{ (p.prix_unitaire or 0)|int|format_currency }}</td>
+                                                <td class="text-end fw-bold">{{ (p.prix_total or 0)|int|format_currency }}</td>
+                                                <td>{{ p.prescripteur or '-' }}</td>
+                                                <td>{{ p.date_prescription.strftime('%d/%m/%Y') if p.date_prescription else '-' }}</td>
+                                                <td class="statut-cell">
+                                                    {% set statut = p.statut or 'EN_ATTENTE' %}
+                                                    {% if statut == 'EN_ATTENTE' %}
+                                                        <span class="badge bg-warning">En attente</span>
+                                                    {% elif statut == 'AU_PANIER' %}
+                                                        <span class="badge bg-info">Au panier</span>
+                                                    {% elif statut == 'DELIVREE' %}
+                                                        <span class="badge bg-success">Délivrée ✅</span>
+                                                    {% else %}
+                                                        <span class="badge bg-secondary">{{ statut }}</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td class="actions-cell">
+                                                    <div class="btn-group btn-group-sm">
+                                                        <button class="btn btn-info" onclick="voirDetails({{ p.id }})" title="Voir détails">
+                                                            <i class="fas fa-eye"></i>
+                                                        </button>
+                                                        {% if statut == 'EN_ATTENTE' %}
+                                                        <button class="btn btn-success" onclick="ajouterPanier({{ p.id }})" title="Ajouter au panier">
+                                                            <i class="fas fa-cart-plus"></i>
+                                                        </button>
+                                                        {% endif %}
+                                                        {% if statut == 'AU_PANIER' %}
+                                                        <button class="btn btn-danger" onclick="retirerPanier({{ p.id }})" title="Retirer du panier">
+                                                            <i class="fas fa-trash"></i>
+                                                        </button>
+                                                        {% endif %}
+                                                        <button class="btn btn-secondary" onclick="imprimerPrescription({{ p.id }})" title="Imprimer">
+                                                            <i class="fas fa-print"></i>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="alert alert-info text-center">
+                            <i class="fas fa-info-circle me-2"></i>Aucune prescription pharmaceutique reçue
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════ -->
+        <!-- ACTES -->
+        <!-- ═══════════════════════════════════════════ -->
+        <div class="tab-pane fade" id="actes" role="tabpanel">
+            <div class="card">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-stethoscope me-2"></i>Prescriptions d'actes</h5>
+                    <div>
+                        <button class="btn btn-light btn-sm me-1" onclick="ajouterToutGroupe('actes')" title="Tout ajouter au panier">
+                            <i class="fas fa-cart-plus me-1 text-success"></i> Tout ajouter
+                        </button>
+                        <span class="badge bg-light text-dark">{{ prescriptions_actes|length }}</span>
+                    </div>
+                </div>
+                <div class="card-body" id="actesBody">
+                    {% if prescriptions_actes %}
+                        {% set grouped = prescriptions_actes|groupby('patient_id') %}
+                        {% for patient_id, items in grouped %}
+                        {% set patient_nom = items[0].patient_nom %}
+                        {% set patient_prenom = items[0].patient_prenom %}
+                        <div class="card mb-3 border-primary" data-patient-id="{{ patient_id }}">
+                            <div class="card-header bg-primary bg-opacity-10 d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong><i class="fas fa-user me-2"></i>{{ patient_nom }} {{ patient_prenom }}</strong>
+                                    <span class="badge bg-secondary ms-2">{{ items|length }} prescription(s)</span>
+                                </div>
+                                <div>
+                                    <button class="btn btn-sm btn-success" onclick="ajouterPanierGroupe({{ items|map(attribute='id')|list|tojson }})" title="Tout ajouter au panier">
+                                        <i class="fas fa-cart-plus me-1"></i> Panier
+                                    </button>
+                                    <button class="btn btn-sm btn-info" onclick="imprimerActes({{ patient_id }})" title="Imprimer toutes les prescriptions d'actes">
+                                        <i class="fas fa-print me-1"></i> Imprimer
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-hover table-striped mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Acte</th>
+                                                <th>Prix</th>
+                                                <th>Prescripteur</th>
+                                                <th>Date</th>
+                                                <th>Statut</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for p in items %}
+                                            <tr id="presc-row-{{ p.id }}" data-type="actes" data-patient="{{ patient_id }}" data-patient-nom="{{ patient_nom }}" data-patient-prenom="{{ patient_prenom }}">
+                                                <td><strong>{{ p.medicament }}</strong></td>
+                                                <td class="text-end fw-bold">{{ (p.prix_total or 0)|int|format_currency }}</td>
+                                                <td>{{ p.prescripteur or '-' }}</td>
+                                                <td>{{ p.date_prescription.strftime('%d/%m/%Y') if p.date_prescription else '-' }}</td>
+                                                <td class="statut-cell">
+                                                    {% set statut = p.statut or 'EN_ATTENTE' %}
+                                                    {% if statut == 'EN_ATTENTE' %}
+                                                        <span class="badge bg-warning">En attente</span>
+                                                    {% elif statut == 'AU_PANIER' %}
+                                                        <span class="badge bg-info">Au panier</span>
+                                                    {% elif statut == 'FACTURE' %}
+                                                        <span class="badge bg-primary">Facturée ✅</span>
+                                                    {% else %}
+                                                        <span class="badge bg-secondary">{{ statut }}</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td class="actions-cell">
+                                                    <div class="btn-group btn-group-sm">
+                                                        <button class="btn btn-info" onclick="voirDetails({{ p.id }})" title="Voir détails">
+                                                            <i class="fas fa-eye"></i>
+                                                        </button>
+                                                        {% if statut == 'EN_ATTENTE' %}
+                                                        <button class="btn btn-success" onclick="ajouterPanier({{ p.id }})" title="Ajouter au panier">
+                                                            <i class="fas fa-cart-plus"></i>
+                                                        </button>
+                                                        {% endif %}
+                                                        {% if statut == 'AU_PANIER' %}
+                                                        <button class="btn btn-danger" onclick="retirerPanier({{ p.id }})" title="Retirer du panier">
+                                                            <i class="fas fa-trash"></i>
+                                                        </button>
+                                                        {% endif %}
+                                                        <button class="btn btn-secondary" onclick="imprimerPrescription({{ p.id }})" title="Imprimer">
+                                                            <i class="fas fa-print"></i>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="alert alert-info text-center">
+                            <i class="fas fa-info-circle me-2"></i>Aucune prescription d'acte reçue
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- MODAL DÉTAILS -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="modal fade" id="detailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="fas fa-prescription me-2"></i>Détails de la prescription</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="detailsBody">
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Chargement...</span>
+                    </div>
+                    <p class="mt-2">Chargement des détails...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                <button type="button" class="btn btn-success" id="btnAjouterPanier" onclick="ajouterPanierDepuisModal()">
+                    <i class="fas fa-cart-plus me-1"></i> Ajouter au panier
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SCRIPT AMÉLIORÉ -->
+<!-- ═══════════════════════════════════════════ -->
+<script>
+// ============================================
+// VARIABLES GLOBALES
+// ============================================
+let prescriptionIdActuel = null;
+let panier = [];
+let isAjoutEnCours = false;
+
+// ============================================
+// INITIALISATION
+// ============================================
+document.addEventListener('DOMContentLoaded', function() {
+    chargerPanier();
+    compterPatients();
+});
+
+function compterPatients() {
+    const pharmaCards = document.querySelectorAll('#pharma .card.mb-3');
+    const actesCards = document.querySelectorAll('#actes .card.mb-3');
+    document.getElementById('prescriptionResultCount').textContent = pharmaCards.length + actesCards.length;
+}
+
+// ============================================
+// CHARGEMENT DU PANIER
+// ============================================
+function chargerPanier() {
+    fetch('/api/panier-prescriptions')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                panier = data.panier || [];
+                mettreAJourPanier();
+                mettreAJourStatutsPanier();
+            }
+        })
+        .catch(() => console.warn('Erreur chargement panier'));
+}
+
+// ============================================
+// AFFICHAGE DU PANIER
+// ============================================
+function mettreAJourPanier() {
+    const total = panier.reduce((sum, item) => sum + (item.prix_total || 0), 0);
+    const count = panier.length;
+    
+    document.getElementById('panierBadge').textContent = count;
+    document.getElementById('panierCount').textContent = count;
+    document.getElementById('panierTotal').textContent = total.toLocaleString() + ' FCFA';
+    
+    const floating = document.getElementById('panierFloating');
+    if (count > 0) {
+        floating.style.display = 'block';
+        const itemsContainer = document.getElementById('panierItems');
+        itemsContainer.innerHTML = panier.map(item => 
+            `<div class="d-flex justify-content-between align-items-center border-bottom py-1">
+                <span>${item.nom}</span>
+                <span class="text-success">${(item.prix_total || 0).toLocaleString()} F</span>
+            </div>`
+        ).join('');
+    } else {
+        floating.style.display = 'none';
+    }
+}
+
+// ============================================
+// METTRE À JOUR LES STATUTS
+// ============================================
+function mettreAJourStatutsPanier() {
+    const idsDansPanier = panier.map(item => item.prescription_id);
+    
+    document.querySelectorAll('#pharmaBody tr[id^="presc-row-"], #actesBody tr[id^="presc-row-"]').forEach(row => {
+        const id = parseInt(row.id.replace('presc-row-', ''));
+        const statutCell = row.querySelector('.statut-cell');
+        const actionsCell = row.querySelector('.actions-cell');
+        
+        if (!statutCell || !actionsCell) return;
+        
+        if (idsDansPanier.includes(id)) {
+            statutCell.innerHTML = '<span class="badge bg-info">Au panier</span>';
+            actionsCell.innerHTML = `
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-info" onclick="voirDetails(${id})" title="Voir détails"><i class="fas fa-eye"></i></button>
+                    <button class="btn btn-danger" onclick="retirerPanier(${id})" title="Retirer du panier"><i class="fas fa-trash"></i></button>
+                    <button class="btn btn-secondary" onclick="imprimerPrescription(${id})" title="Imprimer"><i class="fas fa-print"></i></button>
+                </div>
+            `;
+        } else {
+            const type = row.dataset.type;
+            if (type === 'pharma') {
+                statutCell.innerHTML = '<span class="badge bg-warning">En attente</span>';
+                actionsCell.innerHTML = `
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-info" onclick="voirDetails(${id})" title="Voir détails"><i class="fas fa-eye"></i></button>
+                        <button class="btn btn-success" onclick="ajouterPanier(${id})" title="Ajouter au panier"><i class="fas fa-cart-plus"></i></button>
+                        <button class="btn btn-secondary" onclick="imprimerPrescription(${id})" title="Imprimer"><i class="fas fa-print"></i></button>
+                    </div>
+                `;
+            } else {
+                statutCell.innerHTML = '<span class="badge bg-warning">En attente</span>';
+                actionsCell.innerHTML = `
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-info" onclick="voirDetails(${id})" title="Voir détails"><i class="fas fa-eye"></i></button>
+                        <button class="btn btn-success" onclick="ajouterPanier(${id})" title="Ajouter au panier"><i class="fas fa-cart-plus"></i></button>
+                        <button class="btn btn-secondary" onclick="imprimerPrescription(${id})" title="Imprimer"><i class="fas fa-print"></i></button>
+                    </div>
+                `;
+            }
+        }
+    });
+}
+
+// ============================================
+// AJOUTER TOUT UN GROUPE
+// ============================================
+function ajouterToutGroupe(type) {
+    const container = type === 'pharma' ? '#pharmaBody' : '#actesBody';
+    const rows = document.querySelectorAll(`${container} tr[id^="presc-row-"]`);
+    const ids = [];
+    
+    rows.forEach(row => {
+        const id = parseInt(row.id.replace('presc-row-', ''));
+        const statutCell = row.querySelector('.statut-cell');
+        if (!statutCell || !statutCell.innerHTML.includes('Au panier')) {
+            ids.push(id);
+        }
+    });
+    
+    if (ids.length === 0) {
+        showToast('⚠️ Aucune prescription à ajouter (déjà toutes au panier)', 'warning');
+        return;
+    }
+    
+    if (!confirm(`Ajouter ${ids.length} prescription(s) au panier ?`)) return;
+    if (isAjoutEnCours) return;
+    isAjoutEnCours = true;
+    
+    // Mise à jour UI optimiste
+    ids.forEach(id => {
+        const row = document.getElementById(`presc-row-${id}`);
+        if (row) {
+            const statutCell = row.querySelector('.statut-cell');
+            const actionsCell = row.querySelector('.actions-cell');
+            if (statutCell) statutCell.innerHTML = '<span class="badge bg-info">Au panier</span>';
+            if (actionsCell) {
+                actionsCell.innerHTML = `
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-info" onclick="voirDetails(${id})" title="Voir détails"><i class="fas fa-eye"></i></button>
+                        <button class="btn btn-danger" onclick="retirerPanier(${id})" title="Retirer du panier"><i class="fas fa-trash"></i></button>
+                        <button class="btn btn-secondary" onclick="imprimerPrescription(${id})" title="Imprimer"><i class="fas fa-print"></i></button>
+                    </div>
+                `;
+            }
+        }
+    });
+    
+    // Appel API massif
+    fetch('/api/prescriptions/panier/mass', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ ids: ids, action: 'add' })
+    })
+    .then(response => response.json())
+    .then(data => {
+        isAjoutEnCours = false;
+        if (data.success) {
+            chargerPanier();
+            showToast(`✅ ${ids.length} prescriptions ajoutées au panier`, 'success');
+        } else {
+            showToast('❌ Erreur lors de l\'ajout', 'danger');
+            chargerPanier();
+        }
+    })
+    .catch(() => {
+        isAjoutEnCours = false;
+        showToast('❌ Erreur réseau', 'danger');
+        chargerPanier();
+    });
+}
+
+// ============================================
+// AJOUTER UN GROUPE D'IDS
+// ============================================
+function ajouterPanierGroupe(ids) {
+    if (isAjoutEnCours) return;
+    if (!ids || ids.length === 0) return;
+    
+    // Filtrer les IDs déjà au panier
+    const idsDansPanier = panier.map(item => item.prescription_id);
+    const idsFiltered = ids.filter(id => !idsDansPanier.includes(id));
+    
+    if (idsFiltered.length === 0) {
+        showToast('⚠️ Toutes ces prescriptions sont déjà au panier', 'warning');
+        return;
+    }
+    
+    if (!confirm(`Ajouter ${idsFiltered.length} prescription(s) au panier ?`)) return;
+    
+    isAjoutEnCours = true;
+    let count = 0;
+    
+    // Mise à jour UI optimiste
+    idsFiltered.forEach(id => {
+        const row = document.getElementById(`presc-row-${id}`);
+        if (row) {
+            const statutCell = row.querySelector('.statut-cell');
+            const actionsCell = row.querySelector('.actions-cell');
+            if (statutCell) statutCell.innerHTML = '<span class="badge bg-info">Au panier</span>';
+            if (actionsCell) {
+                actionsCell.innerHTML = `
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-info" onclick="voirDetails(${id})" title="Voir détails"><i class="fas fa-eye"></i></button>
+                        <button class="btn btn-danger" onclick="retirerPanier(${id})" title="Retirer du panier"><i class="fas fa-trash"></i></button>
+                        <button class="btn btn-secondary" onclick="imprimerPrescription(${id})" title="Imprimer"><i class="fas fa-print"></i></button>
+                    </div>
+                `;
+            }
+        }
+    });
+    
+    // Appels API individuels
+    const promesses = idsFiltered.map(id => 
+        fetch(`/api/prescriptions/${id}/ajouter-panier`, { method: 'POST' })
+            .then(response => response.json())
+            .then(data => data.success ? 1 : 0)
+            .catch(() => 0)
+    );
+    
+    Promise.all(promesses)
+        .then(resultats => {
+            const success = resultats.reduce((a, b) => a + b, 0);
+            isAjoutEnCours = false;
+            chargerPanier();
+            
+            if (success === idsFiltered.length) {
+                showToast(`✅ ${success} prescriptions ajoutées au panier`, 'success');
+            } else {
+                showToast(`⚠️ ${success}/${idsFiltered.length} prescriptions ajoutées`, 'warning');
+            }
+        })
+        .catch(() => {
+            isAjoutEnCours = false;
+            chargerPanier();
+            showToast('⚠️ Erreur lors de l\'ajout', 'warning');
+        });
+}
+
+// ============================================
+// AJOUTER UNE PRESCRIPTION
+// ============================================
+function ajouterPanier(id) {
+    if (isAjoutEnCours) return;
+    
+    // Vérifier si déjà au panier
+    if (panier.some(item => item.prescription_id === id)) {
+        showToast('⚠️ Déjà au panier', 'warning');
+        return;
+    }
+    
+    const btn = event?.target?.closest('button');
+    if (btn) { btn.disabled = true; }
+    
+    // Mise à jour UI optimiste
+    const row = document.getElementById(`presc-row-${id}`);
+    if (row) {
+        const statutCell = row.querySelector('.statut-cell');
+        const actionsCell = row.querySelector('.actions-cell');
+        if (statutCell) statutCell.innerHTML = '<span class="badge bg-info">Au panier</span>';
+        if (actionsCell) {
+            actionsCell.innerHTML = `
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-info" onclick="voirDetails(${id})" title="Voir détails"><i class="fas fa-eye"></i></button>
+                    <button class="btn btn-danger" onclick="retirerPanier(${id})" title="Retirer du panier"><i class="fas fa-trash"></i></button>
+                    <button class="btn btn-secondary" onclick="imprimerPrescription(${id})" title="Imprimer"><i class="fas fa-print"></i></button>
+                </div>
+            `;
+        }
+    }
+    
+    fetch(`/api/prescriptions/${id}/ajouter-panier`, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                chargerPanier();
+                showToast('✅ Prescription ajoutée au panier', 'success');
+            } else {
+                showToast('❌ ' + (data.message || 'Erreur'), 'danger');
+                chargerPanier();
+            }
+        })
+        .finally(() => {
+            if (btn) { btn.disabled = false; }
+        });
+}
+
+// ============================================
+// RETIRER DU PANIER
+// ============================================
+function retirerPanier(id) {
+    if (!confirm('Retirer cette prescription du panier ?')) return;
+    
+    // Mise à jour UI optimiste
+    const row = document.getElementById(`presc-row-${id}`);
+    if (row) {
+        const statutCell = row.querySelector('.statut-cell');
+        const actionsCell = row.querySelector('.actions-cell');
+        const type = row.dataset.type;
+        if (statutCell) statutCell.innerHTML = '<span class="badge bg-warning">En attente</span>';
+        if (actionsCell) {
+            if (type === 'pharma') {
+                actionsCell.innerHTML = `
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-info" onclick="voirDetails(${id})" title="Voir détails"><i class="fas fa-eye"></i></button>
+                        <button class="btn btn-success" onclick="ajouterPanier(${id})" title="Ajouter au panier"><i class="fas fa-cart-plus"></i></button>
+                        <button class="btn btn-secondary" onclick="imprimerPrescription(${id})" title="Imprimer"><i class="fas fa-print"></i></button>
+                    </div>
+                `;
+            } else {
+                actionsCell.innerHTML = `
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-info" onclick="voirDetails(${id})" title="Voir détails"><i class="fas fa-eye"></i></button>
+                        <button class="btn btn-success" onclick="ajouterPanier(${id})" title="Ajouter au panier"><i class="fas fa-cart-plus"></i></button>
+                        <button class="btn btn-secondary" onclick="imprimerPrescription(${id})" title="Imprimer"><i class="fas fa-print"></i></button>
+                    </div>
+                `;
+            }
+        }
+    }
+    
+    fetch(`/api/prescriptions/${id}/retirer-panier`, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                chargerPanier();
+                showToast('✅ Prescription retirée du panier', 'info');
+            }
+        });
+}
+
+// ============================================
+// VIDER LE PANIER
+// ============================================
+function viderPanier() {
+    if (panier.length === 0) {
+        showToast('⚠️ Le panier est déjà vide', 'warning');
+        return;
+    }
+    
+    if (!confirm(`⚠️ Vider tout le panier (${panier.length} article(s)) ?`)) return;
+    
+    const btn = document.querySelector('.btn-danger');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Vidage...';
+    }
+    
+    fetch('/api/panier-prescriptions/vider', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            panier = [];
+            mettreAJourPanier();
+            mettreAJourStatutsPanier();
+            showToast('🗑️ Panier vidé avec succès', 'success');
+        } else {
+            showToast('❌ ' + (data.message || 'Erreur lors du vidage'), 'danger');
+            chargerPanier();
+        }
+    })
+    .catch(() => {
+        showToast('❌ Erreur réseau', 'danger');
+        chargerPanier();
+    })
+    .finally(() => {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-trash me-1"></i> Vider tout';
+        }
+    });
+}
+
+// ============================================
+// FINALISER LE PANIER
+// ============================================
+function finaliserPanier() {
+    if (panier.length === 0) {
+        showToast('⚠️ Le panier est vide', 'warning');
+        return;
+    }
+    
+    // Récupérer le patient depuis le panier
+    let patientId = sessionStorage.getItem('selectedPatientId');
+    let patientNom = sessionStorage.getItem('selectedPatientName') || '';
+    let patientPrenom = sessionStorage.getItem('selectedPatientPrenom') || '';
+    
+    // Si pas de patient en session, prendre le premier du panier
+    if (!patientId || patientId === 'null' || patientId === 'undefined') {
+        const firstItem = panier[0];
+        patientId = firstItem?.patient_id;
+        patientNom = firstItem?.patient_nom || '';
+        patientPrenom = firstItem?.patient_prenom || '';
+    }
+    
+    if (!patientId || patientId === 'null' || patientId === 'undefined') {
+        showToast('⚠️ Veuillez d\'abord sélectionner un patient', 'warning');
+        return;
+    }
+    
+    // Déterminer le type
+    const aDesActes = panier.some(item => item.type === 'acte');
+    const aDesMedicaments = panier.some(item => item.type === 'medicament');
+    
+    let type = 'mixte';
+    if (aDesActes && !aDesMedicaments) type = 'actes';
+    else if (aDesMedicaments && !aDesActes) type = 'pharma';
+    
+    const total = panier.reduce((sum, item) => sum + (item.prix_total || 0), 0);
+    const ids = panier.map(item => item.prescription_id).join(',');
+    
+    let msg = `📋 Finaliser le panier ?\n\n`;
+    msg += `👤 Patient: ${patientNom} ${patientPrenom}\n`;
+    msg += `📦 ${panier.length} article(s)\n`;
+    msg += `💰 Total: ${total.toLocaleString()} FCFA\n\n`;
+    msg += type === 'actes' ? '🔬 Vente d\'ACTES' : type === 'pharma' ? '💊 Vente PHARMACIE' : '📋 Panier mixte';
+    msg += `\n\nLe patient et les articles seront automatiquement chargés ✅`;
+    
+    if (!confirm(msg)) return;
+    
+    const baseUrl = type === 'actes' ? '/actes_vente' : '/pharma_vente';
+    const url = `${baseUrl}?prescription_ids=${ids}&patient_id=${patientId}&patient_nom=${encodeURIComponent(patientNom)}&patient_prenom=${encodeURIComponent(patientPrenom)}`;
+    
+    window.location.href = url;
+}
+
+// ============================================
+// VOIR DÉTAILS
+// ============================================
+function voirDetails(id) {
+    prescriptionIdActuel = id;
+    
+    fetch(`/api/prescriptions/${id}/details`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const p = data.prescription;
+                const modal = document.getElementById('detailsBody');
+                modal.innerHTML = `
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6><i class="fas fa-user me-2"></i>Patient</h6>
+                            <p><strong>${p.patient_nom} ${p.patient_prenom}</strong></p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6><i class="fas fa-prescription me-2"></i>Prescription</h6>
+                            <p><strong>${p.medicament}</strong></p>
+                            <p class="text-muted small">Type: ${p.type}</p>
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <h6><i class="fas fa-hashtag me-2"></i>Quantité</h6>
+                            <p><strong>${p.quantite}</strong></p>
+                        </div>
+                        <div class="col-md-4">
+                            <h6><i class="fas fa-money-bill me-2"></i>Prix unitaire</h6>
+                            <p><strong>${p.prix_unitaire.toLocaleString()} FCFA</strong></p>
+                        </div>
+                        <div class="col-md-4">
+                            <h6><i class="fas fa-calculator me-2 text-success"></i>Total</h6>
+                            <p class="text-success fw-bold fs-5">${p.prix_total.toLocaleString()} FCFA</p>
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6><i class="fas fa-user-md me-2"></i>Prescripteur</h6>
+                            <p>${p.prescripteur || 'Non renseigné'}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6><i class="fas fa-calendar me-2"></i>Date</h6>
+                            <p>${p.date_prescription ? new Date(p.date_prescription).toLocaleDateString() : '-'}</p>
+                        </div>
+                    </div>
+                `;
+                new bootstrap.Modal(document.getElementById('detailsModal')).show();
+            } else {
+                showToast('❌ ' + (data.message || 'Erreur chargement'), 'danger');
+            }
+        })
+        .catch(() => {
+            showToast('❌ Erreur lors du chargement des détails', 'danger');
+        });
+}
+
+function ajouterPanierDepuisModal() {
+    if (prescriptionIdActuel) {
+        bootstrap.Modal.getInstance(document.getElementById('detailsModal')).hide();
+        setTimeout(() => ajouterPanier(prescriptionIdActuel), 300);
+    }
+}
+
+// ============================================
+// IMPRIMER
+// ============================================
+function imprimerPrescription(id) {
+    const choix = confirm('📄 Imprimer en format A4 (couleur) ?\n\nCliquez sur "OK" pour A4\nAnnuler pour format 80mm (ticket)');
+    const format = choix ? 'A4' : '80mm';
+    window.open(`/ordonnance/${id}?format=${format}`, '_blank', 'width=800,height=600');
+}
+
+function imprimerMedicaments(patientId) {
+    if (!patientId) return;
+    const choix = confirm(`📄 Imprimer TOUTES les prescriptions MÉDICAMENTEUSES de ce patient ?\n\nCliquez sur "OK" pour A4\nAnnuler pour format 80mm (ticket)`);
+    const format = choix ? 'A4' : '80mm';
+    window.open(`/ordonnance/patient/${patientId}/medicaments?format=${format}`, '_blank', 'width=800,height=600');
+}
+
+function imprimerActes(patientId) {
+    if (!patientId) return;
+    const choix = confirm(`📄 Imprimer TOUTES les prescriptions d'ACTES de ce patient ?\n\nCliquez sur "OK" pour A4\nAnnuler pour format 80mm (ticket)`);
+    const format = choix ? 'A4' : '80mm';
+    window.open(`/ordonnance/patient/${patientId}/actes?format=${format}`, '_blank', 'width=800,height=600');
+}
+
+// ============================================
+// RECHERCHE
+// ============================================
+function filterPrescriptions() {
+    const searchTerm = document.getElementById('searchPrescriptionInput').value.toLowerCase().trim();
+    const pharmaCards = document.querySelectorAll('#pharma .card.mb-3');
+    const actesCards = document.querySelectorAll('#actes .card.mb-3');
+    let visibleCount = 0;
+    
+    pharmaCards.forEach(card => {
+        const header = card.querySelector('.card-header');
+        if (header) {
+            const text = header.textContent.toLowerCase();
+            if (searchTerm === '' || text.includes(searchTerm)) {
+                card.style.display = '';
+                visibleCount++;
+            } else {
+                card.style.display = 'none';
+            }
+        }
+    });
+    
+    actesCards.forEach(card => {
+        const header = card.querySelector('.card-header');
+        if (header) {
+            const text = header.textContent.toLowerCase();
+            if (searchTerm === '' || text.includes(searchTerm)) {
+                card.style.display = '';
+                visibleCount++;
+            } else {
+                card.style.display = 'none';
+            }
+        }
+    });
+    
+    document.getElementById('prescriptionResultCount').textContent = visibleCount;
+}
+
+function clearSearchPrescription() {
+    document.getElementById('searchPrescriptionInput').value = '';
+    filterPrescriptions();
+}
+
+function togglePanier() {
+    const floating = document.getElementById('panierFloating');
+    floating.style.display = floating.style.display === 'block' ? 'none' : 'block';
+}
+
+function rafraichirPrescriptions() {
+    const btn = document.querySelector('.btn-outline-primary');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Chargement...';
+    }
+    location.reload();
+}
+
+// ============================================
+// TOAST NOTIFICATION
+// ============================================
+function showToast(message, type = 'info') {
+    const container = document.querySelector('.toast-container') || (() => {
+        const c = document.createElement('div');
+        c.className = 'toast-container position-fixed top-0 end-0 p-3';
+        c.style.zIndex = '9999';
+        document.body.appendChild(c);
+        return c;
+    })();
+    
+    const toast = document.createElement('div');
+    const bgColor = type === 'success' ? 'bg-success' : type === 'danger' ? 'bg-danger' : type === 'warning' ? 'bg-warning' : 'bg-info';
+    toast.className = `toast show ${bgColor} text-white`;
+    toast.style.opacity = '1';
+    toast.innerHTML = `
+        <div class="toast-body d-flex justify-content-between align-items-center">
+            <span>${message}</span>
+            <button type="button" class="btn-close btn-close-white" onclick="this.closest('.toast').remove()"></button>
+        </div>
+    `;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+}
+</script>
+{% endblock %}

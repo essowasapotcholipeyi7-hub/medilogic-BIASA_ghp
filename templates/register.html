@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-success text-white text-center">
+                <h4><i class="fas fa-building"></i> Créer votre structure</h4>
+                <p class="mb-0">Entrez les informations de votre hôpital, clinique ou pharmacie</p>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="row">
+                        <div class="col-md-12 mb-3">
+                            <label for="structure_name" class="form-label">Nom de votre structure *</label>
+                            <input type="text" class="form-control" id="structure_name" name="structure_name" 
+                                   placeholder="Ex: Hôpital Central, Clinique La Paix, Pharmacie Moderne..." required>
+                            <small class="text-muted">C'est le nom qui apparaîtra sur vos factures et reçus</small>
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            <label for="proprietaire_nom" class="form-label">Votre nom complet *</label>
+                            <input type="text" class="form-control" id="proprietaire_nom" name="proprietaire_nom" 
+                                   placeholder="Jean Dupont" required>
+                            <small class="text-muted">Nom du propriétaire/gérant</small>
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            <label for="email" class="form-label">Email de la structure *</label>
+                            <input type="email" class="form-control" id="email" name="email" 
+                                   placeholder="contact@mastructure.com" required>
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            <label for="phone" class="form-label">Téléphone *</label>
+                            <input type="tel" class="form-control" id="phone" name="phone" 
+                                   placeholder="EX: 90XXXXXX" required>
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            <label for="address" class="form-label">Adresse *</label>
+                            <input type="text" class="form-control" id="address" name="address" 
+                                   placeholder="Ville, quartier, rue..." required>
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+    <label for="password" class="form-label">Mot de passe *</label>
+    <input type="password" class="form-control" id="password" name="password" 
+           placeholder="Minimum 8 caractères" required
+           onkeyup="checkPasswordStrength()">
+    <div class="mt-2" id="password-strength"></div>
+    <small class="text-muted">
+        🔒 Le mot de passe doit contenir :<br>
+        ✓ Au moins 8 caractères<br>
+        ✓ Une lettre majuscule<br>
+        ✓ Une lettre minuscule<br>
+        ✓ Un chiffre<br>
+        ✓ Un symbole (!@#$%^&*)
+    </small>
+</div>
+
+<div class="col-md-6 mb-3">
+    <label for="confirm_password" class="form-label">Confirmer le mot de passe *</label>
+    <input type="password" class="form-control" id="confirm_password" name="confirm_password" required
+           onkeyup="checkPasswordMatch()">
+    <div class="mt-1" id="password-match" style="font-size: 12px;"></div>
+</div>
+                    
+                    <button type="submit" class="btn btn-success w-100">
+                        <i class="fas fa-paper-plane"></i> Créer ma structure
+                    </button>
+                </form>
+                <hr>
+                <p class="text-center mb-0">
+                    Vous avez déjà une structure ? <a href="{{ url_for('index') }}">Connectez-vous</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function checkFormValidity() {
+    const password = document.getElementById('password').value;
+    const confirm = document.getElementById('confirm_password').value;
+    const submitBtn = document.querySelector('button[type="submit"]');
+    
+    if (!submitBtn) return;
+    
+    // Vérifications simples
+    const passwordValid = password.length >= 8;
+    const passwordMatch = password === confirm && password !== '';
+    
+    submitBtn.disabled = !(passwordValid && passwordMatch);
+    submitBtn.style.opacity = submitBtn.disabled ? '0.6' : '1';
+    submitBtn.style.cursor = submitBtn.disabled ? 'not-allowed' : 'pointer';
+}
+
+function checkPasswordStrength() {
+    const password = document.getElementById('password').value;
+    const strengthDiv = document.getElementById('password-strength');
+    
+    if (!strengthDiv) return;
+    
+    if (password === '') {
+        strengthDiv.innerHTML = '';
+        checkFormValidity();
+        return;
+    }
+    
+    const rules = {
+        length: password.length >= 8,
+        upper: /[A-Z]/.test(password),
+        lower: /[a-z]/.test(password),
+        digit: /[0-9]/.test(password),
+        symbol: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)
+    };
+    
+    const allValid = rules.length && rules.upper && rules.lower && rules.digit && rules.symbol;
+    
+    if (allValid) {
+        strengthDiv.innerHTML = '<span style="color: green;">✅ Mot de passe fort !</span>';
+    } else {
+        const missing = [];
+        if (!rules.length) missing.push('8 caractères');
+        if (!rules.upper) missing.push('majuscule');
+        if (!rules.lower) missing.push('minuscule');
+        if (!rules.digit) missing.push('chiffre');
+        if (!rules.symbol) missing.push('symbole');
+        strengthDiv.innerHTML = '<span style="color: orange;">⚠️ Manque : ' + missing.join(', ') + '</span>';
+    }
+    
+    checkFormValidity();
+}
+
+function checkPasswordMatch() {
+    const password = document.getElementById('password').value;
+    const confirm = document.getElementById('confirm_password').value;
+    const matchDiv = document.getElementById('password-match');
+    
+    if (!matchDiv) return;
+    
+    if (confirm === '') {
+        matchDiv.innerHTML = '';
+    } else if (password === confirm) {
+        matchDiv.innerHTML = '<span style="color: green;">✅ Les mots de passe correspondent</span>';
+    } else {
+        matchDiv.innerHTML = '<span style="color: red;">❌ Les mots de passe ne correspondent pas</span>';
+    }
+    
+    checkFormValidity();
+}
+
+// Initialisation
+document.addEventListener('DOMContentLoaded', function() {
+    checkFormValidity();
+    
+    // Écouter les changements
+    document.getElementById('password').addEventListener('input', function() {
+        checkPasswordStrength();
+        checkPasswordMatch();
+    });
+    
+    document.getElementById('confirm_password').addEventListener('input', function() {
+        checkPasswordMatch();
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,1207 @@
+{% extends "base.html" %}
+
+{% block title %}Factures Proforma{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        {% include 'sidebar_menu.html' %}
+    </div>
+    
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-file-invoice"></i> Factures Proforma</h5>
+                <div>
+                    <button class="btn btn-sm btn-primary" onclick="nouvelleProforma()">
+                        <i class="fas fa-plus"></i> Nouvelle proforma
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- Statistiques -->
+                <div class="row g-3 mb-4">
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h5>{{ stats.total }}</h5>
+                                <small class="text-muted">Total</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-warning text-white">
+                            <div class="card-body text-center">
+                                <h5>{{ stats.en_attente }}</h5>
+                                <small>En attente</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-success text-white">
+                            <div class="card-body text-center">
+                                <h5>{{ stats.acceptees }}</h5>
+                                <small>Acceptées</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-info text-white">
+                            <div class="card-body text-center">
+                                <h5>{{ stats.total_montant|round(0)|int }} FCFA</h5>
+                                <small>Montant total</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Tableau -->
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>N°</th>
+                                <th>Patient</th>
+                                <th>Date</th>
+                                <th>Montant</th>
+                                <th>Assurance</th>
+                                <th>Assurance 2</th>
+                                <th>Statut</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in proformas %}
+                            <tr>
+                                <td><strong>#{{ p.numero_proforma or p.id }}</strong></td>
+                                <td>{{ p.patient_nom }}</td>
+                                <td>{{ p.created_at.strftime('%d/%m/%Y') if p.created_at else '-' }}</td>
+                                <td><strong>{{ p.net_a_payer|round(0)|int }} FCFA</strong></td>
+                                <td>{{ p.assurance_nom or 'Non assuré' }} ({{ p.taux_assurance or 0 }}%)</td>
+                                <td>
+                                    {% if p.assurance2_nom and p.assurance2_nom != '' and p.assurance2_nom != 'Aucune' %}
+                                        {{ p.assurance2_nom }} ({{ p.taux_assurance2 or 0 }}%)
+                                        {% if p.taux_modifie %}
+                                        <span class="badge bg-warning text-dark" title="Taux modifié">⚠️</span>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge 
+                                        {% if p.statut == 'en_attente' %}bg-warning
+                                        {% elif p.statut == 'accepte' %}bg-success
+                                        {% elif p.statut == 'refuse' %}bg-danger
+                                        {% elif p.statut == 'converti_en_vente' %}bg-info
+                                        {% else %}bg-secondary{% endif %}">
+                                        {{ p.statut_label }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="{{ url_for('proforma_print', proforma_id=p.id) }}?format=80mm" target="_blank" class="btn btn-secondary" title="Ticket 80mm">
+                                            <i class="fas fa-receipt"></i>
+                                        </a>
+                                        <a href="{{ url_for('proforma_print', proforma_id=p.id) }}?format=A4" target="_blank" class="btn btn-info" title="A4">
+                                            <i class="fas fa-file-pdf"></i>
+                                        </a>
+                                        {% if session.is_admin and p.statut == 'en_attente' %}
+                                        <button onclick="changerStatut({{ p.id }}, 'accepte')" class="btn btn-success" title="Accepter">
+                                            <i class="fas fa-check"></i>
+                                        </button>
+                                        <button onclick="changerStatut({{ p.id }}, 'refuse')" class="btn btn-danger" title="Refuser">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="8" class="text-center py-4">
+                                    <i class="fas fa-file-invoice fa-2x text-muted mb-2 d-block"></i>
+                                    Aucune proforma trouvée
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Nouvelle Proforma -->
+<div class="modal fade" id="proformaModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-file-invoice"></i> Facture Proforma</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="proformaForm">
+                    <!-- ===== SECTION PATIENT AVEC RECHERCHE ===== -->
+                    <div class="card bg-light mb-3">
+                        <div class="card-header bg-info text-white">
+                            <i class="fas fa-user"></i> Informations patient
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6 mb-2">
+                                    <label class="form-label fw-bold">Patient *</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text bg-white"><i class="fas fa-search"></i></span>
+                                        <input type="text" class="form-control" id="patientSearch" 
+                                               placeholder="Rechercher par nom, prénom, téléphone..." 
+                                               onkeyup="filtrerPatients()">
+                                    </div>
+                                    <select class="form-control mt-2" id="patientSelect" size="5" onchange="chargerInfosPatient()">
+                                        <option value="">-- Sélectionner un patient --</option>
+                                    </select>
+                                    <small class="text-muted" id="patientResultCount">0 patient(s) trouvé(s)</small>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="row">
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Nom complet</label>
+                                            <input type="text" class="form-control" id="patientNom" readonly>
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Téléphone</label>
+                                            <input type="text" class="form-control" id="patientTelephone" readonly>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Assurance principale</label>
+                                            <input type="text" class="form-control" id="assuranceNom" placeholder="AMU-CNSS, GTA, etc.">
+                                        </div>
+                                        <div class="col-md-3 mb-2">
+                                            <label class="form-label">Taux (%)</label>
+                                            <input type="number" class="form-control" id="tauxAssurance" value="0" min="0" max="100" onchange="calculerTotal()">
+                                        </div>
+                                        <div class="col-md-3 mb-2">
+                                            <label class="form-label">N° Carte</label>
+                                            <input type="text" class="form-control" id="numeroAssure" placeholder="N°">
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 🔥 ASSURANCE COMPLÉMENTAIRE -->
+                                    <div class="row mt-2">
+                                        <div class="col-md-12">
+                                            <div class="card border-info">
+                                                <div class="card-header bg-info text-white py-1">
+                                                    <div class="d-flex align-items-center gap-3">
+                                                        <div class="form-check form-switch">
+                                                            <input class="form-check-input" type="checkbox" id="toggleAssurance2Proforma" 
+                                                                   style="width: 40px; height: 20px; cursor: pointer;"
+                                                                   onchange="toggleAssuranceComplementaireProforma()">
+                                                            <label class="form-check-label text-white fw-bold" for="toggleAssurance2Proforma">
+                                                                Assurance complémentaire
+                                                            </label>
+                                                        </div>
+                                                        <span id="assurance2NomProforma" class="badge bg-light text-dark">Aucune</span>
+                                                        <span id="assurance2TauxProforma" class="badge bg-light text-dark">0%</span>
+                                                    </div>
+                                                </div>
+                                                <div class="card-body py-2">
+                                                    <div class="row align-items-center">
+                                                        <div class="col-md-4">
+                                                            <label class="form-label small">Nom de l'assurance</label>
+                                                            <input type="text" class="form-control form-control-sm" id="assurance2NomInput" 
+                                                                   placeholder="Ex: SUNU, GTA..." readonly>
+                                                        </div>
+                                                        <div class="col-md-3">
+                                                            <label class="form-label small">Taux par défaut</label>
+                                                            <input type="number" class="form-control form-control-sm" id="assurance2TauxDefaut" 
+                                                                   value="0" min="0" max="100" readonly>
+                                                        </div>
+                                                        <div class="col-md-3">
+                                                            <label class="form-label small">Taux appliqué</label>
+                                                            <div class="input-group input-group-sm">
+                                                                <input type="number" class="form-control" id="assurance2TauxApplique" 
+                                                                       value="0" min="0" max="100" onchange="calculerTotal()">
+                                                                <button class="btn btn-outline-secondary" onclick="resetTauxAssurance2()" title="Réinitialiser">
+                                                                    <i class="fas fa-undo"></i>
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                        <div class="col-md-2">
+                                                            <span id="tauxModifieBadge" class="badge bg-warning text-dark" style="display:none;">Modifié</span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="row mt-1">
+                                                        <div class="col-md-12">
+                                                            <small class="text-muted" id="assurance2InfoProforma">
+                                                                <i class="fas fa-info-circle"></i> S'applique sur le reste à charge après l'assurance principale
+                                                            </small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- ===== SECTION ARTICLES AVEC RECHERCHE ===== -->
+                    <div class="card bg-light mb-3">
+                        <div class="card-header bg-success text-white">
+                            <i class="fas fa-boxes"></i> Articles
+                        </div>
+                        <div class="card-body">
+                            <!-- Barre de recherche articles -->
+                            <div class="row mb-2">
+                                <div class="col-md-12">
+                                    <div class="input-group">
+                                        <span class="input-group-text bg-white"><i class="fas fa-search"></i></span>
+                                        <input type="text" class="form-control" id="articleSearch" 
+                                               placeholder="Rechercher un article..." 
+                                               onkeyup="filtrerArticles()">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <!-- Liste des actes -->
+                                <div class="col-md-6">
+                                    <div class="card">
+                                        <div class="card-header bg-primary text-white py-1 d-flex justify-content-between align-items-center">
+                                            <small><i class="fas fa-stethoscope"></i> Actes médicaux</small>
+                                            <span class="badge bg-light text-dark" id="acteCount">0</span>
+                                        </div>
+                                        <div class="card-body p-1">
+                                            <input type="text" class="form-control form-control-sm mb-1" id="acteSearchInput" 
+                                                   placeholder="🔍 Rechercher un acte..." onkeyup="filtrerActesListe()">
+                                            <div style="max-height: 200px; overflow-y: auto;">
+                                                <select class="form-control" id="acteSelect" size="6" multiple>
+                                                    <option value="">-- Actes disponibles --</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Liste des produits -->
+                                <div class="col-md-6">
+                                    <div class="card">
+                                        <div class="card-header bg-success text-white py-1 d-flex justify-content-between align-items-center">
+                                            <small><i class="fas fa-pills"></i> Produits pharmacie</small>
+                                            <span class="badge bg-light text-dark" id="produitCount">0</span>
+                                        </div>
+                                        <div class="card-body p-1">
+                                            <input type="text" class="form-control form-control-sm mb-1" id="produitSearchInput" 
+                                                   placeholder="🔍 Rechercher un produit..." onkeyup="filtrerProduitsListe()">
+                                            <div style="max-height: 200px; overflow-y: auto;">
+                                                <select class="form-control" id="produitSelect" size="6" multiple>
+                                                    <option value="">-- Produits disponibles --</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row mt-2">
+                                <div class="col-md-3">
+                                    <label class="form-label">Quantité</label>
+                                    <input type="number" class="form-control" id="quantiteArticle" value="1" min="1">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">&nbsp;</label>
+                                    <button type="button" class="btn btn-primary w-100" onclick="ajouterArticleSelectionne()">
+                                        <i class="fas fa-cart-plus"></i> Ajouter sélection
+                                    </button>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">&nbsp;</label>
+                                    <button type="button" class="btn btn-warning w-100" onclick="ajouterArticlePersonnalise()">
+                                        <i class="fas fa-plus"></i> Article perso
+                                    </button>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">&nbsp;</label>
+                                    <button type="button" class="btn btn-danger w-100" onclick="viderPanier()">
+                                        <i class="fas fa-trash"></i> Vider panier
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <hr>
+                            
+                            <!-- Panier -->
+                            <div class="table-responsive">
+                                <table class="table table-bordered table-sm" id="panierTable">
+                                    <thead class="table-dark">
+                                        <tr>
+                                            <th style="width:30%">Article</th>
+                                            <th style="width:10%">Type</th>
+                                            <th style="width:12%">Qté</th>
+                                            <th style="width:18%">Prix unit.</th>
+                                            <th style="width:15%">Total</th>
+                                            <th style="width:5%"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="panierBody">
+                                        <tr><td colspan="6" class="text-center">Aucun article dans le panier</td></tr>
+                                    </tbody>
+                                    <tfoot class="table-light">
+                                        <tr>
+                                            <th colspan="4" class="text-end">Sous-total :</th>
+                                            <th id="sousTotalDisplay" class="text-end">0 FCFA</th>
+                                            <th></th>
+                                        </tr>
+                                        <tr>
+                                            <th colspan="4" class="text-end text-success">Prise en charge principale :</th>
+                                            <th id="priseEnChargeDisplay" class="text-end text-success">0 FCFA</th>
+                                            <th></th>
+                                        </tr>
+                                        <tr id="priseEnCharge2Row" style="display:none;">
+                                            <th colspan="4" class="text-end text-info">Prise en charge complémentaire :</th>
+                                            <th id="priseEnCharge2Display" class="text-end text-info">0 FCFA</th>
+                                            <th></th>
+                                        </tr>
+                                        <tr class="table-warning">
+                                            <th colspan="4" class="text-end text-danger">NET À PAYER :</th>
+                                            <th id="netAPayerDisplay" class="text-end text-danger fw-bold">0 FCFA</th>
+                                            <th></th>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Notes -->
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" id="proformaNotes" rows="2" placeholder="Informations complémentaires..."></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-success" onclick="sauvegarderProforma()">
+                    <i class="fas fa-save"></i> Sauvegarder
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ============================================
+// VARIABLES GLOBALES
+// ============================================
+let panierArticles = [];
+let patientsList = [];
+let actesList = [];
+let produitsList = [];
+let patientId = null;
+let actesOffset = 0;
+let produitsOffset = 0;
+const ACTES_LIMIT = 50;
+const PRODUITS_LIMIT = 50;
+let actesTotal = 0;
+let produitsTotal = 0;
+let acteSearchTimeout = null;
+let produitSearchTimeout = null;
+
+// 🔥 VARIABLES ASSURANCE COMPLÉMENTAIRE
+let assurance2Active = false;
+let assurance2Nom = '';
+let assurance2TauxOriginal = 0;
+let assurance2TauxApplique = 0;
+let tauxModifie = false;
+
+// ============================================
+// CHARGEMENT DES DONNÉES
+// ============================================
+function chargerPatients() {
+    fetch('/api/patients')
+        .then(response => response.json())
+        .then(data => {
+            patientsList = data || [];
+            remplirListePatients();
+        })
+        .catch(err => console.error('Erreur chargement patients:', err));
+}
+
+function chargerActes(search = '', append = false) {
+    const searchParam = search ? `&search=${encodeURIComponent(search)}` : '';
+    const url = `/api/actes?limit=${ACTES_LIMIT}&offset=${actesOffset}${searchParam}`;
+    
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                console.error('Erreur:', data.error);
+                return;
+            }
+            
+            const newActes = data.data || [];
+            actesTotal = data.total || 0;
+            
+            if (append) {
+                actesList = [...actesList, ...newActes];
+            } else {
+                actesList = newActes;
+            }
+            
+            remplirListeActes(search, append, data.has_more);
+        })
+        .catch(err => console.error('❌ Erreur chargement actes:', err));
+}
+
+function chargerProduits(search = '', append = false) {
+    const searchParam = search ? `&search=${encodeURIComponent(search)}` : '';
+    const url = `/api/produits/search?limit=${PRODUITS_LIMIT}&offset=${produitsOffset}${searchParam}`;
+    
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                console.error('Erreur:', data.error);
+                return;
+            }
+            
+            const newProduits = data.data || [];
+            produitsTotal = data.total || 0;
+            
+            if (append) {
+                produitsList = [...produitsList, ...newProduits];
+            } else {
+                produitsList = newProduits;
+            }
+            
+            remplirListeProduits(search, append, data.has_more);
+        })
+        .catch(err => console.error('❌ Erreur chargement produits:', err));
+}
+// ============================================
+// REMPLIR LES LISTES
+// ============================================
+function remplirListePatients() {
+    const select = document.getElementById('patientSelect');
+    select.innerHTML = '<option value="">-- Sélectionner un patient --</option>';
+    
+    patientsList.forEach(p => {
+        const nomComplet = `${p.nom || ''} ${p.prenom || ''}`.trim();
+        select.innerHTML += `
+            <option value="${p.id}" 
+                    data-nom="${nomComplet}"
+                    data-telephone="${p.telephone || ''}"
+                    data-assurance="${p.type_assurance || 'non_assure'}"
+                    data-taux="${p.taux_prise_charge || 0}"
+                    data-numero="${p.numero_assure || ''}"
+                    data-assurance2="${p.assurance2_nom || ''}"
+                    data-taux2="${p.taux_assurance2 || 0}"
+                    data-numero2="${p.numero_assure2 || ''}">
+                ${nomComplet} - ${p.telephone || ''}
+            </option>
+        `;
+    });
+    
+    document.getElementById('patientResultCount').textContent = `${patientsList.length} patient(s) trouvé(s)`;
+    filtrerPatients();
+}
+
+function remplirListeActes(search = '', append = false, hasMore = false) {
+    const select = document.getElementById('acteSelect');
+    
+    if (!append) {
+        select.innerHTML = '<option value="">-- Actes disponibles --</option>';
+    }
+    
+    actesList.forEach(a => {
+        const nom = a.nom || 'Sans nom';
+        const prix = a.prix || 0;
+        const id = a.id || a.ID;
+        
+        select.innerHTML += `
+            <option value="${id}" data-prix="${prix}" data-nom="${nom}">
+                ${nom} - ${prix} FCFA
+            </option>
+        `;
+    });
+    
+    const total = actesTotal || actesList.length;
+    document.getElementById('acteCount').textContent = total;
+    
+    if (search && total > 0) {
+        select.innerHTML += `<option value="" disabled style="color: #6c757d;">🔍 ${total} résultat(s) pour "${search}"</option>`;
+    } else if (search && total === 0) {
+        select.innerHTML += `<option value="" disabled style="color: #dc3545;">❌ Aucun acte trouvé pour "${search}"</option>`;
+    }
+    
+    if (hasMore && !search) {
+        select.innerHTML += `
+            <option value="" disabled style="color: #4a5568; font-weight: bold; background: #e9ecef; cursor: pointer;" 
+                    onclick="chargerPlusActes()">
+                ⬇️ Charger plus (${actesList.length}/${total})
+            </option>
+        `;
+    }
+}
+
+function remplirListeProduits(search = '', append = false, hasMore = false) {
+    const select = document.getElementById('produitSelect');
+    
+    if (!append) {
+        select.innerHTML = '<option value="">-- Produits disponibles --</option>';
+    }
+    
+    produitsList.forEach(p => {
+        const nom = p.nom || 'Sans nom';
+        const prix = p.prix_vente || 0;
+        const id = p.id || p.ID;
+        const stock = p.quantite_stock || 0;
+        
+        select.innerHTML += `
+            <option value="${id}" data-prix="${prix}" data-nom="${nom}">
+                ${nom} - ${prix} FCFA (Stock: ${stock})
+            </option>
+        `;
+    });
+    
+    const total = produitsTotal || produitsList.length;
+    document.getElementById('produitCount').textContent = total;
+    
+    if (search && total > 0) {
+        select.innerHTML += `<option value="" disabled style="color: #6c757d;">🔍 ${total} résultat(s) pour "${search}"</option>`;
+    } else if (search && total === 0) {
+        select.innerHTML += `<option value="" disabled style="color: #dc3545;">❌ Aucun produit trouvé pour "${search}"</option>`;
+    }
+    
+    if (hasMore && !search) {
+        select.innerHTML += `
+            <option value="" disabled style="color: #4a5568; font-weight: bold; background: #e9ecef; cursor: pointer;"
+                    onclick="chargerPlusProduits()">
+                ⬇️ Charger plus (${produitsList.length}/${total})
+            </option>
+        `;
+    }
+}
+
+// ============================================
+// FILTRAGE
+// ============================================
+function filtrerPatients() {
+    const search = document.getElementById('patientSearch').value.toLowerCase().trim();
+    const select = document.getElementById('patientSelect');
+    const options = select.options;
+    let count = 0;
+    
+    for (let i = 1; i < options.length; i++) {
+        const text = options[i].text.toLowerCase();
+        if (search === '' || text.includes(search)) {
+            options[i].style.display = '';
+            count++;
+        } else {
+            options[i].style.display = 'none';
+        }
+    }
+    
+    document.getElementById('patientResultCount').textContent = `${count} patient(s) trouvé(s)`;
+}
+
+function filtrerActesListe() {
+    const search = document.getElementById('acteSearchInput').value.trim();
+    
+    clearTimeout(acteSearchTimeout);
+    acteSearchTimeout = setTimeout(() => {
+        actesOffset = 0;
+        chargerActes(search, false);
+    }, 500);
+}
+
+function filtrerProduitsListe() {
+    const search = document.getElementById('produitSearchInput').value.trim();
+    
+    clearTimeout(produitSearchTimeout);
+    produitSearchTimeout = setTimeout(() => {
+        produitsOffset = 0;
+        chargerProduits(search, false);
+    }, 500);
+}
+
+function filtrerArticles() {
+    const search = document.getElementById('articleSearch').value.toLowerCase().trim();
+    
+    const acteSelect = document.getElementById('acteSelect');
+    for (let i = 1; i < acteSelect.options.length; i++) {
+        const text = acteSelect.options[i].text.toLowerCase();
+        const isSearchable = acteSelect.options[i].disabled === false;
+        if (isSearchable && (search === '' || text.includes(search))) {
+            acteSelect.options[i].style.display = '';
+        } else {
+            acteSelect.options[i].style.display = 'none';
+        }
+    }
+    
+    const produitSelect = document.getElementById('produitSelect');
+    for (let i = 1; i < produitSelect.options.length; i++) {
+        const text = produitSelect.options[i].text.toLowerCase();
+        const isSearchable = produitSelect.options[i].disabled === false;
+        if (isSearchable && (search === '' || text.includes(search))) {
+            produitSelect.options[i].style.display = '';
+        } else {
+            produitSelect.options[i].style.display = 'none';
+        }
+    }
+}
+
+// ============================================
+// CHARGER PLUS
+// ============================================
+function chargerPlusActes() {
+    const search = document.getElementById('acteSearchInput').value.trim();
+    actesOffset += ACTES_LIMIT;
+    chargerActes(search, true);
+}
+
+function chargerPlusProduits() {
+    const search = document.getElementById('produitSearchInput').value.trim();
+    produitsOffset += PRODUITS_LIMIT;
+    chargerProduits(search, true);
+}
+
+// ============================================
+// GESTION PATIENT AVEC DOUBLE ASSURANCE
+// ============================================
+function chargerInfosPatient() {
+    const select = document.getElementById('patientSelect');
+    const option = select.options[select.selectedIndex];
+    
+    if (!option || !option.value) {
+        document.getElementById('patientNom').value = '';
+        document.getElementById('patientTelephone').value = '';
+        document.getElementById('assuranceNom').value = '';
+        document.getElementById('tauxAssurance').value = 0;
+        document.getElementById('numeroAssure').value = '';
+        document.getElementById('assurance2NomInput').value = '';
+        document.getElementById('assurance2TauxDefaut').value = 0;
+        document.getElementById('assurance2TauxApplique').value = 0;
+        patientId = null;
+        assurance2Active = false;
+        document.getElementById('toggleAssurance2Proforma').checked = false;
+        document.getElementById('toggleAssurance2Proforma').disabled = true;
+        document.getElementById('assurance2NomProforma').textContent = 'Aucune';
+        document.getElementById('assurance2TauxProforma').textContent = '0%';
+        document.getElementById('assurance2InfoProforma').innerHTML = '<i class="fas fa-info-circle"></i> Aucune assurance complémentaire enregistrée';
+        return;
+    }
+    
+    patientId = option.value;
+    document.getElementById('patientNom').value = option.dataset.nom || '';
+    document.getElementById('patientTelephone').value = option.dataset.telephone || '';
+    
+    const assurance = option.dataset.assurance || 'non_assure';
+    const assuranceDisplay = assurance !== 'non_assure' ? assurance : '';
+    document.getElementById('assuranceNom').value = assuranceDisplay;
+    document.getElementById('tauxAssurance').value = option.dataset.taux || 0;
+    document.getElementById('numeroAssure').value = option.dataset.numero || '';
+    
+    // 🔥 CHARGER L'ASSURANCE COMPLÉMENTAIRE
+    assurance2Nom = option.dataset.assurance2 || '';
+    assurance2TauxOriginal = parseFloat(option.dataset.taux2) || 0;
+    assurance2TauxApplique = assurance2TauxOriginal;
+    
+    document.getElementById('assurance2NomInput').value = assurance2Nom;
+    document.getElementById('assurance2TauxDefaut').value = assurance2TauxOriginal;
+    document.getElementById('assurance2TauxApplique').value = assurance2TauxOriginal;
+    
+    const toggle = document.getElementById('toggleAssurance2Proforma');
+    const nomDisplay = document.getElementById('assurance2NomProforma');
+    const tauxDisplay = document.getElementById('assurance2TauxProforma');
+    const info = document.getElementById('assurance2InfoProforma');
+    const badge = document.getElementById('tauxModifieBadge');
+    
+    if (assurance2Nom && assurance2Nom !== '' && assurance2Nom !== 'Aucune' && assurance2TauxOriginal > 0) {
+        toggle.disabled = false;
+        toggle.checked = true;
+        assurance2Active = true;
+        nomDisplay.textContent = assurance2Nom;
+        tauxDisplay.textContent = assurance2TauxOriginal + '%';
+        info.innerHTML = `<i class="fas fa-check-circle text-success"></i> Assurance complémentaire <strong>${assurance2Nom}</strong> disponible (${assurance2TauxOriginal}%)`;
+        info.className = 'small text-success mt-1';
+        badge.style.display = 'none';
+        document.getElementById('assurance2TauxApplique').disabled = false;
+    } else {
+        toggle.disabled = true;
+        toggle.checked = false;
+        assurance2Active = false;
+        nomDisplay.textContent = 'Aucune';
+        tauxDisplay.textContent = '0%';
+        info.innerHTML = '<i class="fas fa-info-circle"></i> Aucune assurance complémentaire enregistrée pour ce patient';
+        info.className = 'small text-muted mt-1';
+        badge.style.display = 'none';
+        document.getElementById('assurance2TauxApplique').disabled = true;
+    }
+    
+    calculerTotal();
+}
+
+// ============================================
+// ASSURANCE COMPLÉMENTAIRE PROFORMA
+// ============================================
+function toggleAssuranceComplementaireProforma() {
+    const toggle = document.getElementById('toggleAssurance2Proforma');
+    assurance2Active = toggle.checked;
+    
+    if (assurance2Active) {
+        document.getElementById('assurance2TauxApplique').disabled = false;
+        document.getElementById('assurance2InfoProforma').innerHTML = 
+            `<i class="fas fa-check-circle text-success"></i> Assurance complémentaire <strong>${assurance2Nom}</strong> appliquée (${assurance2TauxApplique}%)`;
+        document.getElementById('assurance2InfoProforma').className = 'small text-success mt-1';
+    } else {
+        document.getElementById('assurance2TauxApplique').disabled = true;
+        document.getElementById('assurance2InfoProforma').innerHTML = 
+            `<i class="fas fa-info-circle"></i> Assurance complémentaire désactivée pour cette proforma`;
+        document.getElementById('assurance2InfoProforma').className = 'small text-muted mt-1';
+    }
+    
+    calculerTotal();
+}
+
+function resetTauxAssurance2() {
+    const tauxOriginal = assurance2TauxOriginal || 0;
+    document.getElementById('assurance2TauxApplique').value = tauxOriginal;
+    assurance2TauxApplique = tauxOriginal;
+    tauxModifie = false;
+    document.getElementById('tauxModifieBadge').style.display = 'none';
+    
+    if (assurance2Active) {
+        document.getElementById('assurance2InfoProforma').innerHTML = 
+            `<i class="fas fa-check-circle text-success"></i> Assurance complémentaire <strong>${assurance2Nom}</strong> appliquée (${tauxOriginal}%) - Taux par défaut`;
+        document.getElementById('assurance2InfoProforma').className = 'small text-success mt-1';
+        document.getElementById('assurance2TauxProforma').textContent = tauxOriginal + '%';
+    }
+    
+    calculerTotal();
+}
+
+// ============================================
+// GESTION ARTICLES
+// ============================================
+function ajouterArticleSelectionne() {
+    const acteSelect = document.getElementById('acteSelect');
+    const produitSelect = document.getElementById('produitSelect');
+    const qte = parseInt(document.getElementById('quantiteArticle').value) || 1;
+    let added = 0;
+    
+    for (let opt of acteSelect.selectedOptions) {
+        if (!opt.value || opt.disabled) continue;
+        const nom = opt.dataset.nom || opt.text.split(' - ')[0];
+        const prix = parseFloat(opt.dataset.prix) || 0;
+        if (prix > 0) {
+            ajouterAuPanier(nom, 'acte', prix, qte);
+            added++;
+        }
+        opt.selected = false;
+    }
+    
+    for (let opt of produitSelect.selectedOptions) {
+        if (!opt.value || opt.disabled) continue;
+        const nom = opt.dataset.nom || opt.text.split(' - ')[0];
+        const prix = parseFloat(opt.dataset.prix) || 0;
+        if (prix > 0) {
+            ajouterAuPanier(nom, 'produit', prix, qte);
+            added++;
+        }
+        opt.selected = false;
+    }
+    
+    if (added === 0) {
+        alert('Veuillez sélectionner au moins un article valide dans les listes');
+    }
+}
+
+function ajouterArticlePersonnalise() {
+    const nom = prompt('Nom de l\'article :');
+    if (!nom) return;
+    
+    const type = confirm('Cliquez OK pour "Acte", Annuler pour "Produit"') ? 'acte' : 'produit';
+    const prix = parseFloat(prompt('Prix unitaire (FCFA) :')) || 0;
+    const qte = parseInt(prompt('Quantité :')) || 1;
+    
+    if (prix <= 0) {
+        alert('Prix invalide');
+        return;
+    }
+    
+    ajouterAuPanier(nom, type, prix, qte);
+}
+
+function ajouterAuPanier(nom, type, prix, qte) {
+    const existing = panierArticles.find(item => item.nom === nom && item.type === type && item.prix === prix);
+    
+    if (existing) {
+        existing.quantite += qte;
+        existing.total = existing.quantite * existing.prix;
+    } else {
+        panierArticles.push({
+            nom: nom,
+            type: type,
+            prix: prix,
+            quantite: qte,
+            total: prix * qte
+        });
+    }
+    
+    afficherPanier();
+}
+
+function supprimerArticlePanier(index) {
+    panierArticles.splice(index, 1);
+    afficherPanier();
+}
+
+function modifierQuantitePanier(index, delta) {
+    const item = panierArticles[index];
+    if (!item) return;
+    const nouvelleQte = item.quantite + delta;
+    if (nouvelleQte < 1) return;
+    item.quantite = nouvelleQte;
+    item.total = item.quantite * item.prix;
+    afficherPanier();
+}
+
+function modifierPrixPanier(index, nouveauPrix) {
+    const item = panierArticles[index];
+    if (!item) return;
+    const prix = parseFloat(nouveauPrix);
+    if (isNaN(prix) || prix <= 0) {
+        alert('Prix invalide');
+        afficherPanier();
+        return;
+    }
+    item.prix = prix;
+    item.total = item.quantite * prix;
+    afficherPanier();
+}
+
+function viderPanier() {
+    if (panierArticles.length === 0) return;
+    if (!confirm('Vider le panier ?')) return;
+    panierArticles = [];
+    afficherPanier();
+}
+
+// ============================================
+// AFFICHER PANIER AVEC DOUBLE ASSURANCE
+// ============================================
+function afficherPanier() {
+    const tbody = document.getElementById('panierBody');
+    tbody.innerHTML = '';
+    
+    if (panierArticles.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center">Aucun article dans le panier</td></tr>';
+        document.getElementById('sousTotalDisplay').textContent = '0 FCFA';
+        document.getElementById('priseEnChargeDisplay').textContent = '0 FCFA';
+        document.getElementById('priseEnCharge2Display').textContent = '0 FCFA';
+        document.getElementById('netAPayerDisplay').textContent = '0 FCFA';
+        document.getElementById('priseEnCharge2Row').style.display = 'none';
+        return;
+    }
+    
+    let sousTotal = 0;
+    
+    panierArticles.forEach((item, index) => {
+        sousTotal += item.total;
+        
+        const row = tbody.insertRow();
+        row.innerHTML = `
+            <td>${item.nom}</td>
+            <td>
+                <span class="badge ${item.type === 'acte' ? 'bg-primary' : 'bg-success'}">
+                    ${item.type === 'acte' ? 'Acte' : 'Produit'}
+                </span>
+            </td>
+            <td>
+                <div class="input-group input-group-sm">
+                    <button class="btn btn-sm btn-secondary" onclick="modifierQuantitePanier(${index}, -1)">-</button>
+                    <input type="number" class="form-control form-control-sm text-center" value="${item.quantite}" 
+                           style="width:50px;" onchange="modifierQuantitePanier(${index}, parseInt(this.value) - ${item.quantite})">
+                    <button class="btn btn-sm btn-secondary" onclick="modifierQuantitePanier(${index}, 1)">+</button>
+                </div>
+            </td>
+            <td>
+                <input type="number" class="form-control form-control-sm" value="${item.prix}" 
+                       style="width:100px;" onchange="modifierPrixPanier(${index}, this.value)">
+            </td>
+            <td class="text-end fw-bold">${item.total.toLocaleString()} FCFA</td>
+            <td>
+                <button class="btn btn-sm btn-danger" onclick="supprimerArticlePanier(${index})">
+                    <i class="fas fa-times"></i>
+                </button>
+            </td>
+        `;
+    });
+    
+    // 🔥 CALCUL AVEC DOUBLE ASSURANCE
+    calculerTotal();
+}
+
+function calculerTotal() {
+    // Recalculer le sous-total depuis le panier
+    let sousTotal = 0;
+    for (const item of panierArticles) {
+        sousTotal += item.prix * item.quantite;
+    }
+    
+    // Assurance principale
+    let tauxPrincipal = parseFloat(document.getElementById('tauxAssurance').value) || 0;
+    let priseEnCharge = (sousTotal * tauxPrincipal) / 100;
+    let resteApresPrincipal = sousTotal - priseEnCharge;
+    
+    // Assurance complémentaire
+    let priseEnCharge2 = 0;
+    let tauxComplementaire = 0;
+    
+    if (assurance2Active) {
+        // Récupérer le taux appliqué (modifié ou original)
+        tauxComplementaire = parseFloat(document.getElementById('assurance2TauxApplique').value) || 0;
+        
+        // Détecter si le taux a été modifié
+        if (Math.abs(tauxComplementaire - assurance2TauxOriginal) > 0.01 && tauxComplementaire > 0) {
+            tauxModifie = true;
+            document.getElementById('tauxModifieBadge').style.display = 'inline-block';
+            document.getElementById('tauxModifieBadge').textContent = `Modifié (${tauxComplementaire}%)`;
+        } else {
+            tauxModifie = false;
+            document.getElementById('tauxModifieBadge').style.display = 'none';
+        }
+        
+        if (tauxComplementaire > 0 && resteApresPrincipal > 0) {
+            priseEnCharge2 = (resteApresPrincipal * tauxComplementaire) / 100;
+        }
+        
+        // Mettre à jour l'affichage du taux
+        document.getElementById('assurance2TauxProforma').textContent = tauxComplementaire + '%';
+    }
+    
+    let netAPayer = sousTotal - priseEnCharge - priseEnCharge2;
+    if (netAPayer < 0) netAPayer = 0;
+    
+    // Mettre à jour l'affichage
+    document.getElementById('sousTotalDisplay').textContent = sousTotal.toLocaleString() + ' FCFA';
+    document.getElementById('priseEnChargeDisplay').textContent = priseEnCharge.toLocaleString() + ' FCFA';
+    document.getElementById('netAPayerDisplay').textContent = netAPayer.toLocaleString() + ' FCFA';
+    
+    // Afficher la prise en charge complémentaire
+    const priseEnCharge2Row = document.getElementById('priseEnCharge2Row');
+    const priseEnCharge2Display = document.getElementById('priseEnCharge2Display');
+    
+    if (assurance2Active && tauxComplementaire > 0 && priseEnCharge2 > 0) {
+        const modifText = tauxModifie ? ' 🔄' : '';
+        priseEnCharge2Display.textContent = `${assurance2Nom} (${tauxComplementaire}%) : - ${priseEnCharge2.toLocaleString()} FCFA${modifText}`;
+        priseEnCharge2Row.style.display = '';
+    } else if (assurance2Active && tauxComplementaire > 0) {
+        priseEnCharge2Display.textContent = `${assurance2Nom} (${tauxComplementaire}%) : 0 FCFA (reste à charge nul)`;
+        priseEnCharge2Row.style.display = '';
+    } else {
+        priseEnCharge2Row.style.display = 'none';
+    }
+}
+
+// ============================================
+// SAUVEGARDER PROFORMA
+// ============================================
+function sauvegarderProforma() {
+    if (panierArticles.length === 0) {
+        alert('Veuillez ajouter au moins un article');
+        return;
+    }
+    
+    if (!patientId) {
+        alert('Veuillez sélectionner un patient');
+        return;
+    }
+    
+    const articles = panierArticles.map(item => ({
+        nom: item.nom,
+        type: item.type,
+        quantite: item.quantite,
+        prix_unitaire: item.prix,
+        total: item.total
+    }));
+    
+    // 🔥 Récupérer les données des assurances
+    let tauxComplementaire = 0;
+    if (assurance2Active) {
+        tauxComplementaire = parseFloat(document.getElementById('assurance2TauxApplique').value) || 0;
+    }
+    
+    const data = {
+        patient_id: parseInt(patientId),
+        patient_nom: document.getElementById('patientNom').value,
+        patient_telephone: document.getElementById('patientTelephone').value || '',
+        assurance_nom: document.getElementById('assuranceNom').value || 'Non assuré',
+        taux_assurance: parseFloat(document.getElementById('tauxAssurance').value) || 0,
+        numero_assure: document.getElementById('numeroAssure').value || '',
+        // 🔥 DONNÉES ASSURANCE COMPLÉMENTAIRE
+        assurance2_nom: assurance2Active ? assurance2Nom : '',
+        taux_assurance2: assurance2Active ? tauxComplementaire : 0,
+        numero_assure2: document.getElementById('numeroAssure').value || '',
+        assurance2_active: assurance2Active,
+        taux_modifie: tauxModifie,
+        taux_original: assurance2TauxOriginal,
+        articles: articles,
+        notes: document.getElementById('proformaNotes').value,
+        type: 'mixte'
+    };
+    
+    console.log('📦 Données proforma:', data);
+    
+    showLoader('Enregistrement de la proforma...');
+    
+    fetch('/api/proformas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(data => {
+        hideLoader();
+        if (data.success) {
+            let msg = `✅ Proforma #${data.numero} créée !\n`;
+            msg += `💰 Net à payer: ${data.net_a_payer.toLocaleString()} FCFA\n`;
+            if (data.assurance2_nom && data.taux_assurance2 > 0) {
+                msg += `🏥 Assurance complémentaire: ${data.assurance2_nom} (${data.taux_assurance2}%)`;
+                if (data.taux_modifie) {
+                    msg += ` - Taux modifié (original: ${data.taux_original}%)`;
+                }
+            }
+            alert(msg);
+            
+            if (confirm('Imprimer la proforma ?')) {
+                window.open(`/proforma/${data.id}/print?format=A4`, '_blank');
+            }
+            
+            bootstrap.Modal.getInstance(document.getElementById('proformaModal')).hide();
+            location.reload();
+        } else {
+            alert('❌ Erreur: ' + data.error);
+        }
+    })
+    .catch(() => { 
+        hideLoader(); 
+        alert('❌ Erreur'); 
+    });
+}
+
+// ============================================
+// CHANGER STATUT
+// ============================================
+function changerStatut(id, statut) {
+    if (!confirm('Confirmer le changement de statut ?')) return;
+    
+    fetch(`/api/proformas/${id}/statut`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ statut: statut })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Erreur: ' + data.error);
+        }
+    });
+}
+
+// ============================================
+// NOUVELLE PROFORMA
+// ============================================
+function nouvelleProforma() {
+    panierArticles = [];
+    patientId = null;
+    actesOffset = 0;
+    produitsOffset = 0;
+    actesList = [];
+    produitsList = [];
+    assurance2Active = false;
+    tauxModifie = false;
+    assurance2Nom = '';
+    assurance2TauxOriginal = 0;
+    assurance2TauxApplique = 0;
+    
+    document.getElementById('panierBody').innerHTML = '<tr><td colspan="6" class="text-center">Aucun article dans le panier</td></tr>';
+    document.getElementById('sousTotalDisplay').textContent = '0 FCFA';
+    document.getElementById('priseEnChargeDisplay').textContent = '0 FCFA';
+    document.getElementById('priseEnCharge2Display').textContent = '0 FCFA';
+    document.getElementById('netAPayerDisplay').textContent = '0 FCFA';
+    document.getElementById('priseEnCharge2Row').style.display = 'none';
+    document.getElementById('patientNom').value = '';
+    document.getElementById('patientTelephone').value = '';
+    document.getElementById('assuranceNom').value = '';
+    document.getElementById('tauxAssurance').value = 0;
+    document.getElementById('numeroAssure').value = '';
+    document.getElementById('proformaNotes').value = '';
+    document.getElementById('patientSearch').value = '';
+    document.getElementById('articleSearch').value = '';
+    document.getElementById('acteSearchInput').value = '';
+    document.getElementById('produitSearchInput').value = '';
+    document.getElementById('assurance2NomInput').value = '';
+    document.getElementById('assurance2TauxDefaut').value = 0;
+    document.getElementById('assurance2TauxApplique').value = 0;
+    document.getElementById('toggleAssurance2Proforma').checked = false;
+    document.getElementById('toggleAssurance2Proforma').disabled = true;
+    document.getElementById('assurance2NomProforma').textContent = 'Aucune';
+    document.getElementById('assurance2TauxProforma').textContent = '0%';
+    document.getElementById('tauxModifieBadge').style.display = 'none';
+    document.getElementById('assurance2InfoProforma').innerHTML = '<i class="fas fa-info-circle"></i> Aucune assurance complémentaire enregistrée';
+    document.getElementById('assurance2InfoProforma').className = 'small text-muted mt-1';
+    document.getElementById('assurance2TauxApplique').disabled = true;
+    
+    chargerPatients();
+    chargerActes('', false);
+    chargerProduits('', false);
+    
+    new bootstrap.Modal(document.getElementById('proformaModal')).show();
+}
+
+// ============================================
+// INITIALISATION
+// ============================================
+document.addEventListener('DOMContentLoaded', function() {
+    chargerPatients();
+    chargerActes('', false);
+    chargerProduits('', false);
+    
+    const form = document.getElementById('proformaForm');
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            return false;
+        });
+    }
+    
+    document.getElementById('acteSearchInput')?.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            filtrerActesListe();
+        }
+    });
+    
+    document.getElementById('produitSearchInput')?.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            filtrerProduitsListe();
+        }
+    });
+    
+    // 🔥 Écouter les changements du taux complémentaire
+    document.getElementById('assurance2TauxApplique')?.addEventListener('change', function() {
+        calculerTotal();
+    });
+});
+</script>
+{% endblock %}
