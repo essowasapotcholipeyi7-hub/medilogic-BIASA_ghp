@@ -5,12 +5,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Facture #{{ facture.numero_facture }}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- html2pdf pour l'export PDF -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     
     <style>
         /* ============================================
-           STYLES DE BASE (identiques pour tous les formats)
+           STYLES DE BASE
            ============================================ */
         * {
             margin: 0;
@@ -31,30 +32,65 @@
             padding: 15px;
         }
         
-        /* En-tête */
-        .header {
+        /* ============================================
+           EN-TÊTE AVEC BANDE BLEUE (comme les autres)
+           ============================================ */
+        
+        .recu-header {
+            background: #1a2a6c;
+            padding: 20px 30px;
+            color: white;
+            border-radius: 0;
+            margin: -30px -35px 20px -35px;
+        }
+        
+        .recu-header .top-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-bottom: 2px solid #000;
-            padding-bottom: 10px;
-            margin-bottom: 10px;
+            flex-wrap: wrap;
         }
         
-        .header h2 {
-            font-size: 18px;
+        .recu-header .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .recu-header .logo-area img {
+            max-height: 50px;
+            max-width: 100px;
+            object-fit: contain;
+        }
+        
+        .recu-header .logo-area h1 {
+            font-size: 20px;
+            font-weight: 600;
             margin: 0;
-            color: #000;
+            color: white;
         }
         
-        .header .badge-facture {
-            background: #000;
-            color: white !important;
-            padding: 4px 12px;
-            border-radius: 4px;
-            font-weight: bold;
-            font-size: 14px;
-            display: inline-block;
+        .recu-header .badge-rdv {
+            background: rgba(255,255,255,0.15);
+            padding: 5px 14px;
+            border-radius: 30px;
+            font-size: 12px;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .recu-header .sub-info {
+            margin-top: 10px;
+            font-size: 13px;
+            opacity: 0.9;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px 20px;
+        }
+        
+        .recu-header .sub-info span {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
         }
         
         /* Tableau */
@@ -270,10 +306,23 @@
                 border-color: black !important;
             }
             
-            .header .badge-facture {
+            .recu-header {
                 background: black !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            
+            .recu-header .logo-area h1 {
                 color: white !important;
-                border: 1px solid black !important;
+            }
+            
+            .recu-header .badge-rdv {
+                color: white !important;
+                border-color: white !important;
+            }
+            
+            .recu-header .sub-info span {
+                color: white !important;
             }
             
             /* Tableaux en noir */
@@ -295,26 +344,6 @@
                 color: black !important;
                 font-size: 6px !important;
                 padding: 2px 2px !important;
-            }
-            
-            .header {
-                border-bottom: 1px solid black !important;
-                padding-bottom: 5px !important;
-                margin-bottom: 5px !important;
-            }
-            
-            .header h2 {
-                font-size: 11px !important;
-            }
-            
-            .header .badge-facture {
-                font-size: 8px !important;
-                padding: 2px 8px !important;
-            }
-            
-            .header p {
-                font-size: 6px !important;
-                margin: 0 !important;
             }
             
             .totaux {
@@ -430,6 +459,13 @@
             .statut {
                 border: 1px solid #000;
             }
+            
+            .recu-header {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                color-adjust: exact !important;
+                background: #1a2a6c !important;
+            }
         }
         
         /* Style A4 à l'écran */
@@ -439,35 +475,6 @@
             border-radius: 12px;
             box-shadow: 0 5px 20px rgba(0,0,0,0.1);
             max-width: 800px;
-        }
-        
-        .header {
-            border-bottom: 3px solid #667eea;
-            padding-bottom: 15px;
-            margin-bottom: 20px;
-        }
-        
-        .header h2 {
-            color: #1a1a2e;
-        }
-        
-        .header .badge-facture {
-            background: #667eea;
-            color: white !important;
-            padding: 4px 15px;
-            border-radius: 4px;
-            font-size: 16px;
-        }
-        
-        table th {
-            background: #f8f9fa;
-            border: 1px solid #dee2e6;
-            padding: 10px;
-        }
-        
-        table td {
-            border: 1px solid #dee2e6;
-            padding: 8px 10px;
         }
         
         .totaux {
@@ -511,20 +518,28 @@
 </head>
 <body>
     <div class="container" id="factureContenu">
-        <!-- En-tête -->
-        <div class="header">
-            <div>
-                <h2>{{ structure.nom or 'Medilogic-GHP' }}</h2>
-                <p style="margin: 2px 0; font-size: 10px;">
-                    {{ structure.adresse or '' }}<br>
-                    Tél: {{ structure.telephone or '' }}
-                </p>
+        <!-- ============================================================
+             EN-TÊTE AVEC BANDE BLEUE (comme les autres impressions)
+             ============================================================ -->
+        <div class="recu-header" id="recuHeader">
+            <div class="top-row">
+                <div class="logo-area">
+                    <img id="structureLogo" src="" alt="Logo" style="display:none;">
+                    <h1 id="structureNom">{{ structure.nom if structure else 'Hopital' }}</h1>
+                </div>
+                <div class="badge-rdv">FACTURE</div>
             </div>
-            <div style="text-align: right;">
-                <span class="badge-facture">FACTURE</span>
-                <p style="margin: 2px 0; font-weight: bold; font-size: 12px;">N° {{ facture.numero_facture }}</p>
-                <p style="margin: 0; font-size: 10px;">{{ date_actuelle }}</p>
+            <div class="sub-info" id="structureInfos">
+                <span id="structureAdresse"></span>
+                <span id="structureTelephone"></span>
+                <span id="structureEmail"></span>
             </div>
+        </div>
+
+        <!-- Numéro de facture et date -->
+        <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 12px;">
+            <span><strong>N° :</strong> {{ facture.numero_facture }}</span>
+            <span><strong>Date :</strong> {{ date_actuelle }}</span>
         </div>
 
         <!-- Infos patient -->
@@ -536,6 +551,7 @@
             <br><strong>Assurance :</strong> {{ facture.assurance_nom }} ({{ facture.taux_assurance }}%)
             {% if facture.assurance2_nom and facture.assurance2_nom != 'Aucune' %}
             <br><strong>CAC :</strong> {{ facture.assurance2_nom }} ({{ facture.taux_assurance2 }}%)
+            {% if facture.societe_assurance2 %}<br><strong>Société :</strong> {{ facture.societe_assurance2 }}{% endif %}
             {% endif %}
             {% endif %}
         </div>
@@ -601,18 +617,18 @@
             </div>
             
             <div class="ligne paye">
-                <span>✅ Montant payé</span>
+                <span>Montant payé</span>
                 <span>{{ facture.montant_paye|default(0)|round(0)|int }} FCFA</span>
             </div>
             
             {% if facture.reste_a_payer > 0 %}
             <div class="ligne reste">
-                <span>⏳ Reste à payer</span>
+                <span>Reste à payer</span>
                 <span>{{ facture.reste_a_payer|default(0)|round(0)|int }} FCFA</span>
             </div>
             {% else %}
             <div class="ligne" style="border-top: 1px solid #000; padding-top: 5px; margin-top: 5px; font-weight: bold;">
-                <span>✅ Facture entièrement payée</span>
+                <span>Facture entièrement payée</span>
                 <span>✓</span>
             </div>
             {% endif %}
@@ -623,9 +639,9 @@
             {% set statut_labels = {
                 'en_attente': 'En attente de paiement',
                 'partielle': 'Paiement partiel',
-                'payee': '✅ Facture payée',
-                'en_retard': '⚠️ En retard de paiement',
-                'impayee': '⚠️ Impayée',
+                'payee': 'Facture payée',
+                'en_retard': 'En retard de paiement',
+                'impayee': 'Impayée',
                 'annulee': 'Annulée'
             } %}
             <span class="statut statut-{{ facture.statut }}">
@@ -653,26 +669,72 @@
         <!-- Notes -->
         {% if facture.notes %}
         <div style="margin-top: 8px; font-size: 10px; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
-            <strong>📝 Notes :</strong> {{ facture.notes }}
+            <strong>Notes :</strong> {{ facture.notes }}
         </div>
         {% endif %}
 
         <!-- Pied de page -->
         <div class="footer">
             Merci de votre confiance !<br>
-            {{ structure.nom or 'Medilogic-GHP' }}
+            <span id="structureNomFooter">{{ structure.nom if structure else 'Hopital' }}</span>
         </div>
     </div>
 
     <!-- Boutons (non imprimés) -->
     <div class="no-print">
-        <button class="btn-print" onclick="window.print()">🖨️ Imprimer</button>
-        <button class="btn-pdf" onclick="telechargerPDF()">📄 PDF</button>
-        <button class="btn-back" onclick="retour()">⬅️ Retour</button>
-        <button class="btn-close" onclick="fermer()">✖ Fermer</button>
+        <button class="btn-print" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
+        <button class="btn-pdf" onclick="telechargerPDF()">PDF</button>
+        <button class="btn-back" onclick="retour()">Retour</button>
+        <button class="btn-close" onclick="fermer()"><i class="fas fa-times"></i> Fermer</button>
     </div>
 
     <script>
+    // ============================================================
+    // CHARGER LES INFOS DE LA STRUCTURE DEPUIS LOCALSTORAGE
+    // ============================================================
+    
+    function chargerInfosStructure() {
+        var nom = localStorage.getItem('structureNom') || '{{ structure.nom if structure else "Hopital" }}';
+        var adresse = localStorage.getItem('structureAdresse') || '{{ structure.adresse if structure else "" }}';
+        var telephone = localStorage.getItem('structureTelephone') || '{{ structure.telephone if structure else "" }}';
+        var email = localStorage.getItem('structureEmail') || '{{ structure.email if structure else "" }}';
+        var logo = localStorage.getItem('structureLogo') || '';
+        
+        document.getElementById('structureNom').textContent = nom;
+        document.getElementById('structureNomFooter').textContent = nom;
+        
+        var infosDiv = document.getElementById('structureInfos');
+        infosDiv.innerHTML = '';
+        
+        if (adresse) {
+            var spanAdresse = document.createElement('span');
+            spanAdresse.textContent = adresse;
+            infosDiv.appendChild(spanAdresse);
+        }
+        
+        if (telephone) {
+            var spanTel = document.createElement('span');
+            spanTel.textContent = 'Tel: ' + telephone;
+            infosDiv.appendChild(spanTel);
+        }
+        
+        if (email) {
+            var spanEmail = document.createElement('span');
+            spanEmail.textContent = 'Email: ' + email;
+            infosDiv.appendChild(spanEmail);
+        }
+        
+        if (logo) {
+            var img = document.getElementById('structureLogo');
+            img.src = logo;
+            img.style.display = 'inline-block';
+        }
+    }
+    
+    // ============================================================
+    // TÉLÉCHARGER PDF
+    // ============================================================
+    
     function telechargerPDF() {
         const element = document.getElementById('factureContenu');
         const format = '{{ request.args.get("format", "80mm") }}';
@@ -697,19 +759,20 @@
         html2pdf().set(opt).from(element).save();
     }
     
+    // ============================================================
+    // FERMETURE ET RETOUR
+    // ============================================================
+    
     function retour() {
-        // Fermer l'onglet s'il a été ouvert par window.open
         if (window.opener) {
             window.close();
         } else {
-            // Sinon rediriger vers la page des factures
             window.location.href = "{{ url_for('factures') }}";
         }
     }
     
     function fermer() {
         window.close();
-        // Si la fenêtre ne se ferme pas, rediriger
         setTimeout(() => { 
             if (!window.closed) {
                 window.location.href = "{{ url_for('factures') }}";
@@ -717,15 +780,19 @@
         }, 500);
     }
     
-    // Impression automatique si demandé
+    // ============================================================
+    // INITIALISATION
+    // ============================================================
+    
     document.addEventListener('DOMContentLoaded', function() {
+        chargerInfosStructure();
+        
         {% if request.args.get('print', 'false') == 'true' %}
         setTimeout(function() {
             window.print();
         }, 500);
         {% endif %}
         
-        // Si l'onglet a été ouvert par window.open, afficher un message
         if (window.opener) {
             console.log('📄 Cette page a été ouverte dans un nouvel onglet.');
             console.log('🔙 Cliquez sur "Retour" pour fermer cet onglet.');

@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block title %}Gestion des services{% endblock %}
+
+{% block content %}
+        <div class="card">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-building"></i> Gestion des services</h5>
+                <button class="btn btn-light btn-sm" onclick="ouvrirAjoutService()">
+                    <i class="fas fa-plus"></i> Nouveau service
+                </button>
+            </div>
+            <div class="card-body">
+                <!-- Liste des services -->
+                <div class="table-responsive">
+                    <table class="table table-hover table-bordered">
+                        <thead class="table-light">
+                            <tr>
+                                <th>ID</th>
+                                <th>Nom du service</th>
+                                <th>Responsable</th>
+                                <th>Employes</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="servicesBody">
+                            <tr><td colspan="5" class="text-center">Chargement...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Ajout/Modification Service -->
+<div class="modal fade" id="serviceModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><span id="serviceModalTitle">Ajouter un service</span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="serviceForm">
+                    <input type="hidden" id="serviceId">
+                    <div class="mb-3">
+                        <label class="form-label">Nom du service *</label>
+                        <input type="text" class="form-control" id="serviceNom" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Responsable</label>
+                        <input type="text" class="form-control" id="serviceResponsable">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-primary" onclick="sauvegarderService()">
+                    <i class="fas fa-save"></i> Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ============================================
+// CHARGEMENT DES SERVICES
+// ============================================
+function chargerServices() {
+    const tbody = document.getElementById('servicesBody');
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center">Chargement...</td></tr>';
+    
+    fetch('/rh/api/services')
+        .then(response => response.json())
+        .then(data => {
+            tbody.innerHTML = '';
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center">Aucun service trouve</td></tr>';
+                return;
+            }
+            
+            data.forEach(s => {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${s.id}</td>
+                    <td><strong>${s.nom}</strong></td>
+                    <td>${s.responsable || '-'}</td>
+                    <td><span class="badge bg-info">${s.nb_employes || 0}</span></td>
+                    <td>
+                        <button class="btn btn-sm btn-warning" onclick="modifierService(${s.id})">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="supprimerService(${s.id})">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                `;
+            });
+        })
+        .catch(error => {
+            console.error('Erreur:', error);
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Erreur de chargement</td></tr>';
+        });
+}
+
+// ============================================
+// AJOUTER/MODIFIER SERVICE
+// ============================================
+function ouvrirAjoutService() {
+    document.getElementById('serviceModalTitle').textContent = 'Ajouter un service';
+    document.getElementById('serviceForm').reset();
+    document.getElementById('serviceId').value = '';
+    new bootstrap.Modal(document.getElementById('serviceModal')).show();
+}
+
+function modifierService(id) {
+    document.getElementById('serviceModalTitle').textContent = 'Modifier le service';
+    document.getElementById('serviceId').value = id;
+    
+    fetch(`/rh/api/services`)
+        .then(r => r.json())
+        .then(services => {
+            const service = services.find(s => s.id === id);
+            if (service) {
+                document.getElementById('serviceNom').value = service.nom;
+                document.getElementById('serviceResponsable').value = service.responsable || '';
+                new bootstrap.Modal(document.getElementById('serviceModal')).show();
+            }
+        });
+}
+
+function sauvegarderService() {
+    const id = document.getElementById('serviceId').value;
+    const nom = document.getElementById('serviceNom').value.trim();
+    const responsable = document.getElementById('serviceResponsable').value.trim();
+    
+    if (!nom) {
+        alert('Veuillez saisir le nom du service');
+        return;
+    }
+    
+    const data = { nom: nom, responsable: responsable };
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? `/rh/api/services/${id}` : '/rh/api/services';
+    
+    fetch(url, {
+        method: method,
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert(id ? 'Service modifie avec succes !' : 'Service ajoute avec succes !');
+            bootstrap.Modal.getInstance(document.getElementById('serviceModal')).hide();
+            chargerServices();
+        } else {
+            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('Erreur: ' + error));
+}
+
+function supprimerService(id) {
+    if (!confirm('Voulez-vous vraiment supprimer ce service ?')) return;
+    
+    fetch(`/rh/api/services/${id}`, {
+        method: 'DELETE'
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert('Service supprime avec succes !');
+            chargerServices();
+        } else {
+            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('Erreur: ' + error));
+}
+
+// ============================================
+// INITIALISATION
+// ============================================
+document.addEventListener('DOMContentLoaded', function() {
+    chargerServices();
+});
+</script>
+{% endblock %}

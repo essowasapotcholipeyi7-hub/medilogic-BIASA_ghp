@@ -1,0 +1,275 @@
+{% extends "base.html" %}
+
+{% block title %}Paramètres de paie{% endblock %}
+
+{% block content %}
+        <div class="card">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-sliders-h"></i> Paramètres de paie — Togo (Public / Privé)</h5>
+                <a href="{{ url_for('rh.page_paie') }}" class="btn btn-light btn-sm">
+                    <i class="fas fa-arrow-left"></i> Retour à la paie
+                </a>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning">
+                    <i class="fas fa-triangle-exclamation"></i>
+                    <strong>Taux indicatifs.</strong> Ces valeurs par défaut doivent être vérifiées et
+                    ajustées avec votre comptable ou la DGI avant la première paie réelle — la
+                    législation sociale et fiscale togolaise évolue. Ces réglages s'appliquent par
+                    défaut ; chaque salarié peut avoir ses propres taux depuis l'écran de génération
+                    de la paie.
+                </div>
+
+                <h6 class="mt-4 text-primary"><i class="fas fa-building"></i> Secteur privé — Retraite CNSS</h6>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label small">Taux salarial (%)</label>
+                        <input type="number" step="0.01" class="form-control" id="tauxCnssSalarial">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Taux patronal (%)</label>
+                        <input type="number" step="0.01" class="form-control" id="tauxCnssPatronal">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Plafond mensuel (FCFA) — 0 = pas de plafond</label>
+                        <input type="number" step="1" class="form-control" id="plafondCnss">
+                    </div>
+                </div>
+                <small class="text-muted">Assiette : salaire brut.</small>
+
+                <h6 class="mt-4 text-success"><i class="fas fa-landmark"></i> Secteur public — Retraite CRT</h6>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label small">Taux salarial (%)</label>
+                        <input type="number" step="0.01" class="form-control" id="tauxCrtSalarial">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Taux patronal (%)</label>
+                        <input type="number" step="0.01" class="form-control" id="tauxCrtPatronal">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Plafond mensuel (FCFA) — 0 = pas de plafond</label>
+                        <input type="number" step="1" class="form-control" id="plafondCrt">
+                    </div>
+                </div>
+                <small class="text-muted">Assiette : salaire de base (traitement indiciaire).</small>
+
+                <h6 class="mt-4 text-info">
+                    <i class="fas fa-shield-heart"></i> AMU — Assurance Maladie Universelle (AMU-CNSS / AMU-INAM)
+                </h6>
+                <div class="alert alert-info small mb-3">
+                    <i class="fas fa-lock"></i>
+                    <strong>Verrouillé par le décret n°2023-096/PR du 4 octobre 2023 :</strong>
+                    taux global de 10% de la rémunération. La part salarié ne peut jamais dépasser
+                    <strong>la moitié</strong> du taux global (5% par défaut), la part employeur ne
+                    peut jamais être <strong>inférieure à cette moitié</strong>. Cette règle s'applique
+                    aussi bien à l'AMU-CNSS (privé) qu'à l'AMU-INAM (public), et même en cas de taux
+                    personnalisé pour un salarié.
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label small">Taux global AMU (%)</label>
+                        <input type="number" step="0.01" class="form-control" id="amuTauxGlobal" onchange="onChangeAmuGlobal()">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Part salarié par défaut (%) — <span id="amuMaxLabel">≤ 5%</span></label>
+                        <input type="number" step="0.01" class="form-control" id="tauxAmuSalarialDefaut" onchange="clamperAmuSalarial()">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Part employeur par défaut (%) — <span id="amuMinLabel">≥ 5%</span></label>
+                        <input type="number" step="0.01" class="form-control" id="tauxAmuPatronalDefaut" onchange="clamperAmuPatronal()">
+                    </div>
+                </div>
+                <small class="text-muted">Assiette : salaire brut (privé et public).</small>
+
+                <h6 class="mt-4 text-secondary"><i class="fas fa-graduation-cap"></i> Formation professionnelle (privé — à vérifier)</h6>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label small">Taux (%) — 0 = désactivé tant que non confirmé</label>
+                        <input type="number" step="0.01" class="form-control" id="tauxFormationPro">
+                    </div>
+                </div>
+
+                <h6 class="mt-4"><i class="fas fa-percent"></i> IRPP — Abattement et déductions</h6>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label small">Abattement forfaitaire (%)</label>
+                        <input type="number" step="0.01" class="form-control" id="abattementTaux">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Plafond de l'abattement (FCFA / an)</label>
+                        <input type="number" step="1" class="form-control" id="abattementPlafond">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small">Déduction / personne à charge (FCFA / mois)</label>
+                        <input type="number" step="1" class="form-control" id="deductionPersonneCharge">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small">Nb max de personnes à charge</label>
+                        <input type="number" step="1" class="form-control" id="maxPersonnesCharge">
+                    </div>
+                </div>
+
+                <h6 class="mt-4 d-flex justify-content-between align-items-center">
+                    <span>Barème IRPP (progressif, <strong>annuel</strong>)</span>
+                    <button class="btn btn-sm btn-outline-primary" onclick="ajouterTranche()">
+                        <i class="fas fa-plus"></i> Ajouter une tranche
+                    </button>
+                </h6>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered">
+                        <thead class="table-light">
+                            <tr>
+                                <th>De (FCFA / an)</th>
+                                <th>À (FCFA / an) — vide = illimité</th>
+                                <th>Taux (%)</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tranchesBody"></tbody>
+                    </table>
+                </div>
+
+                <div class="text-end mt-3">
+                    <span class="text-muted small me-3" id="dernMaj"></span>
+                    <button class="btn btn-primary" onclick="sauvegarderParametres()">
+                        <i class="fas fa-save"></i> Enregistrer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let demiAmu = 5.0;
+
+function onChangeAmuGlobal() {
+    demiAmu = (parseFloat(document.getElementById('amuTauxGlobal').value) || 10) / 2.0;
+    document.getElementById('amuMaxLabel').textContent = `≤ ${demiAmu}%`;
+    document.getElementById('amuMinLabel').textContent = `≥ ${demiAmu}%`;
+    clamperAmuSalarial();
+    clamperAmuPatronal();
+}
+
+function avertir(message) {
+    if (typeof showToast === 'function') {
+        showToast(message, 'warning');
+    } else {
+        console.warn(message);
+    }
+}
+
+function clamperAmuSalarial() {
+    const el = document.getElementById('tauxAmuSalarialDefaut');
+    const v = parseFloat(el.value) || 0;
+    if (v > demiAmu) {
+        el.value = demiAmu;
+        avertir(`La part salarié AMU ne peut pas dépasser ${demiAmu}%`);
+    }
+}
+
+function clamperAmuPatronal() {
+    const el = document.getElementById('tauxAmuPatronalDefaut');
+    const v = parseFloat(el.value) || 0;
+    if (v < demiAmu) {
+        el.value = demiAmu;
+        avertir(`La part employeur AMU ne peut pas être inférieure à ${demiAmu}%`);
+    }
+}
+
+function ligneTrancheHTML(t) {
+    t = t || {min: 0, max: null, taux: 0};
+    return `<tr>
+        <td><input type="number" class="form-control form-control-sm t-min" value="${t.min ?? 0}"></td>
+        <td><input type="number" class="form-control form-control-sm t-max" value="${t.max ?? ''}" placeholder="illimité"></td>
+        <td><input type="number" step="0.01" class="form-control form-control-sm t-taux" value="${t.taux ?? 0}"></td>
+        <td><button class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()"><i class="fas fa-trash"></i></button></td>
+    </tr>`;
+}
+
+function ajouterTranche() {
+    document.getElementById('tranchesBody').insertAdjacentHTML('beforeend', ligneTrancheHTML());
+}
+
+function chargerParametres() {
+    fetch('/rh/api/parametres-paie')
+        .then(r => r.json())
+        .then(p => {
+            document.getElementById('tauxCnssSalarial').value = p.taux_cnss_salarial;
+            document.getElementById('tauxCnssPatronal').value = p.taux_cnss_patronal;
+            document.getElementById('plafondCnss').value = p.plafond_cnss;
+            document.getElementById('tauxCrtSalarial').value = p.taux_crt_salarial;
+            document.getElementById('tauxCrtPatronal').value = p.taux_crt_patronal;
+            document.getElementById('plafondCrt').value = p.plafond_crt;
+
+            document.getElementById('amuTauxGlobal').value = p.amu_taux_global;
+            demiAmu = p.amu_salarial_max;
+            document.getElementById('amuMaxLabel').textContent = `≤ ${p.amu_salarial_max}%`;
+            document.getElementById('amuMinLabel').textContent = `≥ ${p.amu_patronal_min}%`;
+            document.getElementById('tauxAmuSalarialDefaut').value = p.taux_amu_salarial_defaut;
+            document.getElementById('tauxAmuPatronalDefaut').value = p.taux_amu_patronal_defaut;
+
+            document.getElementById('tauxFormationPro').value = p.taux_formation_pro;
+
+            document.getElementById('abattementTaux').value = p.abattement_taux;
+            document.getElementById('abattementPlafond').value = p.abattement_plafond_annuel;
+            document.getElementById('deductionPersonneCharge').value = p.deduction_personne_charge;
+            document.getElementById('maxPersonnesCharge').value = p.max_personnes_charge;
+
+            document.getElementById('dernMaj').textContent = p.updated_at ? ('Dernière modification : ' + p.updated_at) : '';
+
+            const tbody = document.getElementById('tranchesBody');
+            tbody.innerHTML = '';
+            (p.tranches_irpp || []).forEach(t => tbody.insertAdjacentHTML('beforeend', ligneTrancheHTML(t)));
+        })
+        .catch(err => console.error(err));
+}
+
+function sauvegarderParametres() {
+    const tranches = Array.from(document.querySelectorAll('#tranchesBody tr')).map(tr => ({
+        min: parseFloat(tr.querySelector('.t-min').value || 0),
+        max: tr.querySelector('.t-max').value === '' ? null : parseFloat(tr.querySelector('.t-max').value),
+        taux: parseFloat(tr.querySelector('.t-taux').value || 0),
+    }));
+
+    // Sécurité côté client (le serveur revérifie et corrige de toute façon)
+    clamperAmuSalarial();
+    clamperAmuPatronal();
+
+    fetch('/rh/api/parametres-paie', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            taux_cnss_salarial: parseFloat(document.getElementById('tauxCnssSalarial').value || 0),
+            taux_cnss_patronal: parseFloat(document.getElementById('tauxCnssPatronal').value || 0),
+            plafond_cnss: parseFloat(document.getElementById('plafondCnss').value || 0),
+            taux_crt_salarial: parseFloat(document.getElementById('tauxCrtSalarial').value || 0),
+            taux_crt_patronal: parseFloat(document.getElementById('tauxCrtPatronal').value || 0),
+            plafond_crt: parseFloat(document.getElementById('plafondCrt').value || 0),
+            amu_taux_global: parseFloat(document.getElementById('amuTauxGlobal').value || 10),
+            taux_amu_salarial_defaut: parseFloat(document.getElementById('tauxAmuSalarialDefaut').value || 0),
+            taux_amu_patronal_defaut: parseFloat(document.getElementById('tauxAmuPatronalDefaut').value || 0),
+            taux_formation_pro: parseFloat(document.getElementById('tauxFormationPro').value || 0),
+            abattement_taux: parseFloat(document.getElementById('abattementTaux').value || 0),
+            abattement_plafond_annuel: parseFloat(document.getElementById('abattementPlafond').value || 0),
+            deduction_personne_charge: parseFloat(document.getElementById('deductionPersonneCharge').value || 0),
+            max_personnes_charge: parseInt(document.getElementById('maxPersonnesCharge').value || 6),
+            tranches_irpp: tranches,
+        })
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert('Paramètres enregistrés avec succès !');
+            chargerParametres();
+        } else {
+            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(err => alert('Erreur: ' + err));
+}
+
+document.addEventListener('DOMContentLoaded', chargerParametres);
+</script>
+{% endblock %}

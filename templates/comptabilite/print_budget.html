@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Budget {{ annee }}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+            background: white;
+            padding: 30px;
+            color: #1a2a3a;
+        }
+        
+        .budget-container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+        
+        .budget-header {
+            text-align: center;
+            padding: 20px 0 15px 0;
+            border-bottom: 3px solid #1a2a6c;
+            margin-bottom: 20px;
+        }
+        
+        .budget-header .logo-area {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .budget-header .logo-area img {
+            max-height: 50px;
+            max-width: 120px;
+            object-fit: contain;
+        }
+        
+        .budget-header h1 {
+            font-size: 22px;
+            color: #1a2a6c;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+        
+        .budget-header .sub-info {
+            font-size: 12px;
+            color: #6c7a89;
+            margin-top: 5px;
+        }
+        
+        .budget-header .titre-budget {
+            font-size: 20px;
+            font-weight: 600;
+            color: #2d4373;
+            margin-top: 10px;
+        }
+        
+        .budget-header .generated {
+            font-size: 10px;
+            color: #8e9aaf;
+            margin-top: 5px;
+        }
+        
+        .stat-boxes {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin: 15px 0 20px 0;
+        }
+        
+        .stat-box {
+            background: #f8faff;
+            border-radius: 8px;
+            padding: 10px 15px;
+            text-align: center;
+            border-left: 3px solid #667eea;
+        }
+        
+        .stat-box .number {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1a2a6c;
+        }
+        
+        .stat-box .label {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: #8e9aaf;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        
+        .table-container {
+            margin-top: 15px;
+            overflow-x: auto;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+        
+        th {
+            background: #1a2a6c;
+            color: white;
+            padding: 8px 6px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        td {
+            padding: 6px 4px;
+            border-bottom: 1px solid #e6ebf2;
+            color: #3d4f60;
+            text-align: center;
+        }
+        
+        .text-end {
+            text-align: right;
+        }
+        
+        .text-start {
+            text-align: left;
+        }
+        
+        .fw-bold {
+            font-weight: 600;
+        }
+        
+        .text-success {
+            color: #28a745;
+        }
+        
+        .text-danger {
+            color: #dc3545;
+        }
+        
+        .text-primary {
+            color: #1a2a6c;
+        }
+        
+        .bg-total {
+            background: #f5f7fb;
+            font-weight: 700;
+        }
+        
+        .bg-grand-total {
+            background: #e8edf5;
+            font-weight: 700;
+            font-size: 12px;
+        }
+        
+        .compte-nom {
+            font-weight: 600;
+            color: #1a2a3a;
+            text-align: left;
+        }
+        
+        .budget-footer {
+            margin-top: 25px;
+            padding-top: 15px;
+            border-top: 2px solid #e6ebf2;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            font-size: 10px;
+            color: #8e9aaf;
+        }
+        
+        .budget-footer .signature {
+            display: flex;
+            gap: 40px;
+        }
+        
+        .budget-footer .signature .sig-item {
+            text-align: center;
+        }
+        
+        .budget-footer .signature .sig-item .line {
+            width: 150px;
+            border-top: 1px solid #1a2a6c;
+            margin-top: 30px;
+        }
+        
+        .budget-footer .signature .sig-item .label {
+            font-size: 9px;
+            color: #8e9aaf;
+        }
+        
+        .budget-footer .right {
+            font-weight: 500;
+            color: #1a2a6c;
+        }
+        
+        @media print {
+            body {
+                padding: 15px;
+                background: white;
+            }
+            .budget-header {
+                padding: 10px 0;
+            }
+            th {
+                background: #1a2a6c !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            .stat-box {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            .bg-total {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            .bg-grand-total {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            .no-print {
+                display: none !important;
+            }
+        }
+        
+        .no-print {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn-print {
+            background: #1a2a6c;
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(26, 42, 108, 0.3);
+        }
+        
+        .btn-print:hover {
+            background: #2d4373;
+        }
+        
+        .btn-close-pdf {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(220, 53, 69, 0.3);
+        }
+        
+        .btn-close-pdf:hover {
+            background: #c82333;
+        }
+    </style>
+</head>
+<body>
+    <div class="no-print">
+        <button class="btn-print" onclick="imprimirPDF()">
+            <i class="fas fa-print"></i> Imprimer PDF
+        </button>
+        <button class="btn-close-pdf" onclick="fermerFenetre()">
+            <i class="fas fa-times"></i> Fermer
+        </button>
+    </div>
+
+    <div class="budget-container">
+        <!-- ===== EN-TETE ===== -->
+        <div class="budget-header">
+            <div class="logo-area">
+                <img id="structureLogo" src="" alt="Logo" style="display:none; max-height:50px;">
+                <h1 id="structureNom">Mon Etablissement</h1>
+            </div>
+            <div class="sub-info">
+                <span id="structureAdresse"></span>
+                <span id="structureTel"></span>
+                <span id="structureEmail"></span>
+            </div>
+            <div class="titre-budget">Budget prévisionnel {{ annee }}</div>
+            <div class="generated">Généré le {{ now.strftime('%d/%m/%Y à %H:%M') }}</div>
+        </div>
+
+        <!-- ===== STATISTIQUES ===== -->
+        {% set total_general = data|sum(attribute='total_prevu') %}
+        <div class="stat-boxes">
+            <div class="stat-box">
+                <div class="number">{{ data|length }}</div>
+                <div class="label">Comptes</div>
+            </div>
+            <div class="stat-box">
+                <div class="number">{{ "{:,.0f}".format(total_general).replace(',', ' ') }} F</div>
+                <div class="label">Budget total</div>
+            </div>
+            <div class="stat-box">
+                <div class="number">{{ data|selectattr('total_prevu', 'gt', 0)|list|length }}</div>
+                <div class="label">Comptes budgétés</div>
+            </div>
+            <div class="stat-box">
+                <div class="number">{{ "{:,.0f}".format(total_general / 12).replace(',', ' ') }} F</div>
+                <div class="label">Moyenne mensuelle</div>
+            </div>
+        </div>
+
+        <!-- ===== TABLEAU ===== -->
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:15%; text-align:left;">Compte</th>
+                        <th style="width:6%;">Jan</th>
+                        <th style="width:6%;">Fév</th>
+                        <th style="width:6%;">Mar</th>
+                        <th style="width:6%;">Avr</th>
+                        <th style="width:6%;">Mai</th>
+                        <th style="width:6%;">Juin</th>
+                        <th style="width:6%;">Juil</th>
+                        <th style="width:6%;">Aoû</th>
+                        <th style="width:6%;">Sep</th>
+                        <th style="width:6%;">Oct</th>
+                        <th style="width:6%;">Nov</th>
+                        <th style="width:6%;">Déc</th>
+                        <th style="width:9%;">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in data %}
+                    <tr>
+                        <td class="compte-nom">{{ item.compte_numero }} - {{ item.compte_nom }}</td>
+                        {% for mois in item.mois_data %}
+                        <td class="text-end">
+                            {% if mois.montant_prevu > 0 %}
+                                {{ "{:,.0f}".format(mois.montant_prevu).replace(',', ' ') }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        {% endfor %}
+                        <td class="text-end fw-bold text-primary">
+                            {{ "{:,.0f}".format(item.total_prevu).replace(',', ' ') }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    
+                    <!-- TOTAL PAR MOIS -->
+                    <tr class="bg-grand-total">
+                        <td class="text-end">TOTAL GÉNÉRAL</td>
+                        {% for mois_num in range(1, 13) %}
+                        {% set total_mois = 0 %}
+                        {% for item in data %}
+                            {% for mois in item.mois_data %}
+                                {% if mois.mois == mois_num %}
+                                    {% set total_mois = total_mois + mois.montant_prevu %}
+                                {% endif %}
+                            {% endfor %}
+                        {% endfor %}
+                        <td class="text-end">
+                            {% if total_mois > 0 %}
+                                {{ "{:,.0f}".format(total_mois).replace(',', ' ') }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        {% endfor %}
+                        <td class="text-end">
+                            {{ "{:,.0f}".format(total_general).replace(',', ' ') }}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ===== PIED DE PAGE ===== -->
+        <div class="budget-footer">
+            <div class="signature">
+                <div class="sig-item">
+                    <div class="line"></div>
+                    <div class="label">Le comptable</div>
+                </div>
+                <div class="sig-item">
+                    <div class="line"></div>
+                    <div class="label">Le responsable</div>
+                </div>
+            </div>
+            <div class="right" id="footerNom">
+                Mon Etablissement - {{ now.strftime('%d/%m/%Y') }}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // CHARGER LES INFOS DE LA STRUCTURE DEPUIS localStorage
+        // ============================================================
+        
+        function chargerStructure() {
+            // Récupérer les infos depuis localStorage
+            const nom = localStorage.getItem('structureNom');
+            const telephone = localStorage.getItem('structureTelephone');
+            const email = localStorage.getItem('structureEmail');
+            const adresse = localStorage.getItem('structureAdresse');
+            const logo = localStorage.getItem('structureLogo');
+            
+            // Mettre à jour le nom
+            const nomEl = document.getElementById('structureNom');
+            if (nomEl && nom) {
+                nomEl.textContent = nom;
+            }
+            
+            // Mettre à jour le footer
+            const footerEl = document.getElementById('footerNom');
+            if (footerEl && nom) {
+                footerEl.textContent = nom + ' - ' + new Date().toLocaleDateString('fr-FR');
+            }
+            
+            // Mettre à jour les coordonnées
+            const adresseEl = document.getElementById('structureAdresse');
+            const telEl = document.getElementById('structureTel');
+            const emailEl = document.getElementById('structureEmail');
+            
+            let infos = [];
+            if (adresse) infos.push(adresse);
+            if (telephone) infos.push('Tel: ' + telephone);
+            if (email) infos.push('Email: ' + email);
+            
+            if (adresseEl) {
+                adresseEl.textContent = infos.join(' | ');
+            }
+            
+            // Logo
+            if (logo) {
+                const logoImg = document.getElementById('structureLogo');
+                if (logoImg) {
+                    logoImg.src = logo;
+                    logoImg.style.display = 'inline';
+                }
+            }
+            
+            console.log('✅ Structure chargée depuis localStorage');
+        }
+        
+        // ============================================================
+        // IMPRESSION ET FERMETURE AUTOMATIQUE
+        // ============================================================
+        
+        let impressionLancee = false;
+        
+        function imprimirPDF() {
+            if (!impressionLancee) {
+                impressionLancee = true;
+                window.print();
+            }
+        }
+        
+        function fermerFenetre() {
+            if (confirm('Voulez-vous fermer cette fenêtre ?')) {
+                window.close();
+            }
+        }
+        
+        // Charger les infos au démarrage
+        document.addEventListener('DOMContentLoaded', function() {
+            chargerStructure();
+        });
+        
+        // Impression automatique au chargement
+        window.onload = function() {
+            setTimeout(function() {
+                if (!impressionLancee) {
+                    impressionLancee = true;
+                    window.print();
+                }
+            }, 800);
+        };
+        
+        // Fermeture automatique après impression
+        window.addEventListener('afterprint', function() {
+            if (impressionLancee) {
+                setTimeout(function() {
+                    try {
+                        window.close();
+                    } catch(e) {
+                        console.log('⚠️ Fermeture automatique impossible');
+                    }
+                }, 600);
+            }
+        });
+        
+        // Raccourcis clavier
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                fermerFenetre();
+            }
+            if (e.ctrlKey && e.key === 'p') {
+                e.preventDefault();
+                imprimirPDF();
+            }
+        });
+        
+        console.log('✅ Budget chargé - Impression automatique dans 800ms');
+    </script>
+</body>
+</html>

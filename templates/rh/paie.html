@@ -1,0 +1,444 @@
+{% extends "base.html" %}
+
+{% block title %}Paie du mois{% endblock %}
+
+{% block content %}
+        <div class="card">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h5 class="mb-0"><i class="fas fa-money-check-alt"></i> Paie du mois</h5>
+                <div class="d-flex gap-2 align-items-center">
+                    <select class="form-select form-select-sm" id="paieMois" style="width:auto"></select>
+                    <select class="form-select form-select-sm" id="paieAnnee" style="width:auto"></select>
+                    <a href="{{ url_for('rh.page_declarations') }}" class="btn btn-light btn-sm">
+                        <i class="fas fa-file-contract"></i> Déclarations mensuelles
+                    </a>
+                    <a href="{{ url_for('rh.page_parametres_paie') }}" class="btn btn-light btn-sm">
+                        <i class="fas fa-sliders-h"></i> Paramètres (taux CNSS/CRT/AMU/IRPP)
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning small mb-3">
+                    <i class="fas fa-triangle-exclamation"></i>
+                    Les taux CNSS/INAM/IRPP appliqués sont ceux définis dans
+                    <a href="{{ url_for('rh.page_parametres_paie') }}">Paramètres de paie</a> —
+                    vérifiez-les avec votre comptable avant la première paie réelle.
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover table-bordered align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Matricule</th>
+                                <th>Employé</th>
+                                <th>Poste</th>
+                                <th>Secteur</th>
+                                <th class="text-end">Salaire de base</th>
+                                <th class="text-end">Brut calculé</th>
+                                <th class="text-end">Net à payer</th>
+                                <th>Statut</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="paieBody">
+                            <tr><td colspan="9" class="text-center">Chargement...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal génération de paie (tous les paramètres modifiables par salarié) -->
+<div class="modal fade" id="genererPaieModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">Générer le bulletin — <span id="gpEmployeNom"></span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="gpEmployeId">
+
+                <h6 class="text-primary">Profil de paie</h6>
+                <div class="row g-3 mb-2">
+                    <div class="col-md-4">
+                        <label class="form-label small">Statut</label>
+                        <select class="form-select" id="gpSecteur">
+                            <option value="prive">Privé (CNSS / AMU-CNSS)</option>
+                            <option value="public">Public (CRT / AMU-INAM)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Salaire de base (FCFA)</label>
+                        <input type="number" class="form-control" id="gpSalaireBase" min="0">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Personnes à charge (max 6)</label>
+                        <input type="number" class="form-control" id="gpPersonnesCharge" value="0" min="0" max="6">
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-2">
+                    <div class="col-md-6">
+                        <label class="form-label small">Primes (FCFA)</label>
+                        <input type="number" class="form-control" id="gpPrimes" value="0" min="0">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">Indemnités (FCFA)</label>
+                        <input type="number" class="form-control" id="gpIndemnites" value="0" min="0">
+                    </div>
+                </div>
+
+                <h6 class="text-info mt-3">
+                    Taux personnalisés <small class="text-muted">(laisser vide = utiliser les paramètres par défaut)</small>
+                </h6>
+                <div class="row g-3 mb-2">
+                    <div class="col-md-6">
+                        <label class="form-label small">Taux retraite salarial (%)</label>
+                        <input type="number" step="0.01" class="form-control" id="gpTauxRetraiteSal" placeholder="défaut">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">Taux retraite patronal (%)</label>
+                        <input type="number" step="0.01" class="form-control" id="gpTauxRetraitePat" placeholder="défaut">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">Taux AMU salarié (%) <span class="text-danger" id="gpAmuMaxHint"></span></label>
+                        <input type="number" step="0.01" class="form-control" id="gpTauxAmuSal" placeholder="défaut" onchange="clamperGpAmuSal()">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">Taux AMU employeur (%) <span class="text-danger" id="gpAmuMinHint"></span></label>
+                        <input type="number" step="0.01" class="form-control" id="gpTauxAmuPat" placeholder="défaut" onchange="clamperGpAmuPat()">
+                    </div>
+                </div>
+
+                <h6 class="text-warning mt-3">Retenues du mois</h6>
+                <div class="row g-3 mb-2">
+                    <div class="col-md-6">
+                        <label class="form-label small">Prêt (retenue ce mois, FCFA)</label>
+                        <input type="number" class="form-control" id="gpPrets" value="0" min="0">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">Acompte sur salaire (FCFA)</label>
+                        <input type="number" class="form-control" id="gpAcomptes" value="0" min="0">
+                    </div>
+                </div>
+                <div class="mb-2 d-flex justify-content-between align-items-center">
+                    <label class="form-label small mb-0">Autres retenues (assurance, épargne, syndicat...)</label>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="ajouterAutreRetenue()">
+                        <i class="fas fa-plus"></i> Ajouter
+                    </button>
+                </div>
+                <div id="gpAutresRetenues"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-primary" onclick="confirmerGenererPaie()">
+                    <i class="fas fa-calculator"></i> Calculer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal paiement -->
+<div class="modal fade" id="payerPaieModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">Marquer payé</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="ppPaieId">
+                <p>Cette action crée une dépense et une écriture comptable <strong>automatiquement validée</strong>.</p>
+                <div class="mb-3">
+                    <label class="form-label">Mode de paiement</label>
+                    <select class="form-control" id="ppModePaiement">
+                        <option value="especes">Espèces</option>
+                        <option value="carte">Carte bancaire</option>
+                        <option value="virement">Virement</option>
+                        <option value="cheque">Chèque</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-success" onclick="confirmerPayerPaie()">
+                    <i class="fas fa-check"></i> Confirmer le paiement
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const MOIS_NOMS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+function initSelecteurs() {
+    const now = new Date();
+    const selMois = document.getElementById('paieMois');
+    MOIS_NOMS.forEach((nom, idx) => {
+        const opt = document.createElement('option');
+        opt.value = idx + 1;
+        opt.textContent = nom;
+        if (idx + 1 === now.getMonth() + 1) opt.selected = true;
+        selMois.appendChild(opt);
+    });
+    selMois.onchange = chargerPaies;
+
+    const selAnnee = document.getElementById('paieAnnee');
+    for (let a = now.getFullYear() - 1; a <= now.getFullYear() + 1; a++) {
+        const opt = document.createElement('option');
+        opt.value = a;
+        opt.textContent = a;
+        if (a === now.getFullYear()) opt.selected = true;
+        selAnnee.appendChild(opt);
+    }
+    selAnnee.onchange = chargerPaies;
+}
+
+function badgeStatut(statut) {
+    const map = {
+        'non_generee': '<span class="badge bg-secondary">Non générée</span>',
+        'brouillon': '<span class="badge bg-secondary">Brouillon</span>',
+        'valide': '<span class="badge bg-info">Calculée</span>',
+        'payee': '<span class="badge bg-success">Payée</span>',
+    };
+    return map[statut] || statut;
+}
+
+let parametragePaie = null;
+
+function chargerParametragePaie() {
+    return fetch('/rh/api/parametres-paie')
+        .then(r => r.json())
+        .then(p => {
+            parametragePaie = p;
+            const hintMax = `(≤ ${p.amu_salarial_max}%)`;
+            const hintMin = `(≥ ${p.amu_patronal_min}%)`;
+            const elMax = document.getElementById('gpAmuMaxHint');
+            const elMin = document.getElementById('gpAmuMinHint');
+            if (elMax) elMax.textContent = hintMax;
+            if (elMin) elMin.textContent = hintMin;
+        })
+        .catch(err => console.error('Erreur chargement paramétrage paie:', err));
+}
+
+function chargerPaies() {
+    const annee = document.getElementById('paieAnnee').value;
+    const mois = document.getElementById('paieMois').value;
+    const tbody = document.getElementById('paieBody');
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center">⏳ Chargement...</td></tr>';
+
+    fetch(`/rh/api/paie?annee=${annee}&mois=${mois}`)
+        .then(r => r.json())
+        .then(data => {
+            tbody.innerHTML = '';
+            if (!data.employes || data.employes.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">Aucun employé actif</td></tr>';
+                return;
+            }
+            data.employes.forEach(e => {
+                const row = tbody.insertRow();
+                let actions = '';
+                if (!e.paie_id) {
+                    actions = `<button class="btn btn-sm btn-primary" onclick="ouvrirGenererPaie(${e.employe_id}, '${(e.nom+' '+e.prenom).replace(/'/g, "\\'")}')">
+                        <i class="fas fa-calculator"></i> Générer
+                    </button>`;
+                } else if (e.statut === 'payee') {
+                    actions = `<a class="btn btn-sm btn-outline-secondary" href="/rh/paie/${e.paie_id}/bulletin" target="_blank">
+                        <i class="fas fa-file-invoice"></i> Bulletin
+                    </a>`;
+                } else {
+                    actions = `
+                        <a class="btn btn-sm btn-outline-secondary" href="/rh/paie/${e.paie_id}/bulletin" target="_blank">
+                            <i class="fas fa-file-invoice"></i>
+                        </a>
+                        <button class="btn btn-sm btn-outline-primary" onclick="ouvrirGenererPaie(${e.employe_id}, '${(e.nom+' '+e.prenom).replace(/'/g, "\\'")}', ${e.paie_id})" title="Recalculer">
+                            <i class="fas fa-rotate"></i>
+                        </button>
+                        <button class="btn btn-sm btn-success" onclick="ouvrirPayerPaie(${e.paie_id})">
+                            <i class="fas fa-money-bill-wave"></i> Payer
+                        </button>`;
+                }
+                const secteurBadge = e.secteur_paie === 'public'
+                    ? '<span class="badge bg-success">Public</span>'
+                    : '<span class="badge bg-primary">Privé</span>';
+                row.innerHTML = `
+                    <td>${e.matricule || '-'}</td>
+                    <td><strong>${e.nom} ${e.prenom}</strong></td>
+                    <td>${e.poste || '-'}</td>
+                    <td>${secteurBadge}</td>
+                    <td class="text-end">${(e.salaire_base || 0).toLocaleString()} F</td>
+                    <td class="text-end">${e.salaire_brut != null ? e.salaire_brut.toLocaleString() + ' F' : '-'}</td>
+                    <td class="text-end fw-bold">${e.net_a_payer != null ? e.net_a_payer.toLocaleString() + ' F' : '-'}</td>
+                    <td>${badgeStatut(e.statut)}</td>
+                    <td>${actions}</td>
+                `;
+            });
+        })
+        .catch(err => {
+            console.error(err);
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-danger">Erreur de chargement</td></tr>';
+        });
+}
+
+function clamperGpAmuSal() {
+    if (!parametragePaie) return;
+    const el = document.getElementById('gpTauxAmuSal');
+    if (el.value === '') return;
+    const v = parseFloat(el.value) || 0;
+    if (v > parametragePaie.amu_salarial_max) el.value = parametragePaie.amu_salarial_max;
+}
+
+function clamperGpAmuPat() {
+    if (!parametragePaie) return;
+    const el = document.getElementById('gpTauxAmuPat');
+    if (el.value === '') return;
+    const v = parseFloat(el.value) || 0;
+    if (v < parametragePaie.amu_patronal_min) el.value = parametragePaie.amu_patronal_min;
+}
+
+function ligneAutreRetenueHTML(r) {
+    r = r || {libelle: '', montant: 0};
+    return `<div class="row g-2 mb-1 autre-retenue-ligne">
+        <div class="col-7"><input type="text" class="form-control form-control-sm ar-libelle" placeholder="Ex: Assurance, épargne, syndicat..." value="${r.libelle || ''}"></div>
+        <div class="col-4"><input type="number" class="form-control form-control-sm ar-montant" placeholder="Montant" value="${r.montant || 0}"></div>
+        <div class="col-1"><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('.autre-retenue-ligne').remove()"><i class="fas fa-trash"></i></button></div>
+    </div>`;
+}
+
+function ajouterAutreRetenue() {
+    document.getElementById('gpAutresRetenues').insertAdjacentHTML('beforeend', ligneAutreRetenueHTML());
+}
+
+function ouvrirGenererPaie(employeId, nom, paieId) {
+    document.getElementById('gpEmployeId').value = employeId;
+    document.getElementById('gpEmployeNom').textContent = nom;
+    document.getElementById('gpPrimes').value = 0;
+    document.getElementById('gpIndemnites').value = 0;
+    document.getElementById('gpPrets').value = 0;
+    document.getElementById('gpAcomptes').value = 0;
+    document.getElementById('gpTauxRetraiteSal').value = '';
+    document.getElementById('gpTauxRetraitePat').value = '';
+    document.getElementById('gpTauxAmuSal').value = '';
+    document.getElementById('gpTauxAmuPat').value = '';
+    document.getElementById('gpAutresRetenues').innerHTML = '';
+
+    // ⭐ Précharger le profil déjà enregistré pour ce salarié (modifiable ici)
+    fetch(`/rh/api/employes/${employeId}`)
+        .then(r => r.json())
+        .then(e => {
+            document.getElementById('gpSecteur').value = e.secteur_paie || 'prive';
+            document.getElementById('gpSalaireBase').value = e.salaire_base || 0;
+            document.getElementById('gpPersonnesCharge').value = e.personnes_a_charge || 0;
+            if (e.taux_retraite_salarial_override != null) document.getElementById('gpTauxRetraiteSal').value = e.taux_retraite_salarial_override;
+            if (e.taux_retraite_patronal_override != null) document.getElementById('gpTauxRetraitePat').value = e.taux_retraite_patronal_override;
+            if (e.taux_amu_salarial_override != null) document.getElementById('gpTauxAmuSal').value = e.taux_amu_salarial_override;
+            if (e.taux_amu_patronal_override != null) document.getElementById('gpTauxAmuPat').value = e.taux_amu_patronal_override;
+        })
+        .catch(err => console.error(err));
+
+    // ⭐ Si un bulletin existe déjà pour ce mois (recalcul), précharger aussi
+    // primes/indemnités/prêts/acomptes/autres retenues — sinon un recalcul
+    // sans tout ressaisir les remettrait silencieusement à zéro.
+    if (paieId) {
+        fetch(`/rh/api/paie/${paieId}`)
+            .then(r => r.json())
+            .then(p => {
+                if (p.error) return;
+                document.getElementById('gpPrimes').value = p.primes || 0;
+                document.getElementById('gpIndemnites').value = p.indemnites || 0;
+                document.getElementById('gpPersonnesCharge').value = p.personnes_a_charge || 0;
+                document.getElementById('gpPrets').value = p.prets_deduction || 0;
+                document.getElementById('gpAcomptes').value = p.acomptes_deduction || 0;
+                (p.autres_retenues || []).forEach(r => {
+                    document.getElementById('gpAutresRetenues').insertAdjacentHTML('beforeend', ligneAutreRetenueHTML(r));
+                });
+            })
+            .catch(err => console.error(err));
+    }
+
+    new bootstrap.Modal(document.getElementById('genererPaieModal')).show();
+}
+
+function valeurOuNull(id) {
+    const v = document.getElementById(id).value;
+    return v === '' ? null : parseFloat(v);
+}
+
+function confirmerGenererPaie() {
+    const employeId = document.getElementById('gpEmployeId').value;
+    const annee = document.getElementById('paieAnnee').value;
+    const mois = document.getElementById('paieMois').value;
+
+    const autresRetenues = Array.from(document.querySelectorAll('#gpAutresRetenues .autre-retenue-ligne'))
+        .map(div => ({
+            libelle: div.querySelector('.ar-libelle').value.trim(),
+            montant: parseFloat(div.querySelector('.ar-montant').value || 0),
+        }))
+        .filter(r => r.libelle && r.montant);
+
+    fetch('/rh/api/paie/generer', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            employe_id: parseInt(employeId), annee: parseInt(annee), mois: parseInt(mois),
+            secteur_paie: document.getElementById('gpSecteur').value,
+            salaire_base: parseFloat(document.getElementById('gpSalaireBase').value || 0),
+            personnes_a_charge: parseInt(document.getElementById('gpPersonnesCharge').value || 0),
+            primes: parseFloat(document.getElementById('gpPrimes').value || 0),
+            indemnites: parseFloat(document.getElementById('gpIndemnites').value || 0),
+            taux_retraite_salarial_override: valeurOuNull('gpTauxRetraiteSal'),
+            taux_retraite_patronal_override: valeurOuNull('gpTauxRetraitePat'),
+            taux_amu_salarial_override: valeurOuNull('gpTauxAmuSal'),
+            taux_amu_patronal_override: valeurOuNull('gpTauxAmuPat'),
+            prets: parseFloat(document.getElementById('gpPrets').value || 0),
+            acomptes: parseFloat(document.getElementById('gpAcomptes').value || 0),
+            autres_retenues: autresRetenues,
+        })
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            bootstrap.Modal.getInstance(document.getElementById('genererPaieModal')).hide();
+            chargerPaies();
+        } else {
+            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(err => alert('Erreur: ' + err));
+}
+
+function ouvrirPayerPaie(paieId) {
+    document.getElementById('ppPaieId').value = paieId;
+    new bootstrap.Modal(document.getElementById('payerPaieModal')).show();
+}
+
+function confirmerPayerPaie() {
+    const paieId = document.getElementById('ppPaieId').value;
+    fetch(`/rh/api/paie/${paieId}/payer`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ mode_paiement: document.getElementById('ppModePaiement').value })
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            bootstrap.Modal.getInstance(document.getElementById('payerPaieModal')).hide();
+            chargerPaies();
+        } else {
+            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(err => alert('Erreur: ' + err));
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    initSelecteurs();
+    chargerParametragePaie();
+    chargerPaies();
+});
+</script>
+{% endblock %}

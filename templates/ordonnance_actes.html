@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Ordonnance actes - {{ num_ordonnance }}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         /* ===== STYLES COMMUNS ===== */
         * { font-family: 'Segoe UI', Arial, sans-serif; }
@@ -98,8 +99,8 @@
     <button class="btn btn-a4" onclick="setFormat('A4')"> A4 (Couleur)</button>
     <button class="btn btn-80mm active" onclick="setFormat('80mm')"> Ticket 80mm</button>
     <span style="margin:0 10px; color:#ccc;">|</span>
-    <button class="btn btn-print" onclick="window.print()">🖨️ Imprimer</button>
-    <button class="btn btn-close" onclick="window.close()">❌ Fermer</button>
+    <button class="btn btn-print" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
+    <button class="btn btn-close" onclick="window.close()"><i class="fas fa-times"></i> Fermer</button>
 </div>
 
 <!-- ═══════════════════════════════════════════ -->

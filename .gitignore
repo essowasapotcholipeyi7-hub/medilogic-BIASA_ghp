@@ -5,3 +5,5 @@ __pycache__/
 credentials.json
 .DS_Store
 *.log
+# Sauvegardes DB locales
+*.dump

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Déclaration {{ declaration.label }} — {{ periode_libelle }}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+            background: white;
+            padding: 40px;
+            color: #1a2a3a;
+            font-size: 13px;
+        }
+        .conteneur { max-width: 1000px; margin: 0 auto; }
+
+        .entete {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 3px solid #1a2a6c;
+            padding-bottom: 18px;
+            margin-bottom: 20px;
+        }
+        .entete .structure { display: flex; align-items: center; gap: 12px; }
+        .entete img { max-height: 55px; max-width: 110px; object-fit: contain; }
+        .entete h1 { font-size: 17px; color: #1a2a6c; }
+        .entete .sub { font-size: 11px; color: #6c7a89; margin-top: 3px; }
+        .entete .droite { text-align: right; }
+        .entete .droite h2 { font-size: 16px; color: #1a2a6c; }
+        .entete .droite .periode { font-size: 12px; color: #555; margin-top: 4px; }
+
+        .kpis { display: flex; gap: 14px; margin-bottom: 22px; }
+        .kpi {
+            flex: 1; border: 1px solid #dde3ea; border-radius: 8px;
+            padding: 12px 14px; background: #f7f9fc;
+        }
+        .kpi .label { font-size: 11px; color: #6c7a89; text-transform: uppercase; letter-spacing: .3px; }
+        .kpi .valeur { font-size: 18px; font-weight: 700; color: #1a2a6c; margin-top: 4px; }
+
+        table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+        thead th {
+            background: #1a2a6c; color: white; text-align: left;
+            padding: 8px 10px; font-size: 11.5px; text-transform: uppercase;
+        }
+        tbody td { padding: 8px 10px; border-bottom: 1px solid #e8ecf1; vertical-align: top; }
+        tbody tr:nth-child(even) { background: #f9fafc; }
+        .num { text-align: right; white-space: nowrap; }
+
+        tfoot td { font-weight: 700; border-top: 2px solid #1a2a6c; padding: 10px; background: #f0f3fa; }
+
+        .footer {
+            margin-top: 30px; padding-top: 12px; border-top: 1px solid #dde3ea;
+            display: flex; justify-content: space-between; font-size: 11px; color: #6c7a89;
+        }
+        .signatures { display: flex; justify-content: space-between; margin-top: 60px; }
+        .signatures div { text-align: center; width: 220px; border-top: 1px solid #333; padding-top: 6px; font-size: 12px; }
+
+        .btn-print, .btn-fermer {
+            position: fixed; top: 16px; padding: 8px 16px;
+            color: white; border: none; border-radius: 6px; cursor: pointer;
+        }
+        .btn-print { right: 16px; background: #1a2a6c; }
+        .btn-fermer { right: 130px; background: #6c757d; }
+        @media print { .btn-print, .btn-fermer { display: none; } body { padding: 15px; } }
+    </style>
+</head>
+<body>
+    <button class="btn-fermer" onclick="fermerDeclaration()"><i class="fas fa-times"></i> Fermer</button>
+    <button class="btn-print" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
+
+    <div class="conteneur">
+        <div class="entete">
+            <div class="structure">
+                {% if structure and structure.logo_url %}<img src="{{ structure.logo_url }}" alt="logo">{% endif %}
+                <div>
+                    <h1>{{ (structure.nom if structure else '') or 'Structure' }}</h1>
+                    <div class="sub">
+                        {{ (structure.adresse if structure else '') or '' }}
+                        {% if structure and structure.telephone %} — Tél: {{ structure.telephone }}{% endif %}
+                        {% if structure and structure.email %} — {{ structure.email }}{% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="droite">
+                <h2>Déclaration — {{ declaration.label }}</h2>
+                <div class="periode">Organisme : {{ declaration.organisme }}</div>
+                <div class="periode">{{ periode_libelle }}</div>
+                <div class="periode">À déposer avant le {{ declaration.date_limite.strftime('%d/%m/%Y') }}</div>
+                <div class="periode">Édité le {{ now.strftime('%d/%m/%Y à %H:%M') }}</div>
+            </div>
+        </div>
+
+        <div class="kpis">
+            <div class="kpi">
+                <div class="label">Salariés concernés</div>
+                <div class="valeur">{{ declaration.nb_employes }}</div>
+            </div>
+            {% if declaration.total_patronal > 0 %}
+            <div class="kpi">
+                <div class="label">Total part salariale</div>
+                <div class="valeur">{{ '{:,.0f}'.format(declaration.total_salarial).replace(',', ' ') }} F</div>
+            </div>
+            <div class="kpi">
+                <div class="label">Total part patronale</div>
+                <div class="valeur">{{ '{:,.0f}'.format(declaration.total_patronal).replace(',', ' ') }} F</div>
+            </div>
+            {% endif %}
+            <div class="kpi">
+                <div class="label">Total à reverser</div>
+                <div class="valeur">{{ '{:,.0f}'.format(declaration.total).replace(',', ' ') }} F</div>
+            </div>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Matricule</th>
+                    <th>Salarié</th>
+                    <th class="num">Base</th>
+                    {% if declaration.total_patronal > 0 %}
+                    <th>Taux (sal. / pat.)</th>
+                    <th class="num">Part salariale</th>
+                    <th class="num">Part patronale</th>
+                    {% endif %}
+                    <th class="num">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for l in declaration.lignes %}
+                <tr>
+                    <td>{{ l.matricule }}</td>
+                    <td><strong>{{ l.employe }}</strong></td>
+                    <td class="num">{{ '{:,.0f}'.format(l.base).replace(',', ' ') }} F</td>
+                    {% if declaration.total_patronal > 0 %}
+                    <td>{{ l.taux or '-' }}</td>
+                    <td class="num">{{ '{:,.0f}'.format(l.salarial).replace(',', ' ') }} F</td>
+                    <td class="num">{{ '{:,.0f}'.format(l.patronal).replace(',', ' ') }} F</td>
+                    {% endif %}
+                    <td class="num">{{ '{:,.0f}'.format(l.total).replace(',', ' ') }} F</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" style="text-align:center; color:#888; padding:20px;">Aucun salarié concerné sur cette période.</td></tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="{{ 2 if declaration.total_patronal > 0 else 1 }}">TOTAUX</td>
+                    <td></td>
+                    {% if declaration.total_patronal > 0 %}
+                    <td></td>
+                    <td class="num">{{ '{:,.0f}'.format(declaration.total_salarial).replace(',', ' ') }} F</td>
+                    <td class="num">{{ '{:,.0f}'.format(declaration.total_patronal).replace(',', ' ') }} F</td>
+                    {% endif %}
+                    <td class="num">{{ '{:,.0f}'.format(declaration.total).replace(',', ' ') }} F</td>
+                </tr>
+            </tfoot>
+        </table>
+
+        <div class="signatures">
+            <div>Pour la structure</div>
+            <div>Pour {{ declaration.organisme }}</div>
+        </div>
+
+        <div class="footer">
+            <span>Document généré automatiquement par MediLogic — à vérifier avant dépôt.</span>
+            <span>{{ declaration.lignes|length }} ligne(s)</span>
+        </div>
+    </div>
+
+    <script>
+        function fermerDeclaration() {
+            window.close();
+            setTimeout(function() {
+                if (!window.closed) {
+                    window.location.href = "{{ url_for('rh.page_declarations') }}";
+                }
+            }, 500);
+        }
+    </script>
+</body>
+</html>

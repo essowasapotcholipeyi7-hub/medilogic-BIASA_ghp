@@ -1,0 +1,466 @@
+{% extends "base.html" %}
+
+{% block title %}Gestion des conges{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        {% include 'sidebar_menu.html' %}
+    </div>
+
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-calendar-alt"></i> Gestion des conges</h5>
+                <div>
+                    <button class="btn btn-dark btn-sm" onclick="demanderConge()">
+                        <i class="fas fa-plus"></i> Demander un conge
+                    </button>
+                    <button class="btn btn-dark btn-sm" onclick="chargerConges()">
+                        <i class="fas fa-sync-alt"></i> Rafraichir
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- Filtres -->
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="fas fa-search"></i></span>
+                            <input type="text" class="form-control" id="searchConge" 
+                                   placeholder="Rechercher par employe..." 
+                                   onkeyup="filtrerConges()">
+                            <button class="btn btn-outline-secondary" onclick="reinitialiserRechercheConge()" type="button">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-control form-control-sm" id="filtreStatutConge" onchange="filtrerConges()">
+                            <option value="">Tous les statuts</option>
+                            <option value="en_attente">En attente</option>
+                            <option value="approuve">Approuve</option>
+                            <option value="refuse">Refuse</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-control form-control-sm" id="filtreTypeConge" onchange="filtrerConges()">
+                            <option value="">Tous les types</option>
+                            <option value="annuel">Annuel</option>
+                            <option value="maladie">Maladie</option>
+                            <option value="maternite">Maternite</option>
+                            <option value="paternite">Paternite</option>
+                            <option value="sans_solde">Sans solde</option>
+                            <option value="exceptionnel">Exceptionnel</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2 text-end">
+                        <span id="totalConges" class="badge bg-secondary">0 conge(s)</span>
+                    </div>
+                </div>
+
+                <!-- Tableau -->
+                <div class="table-responsive">
+                    <table class="table table-hover table-bordered">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Employe</th>
+                                <th>Type</th>
+                                <th>Debut</th>
+                                <th>Fin</th>
+                                <th>Reprise</th>
+                                <th>Jours</th>
+                                <th>Statut</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="congesBody">
+                            <tr><td colspan="8" class="text-center">Chargement...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="row mt-3">
+                    <div class="col-md-12">
+                        <nav>
+                            <ul class="pagination justify-content-center" id="paginationConges"></ul>
+                        </nav>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Demande de Conge -->
+<div class="modal fade" id="congeModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title"><i class="fas fa-calendar-plus"></i> Demander un conge</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="congeForm">
+                    <div class="mb-3">
+                        <label class="form-label">Employe *</label>
+                        <select class="form-control" id="congeEmploye" required>
+                            <option value="">Selectionner</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Type de conge *</label>
+                        <select class="form-control" id="congeType" required onchange="verifierRegleConge()">
+                            <option value="annuel">Annuel (paye)</option>
+                            <option value="maladie">Maladie</option>
+                            <option value="maternite">Maternite</option>
+                            <option value="paternite">Paternite</option>
+                            <option value="sans_solde">Sans solde</option>
+                            <option value="exceptionnel">Exceptionnel</option>
+                        </select>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Date de debut *</label>
+                            <input type="date" class="form-control" id="congeDebut" required onchange="calculerJoursConge()">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Date de fin *</label>
+                            <input type="date" class="form-control" id="congeFin" required onchange="calculerJoursConge()">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Nombre de jours</label>
+                            <input type="text" class="form-control" id="congeJours" readonly>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Date de reprise</label>
+                            <input type="text" class="form-control" id="congeReprise" readonly>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Motif</label>
+                        <textarea class="form-control" id="congeMotif" rows="3"></textarea>
+                    </div>
+                    <div id="congeAlerte" class="alert alert-warning" style="display:none;">
+                        <i class="fas fa-exclamation-triangle"></i> <span id="congeAlerteMessage"></span>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-warning" onclick="sauvegarderConge()">
+                    <i class="fas fa-paper-plane"></i> Soumettre
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ============================================
+// VARIABLES
+// ============================================
+let tousConges = [];
+let congesFiltres = [];
+let pageConge = 1;
+let itemsCongeParPage = 10;
+
+// ============================================
+// CHARGEMENT DES CONGES
+// ============================================
+function chargerConges() {
+    const tbody = document.getElementById('congesBody');
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center">Chargement...</td></tr>';
+    
+    fetch('/rh/api/conges')
+        .then(response => response.json())
+        .then(data => {
+            tousConges = data || [];
+            congesFiltres = tousConges;
+            document.getElementById('totalConges').textContent = tousConges.length + ' conge(s)';
+            afficherConges();
+        })
+        .catch(error => {
+            console.error('Erreur:', error);
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">Erreur de chargement</td></tr>';
+        });
+}
+
+function afficherConges() {
+    const tbody = document.getElementById('congesBody');
+    const debut = (pageConge - 1) * itemsCongeParPage;
+    const fin = Math.min(debut + itemsCongeParPage, congesFiltres.length);
+    const pageConges = congesFiltres.slice(debut, fin);
+    
+    tbody.innerHTML = '';
+    
+    if (pageConges.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center">Aucun conge trouve</td></tr>';
+        return;
+    }
+    
+    pageConges.forEach(c => {
+        const row = tbody.insertRow();
+        
+        let statutBadge = '';
+        if (c.statut === 'en_attente') statutBadge = 'bg-warning';
+        else if (c.statut === 'approuve') statutBadge = 'bg-success';
+        else statutBadge = 'bg-danger';
+        
+        let typeLabel = c.type_conge;
+        if (typeLabel === 'annuel') typeLabel = 'Annuel';
+        else if (typeLabel === 'maladie') typeLabel = 'Maladie';
+        else if (typeLabel === 'maternite') typeLabel = 'Maternite';
+        else if (typeLabel === 'paternite') typeLabel = 'Paternite';
+        else if (typeLabel === 'sans_solde') typeLabel = 'Sans solde';
+        else if (typeLabel === 'exceptionnel') typeLabel = 'Exceptionnel';
+        
+        row.innerHTML = `
+            <td><strong>${c.employe_nom}</strong></td>
+            <td>${typeLabel}</td>
+            <td>${c.date_debut}</td>
+            <td>${c.date_fin}</td>
+            <td>${c.date_reprise || '-'}</td>
+            <td>${c.nombre_jours || 0}</td>
+            <td><span class="badge ${statutBadge}">${c.statut}</span></td>
+            <td>
+                <div class="btn-group btn-group-sm">
+                    ${c.statut === 'en_attente' ? `
+                        <button class="btn btn-success" onclick="changerStatutConge(${c.id}, 'approuve')">
+                            <i class="fas fa-check"></i>
+                        </button>
+                        <button class="btn btn-danger" onclick="changerStatutConge(${c.id}, 'refuse')">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    ` : ''}
+                    ${c.statut === 'approuve' ? `
+                        <button class="btn btn-info" onclick="imprimerAutorisation(${c.id})">
+                            <i class="fas fa-print"></i>
+                        </button>
+                    ` : ''}
+                </div>
+            </td>
+        `;
+    });
+    
+    mettreAJourPaginationConges();
+}
+
+// ============================================
+// FILTRES CONGES
+// ============================================
+function filtrerConges() {
+    const search = document.getElementById('searchConge').value.toLowerCase().trim();
+    const statut = document.getElementById('filtreStatutConge').value;
+    const type = document.getElementById('filtreTypeConge').value;
+    
+    congesFiltres = tousConges.filter(c => {
+        let match = true;
+        if (search) {
+            if (!c.employe_nom.toLowerCase().includes(search)) match = false;
+        }
+        if (statut && c.statut !== statut) match = false;
+        if (type && c.type_conge !== type) match = false;
+        return match;
+    });
+    
+    pageConge = 1;
+    afficherConges();
+}
+
+function reinitialiserRechercheConge() {
+    document.getElementById('searchConge').value = '';
+    filtrerConges();
+}
+
+// ============================================
+// PAGINATION CONGES
+// ============================================
+function mettreAJourPaginationConges() {
+    const total = congesFiltres.length;
+    const totalPages = Math.ceil(total / itemsCongeParPage);
+    const pagination = document.getElementById('paginationConges');
+    
+    if (totalPages <= 1) {
+        pagination.innerHTML = '';
+        return;
+    }
+    
+    let html = `<li class="page-item ${pageConge === 1 ? 'disabled' : ''}">
+                    <a class="page-link" href="#" onclick="changerPageConge(${pageConge - 1}); return false;">Precedent</a>
+                </li>`;
+    
+    for (let i = 1; i <= totalPages; i++) {
+        html += `<li class="page-item ${i === pageConge ? 'active' : ''}">
+                    <a class="page-link" href="#" onclick="changerPageConge(${i}); return false;">${i}</a>
+                 </li>`;
+    }
+    
+    html += `<li class="page-item ${pageConge === totalPages ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="changerPageConge(${pageConge + 1}); return false;">Suivant</a>
+             </li>`;
+    pagination.innerHTML = html;
+}
+
+function changerPageConge(page) {
+    const totalPages = Math.ceil(congesFiltres.length / itemsCongeParPage);
+    if (page < 1 || page > totalPages) return;
+    pageConge = page;
+    afficherConges();
+}
+
+// ============================================
+// DEMANDER CONGE
+// ============================================
+function demanderConge() {
+    // Charger les employes
+    fetch('/rh/api/employes')
+        .then(r => r.json())
+        .then(employes => {
+            const select = document.getElementById('congeEmploye');
+            select.innerHTML = '<option value="">Selectionner</option>';
+            employes.forEach(e => {
+                select.innerHTML += `<option value="${e.id}">${e.nom} ${e.prenom} (${e.matricule})</option>`;
+            });
+        });
+    
+    document.getElementById('congeForm').reset();
+    document.getElementById('congeJours').value = '';
+    document.getElementById('congeReprise').value = '';
+    document.getElementById('congeAlerte').style.display = 'none';
+    new bootstrap.Modal(document.getElementById('congeModal')).show();
+}
+
+function calculerJoursConge() {
+    const debut = document.getElementById('congeDebut').value;
+    const fin = document.getElementById('congeFin').value;
+    
+    if (!debut || !fin) return;
+    
+    const d1 = new Date(debut);
+    const d2 = new Date(fin);
+    
+    if (d2 < d1) {
+        document.getElementById('congeJours').value = 'Date invalide';
+        document.getElementById('congeReprise').value = '';
+        return;
+    }
+    
+    // Calculer les jours ouvrés
+    let jours = 0;
+    let current = new Date(d1);
+    while (current <= d2) {
+        if (current.getDay() !== 0 && current.getDay() !== 6) jours++;
+        current.setDate(current.getDate() + 1);
+    }
+    document.getElementById('congeJours').value = jours + ' jours';
+    
+    // Calculer la date de reprise
+    let reprise = new Date(d2);
+    reprise.setDate(reprise.getDate() + 1);
+    while (reprise.getDay() === 0 || reprise.getDay() === 6) {
+        reprise.setDate(reprise.getDate() + 1);
+    }
+    document.getElementById('congeReprise').value = reprise.toLocaleDateString('fr-FR');
+    
+    // Vérifier les alertes
+    verifierRegleConge();
+}
+
+function verifierRegleConge() {
+    const type = document.getElementById('congeType').value;
+    const jours = parseInt(document.getElementById('congeJours').value) || 0;
+    const alerteDiv = document.getElementById('congeAlerte');
+    const message = document.getElementById('congeAlerteMessage');
+    
+    let alertes = [];
+    
+    if (type === 'annuel' && jours > 30) {
+        alertes.push('⚠️ Conge annuel de plus de 30 jours consecutifs');
+    }
+    
+    if (type === 'annuel' && jours > 0 && jours < 10) {
+        alertes.push('ℹ️ Conge annuel de moins de 10 jours (minimum recommande: 2 semaines)');
+    }
+    
+    if (alertes.length > 0) {
+        alerteDiv.style.display = 'block';
+        message.textContent = alertes.join(' | ');
+    } else {
+        alerteDiv.style.display = 'none';
+    }
+}
+
+function sauvegarderConge() {
+    const data = {
+        employe_id: document.getElementById('congeEmploye').value,
+        type_conge: document.getElementById('congeType').value,
+        date_debut: document.getElementById('congeDebut').value,
+        date_fin: document.getElementById('congeFin').value,
+        motif: document.getElementById('congeMotif').value
+    };
+    
+    if (!data.employe_id || !data.date_debut || !data.date_fin) {
+        alert('Veuillez remplir tous les champs obligatoires');
+        return;
+    }
+    
+    fetch('/rh/conge/demander', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert('Demande de conge soumise avec succes !');
+            bootstrap.Modal.getInstance(document.getElementById('congeModal')).hide();
+            chargerConges();
+        } else {
+            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('Erreur: ' + error));
+}
+
+// ============================================
+// CHANGER STATUT CONGE
+// ============================================
+function changerStatutConge(id, statut) {
+    if (!confirm(`Confirmer le changement de statut vers "${statut}" ?`)) return;
+    
+    fetch(`/rh/conge/${id}/statut`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({statut: statut})
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert('Statut mis a jour avec succes !');
+            chargerConges();
+        } else {
+            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('Erreur: ' + error));
+}
+
+// ============================================
+// IMPRIMER AUTORISATION
+// ============================================
+function imprimerAutorisation(id) {
+    window.open(`/rh/conge/${id}/autorisation`, '_blank');
+}
+
+// ============================================
+// INITIALISATION
+// ============================================
+document.addEventListener('DOMContentLoaded', function() {
+    chargerConges();
+});
+</script>
+{% endblock %}

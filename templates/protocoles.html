@@ -1,0 +1,1101 @@
+{% extends "base.html" %}
+
+{% block title %}Protocoles et Modèles Médicaux{% endblock %}
+
+{% block extra_css %}
+<style>
+    .categorie-badge {
+        font-size: 11px;
+        padding: 4px 12px;
+        border-radius: 20px;
+    }
+    .categorie-protocole_soins { background: #e3f2fd; color: #0d47a1; }
+    .categorie-ordonnance_type { background: #e8f5e9; color: #1b5e20; }
+    .categorie-bulletin_examen { background: #fff3e0; color: #e65100; }
+    .categorie-protocole_patient { background: #f3e5f5; color: #4a148c; }
+    .categorie-fiche_information { background: #e0f7fa; color: #006064; }
+    .categorie-protocole_infirmier { background: #fce4ec; color: #880e4f; }
+    
+    .statut-badge {
+        font-size: 10px;
+        padding: 2px 10px;
+        border-radius: 12px;
+    }
+    .statut-brouillon { background: #e0e0e0; color: #424242; }
+    .statut-en_validation { background: #fff9c4; color: #f57f17; }
+    .statut-publie { background: #c8e6c9; color: #1b5e20; }
+    .statut-archive { background: #d7ccc8; color: #4e342e; }
+    
+    /* ============================================================
+       STYLES POUR LES MÉDICAMENTS (ORDONNANCE)
+       ============================================================ */
+    
+    .medicament-row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 8px;
+        padding: 8px 12px;
+        background: #f8faff;
+        border-radius: 6px;
+        border: 1px solid #eef2f7;
+    }
+    
+    .medicament-row .btn-remove {
+        background: none;
+        border: none;
+        color: #dc3545;
+        cursor: pointer;
+        font-size: 18px;
+        font-weight: bold;
+        padding: 0 5px;
+    }
+    
+    .medicament-row .btn-remove:hover {
+        color: #c82333;
+    }
+    
+    .medicament-row input {
+        flex: 1;
+    }
+    
+    .medicament-row input.quantite {
+        flex: 0.5;
+        min-width: 80px;
+    }
+    
+    /* ============================================================
+       STYLES POUR LE BULLETIN D'EXAMEN
+       ============================================================ */
+    
+    .bulletin-field {
+        margin-bottom: 12px;
+    }
+    
+    .bulletin-field label {
+        font-weight: 600;
+        font-size: 13px;
+        color: #1a2a3a;
+        display: block;
+        margin-bottom: 4px;
+    }
+    
+    .bulletin-field textarea {
+        width: 100%;
+        min-height: 60px;
+        padding: 8px 12px;
+        border-radius: 6px;
+        border: 1px solid #dce3ed;
+        font-size: 14px;
+        resize: vertical;
+    }
+    
+    .section-ordonnance,
+    .section-bulletin {
+        display: none;
+        margin-top: 15px;
+        padding: 15px;
+        background: #f8faff;
+        border-radius: 8px;
+        border: 1px solid #eef2f7;
+    }
+    
+    .section-ordonnance.active,
+    .section-bulletin.active {
+        display: block;
+    }
+    
+    .section-title-small {
+        font-size: 14px;
+        font-weight: 600;
+        color: #1a2a6c;
+        margin-bottom: 10px;
+        padding-bottom: 5px;
+        border-bottom: 2px solid #eef2f7;
+    }
+    
+    .btn-add-medicament {
+        margin-top: 8px;
+    }
+    
+    /* ============================================================
+       CORRECTION POUR LE MODAL DES PROTOCOLES
+       ============================================================ */
+    
+    .modal-backdrop {
+        display: none !important;
+    }
+    
+    .modal {
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 99999 !important;
+    }
+    
+    .modal .modal-content {
+        pointer-events: auto !important;
+    }
+    
+    .modal .modal-body input,
+    .modal .modal-body textarea,
+    .modal .modal-body select,
+    .modal .modal-body button {
+        pointer-events: auto !important;
+    }
+    
+    #protocoleModal {
+        z-index: 99999 !important;
+    }
+    
+    #protocoleModal .modal-dialog {
+        max-height: 90vh;
+        margin: 1.75rem auto;
+        z-index: 99999 !important;
+    }
+    
+    #protocoleModal .modal-content {
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        border-radius: 12px;
+        overflow: hidden;
+        z-index: 99999 !important;
+    }
+    
+    #protocoleModal .modal-header {
+        flex-shrink: 0;
+        border-radius: 12px 12px 0 0;
+        padding: 15px 20px;
+    }
+    
+    #protocoleModal .modal-body {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        padding: 20px;
+        max-height: calc(90vh - 140px);
+    }
+    
+    #protocoleModal .modal-footer {
+        flex-shrink: 0;
+        border-radius: 0 0 12px 12px;
+        padding: 12px 20px;
+    }
+    
+    #protocoleModal .modal-body input,
+    #protocoleModal .modal-body textarea,
+    #protocoleModal .modal-body select {
+        pointer-events: auto !important;
+    }
+    
+    #protocoleModal .modal-body::-webkit-scrollbar {
+        width: 6px;
+    }
+    
+    #protocoleModal .modal-body::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 3px;
+    }
+    
+    #protocoleModal .modal-body::-webkit-scrollbar-thumb {
+        background: #c1c7cd;
+        border-radius: 3px;
+    }
+    
+    #protocoleModal .modal-body::-webkit-scrollbar-thumb:hover {
+        background: #a0a7ae;
+    }
+    
+    body.modal-open {
+        overflow: visible !important;
+        padding-right: 0 !important;
+    }
+
+    #historiqueModal {
+        z-index: 99999 !important;
+    }
+
+    #historiqueModal .modal-dialog {
+        z-index: 99999 !important;
+    }
+
+    #historiqueModal .modal-content {
+        z-index: 99999 !important;
+    }
+
+    #historiqueModal .modal-body {
+        max-height: 500px;
+        overflow-y: auto;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+    <!-- En-tête -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="fas fa-file-medical me-2"></i> Protocoles et Modèles Médicaux</h6>
+            <button class="btn btn-light btn-sm" onclick="showCreateModal()">
+                <i class="fas fa-plus me-1"></i> Nouveau document
+            </button>
+        </div>
+        <div class="card-body">
+            <!-- Filtres -->
+            <div class="row g-2">
+                <div class="col-md-3">
+                    <select id="filtreCategorie" class="form-select form-select-sm" onchange="chargerProtocoles()">
+                        <option value="">Toutes les catégories</option>
+                        {% for cat in categories %}
+                        <option value="{{ cat.id }}">{{ cat.nom }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select id="filtreStatut" class="form-select form-select-sm" onchange="chargerProtocoles()">
+                        <option value="">Tous les statuts</option>
+                        {% for statut in statuts %}
+                        <option value="{{ statut.id }}">{{ statut.nom }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <input type="text" id="filtreSearch" class="form-control form-control-sm" 
+                           placeholder="Rechercher..." onkeyup="chargerProtocoles()">
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-primary btn-sm w-100" onclick="chargerProtocoles()">
+                        <i class="fas fa-search me-1"></i> Filtrer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Liste des protocoles -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="fas fa-list me-2"></i> Liste des documents</h6>
+            <span class="badge bg-secondary" id="totalCount">0</span>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Titre</th>
+                            <th>Catégorie</th>
+                            <th>Spécialité</th>
+                            <th>Version</th>
+                            <th>Statut</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="protocolesList">
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">Chargement...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================
+     MODAL CRÉATION / ÉDITION
+     ============================================================ -->
+<div class="modal fade" id="protocoleModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <!-- En-tête -->
+            <div class="modal-header bg-primary text-white">
+                <h6 class="modal-title" id="protocoleModalTitle">
+                    <i class="fas fa-plus me-2"></i> Nouveau document
+                </h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            
+            <!-- Corps -->
+            <div class="modal-body">
+                <form id="protocoleForm">
+                    <input type="hidden" id="protocoleId">
+                    <input type="hidden" id="medicamentsData" value="">
+                    <input type="hidden" id="bulletinData" value="">
+                    
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Titre *</label>
+                            <input type="text" class="form-control" id="titre" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">Catégorie *</label>
+                            <select class="form-select" id="categorie" required onchange="onCategorieChange()">
+                                <option value="">Sélectionner...</option>
+                                {% for cat in categories %}
+                                <option value="{{ cat.id }}">{{ cat.nom }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">Statut</label>
+                            <select class="form-select" id="statut">
+                                {% for statut in statuts %}
+                                <option value="{{ statut.id }}">{{ statut.nom }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="row g-3 mt-1">
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">Spécialité</label>
+                            <input type="text" class="form-control" id="specialite" placeholder="Ex: Cardiologie">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">Tags</label>
+                            <input type="text" class="form-control" id="tags" placeholder="Séparés par des virgules">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">Durée estimée</label>
+                            <input type="text" class="form-control" id="duree" placeholder="Ex: 30 min, 2 semaines">
+                        </div>
+                    </div>
+                    
+                    <div class="mt-3">
+                        <label class="form-label fw-bold">Description</label>
+                        <textarea class="form-control" id="description" rows="2"></textarea>
+                    </div>
+                    
+                    <!-- ============================================================
+                         SECTION ORDONNANCE
+                         ============================================================ -->
+                    <div class="section-ordonnance" id="sectionOrdonnance">
+                        <div class="section-title-small">
+                            <i class="fas fa-prescription me-2"></i> Médicaments
+                        </div>
+                        
+                        <div id="medicamentsList">
+                            <!-- Les médicaments seront ajoutés ici dynamiquement -->
+                        </div>
+                        
+                        <div class="row g-2 mt-2">
+                            <div class="col-md-4">
+                                <input type="text" class="form-control" id="medicamentNom" placeholder="Nom du médicament">
+                            </div>
+                            <div class="col-md-3">
+                                <input type="text" class="form-control" id="medicamentDosage" placeholder="Dosage / Posologie">
+                            </div>
+                            <div class="col-md-3">
+                                <input type="text" class="form-control" id="medicamentQuantite" placeholder="Quantité">
+                            </div>
+                            <div class="col-md-2">
+                                <button class="btn btn-primary btn-sm" type="button" onclick="ajouterMedicament()">
+                                    <i class="fas fa-plus"></i> Ajouter
+                                </button>
+                            </div>
+                        </div>
+                        <small class="text-muted">Ex: PARA SIROP, 1 cuillère 3x/jour, 2 bte</small>
+                    </div>
+                    
+                    <!-- ============================================================
+                         SECTION BULLETIN D'EXAMEN
+                         ============================================================ -->
+                    <div class="section-bulletin" id="sectionBulletin">
+                        <div class="section-title-small">
+                            Bulletin d'examen
+                        </div>
+                        
+                        <div class="bulletin-field">
+                            <label>1. Motif / Diagnostic *</label>
+                            <textarea class="form-control" id="bulletinMotif" rows="3" placeholder="Décrivez le motif ou le diagnostic..."></textarea>
+                        </div>
+                        
+                        <div class="bulletin-field">
+                            <label>2. Eléments complémentaires</label>
+                            <textarea class="form-control" id="bulletinComplement" rows="3" placeholder="Informations complémentaires..."></textarea>
+                        </div>
+                        
+                        <div class="bulletin-field">
+                            <label>3. Nature d'examen(s) demandé(s) *</label>
+                            <textarea class="form-control" id="bulletinExamens" rows="3" placeholder="Listez les examens demandés..."></textarea>
+                        </div>
+                    </div>
+                    
+                    <!-- ============================================================
+                         CONTENU STANDARD
+                         ============================================================ -->
+                    <div class="mt-3" id="sectionContenuStandard">
+                        <label class="form-label fw-bold">Contenu *</label>
+                        <textarea class="form-control" id="contenu" rows="10" required></textarea>
+                        <small class="text-muted">
+                            Utilisez {{patient_nom}} pour le nom du patient, {{date}} pour la date
+                        </small>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Pied de page -->
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="sauvegarderProtocole()">
+                    <i class="fas fa-save me-1"></i> Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ============================================================
+// VARIABLES
+// ============================================================
+
+var medicamentsList = [];
+var bulletinMotif = '';
+var bulletinComplement = '';
+var bulletinExamens = '';
+
+// ============================================================
+// CHARGER LES PROTOCOLES
+// ============================================================
+
+function chargerProtocoles() {
+    var categorie = document.getElementById('filtreCategorie').value;
+    var statut = document.getElementById('filtreStatut').value;
+    var search = document.getElementById('filtreSearch').value;
+    
+    var url = '/protocoles/api/liste?';
+    if (categorie) url += 'categorie=' + categorie + '&';
+    if (statut) url += 'statut=' + statut + '&';
+    if (search) url += 'search=' + encodeURIComponent(search) + '&';
+    
+    fetch(url)
+        .then(function(response) {
+            return response.json();
+        })
+        .then(function(data) {
+            if (data.success) {
+                afficherProtocoles(data.data);
+                document.getElementById('totalCount').textContent = data.total;
+            }
+        })
+        .catch(function(error) {
+            console.error('Erreur:', error);
+        });
+}
+
+// ============================================================
+// AFFICHER LES PROTOCOLES
+// ============================================================
+
+function afficherProtocoles(protocoles) {
+    var tbody = document.getElementById('protocolesList');
+    
+    if (!protocoles || protocoles.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Aucun document trouvé</td></tr>';
+        return;
+    }
+    
+    var html = '';
+    protocoles.forEach(function(p) {
+        var categorieClass = 'categorie-' + p.categorie;
+        var statutClass = 'statut-' + p.statut;
+        
+        html += '<tr>';
+        html += '<td><strong>' + escapeHtml(p.titre) + '</strong></td>';
+        html += '<td><span class="categorie-badge ' + categorieClass + '">' + p.categorie_label + '</span></td>';
+        html += '<td>' + (p.specialite || '-') + '</td>';
+        html += '<td>v' + p.version + '</td>';
+        html += '<td><span class="statut-badge ' + statutClass + '">' + p.statut_label + '</span></td>';
+        html += '<td>';
+        html += '<div class="btn-group btn-group-sm">';
+        html += '<button class="btn btn-primary" onclick="modifierProtocole(' + p.id + ')" title="Modifier"><i class="fas fa-edit"></i></button>';
+        html += '<button class="btn btn-info" onclick="dupliquerProtocole(' + p.id + ')" title="Dupliquer"><i class="fas fa-copy"></i></button>';
+        html += '<button class="btn btn-secondary" onclick="voirHistorique(' + p.id + ')" title="Historique"><i class="fas fa-history"></i></button>';
+        html += '<button class="btn btn-success" onclick="imprimerProtocole(' + p.id + ')" title="Imprimer"><i class="fas fa-print"></i></button>';
+        html += '<button class="btn btn-danger" onclick="supprimerProtocole(' + p.id + ')" title="Supprimer"><i class="fas fa-trash"></i></button>';
+        html += '</div>';
+        html += '</td>';
+        html += '</tr>';
+    });
+    
+    tbody.innerHTML = html;
+}
+
+// ============================================================
+// UTILITAIRE : ÉCHAPPER LE HTML
+// ============================================================
+
+function escapeHtml(text) {
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// ============================================================
+// CHANGEMENT DE CATÉGORIE
+// ============================================================
+
+function onCategorieChange() {
+    var categorie = document.getElementById('categorie').value;
+    var titre = document.getElementById('titre');
+    var sectionOrdonnance = document.getElementById('sectionOrdonnance');
+    var sectionBulletin = document.getElementById('sectionBulletin');
+    var sectionContenuStandard = document.getElementById('sectionContenuStandard');
+    var contenu = document.getElementById('contenu');
+    
+    sectionOrdonnance.classList.remove('active');
+    sectionBulletin.classList.remove('active');
+    sectionContenuStandard.style.display = 'block';
+    contenu.value = '';
+    
+    if (categorie === 'ordonnance_type') {
+        titre.value = 'ORDONNANCE MEDICALE';
+        sectionOrdonnance.classList.add('active');
+        sectionContenuStandard.style.display = 'none';
+        genererContenuOrdonnance();
+    } else if (categorie === 'bulletin_examen') {
+        titre.value = 'BULLETIN D\'EXAMEN';
+        sectionBulletin.classList.add('active');
+        sectionContenuStandard.style.display = 'none';
+        genererContenuBulletin();  // ← GÉNÉRER AU CHANGEMENT
+    } else {
+        if (titre.value === 'ORDONNANCE MEDICALE' || titre.value === 'BULLETIN D\'EXAMEN') {
+            titre.value = '';
+        }
+        sectionContenuStandard.style.display = 'block';
+    }
+}
+
+// ============================================================
+// GÉNÉRER LE CONTENU DE L'ORDONNANCE
+// ============================================================
+
+function genererContenuOrdonnance() {
+    var contenu = document.getElementById('contenu');
+    var dateAujourdhui = new Date().toLocaleDateString('fr-FR');
+    
+    // 🔥 SUPPRIMER LA LIGNE DE SÉPARATION ENTRE DATE ET CONTENU
+    var text = '';
+    text += 'Date : ' + dateAujourdhui + '\n\n';
+    
+    if (medicamentsList.length === 0) {
+        text += 'Aucun médicament ajouté.\n';
+    } else {
+        medicamentsList.forEach(function(med, index) {
+            var numero = index + 1;
+            var nom = med.nom || '';
+            var dosage = med.dosage || '';
+            var quantite = med.quantite || '';
+            var ligne = numero + '. ' + nom;
+            if (dosage) {
+                ligne += ' (' + dosage + ')';
+            }
+            var espaces = 50 - ligne.length;
+            if (espaces < 5) espaces = 5;
+            ligne += ' ';
+            for (var i = 0; i < espaces; i++) {
+                ligne += '.';
+            }
+            ligne += ' ' + quantite;
+            text += ligne + '\n';
+        });
+    }
+    
+    // 🔥 GARDER LA SÉPARATION AVANT LA SIGNATURE
+    text += '\n─────────────────────────────────────────\n\n';
+    text += 'Signature : {{medecin}}\n';
+    
+    contenu.value = text;
+}
+
+// ============================================================
+// GÉNÉRER LE CONTENU DU BULLETIN
+// ============================================================
+
+function genererContenuBulletin() {
+    var contenu = document.getElementById('contenu');
+    var motif = document.getElementById('bulletinMotif').value || '';
+    var complement = document.getElementById('bulletinComplement').value || '';
+    var examens = document.getElementById('bulletinExamens').value || '';
+    
+    var dateAujourdhui = new Date().toLocaleDateString('fr-FR');
+    
+    // 🔥 SUPPRIMER LA LIGNE DE SÉPARATION ENTRE DATE ET CONTENU
+    var text = '';
+    text += 'Date : ' + dateAujourdhui + '\n\n';
+    
+    text += '1. Motif / Diagnostic :\n';
+    text += '   ' + (motif || '__________________________') + '\n\n';
+    
+    text += '2. Eléments complémentaires :\n';
+    text += '   ' + (complement || '__________________________') + '\n\n';
+    
+    text += '3. Nature d\'examen(s) demandé(s) :\n';
+    if (examens) {
+        var lignes = examens.split('\n');
+        lignes.forEach(function(ligne) {
+            if (ligne.trim()) {
+                text += '   - ' + ligne.trim() + '\n';
+            }
+        });
+    } else {
+        text += '   __________________________\n';
+    }
+    
+    // 🔥 GARDER LA SÉPARATION AVANT LA SIGNATURE
+    text += '\n─────────────────────────────────────────\n\n';
+    text += 'Signature : {{medecin}}\n';
+    
+    contenu.value = text;
+}
+
+// ============================================================
+// ÉCOUTEURS D'ÉVÉNEMENTS POUR LE BULLETIN
+// ============================================================
+
+function initBulletinListeners() {
+    var motif = document.getElementById('bulletinMotif');
+    var complement = document.getElementById('bulletinComplement');
+    var examens = document.getElementById('bulletinExamens');
+    
+    if (motif) {
+        motif.addEventListener('input', function() {
+            if (document.getElementById('categorie').value === 'bulletin_examen') {
+                genererContenuBulletin();
+            }
+        });
+    }
+    
+    if (complement) {
+        complement.addEventListener('input', function() {
+            if (document.getElementById('categorie').value === 'bulletin_examen') {
+                genererContenuBulletin();
+            }
+        });
+    }
+    
+    if (examens) {
+        examens.addEventListener('input', function() {
+            if (document.getElementById('categorie').value === 'bulletin_examen') {
+                genererContenuBulletin();
+            }
+        });
+    }
+}
+
+// ============================================================
+// AJOUTER UN MÉDICAMENT
+// ============================================================
+
+function ajouterMedicament() {
+    var nom = document.getElementById('medicamentNom').value.trim();
+    var dosage = document.getElementById('medicamentDosage').value.trim();
+    var quantite = document.getElementById('medicamentQuantite').value.trim();
+    
+    if (!nom) {
+        alert('Veuillez entrer le nom du médicament');
+        document.getElementById('medicamentNom').focus();
+        return;
+    }
+    
+    if (!quantite) {
+        alert('Veuillez entrer la quantité');
+        document.getElementById('medicamentQuantite').focus();
+        return;
+    }
+    
+    medicamentsList.push({
+        nom: nom,
+        dosage: dosage,
+        quantite: quantite
+    });
+    
+    // Vider les champs
+    document.getElementById('medicamentNom').value = '';
+    document.getElementById('medicamentDosage').value = '';
+    document.getElementById('medicamentQuantite').value = '';
+    document.getElementById('medicamentNom').focus();
+    
+    afficherMedicaments();
+    genererContenuOrdonnance();
+}
+
+// ============================================================
+// AFFICHER LES MÉDICAMENTS
+// ============================================================
+
+function afficherMedicaments() {
+    var container = document.getElementById('medicamentsList');
+    
+    if (medicamentsList.length === 0) {
+        container.innerHTML = '<div class="text-muted small">Aucun médicament ajouté</div>';
+        return;
+    }
+    
+    var html = '';
+    medicamentsList.forEach(function(med, index) {
+        var numero = index + 1;
+        html += '<div class="medicament-row">';
+        html += '<span class="fw-bold" style="min-width:30px;">' + numero + '.</span>';
+        html += '<span style="flex:1;"><strong>' + escapeHtml(med.nom) + '</strong>';
+        if (med.dosage) {
+            html += ' <span class="text-muted">(' + escapeHtml(med.dosage) + ')</span>';
+        }
+        html += '</span>';
+        html += '<span style="min-width:80px; text-align:right; font-weight:500;">' + escapeHtml(med.quantite) + '</span>';
+        html += '<button class="btn-remove" onclick="supprimerMedicament(' + index + ')" title="Supprimer">×</button>';
+        html += '</div>';
+    });
+    
+    container.innerHTML = html;
+}
+
+// ============================================================
+// SUPPRIMER UN MÉDICAMENT
+// ============================================================
+
+function supprimerMedicament(index) {
+    medicamentsList.splice(index, 1);
+    afficherMedicaments();
+    genererContenuOrdonnance();
+}
+
+// ============================================================
+// CHARGER LES DONNÉES D'UN PROTOCOLE EXISTANT
+// ============================================================
+
+function chargerDonneesProtocole(data) {
+    var p = data.data;
+    
+    document.getElementById('protocoleId').value = p.id;
+    document.getElementById('titre').value = p.titre;
+    document.getElementById('categorie').value = p.categorie;
+    document.getElementById('statut').value = p.statut;
+    document.getElementById('specialite').value = p.specialite || '';
+    document.getElementById('tags').value = (p.tags || []).join(', ');
+    document.getElementById('duree').value = p.duree || '';
+    document.getElementById('description').value = p.description || '';
+    document.getElementById('contenu').value = p.contenu || '';
+    
+    // Si c'est une ordonnance, charger les médicaments
+    if (p.categorie === 'ordonnance_type' && p.medicaments) {
+        medicamentsList = p.medicaments || [];
+        afficherMedicaments();
+    }
+    
+    // Si c'est un bulletin, charger les données
+    if (p.categorie === 'bulletin_examen' && p.examens) {
+        var examensData = p.examens || {};
+        document.getElementById('bulletinMotif').value = examensData.motif || '';
+        document.getElementById('bulletinComplement').value = examensData.complement || '';
+        document.getElementById('bulletinExamens').value = examensData.examens || '';
+    }
+    
+    // Déclencher l'affichage des sections
+    onCategorieChange();
+}
+
+// ============================================================
+// SAUVEGARDER UN PROTOCOLE
+// ============================================================
+
+function sauvegarderProtocole() {
+    var id = document.getElementById('protocoleId').value;
+    var titre = document.getElementById('titre').value.trim();
+    var categorie = document.getElementById('categorie').value;
+    var statut = document.getElementById('statut').value;
+    var specialite = document.getElementById('specialite').value.trim();
+    var tagsInput = document.getElementById('tags').value;
+    var tags = tagsInput.split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t; });
+    var duree = document.getElementById('duree').value.trim();
+    var description = document.getElementById('description').value.trim();
+    var contenu = document.getElementById('contenu').value.trim();
+    
+    if (!titre || !categorie || !contenu) {
+        alert('Veuillez remplir les champs obligatoires: Titre, Catégorie et Contenu');
+        return;
+    }
+    
+    var data = {
+        titre: titre,
+        categorie: categorie,
+        statut: statut,
+        specialite: specialite,
+        tags: tags,
+        duree: duree,
+        description: description,
+        contenu: contenu
+    };
+    
+    // Ajouter les médicaments si ordonnance
+    if (categorie === 'ordonnance_type') {
+        data.medicaments = medicamentsList;
+    }
+    
+    // Ajouter les données du bulletin si bulletin
+    if (categorie === 'bulletin_examen') {
+        data.examens = {
+            motif: document.getElementById('bulletinMotif').value.trim(),
+            complement: document.getElementById('bulletinComplement').value.trim(),
+            examens: document.getElementById('bulletinExamens').value.trim()
+        };
+    }
+    
+    var url = '/protocoles/api/creer';
+    var method = 'POST';
+    
+    if (id) {
+        url = '/protocoles/api/' + id;
+        method = 'PUT';
+    }
+    
+    fetch(url, {
+        method: method,
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(function(response) {
+        return response.json();
+    })
+    .then(function(data) {
+        if (data.success) {
+            alert(id ? 'Document modifié avec succès' : 'Document créé avec succès');
+            bootstrap.Modal.getInstance(document.getElementById('protocoleModal')).hide();
+            chargerProtocoles();
+        } else {
+            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(function(error) {
+        console.error('Erreur:', error);
+        alert('Erreur: ' + error);
+    });
+}
+
+// ============================================================
+// CRÉER UN PROTOCOLE
+// ============================================================
+
+function showCreateModal() {
+    document.getElementById('protocoleModalTitle').textContent = 'Nouveau document';
+    document.getElementById('protocoleForm').reset();
+    document.getElementById('protocoleId').value = '';
+    document.getElementById('statut').value = 'brouillon';
+    
+    // Réinitialiser les listes
+    medicamentsList = [];
+    afficherMedicaments();
+    document.getElementById('medicamentsData').value = '';
+    document.getElementById('bulletinData').value = '';
+    
+    // Masquer les sections
+    document.getElementById('sectionOrdonnance').classList.remove('active');
+    document.getElementById('sectionBulletin').classList.remove('active');
+    document.getElementById('sectionContenuStandard').style.display = 'block';
+    
+    var modalElement = document.getElementById('protocoleModal');
+    var modal = new bootstrap.Modal(modalElement, {
+        backdrop: false,
+        keyboard: true
+    });
+    modal.show();
+    
+    setTimeout(function() {
+        document.getElementById('titre').focus();
+    }, 300);
+}
+
+// ============================================================
+// MODIFIER UN PROTOCOLE
+// ============================================================
+
+function modifierProtocole(id) {
+    fetch('/protocoles/api/' + id)
+        .then(function(response) {
+            return response.json();
+        })
+        .then(function(data) {
+            if (data.success) {
+                document.getElementById('protocoleModalTitle').textContent = 'Modifier: ' + data.data.titre;
+                chargerDonneesProtocole(data);
+                
+                var modalElement = document.getElementById('protocoleModal');
+                var modal = new bootstrap.Modal(modalElement, {
+                    backdrop: false,
+                    keyboard: true
+                });
+                modal.show();
+            }
+        })
+        .catch(function(error) {
+            console.error('Erreur:', error);
+            alert('Erreur lors du chargement du document');
+        });
+}
+
+// ============================================================
+// VOIR L'HISTORIQUE D'UN PROTOCOLE
+// ============================================================
+
+function voirHistorique(id) {
+    fetch('/protocoles/api/' + id + '/historique')
+        .then(function(response) {
+            return response.json();
+        })
+        .then(function(data) {
+            if (data.success) {
+                afficherHistorique(data.data, id);
+            } else {
+                alert('Erreur: ' + (data.error || 'Impossible de charger l\'historique'));
+            }
+        })
+        .catch(function(error) {
+            console.error('Erreur:', error);
+            alert('Erreur lors du chargement de l\'historique');
+        });
+}
+
+// ============================================================
+// AFFICHER L'HISTORIQUE DANS UN MODAL
+// ============================================================
+
+function afficherHistorique(historique, protocoleId) {
+    var modalHtml = '';
+    modalHtml += '<div class="modal fade" id="historiqueModal" tabindex="-1">';
+    modalHtml += '  <div class="modal-dialog modal-lg">';
+    modalHtml += '    <div class="modal-content">';
+    modalHtml += '      <div class="modal-header bg-primary text-white">';
+    modalHtml += '        <h6 class="modal-title"><i class="fas fa-history me-2"></i> Historique du document</h6>';
+    modalHtml += '        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>';
+    modalHtml += '      </div>';
+    modalHtml += '      <div class="modal-body" style="max-height: 500px; overflow-y: auto;">';
+    
+    if (historique.length === 0) {
+        modalHtml += '        <p class="text-muted text-center">Aucun historique disponible</p>';
+    } else {
+        modalHtml += '        <div class="list-group">';
+        historique.forEach(function(h) {
+            var actionLabel = '';
+            switch(h.action) {
+                case 'creation': actionLabel = 'Création'; break;
+                case 'modification': actionLabel = 'Modification'; break;
+                case 'changement_statut': actionLabel = 'Changement de statut'; break;
+                case 'suppression': actionLabel = 'Suppression'; break;
+                default: actionLabel = h.action;
+            }
+            
+            modalHtml += '          <div class="list-group-item">';
+            modalHtml += '            <div class="d-flex justify-content-between align-items-center">';
+            modalHtml += '              <div>';
+            modalHtml += '                <span class="badge bg-primary me-2">' + actionLabel + '</span>';
+            modalHtml += '                <strong>' + h.utilisateur_nom + '</strong>';
+            modalHtml += '              </div>';
+            modalHtml += '              <small class="text-muted">' + h.date + '</small>';
+            modalHtml += '            </div>';
+            if (h.commentaire) {
+                modalHtml += '            <div class="mt-1 small text-muted">' + h.commentaire + '</div>';
+            }
+            modalHtml += '          </div>';
+        });
+        modalHtml += '        </div>';
+    }
+    
+    modalHtml += '      </div>';
+    modalHtml += '      <div class="modal-footer">';
+    modalHtml += '        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>';
+    modalHtml += '      </div>';
+    modalHtml += '    </div>';
+    modalHtml += '  </div>';
+    modalHtml += '</div>';
+    
+    var oldModal = document.getElementById('historiqueModal');
+    if (oldModal) {
+        oldModal.remove();
+    }
+    
+    var div = document.createElement('div');
+    div.innerHTML = modalHtml;
+    document.body.appendChild(div.firstElementChild);
+    
+    var modalElement = document.getElementById('historiqueModal');
+    var modal = new bootstrap.Modal(modalElement, {
+        backdrop: false,
+        keyboard: true
+    });
+    modal.show();
+}
+
+// ============================================================
+// DUPLIQUER UN PROTOCOLE
+// ============================================================
+
+function dupliquerProtocole(id) {
+    if (!confirm('Dupliquer ce document ?')) return;
+    
+    fetch('/protocoles/api/' + id + '/dupliquer', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(function(response) {
+        return response.json();
+    })
+    .then(function(data) {
+        if (data.success) {
+            alert('Document dupliqué avec succès');
+            chargerProtocoles();
+        } else {
+            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(function(error) {
+        console.error('Erreur:', error);
+        alert('Erreur: ' + error);
+    });
+}
+
+// ============================================================
+// IMPRIMER UN PROTOCOLE
+// ============================================================
+
+function imprimerProtocole(id) {
+    window.open('/protocoles/api/' + id + '/print', '_blank', 'width=900,height=700');
+}
+
+// ============================================================
+// SUPPRIMER UN PROTOCOLE
+// ============================================================
+
+function supprimerProtocole(id) {
+    if (!confirm('Supprimer ce document ? Cette action est irréversible.')) return;
+    
+    fetch('/protocoles/api/' + id, {
+        method: 'DELETE',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(function(response) {
+        return response.json();
+    })
+    .then(function(data) {
+        if (data.success) {
+            alert('Document supprimé avec succès');
+            chargerProtocoles();
+        } else {
+            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(function(error) {
+        console.error('Erreur:', error);
+        alert('Erreur: ' + error);
+    });
+}
+
+// ============================================================
+// INITIALISATION
+// ============================================================
+
+document.addEventListener('DOMContentLoaded', function() {
+    initBulletinListeners();
+    chargerProtocoles();
+});
+</script>
+{% endblock %}

@@ -3,30 +3,63 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Medilogic-GHP - {% block title %}Gestion Hospitalière, Pharmacie & Lunetterie{% endblock %}</title>
+    <title>Medilogic-GHP - {% block title %}Gestion Hospitalière & Pharmacie{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
+        /* ⭐ FIX : #offlineBanner porte aussi la classe utilitaire Bootstrap
+           .d-flex (display:flex !important) pour sa mise en page interne.
+           Le navigateur cache normalement un élément [hidden] via une règle
+           UA "display:none" — mais celle-ci n'est PAS !important, donc le
+           !important de .d-flex gagnait toujours et la bannière restait
+           visible en permanence, quoi que fasse le JS (qui ne fait
+           qu'ajouter/retirer l'attribut hidden). D'où le bandeau "Mode
+           hors-ligne" affiché en continu même quand tout était en ligne.
+           Cette règle, plus spécifique (#id[hidden]) et elle aussi
+           !important, reprend la main quand hidden est présent. */
+        #offlineBanner[hidden] {
+            display: none !important;
+        }
+
+        /* ============================================
+           BASE - CONSERVÉE
+           ============================================ */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
         
-body {
-    background: linear-gradient(135deg, #e3f2fd 0%, #e8f0fe 100%) !important;
-    min-height: 100vh;
-}
-.main-content {
-    background-color: rgba(255, 255, 255, 0.92);
-    backdrop-filter: blur(10px);
-    padding: 20px;
-    border-radius: 15px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
-}
+        body {
+            background: url("{{ url_for('static', filename='images/background.jpg') }}") no-repeat center center fixed !important;
+            background-size: cover !important;
+            min-height: 100vh;
+        }
+
+        body::after {
+            content: 'SSoftOneV10';
+            position: fixed;
+            bottom: 30px;
+            right: 35px;
+            font-size: 32px;
+            font-weight: 800;
+            color: rgba(102, 126, 234, 0.20);
+            z-index: 9999;
+            pointer-events: none;
+        }
         
-        /* Navbar moderne avec effet glass */
+        .main-content {
+            background-color: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+        }
+        
+        /* ============================================
+           NAVBAR - CONSERVÉE
+           ============================================ */
         .navbar {
             background: rgba(255, 255, 255, 0.98);
             backdrop-filter: blur(10px);
@@ -52,37 +85,404 @@ body {
             -webkit-text-fill-color: #667eea;
             margin-right: 8px;
         }
+
+        /* ============================================
+           STRUCTURE BRAND - CONSERVÉE
+           ============================================ */
+        .structure-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            max-width: 400px;
+            margin: 0 auto;
+        }
         
-        /* Cartes modernes avec effet glass */
-        .card {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 24px;
-            border: none;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        .structure-brand {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 4px 16px 4px 12px;
+            border-radius: 50px;
+            border: 2px solid #dc3545;
+            box-shadow: 0 2px 15px rgba(220, 53, 69, 0.12);
+            transition: all 0.3s ease;
+            position: relative;
             overflow: hidden;
+            max-width: 100%;
+            white-space: nowrap;
         }
         
-        .card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 20px 40px rgba(0,0,0,0.12);
+        .structure-brand::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(220, 53, 69, 0.06), transparent);
+            transition: left 0.6s ease;
         }
         
-        .card-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        .structure-brand:hover::before {
+            left: 100%;
+        }
+        
+        .structure-brand .structure-logo {
+            width: 32px !important;
+            height: 32px !important;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid rgba(220, 53, 69, 0.2);
+            flex-shrink: 0;
+            transition: all 0.3s ease;
+        }
+        
+        .structure-brand:hover .structure-logo {
+            transform: scale(1.08) rotate(-3deg);
+            border-color: #dc3545;
+            box-shadow: 0 0 20px rgba(220, 53, 69, 0.15);
+        }
+        
+        .structure-brand .structure-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #dc3545, #c82333);
+            border-radius: 50%;
             color: white;
-            border: none;
-            padding: 16px 24px;
-            font-weight: 600;
+            font-size: 14px;
+            flex-shrink: 0;
+            transition: transform 0.3s ease;
         }
         
-        /* Boutons modernes */
-        .btn {
+        .structure-brand:hover .structure-icon {
+            transform: rotate(-5deg) scale(1.05);
+        }
+        
+        .structure-brand .structure-name {
+            font-weight: 700;
+            font-size: 14px;
+            color: #0056a7;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+        }
+        
+        .structure-brand .structure-badge {
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            color: white;
+            background: linear-gradient(135deg, #dc3545, #a71d2a);
+            padding: 2px 8px;
+            border-radius: 50px;
+            text-transform: uppercase;
+            flex-shrink: 0;
+        }
+        
+        @media (max-width: 768px) {
+            .structure-brand {
+                padding: 3px 12px 3px 8px;
+                gap: 6px;
+                border-width: 1.5px;
+            }
+            .structure-brand .structure-logo {
+                width: 26px !important;
+                height: 26px !important;
+            }
+            .structure-brand .structure-name {
+                font-size: 12px;
+                max-width: 120px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            .structure-brand .structure-badge {
+                font-size: 7px;
+                padding: 1px 6px;
+            }
+            .structure-brand .structure-icon {
+                width: 26px;
+                height: 26px;
+                font-size: 11px;
+            }
+        }
+        
+        @media (max-width: 576px) {
+            .structure-brand .structure-name {
+                max-width: 80px;
+                font-size: 11px;
+            }
+            .structure-brand .structure-badge {
+                display: none;
+            }
+            .structure-brand .structure-logo {
+                width: 22px !important;
+                height: 22px !important;
+            }
+        }
+        
+        .structure-brand {
+            animation: structureFadeIn 0.6s ease-out;
+        }
+        
+        @keyframes structureFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        /* ============================================
+           SIDEBAR - CONSERVÉE
+           ============================================ */
+        .sidebar {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-radius: 24px;
+            padding: 20px;
+            position: sticky;
+            top: 90px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+            backdrop-filter: blur(10px);
+        }
+        
+        .sidebar .menu-title {
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 0.65rem;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .sidebar .nav-link {
+            color: rgba(255, 255, 255, 0.65);
+            padding: 10px 16px;
+            margin: 4px 0;
+            border-radius: 10px;
+            transition: all 0.25s ease;
+            font-weight: 400;
+            font-size: 14px;
+            letter-spacing: 0.2px;
+            position: relative;
+        }
+
+        .sidebar .nav-link:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: #ffffff;
+            transform: translateX(4px);
+        }
+
+        .sidebar .nav-link.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #ffffff;
+            font-weight: 500;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.25);
+        }
+
+        .sidebar .nav-link {
+            color: rgba(255, 255, 255, 0.65);
+        }
+
+        .sidebar .nav-link:hover {
+            color: #ffffff !important;
+        }
+        
+        .sidebar .dropdown-toggle {
+            background: transparent !important;
+            color: rgba(255,255,255,0.7) !important;
+        }
+        
+        .sidebar .dropdown-menu {
+            background: #1a1a2e;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 14px;
+            margin-top: 8px;
+        }
+        
+        .sidebar .dropdown-item {
+            color: rgba(255,255,255,0.7);
+            border-radius: 10px;
+            padding: 8px 16px;
+        }
+        
+        .sidebar .dropdown-item:hover {
+            background: rgba(102, 126, 234, 0.3);
+            color: white;
+        }
+
+        /* ============================================
+           TOP NAV - CONSERVÉE
+           ============================================ */
+        .top-nav {
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+            padding: 0 20px;
+            position: sticky;
+            top: 72px;
+            z-index: 999;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+        }
+
+        .top-nav .nav-group {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            height: 50px;
+        }
+
+        .top-nav .nav-item {
+            position: relative;
+            height: 100%;
+            display: flex;
+            align-items: center;
+        }
+
+        .top-nav .nav-link-top {
+            color: #1a1a2e;
+            padding: 0 18px;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            font-size: 13px;
+            font-weight: 500;
+            text-decoration: none;
+            transition: all 0.25s ease;
+            border-bottom: 3px solid transparent;
+            cursor: pointer;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+            background: transparent;
+            border: none;
+            border-bottom: 3px solid transparent;
+        }
+
+        .top-nav .nav-link-top:hover {
+            color: #1a1a2e;
+            background: rgba(0, 0, 0, 0.04);
+            border-bottom-color: #1a1a2e;
+        }
+
+        .top-nav .nav-link-top .arrow {
+            margin-left: 6px;
+            font-size: 10px;
+            transition: transform 0.25s ease;
+        }
+
+        .top-nav .nav-item:hover .nav-link-top .arrow {
+            transform: rotate(180deg);
+        }
+
+        .top-nav .nav-item.open .nav-link-top .arrow {
+            transform: rotate(180deg);
+        }
+
+        .top-nav .mega-menu {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            min-width: 220px;
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(10px);
             border-radius: 12px;
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.12);
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            padding: 8px 0;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(8px);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 1000;
+        }
+
+        .top-nav .nav-item:hover .mega-menu {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .top-nav .nav-item.open .mega-menu {
+            opacity: 1 !important;
+            visibility: visible !important;
+            transform: translateY(0) !important;
+        }
+
+        .top-nav .mega-menu .menu-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 20px;
+            color: #1a1a2e;
+            font-size: 13px;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            border-left: 3px solid transparent;
+            gap: 10px;
+        }
+
+        .top-nav .mega-menu .menu-item:hover {
+            background: rgba(0, 0, 0, 0.05);
+            color: #1a1a2e;
+            border-left-color: #1a1a2e;
+        }
+
+        .top-nav .mega-menu .menu-item i {
+            width: 18px;
+            text-align: center;
+            font-size: 14px;
+            color: #1a1a2e;
+            transition: color 0.2s ease;
+        }
+
+        .top-nav .mega-menu .menu-item:hover i {
+            color: #1a1a2e;
+        }
+
+        .top-nav .mega-menu .menu-divider {
+            height: 1px;
+            background: rgba(0, 0, 0, 0.06);
+            margin: 6px 16px;
+        }
+
+        .top-nav .mega-menu.large {
+            min-width: 420px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            padding: 12px;
+        }
+
+        .top-nav .mega-menu.large .menu-item {
+            border-left: none;
+            border-radius: 8px;
+            padding: 8px 14px;
+        }
+
+        @media (max-width: 992px) {
+            .top-nav {
+                display: none;
+            }
+        }
+
+        /* ============================================
+           BOUTONS UNIFORMISÉS - STYLE PATIENTS
+           ============================================ */
+        .btn {
+            border-radius: 10px;
             padding: 8px 20px;
             font-weight: 500;
-            transition: all 0.3s ease;
+            font-size: 13px;
+            transition: all 0.25s ease;
             border: none;
             position: relative;
             overflow: hidden;
@@ -106,119 +506,452 @@ body {
             height: 200%;
         }
         
+        /* Bouton principal - Bleu comme l'onglet Patients */
         .btn-primary {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
         }
         
         .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.35);
+            color: white;
         }
         
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+        
+        /* Bouton secondaire - Bleu clair */
+        .btn-secondary {
+            background: rgba(102, 126, 234, 0.08);
+            color: #667eea;
+            border: 1px solid rgba(102, 126, 234, 0.15);
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(102, 126, 234, 0.15);
+            color: #5a67d8;
+            transform: translateY(-2px);
+        }
+        
+        /* Bouton succès - Vert doux */
         .btn-success {
-            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            background: #10b981;
+            color: white;
         }
         
         .btn-success:hover {
+            background: #059669;
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(56, 239, 125, 0.4);
+            box-shadow: 0 5px 15px rgba(16, 185, 129, 0.30);
+            color: white;
         }
         
+        /* Bouton danger - Rouge doux */
         .btn-danger {
-            background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+            background: #ef4444;
+            color: white;
         }
         
         .btn-danger:hover {
+            background: #dc2626;
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(235, 51, 73, 0.4);
+            box-shadow: 0 5px 15px rgba(239, 68, 68, 0.30);
+            color: white;
         }
         
+        /* Bouton avertissement - Orange doux */
         .btn-warning {
-            background: linear-gradient(135deg, #f8961e 0%, #f3722c 100%);
+            background: #f59e0b;
             color: white;
         }
         
+        .btn-warning:hover {
+            background: #d97706;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(245, 158, 11, 0.30);
+            color: white;
+        }
+        
+        /* Bouton info - Bleu clair */
         .btn-info {
-            background: linear-gradient(135deg, #4cc9f0 0%, #4361ee 100%);
+            background: #3b82f6;
             color: white;
         }
         
-        /* Sidebar moderne avec fond sombre */
-        .sidebar {
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            border-radius: 24px;
-            padding: 20px;
-            position: sticky;
-            top: 90px;
-            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
-            backdrop-filter: blur(10px);
+        .btn-info:hover {
+            background: #2563eb;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(59, 130, 246, 0.30);
+            color: white;
         }
         
-        .sidebar h5 {
-            color: rgba(255,255,255,0.6);
-            font-size: 0.7rem;
-            letter-spacing: 2px;
-            margin-bottom: 20px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
+        /* Bouton outline - Comme l'onglet Patients */
+        .btn-outline-primary {
+            border: 1.5px solid #667eea;
+            color: #667eea;
+            background: transparent;
         }
         
-        .sidebar .nav-link {
-            color: rgba(255,255,255,0.7);
-            padding: 12px 16px;
-            margin: 6px 0;
+        .btn-outline-primary:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.25);
+        }
+        
+        .btn-outline-danger {
+            border: 1.5px solid #ef4444;
+            color: #ef4444;
+            background: transparent;
+        }
+        
+        .btn-outline-danger:hover {
+            background: #ef4444;
+            color: white;
+            transform: translateY(-2px);
+        }
+        
+        .btn-outline-success {
+            border: 1.5px solid #10b981;
+            color: #10b981;
+            background: transparent;
+        }
+        
+        .btn-outline-success:hover {
+            background: #10b981;
+            color: white;
+            transform: translateY(-2px);
+        }
+        
+        /* Petit bouton */
+        .btn-sm {
+            padding: 5px 14px;
+            font-size: 12px;
+            border-radius: 8px;
+        }
+        
+        /* Gros bouton */
+        .btn-lg {
+            padding: 10px 28px;
+            font-size: 15px;
+            border-radius: 12px;
+        }
+        
+        /* Bouton light pour la navbar */
+        .btn-light {
+            background: rgba(248, 250, 252, 0.9);
+            color: #4a5568;
+            border: 1px solid rgba(0,0,0,0.04);
+        }
+        
+        .btn-light:hover {
+            background: rgba(102, 126, 234, 0.06);
+            color: #1a1a2e;
+            border-color: rgba(102, 126, 234, 0.15);
+        }
+
+        /* ============================================
+           CARTES TABLEAU DE BORD
+           ============================================ */
+        .dashboard-card {
+            background: white;
+            border-radius: 16px;
+            border: none;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.04);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+            height: 100%;
+            position: relative;
+        }
+
+        .dashboard-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.06), 0 8px 40px rgba(0,0,0,0.08);
+        }
+
+        .dashboard-card .card-body {
+            padding: 22px 24px 18px;
+        }
+
+        .dashboard-card .card-icon {
+            width: 50px;
+            height: 50px;
             border-radius: 14px;
-            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            margin-bottom: 16px;
+        }
+
+        .dashboard-card .card-icon.blue {
+            background: rgba(102, 126, 234, 0.10);
+            color: #667eea;
+        }
+
+        .dashboard-card .card-icon.green {
+            background: rgba(16, 185, 129, 0.10);
+            color: #10b981;
+        }
+
+        .dashboard-card .card-icon.orange {
+            background: rgba(245, 158, 11, 0.10);
+            color: #f59e0b;
+        }
+
+        .dashboard-card .card-icon.purple {
+            background: rgba(139, 92, 246, 0.10);
+            color: #8b5cf6;
+        }
+
+        .dashboard-card .card-icon.red {
+            background: rgba(239, 68, 68, 0.10);
+            color: #ef4444;
+        }
+
+        .dashboard-card .card-icon.teal {
+            background: rgba(20, 184, 166, 0.10);
+            color: #14b8a6;
+        }
+
+        .dashboard-card .card-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1a1a2e;
+            letter-spacing: -0.5px;
+            line-height: 1.2;
+        }
+
+        .dashboard-card .card-label {
+            font-size: 13px;
+            color: #6b7280;
             font-weight: 500;
+            margin-top: 4px;
         }
-        
-        .sidebar .nav-link:hover {
-            background: rgba(255,255,255,0.1);
-            color: white;
-            transform: translateX(5px);
+
+        .dashboard-card .card-trend {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 12px;
+            border-radius: 20px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            margin-top: 10px;
         }
-        
-        .sidebar .nav-link.active {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+
+        .dashboard-card .card-trend.up {
+            background: rgba(16, 185, 129, 0.10);
+            color: #10b981;
         }
-        
-        .sidebar .nav-link i {
-            margin-right: 12px;
-            width: 22px;
-            text-align: center;
+
+        .dashboard-card .card-trend.down {
+            background: rgba(239, 68, 68, 0.10);
+            color: #ef4444;
         }
-        
-        /* Dropdown dans sidebar */
-        .sidebar .dropdown-toggle {
-            background: transparent !important;
-            color: rgba(255,255,255,0.7) !important;
+
+        .dashboard-card .card-trend.neutral {
+            background: rgba(107, 114, 128, 0.08);
+            color: #6b7280;
         }
-        
-        .sidebar .dropdown-menu {
-            background: #1a1a2e;
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 14px;
-            margin-top: 8px;
+
+        .dashboard-card .card-footer-link {
+            padding: 12px 24px;
+            border-top: 1px solid rgba(0,0,0,0.04);
+            background: rgba(248, 250, 252, 0.5);
+            font-size: 12px;
+            font-weight: 500;
+            color: #667eea;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: all 0.2s ease;
         }
-        
-        .sidebar .dropdown-item {
-            color: rgba(255,255,255,0.7);
-            border-radius: 10px;
-            padding: 8px 16px;
+
+        .dashboard-card .card-footer-link:hover {
+            background: rgba(102, 126, 234, 0.04);
+            color: #5a67d8;
         }
-        
-        .sidebar .dropdown-item:hover {
-            background: rgba(102, 126, 234, 0.3);
-            color: white;
+
+        .dashboard-card .card-footer-link i {
+            transition: transform 0.2s ease;
         }
-        
-        /* Bandeau patient */
+
+        .dashboard-card .card-footer-link:hover i {
+            transform: translateX(4px);
+        }
+
+        /* ============================================
+           TABLEAU HISTORIQUE
+           ============================================ */
+        .table-container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.04);
+            overflow: hidden;
+        }
+
+        .table-container .table-header {
+            padding: 18px 24px;
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .table-container .table-header h5 {
+            font-weight: 600;
+            color: #1a1a2e;
+            font-size: 15px;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .table-container .table-header h5 i {
+            color: #667eea;
+            font-size: 16px;
+        }
+
+        .table-container .table-header .badge-count {
+            background: rgba(102, 126, 234, 0.08);
+            color: #667eea;
+            font-weight: 600;
+            font-size: 11px;
+            padding: 2px 14px;
+            border-radius: 20px;
+        }
+
+        .table-container .table-scroll {
+            overflow-x: auto;
+            padding: 0 4px 4px 4px;
+        }
+
+        .table-container table {
+            margin: 0;
+            font-size: 13px;
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        .table-container table thead th {
+            background: rgba(248, 250, 252, 0.8);
+            color: #4a5568;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 12px 18px;
+            border-bottom: 1.5px solid rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            white-space: nowrap;
+        }
+
+        .table-container table tbody td {
+            padding: 11px 18px;
+            border-bottom: 1px solid rgba(0,0,0,0.03);
+            color: #1a1a2e;
+            vertical-align: middle;
+            font-size: 13px;
+        }
+
+        .table-container table tbody tr {
+            transition: background 0.15s ease;
+        }
+
+        .table-container table tbody tr:hover {
+            background: rgba(102, 126, 234, 0.03);
+        }
+
+        .table-container table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* Status badges */
+        .status-badge {
+            padding: 3px 14px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            white-space: nowrap;
+        }
+
+        .status-badge.paid {
+            background: rgba(16, 185, 129, 0.10);
+            color: #10b981;
+        }
+
+        .status-badge.pending {
+            background: rgba(245, 158, 11, 0.10);
+            color: #f59e0b;
+        }
+
+        .status-badge.cancelled {
+            background: rgba(239, 68, 68, 0.08);
+            color: #ef4444;
+        }
+
+        .status-badge.proforma {
+            background: rgba(102, 126, 234, 0.08);
+            color: #667eea;
+        }
+
+        .status-badge.draft {
+            background: rgba(107, 114, 128, 0.08);
+            color: #6b7280;
+        }
+
+        /* ============================================
+           CARTE GÉNÉRIQUE MODERNE
+           ============================================ */
+        .card-modern {
+            background: white;
+            border-radius: 16px;
+            border: none;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.04);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+        }
+
+        .card-modern .card-header {
+            background: transparent;
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+            padding: 16px 24px;
+            font-weight: 600;
+            color: #1a1a2e;
+            font-size: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .card-modern .card-header i {
+            color: #667eea;
+        }
+
+        .card-modern .card-body {
+            padding: 20px 24px;
+        }
+
+        /* ============================================
+           BANDEAU PATIENT - CONSERVÉ
+           ============================================ */
         #selectedPatientBadge {
             background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
             border-left: 5px solid #28a745;
-            border-radius: 16px;
+            border-radius: 0;
             animation: slideDown 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             box-shadow: 0 4px 12px rgba(40, 167, 69, 0.2);
         }
@@ -233,23 +966,20 @@ body {
                 transform: translateY(0);
             }
         }
-        
-        /* Badges */
-        .badge {
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-weight: 500;
-        }
-        
-        /* Alertes */
+
+        /* ============================================
+           ALERTES - CONSERVÉES
+           ============================================ */
         .alert {
             border-radius: 16px;
             border: none;
             padding: 14px 20px;
             backdrop-filter: blur(10px);
         }
-        
-        /* Tables */
+
+        /* ============================================
+           TABLES - CONSERVÉES
+           ============================================ */
         .table {
             border-radius: 16px;
             overflow: hidden;
@@ -261,8 +991,10 @@ body {
             font-weight: 600;
             color: #4a5568;
         }
-        
-        /* Scrollbar personnalisée */
+
+        /* ============================================
+           SCROLLBAR - CONSERVÉE
+           ============================================ */
         ::-webkit-scrollbar {
             width: 8px;
             height: 8px;
@@ -281,8 +1013,10 @@ body {
         ::-webkit-scrollbar-thumb:hover {
             background: #5a67d8;
         }
-        
-        /* Loader spinner amélioré */
+
+        /* ============================================
+           LOADER - CONSERVÉ
+           ============================================ */
         .loader-overlay {
             position: fixed;
             top: 0;
@@ -318,8 +1052,10 @@ body {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        
-        /* Responsive */
+
+        /* ============================================
+           RESPONSIVE - CONSERVÉ
+           ============================================ */
         @media (max-width: 768px) {
             .sidebar {
                 position: static;
@@ -351,73 +1087,554 @@ body {
             #selectedPatientBadge .text-end {
                 text-align: center !important;
             }
-        }
-        
-        /* Styles impression */
-        @media print {
-            body {
-                background: white;
-                margin: 0;
-                padding: 0;
+
+            .dashboard-card .card-value {
+                font-size: 22px;
             }
-            
-            .navbar, .sidebar, .btn, .no-print, 
-            #selectedPatientBadge, .alert,
-            button, .nav-link, .card-header .btn,
-            .btn-primary, .btn-success, .btn-warning, .btn-danger,
-            a[onclick], .ms-auto, .float-end, .sidebar,
-            .loader-overlay {
-                display: none !important;
+            .dashboard-card .card-body {
+                padding: 18px;
             }
-            
-            .card {
-                box-shadow: none;
-                border: 1px solid #ddd;
-                margin: 0;
-                padding: 0;
-                transform: none;
+            .table-container .table-header {
+                padding: 14px 18px;
+                flex-direction: column;
+                align-items: stretch;
+                gap: 8px;
             }
-            
-            .container {
-                padding: 0;
-                margin: 0;
-                width: 100%;
-                max-width: 100%;
+            .table-container table tbody td,
+            .table-container table thead th {
+                padding: 8px 14px;
+                font-size: 12px;
             }
-            
-            @page {
-                margin: 1.5cm;
-                size: A4;
+            .card-modern .card-header {
+                padding: 14px 18px;
+                font-size: 14px;
+            }
+            .card-modern .card-body {
+                padding: 16px 18px;
             }
         }
-        
-        /* Animation fade in */
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+
+        @media (max-width: 480px) {
+            .dashboard-card .card-value {
+                font-size: 20px;
+            }
+            .dashboard-card .card-icon {
+                width: 42px;
+                height: 42px;
+                font-size: 18px;
+            }
         }
-        
-        .fade-in {
-            animation: fadeIn 0.4s ease-out;
+
+/* Styles impression */
+@media print {
+    body {
+        background: white;
+        margin: 0;
+        padding: 0;
+    }
+
+    /* ⭐ Cacher le watermark sur toutes les impressions */
+    body::after {
+        display: none !important;
+        content: '' !important;
+    }
+
+    .navbar, .sidebar, .btn, .no-print, 
+    #selectedPatientBadge, .alert,
+    button, .nav-link, .card-header .btn,
+    .btn-primary, .btn-success, .btn-warning, .btn-danger,
+    a[onclick], .ms-auto, .float-end, .sidebar,
+    .loader-overlay {
+        display: none !important;
+    }
+
+    .card {
+        box-shadow: none;
+        border: 1px solid #ddd;
+        margin: 0;
+        padding: 0;
+        transform: none;
+    }
+
+    .container {
+        padding: 0;
+        margin: 0;
+        width: 100%;
+        max-width: 100%;
+    }
+
+    @page {
+        margin: 1.5cm;
+        size: A4;
+    }
+}  /* ← L'accolade de fermeture est ici, à la fin */
+
+
+
+        /* ============================================
+           FULLSCREEN - CONSERVÉ
+           ============================================ */
+        #fullscreenBtn {
+            transition: all 0.3s ease;
         }
+
+        #fullscreenBtn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+        }
+
+        #fullscreenBtn:active {
+            transform: scale(0.95);
+        }
+
+        :-webkit-full-screen .top-nav {
+            top: 0;
+            z-index: 1000;
+        }
+
+        :-moz-full-screen .top-nav {
+            top: 0;
+            z-index: 1000;
+        }
+
+        :fullscreen .top-nav {
+            top: 0;
+            z-index: 1000;
+        }
+
+        .sidebar .badge {
+            font-size: 10px;
+            padding: 3px 8px;
+            border-radius: 20px;
+        }
+
+        .container-fluid {
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+            max-width: 100% !important;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+        }
+
+        .col-md-3, .col-md-9 {
+            padding-left: 0;
+            padding-right: 0;
+        }
+
+        .navbar {
+            padding-left: 15px;
+            padding-right: 15px;
+        }
+
+
+/* ============================================
+   LAYOUT PRINCIPAL (comme DeepSeek)
+   ============================================ */
+
+/* Reset et base */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* ===== APP LAYOUT ===== */
+.app-wrapper {
+    display: flex;
+    min-height: 100vh;
+    background: #f0f2f5;
+}
+
+/* ============================================
+   SIDEBAR - VERSION COMPLÈTE
+   ============================================ */
+
+.sidebar {
+    width: 260px;
+    background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+    color: white;
+    height: 100vh;
+    position: sticky;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    flex-shrink: 0;
+    overflow: hidden;
+    z-index: 100;
+}
+
+/* Sidebar caché */
+.sidebar.hidden {
+    width: 0;
+    min-width: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+/* ===== SIDEBAR HEADER ===== */
+.sidebar-header {
+    padding: 18px 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    min-height: 65px;
+}
+
+.sidebar-header .logo-area {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.sidebar-header .logo-area i {
+    font-size: 26px;
+    color: #667eea;
+    flex-shrink: 0;
+}
+
+.sidebar-header .logo-area span {
+    font-size: 20px;
+    font-weight: 700;
+    color: white;
+    letter-spacing: 0.5px;
+}
+
+/* ===== BOUTON TOGGLE ===== */
+.sidebar-toggle {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.08);
+    border: none;
+    color: white;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.sidebar-toggle:hover {
+    background: rgba(255,255,255,0.15);
+    transform: scale(1.05);
+}
+
+/* ===== SIDEBAR NAVIGATION ===== */
+.sidebar-nav {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 16px 0 20px 0;
+}
+
+/* ===== CATÉGORIES ===== */
+.sidebar-category {
+    padding: 12px 20px 6px 20px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: rgba(255,255,255,0.35);
+    font-weight: 700;
+}
+
+/* ===== LIENS ===== */
+.sidebar-link {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 20px;
+    color: rgba(255,255,255,0.65);
+    text-decoration: none;
+    font-size: 15px;
+    font-weight: 500;
+    transition: all 0.15s ease;
+    border-left: 4px solid transparent;
+    position: relative;
+    cursor: pointer;
+}
+
+.sidebar-link:hover {
+    background: rgba(255,255,255,0.08);
+    color: white;
+    transform: translateX(4px);
+}
+
+/* ⭐ LIEN ACTIF (surbrillance) */
+.sidebar-link.active {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.25) 0%, rgba(118, 75, 162, 0.20) 100%);
+    color: #ffffff !important;
+    border-left-color: #667eea;
+    box-shadow: inset 0 0 20px rgba(102, 126, 234, 0.10);
+}
+
+.sidebar-link.active i {
+    color: #667eea !important;
+}
+
+.sidebar-link.active .link-text {
+    color: #ffffff !important;
+    font-weight: 600;
+}
+
+.sidebar-link.active:hover {
+    transform: translateX(2px);
+}
+
+/* ⭐ ICÔNES */
+.sidebar-link i {
+    width: 24px;
+    font-size: 18px;
+    text-align: center;
+    flex-shrink: 0;
+    color: rgba(255,255,255,0.5);
+    transition: color 0.15s ease;
+}
+
+.sidebar-link:hover i,
+.sidebar-link.active i {
+    color: #667eea;
+}
+
+/* ⭐ TEXTE DES LIENS */
+.sidebar-link .link-text {
+    font-size: 15px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ⭐ BADGES */
+.sidebar-link .badge {
+    margin-left: auto;
+    font-size: 11px;
+    padding: 3px 12px;
+    border-radius: 20px;
+    background: #667eea;
+    color: white;
+    font-weight: 600;
+}
+
+/* ===== DROPDOWN ===== */
+.sidebar-dropdown .dropdown-toggle {
+    cursor: pointer;
+}
+
+.sidebar-dropdown .dropdown-toggle .arrow {
+    margin-left: auto;
+    font-size: 12px;
+    transition: transform 0.2s ease;
+}
+
+.sidebar-dropdown.open .dropdown-toggle .arrow {
+    transform: rotate(180deg);
+}
+
+.sidebar-dropdown .dropdown-menu {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, padding 0.3s ease;
+    padding: 0;
+}
+
+.sidebar-dropdown.open .dropdown-menu {
+    max-height: 300px;
+    padding: 4px 0;
+}
+
+.sidebar-dropdown .dropdown-item {
+    display: block;
+    padding: 10px 20px 10px 54px;
+    color: rgba(255,255,255,0.55);
+    text-decoration: none;
+    font-size: 14px;
+    transition: all 0.15s ease;
+}
+
+.sidebar-dropdown .dropdown-item:hover {
+    color: white;
+    background: rgba(255,255,255,0.04);
+}
+
+.sidebar-dropdown .dropdown-item i {
+    margin-right: 10px;
+    font-size: 14px;
+}
+
+/* ===== SIDEBAR FOOTER ===== */
+.sidebar-footer {
+    padding: 15px 20px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    font-size: 13px;
+    color: rgba(255,255,255,0.3);
+    flex-shrink: 0;
+    text-align: center;
+}
+
+/* ===== SCROLLBAR ===== */
+.sidebar-nav::-webkit-scrollbar {
+    width: 4px;
+}
+
+.sidebar-nav::-webkit-scrollbar-track {
+    background: rgba(255,255,255,0.05);
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.2);
+    border-radius: 10px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.3);
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+    .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: 280px !important;
+        height: 100vh;
+        z-index: 1000;
+        transform: translateX(0);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .sidebar.hidden {
+        transform: translateX(-100%);
+        width: 280px !important;
+    }
+
+    .sidebar-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        z-index: 999;
+        display: none;
+    }
+
+    .sidebar-overlay.active {
+        display: block;
+    }
+}
+
+/* ===== CONTENU PRINCIPAL ===== */
+.main-content {
+    flex: 1;
+    min-width: 0;
+    padding: 20px 25px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-y: auto;
+    max-height: 100vh;
+}
+
+
+/* ============================================
+     BOUTON TOGGLE GLOBAL (toujours visible)
+     ============================================ */
+
+.global-toggle-btn {
+    position: fixed;
+    top: 80px;
+    left: 10px;
+    z-index: 999;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: #1a1a2e;
+    color: white;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+}
+
+.global-toggle-btn:hover {
+    background: #2d4373;
+    transform: scale(1.05);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+}
+
+/* Quand le menu est visible, le bouton est décalé */
+.sidebar:not(.hidden) ~ .global-toggle-btn {
+    left: 270px;
+}
+
+/* Quand le menu est caché, le bouton est à gauche */
+.sidebar.hidden ~ .global-toggle-btn {
+    left: 10px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .global-toggle-btn {
+        top: 10px;
+        left: 10px;
+        width: 36px;
+        height: 36px;
+        font-size: 16px;
+    }
+
+    .sidebar:not(.hidden) ~ .global-toggle-btn {
+        left: 290px;
+    }
+
+    .sidebar.hidden ~ .global-toggle-btn {
+        left: 10px;
+    }
+}
+
     </style>
     {% block extra_css %}{% endblock %}
 </head>
 <body>
 
-<!-- Navbar moderne -->
+<!-- ============================================
+     NAVBAR - CONSERVÉE
+     ============================================ -->
 <nav class="navbar navbar-expand-lg">
     <div class="container">
         <a class="navbar-brand" href="{{ url_for('dashboard' if session.user_id else 'index') }}">
-            <i class="fas fa-heartbeat"></i> Medilogic<span style="color: #667eea;">-GHP</span>
+            <span style="color: #667eea;">SSoftOneV10</span>
         </a>
         
-        <!-- 🔥 AFFICHAGE DU NOM DE LA STRUCTURE (centré) 🔥 -->
+        <!-- NOM DE LA STRUCTURE AVEC LOGO -->
         {% if session.user_id and session.structure_nom %}
-        <div class="mx-auto">
-            <div class="d-none d-md-block" style="background: linear-gradient(135deg, #667eea15, #764ba215); padding: 6px 16px; border-radius: 30px;">
-                <i class="fas fa-building me-1" style="color: #667eea;"></i>
-                <span style="font-weight: 600; font-size: 14px; color: #4a5568;">{{ session.structure_nom }}</span>
+        <div class="structure-container mx-auto">
+            <div class="structure-brand">
+                {% if session.structure_logo and session.structure_logo|trim != '' %}
+                <img src="{{ session.structure_logo }}" alt="Logo" class="structure-logo" 
+                     onerror="this.style.display='none'; this.parentElement.querySelector('.structure-icon').style.display='flex';">
+                <span class="structure-icon" style="display:none;">
+                    <i class="fas fa-building"></i>
+                </span>
+                {% else %}
+                <span class="structure-icon">
+                    <i class="fas fa-building"></i>
+                </span>
+                {% endif %}
+                <span class="structure-name">{{ session.structure_nom }}</span>
+                <span class="structure-badge">****</span>
             </div>
         </div>
         {% endif %}
@@ -427,18 +1644,35 @@ body {
             <!-- Horloge temps réel -->
             <div class="d-none d-md-block" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); padding: 8px 18px; border-radius: 40px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
                 <div id="horloge" class="d-flex align-items-center gap-2">
-                    <i class="fas fa-calendar-alt text-primary"></i>
                     <span id="dateActuelle" style="font-size: 13px; font-weight: 500; color: #4a5568;"></span>
                     <i class="fas fa-clock text-primary ms-1"></i>
                     <span id="heureActuelle" style="font-size: 13px; font-weight: 700; background: linear-gradient(135deg, #667eea, #764ba2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;"></span>
                 </div>
             </div>
             
-            <!-- Version mobile simplifiée -->
             <div class="d-md-none">
                 <div id="horlogeMobile" style="background: #f8f9fa; padding: 5px 12px; border-radius: 30px;">
                     <span id="heureMobile" style="font-size: 12px; font-weight: 600; color: #667eea;"></span>
                 </div>
+            </div>
+
+            <!-- BOUTON PLEIN ÉCRAN -->
+            <div class="d-none d-md-block">
+                <button id="fullscreenBtn" class="btn btn-light rounded-pill d-flex align-items-center gap-2" 
+                        style="padding: 8px 16px; border: none; background: rgba(255,255,255,0.8); box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: all 0.3s ease;"
+                        onclick="toggleFullScreen()" title="Plein écran (F11)">
+                    <i class="fas fa-expand" id="fullscreenIcon"></i>
+                    <span id="fullscreenText" style="font-size: 12px; font-weight: 500; color: #4a5568;">Plein écran</span>
+                </button>
+            </div>
+
+            <div class="d-md-none">
+                <button id="fullscreenBtnMobile" class="btn btn-light rounded-pill d-flex align-items-center gap-1" 
+                        style="padding: 5px 12px; border: none; background: rgba(255,255,255,0.8);"
+                        onclick="toggleFullScreen()" title="Plein écran">
+                    <i class="fas fa-expand" id="fullscreenIconMobile" style="font-size: 14px;"></i>
+                    <span id="fullscreenTextMobile" style="font-size: 10px; font-weight: 500; color: #4a5568;">Plein</span>
+                </button>
             </div>
             
             <div class="dropdown">
@@ -451,246 +1685,822 @@ body {
                     <li><hr class="dropdown-divider"></li>
                     <li><a class="dropdown-item" href="{{ url_for('rendez_vous') }}"><i class="fas fa-calendar-alt"></i> Rendez-vous</a></li>
                     <li><a class="dropdown-item text-danger" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Déconnexion</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="toggleFullscreenMode(); return false;"><i class="fas fa-expand" id="fullscreenModeIcon"></i> <span id="fullscreenModeText">Mode plein écran</span></a></li>
                 </ul>
             </div>
         </div>
         {% endif %}
     </div>
 </nav>
-    <!-- BANDEAU PATIENT SÉLECTIONNÉ -->
-    {% if session.user_id %}
-    <div class="container mt-3">
-        <div id="selectedPatientBadge" class="alert py-3 mb-0 fade-in" style="display:none;">
-            <div class="row align-items-center">
-                <div class="col-md-8">
-                    <i class="fas fa-user-check text-success fa-lg"></i> 
-                    <strong class="ms-1">Patient actuel :</strong> 
-                    <span id="currentPatientName" class="fw-bold ms-1">-</span>
-                    <span class="badge bg-info text-white ms-2" id="currentPatientAssurance">-</span>
-                    <span class="badge bg-warning text-dark ms-1" id="currentPatientTaux">-</span>
-                </div>
-                <div class="col-md-4 text-end">
-                    <button onclick="clearSelectedPatient()" class="btn btn-sm btn-outline-danger me-2 rounded-pill">
-                        <i class="fas fa-times-circle"></i> Désélectionner
-                    </button>
-                    <a href="{{ url_for('patients') }}" class="btn btn-sm btn-outline-primary rounded-pill">
-                        <i class="fas fa-exchange-alt"></i> Changer
-                    </a>
-                </div>
+
+<!-- ============================================
+     TOP NAV - CONSERVÉE
+     ============================================ -->
+{% if session.user_id %}
+<div class="top-nav d-none d-lg-block">
+    <ul class="nav-group">
+        <li class="nav-item nav-item-accueil">
+            <a class="nav-link-top" href="{{ url_for('dashboard') }}">
+                Accueil
+            </a>
+        </li>
+        <li class="nav-item nav-item-patients">
+            <a class="nav-link-top" href="#" onclick="return false;">
+                Patients <i class="fas fa-chevron-down arrow"></i>
+            </a>
+            <div class="mega-menu">
+                <a class="menu-item" href="{{ url_for('patients') }}">
+                    Liste des patients
+                </a>
+                <a class="menu-item" href="{{ url_for('rendez_vous') }}">
+                    Programmer Rendez-vous
+                </a>
+                <a class="menu-item" href="{{ url_for('rappels') }}">
+                    Rappels des rendez-vous
+                </a>
+            </div>
+        </li>
+        <li class="nav-item nav-item-soins">
+            <a class="nav-link-top" href="#" onclick="return false;">
+                Soins&actes&vente <i class="fas fa-chevron-down arrow"></i>
+            </a>
+            <div class="mega-menu large">
+                <a class="menu-item" href="{{ url_for('consultation') }}">
+                    Consultation
+                </a>
+                <a class="menu-item" href="{{ url_for('actes_vente') }}">
+                    Labo/Radio/Hospi/Actes
+                </a>
+                <a class="menu-item" href="{{ url_for('prescriptions_recues') }}">
+                    Prescriptions reçues
+                </a>
+            </div>
+        </li>
+        <li class="nav-item nav-item-pharmacie">
+            <a class="nav-link-top" href="#" onclick="return false;">
+                Pharmacie <i class="fas fa-chevron-down arrow"></i>
+            </a>
+            <div class="mega-menu">
+                <a class="menu-item" href="{{ url_for('pharma_vente') }}">
+                    Vente pharmacie
+                </a>
+                <a class="menu-item" href="{{ url_for('gestion_stock') }}">
+                    Gestion des stocks
+                </a>
+            </div>
+        </li>
+        <li class="nav-item nav-item-finances">
+            <span class="nav-link-top">
+                Finances <i class="fas fa-chevron-down arrow"></i>
+            </span>
+            <div class="mega-menu">
+                <a class="menu-item" href="{{ url_for('factures') }}">
+                    Factures clients&Créances
+                </a>
+                <a class="menu-item" href="{{ url_for('proformas') }}">
+                    Factures Proforma
+                </a>
+                {% if session.is_admin %}
+                <a class="menu-item" href="{{ url_for('admin_finances') }}">
+                    Finances&Caisse&Charges
+                </a>
+                <a class="menu-item" href="{{ url_for('statistiques_ventes') }}">
+                    Statistiques des ventes
+                </a>
+                {% endif %}
+            </div>
+        </li>
+        <li class="nav-item nav-item-historique">
+            <a class="nav-link-top" href="{{ url_for('historique_ventes') }}">
+                Historique des ventes
+            </a>
+        </li>
+        <li class="nav-item nav-item-referentiels">
+            <span class="nav-link-top">
+                Référentiels AMU <i class="fas fa-chevron-down arrow"></i>
+            </span>
+            <div class="mega-menu">
+                <a class="menu-item" href="https://referentiels.amu.tg/#/providers" target="_blank">
+                    AMU-CNSS
+                </a>
+                <a class="menu-item" href="https://prestaplus.inam.tg/Vue/index.php" target="_blank">
+                    AMU-INAM
+                </a>
+            </div>
+        </li>
+        {% if session.is_admin %}
+        <li class="nav-item nav-item-administration">
+            <span class="nav-link-top">
+                Administration <i class="fas fa-chevron-down arrow"></i>
+            </span>
+            <div class="mega-menu">
+                <a class="menu-item" href="{{ url_for('admin_structure') }}">
+                    <i class="fas fa-cog"></i> Administration
+                </a>
+                <a class="menu-item" href="{{ url_for('rh.gestion_rh') }}">
+                    Gestion Ressources Humaines
+                </a>
+                <a class="menu-item" href="{{ url_for('comptabilite.index') }}">
+                    Comptabilité
+                </a>
+                <a class="menu-item" href="{{ url_for('historique_annulations') }}">
+                    Historique Annulations
+                </a>
+            </div>
+        </li>
+        {% endif %}
+    </ul>
+</div>
+{% endif %}
+
+<!-- ============================================
+     BANDEAU PATIENT
+     ============================================ -->
+{% if session.user_id %}
+<div class="container-fluid px-3 mt-2">
+    <div id="selectedPatientBadge" class="alert py-3 mb-0 fade-in" style="display:none;">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <i class="fas fa-user-check text-success fa-lg"></i> 
+                <strong class="ms-1">Patient actuel :</strong> 
+                <span id="currentPatientName" class="fw-bold ms-1">-</span>
+                <span class="badge bg-info text-white ms-2" id="currentPatientAssurance">-</span>
+                <span class="badge bg-warning text-dark ms-1" id="currentPatientTaux">-</span>
+            </div>
+            <div class="col-md-4 text-end">
+                <button onclick="clearSelectedPatient()" class="btn btn-outline-danger btn-sm rounded-pill">
+                    <i class="fas fa-times-circle"></i> Désélectionner
+                </button>
+                <a href="{{ url_for('patients') }}" class="btn btn-outline-primary btn-sm rounded-pill">
+                    <i class="fas fa-exchange-alt"></i> Changer
+                </a>
             </div>
         </div>
     </div>
+</div>
+{% endif %}
+
+<!-- ============================================
+     LAYOUT PRINCIPAL (type DeepSeek)
+     ============================================ -->
+
+{% if session.user_id %}
+<div class="app-wrapper">
     
-    <script>
-    // Horloge temps réel
-    function updateHorloge() {
-        const maintenant = new Date();
-        const jours = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
-        const mois = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
-        const jourSemaine = jours[maintenant.getDay()];
-        const moisNom = mois[maintenant.getMonth()];
-        const jour = maintenant.getDate();
-        const annee = maintenant.getFullYear();
-        const dateFormatee = `${jourSemaine} ${jour} ${moisNom} ${annee}`;
+    <!-- ===== BOUTON TOGGLE GLOBAL (toujours visible) ===== -->
+    <button class="global-toggle-btn" onclick="toggleSidebar()" title="Afficher/Masquer le menu" id="globalToggleBtn">
+        <i class="fas fa-bars" id="globalToggleIcon"></i>
+    </button>
+    
+    <!-- ===== SIDEBAR ===== -->
+    <div class="sidebar" id="sidebar">
         
-        let heures = maintenant.getHours();
-        let minutes = maintenant.getMinutes();
-        let secondes = maintenant.getSeconds();
-        heures = heures < 10 ? '0' + heures : heures;
-        minutes = minutes < 10 ? '0' + minutes : minutes;
-        secondes = secondes < 10 ? '0' + secondes : secondes;
-        const heureFormatee = `${heures}:${minutes}:${secondes}`;
+        <!-- ===== HEADER ===== -->
+        <div class="sidebar-header">
+            <div class="logo-area">
+                <span> =============== </span>
+            </div>
+            <button class="sidebar-toggle" onclick="toggleSidebar()" title="Masquer le menu">
+                <i class="fas fa-chevron-left" id="sidebarToggleIcon"></i>
+            </button>
+        </div>
         
-        const dateElement = document.getElementById('dateActuelle');
-        const heureElement = document.getElementById('heureActuelle');
-        const heureMobile = document.getElementById('heureMobile');
+        <!-- ===== NAVIGATION ===== -->
+        <nav class="sidebar-nav">
+            {% include 'sidebar_menu.html' %}
+        </nav>
         
-        if (dateElement) dateElement.textContent = dateFormatee;
-        if (heureElement) heureElement.textContent = heureFormatee;
-        if (heureMobile) heureMobile.textContent = `${heures}:${minutes}`;
+        <!-- ===== FOOTER ===== -->
+        <div class="sidebar-footer">
+            <div id="structureNomSidebar">SSoftOne</div>
+            <div style="font-size: 9px; margin-top: 2px;">V10</div>
+        </div>
+    </div>
+    
+    <!-- ===== OVERLAY (mobile) ===== -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+    
+    <!-- ===== CONTENU PRINCIPAL ===== -->
+    <main class="main-content" id="mainContent">
+
+        <!-- ===== BANNIÈRE MODE HORS-LIGNE (bascule Neon <-> local) ===== -->
+        <div id="offlineBanner" class="alert alert-warning d-flex align-items-center justify-content-between shadow-sm mb-2" role="alert" hidden>
+            <span><i class="fas fa-plug-circle-xmark me-2"></i><span id="offlineBannerText">Mode hors-ligne — travail en cours sur la base locale.</span></span>
+            <span class="d-flex align-items-center gap-2">
+                <span id="offlineBannerPending" class="badge bg-warning text-dark"></span>
+                {% if session.get('is_admin') %}
+                <button type="button" class="btn btn-sm btn-outline-dark" onclick="forcerSynchro()"><i class="fas fa-sync"></i> Forcer la synchro</button>
+                {% endif %}
+            </span>
+        </div>
+
+        <!-- ===== FLASH MESSAGES ===== -->
+        <div class="container-fluid px-0">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} alert-dismissible fade show shadow-sm" role="alert">
+                            <i class="fas fa-{{ 'check-circle' if category == 'success' else 'exclamation-triangle' if category == 'danger' else 'info-circle' }} me-2"></i>
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+        </div>
+
+        <!-- ===== CONTENU ===== -->
+        {% block content %}{% endblock %}
+        
+    </main>
+    
+</div>
+{% else %}
+    <!-- Layout simple pour les pages publiques -->
+    <div class="container-fluid px-3 mt-3">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <!-- ===== FLASH MESSAGES ===== -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category }} alert-dismissible fade show shadow-sm" role="alert">
+                                <i class="fas fa-{{ 'check-circle' if category == 'success' else 'exclamation-triangle' if category == 'danger' else 'info-circle' }} me-2"></i>
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+                
+                <!-- ===== CONTENU ===== -->
+                {{ self.content() }}
+            </div>
+        </div>
+    </div>
+{% endif %}
+
+<!-- ============================================
+     SCRIPTS - CONSERVÉS
+     ============================================ -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+<script>
+// ============================================
+// FIX GLOBAL : modales Bootstrap ouvertes derrière la navbar
+// ============================================
+// ⭐ .main-content (le conteneur du bloc "content" de chaque page) a un
+// backdrop-filter (effet verre dépoli) ET overflow-y:auto (c'est son
+// propre conteneur de défilement). Un backdrop-filter sur un ancêtre crée
+// une nouvelle "containing block" pour tout descendant en position:fixed
+// (comme .transform le ferait) — une modale Bootstrap, normalement fixe
+// par rapport à la fenêtre, se retrouve donc positionnée par rapport à
+// .main-content à la place, ET défile avec son contenu au lieu de rester
+// à l'écran. Résultat concret : la modale s'ouvre "collée" à la position
+// de défilement courante de .main-content, avec son en-tête caché
+// au-dessus de la zone visible, sous la navbar sticky.
+// Fix : au moment où Bootstrap s'apprête à afficher une modale, on la
+// déplace pour qu'elle devienne un enfant direct de <body> — elle échappe
+// ainsi à la containing block de .main-content et redevient fixe par
+// rapport à la fenêtre, comme prévu. Un seul écouteur global : s'applique
+// à toutes les modales de l'application, sur toutes les pages.
+document.addEventListener('show.bs.modal', function(e) {
+    if (e.target && e.target.parentElement !== document.body) {
+        document.body.appendChild(e.target);
     }
+});
+
+// ============================================
+// HORLOGE - CONSERVÉE
+// ============================================
+function updateHorloge() {
+    const maintenant = new Date();
+    const jours = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+    const mois = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+    const jourSemaine = jours[maintenant.getDay()];
+    const moisNom = mois[maintenant.getMonth()];
+    const jour = maintenant.getDate();
+    const annee = maintenant.getFullYear();
+    const dateFormatee = jourSemaine + ' ' + jour + ' ' + moisNom + ' ' + annee;
     
-    setInterval(updateHorloge, 1000);
-    updateHorloge();
+    let heures = maintenant.getHours();
+    let minutes = maintenant.getMinutes();
+    let secondes = maintenant.getSeconds();
+    heures = heures < 10 ? '0' + heures : heures;
+    minutes = minutes < 10 ? '0' + minutes : minutes;
+    secondes = secondes < 10 ? '0' + secondes : secondes;
+    const heureFormatee = heures + ':' + minutes + ':' + secondes;
     
-    // Stocker les infos de la structure
-    {% if session.structure_nom %}
-    localStorage.setItem('structureNom', '{{ session.structure_nom }}');
-    {% endif %}
-    {% if session.structure_id %}
-    localStorage.setItem('structureId', '{{ session.structure_id }}');
-    {% endif %}
-    {% if session.structure_telephone %}
-    localStorage.setItem('structureTelephone', '{{ session.structure_telephone }}');
-    {% endif %}
-    {% if session.structure_logo %}
-    localStorage.setItem('structureLogo', '{{ session.structure_logo }}');
-    {% endif %}
-    {% if session.structure_email %}
-    localStorage.setItem('structureEmail', '{{ session.structure_email }}');
-    {% endif %}
+    const dateElement = document.getElementById('dateActuelle');
+    const heureElement = document.getElementById('heureActuelle');
+    const heureMobile = document.getElementById('heureMobile');
     
-    // Récupérer le nom de la structure
-    function getStructureNom(callback) {
-        let nom = localStorage.getItem('structureNom');
-        if (nom) {
-            callback(nom);
+    if (dateElement) dateElement.textContent = dateFormatee;
+    if (heureElement) heureElement.textContent = heureFormatee;
+    if (heureMobile) heureMobile.textContent = heures + ':' + minutes;
+}
+    
+setInterval(updateHorloge, 1000);
+updateHorloge();
+
+// ============================================
+// BASCULE HORS-LIGNE — bannière Neon <-> local
+// ============================================
+let syncPollingActif = null;
+
+function verifierEtatSynchro() {
+    fetch('/api/sync/status').then(r => r.ok ? r.json() : null).then(etat => {
+        if (!etat || !etat.enabled) {
+            // Bascule non configurée sur ce serveur (ex: Render, sans base
+            // locale de secours) : inutile de re-sonder toutes les 15s.
+            if (syncPollingActif) { clearInterval(syncPollingActif); syncPollingActif = null; }
             return;
         }
-        fetch('/api/structure/nom')
-            .then(response => response.json())
-            .then(data => {
-                let nom = data.nom || 'Notre établissement';
-                localStorage.setItem('structureNom', nom);
-                callback(nom);
-            })
-            .catch(() => callback('Notre établissement'));
-    }
+        const banniere = document.getElementById('offlineBanner');
+        const texte = document.getElementById('offlineBannerText');
+        const badge = document.getElementById('offlineBannerPending');
+        if (etat.is_offline) {
+            banniere.hidden = false;
+            texte.textContent = "Mode hors-ligne — connexion au serveur principal indisponible, vous travaillez sur la copie locale. La synchronisation se fera automatiquement au retour de la connexion.";
+            badge.textContent = etat.changements_en_attente + ' en attente';
+        } else if (etat.changements_en_attente > 0) {
+            banniere.hidden = false;
+            texte.textContent = "Synchronisation en cours avec le serveur principal...";
+            badge.textContent = etat.changements_en_attente + ' en attente';
+        } else {
+            banniere.hidden = true;
+        }
+    }).catch(() => {});
+}
+verifierEtatSynchro();
+syncPollingActif = setInterval(verifierEtatSynchro, 15000);
+
+function forcerSynchro() {
+    fetch('/api/sync/forcer', {method: 'POST'})
+        .then(r => r.json())
+        .then(res => { alert(res.message || (res.success ? 'OK' : 'Echec')); verifierEtatSynchro(); })
+        .catch(() => alert('Erreur réseau lors de la synchronisation.'));
+}
+
+// Stocker les infos de la structure
+{% if session.structure_nom %}
+localStorage.setItem('structureNom', '{{ session.structure_nom }}');
+{% endif %}
+{% if session.structure_id %}
+localStorage.setItem('structureId', '{{ session.structure_id }}');
+{% endif %}
+{% if session.structure_telephone %}
+localStorage.setItem('structureTelephone', '{{ session.structure_telephone }}');
+{% endif %}
+{% if session.structure_logo %}
+localStorage.setItem('structureLogo', '{{ session.structure_logo }}');
+{% endif %}
+{% if session.structure_email %}
+localStorage.setItem('structureEmail', '{{ session.structure_email }}');
+{% endif %}
     
-// Charger les infos de la structure au démarrage
+function getStructureNom(callback) {
+    let nom = localStorage.getItem('structureNom');
+    if (nom) {
+        callback(nom);
+        return;
+    }
+    fetch('/api/structure/nom')
+        .then(response => response.json())
+        .then(data => {
+            let nom = data.nom || 'Notre établissement';
+            localStorage.setItem('structureNom', nom);
+            callback(nom);
+        })
+        .catch(() => callback('Notre établissement'));
+}
+    
 function chargerInfosStructure() {
     fetch('/api/structure/infos')
         .then(response => response.json())
         .then(data => {
-            if (data.nom) {
-                localStorage.setItem('structureNom', data.nom);
-            }
-            if (data.telephone) {
-                localStorage.setItem('structureTelephone', data.telephone);
-            }
-            if (data.logo_url) {
-                localStorage.setItem('structureLogo', data.logo_url);
-            }
-            if (data.email) {
-                localStorage.setItem('structureEmail', data.email);
-            }
+            if (data.nom) localStorage.setItem('structureNom', data.nom);
+            if (data.telephone) localStorage.setItem('structureTelephone', data.telephone);
+            if (data.logo_url) localStorage.setItem('structureLogo', data.logo_url);
+            if (data.email) localStorage.setItem('structureEmail', data.email);
             console.log('Infos structure chargées:', data);
         })
         .catch(err => console.error('Erreur chargement infos structure:', err));
 }
 
-// Appeler au chargement de la page
 if (window.location.pathname !== '/login' && window.location.pathname !== '/') {
     chargerInfosStructure();
 }    
-    // Chargement du patient sélectionné
-    function loadSelectedPatient() {
-        let patientId = sessionStorage.getItem('selectedPatientId');
-        let patientName = sessionStorage.getItem('selectedPatientName');
-        let assurance = sessionStorage.getItem('selectedPatientAssurance');
-        let taux = sessionStorage.getItem('selectedPatientTaux');
-        
-        if (!patientId || patientId === 'null' || patientId === 'undefined') {
-            patientId = localStorage.getItem('selectedPatientId');
-            patientName = localStorage.getItem('selectedPatientName');
-            assurance = localStorage.getItem('selectedPatientAssurance');
-            taux = localStorage.getItem('selectedPatientTaux');
-        }
-        
-        if (patientId && patientId !== 'null' && patientId !== 'undefined') {
-            let badge = document.getElementById('selectedPatientBadge');
-            if (badge) badge.style.display = 'block';
-            let nameSpan = document.getElementById('currentPatientName');
-            if (nameSpan) nameSpan.innerText = patientName || 'Patient';
-            
-            let assuranceText = 'Non assuré';
-            if (assurance === 'amu_cnss') {
-                assuranceText = 'AMU-CNSS';
-            } else if (assurance === 'amu_inam') {
-                assuranceText = 'AMU-INAM';
-            } else if (assurance === 'autre') {
-                assuranceText = 'Autre assurance';
-            } else if (assurance && assurance !== 'non_assure' && assurance !== 'null') {
-                assuranceText = assurance;
-            }
-            
-            let assuranceSpan = document.getElementById('currentPatientAssurance');
-            if (assuranceSpan) assuranceSpan.innerText = assuranceText;
-            
-            let tauxSpan = document.getElementById('currentPatientTaux');
-            if (tauxSpan) tauxSpan.innerText = (taux || 0) + '%';
-        } else {
-            let badge = document.getElementById('selectedPatientBadge');
-            if (badge) badge.style.display = 'none';
-        }
+    
+function loadSelectedPatient() {
+    let patientId = sessionStorage.getItem('selectedPatientId');
+    let patientName = sessionStorage.getItem('selectedPatientName');
+    let assurance = sessionStorage.getItem('selectedPatientAssurance');
+    let taux = sessionStorage.getItem('selectedPatientTaux');
+    
+    if (!patientId || patientId === 'null' || patientId === 'undefined') {
+        patientId = localStorage.getItem('selectedPatientId');
+        patientName = localStorage.getItem('selectedPatientName');
+        assurance = localStorage.getItem('selectedPatientAssurance');
+        taux = localStorage.getItem('selectedPatientTaux');
     }
     
-    function clearSelectedPatient() {
-        sessionStorage.removeItem('selectedPatientId');
-        sessionStorage.removeItem('selectedPatientName');
-        sessionStorage.removeItem('selectedPatientAssurance');
-        sessionStorage.removeItem('selectedPatientTaux');
-        localStorage.removeItem('selectedPatientId');
-        localStorage.removeItem('selectedPatientName');
-        localStorage.removeItem('selectedPatientAssurance');
-        localStorage.removeItem('selectedPatientTaux');
+    if (patientId && patientId !== 'null' && patientId !== 'undefined') {
+        let badge = document.getElementById('selectedPatientBadge');
+        if (badge) badge.style.display = 'block';
+        let nameSpan = document.getElementById('currentPatientName');
+        if (nameSpan) nameSpan.innerText = patientName || 'Patient';
+        
+        let assuranceText = 'Non assuré';
+        if (assurance === 'amu_cnss') assuranceText = 'AMU-CNSS';
+        else if (assurance === 'amu_inam') assuranceText = 'AMU-INAM';
+        else if (assurance === 'autre') assuranceText = 'Autre assurance';
+        else if (assurance && assurance !== 'non_assure' && assurance !== 'null') assuranceText = assurance;
+        
+        let assuranceSpan = document.getElementById('currentPatientAssurance');
+        if (assuranceSpan) assuranceSpan.innerText = assuranceText;
+        
+        let tauxSpan = document.getElementById('currentPatientTaux');
+        if (tauxSpan) tauxSpan.innerText = (taux || 0) + '%';
+    } else {
         let badge = document.getElementById('selectedPatientBadge');
         if (badge) badge.style.display = 'none';
-        location.reload();
     }
+}
     
-    document.addEventListener('DOMContentLoaded', loadSelectedPatient);
+function clearSelectedPatient() {
+    sessionStorage.removeItem('selectedPatientId');
+    sessionStorage.removeItem('selectedPatientName');
+    sessionStorage.removeItem('selectedPatientAssurance');
+    sessionStorage.removeItem('selectedPatientTaux');
+    localStorage.removeItem('selectedPatientId');
+    localStorage.removeItem('selectedPatientName');
+    localStorage.removeItem('selectedPatientAssurance');
+    localStorage.removeItem('selectedPatientTaux');
+    let badge = document.getElementById('selectedPatientBadge');
+    if (badge) badge.style.display = 'none';
+    location.reload();
+}
     
-    // Loader functions améliorées
-    function showLoader(message = 'Chargement en cours...') {
-        let loader = document.getElementById('loaderOverlay');
-        if (!loader) {
-            loader = document.createElement('div');
-            loader.id = 'loaderOverlay';
-            loader.className = 'loader-overlay';
-            loader.innerHTML = `
-                <div class="text-center">
-                    <div class="loader"></div>
-                    <div class="loader-text">${message}</div>
-                </div>
-            `;
-            document.body.appendChild(loader);
+function showLoader(message) {
+    message = message || 'Chargement en cours...';
+    let loader = document.getElementById('loaderOverlay');
+    if (!loader) {
+        loader = document.createElement('div');
+        loader.id = 'loaderOverlay';
+        loader.className = 'loader-overlay';
+        loader.innerHTML = '<div class="text-center"><div class="loader"></div><div class="loader-text">' + message + '</div></div>';
+        document.body.appendChild(loader);
+    }
+    loader.style.display = 'flex';
+    const loaderText = loader.querySelector('.loader-text');
+    if (loaderText) loaderText.textContent = message;
+}
+    
+function hideLoader() {
+    const loader = document.getElementById('loaderOverlay');
+    if (loader) loader.style.display = 'none';
+}
+    
+window.addEventListener('beforeunload', function() {
+    showLoader();
+});
+    
+document.addEventListener('click', function(e) {
+    const link = e.target.closest('a');
+    if (link && link.href && !link.target && link.hostname === window.location.hostname) {
+        if (!link.href.includes('javascript:') && !link.href.includes('#')) {
+            showLoader('Navigation en cours...');
         }
-        loader.style.display = 'flex';
-        const loaderText = loader.querySelector('.loader-text');
-        if (loaderText) loaderText.textContent = message;
     }
+});
+
+// ============================================
+// CHARGEMENT PATIENT ET LOGO
+// ============================================
+document.addEventListener('DOMContentLoaded', function() {
+    loadSelectedPatient();
     
-    function hideLoader() {
-        const loader = document.getElementById('loaderOverlay');
-        if (loader) loader.style.display = 'none';
-    }
-    
-    // Afficher le loader avant de quitter la page
-    window.addEventListener('beforeunload', function() {
-        showLoader();
-    });
-    
-    // Intercepter les clics sur les liens
-    document.addEventListener('click', function(e) {
-        const link = e.target.closest('a');
-        if (link && link.href && !link.target && link.hostname === window.location.hostname) {
-            if (!link.href.includes('javascript:') && !link.href.includes('#')) {
-                showLoader('Navigation en cours...');
+    // Logo via API
+    fetch('/api/structure/infos')
+        .then(response => response.json())
+        .then(data => {
+            if (data.logo_url) {
+                const brand = document.querySelector('.structure-brand');
+                if (brand) {
+                    const icon = brand.querySelector('.structure-icon');
+                    if (icon) icon.style.display = 'none';
+                    
+                    let img = brand.querySelector('.structure-logo');
+                    if (!img) {
+                        img = document.createElement('img');
+                        img.className = 'structure-logo';
+                        brand.insertBefore(img, brand.firstChild);
+                    }
+                    img.src = data.logo_url;
+                    img.alt = 'Logo';
+                    img.onerror = function() {
+                        this.style.display = 'none';
+                        if (icon) icon.style.display = 'flex';
+                    };
+                }
             }
+        })
+        .catch(err => console.error('Erreur chargement logo:', err));
+});
+
+// ============================================
+// TOP NAV - GESTION DES MENUS
+// ============================================
+document.addEventListener('DOMContentLoaded', function() {
+    const navItems = document.querySelectorAll('.top-nav .nav-item');
+    
+    navItems.forEach(function(item) {
+        const link = item.querySelector('.nav-link-top');
+        const menu = item.querySelector('.mega-menu');
+        
+        if (menu && link) {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const isOpen = item.classList.contains('open');
+                
+                document.querySelectorAll('.top-nav .nav-item.open').forEach(function(el) {
+                    if (el !== item) el.classList.remove('open');
+                });
+                
+                if (isOpen) {
+                    item.classList.remove('open');
+                } else {
+                    item.classList.add('open');
+                }
+            });
         }
     });
-    </script>
-    {% endif %}
+    
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('.top-nav .nav-item')) {
+            document.querySelectorAll('.top-nav .nav-item.open').forEach(function(el) {
+                el.classList.remove('open');
+            });
+        }
+    });
+});
 
-    <div class="container mt-4">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }} alert-dismissible fade show shadow-sm fade-in" role="alert">
-                        <i class="fas fa-{{ 'check-circle' if category == 'success' else 'exclamation-triangle' if category == 'danger' else 'info-circle' }} me-2"></i>
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                    </div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
 
-        {% block content %}{% endblock %}
-    </div>
+// ============================================================
+// TOGGLE SIDEBAR (avec bouton global toujours visible)
+// ============================================================
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    {% block scripts %}{% endblock %}
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const icon = document.getElementById('sidebarToggleIcon');    // Icône dans le sidebar
+    const globalIcon = document.getElementById('globalToggleIcon'); // Icône globale
+    
+    if (!sidebar) return;
+    
+    sidebar.classList.toggle('hidden');
+    
+    if (overlay) {
+        overlay.classList.toggle('active');
+    }
+    
+    // Changer les icônes
+    if (sidebar.classList.contains('hidden')) {
+        if (icon) icon.className = 'fas fa-chevron-right';
+        if (globalIcon) globalIcon.className = 'fas fa-bars';
+        localStorage.setItem('sidebarHidden', 'true');
+    } else {
+        if (icon) icon.className = 'fas fa-chevron-left';
+        if (globalIcon) globalIcon.className = 'fas fa-times';
+        localStorage.setItem('sidebarHidden', 'false');
+    }
+}
+
+// ============================================================
+// RESTAURER L'ÉTAT DU SIDEBAR
+// ============================================================
+
+function restoreSidebarState() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const icon = document.getElementById('sidebarToggleIcon');
+    const globalIcon = document.getElementById('globalToggleIcon');
+
+    if (!sidebar) return;
+
+    let hidden = localStorage.getItem('sidebarHidden');
+    // ⭐ Sur mobile/tablette, tant que l'utilisateur n'a jamais touché au
+    // bouton (aucune préférence enregistrée), le menu démarre replié —
+    // sinon il s'ouvre par-dessus tout le contenu au premier chargement
+    // (le "hidden" ne masque le sidebar qu'en dessous de 768px, donc ça
+    // ne change rien à l'affichage desktop).
+    if (hidden === null && window.innerWidth <= 768) {
+        hidden = 'true';
+    }
+
+    if (hidden === 'true') {
+        sidebar.classList.add('hidden');
+        if (overlay) overlay.classList.remove('active');
+        if (icon) icon.className = 'fas fa-chevron-right';
+        if (globalIcon) globalIcon.className = 'fas fa-bars';
+    } else {
+        sidebar.classList.remove('hidden');
+        if (icon) icon.className = 'fas fa-chevron-left';
+        if (globalIcon) globalIcon.className = 'fas fa-times';
+    }
+}
+
+// ============================================================
+// TOGGLE DROPDOWN
+// ============================================================
+
+function toggleDropdown(id) {
+    const element = document.getElementById(id);
+    if (!element) return;
+    element.classList.toggle('open');
+}
+
+// ============================================================
+// BADGE PROFORMA
+// ============================================================
+
+function chargerProformaBadge() {
+    fetch('/api/proformas/count')
+        .then(response => response.json())
+        .then(data => {
+            const badge = document.getElementById('proformaBadge');
+            if (badge) {
+                if (data.en_attente > 0) {
+                    badge.textContent = data.en_attente;
+                    badge.style.display = 'inline-block';
+                } else {
+                    badge.style.display = 'none';
+                }
+            }
+        })
+        .catch(() => {});
+}
+
+// ============================================================
+// INITIALISATION
+// ============================================================
+
+document.addEventListener('DOMContentLoaded', function() {
+    restoreSidebarState();
+    chargerProformaBadge();
+    
+    // Rafraîchir le badge toutes les 60 secondes
+    setInterval(chargerProformaBadge, 60000);
+});
+
+// ============================================
+// PLEIN ÉCRAN
+// ============================================
+function activerPleinEcran() {
+    const el = document.documentElement;
+    if (el.requestFullscreen) {
+        el.requestFullscreen().catch(function(err) {
+            console.log('Erreur plein écran:', err);
+        });
+    } else if (el.webkitRequestFullscreen) {
+        el.webkitRequestFullscreen();
+    }
+}
+
+function quitterPleinEcran() {
+    if (document.exitFullscreen) {
+        document.exitFullscreen().catch(function(err) {
+            console.log('Erreur sortie plein écran:', err);
+        });
+    } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
+    }
+}
+
+function toggleFullScreen() {
+    const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+    if (!isFullscreen) {
+        activerPleinEcran();
+    } else {
+        quitterPleinEcran();
+    }
+}
+
+// Sauvegarder l'état avant la navigation
+document.addEventListener('click', function(e) {
+    const link = e.target.closest('a');
+    if (link && link.href && !link.target && link.hostname === window.location.hostname) {
+        const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+        if (isFullscreen) {
+            localStorage.setItem('fullscreenBeforeNav', 'true');
+            sessionStorage.setItem('fullscreenBeforeNav', 'true');
+        }
+    }
+});
+
+// RESTAURER AUTOMATIQUEMENT APRÈS CHARGEMENT
+document.addEventListener('DOMContentLoaded', function() {
+    const shouldRestore = localStorage.getItem('fullscreenBeforeNav');
+    
+    if (shouldRestore === 'true') {
+        localStorage.removeItem('fullscreenBeforeNav');
+        sessionStorage.removeItem('fullscreenBeforeNav');
+        
+        setTimeout(function() {
+            activerPleinEcran();
+        }, 500);
+    }
+});
+
+let fullscreenMode = localStorage.getItem('fullscreenMode') === 'true';
+
+function toggleFullscreenMode() {
+    fullscreenMode = !fullscreenMode;
+    localStorage.setItem('fullscreenMode', fullscreenMode ? 'true' : 'false');
+    
+    if (fullscreenMode) {
+        activerPleinEcran();
+        localStorage.setItem('fullscreenBeforeNav', 'true');
+    } else {
+        quitterPleinEcran();
+        localStorage.removeItem('fullscreenBeforeNav');
+    }
+    
+    updateFullscreenModeUI();
+}
+
+function updateFullscreenModeUI() {
+    const icon = document.getElementById('fullscreenModeIcon');
+    const text = document.getElementById('fullscreenModeText');
+    if (fullscreenMode) {
+        if (icon) icon.className = 'fas fa-compress';
+        if (text) text.textContent = 'Quitter mode plein écran';
+    } else {
+        if (icon) icon.className = 'fas fa-expand';
+        if (text) text.textContent = 'Mode plein écran permanent';
+    }
+}
+
+function updateFullscreenUI() {
+    const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+    
+    const icon = document.getElementById('fullscreenIcon');
+    const text = document.getElementById('fullscreenText');
+    const btn = document.getElementById('fullscreenBtn');
+    
+    if (isFullscreen) {
+        if (icon) icon.className = 'fas fa-compress';
+        if (text) text.textContent = 'Quitter';
+        if (btn) {
+            btn.style.background = 'rgba(220, 53, 69, 0.1)';
+            btn.style.color = '#dc3545';
+        }
+    } else {
+        if (icon) icon.className = 'fas fa-expand';
+        if (text) text.textContent = 'Plein écran';
+        if (btn) {
+            btn.style.background = 'rgba(255,255,255,0.8)';
+            btn.style.color = '#4a5568';
+        }
+    }
+}
+
+document.addEventListener('fullscreenchange', function() {
+    updateFullscreenUI();
+    document.querySelectorAll('.top-nav .nav-item.open').forEach(function(el) {
+        el.classList.remove('open');
+    });
+});
+
+document.addEventListener('webkitfullscreenchange', function() {
+    updateFullscreenUI();
+    document.querySelectorAll('.top-nav .nav-item.open').forEach(function(el) {
+        el.classList.remove('open');
+    });
+});
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullScreen();
+    }
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    updateFullscreenUI();
+    updateFullscreenModeUI();
+    
+    if (fullscreenMode) {
+        setTimeout(function() {
+            activerPleinEcran();
+        }, 300);
+    }
+});
+</script>
+{% block scripts %}{% endblock %}
 </body>
 </html>

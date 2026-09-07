@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bordereau {{ nom_compagnie }}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+            background: white;
+            padding: 40px;
+            color: #1a2a3a;
+            font-size: 13px;
+        }
+        .conteneur { max-width: 1100px; margin: 0 auto; }
+
+        /* ⭐ Bande d'en-tête pleine (fond bleu foncé) — tout le contenu de
+           l'en-tête (nom de la structure, adresse, titre du bordereau,
+           période...) vit à l'intérieur de cette bande, pas juste sous un
+           simple filet de couleur. -webkit-print-color-adjust/print-color-
+           adjust forcent l'impression du fond même quand l'utilisateur n'a
+           pas coché "Graphiques d'arrière-plan" dans la boîte de dialogue
+           d'impression du navigateur — sans ça, la bande ressortirait
+           blanche au papier. */
+        .entete {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #1a2a6c;
+            color: white;
+            padding: 18px 24px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .entete .structure { display: flex; align-items: center; gap: 12px; }
+        .entete img {
+            max-height: 55px; max-width: 110px; object-fit: contain;
+            background: white; padding: 5px; border-radius: 6px;
+        }
+        .entete h1 { font-size: 17px; color: white; }
+        .entete .sub { font-size: 11px; color: rgba(255,255,255,0.75); margin-top: 3px; }
+        .entete .droite { text-align: right; }
+        .entete .droite h2 { font-size: 16px; color: white; }
+        .entete .droite .periode { font-size: 12px; color: rgba(255,255,255,0.8); margin-top: 4px; }
+
+        .kpis { display: flex; gap: 14px; margin-bottom: 22px; }
+        .kpi {
+            flex: 1; border: 1px solid #dde3ea; border-radius: 8px;
+            padding: 12px 14px; background: #f7f9fc;
+        }
+        .kpi .label { font-size: 11px; color: #6c7a89; text-transform: uppercase; letter-spacing: .3px; }
+        .kpi .valeur { font-size: 18px; font-weight: 700; color: #1a2a6c; margin-top: 4px; }
+
+        table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+        thead th {
+            background: #1a2a6c; color: white; text-align: left;
+            padding: 8px 10px; font-size: 11.5px; text-transform: uppercase;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        tbody td { padding: 8px 10px; border-bottom: 1px solid #e8ecf1; vertical-align: top; }
+        tbody tr:nth-child(even) { background: #f9fafc; }
+        .num { text-align: right; white-space: nowrap; }
+        .prestations { font-size: 11.5px; color: #444; }
+        .prestations div { line-height: 1.4; }
+
+        tfoot td { font-weight: 700; border-top: 2px solid #1a2a6c; padding: 10px; background: #f0f3fa; }
+
+        .footer {
+            margin-top: 30px; padding-top: 12px; border-top: 1px solid #dde3ea;
+            display: flex; justify-content: space-between; font-size: 11px; color: #6c7a89;
+        }
+        .signatures { display: flex; justify-content: space-between; margin-top: 60px; }
+        .signatures div { text-align: center; width: 220px; border-top: 1px solid #333; padding-top: 6px; font-size: 12px; }
+
+        .btn-print {
+            position: fixed; top: 16px; right: 16px; padding: 8px 16px;
+            background: #1a2a6c; color: white; border: none; border-radius: 6px; cursor: pointer;
+        }
+        .btn-fermer {
+            position: fixed; top: 16px; right: 130px; padding: 8px 16px;
+            background: #6c757d; color: white; border: none; border-radius: 6px; cursor: pointer;
+        }
+        /* ⭐ Sur le PAPIER, on limite la couleur à deux endroits seulement —
+           la bande de l'en-tête et la bande d'en-tête du tableau — pour ne
+           pas gaspiller d'encre couleur : le reste (KPI, zébrage des lignes,
+           totaux, encadré "arrêtée à la somme de", bloc société) repasse en
+           noir sur blanc. L'écran, lui, garde son rendu habituel : ces
+           règles ne s'appliquent qu'à l'impression. */
+        @media print {
+            .btn-print, .btn-fermer { display: none; }
+            body { padding: 15px; }
+
+            .kpi {
+                background: white !important;
+                border: 1px solid #333 !important;
+            }
+            .kpi .label { color: #333 !important; }
+            .kpi .valeur { color: #000 !important; }
+
+            tbody tr:nth-child(even) { background: white !important; }
+            tbody td { border-bottom: 1px solid #999 !important; }
+            .prestations { color: #000 !important; }
+
+            tfoot td {
+                border-top: 2px solid #000 !important;
+                background: white !important;
+                color: #000 !important;
+            }
+
+            .bloc-societe {
+                background: white !important;
+                border: 1px solid #333 !important;
+            }
+            .bloc-arretee {
+                background: white !important;
+                border: 1.5px solid #000 !important;
+            }
+            .bloc-arretee .montant-lettres { color: #000 !important; }
+        }
+    </style>
+</head>
+<body>
+    <button class="btn-fermer" onclick="fermerBordereau()"><i class="fas fa-times"></i> Fermer</button>
+    <button class="btn-print" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
+
+    <div class="conteneur">
+        <div class="entete">
+            <div class="structure">
+                {% if structure and structure.logo_url %}<img src="{{ structure.logo_url }}" alt="logo">{% endif %}
+                <div>
+                    <h1>{{ (structure.nom if structure else '') or 'Structure' }}</h1>
+                    <div class="sub">
+                        {{ (structure.adresse if structure else '') or '' }}
+                        {% if structure and structure.telephone %} — Tél: {{ structure.telephone }}{% endif %}
+                        {% if structure and structure.email %} — {{ structure.email }}{% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="droite">
+                <h2>Bordereau — {{ nom_compagnie }}{% if nom_societe %} / {{ nom_societe }}{% endif %}</h2>
+                <div class="periode">N° {{ numero_bordereau }}</div>
+                <div class="periode">{{ periode_libelle }}</div>
+                <div class="periode">Édité le {{ now.strftime('%d/%m/%Y à %H:%M') }}</div>
+            </div>
+        </div>
+
+        {% if nom_societe %}
+        <div class="bloc-societe" style="background:#eef1fa; border:1px solid #dde3ea; border-radius:8px; padding:10px 14px; margin-bottom:18px; font-size:12.5px;">
+            <strong>Société souscriptrice :</strong> {{ nom_societe }} — contrat groupe {{ nom_compagnie }}
+        </div>
+        {% endif %}
+
+        <div class="kpis">
+            <div class="kpi">
+                <div class="label">Patients concernés</div>
+                <div class="valeur">{{ nb_patients }}</div>
+            </div>
+            <div class="kpi">
+                <div class="label">Montant total des prestations</div>
+                <div class="valeur">{{ '{:,.0f}'.format(total_montant).replace(',', ' ') }} F</div>
+            </div>
+            <div class="kpi">
+                <div class="label">Part {{ nom_compagnie }}</div>
+                <div class="valeur">{{ '{:,.0f}'.format(total_part_assurance).replace(',', ' ') }} F</div>
+            </div>
+            <div class="kpi">
+                <div class="label">Part patient</div>
+                <div class="valeur">{{ '{:,.0f}'.format(total_reste).replace(',', ' ') }} F</div>
+            </div>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Patient</th>
+                    <th>N° assuré</th>
+                    <th>Prestations</th>
+                    <th class="num">Montant total</th>
+                    <th class="num">Part {{ nom_compagnie }}</th>
+                    <th class="num">Part patient</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for l in lignes %}
+                <tr>
+                    <td>{{ l.date }}</td>
+                    <td><strong>{{ l.patient_nom }}</strong></td>
+                    <td>{{ l.numero_assure }}</td>
+                    <td class="prestations">
+                        {% for p in l.prestations %}<div>{{ p }}</div>{% endfor %}
+                    </td>
+                    <td class="num">{{ '{:,.0f}'.format(l.montant_total).replace(',', ' ') }} F</td>
+                    <td class="num">{{ '{:,.0f}'.format(l.part_assurance).replace(',', ' ') }} F</td>
+                    <td class="num">{{ '{:,.0f}'.format(l.reste_patient).replace(',', ' ') }} F</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" style="text-align:center; color:#888; padding:20px;">Aucune vente pour cette compagnie sur la période.</td></tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="4">TOTAUX</td>
+                    <td class="num">{{ '{:,.0f}'.format(total_montant).replace(',', ' ') }} F</td>
+                    <td class="num">{{ '{:,.0f}'.format(total_part_assurance).replace(',', ' ') }} F</td>
+                    <td class="num">{{ '{:,.0f}'.format(total_reste).replace(',', ' ') }} F</td>
+                </tr>
+            </tfoot>
+        </table>
+
+        <div class="bloc-arretee" style="margin-top:24px; padding:14px 18px; border:1.5px solid #1a2a6c; border-radius:8px; background:#f7f9fc;">
+            <strong>Arrêtée la présente facture à la somme de :</strong><br>
+            <span class="montant-lettres" style="font-size:14px; font-weight:700; color:#1a2a6c; text-transform:uppercase;">{{ montant_lettres }}</span>
+            <div style="font-size:11px; color:#6c7a89; margin-top:6px;">
+                (soit {{ '{:,.0f}'.format(total_part_assurance).replace(',', ' ') }} F CFA en chiffres)
+                — à adresser à {{ nom_compagnie }}{% if nom_societe %} pour le compte de la société {{ nom_societe }}{% endif %}.
+            </div>
+        </div>
+
+        <div class="signatures">
+            <div>Pour la structure</div>
+            <div>Pour {{ nom_compagnie }}{% if nom_societe %}<br><small>({{ nom_societe }})</small>{% endif %}</div>
+        </div>
+
+        <div class="footer">
+            <span>Document généré automatiquement par MediLogic — à vérifier avant envoi.</span>
+            <span>{{ lignes|length }} vente(s)</span>
+        </div>
+    </div>
+
+    <script>
+        function fermerBordereau() {
+            window.close();
+            setTimeout(function() {
+                if (!window.closed) {
+                    window.location.href = "{{ url_for('statistiques.index') }}";
+                }
+            }, 500);
+        }
+    </script>
+</body>
+</html>

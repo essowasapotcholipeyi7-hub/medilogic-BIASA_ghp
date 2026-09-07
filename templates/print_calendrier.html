@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calendrier des rendez-vous</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: white;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            padding: 20px 0 15px 0;
+            border-bottom: 3px solid #1a2a6c;
+            margin-bottom: 25px;
+        }
+        .header .logo-area {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        .header .logo-area img {
+            max-height: 60px;
+            max-width: 120px;
+            object-fit: contain;
+        }
+        .header h1 {
+            font-size: 24px;
+            color: #1a2a6c;
+        }
+        .header .sub-info {
+            font-size: 12px;
+            color: #6c7a89;
+            margin-top: 5px;
+        }
+        .header .sub-info span {
+            margin: 0 8px;
+        }
+        .header .period {
+            font-size: 16px;
+            color: #2d4373;
+            margin-top: 8px;
+            font-weight: 600;
+        }
+        .header .stats {
+            font-size: 12px;
+            color: #3d4f60;
+            margin-top: 5px;
+        }
+        .header .stats span {
+            font-weight: 600;
+            color: #1a2a6c;
+        }
+        .calendrier-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 2px;
+            background: #e6ebf2;
+            border: 1px solid #dce3ed;
+        }
+        .jour-colonne {
+            background: white;
+            min-height: 400px;
+        }
+        .jour-entete {
+            background: #1a2a6c;
+            color: white;
+            padding: 10px 8px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 13px;
+        }
+        .jour-entete .date-num {
+            font-size: 22px;
+            font-weight: 700;
+        }
+        .jour-entete .date-nom {
+            font-size: 11px;
+            opacity: 0.8;
+            text-transform: uppercase;
+        }
+        .jour-entete.weekend {
+            background: #2d4373;
+        }
+        .jour-entete.aujourdhui {
+            background: #e74c3c;
+        }
+        .jour-contenu {
+            padding: 6px;
+            min-height: 300px;
+        }
+        .jour-contenu .aucun-rdv {
+            text-align: center;
+            color: #b0b8c5;
+            font-size: 11px;
+            padding: 20px 5px;
+            font-style: italic;
+        }
+        .rdv-card {
+            background: #f8faff;
+            border-radius: 6px;
+            padding: 6px 8px;
+            margin-bottom: 4px;
+            border-left: 4px solid #667eea;
+            font-size: 10px;
+        }
+        .rdv-card .rdv-heure {
+            font-weight: 700;
+            color: #1a2a6c;
+            font-size: 12px;
+        }
+        .rdv-card .rdv-patient {
+            font-weight: 600;
+            color: #1a2a3a;
+            font-size: 11px;
+        }
+        .rdv-card .rdv-medecin {
+            color: #6c7a89;
+            font-size: 9px;
+        }
+        .rdv-card .rdv-motif {
+            color: #3d4f60;
+            font-size: 9px;
+            margin-top: 1px;
+        }
+        .rdv-card .badge-statut {
+            display: inline-block;
+            font-size: 7px;
+            padding: 1px 6px;
+            border-radius: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-top: 2px;
+        }
+        .badge-statut.programme { background: #fff3cd; color: #856404; }
+        .badge-statut.confirme { background: #d4edda; color: #155724; }
+        .badge-statut.termine { background: #e2e3e5; color: #383d41; }
+        .badge-statut.annule { background: #f8d7da; color: #721c24; }
+        .badge-statut.reporte { background: #d1ecf1; color: #0c5460; }
+        .footer {
+            margin-top: 25px;
+            padding-top: 15px;
+            border-top: 2px solid #e6ebf2;
+            text-align: center;
+            font-size: 10px;
+            color: #8e9aaf;
+        }
+        @media print {
+            body { padding: 10px; }
+            .calendrier-grid { break-inside: avoid; }
+            .jour-colonne { break-inside: avoid; page-break-inside: avoid; }
+            .jour-entete { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .rdv-card { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .badge-statut { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+        @media screen and (max-width: 768px) {
+            .calendrier-grid { grid-template-columns: 1fr 1fr; }
+        }
+        @media screen and (max-width: 480px) {
+            .calendrier-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo-area">
+            {% if structure and structure.logo_url %}
+            <img src="{{ structure.logo_url }}" alt="Logo">
+            {% endif %}
+            <h1>{{ structure.nom if structure else 'Hopital' }}</h1>
+        </div>
+        <div class="sub-info" style="white-space: pre-line;">
+            {% if structure and structure.adresse %}
+            <span>{{ structure.adresse }}</span>
+            {% endif %}
+            {% if structure and structure.telephone %}
+            <span>| Tel: {{ structure.telephone }}</span>
+            {% endif %}
+            {% if structure and structure.email %}
+            <span>| Email: {{ structure.email }}</span>
+            {% endif %}
+        </div>
+        <div class="period">Calendrier des rendez-vous - {{ libelle_periode }}</div>
+        <div class="stats">
+            <span>{{ stats.total }}</span> rendez-vous | 
+            <span>{{ stats.jours_avec_rdv }}</span> jours avec rendez-vous | 
+            <span>{{ stats.jours_total }}</span> jours
+        </div>
+        <div style="font-size: 11px; color: #8e9aaf; margin-top: 5px;">
+            Genere le {{ now.strftime('%d/%m/%Y à %H:%M') }}
+        </div>
+    </div>
+
+    <div class="calendrier-grid">
+        {% for jour in jours_liste %}
+        {% set date_str = jour.isoformat() %}
+        {% set rdvs = rdv_par_jour.get(date_str, []) %}
+        {% set jour_semaine = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'][jour.weekday()] %}
+        {% set est_weekend = jour.weekday() >= 5 %}
+        {% set est_aujourdhui = jour == today %}
+        
+        <div class="jour-colonne">
+            <div class="jour-entete {% if est_weekend %}weekend{% endif %} {% if est_aujourdhui %}aujourdhui{% endif %}">
+                <div class="date-num">{{ jour.strftime('%d') }}</div>
+                <div class="date-nom">{{ jour_semaine }}</div>
+                <div style="font-size: 9px; opacity: 0.7;">{{ jour.strftime('%b %Y') }}</div>
+            </div>
+            <div class="jour-contenu">
+                {% if rdvs %}
+                    {% for rdv in rdvs %}
+                    <div class="rdv-card">
+                        <div class="rdv-heure">{{ rdv.heure_rendez_vous }}</div>
+                        <div class="rdv-patient">{{ rdv.patient_nom }}</div>
+                        {% if rdv.medecin %}
+                        <div class="rdv-medecin">Medecin: {{ rdv.medecin.get_nom_complet() if rdv.medecin.get_nom_complet else rdv.medecin.nom }}</div>
+                        {% elif rdv.medecin_nom %}
+                        <div class="rdv-medecin">Medecin: {{ rdv.medecin_nom }}</div>
+                        {% endif %}
+                        {% if rdv.motif %}
+                        <div class="rdv-motif">{{ rdv.motif }}</div>
+                        {% endif %}
+                        <span class="badge-statut {{ rdv.statut }}">
+                            {{ rdv.get_statut_label() if rdv.get_statut_label else rdv.statut }}
+                        </span>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="aucun-rdv">Aucun rendez-vous</div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="footer">
+        {{ structure.nom if structure else 'Hopital' }} - Document genere le {{ now.strftime('%d/%m/%Y à %H:%M') }}
+    </div>
+
+    <script>
+        window.onload = function() {
+            setTimeout(function() {
+                window.print();
+                setTimeout(function() {
+                    window.close();
+                }, 600);
+            }, 500);
+        };
+    </script>
+</body>
+</html>

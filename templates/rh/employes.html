@@ -1,0 +1,629 @@
+{% extends "base.html" %}
+
+{% block title %}Gestion du personnel{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        {% include 'sidebar_menu.html' %}
+    </div>
+
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-users"></i> Gestion du personnel</h5>
+                <div>
+                    <button class="btn btn-light btn-sm" onclick="ajouterEmploye()">
+                        <i class="fas fa-plus"></i> Nouvel employe
+                    </button>
+                    <button class="btn btn-light btn-sm" onclick="chargerEmployes()">
+                        <i class="fas fa-sync-alt"></i> Rafraichir
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- Barre de recherche et filtres -->
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="fas fa-search"></i></span>
+                            <input type="text" class="form-control" id="searchEmploye" 
+                                   placeholder="Rechercher par nom, prenom, matricule..." 
+                                   onkeyup="filtrerEmployes()">
+                            <button class="btn btn-outline-secondary" onclick="reinitialiserRecherche()" type="button">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="text-muted small mt-1">
+                            <i class="fas fa-info-circle"></i> <span id="employeResultCount">0</span> employe(s) trouve(s)
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <select class="form-control form-control-sm" id="filtreService" onchange="filtrerEmployes()">
+                            <option value="">Tous les services</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select class="form-control form-control-sm" id="filtreStatut" onchange="filtrerEmployes()">
+                            <option value="">Tous les statuts</option>
+                            <option value="Actif">Actif</option>
+                            <option value="Inactif">Inactif</option>
+                            <option value="En conge">En congé</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select class="form-control form-control-sm" id="filtreSexe" onchange="filtrerEmployes()">
+                            <option value="">Tous les sexes</option>
+                            <option value="Masculin">Masculin</option>
+                            <option value="Feminin">Feminin</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2 text-end">
+                        <span id="totalEmployes" class="badge bg-secondary">0 employe(s)</span>
+                    </div>
+                </div>
+
+                <!-- Tableau -->
+                <div class="table-responsive">
+                    <table class="table table-hover table-bordered" id="employesTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Matricule</th>
+                                <th>Nom</th>
+                                <th>Prenom</th>
+                                <th>Sexe</th>
+                                <th>Service</th>
+                                <th>Poste</th>
+                                <th>Telephone</th>
+                                <th>Solde conges</th>
+                                <th>Statut</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="employesBody">
+                            <tr><td colspan="10" class="text-center">Chargement...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <div class="btn-group" id="paginationControls">
+                            <button class="btn btn-outline-primary btn-sm" onclick="pagePrecedente()" id="btnPagePrec">
+                                <i class="fas fa-chevron-left"></i> Precedent
+                            </button>
+                            <button class="btn btn-outline-primary btn-sm" onclick="pageSuivante()" id="btnPageSuiv">
+                                Suivant <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <span id="paginationInfo" class="text-muted"></span>
+                        <select class="form-select form-select-sm d-inline-block w-auto ms-2" id="itemsParPage" onchange="changerItemsParPage()">
+                            <option value="10">10</option>
+                            <option value="25" selected>25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                        <label class="text-muted ms-1">par page</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Ajout/Modification Employe -->
+<div class="modal fade" id="employeModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-user-plus"></i> <span id="employeModalTitle">Ajouter un employe</span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="employeForm">
+                    <div class="row">
+                        <!-- Identite -->
+                        <div class="col-md-6">
+                            <div class="card bg-light mb-3">
+                                <div class="card-header bg-info text-white">
+                                    <i class="fas fa-id-card"></i> Identite
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Nom *</label>
+                                            <input type="text" class="form-control" id="empNom" required>
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Prenom *</label>
+                                            <input type="text" class="form-control" id="empPrenom" required>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Sexe *</label>
+                                            <select class="form-control" id="empSexe" required>
+                                                <option value="">Selectionner</option>
+                                                <option value="Masculin">Masculin</option>
+                                                <option value="Feminin">Feminin</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Date de naissance</label>
+                                            <input type="date" class="form-control" id="empDateNaissance" onchange="calculerAge()">
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Age</label>
+                                            <input type="text" class="form-control" id="empAge" readonly>
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Nationalite</label>
+                                            <input type="text" class="form-control" id="empNationalite">
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Quartier</label>
+                                            <input type="text" class="form-control" id="empQuartier">
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Telephone *</label>
+                                            <input type="text" class="form-control" id="empTelephone" required>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-12 mb-2">
+                                            <label class="form-label">Email</label>
+                                            <input type="email" class="form-control" id="empEmail">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Professionnel -->
+                        <div class="col-md-6">
+                            <div class="card bg-light mb-3">
+                                <div class="card-header bg-success text-white">
+                                    <i class="fas fa-briefcase"></i> Professionnel
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Service *</label>
+                                            <select class="form-control" id="empService" required>
+                                                <option value="">Selectionner</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Poste *</label>
+                                            <input type="text" class="form-control" id="empPoste" required>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-4 mb-2">
+                                            <label class="form-label">Numero de poste</label>
+                                            <input type="text" class="form-control" id="empNumeroPoste">
+                                        </div>
+                                        <div class="col-md-4 mb-2">
+                                            <label class="form-label">Date d'embauche *</label>
+                                            <input type="date" class="form-control" id="empDateEmbauche" required onchange="calculerAnciennete()">
+                                        </div>
+                                        <div class="col-md-4 mb-2">
+                                            <label class="form-label">Anciennete</label>
+                                            <input type="text" class="form-control" id="empAnciennete" readonly>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Type de contrat</label>
+                                            <select class="form-control" id="empTypeContrat">
+                                                <option value="CDI">CDI</option>
+                                                <option value="CDD">CDD</option>
+                                                <option value="Stage">Stage</option>
+                                                <option value="Apprentissage">Apprentissage</option>
+                                                <option value="Vacataire">Vacataire</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Salaire de base (FCFA)</label>
+                                            <input type="number" class="form-control" id="empSalaire" value="0" step="1000">
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-12 mb-2">
+                                            <label class="form-label">Personne a prevenir</label>
+                                            <input type="text" class="form-control" id="empPrevenir">
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Telephone prevenir</label>
+                                            <input type="text" class="form-control" id="empTelephonePrevenir">
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Lien de parente</label>
+                                            <input type="text" class="form-control" id="empLienParente">
+                                        </div>
+<div class="row">
+    <div class="col-md-12 mb-2">
+        <label class="form-label">Statut</label>
+        <select class="form-control" id="empStatut">
+            <option value="Actif">Actif</option>
+            <option value="En conge">En congé</option>
+            <option value="Inactif">Inactif</option>
+        </select>
+    </div>
+</div>
+
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-primary" onclick="sauvegarderEmploye()">
+                    <i class="fas fa-save"></i> Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+// ============================================
+// VARIABLES
+// ============================================
+let tousEmployes = [];
+let employesFiltres = [];
+let pageActuelle = 1;
+let itemsParPage = 25;
+let employeIdEnCours = null;
+
+// ============================================
+// CHARGEMENT DES EMPLOYES
+// ============================================
+function chargerEmployes() {
+    const tbody = document.getElementById('employesBody');
+    tbody.innerHTML = '<tr><td colspan="10" class="text-center">Chargement...</td></tr>';
+    
+    fetch('/rh/api/employes')
+        .then(response => response.json())
+        .then(data => {
+            tousEmployes = data || [];
+            employesFiltres = tousEmployes;
+            document.getElementById('totalEmployes').textContent = tousEmployes.length + ' employe(s)';
+            chargerServices();
+            afficherEmployes();
+            pageActuelle = 1;
+            mettreAJourPagination();
+        })
+        .catch(error => {
+            console.error('Erreur:', error);
+            tbody.innerHTML = '<tr><td colspan="10" class="text-center text-danger">Erreur de chargement</td></tr>';
+        });
+}
+
+function chargerServices() {
+    fetch('/api/services')
+        .then(response => response.json())
+        .then(services => {
+            const select = document.getElementById('filtreService');
+            const selectModal = document.getElementById('empService');
+            
+            select.innerHTML = '<option value="">Tous les services</option>';
+            selectModal.innerHTML = '<option value="">Selectionner</option>';
+            
+            services.forEach(s => {
+                select.innerHTML += `<option value="${s.id}">${s.nom}</option>`;
+                selectModal.innerHTML += `<option value="${s.id}">${s.nom}</option>`;
+            });
+        })
+        .catch(error => console.error('Erreur chargement services:', error));
+}
+
+// ============================================
+// AFFICHAGE DES EMPLOYES
+// ============================================
+function afficherEmployes() {
+    const tbody = document.getElementById('employesBody');
+    const debut = (pageActuelle - 1) * itemsParPage;
+    const fin = Math.min(debut + itemsParPage, employesFiltres.length);
+    const pageEmployes = employesFiltres.slice(debut, fin);
+    
+    tbody.innerHTML = '';
+    document.getElementById('employeResultCount').textContent = employesFiltres.length;
+    
+    if (pageEmployes.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center">Aucun employe trouve</td></tr>';
+        return;
+    }
+    
+    pageEmployes.forEach(e => {
+        const row = tbody.insertRow();
+        
+        let statutBadge = '';
+        if (e.statut === 'Actif') statutBadge = 'bg-success';
+        else if (e.statut === 'En conge') statutBadge = 'bg-warning';
+        else statutBadge = 'bg-danger';
+        
+        row.innerHTML = `
+            <td><strong>${e.matricule}</strong></td>
+            <td>${e.nom}</td>
+            <td>${e.prenom}</td>
+            <td>${e.sexe || '-'}</td>
+            <td>${e.service || '-'}</td>
+            <td>${e.poste || '-'}</td>
+            <td>${e.telephone || '-'}</td>
+            <td>${e.solde_conges ? Math.round(e.solde_conges) : 0} jours</td>
+            <td><span class="badge ${statutBadge}">${e.statut}</span></td>
+            <td>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-info" onclick="voirEmploye(${e.id})" title="Voir">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    <button class="btn btn-warning" onclick="modifierEmploye(${e.id})" title="Modifier">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn btn-danger" onclick="supprimerEmploye(${e.id})" title="Supprimer">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </td>
+        `;
+    });
+}
+
+// ============================================
+// FILTRES ET RECHERCHE
+// ============================================
+function filtrerEmployes() {
+    const search = document.getElementById('searchEmploye').value.toLowerCase().trim();
+    const service = document.getElementById('filtreService').value;
+    const statut = document.getElementById('filtreStatut').value;
+    const sexe = document.getElementById('filtreSexe').value;
+    
+    employesFiltres = tousEmployes.filter(e => {
+        let match = true;
+        if (search) {
+            const texte = (e.nom + ' ' + e.prenom + ' ' + e.matricule).toLowerCase();
+            if (!texte.includes(search)) match = false;
+        }
+        if (service && e.service_id != service) match = false;
+        if (statut && e.statut !== statut) match = false;
+        if (sexe && e.sexe !== sexe) match = false;
+        return match;
+    });
+    
+    pageActuelle = 1;
+    afficherEmployes();
+    mettreAJourPagination();
+}
+
+function reinitialiserRecherche() {
+    document.getElementById('searchEmploye').value = '';
+    filtrerEmployes();
+}
+
+// ============================================
+// PAGINATION
+// ============================================
+function mettreAJourPagination() {
+    const total = employesFiltres.length;
+    const totalPages = Math.ceil(total / itemsParPage);
+    
+    document.getElementById('paginationInfo').textContent = 
+        `Affichage ${total > 0 ? (pageActuelle - 1) * itemsParPage + 1 : 0} - ${Math.min(pageActuelle * itemsParPage, total)} sur ${total} employes`;
+    
+    document.getElementById('btnPagePrec').disabled = pageActuelle <= 1;
+    document.getElementById('btnPageSuiv').disabled = pageActuelle >= totalPages || totalPages === 0;
+}
+
+function pagePrecedente() {
+    if (pageActuelle > 1) {
+        pageActuelle--;
+        afficherEmployes();
+        mettreAJourPagination();
+    }
+}
+
+function pageSuivante() {
+    const totalPages = Math.ceil(employesFiltres.length / itemsParPage);
+    if (pageActuelle < totalPages) {
+        pageActuelle++;
+        afficherEmployes();
+        mettreAJourPagination();
+    }
+}
+
+function changerItemsParPage() {
+    itemsParPage = parseInt(document.getElementById('itemsParPage').value);
+    pageActuelle = 1;
+    afficherEmployes();
+    mettreAJourPagination();
+}
+
+// ============================================
+// AJOUTER EMPLOYE
+// ============================================
+function ajouterEmploye() {
+    document.getElementById('employeModalTitle').textContent = 'Ajouter un employe';
+    document.getElementById('employeForm').reset();
+    document.getElementById('empId').value = '';
+    document.getElementById('empAge').value = '';
+    document.getElementById('empAnciennete').value = '';
+    new bootstrap.Modal(document.getElementById('employeModal')).show();
+}
+
+function calculerAge() {
+    const dateNaiss = document.getElementById('empDateNaissance').value;
+    if (dateNaiss) {
+        const naissance = new Date(dateNaiss);
+        const aujourdhui = new Date();
+        let age = aujourdhui.getFullYear() - naissance.getFullYear();
+        if (aujourdhui.getMonth() < naissance.getMonth() || 
+            (aujourdhui.getMonth() === naissance.getMonth() && aujourdhui.getDate() < naissance.getDate())) {
+            age--;
+        }
+        document.getElementById('empAge').value = age + ' ans';
+    }
+}
+
+function calculerAnciennete() {
+    const dateEmbauche = document.getElementById('empDateEmbauche').value;
+    if (dateEmbauche) {
+        const embauche = new Date(dateEmbauche);
+        const aujourdhui = new Date();
+        let ans = aujourdhui.getFullYear() - embauche.getFullYear();
+        if (aujourdhui.getMonth() < embauche.getMonth() || 
+            (aujourdhui.getMonth() === embauche.getMonth() && aujourdhui.getDate() < embauche.getDate())) {
+            ans--;
+        }
+        document.getElementById('empAnciennete').value = ans + ' ans';
+    }
+}
+
+function sauvegarderEmploye() {
+    const id = document.getElementById('empId').value;
+    const data = {
+        nom: document.getElementById('empNom').value.trim(),
+        prenom: document.getElementById('empPrenom').value.trim(),
+        sexe: document.getElementById('empSexe').value,
+        date_naissance: document.getElementById('empDateNaissance').value,
+        nationalite: document.getElementById('empNationalite').value.trim(),
+        quartier: document.getElementById('empQuartier').value.trim(),
+        telephone: document.getElementById('empTelephone').value.trim(),
+        email: document.getElementById('empEmail').value.trim(),
+        service_id: document.getElementById('empService').value,
+        poste: document.getElementById('empPoste').value.trim(),
+        numero_poste: document.getElementById('empNumeroPoste').value.trim(),
+        date_embauche: document.getElementById('empDateEmbauche').value,
+        type_contrat: document.getElementById('empTypeContrat').value,
+        salaire_base: parseFloat(document.getElementById('empSalaire').value) || 0,
+        personne_a_prevenir: document.getElementById('empPrevenir').value.trim(),
+        telephone_prevenir: document.getElementById('empTelephonePrevenir').value.trim(),
+        lien_parente: document.getElementById('empLienParente').value.trim(),
+        statut: document.getElementById('empStatut')?.value || 'Actif'
+    };
+    
+    if (!data.nom || !data.prenom || !data.sexe || !data.telephone || !data.service_id || !data.poste || !data.date_embauche) {
+        alert('Veuillez remplir tous les champs obligatoires');
+        return;
+    }
+    
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? `/rh/employe/${id}` : '/rh/employe/ajouter';
+    
+    fetch(url, {
+        method: method,
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert(id ? 'Employé modifié avec succès !' : 'Employé ajouté avec succès ! Matricule: ' + result.matricule);
+            bootstrap.Modal.getInstance(document.getElementById('employeModal')).hide();
+            chargerEmployes();
+        } else {
+            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('Erreur: ' + error));
+}
+
+// ============================================
+// VOIR EMPLOYE - PAGE DE DÉTAIL
+// ============================================
+function voirEmploye(id) {
+    // ⭐ Ouvrir une nouvelle page ou un modal de détail
+    window.open(`/rh/employe/${id}`, '_blank');
+}
+
+// ============================================
+// MODIFIER EMPLOYE
+// ============================================
+function modifierEmploye(id) {
+    // ⭐ Charger les données dans le modal
+    fetch(`/rh/api/employes/${id}`)
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('employeModalTitle').textContent = 'Modifier l\'employé';
+            document.getElementById('empId').value = data.id;
+            document.getElementById('empNom').value = data.nom;
+            document.getElementById('empPrenom').value = data.prenom;
+            document.getElementById('empSexe').value = data.sexe;
+            document.getElementById('empDateNaissance').value = data.date_naissance ? data.date_naissance.split('/').reverse().join('-') : '';
+            document.getElementById('empAge').value = data.age + ' ans';
+            document.getElementById('empNationalite').value = data.nationalite || '';
+            document.getElementById('empQuartier').value = data.quartier || '';
+            document.getElementById('empTelephone').value = data.telephone || '';
+            document.getElementById('empEmail').value = data.email || '';
+            document.getElementById('empService').value = data.service_id || '';
+            document.getElementById('empPoste').value = data.poste || '';
+            document.getElementById('empNumeroPoste').value = data.numero_poste || '';
+            document.getElementById('empDateEmbauche').value = data.date_embauche ? data.date_embauche.split('/').reverse().join('-') : '';
+            document.getElementById('empAnciennete').value = data.anciennete + ' ans';
+            document.getElementById('empTypeContrat').value = data.type_contrat || 'CDI';
+            document.getElementById('empSalaire').value = data.salaire_base || 0;
+            document.getElementById('empPrevenir').value = data.personne_a_prevenir || '';
+            document.getElementById('empTelephonePrevenir').value = data.telephone_prevenir || '';
+            document.getElementById('empLienParente').value = data.lien_parente || '';
+            
+            // Ajouter le champ statut si présent dans le modal
+            const statutSelect = document.getElementById('empStatut');
+            if (statutSelect) {
+                statutSelect.value = data.statut || 'Actif';
+            }
+            
+            // Recharger les services et sélectionner le bon
+            chargerServices(data.service_id);
+            
+            new bootstrap.Modal(document.getElementById('employeModal')).show();
+        })
+        .catch(error => {
+            alert('Erreur de chargement: ' + error);
+        });
+}
+
+// ============================================
+// SUPPRIMER EMPLOYE
+// ============================================
+function supprimerEmploye(id) {
+    const employe = tousEmployes.find(e => e.id === id);
+    if (!employe) return;
+    
+    if (confirm(`Voulez-vous vraiment supprimer l'employé ${employe.nom} ${employe.prenom} (${employe.matricule}) ?\n\nCette action est irréversible.`)) {
+        fetch(`/rh/employe/${id}`, {
+            method: 'DELETE',
+            headers: {'Content-Type': 'application/json'}
+        })
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                alert('Employé supprimé avec succès !');
+                chargerEmployes();
+            } else {
+                alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+            }
+        })
+        .catch(error => alert('Erreur: ' + error));
+    }
+}
+
+// ============================================
+// INITIALISATION
+// ============================================
+document.addEventListener('DOMContentLoaded', function() {
+    chargerEmployes();
+});
+</script>
+
+{% endblock %}

@@ -68,194 +68,187 @@
 {% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-md-3 mb-4">
-        {% include 'sidebar_menu.html' %}
-    </div>
-
-    <div class="col-md-9">
-        <ul class="nav nav-tabs mb-4" id="financeTab" role="tablist">
-            <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="depenses-tab" data-bs-toggle="tab" data-bs-target="#depenses" type="button" role="tab">
-                    Dépenses
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="rapports-tab" data-bs-toggle="tab" data-bs-target="#rapports" type="button" role="tab">
-                    Rapports
-                </button>
-            </li>
-        </ul>
+    <ul class="nav nav-tabs mb-4" id="financeTab" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="caisse-tab" data-bs-toggle="tab" data-bs-target="#caisse" type="button" role="tab">
+                <i class="fas fa-coins"></i> Caisse & Charges
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="rapports-tab" data-bs-toggle="tab" data-bs-target="#rapports" type="button" role="tab">
+                <i class="fas fa-chart-pie"></i> Rapports
+            </button>
+        </li>
+    </ul>
 
         <div class="tab-content">
 
-            <!-- ONGLET DÉPENSES -->
-            <div class="tab-pane fade show active" id="depenses" role="tabpanel">
-                <div class="card">
-                    <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
-                        <h5>Dépenses</h5>
-                        <button class="btn btn-light btn-sm" onclick="showAddDepenseModal()">
-                            Ajouter une dépense
-                        </button>
+<!-- ONGLET CHARGES -->
+<div class="tab-pane fade show active" id="caisse" role="tabpanel">
+    <div class="card">
+        <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
+            <h5>Charges</h5>
+            <button class="btn btn-light btn-sm" onclick="showAddDepenseModal()">
+                Ajouter une charge
+            </button>
+        </div>
+        <div class="card-body">
+            <div class="row g-3 mb-4">
+                <div class="col-md-4">
+                    <div class="card stat-card-finance border-0 shadow-sm">
+                        <div class="card-body text-center">
+                            <div class="stat-icon-finance bg-success bg-opacity-10 mx-auto mb-2">
+                                <i class="fas fa-arrow-up text-success fa-2x"></i>
+                            </div>
+                            <h5 class="text-success" id="soldeActuel">{{ (total_recettes - total_depenses)|round(0)|int }} FCFA</h5>
+                            <small class="text-muted">Solde actuel</small>
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <div class="row g-3 mb-4">
-                            <div class="col-md-4">
-                                <div class="card stat-card-finance border-0 shadow-sm">
-                                    <div class="card-body text-center">
-                                        <div class="stat-icon-finance bg-success bg-opacity-10 mx-auto mb-2">
-                                            <i class="fas fa-arrow-up text-success fa-2x"></i>
-                                        </div>
-                                        <h5 class="text-success" id="soldeActuel">{{ (total_recettes - total_depenses)|round(0)|int }} FCFA</h5>
-                                        <small class="text-muted">Solde actuel</small>
-                                    </div>
-                                </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card stat-card-finance border-0 shadow-sm">
+                        <div class="card-body text-center">
+                            <div class="stat-icon-finance bg-danger bg-opacity-10 mx-auto mb-2">
+                                <i class="fas fa-chart-line text-danger fa-2x"></i>
                             </div>
-                            <div class="col-md-4">
-                                <div class="card stat-card-finance border-0 shadow-sm">
-                                    <div class="card-body text-center">
-                                        <div class="stat-icon-finance bg-danger bg-opacity-10 mx-auto mb-2">
-                                            <i class="fas fa-chart-line text-danger fa-2x"></i>
-                                        </div>
-                                        <h5 class="text-danger" id="totalDepenses">{{ total_depenses|round(0)|int }} FCFA</h5>
-                                        <small class="text-muted">Total dépenses</small>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="card stat-card-finance border-0 shadow-sm">
-                                    <div class="card-body text-center">
-                                        <div class="stat-icon-finance bg-warning bg-opacity-10 mx-auto mb-2">
-                                            <i class="fas fa-percent text-warning fa-2x"></i>
-                                        </div>
-                                        <h5 class="text-warning" id="tauxDepenses">
-                                            {% if total_recettes > 0 %}
-                                                {{ ((total_depenses / total_recettes) * 100)|round(1) }}%
-                                            {% else %}
-                                                0%
-                                            {% endif %}
-                                        </h5>
-                                        <small class="text-muted">Taux de dépenses</small>
-                                    </div>
-                                </div>
-                            </div>
+                            <h5 class="text-danger" id="totalDepenses">{{ total_depenses|round(0)|int }} FCFA</h5>
+                            <small class="text-muted">Total charges</small>
                         </div>
-
-                        <!-- Filtres dépenses -->
-                        <div class="filter-bar">
-                            <div class="row g-2">
-                                <div class="col-md-3">
-                                    <label class="form-label small">Date début</label>
-                                    <input type="date" id="depensesDateDebut" class="form-control form-control-sm">
-                                </div>
-                                <div class="col-md-3">
-                                    <label class="form-label small">Date fin</label>
-                                    <input type="date" id="depensesDateFin" class="form-control form-control-sm">
-                                </div>
-                                <div class="col-md-2">
-                                    <label class="form-label small">&nbsp;</label>
-                                    <button class="btn btn-primary btn-sm w-100" onclick="filtrerDepenses()">
-                                        <i class="fas fa-search"></i> Appliquer
-                                    </button>
-                                </div>
-                                <div class="col-md-2">
-                                    <label class="form-label small">Recherche motif</label>
-                                    <input type="text" id="searchMotif" class="form-control form-control-sm" 
-                                           placeholder="Salaire, assurance, reparation..." 
-                                           onkeyup="filtrerDepenses()">
-                                </div>
-                                <div class="col-md-2">
-                                    <label class="form-label small">Filtre motif</label>
-                                    <select id="filtreMotif" class="form-control form-control-sm" onchange="filtrerDepenses()">
-                                        <option value="">Tous les motifs</option>
-                                        <option value="salaire">Salaire personnel</option>
-                                        <option value="assurance">Versement assurance</option>
-                                        <option value="reparation">Réparation clinique</option>
-                                        <option value="fourniture">Fourniture médicale</option>
-                                        <option value="eau">Eau</option>
-                                        <option value="electricite">Electricite</option>
-                                        <option value="internet">Internet</option>
-                                        <option value="loyer">Loyer</option>
-                                        <option value="materiel">Matériel informatique</option>
-                                        <option value="transport">Transport</option>
-                                        <option value="communication">Communication</option>
-                                        <option value="autres">Autres</option>
-                                    </select>
-                                </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card stat-card-finance border-0 shadow-sm">
+                        <div class="card-body text-center">
+                            <div class="stat-icon-finance bg-warning bg-opacity-10 mx-auto mb-2">
+                                <i class="fas fa-percent text-warning fa-2x"></i>
                             </div>
-                            <div class="row mt-2">
-                                <div class="col-md-12">
-                                    <button class="btn btn-secondary btn-sm" onclick="resetFiltresDepenses()">
-                                        <i class="fas fa-sync-alt"></i> Réinitialiser
-                                    </button>
-                                    <span class="ms-3 text-muted">
-                                        <span id="depensesResultCount">0</span> dépense(s) trouvée(s)
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="table-responsive">
-                            <table class="table table-hover" id="depensesTable">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>ID</th>
-                                        <th>Date</th>
-                                        <th>Motif</th>
-                                        <th>Montant (FCFA)</th>
-                                        <th>Description</th>
-                                        <th>Enregistré par</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="depensesList">
-                                    {% for d in depenses %}
-                                    <tr>
-                                        <td>{{ d.id }}</td>
-                                        <td>{{ d.date_depense.strftime('%Y-%m-%d %H:%M') if d.date_depense else '-' }}</td>
-                                        <td>
-                                            <span class="motif-badge 
-                                                {% if d.motif == 'salaire' %}motif-salaire
-                                                {% elif d.motif == 'assurance' %}motif-assurance
-                                                {% elif d.motif == 'reparation' %}motif-reparation
-                                                {% elif d.motif == 'fourniture' %}motif-fourniture
-                                                {% else %}motif-autres{% endif %}">
-                                                {% if d.motif == 'salaire' %}Salaire
-                                                {% elif d.motif == 'assurance' %}Assurance
-                                                {% elif d.motif == 'reparation' %}Reparation
-                                                {% elif d.motif == 'fourniture' %}Fourniture
-                                                {% elif d.motif == 'eau' %}Eau
-                                                {% elif d.motif == 'electricite' %}Electricite
-                                                {% elif d.motif == 'internet' %}Internet
-                                                {% elif d.motif == 'loyer' %}Loyer
-                                                {% elif d.motif == 'materiel' %}Matériel
-                                                {% elif d.motif == 'transport' %}Transport
-                                                {% elif d.motif == 'communication' %}Communication
-                                                {% else %}{{ d.motif_personnalise or 'Autres' }}{% endif %}
-                                            </span>
-                                        </td>
-                                        <td class="text-danger fw-bold">{{ d.montant|round(0)|int }} FCFA</td>
-                                        <td>{{ d.description or '-' }}</td>
-                                        <td>{{ d.created_by_nom or '-' }}</td>
-                                    </tr>
-                                    {% else %}
-                                    <tr>
-                                        <td colspan="6" class="text-center">Aucune dépense</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                                <tfoot class="table-light">
-                                    <tr class="fw-bold">
-                                        <td colspan="3" class="text-end">Total dépenses :</td>
-                                        <td class="text-danger" id="totalDepensesFilter">{{ total_depenses|round(0)|int }} FCFA</td>
-                                        <td colspan="2"></td>
-                                    </tr>
-                                </tfoot>
-                            </table>
+                            <h5 class="text-warning" id="tauxDepenses">
+                                {% if total_recettes > 0 %}
+                                    {{ ((total_depenses / total_recettes) * 100)|round(1) }}%
+                                {% else %}
+                                    0%
+                                {% endif %}
+                            </h5>
+                            <small class="text-muted">Taux de charges</small>
                         </div>
                     </div>
                 </div>
             </div>
 
+            <!-- Filtres charges -->
+            <div class="filter-bar">
+                <div class="row g-2">
+                    <div class="col-md-3">
+                        <label class="form-label small">Date début</label>
+                        <input type="date" id="depensesDateDebut" class="form-control form-control-sm">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">Date fin</label>
+                        <input type="date" id="depensesDateFin" class="form-control form-control-sm">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small">&nbsp;</label>
+                        <button class="btn btn-primary btn-sm w-100" onclick="filtrerDepenses()">
+                            <i class="fas fa-search"></i> Appliquer
+                        </button>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small">Recherche charge</label>
+                        <input type="text" id="searchMotif" class="form-control form-control-sm" 
+                               placeholder="Salaire, assurance, reparation..." 
+                               onkeyup="filtrerDepenses()">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small">Filtre charge</label>
+                        <select id="filtreMotif" class="form-control form-control-sm" onchange="filtrerDepenses()">
+                            <option value="">Tous les motifs</option>
+                            <option value="salaire">Salaire personnel</option>
+                            <option value="assurance">Versement assurance</option>
+                            <option value="reparation">Réparation clinique</option>
+                            <option value="fourniture">Fourniture médicale</option>
+                            <option value="eau">Eau</option>
+                            <option value="electricite">Electricite</option>
+                            <option value="internet">Internet</option>
+                            <option value="loyer">Loyer</option>
+                            <option value="materiel">Matériel informatique</option>
+                            <option value="transport">Transport</option>
+                            <option value="communication">Communication</option>
+                            <option value="autres">Autres</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="row mt-2">
+                    <div class="col-md-12">
+                        <button class="btn btn-secondary btn-sm" onclick="resetFiltresDepenses()">
+                            <i class="fas fa-sync-alt"></i> Réinitialiser
+                        </button>
+                        <span class="ms-3 text-muted">
+                            <span id="depensesResultCount">0</span> charge(s) trouvée(s)
+                        </span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="table-responsive">
+                <table class="table table-hover" id="depensesTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th>ID</th>
+                            <th>Date</th>
+                            <th>Motif</th>
+                            <th>Montant (FCFA)</th>
+                            <th>Description</th>
+                            <th>Enregistré par</th>
+                        </tr>
+                    </thead>
+                    <tbody id="depensesList">
+                        {% for d in depenses %}
+                        <tr>
+                            <td>{{ d.id }}</td>
+                            <td>{{ d.date_depense.strftime('%Y-%m-%d %H:%M') if d.date_depense else '-' }}</td>
+                            <td>
+                                <span class="motif-badge 
+                                    {% if d.motif == 'salaire' %}motif-salaire
+                                    {% elif d.motif == 'assurance' %}motif-assurance
+                                    {% elif d.motif == 'reparation' %}motif-reparation
+                                    {% elif d.motif == 'fourniture' %}motif-fourniture
+                                    {% else %}motif-autres{% endif %}">
+                                    {% if d.motif == 'salaire' %}Salaire
+                                    {% elif d.motif == 'assurance' %}Assurance
+                                    {% elif d.motif == 'reparation' %}Reparation
+                                    {% elif d.motif == 'fourniture' %}Fourniture
+                                    {% elif d.motif == 'eau' %}Eau
+                                    {% elif d.motif == 'electricite' %}Electricite
+                                    {% elif d.motif == 'internet' %}Internet
+                                    {% elif d.motif == 'loyer' %}Loyer
+                                    {% elif d.motif == 'materiel' %}Matériel
+                                    {% elif d.motif == 'transport' %}Transport
+                                    {% elif d.motif == 'communication' %}Communication
+                                    {% else %}{{ d.motif_personnalise or 'Autres' }}{% endif %}
+                                </span>
+                            </td>
+                            <td class="text-danger fw-bold">{{ d.montant|round(0)|int }} FCFA</td>
+                            <td>{{ d.description or '-' }}</td>
+                            <td>{{ d.created_by_nom or '-' }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="6" class="text-center">Aucune charge</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="table-light">
+                        <tr class="fw-bold">
+                            <td colspan="3" class="text-end">Total charges :</td>
+                            <td class="text-danger" id="totalDepensesFilter">{{ total_depenses|round(0)|int }} FCFA</td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
             <!-- ONGLET RAPPORTS -->
             <div class="tab-pane fade" id="rapports" role="tabpanel">
                 <div class="card">
@@ -450,7 +443,7 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header bg-danger text-white">
-                <h5 class="modal-title">Ajouter une dépense</h5>
+                <h5 class="modal-title">Ajouter une charge</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -565,7 +558,7 @@ function saveDepense() {
     .then(data => {
         hideLoader();
         if (data.success) {
-            alert('✅ Dépense enregistrée avec succès');
+            alert('charge enregistrée avec succès');
             location.reload();
         } else {
             alert('❌ Erreur: ' + data.error);
@@ -798,28 +791,43 @@ function genererRapport() {
             return fetch(detailUrl);
         })
         .then(response => response.json())
-        .then(recettesDetail => {
+        .then(data => {
+            // 🔥 CORRECTION : Utiliser les bonnes données
             let recettesActes = 0;
             let recettesPharma = 0;
             let nbActes = 0;
             let nbPharma = 0;
             
-            if (recettesDetail && recettesDetail.length) {
-                recettesDetail.forEach(item => {
+            // 🔥 Vérifier la structure des données retournées
+            const recettesList = data.recettes || data || [];
+            
+            if (recettesList.length) {
+                recettesList.forEach(item => {
+                    // 🔥 Utiliser total_net (net_a_payer) au lieu de total_recettes
+                    const montant = item.total_net || item.total_recettes || 0;
+                    
                     if (item.type === 'actes') {
-                        recettesActes = item.total_recettes || 0;
+                        recettesActes = montant;
                         nbActes = item.nombre_ventes || 0;
                     } else if (item.type === 'pharmacie' || item.type === 'pharma') {
-                        recettesPharma = item.total_recettes || 0;
+                        recettesPharma = montant;
                         nbPharma = item.nombre_ventes || 0;
                     }
                 });
             }
             
+            // Mettre à jour l'affichage
             document.getElementById('rapportRecettesActes').innerHTML = Math.round(recettesActes).toLocaleString('fr-FR') + ' FCFA';
             document.getElementById('rapportRecettesPharma').innerHTML = Math.round(recettesPharma).toLocaleString('fr-FR') + ' FCFA';
             document.getElementById('rapportNbActes').innerHTML = nbActes;
             document.getElementById('rapportNbPharma').innerHTML = nbPharma;
+            
+            // 🔥 Afficher les détails des montants (optionnel)
+            if (data.totaux) {
+                console.log('💰 Net payé total:', data.totaux.total_net);
+                console.log('💰 Montant donné total:', data.totaux.total_donne);
+                console.log('💰 Rendu total:', data.totaux.total_rendu);
+            }
             
             hideLoader();
         })

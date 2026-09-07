@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Liste des patients par assurance</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+            background: white;
+            padding: 40px;
+            color: #1a2a3a;
+            font-size: 12.5px;
+        }
+        .conteneur { max-width: 1150px; margin: 0 auto; }
+
+        .entete {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 3px solid #1a2a6c;
+            padding-bottom: 18px;
+            margin-bottom: 20px;
+        }
+        .entete .structure { display: flex; align-items: center; gap: 12px; }
+        .entete img { max-height: 55px; max-width: 110px; object-fit: contain; }
+        .entete h1 { font-size: 17px; color: #1a2a6c; }
+        .entete .sub { font-size: 11px; color: #6c7a89; margin-top: 3px; }
+        .entete .droite { text-align: right; }
+        .entete .droite h2 { font-size: 16px; color: #1a2a6c; }
+        .entete .droite .periode { font-size: 12px; color: #555; margin-top: 4px; }
+
+        .kpis { display: flex; gap: 14px; margin-bottom: 22px; }
+        .kpi {
+            flex: 1; border: 1px solid #dde3ea; border-radius: 8px;
+            padding: 12px 14px; background: #f7f9fc;
+        }
+        .kpi .label { font-size: 11px; color: #6c7a89; text-transform: uppercase; letter-spacing: .3px; }
+        .kpi .valeur { font-size: 18px; font-weight: 700; color: #1a2a6c; margin-top: 4px; }
+
+        table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+        thead th {
+            background: #1a2a6c; color: white; text-align: left;
+            padding: 8px 10px; font-size: 11px; text-transform: uppercase;
+        }
+        tbody td { padding: 7px 10px; border-bottom: 1px solid #e8ecf1; vertical-align: top; }
+        tbody tr:nth-child(even) { background: #f9fafc; }
+        .num { text-align: right; white-space: nowrap; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10.5px; color: white; }
+        .badge-principale { background: #0d6efd; }
+        .badge-complementaire { background: #17a2b8; }
+        .badge-non-assure { background: #6c757d; }
+        .badge-double { background: #ffc107; color: #333; margin-left: 4px; }
+
+        tfoot td { font-weight: 700; border-top: 2px solid #1a2a6c; padding: 10px; background: #f0f3fa; }
+
+        .footer {
+            margin-top: 30px; padding-top: 12px; border-top: 1px solid #dde3ea;
+            font-size: 11px; color: #6c7a89; display: flex; justify-content: space-between;
+        }
+
+        .btn-print {
+            position: fixed; top: 16px; right: 16px; padding: 8px 16px;
+            background: #1a2a6c; color: white; border: none; border-radius: 6px; cursor: pointer;
+        }
+        .btn-fermer {
+            position: fixed; top: 16px; right: 130px; padding: 8px 16px;
+            background: #6c757d; color: white; border: none; border-radius: 6px; cursor: pointer;
+        }
+        @media print { .btn-print, .btn-fermer { display: none; } body { padding: 15px; } }
+    </style>
+</head>
+<body>
+    <button class="btn-fermer" onclick="fermerImpression()"><i class="fas fa-times"></i> Fermer</button>
+    <button class="btn-print" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
+
+    <div class="conteneur">
+        <div class="entete">
+            <div class="structure">
+                {% if structure and structure.logo_url %}<img src="{{ structure.logo_url }}" alt="logo">{% endif %}
+                <div>
+                    <h1>{{ (structure.nom if structure else '') or 'Structure' }}</h1>
+                    <div class="sub">
+                        {{ (structure.adresse if structure else '') or '' }}
+                        {% if structure and structure.telephone %} — Tél: {{ structure.telephone }}{% endif %}
+                        {% if structure and structure.email %} — {{ structure.email }}{% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="droite">
+                <h2>Liste des patients par assurance</h2>
+                {% if assurance_filtre and assurance_filtre != 'toutes' %}
+                <div class="periode">Assurance : {{ assurance_filtre.upper() }}{% if societe_filtre and societe_filtre != 'toutes' %} — Société : {{ societe_filtre }}{% endif %}</div>
+                {% endif %}
+                <div class="periode">{{ periode_libelle }}</div>
+                <div class="periode">Édité le {{ now.strftime('%d/%m/%Y à %H:%M') }}</div>
+            </div>
+        </div>
+
+        <div class="kpis">
+            <div class="kpi">
+                <div class="label">Patients concernés</div>
+                <div class="valeur">{{ nb_patients }}</div>
+            </div>
+            <div class="kpi">
+                <div class="label">Lignes (assurance/société)</div>
+                <div class="valeur">{{ lignes|length }}</div>
+            </div>
+            <div class="kpi">
+                <div class="label">Total montant bénéficiaire</div>
+                <div class="valeur">{{ '{:,.0f}'.format(total_beneficiaire).replace(',', ' ') }} F</div>
+            </div>
+            <div class="kpi">
+                <div class="label">Total part assurance</div>
+                <div class="valeur">{{ '{:,.0f}'.format(total_part_assurance).replace(',', ' ') }} F</div>
+            </div>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Assurance</th>
+                    <th>Société</th>
+                    <th>Patient</th>
+                    <th>N° assuré</th>
+                    <th>Dernière visite</th>
+                    <th class="num">Actes</th>
+                    <th class="num">Montant bénéficiaire</th>
+                    <th class="num">Part assurance</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for l in lignes %}
+                <tr>
+                    <td>
+                        <span class="badge badge-{{ 'non-assure' if l.type_assurance == 'non_assure' else l.type_assurance }}">{{ l.assurance_label }}</span>
+                        {% if l.est_double_assurance %}<span class="badge badge-double">double</span>{% endif %}
+                    </td>
+                    <td>{{ l.societe or '-' }}</td>
+                    <td><strong>{{ l.patient_nom }}</strong></td>
+                    <td>{{ l.numero_assure2 or l.numero_assure or '-' }}</td>
+                    <td>{{ l.derniere_visite or '-' }}</td>
+                    <td class="num">{{ l.nb_actes or 0 }}</td>
+                    <td class="num">{{ '{:,.0f}'.format(l.montant_beneficiaire or 0).replace(',', ' ') }} F</td>
+                    <td class="num">{{ '{:,.0f}'.format(l.part_assurance or 0).replace(',', ' ') }} F</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" style="text-align:center; color:#888; padding:20px;">Aucun patient pour ces filtres.</td></tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="6">TOTAUX</td>
+                    <td class="num">{{ '{:,.0f}'.format(total_beneficiaire).replace(',', ' ') }} F</td>
+                    <td class="num">{{ '{:,.0f}'.format(total_part_assurance).replace(',', ' ') }} F</td>
+                </tr>
+            </tfoot>
+        </table>
+
+        <div class="footer">
+            <span>Document généré automatiquement par MediLogic.</span>
+            <span>{{ lignes|length }} ligne(s)</span>
+        </div>
+    </div>
+
+    <script>
+        function fermerImpression() {
+            window.close();
+            setTimeout(function() {
+                if (!window.closed) {
+                    window.location.href = "{{ url_for('statistiques.index') }}";
+                }
+            }, 500);
+        }
+    </script>
+</body>
+</html>

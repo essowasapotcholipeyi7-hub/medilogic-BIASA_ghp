@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+
+{% block title %}Gestion des permissions{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        {% include 'sidebar_menu.html' %}
+    </div>
+
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-door-open"></i> Gestion des permissions</h5>
+                <div>
+                    <button class="btn btn-light btn-sm" onclick="demanderPermission()">
+                        <i class="fas fa-plus"></i> Demander une permission
+                    </button>
+                    <button class="btn btn-light btn-sm" onclick="chargerPermissions()">
+                        <i class="fas fa-sync-alt"></i> Rafraichir
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- Filtres -->
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="fas fa-search"></i></span>
+                            <input type="text" class="form-control" id="searchPermission" 
+                                   placeholder="Rechercher par employe..." 
+                                   onkeyup="filtrerPermissions()">
+                            <button class="btn btn-outline-secondary" onclick="reinitialiserRecherchePermission()" type="button">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-control form-control-sm" id="filtreStatutPermission" onchange="filtrerPermissions()">
+                            <option value="">Tous les statuts</option>
+                            <option value="en_attente">En attente</option>
+                            <option value="approuve">Approuve</option>
+                            <option value="refuse">Refuse</option>
+                        </select>
+                    </div>
+                    <div class="col-md-5 text-end">
+                        <span id="totalPermissions" class="badge bg-secondary">0 permission(s)</span>
+                    </div>
+                </div>
+
+                <!-- Tableau -->
+                <div class="table-responsive">
+                    <table class="table table-hover table-bordered">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Employe</th>
+                                <th>Date</th>
+                                <th>Heure debut</th>
+                                <th>Heure fin</th>
+                                <th>Motif</th>
+                                <th>Statut</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="permissionsBody">
+                            <tr><td colspan="7" class="text-center">Chargement...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Demande de Permission -->
+<div class="modal fade" id="permissionModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="fas fa-door-open"></i> Demander une permission</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="permissionForm">
+                    <div class="mb-3">
+                        <label class="form-label">Employe *</label>
+                        <select class="form-control" id="permEmploye" required>
+                            <option value="">Selectionner</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date *</label>
+                        <input type="date" class="form-control" id="permDate" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Heure de debut *</label>
+                            <input type="time" class="form-control" id="permHeureDebut" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Heure de fin *</label>
+                            <input type="time" class="form-control" id="permHeureFin" required>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Motif *</label>
+                        <textarea class="form-control" id="permMotif" rows="3" required></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-info" onclick="sauvegarderPermission()">
+                    <i class="fas fa-paper-plane"></i> Soumettre
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ============================================
+// VARIABLES
+// ============================================
+let toutesPermissions = [];
+let permissionsFiltres = [];
+
+// ============================================
+// CHARGEMENT DES PERMISSIONS
+// ============================================
+function chargerPermissions() {
+    const tbody = document.getElementById('permissionsBody');
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center">Chargement...</td></tr>';
+    
+    fetch('/rh/api/permissions')
+        .then(response => response.json())
+        .then(data => {
+            toutesPermissions = data || [];
+            permissionsFiltres = toutesPermissions;
+            document.getElementById('totalPermissions').textContent = toutesPermissions.length + ' permission(s)';
+            afficherPermissions();
+        })
+        .catch(error => {
+            console.error('Erreur:', error);
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">Erreur de chargement</td></tr>';
+        });
+}
+
+function afficherPermissions() {
+    const tbody = document.getElementById('permissionsBody');
+    tbody.innerHTML = '';
+    
+    if (permissionsFiltres.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center">Aucune permission trouvee</td></tr>';
+        return;
+    }
+    
+    permissionsFiltres.forEach(p => {
+        const row = tbody.insertRow();
+        
+        let statutBadge = '';
+        if (p.statut === 'en_attente') statutBadge = 'bg-warning';
+        else if (p.statut === 'approuve') statutBadge = 'bg-success';
+        else statutBadge = 'bg-danger';
+        
+        row.innerHTML = `
+            <td><strong>${p.employe_nom}</strong></td>
+            <td>${p.date_permission}</td>
+            <td>${p.heure_debut}</td>
+            <td>${p.heure_fin}</td>
+            <td>${p.motif}</td>
+            <td><span class="badge ${statutBadge}">${p.statut}</span></td>
+            <td>
+                <div class="btn-group btn-group-sm">
+                    ${p.statut === 'en_attente' ? `
+                        <button class="btn btn-success" onclick="changerStatutPermission(${p.id}, 'approuve')">
+                            <i class="fas fa-check"></i>
+                        </button>
+                        <button class="btn btn-danger" onclick="changerStatutPermission(${p.id}, 'refuse')">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    ` : ''}
+                    ${p.statut === 'approuve' ? `
+                        <button class="btn btn-info" onclick="imprimerAutorisationPermission(${p.id})">
+                            <i class="fas fa-print"></i>
+                        </button>
+                    ` : ''}
+                </div>
+            </td>
+        `;
+    });
+}
+
+// ============================================
+// FILTRES PERMISSIONS
+// ============================================
+function filtrerPermissions() {
+    const search = document.getElementById('searchPermission').value.toLowerCase().trim();
+    const statut = document.getElementById('filtreStatutPermission').value;
+    
+    permissionsFiltres = toutesPermissions.filter(p => {
+        let match = true;
+        if (search) {
+            if (!p.employe_nom.toLowerCase().includes(search)) match = false;
+        }
+        if (statut && p.statut !== statut) match = false;
+        return match;
+    });
+    
+    afficherPermissions();
+}
+
+function reinitialiserRecherchePermission() {
+    document.getElementById('searchPermission').value = '';
+    filtrerPermissions();
+}
+
+// ============================================
+// DEMANDER PERMISSION
+// ============================================
+function demanderPermission() {
+    fetch('/rh/api/employes')
+        .then(r => r.json())
+        .then(employes => {
+            const select = document.getElementById('permEmploye');
+            select.innerHTML = '<option value="">Selectionner</option>';
+            employes.forEach(e => {
+                select.innerHTML += `<option value="${e.id}">${e.nom} ${e.prenom} (${e.matricule})</option>`;
+            });
+        });
+    
+    document.getElementById('permissionForm').reset();
+    new bootstrap.Modal(document.getElementById('permissionModal')).show();
+}
+
+function sauvegarderPermission() {
+    const data = {
+        employe_id: document.getElementById('permEmploye').value,
+        date_permission: document.getElementById('permDate').value,
+        heure_debut: document.getElementById('permHeureDebut').value,
+        heure_fin: document.getElementById('permHeureFin').value,
+        motif: document.getElementById('permMotif').value
+    };
+    
+    if (!data.employe_id || !data.date_permission || !data.heure_debut || !data.heure_fin || !data.motif) {
+        alert('Veuillez remplir tous les champs obligatoires');
+        return;
+    }
+    
+    fetch('/rh/permission/demander', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert('Demande de permission soumise avec succes !');
+            bootstrap.Modal.getInstance(document.getElementById('permissionModal')).hide();
+            chargerPermissions();
+        } else {
+            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('Erreur: ' + error));
+}
+
+// ============================================
+// CHANGER STATUT PERMISSION
+// ============================================
+function changerStatutPermission(id, statut) {
+    if (!confirm(`Confirmer le changement de statut vers "${statut}" ?`)) return;
+    
+    fetch(`/rh/permission/${id}/statut`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({statut: statut})
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert('Statut mis a jour avec succes !');
+            chargerPermissions();
+        } else {
+            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('Erreur: ' + error));
+}
+
+// ============================================
+// IMPRIMER AUTORISATION PERMISSION
+// ============================================
+function imprimerAutorisationPermission(id) {
+    window.open(`/rh/permission/${id}/autorisation`, '_blank');
+}
+
+// ============================================
+// INITIALISATION
+// ============================================
+document.addEventListener('DOMContentLoaded', function() {
+    chargerPermissions();
+});
+</script>
+{% endblock %}

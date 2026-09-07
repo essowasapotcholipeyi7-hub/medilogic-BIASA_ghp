@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Borne de pointage — {{ session.get('structure_nom') or 'Structure' }}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            height: 100%;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            display: flex; align-items: center; justify-content: center;
+            overflow: hidden;
+        }
+        .borne {
+            width: 100%; max-width: 520px; padding: 20px;
+            text-align: center; color: white;
+        }
+        .structure-nom { font-size: 18px; opacity: .85; margin-bottom: 4px; }
+        .horloge { font-size: 48px; font-weight: 700; font-variant-numeric: tabular-nums; margin-bottom: 4px; }
+        .date-jour { font-size: 16px; opacity: .85; margin-bottom: 22px; text-transform: capitalize; }
+
+        .bascule-mode {
+            display: inline-flex; background: rgba(255,255,255,0.12);
+            border-radius: 12px; padding: 4px; margin-bottom: 18px;
+        }
+        .bascule-mode button {
+            border: none; background: transparent; color: white; opacity: .7;
+            padding: 8px 18px; border-radius: 9px; font-size: 14px; cursor: pointer;
+        }
+        .bascule-mode button.actif { background: white; color: #4b3f91; opacity: 1; font-weight: 700; }
+
+        .carte {
+            background: rgba(255,255,255,0.12);
+            border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 20px;
+            padding: 40px 30px;
+            backdrop-filter: blur(6px);
+        }
+        .icone-empreinte { font-size: 90px; margin-bottom: 10px; }
+        .consigne { font-size: 15px; opacity: .9; margin-bottom: 26px; }
+
+        .btn-pointer {
+            display: inline-flex; align-items: center; gap: 10px;
+            background: white; color: #4b3f91;
+            border: none; border-radius: 14px;
+            padding: 18px 50px; font-size: 20px; font-weight: 700;
+            cursor: pointer; transition: transform .15s ease;
+        }
+        .btn-pointer:hover:not(:disabled) { transform: translateY(-2px); }
+        .btn-pointer:disabled { opacity: .6; cursor: wait; }
+
+        #videoVisage {
+            width: 100%; max-width: 320px; border-radius: 14px;
+            transform: scaleX(-1); background: rgba(0,0,0,0.2);
+        }
+        .pastille-scan {
+            font-size: 13px; opacity: .8; margin-top: 10px;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .pastille-scan .point {
+            width: 8px; height: 8px; border-radius: 50%; background: #7CFFB2;
+            animation: clignote 1.4s infinite;
+        }
+        @keyframes clignote { 0%,100%{opacity:.3;} 50%{opacity:1;} }
+
+        .resultat { margin-top: 20px; font-size: 17px; min-height: 26px; }
+        .resultat.succes { color: #b6ffcf; }
+        .resultat.erreur { color: #ffd0d0; }
+
+        .liste-jour {
+            margin-top: 26px; text-align: left; max-height: 130px; overflow-y: auto;
+            font-size: 13px; opacity: .85;
+        }
+        .liste-jour .ligne { display: flex; justify-content: space-between; padding: 3px 6px; }
+        .avertissement { margin-top: 18px; font-size: 12px; opacity: .7; }
+        [hidden] { display: none !important; }
+    </style>
+</head>
+<body>
+    <div class="borne">
+        <div class="structure-nom">{{ session.get('structure_nom') or '' }}</div>
+        <div class="horloge" id="horloge">--:--:--</div>
+        <div class="date-jour" id="dateJour">-</div>
+
+        <div class="bascule-mode">
+            <button id="btnModeEmpreinte" class="actif" onclick="basculerMode('empreinte')"><i class="fas fa-fingerprint"></i> Empreinte</button>
+            <button id="btnModeVisage" onclick="basculerMode('visage')"><i class="fas fa-camera"></i> Visage</button>
+        </div>
+
+        <div class="carte">
+            <!-- Mode empreinte -->
+            <div id="panneauEmpreinte">
+                <div class="icone-empreinte"><i class="fas fa-fingerprint"></i></div>
+                <div class="consigne">Posez le doigt sur le capteur du poste</div>
+                <button class="btn-pointer" id="btnPointer" onclick="pointer()">
+                    <i class="fas fa-hand-point-up"></i> Pointer
+                </button>
+            </div>
+
+            <!-- Mode visage -->
+            <div id="panneauVisage" hidden>
+                <video id="videoVisage" autoplay muted playsinline></video>
+                <div class="pastille-scan" id="pastilleScan"><span class="point"></span> Recherche d'un visage...</div>
+            </div>
+
+            <div class="resultat" id="resultat"></div>
+            <div class="liste-jour" id="listeJour"></div>
+        </div>
+
+        <div class="avertissement" id="avertissementContexte"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@simplewebauthn/browser@10.0.0/dist/bundle/index.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <script>
+        function majHorloge() {
+            const maintenant = new Date();
+            document.getElementById('horloge').textContent = maintenant.toLocaleTimeString('fr-FR');
+            document.getElementById('dateJour').textContent = maintenant.toLocaleDateString('fr-FR', {
+                weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+            });
+        }
+        setInterval(majHorloge, 1000);
+        majHorloge();
+
+        // ============================================================
+        // BASCULE ENTRE LES DEUX MODES
+        // ============================================================
+        let modeActuel = 'empreinte';
+
+        function basculerMode(mode) {
+            if (mode === modeActuel) return;
+            modeActuel = mode;
+            document.getElementById('btnModeEmpreinte').classList.toggle('actif', mode === 'empreinte');
+            document.getElementById('btnModeVisage').classList.toggle('actif', mode === 'visage');
+            document.getElementById('panneauEmpreinte').hidden = mode !== 'empreinte';
+            document.getElementById('panneauVisage').hidden = mode !== 'visage';
+            document.getElementById('resultat').className = 'resultat';
+            document.getElementById('resultat').textContent = '';
+
+            if (mode === 'visage') { demarrerModeVisage(); } else { arreterModeVisage(); }
+        }
+
+        // ============================================================
+        // MODE EMPREINTE (WebAuthn)
+        // ============================================================
+        if (!window.SimpleWebAuthnBrowser || !SimpleWebAuthnBrowser.browserSupportsWebAuthn()) {
+            document.getElementById('avertissementContexte').textContent =
+                "Empreinte/visage indisponibles sur ce poste/navigateur (nécessite http://localhost ou HTTPS).";
+        }
+
+        async function pointer() {
+            const btn = document.getElementById('btnPointer');
+            const resultat = document.getElementById('resultat');
+            resultat.className = 'resultat';
+
+            if (!window.SimpleWebAuthnBrowser || !SimpleWebAuthnBrowser.browserSupportsWebAuthn()) {
+                resultat.className = 'resultat erreur';
+                resultat.textContent = "Empreinte non disponible sur ce poste/navigateur.";
+                return;
+            }
+
+            btn.disabled = true;
+            resultat.textContent = 'Posez le doigt sur le capteur...';
+
+            try {
+                const rOpt = await fetch('/rh/api/pointage/webauthn/options', {method: 'POST'});
+                const dOpt = await rOpt.json();
+                if (!dOpt.success) {
+                    resultat.className = 'resultat erreur';
+                    resultat.textContent = dOpt.message;
+                    return;
+                }
+
+                const assertion = await SimpleWebAuthnBrowser.startAuthentication(dOpt.options);
+
+                const rVer = await fetch('/rh/api/pointage/webauthn/verifier', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({credential: assertion})
+                });
+                const dVer = await rVer.json();
+                afficherResultatPointage(dVer);
+            } catch (err) {
+                console.error(err);
+                resultat.className = 'resultat erreur';
+                resultat.textContent = "Échec : " + (err.message || err);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // ============================================================
+        // MODE VISAGE (webcam + face-api.js, détection automatique)
+        // ============================================================
+        const MODELES_VISAGE_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
+        let modelesVisageCharges = false;
+        let fluxCameraVisage = null;
+        let boucleVisageActive = false;
+        let enCooldownVisage = false;
+
+        async function demarrerModeVisage() {
+            const pastille = document.getElementById('pastilleScan');
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                pastille.textContent = "Caméra non disponible sur ce poste/navigateur.";
+                return;
+            }
+
+            pastille.innerHTML = '<span class="point"></span> Chargement des modèles...';
+            if (!modelesVisageCharges) {
+                try {
+                    await Promise.all([
+                        faceapi.nets.tinyFaceDetector.loadFromUri(MODELES_VISAGE_URL),
+                        faceapi.nets.faceLandmark68Net.loadFromUri(MODELES_VISAGE_URL),
+                        faceapi.nets.faceRecognitionNet.loadFromUri(MODELES_VISAGE_URL),
+                    ]);
+                    modelesVisageCharges = true;
+                } catch (err) {
+                    pastille.textContent = "Échec du chargement des modèles (connexion internet ?).";
+                    return;
+                }
+            }
+
+            try {
+                fluxCameraVisage = await navigator.mediaDevices.getUserMedia({video: {width: 320, height: 240}});
+                document.getElementById('videoVisage').srcObject = fluxCameraVisage;
+                pastille.innerHTML = '<span class="point"></span> Recherche d\'un visage...';
+            } catch (err) {
+                pastille.textContent = "Accès caméra refusé ou indisponible.";
+                return;
+            }
+
+            boucleVisageActive = true;
+            boucleDetectionVisage();
+        }
+
+        function arreterModeVisage() {
+            boucleVisageActive = false;
+            if (fluxCameraVisage) {
+                fluxCameraVisage.getTracks().forEach(t => t.stop());
+                fluxCameraVisage = null;
+            }
+        }
+
+        async function boucleDetectionVisage() {
+            const video = document.getElementById('videoVisage');
+            const pastille = document.getElementById('pastilleScan');
+
+            while (boucleVisageActive) {
+                await new Promise(r => setTimeout(r, 1200));
+                if (!boucleVisageActive || enCooldownVisage) continue;
+
+                let detection;
+                try {
+                    detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+                        .withFaceLandmarks().withFaceDescriptor();
+                } catch (err) {
+                    continue;
+                }
+                if (!detection || !boucleVisageActive) continue;
+
+                pastille.innerHTML = '<span class="point"></span> Visage détecté, vérification...';
+                enCooldownVisage = true;
+
+                try {
+                    const r = await fetch('/rh/api/pointage/facial/verifier', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({descripteur: Array.from(detection.descriptor)})
+                    });
+                    const d = await r.json();
+                    afficherResultatPointage(d);
+                } catch (err) {
+                    document.getElementById('resultat').className = 'resultat erreur';
+                    document.getElementById('resultat').textContent = 'Erreur réseau.';
+                }
+
+                // Pause de quelques secondes pour laisser le temps de lire le
+                // résultat et éviter de re-pointer la même personne en boucle.
+                await new Promise(r => setTimeout(r, 4000));
+                enCooldownVisage = false;
+                if (boucleVisageActive) pastille.innerHTML = '<span class="point"></span> Recherche d\'un visage...';
+            }
+        }
+
+        // ============================================================
+        // AFFICHAGE DU RÉSULTAT (commun empreinte/visage)
+        // ============================================================
+        function afficherResultatPointage(reponse) {
+            const resultat = document.getElementById('resultat');
+            if (reponse.success) {
+                const d = reponse.data;
+                resultat.className = 'resultat succes';
+                if (d.type === 'arrivee') {
+                    const statutTxt = d.statut === 'retard' ? `retard de ${d.retard_minutes} min` : 'à l\'heure';
+                    resultat.innerHTML = `<i class="fas fa-circle-check"></i> Bonjour ${d.employe_nom} — arrivée ${d.heure} (${statutTxt})`;
+                } else {
+                    resultat.innerHTML = `<i class="fas fa-circle-check"></i> Au revoir ${d.employe_nom} — départ ${d.heure}`;
+                }
+                chargerListeJour();
+            } else {
+                resultat.className = 'resultat erreur';
+                resultat.textContent = reponse.message;
+            }
+        }
+
+        function chargerListeJour() {
+            fetch('/rh/api/pointage/liste?date=' + new Date().toISOString().split('T')[0])
+                .then(r => r.json())
+                .then(d => {
+                    if (!d.success) return;
+                    const zone = document.getElementById('listeJour');
+                    if (d.pointages.length === 0) { zone.innerHTML = ''; return; }
+                    zone.innerHTML = d.pointages.slice(-6).reverse().map(p => `
+                        <div class="ligne">
+                            <span>${p.employe_nom}</span>
+                            <span>${p.heure_arrivee || ''}${p.heure_depart ? ' → ' + p.heure_depart : ''}</span>
+                        </div>`).join('');
+                })
+                .catch(() => {});
+        }
+        chargerListeJour();
+        setInterval(chargerListeJour, 30000);
+    </script>
+</body>
+</html>

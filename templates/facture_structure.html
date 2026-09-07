@@ -180,6 +180,9 @@
                     {% if numero_assure2 and numero_assure2 != '' %}
                     N° Assuré 2: {{ numero_assure2 }}<br>
                     {% endif %}
+                    {% if societe_assurance2 and societe_assurance2 != '' %}
+                    Société: {{ societe_assurance2 }}<br>
+                    {% endif %}
                     {# 🔥 AFFICHER LE TAUX ORIGINAL EN RÉFÉRENCE #}
                     {% if taux_modifie and taux_modifie == true and taux_original and taux_original > 0 %}
                     <span style="color: #6c757d; font-size: 9px;">

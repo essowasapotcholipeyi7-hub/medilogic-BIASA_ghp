@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reçu de paiement #{{ paiement.id }}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- html2pdf pour l'export PDF -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     
@@ -538,18 +539,18 @@
             </div>
             
             <div class="ligne paye">
-                <span>✅ Montant payé</span>
+                <span>Montant payé</span>
                 <span>{{ paiement.montant|default(0)|round(0)|int }} FCFA</span>
             </div>
             
             {% if paiement.reste_a_payer|default(0) > 0 %}
             <div class="ligne reste">
-                <span>⏳ Reste à payer</span>
+                <span>Reste à payer</span>
                 <span>{{ paiement.reste_a_payer|default(0)|round(0)|int }} FCFA</span>
             </div>
             {% else %}
             <div class="ligne solde">
-                <span>✅ Facture entièrement payée</span>
+                <span>Facture entièrement payée</span>
                 <span>✓</span>
             </div>
             {% endif %}
@@ -558,7 +559,7 @@
         <!-- Infos paiement -->
         <div style="margin-top: 8px; font-size: 10px; border-top: 1px solid #ccc; padding-top: 8px;">
             <strong>Mode de paiement :</strong> 
-            {% set modes = {'especes': '💰 Espèces', 'carte': '💳 Carte bancaire', 'Moov_money': '📱 FLOOZ', 'Mixx_By_Yas': '📱 MIXX By YAS', 'orange_money': '📱 Orange Money', 'mtn_money': '📱 MTN Money', 'cheque': '📝 Chèque'} %}
+            {% set modes = {'especes': 'Espèces', 'carte': 'Carte bancaire', 'Moov_money': 'FLOOZ', 'Mixx_By_Yas': 'MIXX By YAS', 'orange_money': 'Orange Money', 'mtn_money': 'MTN Money', 'cheque': 'Chèque'} %}
             {{ modes[paiement.mode_paiement]|default(paiement.mode_paiement|default('Espèces')) }}
             <br>
             
@@ -578,10 +579,10 @@
 
     <!-- Boutons (non imprimés) -->
     <div class="no-print">
-        <button class="btn-print" onclick="window.print()">🖨️ Imprimer</button>
-        <button class="btn-pdf" onclick="telechargerPDF()">📄 PDF</button>
-        <button class="btn-back" onclick="retour()">⬅️ Retour</button>
-        <button class="btn-close" onclick="fermer()">✖ Fermer</button>
+        <button class="btn-print" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
+        <button class="btn-pdf" onclick="telechargerPDF()">PDF</button>
+        <button class="btn-back" onclick="retour()">Retour</button>
+        <button class="btn-close" onclick="fermer()"><i class="fas fa-times"></i> Fermer</button>
     </div>
 
     <script>

@@ -3,15 +3,9 @@
 {% block title %}Factures Proforma{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-md-3 mb-4">
-        {% include 'sidebar_menu.html' %}
-    </div>
-    
-    <div class="col-md-9">
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <h5><i class="fas fa-file-invoice"></i> Factures Proforma</h5>
+                <h5>Factures Proforma</h5>
                 <div>
                     <button class="btn btn-sm btn-primary" onclick="nouvelleProforma()">
                         <i class="fas fa-plus"></i> Nouvelle proforma
@@ -55,9 +49,30 @@
                     </div>
                 </div>
                 
+                <!-- Barre de recherche -->
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="fas fa-search"></i></span>
+                            <input type="text" class="form-control" id="searchProforma" 
+                                   placeholder="Rechercher par patient, numéro..." 
+                                   onkeyup="filtrerProformas()">
+                            <button class="btn btn-outline-secondary" onclick="reinitialiserRecherche()" type="button">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="text-muted small mt-1">
+                            <i class="fas fa-info-circle"></i> <span id="proformaResultCount">0</span> proforma(s) trouvée(s)
+                        </div>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <span id="totalProformas" class="badge bg-secondary">{{ proformas|length }} proforma(s)</span>
+                    </div>
+                </div>
+                
                 <!-- Tableau -->
                 <div class="table-responsive">
-                    <table class="table table-hover">
+                    <table class="table table-hover" id="proformasTable">
                         <thead>
                             <tr>
                                 <th>N°</th>
@@ -70,7 +85,7 @@
                                 <th>Actions</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="proformasBody">
                             {% for p in proformas %}
                             <tr>
                                 <td><strong>#{{ p.numero_proforma or p.id }}</strong></td>
@@ -106,13 +121,21 @@
                                         <a href="{{ url_for('proforma_print', proforma_id=p.id) }}?format=A4" target="_blank" class="btn btn-info" title="A4">
                                             <i class="fas fa-file-pdf"></i>
                                         </a>
-                                        {% if session.is_admin and p.statut == 'en_attente' %}
+                                        <button onclick="modifierProforma({{ p.id }})" class="btn btn-warning" title="Modifier">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
                                         <button onclick="changerStatut({{ p.id }}, 'accepte')" class="btn btn-success" title="Accepter">
                                             <i class="fas fa-check"></i>
                                         </button>
                                         <button onclick="changerStatut({{ p.id }}, 'refuse')" class="btn btn-danger" title="Refuser">
                                             <i class="fas fa-times"></i>
                                         </button>
+                                        {% if p.statut != 'converti_en_vente' %}
+                                        <button onclick="convertirEnVente({{ p.id }})" class="btn btn-primary" title="Convertir en vente">
+                                            <i class="fas fa-receipt"></i> Vente
+                                        </button>
+                                        {% else %}
+                                        <span class="badge bg-info">Converti</span>
                                         {% endif %}
                                     </div>
                                 </td>
@@ -128,12 +151,38 @@
                         </tbody>
                     </table>
                 </div>
+                
+                <!-- Pagination -->
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <div class="btn-group" id="paginationControls">
+                            <button class="btn btn-outline-primary btn-sm" onclick="pagePrecedente()" id="btnPagePrec">
+                                <i class="fas fa-chevron-left"></i> Précédent
+                            </button>
+                            <button class="btn btn-outline-primary btn-sm" onclick="pageSuivante()" id="btnPageSuiv">
+                                Suivant <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <span id="paginationInfo" class="text-muted"></span>
+                        <select class="form-select form-select-sm d-inline-block w-auto ms-2" id="itemsParPage" onchange="changerItemsParPage()">
+                            <option value="10">10</option>
+                            <option value="25" selected>25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                        <label class="text-muted ms-1">par page</label>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Modal Nouvelle Proforma -->
+<!-- ============================================ -->
+<!-- MODAL NOUVELLE PROFORMA -->
+<!-- ============================================ -->
 <div class="modal fade" id="proformaModal" tabindex="-1" data-bs-backdrop="static">
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
@@ -143,7 +192,7 @@
             </div>
             <div class="modal-body">
                 <form id="proformaForm">
-                    <!-- ===== SECTION PATIENT AVEC RECHERCHE ===== -->
+                    <!-- SECTION PATIENT -->
                     <div class="card bg-light mb-3">
                         <div class="card-header bg-info text-white">
                             <i class="fas fa-user"></i> Informations patient
@@ -189,7 +238,7 @@
                                         </div>
                                     </div>
                                     
-                                    <!-- 🔥 ASSURANCE COMPLÉMENTAIRE -->
+                                    <!-- Assurance complémentaire -->
                                     <div class="row mt-2">
                                         <div class="col-md-12">
                                             <div class="card border-info">
@@ -249,13 +298,12 @@
                         </div>
                     </div>
                     
-                    <!-- ===== SECTION ARTICLES AVEC RECHERCHE ===== -->
+                    <!-- SECTION ARTICLES -->
                     <div class="card bg-light mb-3">
                         <div class="card-header bg-success text-white">
                             <i class="fas fa-boxes"></i> Articles
                         </div>
                         <div class="card-body">
-                            <!-- Barre de recherche articles -->
                             <div class="row mb-2">
                                 <div class="col-md-12">
                                     <div class="input-group">
@@ -268,7 +316,6 @@
                             </div>
                             
                             <div class="row">
-                                <!-- Liste des actes -->
                                 <div class="col-md-6">
                                     <div class="card">
                                         <div class="card-header bg-primary text-white py-1 d-flex justify-content-between align-items-center">
@@ -277,7 +324,7 @@
                                         </div>
                                         <div class="card-body p-1">
                                             <input type="text" class="form-control form-control-sm mb-1" id="acteSearchInput" 
-                                                   placeholder="🔍 Rechercher un acte..." onkeyup="filtrerActesListe()">
+                                                   placeholder="Rechercher un acte..." onkeyup="filtrerActesListe()">
                                             <div style="max-height: 200px; overflow-y: auto;">
                                                 <select class="form-control" id="acteSelect" size="6" multiple>
                                                     <option value="">-- Actes disponibles --</option>
@@ -286,8 +333,6 @@
                                         </div>
                                     </div>
                                 </div>
-
-                                <!-- Liste des produits -->
                                 <div class="col-md-6">
                                     <div class="card">
                                         <div class="card-header bg-success text-white py-1 d-flex justify-content-between align-items-center">
@@ -296,7 +341,7 @@
                                         </div>
                                         <div class="card-body p-1">
                                             <input type="text" class="form-control form-control-sm mb-1" id="produitSearchInput" 
-                                                   placeholder="🔍 Rechercher un produit..." onkeyup="filtrerProduitsListe()">
+                                                   placeholder="Rechercher un produit..." onkeyup="filtrerProduitsListe()">
                                             <div style="max-height: 200px; overflow-y: auto;">
                                                 <select class="form-control" id="produitSelect" size="6" multiple>
                                                     <option value="">-- Produits disponibles --</option>
@@ -394,6 +439,66 @@
     </div>
 </div>
 
+<!-- ============================================ -->
+<!-- MODAL MODIFIER PROFORMA -->
+<!-- ============================================ -->
+<div class="modal fade" id="modifierProformaModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title"><i class="fas fa-edit"></i> Modifier la proforma</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="modifierProformaContent">
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Chargement...</span>
+                        </div>
+                        <p class="mt-2">Chargement de la proforma...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                <button type="button" class="btn btn-success" onclick="sauvegarderModificationProforma()">
+                    <i class="fas fa-save"></i> Enregistrer les modifications
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================ -->
+<!-- MODAL CONVERTIR PROFORMA EN VENTE -->
+<!-- ============================================ -->
+<div class="modal fade" id="convertirProformaModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-receipt"></i> Convertir en vente - Proforma #<span id="convertProformaNumero"></span>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="convertProformaBody">
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Chargement...</span>
+                    </div>
+                    <p class="mt-2">Chargement de la proforma...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-success" onclick="finaliserConversionVente()">
+                    <i class="fas fa-check"></i> Finaliser la vente
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 // ============================================
 // VARIABLES GLOBALES
@@ -412,12 +517,17 @@ let produitsTotal = 0;
 let acteSearchTimeout = null;
 let produitSearchTimeout = null;
 
-// 🔥 VARIABLES ASSURANCE COMPLÉMENTAIRE
 let assurance2Active = false;
 let assurance2Nom = '';
 let assurance2TauxOriginal = 0;
 let assurance2TauxApplique = 0;
 let tauxModifie = false;
+
+let toutesLesProformas = [];
+let proformasFiltrees = [];
+let pageActuelle = 1;
+let itemsParPage = 25;
+let proformaAModifier = null;
 
 // ============================================
 // CHARGEMENT DES DONNÉES
@@ -445,6 +555,8 @@ function chargerActes(search = '', append = false) {
             }
             
             const newActes = data.data || [];
+            console.log('📊 Actes chargés:', newActes);  // 🔥 Vérifier que pbr est présent
+            
             actesTotal = data.total || 0;
             
             if (append) {
@@ -481,8 +593,9 @@ function chargerProduits(search = '', append = false) {
             
             remplirListeProduits(search, append, data.has_more);
         })
-        .catch(err => console.error('❌ Erreur chargement produits:', err));
+        .catch(err => console.error('Erreur chargement produits:', err));
 }
+
 // ============================================
 // REMPLIR LES LISTES
 // ============================================
@@ -521,11 +634,21 @@ function remplirListeActes(search = '', append = false, hasMore = false) {
     actesList.forEach(a => {
         const nom = a.nom || 'Sans nom';
         const prix = a.prix || 0;
+        const pbr = a.pbr || prix;
         const id = a.id || a.ID;
+        const priseEnChargeAMU = a.prise_en_charge_amu !== false;
+        const priseEnChargeCAC = a.prise_en_charge_cac !== false;
         
         select.innerHTML += `
-            <option value="${id}" data-prix="${prix}" data-nom="${nom}">
-                ${nom} - ${prix} FCFA
+            <option value="${id}" 
+                    data-prix="${prix}" 
+                    data-pbr="${pbr}" 
+                    data-nom="${nom}"
+                    data-prise-en-charge-amu="${priseEnChargeAMU}"
+                    data-prise-en-charge-cac="${priseEnChargeCAC}">
+                ${nom} - ${prix} FCFA ${pbr != prix ? '(PBR: ' + pbr + ' F)' : ''}
+                ${!priseEnChargeAMU ? ' ⚠️ Non AMU' : ''}
+                ${!priseEnChargeCAC ? ' ⚠️ Non CAC' : ''}
             </option>
         `;
     });
@@ -559,14 +682,83 @@ function remplirListeProduits(search = '', append = false, hasMore = false) {
     produitsList.forEach(p => {
         const nom = p.nom || 'Sans nom';
         const prix = p.prix_vente || 0;
+        const pbr = p.pbr || prix;
         const id = p.id || p.ID;
         const stock = p.quantite_stock || 0;
+        const datePeremption = p.date_peremption || '';
+        const lot = p.lot || '';
+        const prixAchat = p.prix_achat || 0;
         
-        select.innerHTML += `
-            <option value="${id}" data-prix="${prix}" data-nom="${nom}">
-                ${nom} - ${prix} FCFA (Stock: ${stock})
-            </option>
-        `;
+        // 🔥 Récupérer les valeurs de prise en charge
+        let amuValue = p.prise_en_charge_amu;
+        if (amuValue === null || amuValue === undefined || amuValue === '') {
+            amuValue = true;
+        } else if (typeof amuValue === 'string') {
+            amuValue = amuValue.toLowerCase() === 'true';
+        }
+        
+        let cacValue = p.prise_en_charge_cac;
+        if (cacValue === null || cacValue === undefined || cacValue === '') {
+            cacValue = true;
+        } else if (typeof cacValue === 'string') {
+            cacValue = cacValue.toLowerCase() === 'true';
+        }
+        
+        const commentaireAMU = p.commentaire_amu || '';
+        const commentaireCAC = p.commentaire_cac || '';
+        
+        // 🔥 Construction de l'option avec TOUS les attributs
+        const option = document.createElement('option');
+        option.value = id;
+        option.setAttribute('data-prix', prix);
+        option.setAttribute('data-pbr', pbr);
+        option.setAttribute('data-nom', nom);
+        option.setAttribute('data-stock', stock);
+        option.setAttribute('data-date-peremption', datePeremption);
+        option.setAttribute('data-lot', lot);
+        option.setAttribute('data-prix-achat', prixAchat);
+        option.setAttribute('data-prise-en-charge-amu', amuValue);
+        option.setAttribute('data-prise-en-charge-cac', cacValue);
+        option.setAttribute('data-commentaire-amu', commentaireAMU);
+        option.setAttribute('data-commentaire-cac', commentaireCAC);
+        
+        // 🔥 Label
+        let label = `${nom} - ${prix.toLocaleString()} FCFA`;
+        if (pbr > 0 && pbr !== prix) {
+            label += ` (PBR: ${pbr.toLocaleString()} F)`;
+        } else if (pbr === 0) {
+            label += ` (PBR: 0 - Non pris en charge)`;
+        }
+        label += ` [Stock: ${stock}]`;
+        
+        // 🔥 Indicateur de péremption
+        if (datePeremption) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const perempDate = new Date(datePeremption);
+            perempDate.setHours(0, 0, 0, 0);
+            
+            if (perempDate < today) {
+                label += ' 🔴 PÉRIMÉ';
+            } else if ((perempDate - today) / (1000 * 60 * 60 * 24) < 30) {
+                label += ' ⚠️ Bientôt périmé';
+            }
+        }
+        
+        // 🔥 Indicateur de prise en charge
+        const isAMU = amuValue === true || amuValue === 'true';
+        const isCAC = cacValue === true || cacValue === 'true';
+        
+        if (!isAMU && !isCAC) {
+            label = `🚫 ${label} - NON PRIS EN CHARGE (AMU & CAC)`;
+        } else if (!isAMU) {
+            label = `⚠️ ${label} - NON PRIS EN CHARGE AMU`;
+        } else if (!isCAC) {
+            label = `⚠️ ${label} - NON PRIS EN CHARGE CAC`;
+        }
+        
+        option.textContent = label;
+        select.appendChild(option);
     });
     
     const total = produitsTotal || produitsList.length;
@@ -587,7 +779,6 @@ function remplirListeProduits(search = '', append = false, hasMore = false) {
         `;
     }
 }
-
 // ============================================
 // FILTRAGE
 // ============================================
@@ -707,7 +898,6 @@ function chargerInfosPatient() {
     document.getElementById('tauxAssurance').value = option.dataset.taux || 0;
     document.getElementById('numeroAssure').value = option.dataset.numero || '';
     
-    // 🔥 CHARGER L'ASSURANCE COMPLÉMENTAIRE
     assurance2Nom = option.dataset.assurance2 || '';
     assurance2TauxOriginal = parseFloat(option.dataset.taux2) || 0;
     assurance2TauxApplique = assurance2TauxOriginal;
@@ -787,31 +977,79 @@ function resetTauxAssurance2() {
 }
 
 // ============================================
-// GESTION ARTICLES
+// GESTION ARTICLES (CORRIGÉE AVEC PRIX + PÉREMPTION)
 // ============================================
+
 function ajouterArticleSelectionne() {
     const acteSelect = document.getElementById('acteSelect');
     const produitSelect = document.getElementById('produitSelect');
     const qte = parseInt(document.getElementById('quantiteArticle').value) || 1;
     let added = 0;
     
+    // 🔥 Parcourir les actes sélectionnés
     for (let opt of acteSelect.selectedOptions) {
         if (!opt.value || opt.disabled) continue;
         const nom = opt.dataset.nom || opt.text.split(' - ')[0];
         const prix = parseFloat(opt.dataset.prix) || 0;
+        const pbr = parseFloat(opt.dataset.pbr);
+        const pbrValue = (pbr !== undefined && pbr !== null && !isNaN(pbr)) ? pbr : 0;
+        const priseEnChargeAMU = opt.dataset.priseEnChargeAmu !== 'false';
+        const priseEnChargeCAC = opt.dataset.priseEnChargeCac !== 'false';
+        
         if (prix > 0) {
-            ajouterAuPanier(nom, 'acte', prix, qte);
+            ajouterAuPanierComplet(nom, 'acte', prix, pbrValue, qte, priseEnChargeAMU, priseEnChargeCAC);
             added++;
         }
         opt.selected = false;
     }
     
+    // 🔥🔥🔥 Parcourir les produits sélectionnés (avec vérifications) 🔥🔥🔥
     for (let opt of produitSelect.selectedOptions) {
         if (!opt.value || opt.disabled) continue;
+        
         const nom = opt.dataset.nom || opt.text.split(' - ')[0];
         const prix = parseFloat(opt.dataset.prix) || 0;
+        const pbr = parseFloat(opt.dataset.pbr);
+        const pbrValue = (pbr !== undefined && pbr !== null && !isNaN(pbr)) ? pbr : 0;
+        const priseEnChargeAMU = opt.dataset.priseEnChargeAmu !== 'false';
+        const priseEnChargeCAC = opt.dataset.priseEnChargeCac !== 'false';
+        
+        // 🔥 VÉRIFICATION DU STOCK
+        const stock = parseInt(opt.dataset.stock) || 0;
+        if (stock <= 0) {
+            alert(`❌ Le produit "${nom}" est en rupture de stock.`);
+            opt.selected = false;
+            continue;
+        }
+        
+        // 🔥 VÉRIFICATION DE LA PÉREMPTION
+        const datePeremption = opt.dataset.datePeremption || '';
+        if (datePeremption) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const perempDate = new Date(datePeremption);
+            perempDate.setHours(0, 0, 0, 0);
+            
+            // Vérifier si la date est valide
+            if (!isNaN(perempDate.getTime())) {
+                if (perempDate < today) {
+                    alert(`❌ Le produit "${nom}" est PÉRIMÉ depuis le ${datePeremption}.\n\nImpossible de l'ajouter.`);
+                    opt.selected = false;
+                    continue;
+                }
+                
+                const joursRestants = Math.ceil((perempDate - today) / (1000 * 60 * 60 * 24));
+                if (joursRestants <= 7 && joursRestants > 0) {
+                    if (!confirm(`⚠️ Attention ! Le produit "${nom}" expire dans ${joursRestants} jour(s) (${datePeremption}).\n\nVoulez-vous quand même l'ajouter ?`)) {
+                        opt.selected = false;
+                        continue;
+                    }
+                }
+            }
+        }
+        
         if (prix > 0) {
-            ajouterAuPanier(nom, 'produit', prix, qte);
+            ajouterAuPanierComplet(nom, 'produit', prix, pbrValue, qte, priseEnChargeAMU, priseEnChargeCAC);
             added++;
         }
         opt.selected = false;
@@ -821,7 +1059,6 @@ function ajouterArticleSelectionne() {
         alert('Veuillez sélectionner au moins un article valide dans les listes');
     }
 }
-
 function ajouterArticlePersonnalise() {
     const nom = prompt('Nom de l\'article :');
     if (!nom) return;
@@ -838,6 +1075,31 @@ function ajouterArticlePersonnalise() {
     ajouterAuPanier(nom, type, prix, qte);
 }
 
+function ajouterAuPanierComplet(nom, type, prix, pbr, qte, priseEnChargeAMU, priseEnChargeCAC) {
+    const existing = panierArticles.find(item => item.nom === nom && item.type === type && item.prix === prix);
+    
+    // 🔥 CORRECTION : Garder 0 si le PBR est 0
+    const pbrValue = (pbr !== undefined && pbr !== null && pbr !== '') ? pbr : 0;
+    
+    if (existing) {
+        existing.quantite += qte;
+        existing.total = existing.quantite * existing.prix;
+    } else {
+        panierArticles.push({
+            nom: nom,
+            type: type,
+            prix: prix,
+            prix_unitaire: prix,
+            pbr: pbrValue,  // 🔥 Garde 0 si c'est 0
+            quantite: qte,
+            total: prix * qte,
+            prise_en_charge_amu: priseEnChargeAMU !== false,
+            prise_en_charge_cac: priseEnChargeCAC !== false
+        });
+    }
+    
+    afficherPanier();
+}
 function ajouterAuPanier(nom, type, prix, qte) {
     const existing = panierArticles.find(item => item.nom === nom && item.type === type && item.prix === prix);
     
@@ -849,8 +1111,12 @@ function ajouterAuPanier(nom, type, prix, qte) {
             nom: nom,
             type: type,
             prix: prix,
+            prix_unitaire: prix,
+            pbr: prix,
             quantite: qte,
-            total: prix * qte
+            total: prix * qte,
+            prise_en_charge_amu: true,
+            prise_en_charge_cac: true
         });
     }
     
@@ -894,7 +1160,7 @@ function viderPanier() {
 }
 
 // ============================================
-// AFFICHER PANIER AVEC DOUBLE ASSURANCE
+// AFFICHER PANIER
 // ============================================
 function afficherPanier() {
     const tbody = document.getElementById('panierBody');
@@ -944,31 +1210,71 @@ function afficherPanier() {
         `;
     });
     
-    // 🔥 CALCUL AVEC DOUBLE ASSURANCE
     calculerTotal();
 }
 
 function calculerTotal() {
-    // Recalculer le sous-total depuis le panier
     let sousTotal = 0;
+    let pbrTotalAMU = 0;
+    let sousTotalAMU = 0;
+    let baseCAC = 0;  // 🔥 Base CAC calculée article par article
+    
+    // 🔥 1. Calculer les bases article par article
     for (const item of panierArticles) {
-        sousTotal += item.prix * item.quantite;
+        const prix = item.prix || 0;
+        const pbr = (item.pbr !== undefined && item.pbr !== null) ? item.pbr : 0;
+        const quantite = item.quantite || 1;
+        const total = prix * quantite;
+        
+        sousTotal += total;
+        
+        // 🔥 AMU
+        if (item.prise_en_charge_amu !== false && pbr > 0) {
+            sousTotalAMU += total;
+            pbrTotalAMU += Math.min(prix, pbr) * quantite;
+        }
+        
+        // 🔥🔥🔥 CORRECTION : CAC article par article 🔥🔥🔥
+        if (item.prise_en_charge_cac !== false) {
+            if (item.prise_en_charge_amu !== false && pbr > 0) {
+                // Article avec AMU → CAC sur le reste après AMU
+                const baseAMU = Math.min(prix, pbr) * quantite;
+                const tauxPrincipal = parseFloat(document.getElementById('tauxAssurance').value) || 0;
+                const priseAMU = (baseAMU * tauxPrincipal) / 100;
+                const reste = total - priseAMU;
+                if (reste > 0) {
+                    baseCAC += reste;
+                }
+            } else {
+                // Article sans AMU → CAC sur le prix total
+                baseCAC += total;
+            }
+        }
     }
     
-    // Assurance principale
+    // 🔥 2. Vérifier si le patient a une assurance principale
+    const typeAssurance = document.getElementById('assuranceNom').value;
+    const estAssure = typeAssurance && typeAssurance !== '' && typeAssurance !== 'Non assuré';
     let tauxPrincipal = parseFloat(document.getElementById('tauxAssurance').value) || 0;
-    let priseEnCharge = (sousTotal * tauxPrincipal) / 100;
-    let resteApresPrincipal = sousTotal - priseEnCharge;
     
-    // Assurance complémentaire
-    let priseEnCharge2 = 0;
+    // 🔥 3. AMU
+    let priseEnChargeAMU = 0;
+    let baseRemboursement = 0;
+    
+    if (estAssure && tauxPrincipal > 0) {
+        baseRemboursement = Math.min(sousTotalAMU, pbrTotalAMU);
+        if (baseRemboursement > 0) {
+            priseEnChargeAMU = (baseRemboursement * tauxPrincipal) / 100;
+        }
+    }
+    
+    // 🔥 4. CAC
+    let priseEnChargeCAC = 0;
     let tauxComplementaire = 0;
     
     if (assurance2Active) {
-        // Récupérer le taux appliqué (modifié ou original)
         tauxComplementaire = parseFloat(document.getElementById('assurance2TauxApplique').value) || 0;
         
-        // Détecter si le taux a été modifié
         if (Math.abs(tauxComplementaire - assurance2TauxOriginal) > 0.01 && tauxComplementaire > 0) {
             tauxModifie = true;
             document.getElementById('tauxModifieBadge').style.display = 'inline-block';
@@ -978,40 +1284,37 @@ function calculerTotal() {
             document.getElementById('tauxModifieBadge').style.display = 'none';
         }
         
-        if (tauxComplementaire > 0 && resteApresPrincipal > 0) {
-            priseEnCharge2 = (resteApresPrincipal * tauxComplementaire) / 100;
+        // 🔥🔥🔥 CAC sur la BASE CAC calculée article par article 🔥🔥🔥
+        if (tauxComplementaire > 0 && baseCAC > 0) {
+            priseEnChargeCAC = (baseCAC * tauxComplementaire) / 100;
         }
         
-        // Mettre à jour l'affichage du taux
         document.getElementById('assurance2TauxProforma').textContent = tauxComplementaire + '%';
     }
     
-    let netAPayer = sousTotal - priseEnCharge - priseEnCharge2;
+    // 🔥 5. Net à payer
+    let netAPayer = sousTotal - priseEnChargeAMU - priseEnChargeCAC;
     if (netAPayer < 0) netAPayer = 0;
     
-    // Mettre à jour l'affichage
+    // 🔥 6. Mise à jour de l'affichage
     document.getElementById('sousTotalDisplay').textContent = sousTotal.toLocaleString() + ' FCFA';
-    document.getElementById('priseEnChargeDisplay').textContent = priseEnCharge.toLocaleString() + ' FCFA';
+    document.getElementById('priseEnChargeDisplay').textContent = priseEnChargeAMU.toLocaleString() + ' FCFA';
     document.getElementById('netAPayerDisplay').textContent = netAPayer.toLocaleString() + ' FCFA';
     
-    // Afficher la prise en charge complémentaire
+    // 🔥 Affichage CAC
     const priseEnCharge2Row = document.getElementById('priseEnCharge2Row');
     const priseEnCharge2Display = document.getElementById('priseEnCharge2Display');
     
-    if (assurance2Active && tauxComplementaire > 0 && priseEnCharge2 > 0) {
+    if (assurance2Active && tauxComplementaire > 0 && priseEnChargeCAC > 0) {
         const modifText = tauxModifie ? ' 🔄' : '';
-        priseEnCharge2Display.textContent = `${assurance2Nom} (${tauxComplementaire}%) : - ${priseEnCharge2.toLocaleString()} FCFA${modifText}`;
-        priseEnCharge2Row.style.display = '';
-    } else if (assurance2Active && tauxComplementaire > 0) {
-        priseEnCharge2Display.textContent = `${assurance2Nom} (${tauxComplementaire}%) : 0 FCFA (reste à charge nul)`;
+        priseEnCharge2Display.textContent = `${assurance2Nom} (${tauxComplementaire}%) : - ${priseEnChargeCAC.toLocaleString()} FCFA${modifText}`;
         priseEnCharge2Row.style.display = '';
     } else {
         priseEnCharge2Row.style.display = 'none';
     }
 }
-
 // ============================================
-// SAUVEGARDER PROFORMA
+// SAUVEGARDER PROFORMA (CORRIGÉ)
 // ============================================
 function sauvegarderProforma() {
     if (panierArticles.length === 0) {
@@ -1024,28 +1327,77 @@ function sauvegarderProforma() {
         return;
     }
     
+    // 🔥 CORRECTION: Envoyer les articles avec les vraies valeurs
     const articles = panierArticles.map(item => ({
         nom: item.nom,
         type: item.type,
         quantite: item.quantite,
         prix_unitaire: item.prix,
-        total: item.total
+        prix: item.prix,
+        pbr: (item.pbr !== undefined && item.pbr !== null) ? item.pbr : 0,
+        total: item.total,
+        prise_en_charge_amu: item.prise_en_charge_amu !== false,
+        prise_en_charge_cac: item.prise_en_charge_cac !== false,
+        commentaire_amu: item.commentaire_amu || '',
+        commentaire_cac: item.commentaire_cac || ''
     }));
     
-    // 🔥 Récupérer les données des assurances
     let tauxComplementaire = 0;
     if (assurance2Active) {
         tauxComplementaire = parseFloat(document.getElementById('assurance2TauxApplique').value) || 0;
     }
+    
+    // 🔥 Calculer le sous-total
+    let sousTotal = panierArticles.reduce((sum, item) => sum + (item.prix * item.quantite), 0);
+    
+    // 🔥🔥🔥 CALCUL DE LA BASE CAC (article par article) 🔥🔥🔥
+    let tauxPrincipal = parseFloat(document.getElementById('tauxAssurance').value) || 0;
+    let baseCAC = 0;
+    
+    for (const item of panierArticles) {
+        // 🔥 Si l'article est pris en charge par CAC
+        if (item.prise_en_charge_cac !== false) {
+            const prix = item.prix || 0;
+            const pbr = (item.pbr !== undefined && item.pbr !== null) ? item.pbr : 0;
+            const quantite = item.quantite || 1;
+            const total = prix * quantite;
+            
+            // 🔥 Si l'article a AMU, CAC sur le reste après AMU
+            if (item.prise_en_charge_amu !== false && pbr > 0 && tauxPrincipal > 0) {
+                const baseAMU = Math.min(prix, pbr) * quantite;
+                const priseAMU = (baseAMU * tauxPrincipal) / 100;
+                const reste = total - priseAMU;
+                if (reste > 0) {
+                    baseCAC += reste;
+                }
+            } else {
+                // 🔥 Si l'article n'a pas AMU, CAC sur le prix total
+                baseCAC += total;
+            }
+        }
+    }
+    
+    // 🔥 Calculer la CAC
+    let priseEnChargeCAC = 0;
+    if (assurance2Active && tauxComplementaire > 0 && baseCAC > 0) {
+        priseEnChargeCAC = (baseCAC * tauxComplementaire) / 100;
+    }
+    
+    // 🔥 Vérifier si tous les articles sont non pris en charge
+    const toutNonPrisEnCharge = panierArticles.every(item => 
+        item.prise_en_charge_amu === false && item.prise_en_charge_cac === false
+    );
+    
+    console.log('📊 Base CAC calculée:', baseCAC);
+    console.log('📊 Prise en charge CAC:', priseEnChargeCAC);
     
     const data = {
         patient_id: parseInt(patientId),
         patient_nom: document.getElementById('patientNom').value,
         patient_telephone: document.getElementById('patientTelephone').value || '',
         assurance_nom: document.getElementById('assuranceNom').value || 'Non assuré',
-        taux_assurance: parseFloat(document.getElementById('tauxAssurance').value) || 0,
+        taux_assurance: tauxPrincipal,
         numero_assure: document.getElementById('numeroAssure').value || '',
-        // 🔥 DONNÉES ASSURANCE COMPLÉMENTAIRE
         assurance2_nom: assurance2Active ? assurance2Nom : '',
         taux_assurance2: assurance2Active ? tauxComplementaire : 0,
         numero_assure2: document.getElementById('numeroAssure').value || '',
@@ -1054,10 +1406,18 @@ function sauvegarderProforma() {
         taux_original: assurance2TauxOriginal,
         articles: articles,
         notes: document.getElementById('proformaNotes').value,
-        type: 'mixte'
+        type: 'mixte',
+        sous_total: sousTotal,
+        tout_non_pris_en_charge: toutNonPrisEnCharge,
+        // 🔥🔥🔥 AJOUTER LA BASE CAC POUR LE BACKEND 🔥🔥🔥
+        base_cac: baseCAC,
+        prise_en_charge_cac_calculee: priseEnChargeCAC
     };
     
     console.log('📦 Données proforma:', data);
+    console.log('📊 Sous-total:', sousTotal);
+    console.log('📊 Base CAC:', baseCAC);
+    console.log('📊 CAC calculée:', priseEnChargeCAC);
     
     showLoader('Enregistrement de la proforma...');
     
@@ -1070,10 +1430,10 @@ function sauvegarderProforma() {
     .then(data => {
         hideLoader();
         if (data.success) {
-            let msg = `✅ Proforma #${data.numero} créée !\n`;
-            msg += `💰 Net à payer: ${data.net_a_payer.toLocaleString()} FCFA\n`;
+            let msg = `Proforma #${data.numero} créée !\n`;
+            msg += `Net à payer: ${data.net_a_payer.toLocaleString()} FCFA\n`;
             if (data.assurance2_nom && data.taux_assurance2 > 0) {
-                msg += `🏥 Assurance complémentaire: ${data.assurance2_nom} (${data.taux_assurance2}%)`;
+                msg += `Assurance complémentaire: ${data.assurance2_nom} (${data.taux_assurance2}%)`;
                 if (data.taux_modifie) {
                     msg += ` - Taux modifié (original: ${data.taux_original}%)`;
                 }
@@ -1169,12 +1529,1131 @@ function nouvelleProforma() {
 }
 
 // ============================================
+// RECHERCHE PROFORMAS
+// ============================================
+function filtrerProformas() {
+    const searchTerm = document.getElementById('searchProforma').value.toLowerCase().trim();
+    const tbody = document.getElementById('proformasBody');
+    const rows = tbody.getElementsByTagName('tr');
+    let visibleCount = 0;
+    
+    for (let row of rows) {
+        if (row.cells.length === 1 && row.cells[0].colSpan === 8) {
+            continue;
+        }
+        const text = row.textContent.toLowerCase();
+        if (searchTerm === '' || text.includes(searchTerm)) {
+            row.style.display = '';
+            visibleCount++;
+        } else {
+            row.style.display = 'none';
+        }
+    }
+    
+    document.getElementById('proformaResultCount').textContent = visibleCount;
+    
+    const noResultRow = Array.from(rows).find(row => row.cells.length === 1 && row.cells[0].colSpan === 8);
+    if (visibleCount === 0 && rows.length > 1) {
+        if (!noResultRow) {
+            const newRow = tbody.insertRow();
+            newRow.innerHTML = '<td colspan="8" class="text-center py-4"><i class="fas fa-search fa-2x text-muted mb-2 d-block"></i>Aucune proforma trouvée</td>';
+        }
+    } else if (noResultRow && visibleCount > 0) {
+        noResultRow.remove();
+    }
+}
+
+function reinitialiserRecherche() {
+    document.getElementById('searchProforma').value = '';
+    filtrerProformas();
+}
+
+// ============================================
+// CONVERTIR PROFORMA EN VENTE (CORRIGÉ)
+// ============================================
+let proformaConversionData = null;
+let panierConversion = [];
+let conversionNetAPayer = 0;
+
+function convertirEnVente(proformaId) {
+    if (!proformaId) {
+        alert('ID de proforma invalide');
+        return;
+    }
+    
+    showLoader('Chargement de la proforma...');
+    
+    fetch(`/api/proformas/${proformaId}`)
+        .then(r => r.json())
+        .then(data => {
+            hideLoader();
+            
+            if (data.error) {
+                alert('Erreur: ' + data.error);
+                return;
+            }
+            
+            if (data.statut === 'converti_en_vente') {
+                alert('Cette proforma a déjà été convertie en vente.');
+                return;
+            }
+            
+            if (data.statut === 'refuse') {
+                alert('Cette proforma a été refusée et ne peut pas être convertie.');
+                return;
+            }
+            
+            proformaConversionData = data;
+            
+            // 🔥 Récupérer les articles avec PBR
+            panierConversion = data.articles ? data.articles.map(a => ({
+                id: a.id || null,
+                nom: a.nom,
+                type: a.type || 'acte',
+                quantite: a.quantite || 1,
+                prix: a.prix || a.prix_unitaire || 0,
+                prix_unitaire: a.prix_unitaire || a.prix || 0,
+                pbr: (a.pbr !== undefined && a.pbr !== null) ? a.pbr : 0,
+                total: (a.prix || a.prix_unitaire || 0) * (a.quantite || 1),
+                prise_en_charge_amu: a.prise_en_charge_amu !== false,
+                prise_en_charge_cac: a.prise_en_charge_cac !== false
+            })) : [];
+            
+            console.log('📊 Panier conversion avec PBR:', panierConversion);
+            afficherModalConversion(data);
+        })
+        .catch(error => {
+            hideLoader();
+            console.error('❌ Erreur:', error);
+            alert('Erreur lors du chargement de la proforma');
+        });
+}
+
+function afficherModalConversion(data) {
+    document.getElementById('convertProformaNumero').textContent = data.numero_proforma || data.id;
+    
+    let html = `
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card bg-light mb-3">
+                    <div class="card-header bg-info text-white">
+                        <i class="fas fa-user"></i> Patient
+                    </div>
+                    <div class="card-body">
+                        <p><strong>${data.patient_nom || 'Patient'}</strong></p>
+                        <p class="text-muted">Tél: ${data.patient_telephone || '-'}</p>
+                        <p>
+                            <span class="badge bg-primary">${data.assurance_nom || 'Non assuré'}</span>
+                            <span class="badge bg-secondary">${data.taux_assurance || 0}%</span>
+                            ${data.assurance2_active && data.assurance2_nom ? 
+                                `<span class="badge bg-info">${data.assurance2_nom} (${data.taux_assurance2 || 0}%)</span>` : ''}
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card bg-light mb-3">
+                    <div class="card-header bg-warning text-dark">
+                        <i class="fas fa-info-circle"></i> Informations
+                    </div>
+                    <div class="card-body">
+                        <p><strong>Proforma #${data.numero_proforma || data.id}</strong></p>
+                        <p class="text-muted">Date: ${data.created_at ? new Date(data.created_at).toLocaleString('fr-FR') : '-'}</p>
+                        <p>
+                            <span class="badge ${data.statut === 'en_attente' ? 'bg-warning' : 'bg-success'}">
+                                ${data.statut || 'En attente'}
+                            </span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mb-3">
+            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-boxes"></i> Articles (${panierConversion.length})</span>
+                <span>
+                    <button class="btn btn-sm btn-light" onclick="ajouterArticleConversion()">
+                        <i class="fas fa-plus"></i> Ajouter
+                    </button>
+                    <button class="btn btn-sm btn-outline-light" onclick="supprimerTousArticlesConversion()">
+                        <i class="fas fa-trash"></i> Tout supprimer
+                    </button>
+                </span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:35%">Article</th>
+                                <th style="width:10%">Type</th>
+                                <th style="width:12%">Qté</th>
+                                <th style="width:15%">Prix</th>
+                                <th style="width:18%">Total</th>
+                                <th style="width:10%">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="convertPanierBody">
+                            ${panierConversion.length === 0 ? 
+                                '<tr><td colspan="6" class="text-center text-muted">Aucun article</td></tr>' :
+                                panierConversion.map((item, index) => `
+                                    <tr>
+                                        <td>${item.nom}</td>
+                                        <td><span class="badge ${item.type === 'acte' ? 'bg-primary' : 'bg-success'}">${item.type === 'acte' ? 'Acte' : 'Produit'}</span></td>
+                                        <td>
+                                            <input type="number" class="form-control form-control-sm" value="${item.quantite}" 
+                                                   style="width:60px; display:inline-block;" 
+                                                   onchange="modifierArticleConversion(${index}, 'quantite', this.value)">
+                                        </td>
+                                        <td>
+                                            <input type="number" class="form-control form-control-sm" value="${item.prix}" 
+                                                   style="width:100px; display:inline-block;" 
+                                                   onchange="modifierArticleConversion(${index}, 'prix', this.value)">
+                                        </td>
+                                        <td class="text-end fw-bold">${item.total.toLocaleString()} F</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-danger" onclick="supprimerArticleConversion(${index})">
+                                                <i class="fas fa-times"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr>
+                                <th colspan="4" class="text-end">Sous-total :</th>
+                                <th id="convertSousTotal" class="text-end">${calculeSousTotalConversion().toLocaleString()} F</th>
+                                <th></th>
+                            </tr>
+                            <tr>
+                                <th colspan="4" class="text-end text-success">Prise en charge principale :</th>
+                                <th id="convertPriseEnCharge" class="text-end text-success">${calculePriseEnChargeConversion().toLocaleString()} F</th>
+                                <th></th>
+                            </tr>
+                            ${data.assurance2_active && data.assurance2_nom ? `
+                            <tr>
+                                <th colspan="4" class="text-end text-info">Prise en charge ${data.assurance2_nom} :</th>
+                                <th id="convertPriseEnCharge2" class="text-end text-info">${calculePriseEnCharge2Conversion().toLocaleString()} F</th>
+                                <th></th>
+                            </tr>
+                            ` : ''}
+                            <tr class="table-warning">
+                                <th colspan="4" class="text-end text-danger">NET À PAYER :</th>
+                                <th id="convertNetAPayer" class="text-end text-danger fw-bold">${calculeNetAPayerConversion().toLocaleString()} F</th>
+                                <th></th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row mt-3">
+            <div class="col-md-4">
+                <label class="form-label fw-bold">Mode de paiement</label>
+                <select class="form-control" id="convertModePaiement">
+                    <option value="especes">Espèces</option>
+                    <option value="carte">Carte bancaire</option>
+                    <option value="Moov_money">FLOOZ</option>
+                    <option value="Mixx_By_Yas">MIXX By YAS</option>
+                    <option value="cheque">Chèque</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-bold" style="color:#dc3545;">Montant donné</label>
+                <input type="number" class="form-control" id="convertMontantDonne" value="0" min="0" step="100"
+                       oninput="calculerRenduConversion()" style="border-color:#dc3545;">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-bold" style="color:#28a745;">Rendu</label>
+                <input type="text" class="form-control" id="convertMontantRendu" value="0 FCFA" readonly 
+                       style="font-weight:bold; color:#28a745; background:#f0f8f0;">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-bold">Type document</label>
+                <select class="form-control" id="convertTypeDocument">
+                    <option value="recu_client">Reçu Patient</option>
+                    <option value="recu_structure">Reçu Structure</option>
+                    <option value="facture_client">Facture Patient</option>
+                    <option value="les_deux">Les deux</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="row mt-2">
+            <div class="col-md-12">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i> 
+                    <strong>Attention :</strong> La conversion de cette proforma créera une vente définitive.
+                    Vous pouvez modifier le panier (ajouter/supprimer des articles) avant de finaliser.
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('convertProformaBody').innerHTML = html;
+    
+    setTimeout(() => {
+        document.querySelector('#convertirProformaModal .btn-success').innerHTML = 
+            `<i class="fas fa-receipt"></i> Finaliser la vente (${calculeNetAPayerConversion().toLocaleString()} F)`;
+    }, 100);
+    
+    new bootstrap.Modal(document.getElementById('convertirProformaModal')).show();
+}
+
+// ============================================
+// FONCTIONS DE CALCUL POUR LA CONVERSION (CORRIGÉES)
+// ============================================
+
+function calculeSousTotalConversion() {
+    return panierConversion.reduce((sum, item) => sum + (item.prix * item.quantite), 0);
+}
+
+function calculePriseEnChargeConversion() {
+    const sousTotal = calculeSousTotalConversion();
+    const taux = proformaConversionData ? proformaConversionData.taux_assurance || 0 : 0;
+    
+    let pbrTotal = 0;
+    let sousTotalAMU = 0;
+    
+    for (const item of panierConversion) {
+        const prix = item.prix || 0;
+        const pbr = (item.pbr !== undefined && item.pbr !== null) ? item.pbr : 0;
+        const quantite = item.quantite || 1;
+        const total = prix * quantite;
+        
+        // Si l'article est pris en charge par AMU ET PBR > 0
+        if (item.prise_en_charge_amu !== false && pbr > 0) {
+            sousTotalAMU += total;
+            pbrTotal += Math.min(prix, pbr) * quantite;
+        }
+    }
+    
+    const baseRemboursement = Math.min(sousTotalAMU, pbrTotal);
+    
+    if (baseRemboursement > 0 && taux > 0) {
+        return (baseRemboursement * taux) / 100;
+    }
+    return 0;
+}
+
+// 🔥🔥🔥 CORRECTION : CAC article par article 🔥🔥🔥
+function calculePriseEnCharge2Conversion() {
+    const sousTotal = calculeSousTotalConversion();
+    const priseEnCharge = calculePriseEnChargeConversion();
+    const tauxAMU = proformaConversionData ? proformaConversionData.taux_assurance || 0 : 0;
+    const taux2 = proformaConversionData && proformaConversionData.assurance2_active ? 
+                  proformaConversionData.taux_assurance2 || 0 : 0;
+    
+    if (!proformaConversionData || !proformaConversionData.assurance2_active || taux2 <= 0) {
+        return 0;
+    }
+    
+    // 🔥 Calcul de la base CAC article par article
+    let baseCAC = 0;
+    
+    for (const item of panierConversion) {
+        // 🔥 Seulement si l'article est pris en charge par CAC
+        if (item.prise_en_charge_cac === false) {
+            continue;
+        }
+        
+        const prix = item.prix || 0;
+        const pbr = (item.pbr !== undefined && item.pbr !== null) ? item.pbr : 0;
+        const quantite = item.quantite || 1;
+        const total = prix * quantite;
+        
+        // 🔥 Si l'article a AMU, CAC sur le reste après AMU
+        if (item.prise_en_charge_amu !== false && pbr > 0) {
+            const baseAMU = Math.min(prix, pbr) * quantite;
+            const priseAMU = (baseAMU * tauxAMU) / 100;
+            const reste = total - priseAMU;
+            if (reste > 0) {
+                baseCAC += reste;
+            }
+        } else {
+            // 🔥 Si l'article n'a pas AMU, CAC sur le prix total
+            baseCAC += total;
+        }
+    }
+    
+    // 🔥 Appliquer le taux CAC sur la base calculée
+    if (baseCAC > 0 && taux2 > 0) {
+        return (baseCAC * taux2) / 100;
+    }
+    return 0;
+}
+
+function calculeNetAPayerConversion() {
+    const sousTotal = calculeSousTotalConversion();
+    const priseEnCharge = calculePriseEnChargeConversion();
+    const priseEnCharge2 = calculePriseEnCharge2Conversion();
+    let net = sousTotal - priseEnCharge - priseEnCharge2;
+    return net < 0 ? 0 : net;
+}
+
+function mettreAJourTotauxConversion() {
+    const sousTotal = calculeSousTotalConversion();
+    const priseEnCharge = calculePriseEnChargeConversion();
+    const priseEnCharge2 = calculePriseEnCharge2Conversion();
+    const netAPayer = calculeNetAPayerConversion();
+    conversionNetAPayer = netAPayer;
+    
+    document.getElementById('convertSousTotal').textContent = sousTotal.toLocaleString() + ' F';
+    document.getElementById('convertPriseEnCharge').textContent = priseEnCharge.toLocaleString() + ' F';
+    document.getElementById('convertNetAPayer').textContent = netAPayer.toLocaleString() + ' F';
+    
+    const el2 = document.getElementById('convertPriseEnCharge2');
+    if (el2) el2.textContent = priseEnCharge2.toLocaleString() + ' F';
+    
+    const btn = document.querySelector('#convertirProformaModal .btn-success');
+    if (btn) {
+        btn.innerHTML = `<i class="fas fa-receipt"></i> Finaliser la vente (${netAPayer.toLocaleString()} F)`;
+    }
+    
+    calculerRenduConversion();
+}
+
+function modifierArticleConversion(index, champ, valeur) {
+    if (index < 0 || index >= panierConversion.length) return;
+    
+    if (champ === 'quantite') {
+        panierConversion[index].quantite = parseInt(valeur) || 1;
+    } else if (champ === 'prix') {
+        panierConversion[index].prix = parseFloat(valeur) || 0;
+    }
+    panierConversion[index].total = panierConversion[index].prix * panierConversion[index].quantite;
+    
+    const tbody = document.getElementById('convertPanierBody');
+    const rows = tbody.getElementsByTagName('tr');
+    if (rows[index]) {
+        const cells = rows[index].getElementsByTagName('td');
+        if (cells.length >= 5) {
+            cells[4].textContent = panierConversion[index].total.toLocaleString() + ' F';
+        }
+    }
+    
+    mettreAJourTotauxConversion();
+}
+
+function supprimerArticleConversion(index) {
+    if (!confirm('Supprimer cet article ?')) return;
+    panierConversion.splice(index, 1);
+    
+    const tbody = document.getElementById('convertPanierBody');
+    const rows = tbody.getElementsByTagName('tr');
+    if (rows[index]) {
+        rows[index].remove();
+    }
+    mettreAJourTotauxConversion();
+}
+
+function supprimerTousArticlesConversion() {
+    if (panierConversion.length === 0) return;
+    if (!confirm('Supprimer tous les articles ?')) return;
+    panierConversion = [];
+    
+    const tbody = document.getElementById('convertPanierBody');
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Aucun article</td></tr>';
+    mettreAJourTotauxConversion();
+}
+
+function ajouterArticleConversion() {
+    const nom = prompt('Nom de l\'article :');
+    if (!nom) return;
+    
+    const prix = parseFloat(prompt('Prix unitaire (FCFA) :')) || 0;
+    const qte = parseInt(prompt('Quantité :')) || 1;
+    
+    if (prix <= 0) {
+        alert('Prix invalide');
+        return;
+    }
+    
+    const type = confirm('Cliquez OK pour "Acte", Annuler pour "Produit"') ? 'acte' : 'produit';
+    
+    panierConversion.push({
+        id: null,
+        nom: nom,
+        type: type,
+        quantite: qte,
+        prix: prix,
+        prix_unitaire: prix,
+        pbr: prix,
+        total: prix * qte
+    });
+    
+    const tbody = document.getElementById('convertPanierBody');
+    const index = panierConversion.length - 1;
+    const row = tbody.insertRow();
+    row.innerHTML = `
+        <td>${nom}</td>
+        <td><span class="badge ${type === 'acte' ? 'bg-primary' : 'bg-success'}">${type === 'acte' ? 'Acte' : 'Produit'}</span></td>
+        <td>
+            <input type="number" class="form-control form-control-sm" value="${qte}" 
+                   style="width:60px; display:inline-block;" 
+                   onchange="modifierArticleConversion(${index}, 'quantite', this.value)">
+        </td>
+        <td>
+            <input type="number" class="form-control form-control-sm" value="${prix}" 
+                   style="width:100px; display:inline-block;" 
+                   onchange="modifierArticleConversion(${index}, 'prix', this.value)">
+        </td>
+        <td class="text-end fw-bold">${(prix * qte).toLocaleString()} F</td>
+        <td>
+            <button class="btn btn-sm btn-danger" onclick="supprimerArticleConversion(${index})">
+                <i class="fas fa-times"></i>
+            </button>
+        </td>
+    `;
+    
+    mettreAJourTotauxConversion();
+}
+
+function calculerRenduConversion() {
+    const netAPayer = calculeNetAPayerConversion();
+    const montantDonne = parseFloat(document.getElementById('convertMontantDonne').value) || 0;
+    
+    let rendu = 0;
+    let resteAPayer = 0;
+    
+    if (montantDonne > netAPayer) {
+        rendu = montantDonne - netAPayer;
+        resteAPayer = 0;
+    } else if (montantDonne < netAPayer) {
+        rendu = 0;
+        resteAPayer = netAPayer - montantDonne;
+    } else {
+        rendu = 0;
+        resteAPayer = 0;
+    }
+    
+    const renduElement = document.getElementById('convertMontantRendu');
+    if (montantDonne < netAPayer) {
+        renduElement.value = `${resteAPayer.toLocaleString()} F manquant`;
+        renduElement.style.color = '#dc3545';
+        renduElement.style.background = '#fde8e8';
+    } else if (rendu === 0 && montantDonne === netAPayer) {
+        renduElement.value = '0 FCFA (juste)';
+        renduElement.style.color = '#28a745';
+        renduElement.style.background = '#f0f8f0';
+    } else if (rendu > 0) {
+        renduElement.value = `${rendu.toLocaleString()} FCFA`;
+        renduElement.style.color = '#28a745';
+        renduElement.style.background = '#f0f8f0';
+    } else {
+        renduElement.value = '0 FCFA';
+        renduElement.style.color = '#28a745';
+        renduElement.style.background = '#f0f8f0';
+    }
+}
+
+// ============================================
+// FINALISER LA CONVERSION EN VENTE (CORRIGÉ)
+// ============================================
+function finaliserConversionVente() {
+    if (!proformaConversionData) {
+        alert('Aucune proforma à convertir');
+        return;
+    }
+    
+    if (panierConversion.length === 0) {
+        alert('Le panier est vide. Ajoutez au moins un article.');
+        return;
+    }
+    
+    const netAPayer = calculeNetAPayerConversion();
+    const montantDonne = parseFloat(document.getElementById('convertMontantDonne').value) || 0;
+    const modePaiement = document.getElementById('convertModePaiement').value;
+    const typeDocument = document.getElementById('convertTypeDocument').value;
+    
+    if (netAPayer > 0 && montantDonne === 0) {
+        if (!confirm(`Le patient n'a rien donné (0 FCFA) alors que le net à payer est de ${netAPayer.toLocaleString()} FCFA.\n\nCréer une facture pour le reste à payer ?`)) {
+            document.getElementById('convertMontantDonne').focus();
+            return;
+        }
+    }
+    
+    if (montantDonne > 0 && montantDonne < netAPayer) {
+        if (!confirm(`Le patient a donné ${montantDonne.toLocaleString()} FCFA mais le net à payer est de ${netAPayer.toLocaleString()} FCFA.\n\nIl reste ${(netAPayer - montantDonne).toLocaleString()} FCFA à payer.\n\nContinuer ?`)) {
+            document.getElementById('convertMontantDonne').focus();
+            return;
+        }
+    }
+    
+    if (!confirm(`Confirmer la conversion de la proforma #${proformaConversionData.numero_proforma || proformaConversionData.id} en vente ?`)) {
+        return;
+    }
+    
+    // 🔥🔥🔥 CORRECTION : Préparer les articles avec les vraies valeurs 🔥🔥🔥
+    const articles = panierConversion.map(item => ({
+        id: item.id,
+        nom: item.nom,
+        type: item.type,
+        quantite: item.quantite,
+        prix_unitaire: item.prix,
+        prix: item.prix,
+        pbr: (item.pbr !== undefined && item.pbr !== null) ? item.pbr : 0,  // 🔥 Garde 0
+        total: item.prix * item.quantite,
+        prise_en_charge_amu: item.prise_en_charge_amu !== false,  // 🔥 TRUE/FALSE réel
+        prise_en_charge_cac: item.prise_en_charge_cac !== false   // 🔥 TRUE/FALSE réel
+    }));
+    
+    // 🔥 Calculer les totaux avec les bonnes valeurs
+    const sousTotal = calculeSousTotalConversion();
+    const priseEnCharge = calculePriseEnChargeConversion();
+    const priseEnCharge2 = calculePriseEnCharge2Conversion();
+    
+    const data = {
+        proforma_id: proformaConversionData.id,
+        patient_id: proformaConversionData.patient_id,
+        patient_nom: proformaConversionData.patient_nom,
+        patient_telephone: proformaConversionData.patient_telephone || '',
+        articles: articles,
+        sous_total: sousTotal,
+        prise_en_charge: priseEnCharge,
+        prise_en_charge2: priseEnCharge2,
+        net_a_payer: netAPayer,
+        mode_paiement: modePaiement,
+        taux_assurance: proformaConversionData.taux_assurance || 0,
+        assurance2_nom: proformaConversionData.assurance2_active ? proformaConversionData.assurance2_nom : '',
+        taux_assurance2: proformaConversionData.assurance2_active ? proformaConversionData.taux_assurance2 || 0 : 0,
+        assurance2_active: proformaConversionData.assurance2_active || false,
+        assurance_principale_active: proformaConversionData.assurance_principale_active !== false,
+        montant_donne: montantDonne,
+        type_document: typeDocument,
+        notes: proformaConversionData.notes || '',
+        base_remboursement: proformaConversionData.base_remboursement || 0,
+        taux_aide: proformaConversionData.taux_aide || 0,
+        aide_hospitaliere: proformaConversionData.aide_hospitaliere || 0
+    };
+    
+    console.log('📦 Données conversion:', data);
+    
+    showLoader('Conversion en cours...');
+    
+    fetch('/api/proformas/convertir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(response => {
+        hideLoader();
+        if (response.success) {
+            alert(`Proforma convertie en vente #${response.vente_id} !\nNet à payer: ${response.net_a_payer.toLocaleString()} FCFA`);
+            
+            bootstrap.Modal.getInstance(document.getElementById('convertirProformaModal')).hide();
+            
+            if (response.vente_id) {
+                const format = '80mm';
+                const type = response.type || 'mixte';
+                const url = `/recu/${response.vente_id}/${type}?format=${format}&montant_donne=${montantDonne}`;
+                window.open(url, '_blank');
+            }
+            
+            location.reload();
+        } else {
+            alert('❌ Erreur: ' + (response.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => {
+        hideLoader();
+        console.error('❌ Erreur:', error);
+        alert('❌ Erreur lors de la conversion: ' + error);
+    });
+}
+
+// ============================================
+// PAGINATION
+// ============================================
+function afficherPage() {
+    const rows = document.querySelectorAll('#proformasBody tr');
+    const rowsArray = Array.from(rows).filter(row => {
+        return row.style.display !== 'none' && row.cells.length > 1;
+    });
+    
+    const total = rowsArray.length;
+    const totalPages = Math.ceil(total / itemsParPage);
+    
+    if (pageActuelle > totalPages) pageActuelle = totalPages || 1;
+    
+    const debut = (pageActuelle - 1) * itemsParPage;
+    const fin = Math.min(debut + itemsParPage, total);
+    
+    rowsArray.forEach((row, index) => {
+        row.style.display = (index >= debut && index < fin) ? '' : 'none';
+    });
+    
+    document.getElementById('paginationInfo').textContent = 
+        `Affichage ${total > 0 ? debut + 1 : 0} - ${fin} sur ${total} proformas`;
+    
+    document.getElementById('btnPagePrec').disabled = pageActuelle <= 1;
+    document.getElementById('btnPageSuiv').disabled = pageActuelle >= totalPages || totalPages === 0;
+}
+
+function pagePrecedente() {
+    if (pageActuelle > 1) {
+        pageActuelle--;
+        afficherPage();
+    }
+}
+
+function pageSuivante() {
+    const rows = document.querySelectorAll('#proformasBody tr');
+    const rowsArray = Array.from(rows).filter(row => row.style.display !== 'none' && row.cells.length > 1);
+    const totalPages = Math.ceil(rowsArray.length / itemsParPage);
+    if (pageActuelle < totalPages) {
+        pageActuelle++;
+        afficherPage();
+    }
+}
+
+function changerItemsParPage() {
+    itemsParPage = parseInt(document.getElementById('itemsParPage').value);
+    pageActuelle = 1;
+    afficherPage();
+}
+
+// ============================================
+// MODIFIER PROFORMA
+// ============================================
+function modifierProforma(id) {
+    console.log('Chargement proforma ID:', id);
+    
+    const modal = new bootstrap.Modal(document.getElementById('modifierProformaModal'));
+    modal.show();
+    
+    fetch(`/api/proformas/${id}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                alert('Erreur: ' + data.error);
+                modal.hide();
+                return;
+            }
+            
+            proformaAModifier = data;
+            console.log('Proforma chargée:', data);
+            
+            const content = document.getElementById('modifierProformaContent');
+            
+            let html = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card bg-light mb-3">
+                            <div class="card-header bg-info text-white">
+                                <i class="fas fa-user"></i> Informations patient
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-2">
+                                    <label class="form-label fw-bold">Patient</label>
+                                    <input type="text" class="form-control" value="${data.patient_nom || ''}" readonly>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label">Téléphone</label>
+                                    <input type="text" class="form-control" value="${data.patient_telephone || ''}" readonly>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <label class="form-label">Assurance principale</label>
+                                        <input type="text" class="form-control" id="modifAssuranceNom" value="${data.assurance_nom || ''}">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">Taux (%)</label>
+                                        <input type="number" class="form-control" id="modifTauxAssurance" value="${data.taux_assurance || 0}" min="0" max="100" onchange="calculerTotalModif()">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">N° Carte</label>
+                                        <input type="text" class="form-control" id="modifNumeroAssure" value="${data.numero_assure || ''}">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card bg-light mb-3">
+                            <div class="card-header bg-info text-white">
+                                <i class="fas fa-shield-alt"></i> Assurance complémentaire
+                            </div>
+                            <div class="card-body">
+                                <div class="form-check form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" id="modifToggleAssurance2" 
+                                           ${data.assurance2_active ? 'checked' : ''} 
+                                           onchange="toggleAssurance2Modif()">
+                                    <label class="form-check-label fw-bold">Activer l'assurance complémentaire</label>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <label class="form-label">Nom</label>
+                                        <input type="text" class="form-control" id="modifAssurance2Nom" value="${data.assurance2_nom || ''}" ${!data.assurance2_active ? 'readonly' : ''}>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">Taux par défaut</label>
+                                        <input type="number" class="form-control" id="modifAssurance2TauxDefaut" value="${data.taux_original || 0}" readonly>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">Taux appliqué</label>
+                                        <input type="number" class="form-control" id="modifAssurance2Taux" value="${data.taux_assurance2 || 0}" min="0" max="100" onchange="calculerTotalModif()" ${!data.assurance2_active ? 'readonly' : ''}>
+                                    </div>
+                                </div>
+                                ${data.taux_modifie ? '<div class="text-warning small mt-1"><i class="fas fa-exclamation-triangle"></i> Taux modifié (original: ' + data.taux_original + '%)</div>' : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card bg-light mb-3">
+                    <div class="card-header bg-success text-white">
+                        <i class="fas fa-boxes"></i> Articles
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-sm">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Article</th>
+                                        <th>Type</th>
+                                        <th>Qté</th>
+                                        <th>Prix unit.</th>
+                                        <th>Total</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="modifPanierBody">
+                                    ${data.articles && data.articles.length > 0 ? data.articles.map((item, index) => `
+                                        <tr>
+                                            <td>${item.nom}</td>
+                                            <td><span class="badge ${item.type === 'acte' ? 'bg-primary' : 'bg-success'}">${item.type === 'acte' ? 'Acte' : 'Produit'}</span></td>
+                                            <td>
+                                                <input type="number" class="form-control form-control-sm" value="${item.quantite}" 
+                                                       style="width:60px;" onchange="modifierArticleModif(${index}, 'quantite', this.value)">
+                                            </td>
+                                            <td>
+                                                <input type="number" class="form-control form-control-sm" value="${item.prix_unitaire}" 
+                                                       style="width:100px;" onchange="modifierArticleModif(${index}, 'prix', this.value)">
+                                            </td>
+                                            <td class="text-end fw-bold">${(item.prix_unitaire * item.quantite).toLocaleString()} FCFA</td>
+                                            <td>
+                                                <button class="btn btn-sm btn-danger" onclick="supprimerArticleModif(${index})">
+                                                    <i class="fas fa-times"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    `).join('') : '<tr><td colspan="6" class="text-center">Aucun article</td></tr>'}
+                                </tbody>
+                                <tfoot class="table-light">
+                                    <tr>
+                                        <th colspan="4" class="text-end">Sous-total :</th>
+                                        <th id="modifSousTotal" class="text-end">${data.sous_total ? data.sous_total.toLocaleString() : 0} FCFA</th>
+                                        <th></th>
+                                    </tr>
+                                    <tr>
+                                        <th colspan="4" class="text-end text-success">Prise en charge principale :</th>
+                                        <th id="modifPriseEnCharge" class="text-end text-success">${data.prise_en_charge ? data.prise_en_charge.toLocaleString() : 0} FCFA</th>
+                                        <th></th>
+                                    </tr>
+                                    <tr id="modifPriseEnCharge2Row" style="${data.prise_en_charge2 && data.prise_en_charge2 > 0 ? '' : 'display:none;'}">
+                                        <th colspan="4" class="text-end text-info">Prise en charge complémentaire :</th>
+                                        <th id="modifPriseEnCharge2" class="text-end text-info">${data.prise_en_charge2 ? data.prise_en_charge2.toLocaleString() : 0} FCFA</th>
+                                        <th></th>
+                                    </tr>
+                                    <tr class="table-warning">
+                                        <th colspan="4" class="text-end text-danger">NET À PAYER :</th>
+                                        <th id="modifNetAPayer" class="text-end text-danger fw-bold">${data.net_a_payer ? data.net_a_payer.toLocaleString() : 0} FCFA</th>
+                                        <th></th>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-md-4">
+                                <label class="form-label">Ajouter un article</label>
+                                <input type="text" class="form-control" id="modifNewArticleNom" placeholder="Nom de l'article">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Prix</label>
+                                <input type="number" class="form-control" id="modifNewArticlePrix" placeholder="0">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Qté</label>
+                                <input type="number" class="form-control" id="modifNewArticleQte" value="1" min="1">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">&nbsp;</label>
+                                <button class="btn btn-primary w-100" onclick="ajouterArticleModif()">
+                                    <i class="fas fa-plus"></i> Ajouter
+                                </button>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-md-12">
+                                <label class="form-label">Notes</label>
+                                <textarea class="form-control" id="modifProformaNotes" rows="2">${data.notes || ''}</textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            content.innerHTML = html;
+            
+            window.modifArticles = data.articles ? data.articles.map(item => ({
+                nom: item.nom,
+                type: item.type || 'acte',
+                quantite: item.quantite,
+                prix_unitaire: item.prix_unitaire,
+                total: item.prix_unitaire * item.quantite
+            })) : [];
+            
+            document.querySelector('#modifierProformaModal .modal-title').textContent = 
+                `Modifier la proforma #${data.numero_proforma || data.id} - ${data.patient_nom}`;
+        })
+        .catch(error => {
+            console.error('❌ Erreur:', error);
+            alert('Erreur lors du chargement de la proforma');
+            modal.hide();
+        });
+}
+
+// ============================================
+// FONCTIONS DE MODIFICATION
+// ============================================
+function calculerTotalModif() {
+    const articles = window.modifArticles || [];
+    let sousTotal = 0;
+    for (const item of articles) {
+        sousTotal += item.prix_unitaire * item.quantite;
+    }
+    
+    const tauxPrincipal = parseFloat(document.getElementById('modifTauxAssurance').value) || 0;
+    const priseEnCharge = (sousTotal * tauxPrincipal) / 100;
+    let resteApresPrincipal = sousTotal - priseEnCharge;
+    
+    const assurance2Active = document.getElementById('modifToggleAssurance2').checked;
+    let priseEnCharge2 = 0;
+    let tauxComplementaire = 0;
+    
+    if (assurance2Active) {
+        tauxComplementaire = parseFloat(document.getElementById('modifAssurance2Taux').value) || 0;
+        if (tauxComplementaire > 0 && resteApresPrincipal > 0) {
+            priseEnCharge2 = (resteApresPrincipal * tauxComplementaire) / 100;
+        }
+    }
+    
+    let netAPayer = sousTotal - priseEnCharge - priseEnCharge2;
+    if (netAPayer < 0) netAPayer = 0;
+    
+    document.getElementById('modifSousTotal').textContent = sousTotal.toLocaleString() + ' FCFA';
+    document.getElementById('modifPriseEnCharge').textContent = priseEnCharge.toLocaleString() + ' FCFA';
+    document.getElementById('modifNetAPayer').textContent = netAPayer.toLocaleString() + ' FCFA';
+    
+    const row2 = document.getElementById('modifPriseEnCharge2Row');
+    const display2 = document.getElementById('modifPriseEnCharge2');
+    if (assurance2Active && priseEnCharge2 > 0) {
+        const nom = document.getElementById('modifAssurance2Nom').value || 'Assurance comp.';
+        display2.textContent = `${nom} (${tauxComplementaire}%) : - ${priseEnCharge2.toLocaleString()} FCFA`;
+        row2.style.display = '';
+    } else {
+        row2.style.display = 'none';
+    }
+}
+
+function modifierArticleModif(index, champ, valeur) {
+    const articles = window.modifArticles || [];
+    if (champ === 'quantite') {
+        articles[index].quantite = parseInt(valeur) || 1;
+    } else if (champ === 'prix') {
+        articles[index].prix_unitaire = parseFloat(valeur) || 0;
+    }
+    articles[index].total = articles[index].quantite * articles[index].prix_unitaire;
+    window.modifArticles = articles;
+    calculerTotalModif();
+    
+    const tbody = document.getElementById('modifPanierBody');
+    const rows = tbody.getElementsByTagName('tr');
+    if (rows[index]) {
+        const cells = rows[index].getElementsByTagName('td');
+        if (cells.length >= 5) {
+            cells[4].textContent = (articles[index].quantite * articles[index].prix_unitaire).toLocaleString() + ' FCFA';
+        }
+    }
+}
+
+function supprimerArticleModif(index) {
+    if (!confirm('Supprimer cet article ?')) return;
+    window.modifArticles.splice(index, 1);
+    
+    const tbody = document.getElementById('modifPanierBody');
+    const rows = tbody.getElementsByTagName('tr');
+    if (rows[index]) {
+        rows[index].remove();
+    }
+    calculerTotalModif();
+}
+
+function ajouterArticleModif() {
+    const nom = document.getElementById('modifNewArticleNom').value.trim();
+    const prix = parseFloat(document.getElementById('modifNewArticlePrix').value) || 0;
+    const qte = parseInt(document.getElementById('modifNewArticleQte').value) || 1;
+    
+    if (!nom) {
+        alert('Veuillez entrer un nom');
+        return;
+    }
+    if (prix <= 0) {
+        alert('Veuillez entrer un prix valide');
+        return;
+    }
+    
+    const articles = window.modifArticles || [];
+    articles.push({
+        nom: nom,
+        type: 'acte',
+        quantite: qte,
+        prix_unitaire: prix,
+        total: prix * qte
+    });
+    window.modifArticles = articles;
+    
+    const tbody = document.getElementById('modifPanierBody');
+    const row = tbody.insertRow();
+    const index = articles.length - 1;
+    row.innerHTML = `
+        <td>${nom}</td>
+        <td><span class="badge bg-primary">Acte</span></td>
+        <td>
+            <input type="number" class="form-control form-control-sm" value="${qte}" 
+                   style="width:60px;" onchange="modifierArticleModif(${index}, 'quantite', this.value)">
+        </td>
+        <td>
+            <input type="number" class="form-control form-control-sm" value="${prix}" 
+                   style="width:100px;" onchange="modifierArticleModif(${index}, 'prix', this.value)">
+        </td>
+        <td class="text-end fw-bold">${(prix * qte).toLocaleString()} FCFA</td>
+        <td>
+            <button class="btn btn-sm btn-danger" onclick="supprimerArticleModif(${index})">
+                <i class="fas fa-times"></i>
+            </button>
+        </td>
+    `;
+    
+    document.getElementById('modifNewArticleNom').value = '';
+    document.getElementById('modifNewArticlePrix').value = '';
+    document.getElementById('modifNewArticleQte').value = '1';
+    calcularTotalModif();
+}
+
+function toggleAssurance2Modif() {
+    const checked = document.getElementById('modifToggleAssurance2').checked;
+    document.getElementById('modifAssurance2Nom').readonly = !checked;
+    document.getElementById('modifAssurance2Taux').readonly = !checked;
+    calculerTotalModif();
+}
+
+function sauvegarderModificationProforma() {
+    if (!proformaAModifier) {
+        alert('Aucune proforma à modifier');
+        return;
+    }
+    
+    const articles = window.modifArticles || [];
+    if (articles.length === 0) {
+        alert('Veuillez ajouter au moins un article');
+        return;
+    }
+    
+    const data = {
+        id: proformaAModifier.id,
+        assurance_nom: document.getElementById('modifAssuranceNom').value,
+        taux_assurance: parseFloat(document.getElementById('modifTauxAssurance').value) || 0,
+        numero_assure: document.getElementById('modifNumeroAssure').value || '',
+        assurance2_active: document.getElementById('modifToggleAssurance2').checked,
+        assurance2_nom: document.getElementById('modifAssurance2Nom').value || '',
+        taux_assurance2: parseFloat(document.getElementById('modifAssurance2Taux').value) || 0,
+        articles: articles.map(item => ({
+            nom: item.nom,
+            type: item.type || 'acte',
+            quantite: item.quantite,
+            prix_unitaire: item.prix_unitaire,
+            prix: item.prix_unitaire,
+            pbr: item.prix_unitaire,
+            total: item.prix_unitaire * item.quantite,
+            prise_en_charge_amu: true,
+            prise_en_charge_cac: true
+        })),
+        notes: document.getElementById('modifProformaNotes').value || ''
+    };
+    
+    console.log('📦 Données modification:', data);
+    
+    if (!confirm('Confirmer la modification de cette proforma ?')) return;
+    
+    showLoader('Enregistrement des modifications...');
+    
+    fetch(`/api/proformas/${proformaAModifier.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(response => {
+        hideLoader();
+        if (response.success) {
+            alert('Proforma modifiée avec succès !');
+            bootstrap.Modal.getInstance(document.getElementById('modifierProformaModal')).hide();
+            location.reload();
+        } else {
+            alert('❌ Erreur: ' + response.error);
+        }
+    })
+    .catch(() => {
+        hideLoader();
+        alert('❌ Erreur lors de la modification');
+    });
+}
+
+// ============================================
+// LOADER
+// ============================================
+function showLoader(message) {
+    const loader = document.getElementById('loaderOverlay') || (() => {
+        const div = document.createElement('div');
+        div.id = 'loaderOverlay';
+        div.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;';
+        div.innerHTML = `
+            <div class="spinner-border text-light" style="width:3rem;height:3rem;" role="status">
+                <span class="visually-hidden">Chargement...</span>
+            </div>
+            <p class="text-white mt-3" id="loaderMessage">${message || 'Chargement...'}</p>
+        `;
+        document.body.appendChild(div);
+        return div;
+    })();
+    
+    const msg = document.getElementById('loaderMessage');
+    if (msg) msg.textContent = message || 'Chargement...';
+    loader.style.display = 'flex';
+}
+
+function hideLoader() {
+    const loader = document.getElementById('loaderOverlay');
+    if (loader) loader.style.display = 'none';
+}
+
+// ============================================
 // INITIALISATION
 // ============================================
 document.addEventListener('DOMContentLoaded', function() {
     chargerPatients();
     chargerActes('', false);
     chargerProduits('', false);
+    
+    setTimeout(() => {
+        pageActuelle = 1;
+        afficherPage();
+    }, 500);
     
     const form = document.getElementById('proformaForm');
     if (form) {
@@ -1198,7 +2677,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    // 🔥 Écouter les changements du taux complémentaire
     document.getElementById('assurance2TauxApplique')?.addEventListener('change', function() {
         calculerTotal();
     });

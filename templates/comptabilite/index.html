@@ -1,0 +1,3559 @@
+{% extends "base.html" %}
+
+{% block title %}Comptabilité{% endblock %}
+
+{% block extra_css %}
+<style>
+    .nav-tabs .nav-link {
+        border-radius: 10px;
+        padding: 10px 20px;
+        margin-right: 8px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        color: #4a5568;
+    }
+    .nav-tabs .nav-link:hover {
+        background: #f0f4ff;
+    }
+    .nav-tabs .nav-link.active {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        border: none;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+    }
+    .tab-pane {
+        padding-top: 20px;
+    }
+    .stats-card {
+        border-radius: 15px;
+        transition: all 0.3s ease;
+        border: none;
+    }
+    .stats-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    }
+    .d-flex.flex-wrap.gap-1 {
+        gap: 4px !important;
+    }
+    .d-flex.flex-wrap.gap-1 .btn {
+        font-size: 11px;
+        padding: 4px 10px;
+    }
+    .badge-statut {
+        font-size: 11px;
+        padding: 5px 10px;
+    }
+    .btn-group-sm .btn {
+        padding: 3px 8px;
+        font-size: 11px;
+    }
+    .sequence-info {
+        background: #f0f4ff;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 12px;
+        color: #667eea;
+        border: 1px solid #dce3ed;
+    }
+    #ecriturePiece {
+        background: #f8f9fa;
+        font-weight: 600;
+        color: #1a2a6c;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+        <div class="card">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-calculator"></i> Comptabilité</h5>
+                <div>
+                    <button class="btn btn-light btn-sm me-2" onclick="initComptes()" title="Initialiser le plan comptable standard">
+                        <i class="fas fa-database"></i> Init comptes
+                    </button>
+                    <button class="btn btn-light btn-sm" onclick="location.reload()">
+                        <i class="fas fa-sync-alt"></i> Rafraîchir
+                    </button>
+                </div>
+            </div>
+
+            <div class="card-body">
+
+                <!-- Onglets Comptabilité : principaux toujours visibles, secondaires
+                     regroupés sous "Plus" (menu déroulant Bootstrap compatible avec
+                     les onglets — le bouton "Plus" se met en surbrillance quand un
+                     onglet secondaire est actif, comportement natif Bootstrap 5). -->
+                <ul class="nav nav-tabs" id="comptaTab" role="tablist">
+                    <li class="nav-item">
+                        <button class="nav-link active" id="dashboard-tab" data-bs-toggle="tab" data-bs-target="#dashboard" type="button" role="tab">
+                            <i class="fas fa-chart-pie"></i> Tableau de bord
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" id="ecritures-tab" data-bs-toggle="tab" data-bs-target="#ecritures" type="button" role="tab">
+                            <i class="fas fa-pen-to-square"></i> Écritures
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" id="comptes-tab" data-bs-toggle="tab" data-bs-target="#comptes" type="button" role="tab">
+                            <i class="fas fa-list"></i> Plan comptable
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" id="rapports-tab" data-bs-toggle="tab" data-bs-target="#rapports" type="button" role="tab">
+                            <i class="fas fa-book"></i> Journal &amp; Rapports
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" id="rapprochement-tab" data-bs-toggle="tab" data-bs-target="#rapprochement" type="button" role="tab" onclick="chargerComptesRapprochement()">
+                            <i class="fas fa-scale-balanced"></i> Rapprochement bancaire
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" id="anomalies-tab" data-bs-toggle="tab" data-bs-target="#anomalies" type="button" role="tab" onclick="chargerAnomalies()">
+                            <i class="fas fa-triangle-exclamation"></i> Anomalies
+                            <span class="badge bg-danger ms-1" id="anomaliesBadge" style="display:none;">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item dropdown">
+                        <button class="nav-link dropdown-toggle" id="comptaPlus-tab" data-bs-toggle="dropdown" type="button" aria-expanded="false">
+                            <i class="fas fa-ellipsis"></i> Plus
+                        </button>
+                        <ul class="dropdown-menu" aria-labelledby="comptaPlus-tab">
+                            <li>
+                                <button class="dropdown-item" id="budget-tab" data-bs-toggle="tab" data-bs-target="#budget" type="button" role="tab">
+                                    <i class="fas fa-coins me-2"></i>Budget
+                                </button>
+                            </li>
+                            <li>
+                                <button class="dropdown-item" id="etatfinancier-tab" data-bs-toggle="tab" data-bs-target="#etatfinancier" type="button" role="tab" onclick="chargerEtatFinancier()">
+                                    <i class="fas fa-balance-scale me-2"></i>État financier
+                                </button>
+                            </li>
+                            <li>
+                                <button class="dropdown-item" id="exercice-tab" data-bs-toggle="tab" data-bs-target="#exercice" type="button" role="tab" onclick="chargerExercice()">
+                                    <i class="fas fa-calendar-check me-2"></i>Exercice comptable
+                                </button>
+                            </li>
+                            <li>
+                                <button class="dropdown-item" id="creances-tab" data-bs-toggle="tab" data-bs-target="#creances" type="button" role="tab" onclick="chargerCreancesDouteuses()">
+                                    <i class="fas fa-user-clock me-2"></i>Créances douteuses
+                                </button>
+                            </li>
+                            <li>
+                                <button class="dropdown-item" id="immobilisations-tab" data-bs-toggle="tab" data-bs-target="#immobilisations" type="button" role="tab" onclick="chargerImmobilisations()">
+                                    <i class="fas fa-building me-2"></i>Immobilisations
+                                </button>
+                            </li>
+                            <li>
+                                <button class="dropdown-item" id="tafire-tab" data-bs-toggle="tab" data-bs-target="#tafire" type="button" role="tab" onclick="chargerTafire()">
+                                    <i class="fas fa-water me-2"></i>TAFIRE
+                                </button>
+                            </li>
+                        </ul>
+                    </li>
+                </ul>
+
+                <div class="tab-content" id="comptaTabContent">
+
+                    <!-- ========================================== -->
+                    <!-- ONGLET TABLEAU DE BORD -->
+                    <!-- ========================================== -->
+                    <div class="tab-pane fade show active" id="dashboard" role="tabpanel">
+
+                        <!-- ⭐ LES DEUX CAISSES — bien visibles, bien distinctes ⭐ -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <div class="card border-0 shadow-sm" style="background:linear-gradient(135deg,#0d6efd,#0a58ca); cursor:pointer;"
+                                     onclick="document.getElementById('rapports-tab').click(); setTimeout(()=>{document.getElementById('rapportType').value='grand_livre'; onChangeRapportType();}, 50);">
+                                    <div class="card-body text-white">
+                                        <div class="d-flex justify-content-between align-items-start">
+                                            <div>
+                                                <div class="text-uppercase small opacity-75"><i class="fas fa-wallet"></i> Caisse Trésorerie</div>
+                                                <div class="fs-6 opacity-75">Argent réellement disponible (espèces + banque)</div>
+                                                <h2 class="mt-2 mb-0" id="caisseTresorerieMontant">0 FCFA</h2>
+                                            </div>
+                                        </div>
+                                        <hr class="opacity-25">
+                                        <div id="caisseTresorerieDetail" class="small"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card border-0 shadow-sm" style="background:linear-gradient(135deg,#198754,#146c43); cursor:pointer;"
+                                     onclick="document.getElementById('rapports-tab').click(); setTimeout(()=>{document.getElementById('rapportType').value='journal'; document.getElementById('rapportJournalCode').value='VTE'; onChangeRapportType();}, 50);">
+                                    <div class="card-body text-white">
+                                        <div class="text-uppercase small opacity-75"><i class="fas fa-chart-line"></i> Caisse Chiffre d'affaires</div>
+                                        <div class="fs-6 opacity-75">Total des ventes de la période (encaissé ou non)</div>
+                                        <h2 class="mt-2 mb-0" id="caisseChiffreAffairesMontant">0 FCFA</h2>
+                                        <hr class="opacity-25">
+                                        <div class="small opacity-75">Clic pour voir le journal des ventes</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row g-3 mb-4" id="dashboardStats">
+                            <div class="col-md-3">
+                                <div class="card stats-card bg-info bg-opacity-10">
+                                    <div class="card-body text-center">
+                                        <h3 class="text-info" id="statTotalEcritures">0</h3>
+                                        <small class="text-muted">Total écritures</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card stats-card bg-warning bg-opacity-10">
+                                    <div class="card-body text-center">
+                                        <h3 class="text-warning" id="statEnAttente">0</h3>
+                                        <small class="text-muted">En attente</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card stats-card bg-success bg-opacity-10">
+                                    <div class="card-body text-center">
+                                        <h3 class="text-success" id="statValidees">0</h3>
+                                        <small class="text-muted">Validées</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card stats-card bg-primary bg-opacity-10">
+                                    <div class="card-body text-center">
+                                        <h3 class="text-primary" id="statSoldeTotal">0 FCFA</h3>
+                                        <small class="text-muted">Solde total</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-header bg-light">
+                                <i class="fas fa-clock"></i> Dernières écritures
+                            </div>
+                            <div class="card-body p-0">
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-hover mb-0" id="dernieresEcritures">
+                                        <thead>
+                                            <tr>
+                                                <th>Date</th>
+                                                <th>Pièce</th>
+                                                <th>Libellé</th>
+                                                <th>Débit</th>
+                                                <th>Crédit</th>
+                                                <th>Statut</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="dernieresEcrituresBody">
+                                            <tr><td colspan="6" class="text-center text-muted">Aucune écriture</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ========================================== -->
+                    <!-- ONGLET PLAN COMPTABLE -->
+                    <!-- ========================================== -->
+                    <div class="tab-pane fade" id="comptes" role="tabpanel">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h6><i class="fas fa-list"></i> Plan comptable</h6>
+                            <button class="btn btn-primary btn-sm" onclick="ouvrirAjoutCompte()">
+                                <i class="fas fa-plus"></i> Ajouter un compte
+                            </button>
+                        </div>
+
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <div class="input-group">
+                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                    <input type="text" class="form-control form-control-sm" id="searchCompte" 
+                                           placeholder="Rechercher..." onkeyup="filtrerComptes()">
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <select class="form-control form-control-sm" id="filtreTypeCompte" onchange="filtrerComptes()">
+                                    <option value="">Tous les types</option>
+                                    <option value="actif">Actif</option>
+                                    <option value="passif">Passif</option>
+                                    <option value="charge">Charge</option>
+                                    <option value="produit">Produit</option>
+                                </select>
+                            </div>
+                            <div class="col-md-5 text-end">
+                                <span id="totalComptes" class="badge bg-secondary">0 compte(s)</span>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-hover table-sm table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Numéro</th>
+                                        <th>Nom</th>
+                                        <th>Type</th>
+                                        <th>Solde</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="comptesBody">
+                                    <tr><td colspan="5" class="text-center">Chargement...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- ========================================== -->
+                    <!-- ONGLET BUDGET -->
+                    <!-- ========================================== -->
+                    <div class="tab-pane fade" id="budget" role="tabpanel">
+
+<!-- Dans l'onglet Budget, remplacer le header -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h6><i class="fas fa-coins"></i> Budget</h6>
+    <div>
+        <button class="btn btn-primary btn-sm me-2" onclick="imprimerBudgetPDF()">
+            <i class="fas fa-file-pdf"></i> PDF
+        </button>
+    </div>
+</div>
+
+                        <div class="row mb-3">
+                            <div class="col-md-3">
+                                <label class="form-label small">Année</label>
+                                <select class="form-control form-control-sm" id="budgetAnnee" onchange="chargerBudget()">
+                                    <!-- Généré par JavaScript -->
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small">Compte</label>
+                                <select class="form-control form-control-sm" id="budgetCompte" onchange="chargerBudget()">
+                                    <option value="">Tous les comptes</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6 text-end">
+                                <span class="badge bg-success" id="totalBudget">0 FCFA</span>
+                                <button class="btn btn-danger btn-sm ms-2" onclick="cloturerAnnee()">
+                                    <i class="fas fa-lock"></i> Clôturer l'année
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-hover table-sm table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Compte</th>
+                                        <th>Jan</th>
+                                        <th>Fév</th>
+                                        <th>Mar</th>
+                                        <th>Avr</th>
+                                        <th>Mai</th>
+                                        <th>Juin</th>
+                                        <th>Juil</th>
+                                        <th>Aoû</th>
+                                        <th>Sep</th>
+                                        <th>Oct</th>
+                                        <th>Nov</th>
+                                        <th>Déc</th>
+                                        <th>Total</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="budgetBody">
+                                    <tr><td colspan="15" class="text-center">Chargement...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- ========================================== -->
+                    <!-- ONGLET ÉCRITURES -->
+                    <!-- ========================================== -->
+                    <div class="tab-pane fade" id="ecritures" role="tabpanel">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h6><i class="fas fa-pen"></i> Écritures comptables</h6>
+                            <button class="btn btn-primary btn-sm" onclick="ouvrirNouvelleEcriture()">
+                                <i class="fas fa-plus"></i> Nouvelle écriture
+                            </button>
+                        </div>
+
+                        <div class="row mb-3">
+                            <div class="col-md-3">
+                                <div class="input-group">
+                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                    <input type="text" class="form-control form-control-sm" id="searchEcriture" 
+                                           placeholder="Rechercher..." onkeyup="filtrerEcritures()">
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <select class="form-control form-control-sm" id="filtreStatutEcriture" onchange="filtrerEcritures()">
+                                    <option value="">Tous les statuts</option>
+                                    <option value="brouillon">Brouillon</option>
+                                    <option value="en_attente">En attente</option>
+                                    <option value="valide">Validé</option>
+                                    <option value="refuse">Refusé</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <input type="date" class="form-control form-control-sm" id="filtreDateDebutEcriture" 
+                                       placeholder="Début" onchange="filtrerEcritures()">
+                            </div>
+                            <div class="col-md-2">
+                                <input type="date" class="form-control form-control-sm" id="filtreDateFinEcriture" 
+                                       placeholder="Fin" onchange="filtrerEcritures()">
+                            </div>
+                            <div class="col-md-3 text-end">
+                                <span id="totalEcritures" class="badge bg-secondary">0 écriture(s)</span>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-hover table-sm table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Pièce</th>
+                                        <th>Libellé</th>
+                                        <th>Débit</th>
+                                        <th>Crédit</th>
+                                        <th>Statut</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ecrituresBody">
+                                    <tr><td colspan="7" class="text-center">Chargement...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Pagination -->
+                        <div class="row mt-3">
+                            <div class="col-12">
+                                <nav>
+                                    <ul class="pagination justify-content-center" id="paginationEcritures"></ul>
+                                </nav>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ========================================== -->
+                    <!-- ONGLET RAPPORTS -->
+                    <!-- ========================================== -->
+                    <div class="tab-pane fade" id="rapports" role="tabpanel">
+                        <h6><i class="fas fa-file-alt"></i> Rapports comptables</h6>
+
+                        <div class="row mb-3">
+                            <div class="col-md-3">
+                                <label class="form-label small">Date début</label>
+                                <input type="date" class="form-control form-control-sm" id="rapportDateDebut" onchange="chargerJournal()">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small">Date fin</label>
+                                <input type="date" class="form-control form-control-sm" id="rapportDateFin" onchange="chargerJournal()">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small">Type</label>
+                                <select class="form-control form-control-sm" id="rapportType" onchange="onChangeRapportType()">
+                                    <option value="journal">Journal</option>
+                                    <option value="grand_livre">Grand livre</option>
+                                    <option value="balance">Balance</option>
+                                    <option value="resultat">Compte de résultat</option>
+                                    <option value="bilan">Bilan</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3 text-end">
+                                <button class="btn btn-primary btn-sm me-2" onclick="imprimerRapportPDF()">
+                                    <i class="fas fa-file-pdf"></i> PDF
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="row mb-3">
+                            <div class="col-md-3" id="filtreJournalCodeWrap">
+                                <label class="form-label small">Journal</label>
+                                <select class="form-control form-control-sm" id="rapportJournalCode" onchange="chargerJournal()">
+                                    <option value="">Tous les journaux</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4" id="filtreCompteUniqueWrap" style="display:none;">
+                                <label class="form-label small">Compte (grand livre d'un seul compte)</label>
+                                <select class="form-control form-control-sm" id="rapportCompteId" onchange="chargerJournal()">
+                                    <option value="">Tous les comptes</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-hover table-sm table-bordered" id="rapportTable">
+                                <thead class="table-light" id="rapportHeader">
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Pièce</th>
+                                        <th>Libellé</th>
+                                        <th>Compte</th>
+                                        <th>Débit</th>
+                                        <th>Crédit</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="rapportBody">
+                                    <tr><td colspan="6" class="text-center">Chargement...</td></tr>
+                                </tbody>
+                                <tfoot class="table-light" id="rapportFooter"></tfoot>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- ========================================== -->
+                    <!-- ONGLET RAPPROCHEMENT BANCAIRE -->
+                    <!-- ========================================== -->
+                    <div class="tab-pane fade" id="rapprochement" role="tabpanel">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h6><i class="fas fa-handshake"></i> Rapprochement bancaire</h6>
+                            <button class="btn btn-outline-primary btn-sm" onclick="ouvrirImportReleve()">
+                                <i class="fas fa-file-import"></i> Importer un relevé (CSV/Excel)
+                            </button>
+                        </div>
+
+                        <div class="alert alert-info mb-3">
+                            <i class="fas fa-info-circle"></i>
+                            <strong>Comment ça fonctionne ?</strong>
+                            <ol class="mb-0">
+                                <li>Choisissez le compte bancaire/caisse concerné, saisissez (ou importez) les lignes du relevé</li>
+                                <li>Cliquez sur "Rapprocher" : appariement automatique par date+montant exacts, puis par montant exact à ± 3 jours</li>
+                                <li>Pour les lignes restantes, cliquez sur "Associer" pour choisir manuellement l'écriture correspondante</li>
+                            </ol>
+                        </div>
+
+                        <div class="row mb-2">
+                            <div class="col-md-3">
+                                <label class="form-label small">Compte bancaire / caisse</label>
+                                <select class="form-control form-control-sm" id="releveCompteId" onchange="chargerHistoriqueReleves()">
+                                    <option value="">Chargement...</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small">Date du relevé</label>
+                                <input type="date" class="form-control form-control-sm" id="releveDate">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small">Solde initial</label>
+                                <input type="number" class="form-control form-control-sm" id="releveSoldeInitial" step="100" 
+                                       value="0" onchange="calculerSoldeReleve()">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small">Solde final</label>
+                                <input type="text" class="form-control form-control-sm" id="releveSoldeFinal" readonly 
+                                       style="font-weight:bold; background:#f8f9fa;">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small">Écart</label>
+                                <input type="text" class="form-control form-control-sm" id="releveEcart" readonly 
+                                       style="font-weight:bold; background:#f8f9fa;">
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-4">
+                            <div class="col-14">
+                                <div class="btn-group" role="group">
+                                    <button class="btn btn-success btn-sm" onclick="ajouterLigneReleve()">
+                                        <i class="fas fa-plus"></i> Ajouter une ligne
+                                    </button>
+                                    <button class="btn btn-primary btn-sm" onclick="sauvegarderReleve()">
+                                        <i class="fas fa-save"></i> Enregistrer
+                                    </button>
+                                    <button class="btn btn-info btn-sm" onclick="rapprocherReleve()">
+                                        <i class="fas fa-handshake"></i> Rapprocher
+                                    </button>
+                                    <button class="btn btn-success btn-sm" onclick="validerReleve()">
+                                        <i class="fas fa-check"></i> Valider
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="table-responsive">
+                            <table class="table table-hover table-sm table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width:12%">Date</th>
+                                        <th style="width:27%">Libellé</th>
+                                        <th style="width:13%">Référence</th>
+                                        <th style="width:13%">Débit</th>
+                                        <th style="width:13%">Crédit</th>
+                                        <th style="width:12%">Solde</th>
+                                        <th style="width:5%">Rap.</th>
+                                        <th style="width:5%">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="releveBody">
+                                    <tr><td colspan="8" class="text-center text-muted">Ajoutez des lignes avec le bouton "Ajouter une ligne"</td></tr>
+                                </tbody>
+                                <tfoot class="table-light">
+                                    <tr class="fw-bold">
+                                        <td colspan="3" class="text-end">TOTAUX</td>
+                                        <td id="releveTotalDebit" class="text-end">0 FCFA</td>
+                                        <td id="releveTotalCredit" class="text-end">0 FCFA</td>
+                                        <td colspan="3"></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                        
+                        <div class="card mt-3">
+                            <div class="card-header bg-light">
+                                <i class="fas fa-history"></i> Historique des relevés
+                            </div>
+                            <div class="card-body p-0">
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-hover mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Date</th>
+                                                <th>Compte</th>
+                                                <th>Solde initial</th>
+                                                <th>Solde final</th>
+                                                <th>Lignes</th>
+                                                <th>Rapprochées</th>
+                                                <th>Statut</th>
+                                                <th>Créé par</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="historiqueRelevesBody">
+                                            <tr><td colspan="9" class="text-center text-muted">Aucun relevé</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ========================================== -->
+                    <!-- ONGLET ÉTAT FINANCIER (OHADA) -->
+                    <!-- ========================================== -->
+                    <div class="tab-pane fade" id="etatfinancier" role="tabpanel">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h6><i class="fas fa-balance-scale"></i> États financiers (SYSCOHADA)</h6>
+                            <div class="d-flex gap-2 align-items-end">
+                                <div>
+                                    <label class="form-label small mb-0">Arrêté au</label>
+                                    <input type="date" class="form-control form-control-sm" id="etatFinDateFin" onchange="chargerEtatFinancier()">
+                                </div>
+                                <button class="btn btn-outline-primary btn-sm" onclick="window.open('/comptabilite/rapport/print/resultat?date_fin=' + document.getElementById('etatFinDateFin').value, '_blank')">
+                                    <i class="fas fa-print"></i> Imprimer compte de résultat
+                                </button>
+                                <button class="btn btn-outline-primary btn-sm" onclick="window.open('/comptabilite/rapport/print/bilan?date_fin=' + document.getElementById('etatFinDateFin').value, '_blank')">
+                                    <i class="fas fa-print"></i> Imprimer bilan
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="row g-3">
+                            <!-- COMPTE DE RÉSULTAT -->
+                            <div class="col-md-6">
+                                <div class="card h-100">
+                                    <div class="card-header bg-dark text-white">Compte de résultat</div>
+                                    <div class="card-body p-0">
+                                        <table class="table table-sm mb-0">
+                                            <thead class="table-light">
+                                                <tr><th colspan="2">CHARGES</th></tr>
+                                            </thead>
+                                            <tbody id="etatFinChargesBody"></tbody>
+                                            <tfoot>
+                                                <tr class="fw-bold table-light"><td>Total charges</td><td class="text-end" id="etatFinTotalCharges">0</td></tr>
+                                            </tfoot>
+                                            <thead class="table-light">
+                                                <tr><th colspan="2">PRODUITS</th></tr>
+                                            </thead>
+                                            <tbody id="etatFinProduitsBody"></tbody>
+                                            <tfoot>
+                                                <tr class="fw-bold table-light"><td>Total produits</td><td class="text-end" id="etatFinTotalProduits">0</td></tr>
+                                                <tr class="fw-bold" id="etatFinResultatRow"><td>RÉSULTAT NET</td><td class="text-end" id="etatFinResultat">0</td></tr>
+                                            </tfoot>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- BILAN -->
+                            <div class="col-md-6">
+                                <div class="card h-100">
+                                    <div class="card-header bg-dark text-white d-flex justify-content-between">
+                                        <span>Bilan</span>
+                                        <span id="etatFinBilanEquilibre" class="badge"></span>
+                                    </div>
+                                    <div class="card-body p-0">
+                                        <table class="table table-sm mb-0">
+                                            <thead class="table-light"><tr><th colspan="2">ACTIF</th></tr></thead>
+                                            <tbody id="etatFinActifBody"></tbody>
+                                            <tfoot><tr class="fw-bold table-light"><td>Total actif</td><td class="text-end" id="etatFinTotalActif">0</td></tr></tfoot>
+                                            <thead class="table-light"><tr><th colspan="2">PASSIF</th></tr></thead>
+                                            <tbody id="etatFinPassifBody"></tbody>
+                                            <thead class="table-light"><tr><th colspan="2">CAPITAUX PROPRES</th></tr></thead>
+                                            <tbody id="etatFinCapitauxBody"></tbody>
+                                            <tfoot><tr class="fw-bold table-light"><td>Total passif + capitaux</td><td class="text-end" id="etatFinTotalPassif">0</td></tr></tfoot>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ========================================== -->
+                    <!-- ONGLET EXERCICE COMPTABLE -->
+                    <!-- ========================================== -->
+                    <div class="tab-pane fade" id="exercice" role="tabpanel">
+                        <h6><i class="fas fa-calendar-check"></i> Exercice comptable</h6>
+
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-4">
+                                <div class="card border-0 shadow-sm">
+                                    <div class="card-body">
+                                        <div class="text-uppercase small text-muted">Exercice en cours</div>
+                                        <h2 class="mb-0" id="exerciceAnneeCourante">—</h2>
+                                        <span class="badge mt-2" id="exerciceStatutBadge">—</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card border-0 shadow-sm">
+                                    <div class="card-body">
+                                        <div class="text-uppercase small text-muted">Écritures sur l'exercice</div>
+                                        <h2 class="mb-0" id="exerciceNbEcritures">0</h2>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card border-0 shadow-sm">
+                                    <div class="card-body">
+                                        <div class="text-uppercase small text-muted">En attente de validation</div>
+                                        <h2 class="mb-0" id="exerciceNbAValider">0</h2>
+                                        <small class="text-muted">écritures saisies manuellement, non encore validées</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            La clôture d'un exercice est <strong>définitive</strong> : toutes les écritures validées de
+                            l'année sont figées. Assurez-vous d'avoir vérifié le Journal, le Grand livre, la Balance
+                            et l'État financier avant de clôturer.
+                        </div>
+
+                        <button class="btn btn-danger mb-4" onclick="cloturerAnnee()">
+                            <i class="fas fa-lock"></i> Clôturer l'exercice en cours
+                        </button>
+
+                        <div class="card">
+                            <div class="card-header bg-light"><i class="fas fa-history"></i> Historique des clôtures</div>
+                            <div class="card-body p-0">
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead><tr><th>Année</th><th>Date de clôture</th><th>Clôturé par</th></tr></thead>
+                                    <tbody id="exerciceHistoriqueBody">
+                                        <tr><td colspan="3" class="text-center text-muted">Aucune clôture</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ========================================== -->
+                    <!-- ONGLET ANOMALIES -->
+                    <!-- ========================================== -->
+                    <div class="tab-pane fade" id="anomalies" role="tabpanel">
+                        <h6><i class="fas fa-triangle-exclamation"></i> Anomalies de génération automatique</h6>
+                        <p class="text-muted small">
+                            Chaque vente, paiement, dépense... génère automatiquement son écriture comptable. Si une
+                            génération échoue (compte introuvable, écriture déséquilibrée...), l'opération métier
+                            réussit quand même — mais l'écriture manquante apparaît ici pour reprise manuelle.
+                        </p>
+
+                        <ul class="nav nav-pills mb-3">
+                            <li class="nav-item"><button class="nav-link active" onclick="filtrerAnomalies('false', this)">Non résolues</button></li>
+                            <li class="nav-item"><button class="nav-link" onclick="filtrerAnomalies('true', this)">Résolues</button></li>
+                            <li class="nav-item"><button class="nav-link" onclick="filtrerAnomalies('', this)">Toutes</button></li>
+                        </ul>
+
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover table-bordered">
+                                <thead class="table-light">
+                                    <tr><th>Date</th><th>Origine</th><th>Message</th><th>Statut</th><th>Action</th></tr>
+                                </thead>
+                                <tbody id="anomaliesBody">
+                                    <tr><td colspan="5" class="text-center text-muted">Chargement...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- ========================================== -->
+                    <!-- ONGLET CRÉANCES DOUTEUSES -->
+                    <!-- ========================================== -->
+                    <div class="tab-pane fade" id="creances" role="tabpanel">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6><i class="fas fa-user-clock"></i> Créances douteuses</h6>
+                            <div>
+                                <label class="form-label small mb-0 me-1">Retard mini (jours)</label>
+                                <input type="number" class="form-control form-control-sm d-inline-block" style="width:80px" id="creancesSeuilJours" value="60" onchange="chargerCreancesDouteuses()">
+                            </div>
+                        </div>
+                        <p class="text-muted small">Factures patients impayées au-delà du seuil. Provisionnez une estimation de perte, ou passez directement une créance irrécouvrable en perte.</p>
+
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Patient</th><th>Facture</th><th>Échéance</th><th>Retard</th>
+                                        <th class="text-end">Reste à payer</th><th>Provision</th><th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="creancesBody">
+                                    <tr><td colspan="7" class="text-center text-muted">Chargement...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="card mt-3">
+                            <div class="card-header bg-light">Provisions en cours / historique</div>
+                            <div class="card-body p-0">
+                                <table class="table table-sm mb-0">
+                                    <thead><tr><th>Patient</th><th class="text-end">Créance</th><th>Taux</th><th class="text-end">Provisionné</th><th>Statut</th><th>Action</th></tr></thead>
+                                    <tbody id="provisionsBody"><tr><td colspan="6" class="text-center text-muted">Aucune</td></tr></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ========================================== -->
+                    <!-- ONGLET IMMOBILISATIONS -->
+                    <!-- ========================================== -->
+                    <div class="tab-pane fade" id="immobilisations" role="tabpanel">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h6><i class="fas fa-building"></i> Immobilisations & amortissements</h6>
+                            <div>
+                                <button class="btn btn-success btn-sm me-2" onclick="ouvrirAjoutImmobilisation()"><i class="fas fa-plus"></i> Nouvelle immobilisation</button>
+                                <button class="btn btn-outline-primary btn-sm" onclick="genererDotationsAnnee()"><i class="fas fa-calculator"></i> Générer les dotations de l'année</button>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Désignation</th><th>Catégorie</th><th>Acquisition</th>
+                                        <th class="text-end">Valeur</th><th class="text-end">Cumul amorti</th>
+                                        <th class="text-end">VNC</th><th>Statut</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="immobilisationsBody">
+                                    <tr><td colspan="7" class="text-center text-muted">Chargement...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- ========================================== -->
+                    <!-- ONGLET TAFIRE -->
+                    <!-- ========================================== -->
+                    <div class="tab-pane fade" id="tafire" role="tabpanel">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6><i class="fas fa-water"></i> TAFIRE — Tableau Financier des Ressources et des Emplois</h6>
+                            <div>
+                                <label class="form-label small mb-0 me-1">Exercice</label>
+                                <input type="number" class="form-control form-control-sm d-inline-block" style="width:100px" id="tafireAnnee" onchange="chargerTafire()">
+                                <button class="btn btn-outline-secondary btn-sm ms-1" onclick="window.print()"><i class="fas fa-print"></i></button>
+                            </div>
+                        </div>
+                        <div class="alert alert-secondary small" id="tafirePremierExerciceAlerte" style="display:none;">
+                            <i class="fas fa-circle-info"></i>
+                            Aucune écriture antérieure au 1er janvier de cet exercice : c'est le premier exercice
+                            comptabilisé avec ce système. Le comparatif N-1 (et donc la variation FR/BFR) part de
+                            zéro — normal pour un démarrage, pas une anomalie du tableau.
+                        </div>
+
+                        <!-- 1) Détermination de la CAFG -->
+                        <div class="card border-0 shadow-sm mb-3">
+                            <div class="card-header bg-light"><strong>1. Détermination de la Capacité d'Autofinancement Globale (CAFG)</strong></div>
+                            <table class="table table-sm table-bordered mb-0">
+                                <tbody>
+                                    <tr><td>Produits d'exploitation</td><td class="text-end" id="tafireProduitsExploitation">0</td></tr>
+                                    <tr><td>Charges d'exploitation (hors dotations)</td><td class="text-end" id="tafireChargesExploitation">0</td></tr>
+                                    <tr class="table-light"><td><strong>= Excédent Brut d'Exploitation (EBE)</strong></td><td class="text-end fw-bold" id="tafireEbe">0</td></tr>
+                                    <tr><td>Dotations aux amortissements et provisions</td><td class="text-end" id="tafireDotations">0</td></tr>
+                                    <tr><td>Reprises d'amortissements et provisions</td><td class="text-end" id="tafireReprises">0</td></tr>
+                                    <tr class="table-light"><td><strong>= Résultat d'exploitation</strong></td><td class="text-end fw-bold" id="tafireResultatExploitation">0</td></tr>
+                                    <tr><td>+ Résultat financier</td><td class="text-end" id="tafireResultatFinancier">0</td></tr>
+                                    <tr><td>+ Résultat HAO</td><td class="text-end" id="tafireResultatHao">0</td></tr>
+                                    <tr><td>− Participation des travailleurs / Impôt sur le résultat</td><td class="text-end" id="tafireImpotParticipation">0</td></tr>
+                                    <tr class="table-primary"><td><strong>= Résultat net de l'exercice</strong></td><td class="text-end fw-bold" id="tafireResultatNet">0</td></tr>
+                                    <tr><td>+ Dotations (charges calculées, non décaissables)</td><td class="text-end" id="tafireDotationsBis">0</td></tr>
+                                    <tr><td>− Reprises (produits calculés, non encaissables)</td><td class="text-end" id="tafireReprisesBis">0</td></tr>
+                                    <tr class="table-success"><td><strong>= CAFG (Capacité d'Autofinancement Globale)</strong></td><td class="text-end fw-bold" id="tafireCafg">0</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- 2) Tableau emplois-ressources -->
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <div class="card border-0 shadow-sm h-100">
+                                    <div class="card-header bg-light"><strong>2. Ressources durables</strong></div>
+                                    <table class="table table-sm table-bordered mb-0">
+                                        <tbody>
+                                            <tr><td>FA — Autofinancement (CAFG)</td><td class="text-end" id="tafireFA">0</td></tr>
+                                            <tr><td>FB — Cessions d'immobilisations</td><td class="text-end" id="tafireFB">0</td></tr>
+                                            <tr><td>FD — Augmentation de capital</td><td class="text-end" id="tafireFD">0</td></tr>
+                                            <tr><td>FF — Nouveaux emprunts</td><td class="text-end" id="tafireFF">0</td></tr>
+                                            <tr class="table-success"><td><strong>Total ressources durables</strong></td><td class="text-end fw-bold" id="tafireRessourcesDurables">0</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card border-0 shadow-sm h-100">
+                                    <div class="card-header bg-light"><strong>Emplois durables</strong></div>
+                                    <table class="table table-sm table-bordered mb-0">
+                                        <tbody>
+                                            <tr><td>FI — Acquisitions d'immobilisations</td><td class="text-end" id="tafireFI">0</td></tr>
+                                            <tr><td>FK — Remboursement de capitaux propres</td><td class="text-end" id="tafireFK">0</td></tr>
+                                            <tr><td>FL — Remboursement d'emprunts</td><td class="text-end" id="tafireFL">0</td></tr>
+                                            <tr class="table-danger"><td><strong>Total emplois durables</strong></td><td class="text-end fw-bold" id="tafireEmploisDurables">0</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-4">
+                                <div class="card border-0 shadow-sm"><div class="card-body">
+                                    <div class="text-uppercase small text-muted">FN — Variation du Fonds de Roulement</div>
+                                    <h4 class="mb-0" id="tafireVariationFR">0</h4>
+                                </div></div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card border-0 shadow-sm"><div class="card-body">
+                                    <div class="text-uppercase small text-muted">Variation du Besoin en FR</div>
+                                    <h4 class="mb-0" id="tafireVariationBFR">0</h4>
+                                </div></div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card border-0 shadow-sm"><div class="card-body">
+                                    <div class="text-uppercase small text-muted">= Variation de Trésorerie</div>
+                                    <h4 class="mb-0" id="tafireVariationTresorerie">0</h4>
+                                </div></div>
+                            </div>
+                        </div>
+
+                        <!-- 3) Détail de la variation du BFR -->
+                        <div class="card border-0 shadow-sm mb-3">
+                            <div class="card-header bg-light"><strong>3. Détail de la variation du Besoin en Fonds de Roulement</strong></div>
+                            <table class="table table-sm table-bordered mb-0">
+                                <tbody>
+                                    <tr><td>Variation des stocks</td><td class="text-end" id="tafireVarStocks">0</td></tr>
+                                    <tr><td>Variation des créances</td><td class="text-end" id="tafireVarCreances">0</td></tr>
+                                    <tr><td>− Variation des dettes circulantes</td><td class="text-end" id="tafireVarDettes">0</td></tr>
+                                    <tr class="table-light"><td><strong>= Variation du BFR</strong></td><td class="text-end fw-bold" id="tafireVarBfrDetail">0</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- 4) Réconciliation avec la trésorerie réelle -->
+                        <div class="card border-0 shadow-sm">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <strong>4. Réconciliation avec la trésorerie réellement constatée</strong>
+                                <span class="badge" id="tafireCoherenceBadge">—</span>
+                            </div>
+                            <table class="table table-sm table-bordered mb-0">
+                                <tbody>
+                                    <tr><td>Trésorerie au 31/12 de l'exercice précédent</td><td class="text-end" id="tafireTresorerieDebut">0</td></tr>
+                                    <tr><td>Variation de trésorerie dérivée du tableau ci-dessus</td><td class="text-end" id="tafireVariationDerivee">0</td></tr>
+                                    <tr class="table-light"><td><strong>= Trésorerie théorique en fin d'exercice</strong></td><td class="text-end fw-bold" id="tafireTresorerieTheorique">0</td></tr>
+                                    <tr><td>Trésorerie réellement constatée en fin d'exercice (comptes 521+571)</td><td class="text-end" id="tafireTresorerieFin">0</td></tr>
+                                    <tr id="tafireEcartRow"><td>Écart non affecté (opérations non rattachées à une masse ci-dessus)</td><td class="text-end" id="tafireEcart">0</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                </div><!-- Fin tab-content -->
+            </div><!-- Fin card-body -->
+        </div><!-- Fin card -->
+    </div><!-- Fin col-md-9 -->
+</div><!-- Fin row -->
+
+
+<!-- ============================================================ -->
+<!-- MODALS -->
+<!-- ============================================================ -->
+
+<!-- Modal Import Relevé -->
+<div class="modal fade" id="importReleveModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-file-import"></i> Importer un relevé bancaire</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted">Fichier CSV ou Excel (.xlsx) exporté de votre banque. Colonnes attendues : une colonne <strong>date</strong>, une colonne <strong>libellé</strong>, et soit <strong>débit/crédit</strong> séparés, soit une seule colonne <strong>montant</strong>.</p>
+                <div class="mb-2">
+                    <label class="form-label small">Compte bancaire / caisse</label>
+                    <select class="form-control form-control-sm" id="importCompteId"></select>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Date du relevé</label>
+                    <input type="date" class="form-control form-control-sm" id="importDateReleve">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Solde initial</label>
+                    <input type="number" class="form-control form-control-sm" id="importSoldeInitial" value="0" step="100">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Fichier</label>
+                    <input type="file" class="form-control form-control-sm" id="importFichier" accept=".csv,.xlsx,.xls">
+                </div>
+                <div id="importReleveMessage"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-primary" onclick="importerReleve()"><i class="fas fa-upload"></i> Importer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Association manuelle -->
+<div class="modal fade" id="associerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">Associer une écriture comptable</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="associerLigneInfo" class="alert alert-light small"></div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead><tr><th>Date</th><th>Pièce</th><th>Libellé</th><th class="text-end">Montant</th><th></th></tr></thead>
+                        <tbody id="associerCandidatsBody">
+                            <tr><td colspan="5" class="text-center text-muted">Chargement...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Nouvelle Immobilisation -->
+<div class="modal fade" id="immobilisationModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-building"></i> Nouvelle immobilisation</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-2">
+                    <label class="form-label small">Désignation</label>
+                    <input type="text" class="form-control form-control-sm" id="immoDesignation" placeholder="Ex: Échographe portable">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Catégorie</label>
+                    <input type="text" class="form-control form-control-sm" id="immoCategorie" placeholder="Ex: Matériel médical">
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label small">Compte d'immobilisation</label>
+                        <select class="form-control form-control-sm" id="immoCompteImmo">
+                            <option value="2183">2183 - Matériel médical et informatique</option>
+                            <option value="2184">2184 - Mobilier et matériel de bureau</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label small">Compte d'amortissement</label>
+                        <input type="text" class="form-control form-control-sm" id="immoCompteAmort" value="2818">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label small">Date d'acquisition</label>
+                        <input type="date" class="form-control form-control-sm" id="immoDateAcquisition">
+                    </div>
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label small">Durée d'amortissement (années)</label>
+                        <input type="number" class="form-control form-control-sm" id="immoDuree" value="5" min="1">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label small">Valeur d'acquisition (FCFA)</label>
+                        <input type="number" class="form-control form-control-sm" id="immoValeur" step="1000">
+                    </div>
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label small">Mode de paiement</label>
+                        <select class="form-control form-control-sm" id="immoModePaiement">
+                            <option value="especes">Espèces (Caisse)</option>
+                            <option value="banque">Banque</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="immoGenererEcriture" checked>
+                    <label class="form-check-label small" for="immoGenererEcriture">
+                        Générer l'écriture comptable d'acquisition (débit immobilisation / crédit trésorerie)
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-primary" onclick="creerImmobilisation()">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Compte -->
+<div class="modal fade" id="compteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><span id="compteModalTitle">Ajouter un compte</span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="compteForm">
+                    <input type="hidden" id="compteId">
+                    <div class="mb-3">
+                        <label class="form-label">Numéro *</label>
+                        <input type="text" class="form-control" id="compteNumero" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Nom *</label>
+                        <input type="text" class="form-control" id="compteNom" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Type *</label>
+                        <select class="form-control" id="compteType" required>
+                            <option value="">Sélectionner</option>
+                            <option value="actif">Actif</option>
+                            <option value="passif">Passif</option>
+                            <option value="charge">Charge</option>
+                            <option value="produit">Produit</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-primary" onclick="sauvegarderCompte()">
+                    <i class="fas fa-save"></i> Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Écriture -->
+<div class="modal fade" id="ecritureModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="ecritureModalTitle">Nouvelle écriture</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="ecritureForm">
+                    <input type="hidden" id="ecritureId">
+                    
+                    <!-- ⭐ NUMERO DE PIECE AUTO-GENERE -->
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">
+                                Pièce 
+                                <small class="text-muted">(auto-généré)</small>
+                            </label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="ecriturePiece" readonly style="background:#f8f9fa; font-weight:600; color:#1a2a6c;">
+                                <button class="btn btn-outline-secondary" type="button" onclick="voirSequences()" title="Voir les séquences">
+                                    <i class="fas fa-info-circle"></i>
+                                </button>
+                            </div>
+                            <div class="sequence-info mt-1">
+                                <i class="fas fa-info-circle"></i> Numéro auto-généré par année (ECR-2026-000001)
+                            </div>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Date *</label>
+                            <input type="date" class="form-control" id="ecritureDate" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Libellé *</label>
+                            <input type="text" class="form-control" id="ecritureLibelle" required>
+                        </div>
+                    </div>
+
+                    <h6>Lignes</h6>
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-sm">
+                            <thead>
+                                <tr>
+                                    <th style="width:30%">Compte</th>
+                                    <th style="width:15%">Débit</th>
+                                    <th style="width:15%">Crédit</th>
+                                    <th style="width:30%">Libellé</th>
+                                    <th style="width:10%">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="lignesBody">
+                                <!-- Les lignes seront ajoutées dynamiquement -->
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <th class="text-end">Totaux</th>
+                                    <th id="totalDebitDisplay">0 FCFA</th>
+                                    <th id="totalCreditDisplay">0 FCFA</th>
+                                    <th colspan="2">
+                                        <span id="equilibreDisplay" class="badge bg-danger">Non équilibré</span>
+                                    </th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+
+                    <button class="btn btn-sm btn-secondary" type="button" onclick="ajouterLigne()">
+                        <i class="fas fa-plus"></i> Ajouter ligne
+                    </button>
+
+                    <div class="mt-3">
+                        <label class="form-label">Commentaire</label>
+                        <textarea class="form-control" id="ecritureCommentaire" rows="2"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-warning" onclick="sauvegarderEcriture(false)">
+                    <i class="fas fa-save"></i> Brouillon
+                </button>
+                <button class="btn btn-success" onclick="sauvegarderEcriture(true)">
+                    <i class="fas fa-paper-plane"></i> Soumettre
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Validation -->
+<div class="modal fade" id="validationModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title">Validation</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="validationEcritureId">
+                <input type="hidden" id="validationNiveau" value="2">
+                <div class="mb-3">
+                    <label class="form-label">Décision</label>
+                    <select class="form-control" id="validationAction">
+                        <option value="approuve">Approuver</option>
+                        <option value="refuse">Refuser</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Commentaire</label>
+                    <textarea class="form-control" id="validationCommentaire" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-primary" onclick="confirmerValidation()">
+                    <i class="fas fa-check"></i> Confirmer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Détail Écriture -->
+<div class="modal fade" id="detailEcritureModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="fas fa-eye"></i> Détails de l'écriture</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="detailEcritureBody">
+                <!-- Contenu chargé dynamiquement -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Budget -->
+<div class="modal fade" id="budgetModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">Modifier budget</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="budgetCompteId">
+                <div class="mb-3">
+                    <label class="form-label">Mois</label>
+                    <select class="form-control" id="budgetMois">
+                        <option value="1">Janvier</option>
+                        <option value="2">Février</option>
+                        <option value="3">Mars</option>
+                        <option value="4">Avril</option>
+                        <option value="5">Mai</option>
+                        <option value="6">Juin</option>
+                        <option value="7">Juillet</option>
+                        <option value="8">Août</option>
+                        <option value="9">Septembre</option>
+                        <option value="10">Octobre</option>
+                        <option value="11">Novembre</option>
+                        <option value="12">Décembre</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Montant prévu (FCFA)</label>
+                    <input type="number" class="form-control" id="budgetPrevu" step="100">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Commentaire</label>
+                    <textarea class="form-control" id="budgetCommentaire" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-success" onclick="sauvegarderBudget()">
+                    <i class="fas fa-save"></i> Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ============================================================ -->
+<!-- SCRIPT -->
+<!-- ============================================================ -->
+
+<script>
+// ============================================================
+// VARIABLES GLOBALES
+// ============================================================
+let tousComptes = [];
+let toutesEcritures = [];
+let compteModal = null;
+let ecritureModal = null;
+let validationModal = null;
+let detailModal = null;
+let budgetModal = null;
+let pageEcritures = 1;
+let totalEcritures = 0;
+let lignesReleve = [];
+let releveId = null;
+let comptesCache = null;
+let comptesCacheTime = null;
+
+
+// ============================================================
+// INITIALISATION
+// ============================================================
+
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Démarrage de la comptabilité...');
+    
+    // 1. Modals
+    initModals();
+    
+    // 2. Dashboard (rapide)
+    chargerDashboard();
+    chargerCaisses();
+    genererAnnees();
+    verifierAnomaliesAuChargement();
+
+    // 3. ⭐ CHARGER LES COMPTES EN PRIORITÉ (car tout le monde en a besoin)
+    chargerComptes();
+    initFiltresJournaux();
+    
+    // 4. ⭐ Budget après chargement des comptes
+    setTimeout(() => {
+        chargerComptesBudget();  // Utilise tousComptes
+        chargerBudget();         // Utilise tousComptes pour les noms
+    }, 300);
+    
+    // 5. Dernières écritures et historique (peuvent se charger en parallèle)
+    setTimeout(() => {
+        chargerDernieresEcritures();
+        chargerHistoriqueReleves();
+    }, 500);
+    
+    // 6. Écritures (plus lourd)
+    setTimeout(() => {
+        chargerEcritures(1);
+    }, 800);
+    
+    // 7. Rapports (en dernier)
+    setTimeout(() => {
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+        const dateDebut = document.getElementById('rapportDateDebut');
+        const dateFin = document.getElementById('rapportDateFin');
+        if (dateDebut) dateDebut.value = firstDay.toISOString().split('T')[0];
+        if (dateFin) dateFin.value = now.toISOString().split('T')[0];
+        chargerJournal();
+    }, 1100);
+});
+
+// ============================================================
+// MODALS
+// ============================================================
+
+function initModals() {
+    try {
+        const compteModalEl = document.getElementById('compteModal');
+        if (compteModalEl) {
+            compteModal = new bootstrap.Modal(compteModalEl, { backdrop: 'static', keyboard: true });
+        }
+        
+        const ecritureModalEl = document.getElementById('ecritureModal');
+        if (ecritureModalEl) {
+            ecritureModal = new bootstrap.Modal(ecritureModalEl, { backdrop: 'static', keyboard: true });
+        }
+        
+        const validationModalEl = document.getElementById('validationModal');
+        if (validationModalEl) {
+            validationModal = new bootstrap.Modal(validationModalEl, { backdrop: 'static', keyboard: true });
+        }
+        
+        const detailModalEl = document.getElementById('detailEcritureModal');
+        if (detailModalEl) {
+            detailModal = new bootstrap.Modal(detailModalEl, { backdrop: 'static', keyboard: true });
+        }
+        
+        const budgetModalEl = document.getElementById('budgetModal');
+        if (budgetModalEl) {
+            budgetModal = new bootstrap.Modal(budgetModalEl, { backdrop: 'static', keyboard: true });
+        }
+        
+        console.log('Modals initialisés');
+    } catch (error) {
+        console.error('❌ Erreur modals:', error);
+    }
+}
+
+
+// ============================================================
+// TABLEAU DE BORD
+// ============================================================
+
+function chargerDashboard() {
+    fetch('/comptabilite/api/dashboard/stats')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('statTotalEcritures').textContent = data.total_ecritures || 0;
+            document.getElementById('statEnAttente').textContent = data.en_attente || 0;
+            document.getElementById('statValidees').textContent = data.validees || 0;
+            document.getElementById('statSoldeTotal').textContent = (data.solde || 0).toLocaleString() + ' FCFA';
+        })
+        .catch(error => console.error('Erreur dashboard:', error));
+}
+
+function chargerDernieresEcritures() {
+    fetch('/comptabilite/api/ecritures?page=1&per_page=5')
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.getElementById('dernieresEcrituresBody');
+            const latest = data.data || [];
+            tbody.innerHTML = '';
+            if (latest.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Aucune écriture</td></tr>';
+                return;
+            }
+            const badges = { 'brouillon': 'bg-secondary', 'en_attente': 'bg-warning', 'valide': 'bg-success', 'refuse': 'bg-danger' };
+            latest.forEach(e => {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${e.date_ecriture || '-'}</td>
+                    <td><strong>${e.piece_justificative || '-'}</strong></td>
+                    <td>${e.libelle || '-'}</td>
+                    <td class="text-end">${(e.total_debit || 0).toLocaleString()} F</td>
+                    <td class="text-end">${(e.total_credit || 0).toLocaleString()} F</td>
+                    <td><span class="badge ${badges[e.statut] || 'bg-secondary'}">${e.statut_label || e.statut}</span></td>
+                `;
+            });
+        })
+        .catch(error => console.error('Erreur dernieres ecritures:', error));
+}
+
+
+// ============================================================
+// LES DEUX CAISSES (Trésorerie vs Chiffre d'affaires)
+// ============================================================
+
+function chargerCaisses() {
+    fetch('/comptabilite/api/caisses')
+        .then(r => r.json())
+        .then(data => {
+            const elTreso = document.getElementById('caisseTresorerieMontant');
+            const elCA = document.getElementById('caisseChiffreAffairesMontant');
+            if (elTreso) elTreso.textContent = (data.caisse_tresorerie || 0).toLocaleString() + ' FCFA';
+            if (elCA) elCA.textContent = (data.caisse_chiffre_affaires || 0).toLocaleString() + ' FCFA';
+
+            const detailTreso = document.getElementById('caisseTresorerieDetail');
+            if (detailTreso) {
+                detailTreso.innerHTML = (data.detail_tresorerie || []).map(c =>
+                    `<div class="d-flex justify-content-between"><span>${c.numero} ${c.nom}</span><strong>${(c.solde || 0).toLocaleString()} F</strong></div>`
+                ).join('') || '<span class="text-muted">Aucun mouvement</span>';
+            }
+        })
+        .catch(error => console.error('Erreur caisses:', error));
+}
+
+
+// ============================================================
+// PLAN COMPTABLE
+// ============================================================
+
+function chargerComptes(force = false) {
+    const tbody = document.getElementById('comptesBody');
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center">⏳ Chargement...</td></tr>';
+    
+    if (!force && comptesCache && comptesCacheTime) {
+        const now = new Date();
+        if ((now - comptesCacheTime) < 5 * 60 * 1000) {
+            tousComptes = comptesCache;
+            document.getElementById('totalComptes').textContent = tousComptes.length + ' compte(s)';
+            afficherComptes();
+            chargerComptesSelect();
+            return;
+        }
+    }
+    
+    fetch('/comptabilite/api/comptes')
+        .then(r => r.json())
+        .then(data => {
+            tousComptes = data || [];
+            comptesCache = tousComptes;
+            comptesCacheTime = new Date();
+            document.getElementById('totalComptes').textContent = tousComptes.length + ' compte(s)';
+            afficherComptes();
+            chargerComptesSelect();
+        })
+        .catch(error => {
+            console.error('Erreur comptes:', error);
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">❌ Erreur de chargement</td></tr>';
+        });
+}
+
+function afficherComptes() {
+    const tbody = document.getElementById('comptesBody');
+    const search = document.getElementById('searchCompte').value.toLowerCase().trim();
+    const type = document.getElementById('filtreTypeCompte').value;
+    
+    let filtres = tousComptes;
+    if (search) {
+        filtres = filtres.filter(c => (c.numero + ' ' + c.nom).toLowerCase().includes(search));
+    }
+    if (type) {
+        filtres = filtres.filter(c => c.type === type);
+    }
+    
+    tbody.innerHTML = '';
+    if (filtres.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center">Aucun compte</td></tr>';
+        return;
+    }
+    
+    const badges = { 'actif': 'bg-primary', 'passif': 'bg-secondary', 'charge': 'bg-danger', 'produit': 'bg-success' };
+    const labels = { 'actif': 'Actif', 'passif': 'Passif', 'charge': 'Charge', 'produit': 'Produit' };
+    
+    filtres.forEach(c => {
+        const row = tbody.insertRow();
+        const solde = c.solde || 0;
+        row.innerHTML = `
+            <td><strong>${c.numero}</strong></td>
+            <td>${c.nom}</td>
+            <td><span class="badge ${badges[c.type] || 'bg-secondary'}">${labels[c.type] || c.type}</span></td>
+            <td class="${solde >= 0 ? 'text-success' : 'text-danger'}">${solde.toLocaleString()} F</td>
+            <td>
+                <button class="btn btn-sm btn-warning" onclick="modifierCompte(${c.id})"><i class="fas fa-edit"></i></button>
+                <button class="btn btn-sm btn-danger" onclick="supprimerCompte(${c.id})"><i class="fas fa-trash"></i></button>
+            </td>
+        `;
+    });
+}
+
+function filtrerComptes() {
+    if (tousComptes.length > 0) {
+        afficherComptes();
+    } else {
+        chargerComptes();
+    }
+}
+
+function chargerComptesSelect() {
+    const selects = document.querySelectorAll('#lignesBody .compte-select');
+    selects.forEach(select => {
+        const currentValue = select.value;
+        select.innerHTML = '<option value="">Sélectionner</option>';
+        tousComptes.forEach(c => {
+            const selected = c.id == currentValue ? 'selected' : '';
+            select.innerHTML += `<option value="${c.id}" ${selected}>${c.numero} - ${c.nom}</option>`;
+        });
+    });
+}
+
+
+// ============================================================
+// PLAN COMPTABLE - CRUD
+// ============================================================
+
+function ouvrirAjoutCompte() {
+    document.getElementById('compteModalTitle').textContent = 'Ajouter un compte';
+    document.getElementById('compteForm').reset();
+    document.getElementById('compteId').value = '';
+    compteModal.show();
+}
+
+function modifierCompte(id) {
+    const c = tousComptes.find(item => item.id === id);
+    if (!c) { alert('Compte non trouvé'); return; }
+    document.getElementById('compteModalTitle').textContent = 'Modifier le compte';
+    document.getElementById('compteId').value = id;
+    document.getElementById('compteNumero').value = c.numero;
+    document.getElementById('compteNom').value = c.nom;
+    document.getElementById('compteType').value = c.type;
+    compteModal.show();
+}
+
+function sauvegarderCompte() {
+    const id = document.getElementById('compteId').value;
+    const data = {
+        numero: document.getElementById('compteNumero').value.trim(),
+        nom: document.getElementById('compteNom').value.trim(),
+        type: document.getElementById('compteType').value
+    };
+    if (!data.numero || !data.nom || !data.type) {
+        alert('Veuillez remplir tous les champs');
+        return;
+    }
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? `/comptabilite/api/comptes/${id}` : '/comptabilite/api/comptes';
+    
+    fetch(url, {
+        method: method,
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert(id ? 'Compte modifié' : 'Compte ajouté');
+            compteModal.hide();
+            comptesCache = null;
+            comptesCacheTime = null;
+            chargerComptes(true);
+        } else {
+            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('Erreur: ' + error));
+}
+
+function supprimerCompte(id) {
+    if (!confirm('Supprimer ce compte ?')) return;
+    fetch(`/comptabilite/api/comptes/${id}`, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                alert('Compte supprimé');
+                comptesCache = null;
+                comptesCacheTime = null;
+                chargerComptes(true);
+            } else {
+                alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+            }
+        })
+        .catch(error => alert('Erreur: ' + error));
+}
+
+function initComptes() {
+    if (!confirm('⚠️ Cette action va créer les comptes standards.\n\nLes comptes déjà existants ne seront pas modifiés.\n\nContinuer ?')) return;
+    
+    fetch('/comptabilite/api/init-comptes', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                alert('Plan comptable initialisé avec succès !');
+                comptesCache = null;
+                comptesCacheTime = null;
+                chargerComptes(true);
+            } else {
+                alert('❌ Erreur: ' + (data.error || 'Erreur inconnue'));
+            }
+        })
+        .catch(error => alert('❌ Erreur: ' + error));
+}
+
+
+// ============================================================
+// SEQUENCES - NUMEROS DE PIECE
+// ============================================================
+
+function voirSequences() {
+    fetch('/comptabilite/api/sequence/next/ecriture')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(`📋 Informations de séquence\n\nProchain numéro: ${data.prochain_numero}\nType: ${data.type_piece}\nPréfixe: ${data.prefixe || 'ECR'}\nAnnée: ${data.annee || new Date().getFullYear()}\nNuméro actuel: ${data.numero_actuel || 0}`);
+            } else {
+                alert('Erreur: ' + (data.error || 'Impossible de récupérer la séquence'));
+            }
+        })
+        .catch(error => alert('Erreur: ' + error));
+}
+
+
+// ============================================================
+// ÉCRITURES
+// ============================================================
+
+function chargerEcritures(page = 1) {
+    pageEcritures = page;
+    const tbody = document.getElementById('ecrituresBody');
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center">⏳ Chargement...</td></tr>';
+    
+    let url = `/comptabilite/api/ecritures?page=${page}&per_page=20`;
+    const search = document.getElementById('searchEcriture')?.value || '';
+    const statut = document.getElementById('filtreStatutEcriture')?.value || '';
+    const dateDebut = document.getElementById('filtreDateDebutEcriture')?.value || '';
+    const dateFin = document.getElementById('filtreDateFinEcriture')?.value || '';
+    
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    if (statut) url += `&statut=${statut}`;
+    if (dateDebut) url += `&date_debut=${dateDebut}`;
+    if (dateFin) url += `&date_fin=${dateFin}`;
+    
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            toutesEcritures = data.data || [];
+            totalEcritures = data.total || 0;
+            document.getElementById('totalEcritures').textContent = totalEcritures + ' écriture(s)';
+            afficherEcritures();
+            updatePaginationEcritures(data.total, data.page, data.total_pages);
+        })
+        .catch(error => {
+            console.error('Erreur ecritures:', error);
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">❌ Erreur de chargement</td></tr>';
+        });
+}
+
+function afficherEcritures() {
+    const tbody = document.getElementById('ecrituresBody');
+    const filtres = toutesEcritures;
+    tbody.innerHTML = '';
+    if (filtres.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center">Aucune écriture</td></tr>';
+        return;
+    }
+    
+    const badges = { 'brouillon': 'bg-secondary', 'en_attente': 'bg-warning', 'valide': 'bg-success', 'refuse': 'bg-danger' };
+    filtres.forEach(e => {
+        const row = tbody.insertRow();
+        let actions = '';
+        if (e.statut === 'en_attente') {
+            actions = `<button class="btn btn-sm btn-warning" onclick="ouvrirValidation(${e.id}, 2)"><i class="fas fa-check-double"></i></button>`;
+        } else if (e.statut === 'brouillon') {
+            actions = `<button class="btn btn-sm btn-warning" onclick="modifierEcriture(${e.id})"><i class="fas fa-edit"></i></button>`;
+        } else if (e.statut === 'valide') {
+            actions = `<button class="btn btn-sm btn-info" onclick="voirEcriture(${e.id})"><i class="fas fa-eye"></i></button>`;
+        }
+        row.innerHTML = `
+            <td>${e.date_ecriture || ''}</td>
+            <td><strong>${e.piece_justificative || '-'}</strong></td>
+            <td>${e.libelle || ''}</td>
+            <td class="text-end">${(e.total_debit || 0).toLocaleString()} F</td>
+            <td class="text-end">${(e.total_credit || 0).toLocaleString()} F</td>
+            <td><span class="badge ${badges[e.statut] || 'bg-secondary'}">${e.statut_label || e.statut}</span></td>
+            <td>${actions}</td>
+        `;
+    });
+}
+
+function filtrerEcritures() {
+    chargerEcritures(1);
+}
+
+function updatePaginationEcritures(total, currentPage, totalPages) {
+    const pagination = document.getElementById('paginationEcritures');
+    if (!pagination) return;
+    if (totalPages <= 1) { pagination.innerHTML = ''; return; }
+    
+    let html = `<li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+                    <a class="page-link" href="#" onclick="chargerEcritures(${currentPage - 1}); return false;">«</a>
+                </li>`;
+    let startPage = Math.max(1, currentPage - 2);
+    let endPage = Math.min(totalPages, startPage + 4);
+    for (let i = startPage; i <= endPage; i++) {
+        html += `<li class="page-item ${i === currentPage ? 'active' : ''}">
+                    <a class="page-link" href="#" onclick="chargerEcritures(${i}); return false;">${i}</a>
+                 </li>`;
+    }
+    html += `<li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="chargerEcritures(${currentPage + 1}); return false;">»</a>
+             </li>`;
+    pagination.innerHTML = html;
+}
+
+
+// ============================================================
+// ÉCRITURES - MODALS
+// ============================================================
+
+function ouvrirNouvelleEcriture() {
+    document.getElementById('ecritureForm').reset();
+    document.getElementById('ecritureId').value = '';
+    document.getElementById('ecritureModalTitle').textContent = 'Nouvelle écriture';
+    document.getElementById('ecritureDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('ecritureLibelle').value = '';
+    document.getElementById('ecritureCommentaire').value = '';
+    
+    // Générer le numéro de pièce automatiquement
+    fetch('/comptabilite/api/sequence/next/ecriture')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('ecriturePiece').value = data.prochain_numero;
+            } else {
+                document.getElementById('ecriturePiece').value = '';
+            }
+        })
+        .catch(error => {
+            console.error('Erreur chargement numéro:', error);
+            document.getElementById('ecriturePiece').value = '';
+        });
+    
+    document.getElementById('lignesBody').innerHTML = '';
+    ajouterLigne();
+    chargerComptesSelect();
+    ecritureModal.show();
+}
+
+function modifierEcriture(id) {
+    fetch(`/comptabilite/api/ecritures/${id}`)
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('ecritureId').value = id;
+            document.getElementById('ecritureModalTitle').textContent = 'Modifier l\'écriture';
+            document.getElementById('ecritureDate').value = data.date_ecriture || '';
+            document.getElementById('ecritureLibelle').value = data.libelle || '';
+            document.getElementById('ecriturePiece').value = data.piece_justificative || '';
+            document.getElementById('ecritureCommentaire').value = data.commentaire || '';
+            
+            const tbody = document.getElementById('lignesBody');
+            tbody.innerHTML = '';
+            if (data.lignes && data.lignes.length > 0) {
+                data.lignes.forEach(ligne => {
+                    ajouterLigne(ligne.compte_id, ligne.debit, ligne.credit, ligne.libelle);
+                });
+            } else {
+                ajouterLigne();
+            }
+            chargerComptesSelect();
+            ecritureModal.show();
+        })
+        .catch(error => {
+            console.error('❌ Erreur:', error);
+            alert('Erreur de chargement de l\'écriture');
+        });
+}
+
+function voirEcriture(id) {
+    fetch(`/comptabilite/api/ecritures/${id}`)
+        .then(response => response.json())
+        .then(data => {
+            let html = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Date :</strong> ${data.date_ecriture || ''}</p>
+                        <p><strong>Pièce :</strong> ${data.piece_justificative || '-'}</p>
+                        <p><strong>Libellé :</strong> ${data.libelle || ''}</p>
+                        <p><strong>Statut :</strong> <span class="badge bg-success">${data.statut_label || data.statut}</span></p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Créé par :</strong> ${data.created_by_nom || '-'}</p>
+                        <p><strong>Créé le :</strong> ${data.created_at || '-'}</p>
+                        <p><strong>Validé par :</strong> ${data.validated_by_nom || '-'}</p>
+                        <p><strong>Validé le :</strong> ${data.date_validation || '-'}</p>
+                    </div>
+                </div>
+                <hr>
+                <h6>Lignes de l'écriture</h6>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-sm">
+                        <thead class="table-light">
+                            <tr><th>Compte</th><th>Débit</th><th>Crédit</th><th>Libellé</th></tr>
+                        </thead>
+                        <tbody>`;
+            let totalDebit = 0, totalCredit = 0;
+            if (data.lignes && data.lignes.length > 0) {
+                data.lignes.forEach(ligne => {
+                    totalDebit += ligne.debit || 0;
+                    totalCredit += ligne.credit || 0;
+                    html += `
+                        <tr>
+                            <td>${ligne.compte_numero || ''} - ${ligne.compte_nom || ''}</td>
+                            <td class="text-end">${(ligne.debit || 0) > 0 ? (ligne.debit || 0).toLocaleString() + ' F' : '-'}</td>
+                            <td class="text-end">${(ligne.credit || 0) > 0 ? (ligne.credit || 0).toLocaleString() + ' F' : '-'}</td>
+                            <td>${ligne.libelle || '-'}</td>
+                        </tr>
+                    `;
+                });
+            }
+            html += `
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr class="fw-bold">
+                                <td class="text-end">TOTAUX</td>
+                                <td class="text-end">${totalDebit.toLocaleString()} F</td>
+                                <td class="text-end">${totalCredit.toLocaleString()} F</td>
+                                <td></td>
+                            </tr>
+                            <tr>
+                                <td colspan="4" class="text-center">
+                                    <span class="badge ${totalDebit === totalCredit ? 'bg-success' : 'bg-danger'}">
+                                        ${totalDebit === totalCredit ? 'Équilibrée' : 'Déséquilibrée'}
+                                    </span>
+                                </td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                ${data.commentaire ? `<div class="mt-2"><strong>Commentaire :</strong> ${data.commentaire}</div>` : ''}
+                <div class="mt-2 text-muted small"><i class="fas fa-info-circle"></i> Cette écriture est validée et ne peut pas être modifiée.</div>
+            `;
+            document.getElementById('detailEcritureBody').innerHTML = html;
+            detailModal.show();
+        })
+        .catch(error => {
+            console.error('❌ Erreur:', error);
+            alert('Erreur de chargement des détails');
+        });
+}
+
+
+// ============================================================
+// LIGNES ÉCRITURES
+// ============================================================
+
+function ajouterLigne(compteId = null, debit = 0, credit = 0, libelle = '') {
+    const tbody = document.getElementById('lignesBody');
+    const row = tbody.insertRow();
+    let options = '<option value="">Sélectionner</option>';
+    tousComptes.forEach(c => {
+        const selected = (c.id == compteId) ? 'selected' : '';
+        options += `<option value="${c.id}" ${selected}>${c.numero} - ${c.nom}</option>`;
+    });
+    row.innerHTML = `
+        <td><select class="form-control form-control-sm compte-select">${options}</select></td>
+        <td><input type="number" class="form-control form-control-sm debit-input" value="${debit || ''}" step="100" oninput="calculerTotaux()"></td>
+        <td><input type="number" class="form-control form-control-sm credit-input" value="${credit || ''}" step="100" oninput="calculerTotaux()"></td>
+        <td><input type="text" class="form-control form-control-sm libelle-input" placeholder="Libellé" value="${libelle || ''}"></td>
+        <td><button class="btn btn-sm btn-danger" onclick="supprimerLigne(this)"><i class="fas fa-times"></i></button></td>
+    `;
+    calculerTotaux();
+}
+
+function supprimerLigne(btn) {
+    const tbody = document.getElementById('lignesBody');
+    if (tbody.children.length > 1) {
+        btn.closest('tr').remove();
+        calculerTotaux();
+    } else {
+        alert('Au moins une ligne est requise');
+    }
+}
+
+function calculerTotaux() {
+    const rows = document.querySelectorAll('#lignesBody tr');
+    let totalDebit = 0, totalCredit = 0;
+    rows.forEach(row => {
+        const debit = parseFloat(row.querySelector('.debit-input')?.value) || 0;
+        const credit = parseFloat(row.querySelector('.credit-input')?.value) || 0;
+        totalDebit += debit;
+        totalCredit += credit;
+    });
+    document.getElementById('totalDebitDisplay').textContent = totalDebit.toLocaleString() + ' FCFA';
+    document.getElementById('totalCreditDisplay').textContent = totalCredit.toLocaleString() + ' FCFA';
+    const eq = totalDebit === totalCredit;
+    const el = document.getElementById('equilibreDisplay');
+    el.textContent = eq ? 'Équilibré' : 'Non équilibré';
+    el.className = 'badge ' + (eq ? 'bg-success' : 'bg-danger');
+}
+
+
+// ============================================================
+// SAUVEGARDE ÉCRITURE
+// ============================================================
+
+function sauvegarderEcriture(soumettre) {
+    const date = document.getElementById('ecritureDate').value;
+    const libelle = document.getElementById('ecritureLibelle').value.trim();
+    const piece = document.getElementById('ecriturePiece').value.trim();
+    const commentaire = document.getElementById('ecritureCommentaire').value.trim();
+    const ecritureId = document.getElementById('ecritureId').value;
+    
+    if (!date || !libelle) {
+        alert('Veuillez remplir la date et le libellé');
+        return;
+    }
+    
+    const lignes = [];
+    const rows = document.querySelectorAll('#lignesBody tr');
+    let totalDebit = 0, totalCredit = 0;
+    rows.forEach(row => {
+        const compteSelect = row.querySelector('.compte-select');
+        const debitInput = row.querySelector('.debit-input');
+        const creditInput = row.querySelector('.credit-input');
+        const libelleInput = row.querySelector('.libelle-input');
+        const compteId = compteSelect?.value;
+        const debit = parseFloat(debitInput?.value) || 0;
+        const credit = parseFloat(creditInput?.value) || 0;
+        const libelleLigne = libelleInput?.value || '';
+        if (compteId && (debit > 0 || credit > 0)) {
+            lignes.push({ compte_id: parseInt(compteId), debit, credit, libelle: libelleLigne });
+            totalDebit += debit;
+            totalCredit += credit;
+        }
+    });
+    
+    if (lignes.length === 0) {
+        alert('Ajoutez au moins une ligne valide');
+        return;
+    }
+    if (totalDebit !== totalCredit) {
+        alert('Les totaux débit et crédit doivent être égaux');
+        return;
+    }
+    
+    const data = {
+        date_ecriture: date,
+        libelle: libelle,
+        piece_justificative: piece,
+        commentaire: commentaire,
+        lignes: lignes,
+        soumettre: soumettre ? 'true' : 'false'
+    };
+    
+    const method = ecritureId ? 'PUT' : 'POST';
+    const url = ecritureId ? `/comptabilite/api/ecritures/${ecritureId}` : '/comptabilite/api/ecritures';
+    
+    fetch(url, {
+        method: method,
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            const msg = soumettre ? 'Écriture soumise pour validation' : 'Écriture sauvegardée';
+            alert(msg);
+            ecritureModal.hide();
+            chargerEcritures();
+            chargerDernieresEcritures();
+            chargerDashboard();
+        } else {
+            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('Erreur: ' + error));
+}
+
+
+// ============================================================
+// VALIDATION
+// ============================================================
+
+function ouvrirValidation(id, niveau) {
+    document.getElementById('validationEcritureId').value = id;
+    document.getElementById('validationNiveau').value = niveau;
+    document.getElementById('validationAction').value = 'approuve';
+    document.getElementById('validationCommentaire').value = '';
+    validationModal.show();
+}
+
+function confirmerValidation() {
+    const id = document.getElementById('validationEcritureId').value;
+    const niveau = document.getElementById('validationNiveau').value;
+    const action = document.getElementById('validationAction').value;
+    const commentaire = document.getElementById('validationCommentaire').value;
+    
+    fetch(`/comptabilite/api/ecritures/${id}/valider`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ niveau: parseInt(niveau), action: action, commentaire: commentaire })
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert('Validation effectuée');
+            validationModal.hide();
+            chargerEcritures();
+            chargerDernieresEcritures();
+            chargerDashboard();
+        } else {
+            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('Erreur: ' + error));
+}
+
+
+// ============================================================
+// BUDGET
+// ============================================================
+
+function genererAnnees() {
+    const select = document.getElementById('budgetAnnee');
+    const anneeActuelle = new Date().getFullYear();
+    select.innerHTML = '';
+    for (let annee = 2000; annee <= 2100; annee++) {
+        const option = document.createElement('option');
+        option.value = annee;
+        option.textContent = annee;
+        if (annee === anneeActuelle) option.selected = true;
+        select.appendChild(option);
+    }
+}
+
+function chargerBudget() {
+    const tbody = document.getElementById('budgetBody');
+    const annee = document.getElementById('budgetAnnee').value;
+    const compteId = document.getElementById('budgetCompte').value;
+    
+    // ⭐ Afficher un message de chargement
+    tbody.innerHTML = '<tr><td colspan="15" class="text-center">⏳ Chargement...</td></tr>';
+    
+    let url = `/comptabilite/api/budget?annee=${annee}`;
+    if (compteId && compteId !== '') {
+        url += `&compte_id=${compteId}`;
+    }
+    
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            tbody.innerHTML = '';
+            
+            if (!data || data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="15" class="text-center">Aucun compte trouvé${compteId ? ' pour ce filtre' : ''}</td></tr>`;
+                document.getElementById('totalBudget').textContent = '0 FCFA';
+                return;
+            }
+            
+            let grandTotal = 0;
+            let grandTotalReel = 0;
+            
+            data.forEach(item => {
+                const row = tbody.insertRow();
+                let totalLigne = 0;
+                let totalReelLigne = 0;
+                
+                row.innerHTML = `<td><strong>${item.compte_numero} - ${item.compte_nom}</strong></td>`;
+                
+                if (item.mois_data) {
+                    for (let m = 1; m <= 12; m++) {
+                        const moisData = item.mois_data.find(d => d.mois === m);
+                        const montant = moisData ? moisData.montant_prevu : 0;
+                        const montantReel = moisData ? moisData.montant_reel || 0 : 0;
+                        totalLigne += montant;
+                        totalReelLigne += montantReel;
+                        row.innerHTML += `<td class="text-end">${montant > 0 ? montant.toLocaleString() : '-'}</td>`;
+                    }
+                } else {
+                    for (let m = 1; m <= 12; m++) {
+                        row.innerHTML += `<td class="text-end text-muted">-</td>`;
+                    }
+                }
+                
+                grandTotal += totalLigne;
+                grandTotalReel += totalReelLigne;
+                
+                row.innerHTML += `
+                    <td class="text-end fw-bold">${totalLigne > 0 ? totalLigne.toLocaleString() : '0'} F</td>
+                    <td>
+                        <button class="btn btn-sm btn-warning" onclick="ouvrirBudget(${item.compte_id}, '${item.compte_nom}')" title="Modifier le budget">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                    </td>
+                `;
+            });
+            
+            // ⭐ Afficher le total général
+            document.getElementById('totalBudget').textContent = grandTotal.toLocaleString() + ' FCFA';
+            
+        })
+        .catch(error => {
+            console.error('❌ Erreur budget:', error);
+            tbody.innerHTML = '<tr><td colspan="15" class="text-center text-danger">❌ Erreur de chargement</td></tr>';
+        });
+}
+
+function chargerComptesBudget() {
+    const select = document.getElementById('budgetCompte');
+    if (!select) return;
+    
+    const currentValue = select.value;
+    select.innerHTML = '<option value="">⏳ Chargement...</option>';
+    
+    // ⭐ Si tousComptes est déjà chargé, l'utiliser
+    if (tousComptes && tousComptes.length > 0) {
+        select.innerHTML = '<option value="">Tous les comptes</option>';
+        tousComptes.forEach(c => {
+            const selected = c.id == currentValue ? 'selected' : '';
+            select.innerHTML += `<option value="${c.id}" ${selected}>${c.numero} - ${c.nom}</option>`;
+        });
+        if (currentValue) select.value = currentValue;
+        return;
+    }
+    
+    // ⭐ Sinon, charger depuis l'API
+    fetch('/comptabilite/api/comptes')
+        .then(r => r.json())
+        .then(comptes => {
+            select.innerHTML = '<option value="">Tous les comptes</option>';
+            comptes.forEach(c => {
+                const selected = c.id == currentValue ? 'selected' : '';
+                select.innerHTML += `<option value="${c.id}" ${selected}>${c.numero} - ${c.nom}</option>`;
+            });
+            if (currentValue) select.value = currentValue;
+        })
+        .catch(error => {
+            console.error('❌ Erreur chargement comptes budget:', error);
+            select.innerHTML = '<option value="">Erreur de chargement</option>';
+        });
+}
+
+function ouvrirBudget(compteId, compteNom) {
+    document.getElementById('budgetCompteId').value = compteId;
+    document.getElementById('budgetMois').value = 1;
+    document.getElementById('budgetPrevu').value = 0;
+    document.getElementById('budgetCommentaire').value = '';
+    document.querySelector('#budgetModal .modal-title').textContent = 'Budget - ' + compteNom;
+    budgetModal.show();
+}
+
+function sauvegarderBudget() {
+    const compteId = document.getElementById('budgetCompteId').value;
+    const mois = document.getElementById('budgetMois').value;
+    const annee = document.getElementById('budgetAnnee').value;
+    const montantPrevu = parseFloat(document.getElementById('budgetPrevu').value) || 0;
+    const commentaire = document.getElementById('budgetCommentaire').value;
+    
+    fetch('/comptabilite/api/budget', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            compte_id: parseInt(compteId),
+            mois: parseInt(mois),
+            annee: parseInt(annee),
+            montant_prevu: montantPrevu,
+            commentaire: commentaire
+        })
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert('Budget enregistré avec succès !');
+            budgetModal.hide();
+            chargerBudget();
+        } else {
+            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('Erreur: ' + error));
+}
+
+function cloturerAnnee() {
+    let annee = document.getElementById('exerciceAnneeCourante')?.textContent?.trim();
+    if (!annee || annee === '—') {
+        annee = document.getElementById('budgetAnnee')?.value;
+    }
+    if (!annee) { alert('Veuillez sélectionner une année'); return; }
+    if (!confirm(`Clôturer l'exercice ${annee} ?\n\nCette action est irréversible : toutes les écritures validées de l'année seront figées.`)) return;
+
+    fetch('/comptabilite/api/cloture', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ annee: parseInt(annee) })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert(`${data.message}`);
+            if (typeof chargerBudget === 'function') chargerBudget();
+            chargerExercice();
+        } else {
+            alert('❌ Erreur: ' + (data.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('❌ Erreur: ' + error));
+}
+
+
+// ============================================================
+// EXERCICE COMPTABLE
+// ============================================================
+
+function chargerExercice() {
+    fetch('/comptabilite/api/exercice/statut')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('exerciceAnneeCourante').textContent = data.annee_courante;
+            const badge = document.getElementById('exerciceStatutBadge');
+            if (data.exercice_ouvert) {
+                badge.textContent = 'Ouvert';
+                badge.className = 'badge mt-2 bg-success';
+            } else {
+                badge.textContent = 'Clôturé';
+                badge.className = 'badge mt-2 bg-secondary';
+            }
+            document.getElementById('exerciceNbEcritures').textContent = data.nb_ecritures_exercice_courant;
+            document.getElementById('exerciceNbAValider').textContent = data.nb_ecritures_a_valider;
+
+            const tbody = document.getElementById('exerciceHistoriqueBody');
+            if (!data.clotures || data.clotures.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">Aucune clôture</td></tr>';
+            } else {
+                tbody.innerHTML = data.clotures.map(c => `
+                    <tr>
+                        <td>${c.annee}</td>
+                        <td>${c.date_cloture}</td>
+                        <td>${c.created_by}</td>
+                    </tr>
+                `).join('');
+            }
+        })
+        .catch(err => console.error('Erreur chargement exercice:', err));
+}
+
+
+// ============================================================
+// ÉTAT FINANCIER (Bilan + Compte de résultat, présentation OHADA)
+// ============================================================
+
+function formaterMontantEtat(m) {
+    return Math.round(m || 0).toLocaleString('fr-FR') + ' FCFA';
+}
+
+function chargerEtatFinancier() {
+    const dateFinInput = document.getElementById('etatFinDateFin');
+    if (dateFinInput && !dateFinInput.value) {
+        dateFinInput.value = new Date().toISOString().split('T')[0];
+    }
+    const dateFin = dateFinInput ? dateFinInput.value : '';
+
+    // Compte de résultat (sur l'année civile de la date choisie)
+    const anneeChoisie = dateFin ? dateFin.split('-')[0] : new Date().getFullYear();
+    fetch(`/comptabilite/api/rapports/resultat?date_debut=${anneeChoisie}-01-01&date_fin=${dateFin}`)
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('etatFinChargesBody').innerHTML = (data.charges || []).map(c => `
+                <tr><td>${c.numero} - ${c.nom}</td><td class="text-end">${formaterMontantEtat(c.montant)}</td></tr>
+            `).join('') || '<tr><td colspan="2" class="text-center text-muted">Aucune charge</td></tr>';
+            document.getElementById('etatFinProduitsBody').innerHTML = (data.produits || []).map(p => `
+                <tr><td>${p.numero} - ${p.nom}</td><td class="text-end">${formaterMontantEtat(p.montant)}</td></tr>
+            `).join('') || '<tr><td colspan="2" class="text-center text-muted">Aucun produit</td></tr>';
+            document.getElementById('etatFinTotalCharges').textContent = formaterMontantEtat(data.total_charges);
+            document.getElementById('etatFinTotalProduits').textContent = formaterMontantEtat(data.total_produits);
+            const resultatRow = document.getElementById('etatFinResultatRow');
+            const resultatCell = document.getElementById('etatFinResultat');
+            resultatCell.textContent = `${formaterMontantEtat(data.resultat)} (${data.resultat_text})`;
+            resultatRow.className = 'fw-bold ' + (data.resultat >= 0 ? 'text-success' : 'text-danger');
+        })
+        .catch(err => console.error('Erreur compte de résultat:', err));
+
+    // Bilan (à la date choisie)
+    fetch(`/comptabilite/api/rapports/bilan?date_fin=${dateFin}`)
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('etatFinActifBody').innerHTML = (data.actifs || []).map(a => `
+                <tr><td>${a.numero} - ${a.nom}</td><td class="text-end">${formaterMontantEtat(a.montant)}</td></tr>
+            `).join('') || '<tr><td colspan="2" class="text-center text-muted">Aucun compte d\'actif</td></tr>';
+            document.getElementById('etatFinPassifBody').innerHTML = (data.passifs || []).map(p => `
+                <tr><td>${p.numero} - ${p.nom}</td><td class="text-end">${formaterMontantEtat(p.montant)}</td></tr>
+            `).join('') || '<tr><td colspan="2" class="text-center text-muted">Aucun compte de passif</td></tr>';
+            document.getElementById('etatFinCapitauxBody').innerHTML = (data.capitaux_propres || []).map(c => `
+                <tr><td>${c.numero} - ${c.nom}</td><td class="text-end">${formaterMontantEtat(c.montant)}</td></tr>
+            `).join('') || '<tr><td colspan="2" class="text-center text-muted">—</td></tr>';
+            document.getElementById('etatFinTotalActif').textContent = formaterMontantEtat(data.total_actif);
+            document.getElementById('etatFinTotalPassif').textContent = formaterMontantEtat(data.total_passif_capitaux);
+            const badgeEq = document.getElementById('etatFinBilanEquilibre');
+            if (data.est_equilibre) {
+                badgeEq.textContent = 'Équilibré';
+                badgeEq.className = 'badge bg-success';
+            } else {
+                badgeEq.textContent = 'Déséquilibré';
+                badgeEq.className = 'badge bg-danger';
+            }
+        })
+        .catch(err => console.error('Erreur bilan:', err));
+}
+
+
+// ============================================================
+// ANOMALIES COMPTABLES
+// ============================================================
+
+let anomaliesFiltreCourant = 'false';
+
+function filtrerAnomalies(valeur, btn) {
+    anomaliesFiltreCourant = valeur;
+    document.querySelectorAll('#anomalies .nav-pills .nav-link').forEach(el => el.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    chargerAnomalies();
+}
+
+function chargerAnomalies() {
+    const url = anomaliesFiltreCourant ? `/comptabilite/api/anomalies?resolu=${anomaliesFiltreCourant}` : '/comptabilite/api/anomalies';
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            // Badge sur l'onglet + rappel dashboard
+            const badge = document.getElementById('anomaliesBadge');
+            if (data.total_non_resolues > 0) {
+                badge.textContent = data.total_non_resolues;
+                badge.style.display = '';
+            } else {
+                badge.style.display = 'none';
+            }
+
+            const tbody = document.getElementById('anomaliesBody');
+            if (!data.data || data.data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Aucune anomalie</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.data.map(a => `
+                <tr class="${a.resolu ? '' : 'table-warning'}">
+                    <td>${a.date_creation}</td>
+                    <td><span class="badge bg-secondary">${a.source_type}</span> #${a.source_id ?? '-'}</td>
+                    <td class="small">${a.message}</td>
+                    <td>${a.resolu ? `<span class="badge bg-success">Résolue par ${a.resolu_par}</span>` : '<span class="badge bg-danger">Non résolue</span>'}</td>
+                    <td>${a.resolu ? '-' : `<button class="btn btn-sm btn-outline-success" onclick="resoudreAnomalie(${a.id})">Marquer résolue</button>`}</td>
+                </tr>
+            `).join('');
+        })
+        .catch(err => console.error('Erreur chargement anomalies:', err));
+}
+
+function resoudreAnomalie(id) {
+    const commentaire = prompt('Comment avez-vous corrigé cette anomalie ? (optionnel, pour traçabilité)') || '';
+    fetch(`/comptabilite/api/anomalies/${id}/resoudre`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ commentaire })
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) chargerAnomalies();
+        else alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+    })
+    .catch(error => alert('❌ Erreur: ' + error));
+}
+
+function verifierAnomaliesAuChargement() {
+    // Appelé au chargement de la page pour afficher le badge même si
+    // l'utilisateur n'a pas encore ouvert l'onglet Anomalies.
+    fetch('/comptabilite/api/anomalies?resolu=false')
+        .then(r => r.json())
+        .then(data => {
+            const badge = document.getElementById('anomaliesBadge');
+            if (data.total_non_resolues > 0) {
+                badge.textContent = data.total_non_resolues;
+                badge.style.display = '';
+            }
+        })
+        .catch(() => {});
+}
+
+
+// ============================================================
+// CRÉANCES DOUTEUSES & PROVISIONS
+// ============================================================
+
+function chargerCreancesDouteuses() {
+    const seuil = document.getElementById('creancesSeuilJours').value || 60;
+    fetch(`/comptabilite/api/creances-douteuses?seuil_jours=${seuil}`)
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.getElementById('creancesBody');
+            if (!data || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Aucune créance en retard au-delà du seuil</td></tr>';
+                return;
+            }
+            const badgeTranche = { '0-30j': 'bg-light text-dark', '31-59j': 'bg-warning text-dark', '60-89j': 'bg-orange text-white', '90j+': 'bg-danger' };
+            tbody.innerHTML = data.map(c => `
+                <tr>
+                    <td>${c.patient_nom}</td>
+                    <td>${c.numero_facture}</td>
+                    <td>${c.date_echeance}</td>
+                    <td><span class="badge ${badgeTranche[c.tranche] || 'bg-secondary'}">${c.jours_retard}j (${c.tranche})</span></td>
+                    <td class="text-end">${Math.round(c.reste_a_payer).toLocaleString()} F</td>
+                    <td>${c.deja_provisionnee ? `<span class="badge bg-info">${Math.round(c.montant_provisionne).toLocaleString()} F provisionnés</span>` : '-'}</td>
+                    <td>
+                        ${c.deja_provisionnee ? '' : `
+                            <button class="btn btn-sm btn-outline-warning" onclick="provisionnerCreance(${c.facture_id})">Provisionner</button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="perteDirecteCreance(${c.facture_id})">Perte directe</button>
+                        `}
+                    </td>
+                </tr>
+            `).join('');
+        })
+        .catch(err => console.error('Erreur chargement créances douteuses:', err));
+
+    chargerProvisions();
+}
+
+function provisionnerCreance(factureId) {
+    const taux = prompt('Taux de provision estimé (%) :', '50');
+    if (taux === null) return;
+    fetch(`/comptabilite/api/creances-douteuses/${factureId}/provisionner`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ taux: parseFloat(taux) || 50 })
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert(`Provision de ${Math.round(result.montant_provisionne).toLocaleString()} FCFA enregistrée.`);
+            chargerCreancesDouteuses();
+        } else {
+            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('❌ Erreur: ' + error));
+}
+
+function perteDirecteCreance(factureId) {
+    if (!confirm("Passer définitivement cette créance en perte (créance abandonnée, patient insolvable) ? Cette action est irréversible.")) return;
+    fetch(`/comptabilite/api/creances-douteuses/${factureId}/perte-directe`, { method: 'POST' })
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) { chargerCreancesDouteuses(); }
+            else alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        })
+        .catch(error => alert('❌ Erreur: ' + error));
+}
+
+function chargerProvisions() {
+    fetch('/comptabilite/api/provisions')
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.getElementById('provisionsBody');
+            if (!data || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Aucune</td></tr>';
+                return;
+            }
+            const badges = { 'active': 'bg-warning text-dark', 'reprise': 'bg-success', 'perte': 'bg-danger' };
+            tbody.innerHTML = data.map(p => `
+                <tr>
+                    <td>${p.patient_nom}</td>
+                    <td class="text-end">${Math.round(p.montant_creance).toLocaleString()} F</td>
+                    <td>${p.taux_provision}%</td>
+                    <td class="text-end">${Math.round(p.montant_provisionne).toLocaleString()} F</td>
+                    <td><span class="badge ${badges[p.statut] || 'bg-secondary'}">${p.statut}</span></td>
+                    <td>
+                        ${p.statut === 'active' ? `
+                            <button class="btn btn-sm btn-outline-success" onclick="reprendreProvision(${p.id})">Reprise (payé)</button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="provisionPasserEnPerte(${p.id})">Passer en perte</button>
+                        ` : '-'}
+                    </td>
+                </tr>
+            `).join('');
+        })
+        .catch(err => console.error('Erreur chargement provisions:', err));
+}
+
+function reprendreProvision(id) {
+    if (!confirm('Le patient a-t-il finalement payé ? Ceci annule la provision.')) return;
+    fetch(`/comptabilite/api/provisions/${id}/reprendre`, { method: 'POST' })
+        .then(r => r.json())
+        .then(result => { if (result.success) chargerCreancesDouteuses(); else alert('❌ ' + result.error); })
+        .catch(error => alert('❌ Erreur: ' + error));
+}
+
+function provisionPasserEnPerte(id) {
+    if (!confirm('Passer cette créance provisionnée définitivement en perte ? Irréversible.')) return;
+    fetch(`/comptabilite/api/provisions/${id}/passer-en-perte`, { method: 'POST' })
+        .then(r => r.json())
+        .then(result => { if (result.success) chargerCreancesDouteuses(); else alert('❌ ' + result.error); })
+        .catch(error => alert('❌ Erreur: ' + error));
+}
+
+
+// ============================================================
+// IMMOBILISATIONS & AMORTISSEMENTS
+// ============================================================
+
+function chargerImmobilisations() {
+    fetch('/comptabilite/api/immobilisations')
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.getElementById('immobilisationsBody');
+            if (!data || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Aucune immobilisation enregistrée</td></tr>';
+                return;
+            }
+            const badges = { 'en_service': 'bg-success', 'cede': 'bg-secondary', 'reforme': 'bg-dark' };
+            tbody.innerHTML = data.map(i => `
+                <tr>
+                    <td>${i.designation}</td>
+                    <td>${i.categorie || '-'}</td>
+                    <td>${i.date_acquisition}</td>
+                    <td class="text-end">${Math.round(i.valeur_acquisition).toLocaleString()} F</td>
+                    <td class="text-end">${Math.round(i.cumul_amorti).toLocaleString()} F</td>
+                    <td class="text-end fw-bold">${Math.round(i.vnc).toLocaleString()} F</td>
+                    <td><span class="badge ${badges[i.statut] || 'bg-secondary'}">${i.statut}</span></td>
+                </tr>
+            `).join('');
+        })
+        .catch(err => console.error('Erreur chargement immobilisations:', err));
+}
+
+function ouvrirAjoutImmobilisation() {
+    document.getElementById('immoDesignation').value = '';
+    document.getElementById('immoCategorie').value = '';
+    document.getElementById('immoDateAcquisition').value = new Date().toISOString().split('T')[0];
+    document.getElementById('immoDuree').value = 5;
+    document.getElementById('immoValeur').value = '';
+    new bootstrap.Modal(document.getElementById('immobilisationModal')).show();
+}
+
+function creerImmobilisation() {
+    const designation = document.getElementById('immoDesignation').value.trim();
+    const valeur = parseFloat(document.getElementById('immoValeur').value) || 0;
+    if (!designation || valeur <= 0) { alert('Désignation et valeur d\'acquisition requises'); return; }
+
+    fetch('/comptabilite/api/immobilisations', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            designation, categorie: document.getElementById('immoCategorie').value,
+            compte_immo_numero: document.getElementById('immoCompteImmo').value,
+            compte_amort_numero: document.getElementById('immoCompteAmort').value,
+            date_acquisition: document.getElementById('immoDateAcquisition').value,
+            duree_annees: parseInt(document.getElementById('immoDuree').value) || 5,
+            valeur_acquisition: valeur,
+            mode_paiement: document.getElementById('immoModePaiement').value,
+            generer_ecriture: document.getElementById('immoGenererEcriture').checked,
+        })
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            bootstrap.Modal.getInstance(document.getElementById('immobilisationModal')).hide();
+            chargerImmobilisations();
+        } else {
+            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('❌ Erreur: ' + error));
+}
+
+function genererDotationsAnnee() {
+    const annee = prompt('Générer les dotations aux amortissements pour quelle année ?', new Date().getFullYear());
+    if (!annee) return;
+    fetch('/comptabilite/api/immobilisations/dotations/generer', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ annee: parseInt(annee) })
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert(`${result.nb_generees} dotation(s) générée(s)${result.erreurs.length ? ' (erreurs: ' + result.erreurs.join(', ') + ')' : ''}.`);
+            chargerImmobilisations();
+        } else {
+            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('❌ Erreur: ' + error));
+}
+
+
+// ============================================================
+// TAFIRE
+// ============================================================
+
+function chargerTafire() {
+    const anneeInput = document.getElementById('tafireAnnee');
+    if (!anneeInput.value) anneeInput.value = new Date().getFullYear();
+
+    fetch(`/comptabilite/api/rapports/tafire?annee=${anneeInput.value}`)
+        .then(r => r.json())
+        .then(data => {
+            const sig = data.sig || {};
+            const er = data.emplois_ressources || {};
+            const bfr = data.bfr || {};
+            const M = formaterMontantEtat;
+
+            document.getElementById('tafirePremierExerciceAlerte').style.display = data.premier_exercice ? '' : 'none';
+
+            // 1) CAFG
+            document.getElementById('tafireProduitsExploitation').textContent = M(sig.produits_exploitation);
+            document.getElementById('tafireChargesExploitation').textContent = M(sig.charges_exploitation);
+            document.getElementById('tafireEbe').textContent = M(sig.ebe);
+            document.getElementById('tafireDotations').textContent = M(sig.dotations_amortissements_provisions);
+            document.getElementById('tafireReprises').textContent = M(sig.reprises_amortissements_provisions);
+            document.getElementById('tafireResultatExploitation').textContent = M(sig.resultat_exploitation);
+            document.getElementById('tafireResultatFinancier').textContent = M(sig.resultat_financier);
+            document.getElementById('tafireResultatHao').textContent = M(sig.resultat_hao);
+            document.getElementById('tafireImpotParticipation').textContent = M((sig.participation_travailleurs || 0) + (sig.impot_resultat || 0));
+            document.getElementById('tafireResultatNet').textContent = M(sig.resultat_net);
+            document.getElementById('tafireDotationsBis').textContent = M(sig.dotations_amortissements_provisions);
+            document.getElementById('tafireReprisesBis').textContent = M(sig.reprises_amortissements_provisions);
+            document.getElementById('tafireCafg').textContent = M(sig.cafg);
+
+            // 2) Ressources/emplois durables
+            document.getElementById('tafireFA').textContent = M(er.fa_autofinancement);
+            document.getElementById('tafireFB').textContent = M(er.fb_cessions_immobilisations);
+            document.getElementById('tafireFD').textContent = M(er.fd_augmentation_capital);
+            document.getElementById('tafireFF').textContent = M(er.ff_nouveaux_emprunts);
+            document.getElementById('tafireRessourcesDurables').textContent = M(er.ressources_durables);
+            document.getElementById('tafireFI').textContent = M(er.fi_acquisitions_immobilisations);
+            document.getElementById('tafireFK').textContent = M(er.fk_remboursement_capitaux);
+            document.getElementById('tafireFL').textContent = M(er.fl_remboursement_emprunts);
+            document.getElementById('tafireEmploisDurables').textContent = M(er.emplois_durables);
+            document.getElementById('tafireVariationFR').textContent = M(er.variation_fr);
+            document.getElementById('tafireVariationBFR').textContent = M(bfr.variation_bfr);
+            document.getElementById('tafireVariationTresorerie').textContent = M(data.variation_tresorerie_derivee);
+
+            // 3) Détail BFR
+            document.getElementById('tafireVarStocks').textContent = M(bfr.variation_stocks);
+            document.getElementById('tafireVarCreances').textContent = M(bfr.variation_creances);
+            document.getElementById('tafireVarDettes').textContent = M(bfr.variation_dettes_circulantes);
+            document.getElementById('tafireVarBfrDetail').textContent = M(bfr.variation_bfr);
+
+            // 4) Réconciliation trésorerie
+            document.getElementById('tafireTresorerieDebut').textContent = M(data.tresorerie_debut);
+            document.getElementById('tafireVariationDerivee').textContent = M(data.variation_tresorerie_derivee);
+            document.getElementById('tafireTresorerieTheorique').textContent = M(data.tresorerie_debut + data.variation_tresorerie_derivee);
+            document.getElementById('tafireTresorerieFin').textContent = M(data.tresorerie_fin);
+            const ecartRow = document.getElementById('tafireEcartRow');
+            if (Math.abs(data.ecart_non_affecte) > 1) {
+                document.getElementById('tafireEcart').textContent = M(data.ecart_non_affecte);
+                ecartRow.style.display = '';
+            } else {
+                ecartRow.style.display = 'none';
+            }
+
+            const badge = document.getElementById('tafireCoherenceBadge');
+            if (data.coherent) {
+                badge.className = 'badge bg-success';
+                badge.innerHTML = '<i class="fas fa-check"></i> Cohérent';
+            } else {
+                badge.className = 'badge bg-warning text-dark';
+                badge.innerHTML = '<i class="fas fa-triangle-exclamation"></i> Écart à examiner';
+            }
+        })
+        .catch(err => console.error('Erreur chargement TAFIRE:', err));
+}
+
+
+// ============================================================
+// RAPPORTS
+// ============================================================
+
+function onChangeRapportType() {
+    const type = document.getElementById('rapportType').value;
+    document.getElementById('filtreJournalCodeWrap').style.display = (type === 'journal') ? '' : 'none';
+    document.getElementById('filtreCompteUniqueWrap').style.display = (type === 'grand_livre') ? '' : 'none';
+    chargerJournal();
+}
+
+function initFiltresJournaux() {
+    // Sélecteur des journaux auxiliaires (journal des ventes, caisse, banque...)
+    fetch('/comptabilite/api/rapports/journaux/liste')
+        .then(r => r.json())
+        .then(journaux => {
+            const sel = document.getElementById('rapportJournalCode');
+            journaux.forEach(j => {
+                const opt = document.createElement('option');
+                opt.value = j.code;
+                opt.textContent = j.nom;
+                sel.appendChild(opt);
+            });
+        })
+        .catch(err => console.error('Erreur chargement journaux:', err));
+
+    // Sélecteur "grand livre d'un seul compte" — réutilise la liste des comptes
+    fetch('/comptabilite/api/comptes')
+        .then(r => r.json())
+        .then(comptes => {
+            const sel = document.getElementById('rapportCompteId');
+            comptes.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.id;
+                opt.textContent = `${c.numero} - ${c.nom}`;
+                sel.appendChild(opt);
+            });
+        })
+        .catch(err => console.error('Erreur chargement comptes:', err));
+}
+
+function chargerJournal() {
+    const tbody = document.getElementById('rapportBody');
+    const thead = document.getElementById('rapportHeader');
+    const tfoot = document.getElementById('rapportFooter');
+    const type = document.getElementById('rapportType').value;
+    const dateDebut = document.getElementById('rapportDateDebut').value;
+    const dateFin = document.getElementById('rapportDateFin').value;
+    const journalCode = document.getElementById('rapportJournalCode') ? document.getElementById('rapportJournalCode').value : '';
+    const compteId = document.getElementById('rapportCompteId') ? document.getElementById('rapportCompteId').value : '';
+
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center">⏳ Chargement...</td></tr>';
+
+    let url = `/comptabilite/api/rapports/${type}`;
+    const params = [];
+    if (dateDebut) params.push('date_debut=' + dateDebut);
+    if (dateFin) params.push('date_fin=' + dateFin);
+    if (type === 'journal' && journalCode) params.push('journal_code=' + encodeURIComponent(journalCode));
+    if (type === 'grand_livre' && compteId) params.push('compte_id=' + encodeURIComponent(compteId));
+    if (params.length) url += '?' + params.join('&');
+
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            afficherRapport(data, type);
+        })
+        .catch(error => {
+            console.error('Erreur rapport:', error);
+            let colspan = type === 'balance' ? 4 : 6;
+            tbody.innerHTML = `<tr><td colspan="${colspan}" class="text-center text-danger">❌ Erreur de chargement</td></tr>`;
+        });
+}
+
+function afficherRapport(data, type) {
+    const tbody = document.getElementById('rapportBody');
+    const thead = document.getElementById('rapportHeader');
+    const tfoot = document.getElementById('rapportFooter');
+    
+    let totalDebit = 0, totalCredit = 0;
+    let html = '';
+    
+    if (!data || data.length === 0) {
+        let colspan = type === 'balance' ? 4 : 6;
+        tbody.innerHTML = `<tr><td colspan="${colspan}" class="text-center">Aucune donnée</td></tr>`;
+        return;
+    }
+    
+    if (type === 'journal') {
+        thead.innerHTML = '<th>Date</th><th>Journal</th><th>Pièce</th><th>Libellé</th><th>Compte</th><th>Débit</th><th>Crédit</th>';
+        data.forEach(item => {
+            const debit = item.debit || 0;
+            const credit = item.credit || 0;
+            totalDebit += debit;
+            totalCredit += credit;
+            const badgeAuto = item.generee_auto ? '<span class="badge bg-success ms-1" title="Générée automatiquement et validée">AUTO</span>' : '';
+            html += `<tr>
+                <td>${item.date || ''}</td>
+                <td><span class="badge bg-secondary">${item.journal_code || '-'}</span></td>
+                <td><strong>${item.piece || '-'}</strong></td>
+                <td>${item.libelle || ''}${badgeAuto}</td>
+                <td>${item.compte_numero || ''} - ${item.compte_nom || ''}</td>
+                <td class="text-end">${debit > 0 ? debit.toLocaleString() + ' F' : '-'}</td>
+                <td class="text-end">${credit > 0 ? credit.toLocaleString() + ' F' : '-'}</td>
+            </tr>`;
+        });
+        tfoot.innerHTML = `
+            <tr class="fw-bold">
+                <td colspan="5" class="text-end">TOTAUX :</td>
+                <td class="text-end">${totalDebit.toLocaleString()} FCFA</td>
+                <td class="text-end">${totalCredit.toLocaleString()} FCFA</td>
+            </tr>
+        `;
+    } else if (type === 'grand_livre') {
+        thead.innerHTML = '<th>Date</th><th>Compte</th><th>Libellé</th><th>Débit</th><th>Crédit</th><th>Solde</th>';
+        // ⭐ Le solde cumulé n'a de sens que calculé chronologiquement (du plus
+        // ancien vers le plus récent — c'est l'ordre renvoyé par le serveur,
+        // trié par compte). On garde ce calcul dans cet ordre, mais on
+        // n'affiche les lignes qu'ensuite, dans l'ordre inverse (plus récent
+        // en haut), pour respecter la même convention que le reste de
+        // l'onglet Journal & Rapports sans fausser le solde affiché sur
+        // chaque ligne.
+        let solde_cumul = 0;
+        const lignesHtml = [];
+        data.forEach(item => {
+            const debit = item.debit || 0;
+            const credit = item.credit || 0;
+            solde_cumul += debit - credit;
+            totalDebit += debit;
+            totalCredit += credit;
+            lignesHtml.push(`<tr>
+                <td>${item.date || ''}</td>
+                <td>${item.compte_numero || ''} - ${item.compte_nom || ''}</td>
+                <td>${item.libelle || ''}</td>
+                <td class="text-end">${debit > 0 ? debit.toLocaleString() + ' F' : '-'}</td>
+                <td class="text-end">${credit > 0 ? credit.toLocaleString() + ' F' : '-'}</td>
+                <td class="text-end fw-bold">${solde_cumul.toLocaleString()} F</td>
+            </tr>`);
+        });
+        html = lignesHtml.reverse().join('');
+        const soldeFinal = totalDebit - totalCredit;
+        tfoot.innerHTML = `
+            <tr class="fw-bold">
+                <td colspan="3" class="text-end">TOTAUX :</td>
+                <td class="text-end">${totalDebit.toLocaleString()} FCFA</td>
+                <td class="text-end">${totalCredit.toLocaleString()} FCFA</td>
+                <td class="text-end fw-bold">${soldeFinal.toLocaleString()} FCFA</td>
+            </tr>
+        `;
+    } else if (type === 'balance') {
+        thead.innerHTML = '<th>Compte</th><th>Total Débit</th><th>Total Crédit</th><th>Solde</th>';
+        data.forEach(item => {
+            const totalDebitCompte = item.total_debit || 0;
+            const totalCreditCompte = item.total_credit || 0;
+            const solde = item.solde || 0;
+            totalDebit += totalDebitCompte;
+            totalCredit += totalCreditCompte;
+            html += `<tr>
+                <td><strong>${item.compte_numero || ''} - ${item.compte_nom || ''}</strong></td>
+                <td class="text-end">${totalDebitCompte.toLocaleString()} F</td>
+                <td class="text-end">${totalCreditCompte.toLocaleString()} F</td>
+                <td class="text-end fw-bold ${solde >= 0 ? 'text-success' : 'text-danger'}">${solde.toLocaleString()} F</td>
+            </tr>`;
+        });
+        const soldeGeneral = totalDebit - totalCredit;
+        tfoot.innerHTML = `
+            <tr class="fw-bold">
+                <td class="text-end">TOTAUX :</td>
+                <td class="text-end">${totalDebit.toLocaleString()} FCFA</td>
+                <td class="text-end">${totalCredit.toLocaleString()} FCFA</td>
+                <td class="text-end fw-bold ${soldeGeneral >= 0 ? 'text-success' : 'text-danger'}">${soldeGeneral.toLocaleString()} FCFA</td>
+            </tr>
+        `;
+    } else if (type === 'resultat') {
+        thead.innerHTML = '<th>Compte</th><th>Montant</th><th>Catégorie</th><th></th>';
+        // Afficher le compte de résultat (simplifié)
+        if (data.produits && data.produits.length > 0) {
+            html += `<tr class="table-success"><td colspan="4"><strong>PRODUITS (Revenus)</strong></td></tr>`;
+            data.produits.forEach(p => {
+                html += `<tr><td>${p.numero} - ${p.nom}</td><td class="text-end">${(p.montant || 0).toLocaleString()} FCFA</td><td><span class="badge bg-success">Produit</span></td><td></td></tr>`;
+            });
+        }
+        if (data.charges && data.charges.length > 0) {
+            html += `<tr class="table-danger"><td colspan="4"><strong>CHARGES (Dépenses)</strong></td></tr>`;
+            data.charges.forEach(c => {
+                html += `<tr><td>${c.numero} - ${c.nom}</td><td class="text-end">${(c.montant || 0).toLocaleString()} FCFA</td><td><span class="badge bg-danger">Charge</span></td><td></td></tr>`;
+            });
+        }
+        const resultat = (data.resultat || 0);
+        html += `
+            <tr class="fw-bold table-info">
+                <td>RÉSULTAT (Produits - Charges)</td>
+                <td class="text-end ${resultat >= 0 ? 'text-success' : 'text-danger'}">${resultat.toLocaleString()} FCFA</td>
+                <td><span class="badge ${resultat >= 0 ? 'bg-success' : 'bg-danger'}">${resultat >= 0 ? 'Bénéfice' : 'Perte'}</span></td>
+                <td></td>
+            </tr>
+        `;
+        tfoot.innerHTML = '';
+    } else if (type === 'bilan') {
+        thead.innerHTML = '<th>Compte</th><th>Montant</th><th>Catégorie</th><th></th>';
+        if (data.actifs && data.actifs.length > 0) {
+            html += `<tr class="table-primary"><td colspan="4"><strong>ACTIFS</strong></td></tr>`;
+            data.actifs.forEach(a => {
+                html += `<tr><td>${a.numero} - ${a.nom}</td><td class="text-end">${(a.montant || 0).toLocaleString()} FCFA</td><td><span class="badge bg-primary">Actif</span></td><td></td></tr>`;
+            });
+        }
+        if (data.passifs && data.passifs.length > 0) {
+            html += `<tr class="table-warning"><td colspan="4"><strong>PASSIFS (Dettes)</strong></td></tr>`;
+            data.passifs.forEach(p => {
+                html += `<tr><td>${p.numero} - ${p.nom}</td><td class="text-end">${(p.montant || 0).toLocaleString()} FCFA</td><td><span class="badge bg-warning">Passif</span></td><td></td></tr>`;
+            });
+        }
+        if (data.capitaux_propres && data.capitaux_propres.length > 0) {
+            html += `<tr class="table-info"><td colspan="4"><strong>CAPITAUX PROPRES</strong></td></tr>`;
+            data.capitaux_propres.forEach(c => {
+                html += `<tr><td>${c.numero} - ${c.nom}</td><td class="text-end">${(c.montant || 0).toLocaleString()} FCFA</td><td><span class="badge bg-info">Capitaux propres</span></td><td></td></tr>`;
+            });
+        }
+        const totalActif = data.total_actif || 0;
+        const totalPassifCapitaux = (data.total_passif || 0) + (data.total_capitaux || 0);
+        const estEquilibre = Math.abs(totalActif - totalPassifCapitaux) < 1;
+        html += `
+            <tr class="fw-bold table-secondary">
+                <td>${estEquilibre ? '.' : '❌'} ÉQUILIBRE (Actif = Passif + Capitaux propres)</td>
+                <td class="text-end ${estEquilibre ? 'text-success' : 'text-danger'}">
+                    ${totalActif.toLocaleString()} = ${totalPassifCapitaux.toLocaleString()} FCFA
+                </td>
+                <td><span class="badge ${estEquilibre ? 'bg-success' : 'bg-danger'}">${estEquilibre ? 'Équilibré' : 'Déséquilibré'}</span></td>
+                <td></td>
+            </tr>
+        `;
+        tfoot.innerHTML = '';
+    }
+    
+    tbody.innerHTML = html;
+}
+
+// Dans le fichier HTML - Ajouter cette fonction
+
+function imprimerRapportPDF() {
+    const type = document.getElementById('rapportType').value;
+    const dateDebut = document.getElementById('rapportDateDebut').value;
+    const dateFin = document.getElementById('rapportDateFin').value;
+    
+    let url = `/comptabilite/rapport/print/${type}`;
+    const params = [];
+    if (dateDebut) params.push('date_debut=' + dateDebut);
+    if (dateFin) params.push('date_fin=' + dateFin);
+    if (params.length) url += '?' + params.join('&');
+    
+    // Ouvrir dans une nouvelle fenêtre pour l'impression
+    window.open(url, '_blank', 'width=1100,height=800');
+}
+
+// ============================================================
+// RAPPROCHEMENT BANCAIRE
+// ============================================================
+
+// ============================================================
+// MULTI-COMPTES DE TRÉSORERIE (rapprochement)
+// ============================================================
+
+let comptesRapprochementCache = [];
+
+function chargerComptesRapprochement() {
+    return fetch('/comptabilite/api/rapprochement/comptes')
+        .then(r => r.json())
+        .then(comptes => {
+            comptesRapprochementCache = comptes || [];
+            const options = comptesRapprochementCache.map(c =>
+                `<option value="${c.id}">${c.numero} - ${c.nom} (solde compta: ${Math.round(c.solde_comptable).toLocaleString()} F)</option>`
+            ).join('');
+            const selectPrincipal = document.getElementById('releveCompteId');
+            const selectImport = document.getElementById('importCompteId');
+            if (selectPrincipal) selectPrincipal.innerHTML = options || '<option value="">Aucun compte de trésorerie</option>';
+            if (selectImport) selectImport.innerHTML = options || '<option value="">Aucun compte de trésorerie</option>';
+            chargerHistoriqueReleves();
+        })
+        .catch(err => console.error('Erreur chargement comptes rapprochement:', err));
+}
+
+// ============================================================
+// IMPORT D'UN RELEVÉ (CSV / Excel)
+// ============================================================
+
+function ouvrirImportReleve() {
+    if (comptesRapprochementCache.length === 0) chargerComptesRapprochement();
+    document.getElementById('importReleveMessage').innerHTML = '';
+    document.getElementById('importDateReleve').value = new Date().toISOString().split('T')[0];
+    new bootstrap.Modal(document.getElementById('importReleveModal')).show();
+}
+
+function importerReleve() {
+    const fichierInput = document.getElementById('importFichier');
+    if (!fichierInput.files.length) {
+        document.getElementById('importReleveMessage').innerHTML = '<div class="alert alert-danger py-1">Choisissez un fichier</div>';
+        return;
+    }
+    const fd = new FormData();
+    fd.append('fichier', fichierInput.files[0]);
+    fd.append('compte_id', document.getElementById('importCompteId').value);
+    fd.append('date_releve', document.getElementById('importDateReleve').value);
+    fd.append('solde_initial', document.getElementById('importSoldeInitial').value || 0);
+
+    document.getElementById('importReleveMessage').innerHTML = '<div class="text-muted small">⏳ Import en cours...</div>';
+
+    fetch('/comptabilite/api/rapprochement/releves/import', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                document.getElementById('importReleveMessage').innerHTML =
+                    `<div class="alert alert-success py-1">${result.nb_lignes} ligne(s) importée(s) !</div>`;
+                setTimeout(() => {
+                    bootstrap.Modal.getInstance(document.getElementById('importReleveModal')).hide();
+                    chargerHistoriqueReleves();
+                    releveId = result.id;
+                    chargerLignesReleve(result.id);
+                }, 800);
+            } else {
+                document.getElementById('importReleveMessage').innerHTML =
+                    `<div class="alert alert-danger py-1">❌ ${result.error || 'Erreur inconnue'}</div>`;
+            }
+        })
+        .catch(error => {
+            document.getElementById('importReleveMessage').innerHTML = `<div class="alert alert-danger py-1">❌ ${error}</div>`;
+        });
+}
+
+// ============================================================
+// ASSOCIATION MANUELLE D'UNE LIGNE NON RAPPROCHÉE
+// ============================================================
+
+let associerLigneCourante = null; // { id, index }
+
+function ouvrirAssocierModal(index) {
+    const ligne = lignesReleve[index];
+    if (!ligne || !ligne.id) {
+        alert('Enregistrez le relevé avant d\'associer manuellement une ligne.');
+        return;
+    }
+    associerLigneCourante = { id: ligne.id, index };
+
+    const montant = (ligne.debit && ligne.debit > 0) ? ligne.debit : ligne.credit;
+    document.getElementById('associerLigneInfo').innerHTML =
+        `<strong>${ligne.libelle || 'Opération'}</strong> — ${ligne.date} — ${Math.round(montant).toLocaleString()} FCFA`;
+    document.getElementById('associerCandidatsBody').innerHTML = '<tr><td colspan="5" class="text-center text-muted">Chargement...</td></tr>';
+
+    new bootstrap.Modal(document.getElementById('associerModal')).show();
+
+    fetch(`/comptabilite/api/rapprochement/releves/${releveId}/lignes/${ligne.id}/candidats`)
+        .then(r => r.json())
+        .then(candidats => {
+            const tbody = document.getElementById('associerCandidatsBody');
+            if (!candidats || candidats.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Aucune écriture candidate trouvée sur ce compte</td></tr>';
+                return;
+            }
+            tbody.innerHTML = candidats.map(c => `
+                <tr class="${c.correspond_exactement ? 'table-success' : ''}">
+                    <td>${c.date}</td>
+                    <td>${c.piece || '-'}</td>
+                    <td>${c.libelle}</td>
+                    <td class="text-end">${Math.round(c.montant).toLocaleString()} F</td>
+                    <td><button class="btn btn-sm btn-primary" onclick="choisirCandidat(${c.ecriture_id})">Choisir</button></td>
+                </tr>
+            `).join('');
+        })
+        .catch(err => {
+            document.getElementById('associerCandidatsBody').innerHTML = `<tr><td colspan="5" class="text-danger text-center">${err}</td></tr>`;
+        });
+}
+
+function choisirCandidat(ecritureId) {
+    if (!associerLigneCourante) return;
+    fetch(`/comptabilite/api/rapprochement/releves/${releveId}/lignes/${associerLigneCourante.id}/associer`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ ecriture_id: ecritureId })
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            bootstrap.Modal.getInstance(document.getElementById('associerModal')).hide();
+            chargerLignesReleve(releveId);
+            chargerHistoriqueReleves();
+        } else {
+            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('❌ Erreur: ' + error));
+}
+
+function dissocierLigne(index) {
+    const ligne = lignesReleve[index];
+    if (!ligne || !ligne.id) return;
+    if (!confirm('Annuler ce rapprochement ?')) return;
+    fetch(`/comptabilite/api/rapprochement/releves/${releveId}/lignes/${ligne.id}/dissocier`, { method: 'POST' })
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                chargerLignesReleve(releveId);
+                chargerHistoriqueReleves();
+            } else {
+                alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            }
+        })
+        .catch(error => alert('❌ Erreur: ' + error));
+}
+
+function ajouterLigneReleve(date = '', libelle = '', reference = '', debit = 0, credit = 0) {
+    const tbody = document.getElementById('releveBody');
+    if (tbody.querySelector('tr.text-muted')) tbody.innerHTML = '';
+    const index = lignesReleve.length;
+    const row = tbody.insertRow();
+    row.innerHTML = `
+        <td><input type="date" class="form-control form-control-sm" value="${date}" onchange="majLigneReleve(${index}, 'date', this.value)"></td>
+        <td><input type="text" class="form-control form-control-sm" value="${libelle}" placeholder="Libellé" onchange="majLigneReleve(${index}, 'libelle', this.value)"></td>
+        <td><input type="text" class="form-control form-control-sm" value="${reference}" placeholder="Réf" onchange="majLigneReleve(${index}, 'reference', this.value)"></td>
+        <td><input type="number" class="form-control form-control-sm text-end" value="${debit || ''}" step="100" oninput="majLigneReleve(${index}, 'debit', this.value)"></td>
+        <td><input type="number" class="form-control form-control-sm text-end" value="${credit || ''}" step="100" oninput="majLigneReleve(${index}, 'credit', this.value)"></td>
+        <td class="text-end fw-bold" id="soldeLigne_${index}">0 FCFA</td>
+        <td class="text-center"><span class="badge bg-secondary">Non</span></td>
+        <td><button class="btn btn-sm btn-danger" onclick="supprimerLigneReleve(${index})"><i class="fas fa-times"></i></button></td>
+    `;
+    lignesReleve.push({ date, libelle, reference, debit: parseFloat(debit) || 0, credit: parseFloat(credit) || 0 });
+    calculerSoldeReleve();
+}
+
+function majLigneReleve(index, champ, valeur) {
+    if (champ === 'debit' || champ === 'credit') {
+        lignesReleve[index][champ] = parseFloat(valeur) || 0;
+    } else {
+        lignesReleve[index][champ] = valeur;
+    }
+    calculerSoldeReleve();
+}
+
+function supprimerLigneReleve(index) {
+    if (!confirm('Supprimer cette ligne ?')) return;
+    lignesReleve.splice(index, 1);
+    rafraichirReleve();
+}
+
+function rafraichirReleve() {
+    const tbody = document.getElementById('releveBody');
+    tbody.innerHTML = '';
+    
+    if (lignesReleve.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">Ajoutez des lignes avec le bouton "Ajouter une ligne"</td></tr>';
+        return;
+    }
+    
+    lignesReleve.forEach((l, i) => {
+        // ⭐ S'assurer que est_rapproche est un boolean
+        const estRapproche = l.est_rapproche === true;
+        const idEcriture = l.id_ecriture || null;
+        
+        const row = tbody.insertRow();
+        
+        // Colorer la ligne selon le statut
+        row.style.backgroundColor = estRapproche ? '#d4edda' : '#fff3cd';
+        row.className = estRapproche ? 'table-success' : 'table-warning';
+        
+        row.innerHTML = `
+            <td>
+                <input type="date" class="form-control form-control-sm" value="${l.date || ''}" 
+                       ${estRapproche ? 'disabled' : ''} 
+                       onchange="majLigneReleve(${i}, 'date', this.value)">
+            </td>
+            <td>
+                <input type="text" class="form-control form-control-sm" value="${l.libelle || ''}" 
+                       ${estRapproche ? 'disabled' : ''} 
+                       placeholder="Libellé" onchange="majLigneReleve(${i}, 'libelle', this.value)">
+            </td>
+            <td>
+                <input type="text" class="form-control form-control-sm" value="${l.reference || ''}" 
+                       ${estRapproche ? 'disabled' : ''} 
+                       placeholder="Réf" onchange="majLigneReleve(${i}, 'reference', this.value)">
+            </td>
+            <td>
+                <input type="number" class="form-control form-control-sm text-end" value="${l.debit || ''}" 
+                       ${estRapproche ? 'disabled' : ''} 
+                       step="100" oninput="majLigneReleve(${i}, 'debit', this.value)">
+            </td>
+            <td>
+                <input type="number" class="form-control form-control-sm text-end" value="${l.credit || ''}" 
+                       ${estRapproche ? 'disabled' : ''} 
+                       step="100" oninput="majLigneReleve(${i}, 'credit', this.value)">
+            </td>
+            <td class="text-end fw-bold" id="soldeLigne_${i}">0 FCFA</td>
+            <td class="text-center">
+                <span class="badge ${estRapproche ? 'bg-success' : 'bg-warning text-dark'}" style="font-size:12px;">
+                    ${estRapproche ? 'Rapproché' : 'En attente'}
+                </span>
+                ${idEcriture ? `<span class="badge bg-info ms-1" style="font-size:10px;">Écriture #${idEcriture}</span>` : ''}
+            </td>
+            <td>
+                ${estRapproche
+                    ? `<button class="btn btn-sm btn-outline-secondary" title="Annuler le rapprochement" onclick="dissocierLigne(${i})"><i class="fas fa-unlink"></i></button>`
+                    : `<button class="btn btn-sm btn-outline-primary me-1" title="Associer manuellement" onclick="ouvrirAssocierModal(${i})"><i class="fas fa-link"></i></button>
+                       <button class="btn btn-sm btn-danger" onclick="supprimerLigneReleve(${i})"><i class="fas fa-times"></i></button>`}
+            </td>
+        `;
+    });
+    
+    calculerSoldeReleve();
+    mettreAJourStatutReleve();
+}
+
+function calculerSoldeReleve() {
+    let solde = parseFloat(document.getElementById('releveSoldeInitial').value) || 0;
+    let totalDebit = 0, totalCredit = 0;
+    lignesReleve.forEach((l, i) => {
+        const debit = parseFloat(l.debit) || 0;
+        const credit = parseFloat(l.credit) || 0;
+        solde = solde + credit - debit;
+        totalDebit += debit;
+        totalCredit += credit;
+        const soldeCell = document.getElementById(`soldeLigne_${i}`);
+        if (soldeCell) soldeCell.textContent = solde.toLocaleString() + ' FCFA';
+    });
+    document.getElementById('releveTotalDebit').textContent = totalDebit.toLocaleString() + ' FCFA';
+    document.getElementById('releveTotalCredit').textContent = totalCredit.toLocaleString() + ' FCFA';
+    document.getElementById('releveSoldeFinal').value = solde.toLocaleString() + ' FCFA';
+}
+
+function sauvegarderReleve() {
+    const dateReleve = document.getElementById('releveDate').value;
+    const soldeInitial = parseFloat(document.getElementById('releveSoldeInitial').value) || 0;
+    if (!dateReleve) { alert('Veuillez sélectionner une date'); return; }
+    if (lignesReleve.length === 0) { alert('Ajoutez au moins une ligne'); return; }
+    
+    const data = {
+        date_releve: dateReleve,
+        compte_id: document.getElementById('releveCompteId').value || null,
+        solde_initial: soldeInitial,
+        lignes: lignesReleve.map(l => ({
+            date_operation: l.date || dateReleve,
+            libelle: l.libelle || 'Opération',
+            reference: l.reference || '',
+            debit: l.debit || 0,
+            credit: l.credit || 0
+        }))
+    };
+    
+    fetch('/comptabilite/api/rapprochement/releves', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert('Relevé enregistré !');
+            releveId = result.id;
+            document.getElementById('releveSoldeFinal').value = result.solde_final.toLocaleString() + ' FCFA';
+            chargerHistoriqueReleves();
+        } else {
+            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('❌ Erreur: ' + error));
+}
+
+function rapprocherReleve() {
+    if (!releveId) { 
+        alert('Enregistrez d\'abord le relevé');
+        return; 
+    }
+    if (!confirm('Rapprocher automatiquement les lignes avec les écritures comptables ?')) return;
+    
+    fetch(`/comptabilite/api/rapprochement/releves/${releveId}/rapprocher`, { 
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert(`${result.nb_rapproche} lignes rapprochées sur ${result.total_lignes}`);
+            
+            // ⭐ FORCER LE RECHARGEMENT COMPLET
+            chargerHistoriqueReleves();        // Met à jour l'historique
+            chargerLignesReleve(releveId);     // Recharge les lignes avec les nouveaux statuts
+            
+            // ⭐ METTRE À JOUR LE STATUT
+            setTimeout(() => {
+                mettreAJourStatutReleve();
+                calculerSoldeReleve();
+            }, 500);
+            
+        } else {
+            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('❌ Erreur: ' + error));
+}
+
+function validerReleve() {
+    if (!releveId) { alert('Enregistrez d\'abord le relevé'); return; }
+    if (!confirm('Valider ce relevé bancaire ?')) return;
+    
+    fetch(`/comptabilite/api/rapprochement/releves/${releveId}/valider`, { method: 'POST' })
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                alert('Relevé validé !');
+                chargerHistoriqueReleves();
+            } else {
+                alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            }
+        })
+        .catch(error => alert('❌ Erreur: ' + error));
+}
+
+function chargerHistoriqueReleves() {
+    const compteFiltre = document.getElementById('releveCompteId')?.value || '';
+    const url = compteFiltre
+        ? `/comptabilite/api/rapprochement/releves?compte_id=${compteFiltre}`
+        : '/comptabilite/api/rapprochement/releves';
+
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.getElementById('historiqueRelevesBody');
+            tbody.innerHTML = '';
+            if (!data || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">Aucun relevé</td></tr>';
+                return;
+            }
+            const badges = { 'brouillon': 'bg-secondary', 'en_attente': 'bg-warning', 'valide': 'bg-success' };
+            data.forEach(r => {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${r.date_releve}</td>
+                    <td><span class="badge bg-light text-dark border">${r.compte_numero} - ${r.compte_nom}</span></td>
+                    <td>${(r.solde_initial || 0).toLocaleString()} F</td>
+                    <td>${(r.solde_final || 0).toLocaleString()} F</td>
+                    <td>${r.nb_lignes || 0}</td>
+                    <td>${r.nb_rapproche || 0}/${r.nb_lignes || 0}</td>
+                    <td><span class="badge ${badges[r.statut] || 'bg-secondary'}">${r.statut}</span></td>
+                    <td>${r.created_by || '-'}</td>
+                    <td>
+                        <button class="btn btn-sm btn-info" onclick="chargerLignesReleve(${r.id})"><i class="fas fa-eye"></i></button>
+                        ${r.statut === 'valide' ? '' : `<button class="btn btn-sm btn-primary" onclick="releveId=${r.id}; chargerLignesReleve(${r.id})"><i class="fas fa-edit"></i></button>`}
+                    </td>
+                `;
+            });
+        })
+        .catch(error => console.error('Erreur:', error));
+}
+
+function mettreAJourStatutReleve() {
+    const totalLignes = lignesReleve.length;
+    const totalRapproche = lignesReleve.filter(l => l.est_rapproche === true).length;
+    const totalNonRapproche = totalLignes - totalRapproche;
+    
+    // Mettre à jour le statut global
+    const statutEl = document.getElementById('releveStatut');
+    if (statutEl) {
+        if (totalLignes === 0) {
+            statutEl.textContent = 'Aucune ligne';
+            statutEl.className = 'text-muted';
+        } else if (totalRapproche === totalLignes) {
+            statutEl.innerHTML = 'Tout est rapproché';
+            statutEl.className = 'text-success fw-bold';
+        } else {
+            statutEl.innerHTML = `${totalRapproche}/${totalLignes} rapproché(s) - ${totalNonRapproche} en attente`;
+            statutEl.className = 'text-warning fw-bold';
+        }
+    }
+    
+    // Mettre à jour les badges
+    const badgeEl = document.getElementById('releveStatutBadge');
+    if (badgeEl) {
+        const badges = {
+            'brouillon': 'bg-secondary',
+            'en_attente': 'bg-warning',
+            'valide': 'bg-success'
+        };
+        badgeEl.className = `badge ${badges[releveStatut] || 'bg-secondary'}`;
+        badgeEl.textContent = releveStatut || 'brouillon';
+    }
+    
+    // Mettre à jour les compteurs du résumé
+    const totalEl = document.getElementById('totalLignesCount');
+    const rapprocheEl = document.getElementById('totalRapprocheCount');
+    const nonRapprocheEl = document.getElementById('totalNonRapprocheCount');
+    
+    if (totalEl) totalEl.textContent = totalLignes;
+    if (rapprocheEl) {
+        rapprocheEl.textContent = totalRapproche;
+        rapprocheEl.className = 'text-success';
+    }
+    if (nonRapprocheEl) {
+        nonRapprocheEl.textContent = totalNonRapproche;
+        nonRapprocheEl.className = 'text-warning';
+    }
+    
+    // Mettre à jour les totaux financiers
+    let totalDebit = 0, totalCredit = 0;
+    lignesReleve.forEach(l => {
+        totalDebit += l.debit || 0;
+        totalCredit += l.credit || 0;
+    });
+    
+    const summaryDebit = document.getElementById('summaryTotalDebit');
+    const summaryCredit = document.getElementById('summaryTotalCredit');
+    const summarySolde = document.getElementById('summarySolde');
+    
+    if (summaryDebit) summaryDebit.textContent = totalDebit.toLocaleString() + ' FCFA';
+    if (summaryCredit) summaryCredit.textContent = totalCredit.toLocaleString() + ' FCFA';
+    if (summarySolde) summarySolde.textContent = (totalCredit - totalDebit).toLocaleString() + ' FCFA';
+}
+
+function chargerLignesReleve(id) {
+    console.log('Chargement du relevé ID:', id);
+    
+    releveId = id;
+    
+    const tbody = document.getElementById('releveBody');
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">⏳ Chargement...</td></tr>';
+    
+    fetch(`/comptabilite/api/rapprochement/releves/${id}/lignes`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Erreur HTTP: ' + response.status);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('📊 Données reçues de l\'API:', data);
+            
+            // ⭐ BIEN RÉCUPÉRER est_rapproche ET ecriture_id
+            lignesReleve = data.map(l => ({
+                id: l.id,
+                date: l.date_operation || '',
+                libelle: l.libelle || '',
+                reference: l.reference || '',
+                debit: l.debit || 0,
+                credit: l.credit || 0,
+                est_rapproche: l.est_rapproche === true,  // ⭐ FORCER EN BOOLEAN
+                id_ecriture: l.ecriture_id || null
+            }));
+            
+            console.log('📊 Lignes transformées:', lignesReleve);
+            
+            rafraichirReleve();
+            
+            if (data.length > 0) {
+                document.getElementById('releveDate').value = data[0].date_operation;
+            }
+            
+            // Mettre à jour le statut
+            mettreAJourStatutReleve();
+            
+            // Afficher un résumé
+            const total = lignesReleve.length;
+            const rapproche = lignesReleve.filter(l => l.est_rapproche).length;
+            console.log(`📊 ${rapproche}/${total} lignes rapprochées`);
+            
+        })
+        .catch(error => {
+            console.error('❌ Erreur:', error);
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">❌ Erreur de chargement</td></tr>';
+        });
+}
+
+// ============================================================
+// IMPRESSION BUDGET PDF
+// ============================================================
+
+function imprimerBudgetPDF() {
+    const annee = document.getElementById('budgetAnnee').value;
+    const compteId = document.getElementById('budgetCompte').value;
+    
+    let url = `/comptabilite/budget/print?annee=${annee}`;
+    if (compteId) {
+        url += `&compte_id=${compteId}`;
+    }
+    
+    // Ouvrir dans une nouvelle fenêtre
+    window.open(url, '_blank', 'width=1100,height=800');
+}
+
+</script>
+{% endblock %}

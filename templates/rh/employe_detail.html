@@ -1,0 +1,480 @@
+{% extends "base.html" %}
+
+{% block title %}Détail de l'employé{% endblock %}
+
+{% block extra_css %}
+<style>
+    .detail-label {
+        font-weight: 600;
+        color: #495057;
+        font-size: 13px;
+    }
+    .detail-value {
+        font-size: 14px;
+        color: #212529;
+    }
+    .section-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #0d6efd;
+        border-bottom: 2px solid #0d6efd;
+        padding-bottom: 8px;
+        margin-bottom: 15px;
+    }
+    .stat-card-mini {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 15px;
+        text-align: center;
+        border: 1px solid #dee2e6;
+    }
+    .stat-card-mini .number {
+        font-size: 24px;
+        font-weight: 700;
+        color: #0d6efd;
+    }
+    .stat-card-mini .label {
+        font-size: 12px;
+        color: #6c757d;
+        margin-top: 5px;
+    }
+    @media print {
+        .btn, .no-print {
+            display: none !important;
+        }
+        .card {
+            border: none !important;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+        <div class="card shadow-sm">
+            <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-user me-2"></i> 
+                    {% if employe %}
+                        {{ employe.prenom }} {{ employe.nom }}
+                    {% else %}
+                        Détail de l'employé
+                    {% endif %}
+                </h5>
+                <div class="no-print">
+                    <button class="btn btn-light btn-sm me-1" onclick="fermerPage()" title="Fermer">
+                        <i class="fas fa-times"></i> Fermer
+                    </button>
+                    <button class="btn btn-warning btn-sm me-1" onclick="modifierEmploye()">
+                        <i class="fas fa-edit"></i> Modifier
+                    </button>
+                    <button class="btn btn-success btn-sm" onclick="imprimerFiche()">
+                        <i class="fas fa-print"></i> Imprimer
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if employe %}
+                
+                <!-- ============================================ -->
+                <!-- IDENTITÉ & PROFESSIONNEL                     -->
+                <!-- ============================================ -->
+                <div class="row">
+                    <!-- Colonne Identité -->
+                    <div class="col-md-6">
+                        <h6 class="section-title"><i class="fas fa-id-card me-2"></i>Identité</h6>
+                        
+                        <div class="row mb-2">
+                            <div class="col-4 detail-label">Matricule</div>
+                            <div class="col-8 detail-value"><strong>{{ employe.matricule }}</strong></div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-4 detail-label">Nom</div>
+                            <div class="col-8 detail-value">{{ employe.nom }}</div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-4 detail-label">Prénom</div>
+                            <div class="col-8 detail-value">{{ employe.prenom }}</div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-4 detail-label">Sexe</div>
+                            <div class="col-8 detail-value">
+                                {% if employe.sexe == 'Masculin' %}
+                                    <span class="badge bg-info">♂ Masculin</span>
+                                {% elif employe.sexe == 'Feminin' %}
+                                    <span class="badge bg-pink" style="background:#d63384;">♀ Féminin</span>
+                                {% else %}
+                                    {{ employe.sexe }}
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-4 detail-label">Date naissance</div>
+                            <div class="col-8 detail-value">
+                                {{ employe.date_naissance.strftime('%d/%m/%Y') if employe.date_naissance else '-' }}
+                                {% if employe.calculer_age() %}
+                                    <span class="badge bg-secondary">({{ employe.calculer_age() }} ans)</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-4 detail-label">Nationalité</div>
+                            <div class="col-8 detail-value">{{ employe.nationalite or '-' }}</div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-4 detail-label">Quartier</div>
+                            <div class="col-8 detail-value">{{ employe.quartier or '-' }}</div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-4 detail-label">Téléphone</div>
+                            <div class="col-8 detail-value">
+                                {% if employe.telephone %}
+                                    <a href="tel:{{ employe.telephone }}">{{ employe.telephone }}</a>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-4 detail-label">Email</div>
+                            <div class="col-8 detail-value">
+                                {% if employe.email %}
+                                    <a href="mailto:{{ employe.email }}">{{ employe.email }}</a>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Colonne Professionnel -->
+                    <div class="col-md-6">
+                        <h6 class="section-title"><i class="fas fa-briefcase me-2"></i>Professionnel</h6>
+                        
+                        <div class="row mb-2">
+                            <div class="col-4 detail-label">Service</div>
+                            <div class="col-8 detail-value">
+                                {% if employe.service %}
+                                    <span class="badge bg-primary">{{ employe.service.nom }}</span>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-4 detail-label">Poste</div>
+                            <div class="col-8 detail-value"><strong>{{ employe.poste or '-' }}</strong></div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-4 detail-label">N° poste</div>
+                            <div class="col-8 detail-value">{{ employe.numero_poste or '-' }}</div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-4 detail-label">Date embauche</div>
+                            <div class="col-8 detail-value">
+                                {{ employe.date_embauche.strftime('%d/%m/%Y') if employe.date_embauche else '-' }}
+                                {% if employe.calculer_anciennete() %}
+                                    <span class="badge bg-secondary">({{ employe.calculer_anciennete() }} an(s))</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-4 detail-label">Type contrat</div>
+                            <div class="col-8 detail-value">
+                                {% if employe.type_contrat %}
+                                    <span class="badge bg-secondary">{{ employe.type_contrat }}</span>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-4 detail-label">Salaire base</div>
+                            <div class="col-8 detail-value">
+                                {% if employe.salaire_base %}
+                                    <strong>{{ '{:,.0f}'.format(employe.salaire_base|float) }} FCFA</strong>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-4 detail-label">Statut</div>
+                            <div class="col-8 detail-value">
+                                {% if employe.statut == 'Actif' %}
+                                    <span class="badge bg-success" style="font-size:14px;">✅ Actif</span>
+                                {% elif employe.statut == 'En conge' %}
+                                    <span class="badge bg-warning text-dark" style="font-size:14px;"> En congé</span>
+                                {% elif employe.statut == 'Inactif' %}
+                                    <span class="badge bg-danger" style="font-size:14px;">⛔ Inactif</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ employe.statut }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================ -->
+                <!-- URGENCE                                        -->
+                <!-- ============================================ -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6 class="section-title"><i class="fas fa-phone-alt me-2"></i>Contact d'urgence</h6>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="row mb-2">
+                                    <div class="col-4 detail-label">Personne</div>
+                                    <div class="col-8 detail-value"><strong>{{ employe.personne_a_prevenir or '-' }}</strong></div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="row mb-2">
+                                    <div class="col-4 detail-label">Téléphone</div>
+                                    <div class="col-8 detail-value">
+                                        {% if employe.telephone_prevenir %}
+                                            <a href="tel:{{ employe.telephone_prevenir }}">{{ employe.telephone_prevenir }}</a>
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="row mb-2">
+                                    <div class="col-4 detail-label">Lien</div>
+                                    <div class="col-8 detail-value">{{ employe.lien_parente or '-' }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================ -->
+                <!-- STATISTIQUES RAPIDES                         -->
+                <!-- ============================================ -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6 class="section-title"><i class="fas fa-chart-bar me-2"></i>Statistiques</h6>
+                        <div class="row g-2">
+                            <div class="col-md-3 col-6">
+                                <div class="stat-card-mini">
+                                    <div class="number">{{ solde_info.solde if solde_info else '0' }}</div>
+                                    <div class="label"> Solde congés</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3 col-6">
+                                <div class="stat-card-mini">
+                                    <div class="number">{{ solde_info.conges_pris if solde_info else '0' }}</div>
+                                    <div class="label"> Congés pris</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3 col-6">
+                                <div class="stat-card-mini">
+                                    <div class="number">{{ solde_info.permissions_pris if solde_info else '0' }}</div>
+                                    <div class="label"> Permissions</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3 col-6">
+                                <div class="stat-card-mini">
+                                    <div class="number">{{ employe.conges|length if employe.conges else 0 }}</div>
+                                    <div class="label"> Total congés</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================ -->
+                <!-- HISTORIQUE DES CONGÉS                        -->
+                <!-- ============================================ -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6 class="section-title"><i class="fas fa-calendar-alt me-2"></i>Historique des congés</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Type</th>
+                                        <th>Début</th>
+                                        <th>Fin</th>
+                                        <th>Jours</th>
+                                        <th>Année</th>
+                                        <th>Statut</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% if employe.conges %}
+                                        {% for conge in employe.conges|sort(attribute='date_debut', reverse=True) %}
+                                        <tr>
+                                            <td>
+                                                <span class="badge bg-secondary">
+                                                    {{ conge.type_conge|capitalize }}
+                                                </span>
+                                            </td>
+                                            <td>{{ conge.date_debut.strftime('%d/%m/%Y') if conge.date_debut else '-' }}</td>
+                                            <td>{{ conge.date_fin.strftime('%d/%m/%Y') if conge.date_fin else '-' }}</td>
+                                            <td><strong>{{ conge.nombre_jours or 0 }}</strong></td>
+                                            <td>{{ conge.annee_utilisation or conge.date_debut.year if conge.date_debut else '-' }}</td>
+                                            <td>
+                                                {% if conge.statut == 'approuve' %}
+                                                    <span class="badge bg-success">✅ Approuvé</span>
+                                                {% elif conge.statut == 'en_attente' %}
+                                                    <span class="badge bg-warning text-dark">⏳ En attente</span>
+                                                {% elif conge.statut == 'refuse' %}
+                                                    <span class="badge bg-danger">❌ Refusé</span>
+                                                {% elif conge.statut == 'termine' %}
+                                                    <span class="badge bg-secondary">✔️ Terminé</span>
+                                                {% else %}
+                                                    <span class="badge bg-secondary">{{ conge.statut }}</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    {% else %}
+                                        <tr><td colspan="6" class="text-center text-muted">Aucun congé enregistré</td></tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================ -->
+                <!-- HISTORIQUE DES PERMISSIONS                   -->
+                <!-- ============================================ -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6 class="section-title"><i class="fas fa-door-open me-2"></i>Historique des permissions</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Type</th>
+                                        <th>Période</th>
+                                        <th>Heures</th>
+                                        <th>Jours</th>
+                                        <th>Motif</th>
+                                        <th>Statut</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% if employe.permissions %}
+                                        {% for perm in employe.permissions|sort(attribute='created_at', reverse=True) %}
+                                        <tr>
+                                            <td>
+                                                {% if perm.type_permission == 'heures' %}
+                                                    <span class="badge bg-info"> Heures</span>
+                                                {% elif perm.type_permission == 'journee' %}
+                                                    <span class="badge bg-primary"> Journée</span>
+                                                {% elif perm.type_permission == 'plusieurs_jours' %}
+                                                    <span class="badge bg-warning text-dark"> Multiple</span>
+                                                {% else %}
+                                                    <span class="badge bg-secondary">{{ perm.type_permission }}</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                {% if perm.type_permission == 'heures' %}
+                                                    {{ perm.date_permission.strftime('%d/%m/%Y') if perm.date_permission else '-' }}
+                                                {% else %}
+                                                    {{ perm.date_debut.strftime('%d/%m/%Y') if perm.date_debut else '-' }}
+                                                    {% if perm.date_fin %} → {{ perm.date_fin.strftime('%d/%m/%Y') }}{% endif %}
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                {% if perm.type_permission == 'heures' %}
+                                                    {{ perm.heure_debut.strftime('%H:%M') if perm.heure_debut else '-' }}
+                                                    → {{ perm.heure_fin.strftime('%H:%M') if perm.heure_fin else '-' }}
+                                                {% else %}
+                                                    -
+                                                {% endif %}
+                                            </td>
+                                            <td><strong>{{ perm.nombre_jours or 1 }}</strong></td>
+                                            <td>{{ perm.motif|truncate(30) or '-' }}</td>
+                                            <td>
+                                                {% if perm.statut == 'approuve' %}
+                                                    <span class="badge bg-success">✅ Approuvé</span>
+                                                {% elif perm.statut == 'en_attente' %}
+                                                    <span class="badge bg-warning text-dark">⏳ En attente</span>
+                                                {% elif perm.statut == 'refuse' %}
+                                                    <span class="badge bg-danger">❌ Refusé</span>
+                                                {% else %}
+                                                    <span class="badge bg-secondary">{{ perm.statut }}</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    {% else %}
+                                        <tr><td colspan="6" class="text-center text-muted">Aucune permission enregistrée</td></tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================ -->
+                <!-- BOUTONS D'ACTION                             -->
+                <!-- ============================================ -->
+                <div class="row mt-4 no-print">
+                    <div class="col-12 text-center">
+                        <button onclick="fermerPage()" class="btn btn-secondary">
+                            <i class="fas fa-times me-1"></i> Fermer
+                        </a>
+                        <a href="/rh/employe/modifier/{{ employe.id }}" class="btn btn-warning">
+                            <i class="fas fa-edit me-1"></i> Modifier
+                        </a>
+                        <button onclick="window.print()" class="btn btn-success">
+                            <i class="fas fa-print me-1"></i> Imprimer
+                        </button>
+                    </div>
+                </div>
+
+                {% else %}
+                <div class="alert alert-danger text-center">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Employé non trouvé
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Récupérer l'ID de l'employé
+const employeId = {{ employe.id if employe else 0 }};
+
+function modifierEmploye() {
+    if (employeId) {
+        window.location.href = `/rh/employe/modifier/${employeId}`;
+    }
+}
+
+function imprimerFiche() {
+    window.print();
+}
+
+// ⭐ Gestion des raccourcis clavier
+document.addEventListener('keydown', function(e) {
+    // Ctrl+P = Imprimer
+    if (e.ctrlKey && e.key === 'p') {
+        e.preventDefault();
+        imprimerFiche();
+    }
+    // Escape = Fermer
+    if (e.key === 'Escape') {
+        window.location.href = '/rh/employes';
+    }
+});
+
+function fermerPage() {
+    // ⭐ Essayer de fermer la fenêtre (si ouverte avec window.open)
+    if (window.opener) {
+        window.close();
+    } else {
+        // ⭐ Sinon, rediriger vers la liste des employés
+        window.location.href = '/rh/employes';
+    }
+}
+</script>
+{% endblock %}

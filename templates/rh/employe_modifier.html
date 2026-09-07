@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+
+{% block title %}Modifier l'employé{% endblock %}
+
+{% block content %}
+        <div class="card">
+<div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center">
+    <h5><i class="fas fa-edit"></i> Modifier l'employé</h5>
+    <div>
+        <button class="btn btn-light btn-sm" onclick="fermerPage()">
+            <i class="fas fa-times"></i> Fermer
+        </button>
+    </div>
+</div>
+
+            <div class="card-body">
+                <form id="employeForm">
+                    <input type="hidden" id="empId" value="{{ employe.id }}">
+                    <div class="row">
+                        <!-- Identité -->
+                        <div class="col-md-6">
+                            <div class="card bg-light mb-3">
+                                <div class="card-header bg-info text-white">
+                                    <i class="fas fa-id-card"></i> Identité
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Nom *</label>
+                                            <input type="text" class="form-control" id="empNom" value="{{ employe.nom }}" required>
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Prénom *</label>
+                                            <input type="text" class="form-control" id="empPrenom" value="{{ employe.prenom }}" required>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Sexe *</label>
+                                            <select class="form-control" id="empSexe" required>
+                                                <option value="">Sélectionner</option>
+                                                <option value="Masculin" {% if employe.sexe == 'Masculin' %}selected{% endif %}>Masculin</option>
+                                                <option value="Feminin" {% if employe.sexe == 'Feminin' %}selected{% endif %}>Féminin</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Date de naissance</label>
+                                            <input type="date" class="form-control" id="empDateNaissance" 
+                                                   value="{{ employe.date_naissance.strftime('%Y-%m-%d') if employe.date_naissance else '' }}">
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Téléphone *</label>
+                                            <input type="text" class="form-control" id="empTelephone" value="{{ employe.telephone or '' }}" required>
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Email</label>
+                                            <input type="email" class="form-control" id="empEmail" value="{{ employe.email or '' }}">
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-12 mb-2">
+                                            <label class="form-label">Quartier</label>
+                                            <input type="text" class="form-control" id="empQuartier" value="{{ employe.quartier or '' }}">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Professionnel -->
+                        <div class="col-md-6">
+                            <div class="card bg-light mb-3">
+                                <div class="card-header bg-success text-white">
+                                    <i class="fas fa-briefcase"></i> Professionnel
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Service *</label>
+                                            <select class="form-control" id="empService" required>
+                                                <option value="">Sélectionner</option>
+                                                {% for service in services %}
+                                                <option value="{{ service.id }}" {% if employe.service_id == service.id %}selected{% endif %}>
+                                                    {{ service.nom }}
+                                                </option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Poste *</label>
+                                            <input type="text" class="form-control" id="empPoste" value="{{ employe.poste or '' }}" required>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Date d'embauche *</label>
+                                            <input type="date" class="form-control" id="empDateEmbauche" 
+                                                   value="{{ employe.date_embauche.strftime('%Y-%m-%d') if employe.date_embauche else '' }}" required>
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Type de contrat</label>
+                                            <select class="form-control" id="empTypeContrat">
+                                                <option value="CDI" {% if employe.type_contrat == 'CDI' %}selected{% endif %}>CDI</option>
+                                                <option value="CDD" {% if employe.type_contrat == 'CDD' %}selected{% endif %}>CDD</option>
+                                                <option value="Stage" {% if employe.type_contrat == 'Stage' %}selected{% endif %}>Stage</option>
+                                                <option value="Apprentissage" {% if employe.type_contrat == 'Apprentissage' %}selected{% endif %}>Apprentissage</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Salaire base (FCFA)</label>
+                                            <input type="number" class="form-control" id="empSalaire" value="{{ employe.salaire_base or 0 }}" step="1000">
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Statut</label>
+                                            <select class="form-control" id="empStatut">
+                                                <option value="Actif" {% if employe.statut == 'Actif' %}selected{% endif %}>Actif</option>
+                                                <option value="En conge" {% if employe.statut == 'En conge' %}selected{% endif %}>En congé</option>
+                                                <option value="Inactif" {% if employe.statut == 'Inactif' %}selected{% endif %}>Inactif</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-12 mb-2">
+                                            <label class="form-label">Personne à prévenir</label>
+                                            <input type="text" class="form-control" id="empPrevenir" value="{{ employe.personne_a_prevenir or '' }}">
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Téléphone prévenir</label>
+                                            <input type="text" class="form-control" id="empTelephonePrevenir" value="{{ employe.telephone_prevenir or '' }}">
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <label class="form-label">Lien de parenté</label>
+                                            <input type="text" class="form-control" id="empLienParente" value="{{ employe.lien_parente or '' }}">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+                <div class="text-center mt-3">
+                    <button class="btn btn-secondary" onclick="window.history.back()">Annuler</button>
+                    <button class="btn btn-primary" onclick="sauvegarderModification()">
+                        <i class="fas fa-save"></i> Mettre à jour
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function sauvegarderModification() {
+    const id = document.getElementById('empId').value;
+    
+    const data = {
+        nom: document.getElementById('empNom').value.trim(),
+        prenom: document.getElementById('empPrenom').value.trim(),
+        sexe: document.getElementById('empSexe').value,
+        date_naissance: document.getElementById('empDateNaissance').value,
+        telephone: document.getElementById('empTelephone').value.trim(),
+        email: document.getElementById('empEmail').value.trim(),
+        quartier: document.getElementById('empQuartier').value.trim(),
+        service_id: document.getElementById('empService').value,
+        poste: document.getElementById('empPoste').value.trim(),
+        date_embauche: document.getElementById('empDateEmbauche').value,
+        type_contrat: document.getElementById('empTypeContrat').value,
+        salaire_base: parseFloat(document.getElementById('empSalaire').value) || 0,
+        statut: document.getElementById('empStatut').value,
+        personne_a_prevenir: document.getElementById('empPrevenir').value.trim(),
+        telephone_prevenir: document.getElementById('empTelephonePrevenir').value.trim(),
+        lien_parente: document.getElementById('empLienParente').value.trim()
+    };
+    
+    // Validation
+    if (!data.nom || !data.prenom || !data.sexe || !data.telephone || !data.service_id || !data.poste || !data.date_embauche) {
+        alert('Veuillez remplir tous les champs obligatoires');
+        return;
+    }
+    
+    fetch(`/rh/employe/${id}`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert('Employé modifié avec succès !');
+            window.location.href = `/rh/employe/${id}`;
+        } else {
+            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('❌ Erreur: ' + error));
+}
+
+function fermerPage() {
+    // ⭐ Fermer la page (retour à la liste)
+    window.close();
+    // Si window.close() ne fonctionne pas (car la page n'a pas été ouverte par window.open)
+    // Rediriger vers la page des employés
+    window.location.href = '/rh/employes';
+}
+</script>
+{% endblock %}

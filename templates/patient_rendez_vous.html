@@ -27,6 +27,17 @@
         .table th {
             background-color: #f8f9fa;
         }
+        .badge-statut {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+        }
+        .badge-statut.confirme { background: #d4edda; color: #155724; }
+        .badge-statut.programme { background: #fff3cd; color: #856404; }
+        .badge-statut.annule { background: #f8d7da; color: #721c24; }
+        .badge-statut.reporte { background: #d1ecf1; color: #0c5460; }
+        .badge-statut.termine { background: #e2e3e5; color: #383d41; }
+        .badge-statut.absent { background: #f5c6cb; color: #721c24; }
     </style>
 </head>
 <body>
@@ -39,14 +50,20 @@
                         <i class="fas fa-hospital-user fa-3x mb-2"></i>
                         <h2>{{ structure_nom }}</h2>
                         <p class="mb-0">
+                            {% if structure_adresse %}
                             <i class="fas fa-map-marker-alt"></i> {{ structure_adresse }}<br>
+                            {% endif %}
+                            {% if structure_telephone %}
                             <i class="fas fa-phone"></i> {{ structure_telephone }}
+                            {% endif %}
                         </p>
                     </div>
                     <div class="card-body text-center">
-                        <h4><i class="fas fa-calendar-alt"></i> Mes rendez-vous</h4>
+                        <h4>Mes rendez-vous</h4>
                         <p>Bonjour <strong>{{ patient.nom }} {{ patient.prenom }}</strong></p>
+                        {% if patient.type_assurance %}
                         <p>Assurance: {{ patient.type_assurance }} ({{ patient.taux_prise_charge }}%)</p>
+                        {% endif %}
                         <div class="alert alert-info">
                             <i class="fas fa-info-circle"></i> Consultation uniquement<br>
                             <small>Pour modifier un rendez-vous, veuillez contacter l'établissement.</small>
@@ -57,7 +74,7 @@
                 <!-- Liste des rendez-vous -->
                 <div class="card">
                     <div class="card-header bg-info text-white">
-                        <h5><i class="fas fa-list"></i> Mes rendez-vous à venir</h5>
+                        <h5><i class="fas fa-list"></i> Mes rendez-vous</h5>
                     </div>
                     <div class="card-body">
                         {% if rendez_vous %}
@@ -67,6 +84,7 @@
                                     <tr>
                                         <th>Date</th>
                                         <th>Heure</th>
+                                        <th>Médecin</th>
                                         <th>Motif</th>
                                         <th>Statut</th>
                                     </tr>
@@ -76,19 +94,26 @@
                                     <tr>
                                         <td>{{ rdv.date_rendez_vous }}</td>
                                         <td>{{ rdv.heure_rendez_vous }}</td>
+                                        <td>{{ rdv.medecin_nom or '-' }}</td>
                                         <td>{{ rdv.motif }}</td>
                                         <td>
-                                            {% if rdv.statut == 'confirme' %}
-                                                <span class="badge bg-success">Confirmé</span>
-                                            {% elif rdv.statut == 'programme' %}
-                                                <span class="badge bg-warning">Programmé</span>
-                                            {% elif rdv.statut == 'annule' %}
-                                                <span class="badge bg-danger">Annulé</span>
-                                            {% elif rdv.statut == 'reporte' %}
-                                                <span class="badge bg-info">Reporté</span>
-                                            {% else %}
-                                                <span class="badge bg-secondary">{{ rdv.statut }}</span>
-                                            {% endif %}
+                                            <span class="badge-statut {{ rdv.statut }}">
+                                                {% if rdv.statut == 'confirme' %}
+                                                    Confirmé
+                                                {% elif rdv.statut == 'programme' %}
+                                                    Programmé
+                                                {% elif rdv.statut == 'annule' %}
+                                                    Annulé
+                                                {% elif rdv.statut == 'reporte' %}
+                                                    Reporté
+                                                {% elif rdv.statut == 'termine' %}
+                                                    Terminé
+                                                {% elif rdv.statut == 'absent' %}
+                                                    Absent
+                                                {% else %}
+                                                    {{ rdv.statut }}
+                                                {% endif %}
+                                            </span>
                                         </td>
                                     </tr>
                                     {% endfor %}

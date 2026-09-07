@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bulletin de paie — {{ employe.nom }} {{ employe.prenom }} — {{ paie.get_periode_label() }}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: #f0f2f5;
+            padding: 30px;
+        }
+        .document-container {
+            max-width: 800px;
+            width: 100%;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            padding: 30px 40px;
+            margin: 0 auto;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 3px solid #1a2a6c;
+            padding-bottom: 12px;
+            margin-bottom: 20px;
+        }
+        .header .logo { font-size: 20px; font-weight: 700; color: #1a2a6c; text-transform: uppercase; }
+        .header .periode { text-align: right; font-size: 14px; color: #333; }
+        .header .periode .badge {
+            display: inline-block; margin-top: 6px; padding: 4px 10px; border-radius: 4px;
+            font-size: 12px; font-weight: 600;
+            background: {{ '#d1e7dd' if paie.statut == 'payee' else '#fff3cd' }};
+            color: {{ '#0f5132' if paie.statut == 'payee' else '#664d03' }};
+        }
+        .infos-employe {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px;
+            font-size: 13px; margin-bottom: 20px; padding: 12px; background: #f8f9fa; border-radius: 6px;
+        }
+        .infos-employe div span.label { color: #6c757d; }
+        table.bulletin { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 10px; }
+        table.bulletin th, table.bulletin td { padding: 8px 10px; border: 1px solid #dee2e6; }
+        table.bulletin th { background: #1a2a6c; color: white; text-align: left; }
+        table.bulletin td.montant { text-align: right; font-variant-numeric: tabular-nums; }
+        table.bulletin tr.section td { background: #eef1f8; font-weight: 700; }
+        table.bulletin tr.net td { background: #d1e7dd; font-weight: 700; font-size: 15px; }
+        .footer-note { font-size: 11px; color: #888; margin-top: 20px; text-align: center; }
+        .btn-row { text-align: center; margin-top: 20px; }
+        .btn-print, .btn-fermer {
+            display: inline-block; margin: 0 6px; padding: 10px 24px; border: none; border-radius: 6px;
+            color: white; font-size: 14px; cursor: pointer;
+        }
+        .btn-print { background: #1a2a6c; }
+        .btn-fermer { background: #6c757d; }
+        @media print {
+            body { background: white; padding: 0; }
+            .document-container { box-shadow: none; }
+            .btn-row { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="document-container">
+        <div class="header">
+            <div class="logo">Bulletin de paie</div>
+            <div class="periode">
+                {{ paie.get_periode_label() }}
+                <br><span class="badge">{{ paie.get_statut_label() }}</span>
+            </div>
+        </div>
+
+        <div class="infos-employe">
+            <div><span class="label">Nom : </span><strong>{{ employe.nom }} {{ employe.prenom }}</strong></div>
+            <div><span class="label">Matricule : </span>{{ employe.matricule }}</div>
+            <div><span class="label">Poste : </span>{{ employe.poste or '-' }}</div>
+            <div><span class="label">Date d'embauche : </span>{{ employe.date_embauche.strftime('%d/%m/%Y') if employe.date_embauche else '-' }}</div>
+            <div><span class="label">Statut : </span>{{ 'Public' if paie.secteur == 'public' else 'Privé' }}</div>
+            <div><span class="label">Personnes à charge : </span>{{ paie.personnes_a_charge or 0 }}</div>
+        </div>
+
+        <table class="bulletin">
+            <thead>
+                <tr><th>Élément</th><th style="text-align:right">Montant (FCFA)</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Salaire de base{{ ' (traitement indiciaire)' if paie.secteur == 'public' else '' }}</td><td class="montant">{{ '{:,.0f}'.format(paie.salaire_base) }}</td></tr>
+                <tr><td>Primes</td><td class="montant">{{ '{:,.0f}'.format(paie.primes) }}</td></tr>
+                <tr><td>Indemnités</td><td class="montant">{{ '{:,.0f}'.format(paie.indemnites) }}</td></tr>
+                <tr class="section"><td>Salaire brut</td><td class="montant">{{ '{:,.0f}'.format(paie.salaire_brut) }}</td></tr>
+
+                <tr><td>{{ paie.organisme_retraite }} (retenue salariale — {{ paie.taux_retraite_salarial|round(2) }}%)</td><td class="montant">- {{ '{:,.0f}'.format(paie.retraite_salarial) }}</td></tr>
+                <tr><td>{{ paie.organisme_amu }} (retenue salariale — {{ paie.taux_amu_salarial|round(2) }}%)</td><td class="montant">- {{ '{:,.0f}'.format(paie.amu_salarial) }}</td></tr>
+                <tr class="section"><td>Salaire brut imposable</td><td class="montant">{{ '{:,.0f}'.format(paie.salaire_brut_imposable) }}</td></tr>
+
+                <tr><td>Abattement forfaitaire (28%, plafonné/an)</td><td class="montant">- {{ '{:,.0f}'.format(paie.abattement) }}</td></tr>
+                <tr><td>Déduction personnes à charge ({{ paie.personnes_a_charge or 0 }})</td><td class="montant">- {{ '{:,.0f}'.format(paie.deduction_charges_familiales) }}</td></tr>
+                <tr class="section"><td>Revenu net imposable</td><td class="montant">{{ '{:,.0f}'.format(paie.revenu_net_imposable) }}</td></tr>
+
+                <tr><td>IRPP</td><td class="montant">- {{ '{:,.0f}'.format(paie.irpp) }}</td></tr>
+
+                {% if paie.prets_deduction and paie.prets_deduction > 0 %}
+                <tr><td>Retenue prêt</td><td class="montant">- {{ '{:,.0f}'.format(paie.prets_deduction) }}</td></tr>
+                {% endif %}
+                {% if paie.acomptes_deduction and paie.acomptes_deduction > 0 %}
+                <tr><td>Acompte sur salaire</td><td class="montant">- {{ '{:,.0f}'.format(paie.acomptes_deduction) }}</td></tr>
+                {% endif %}
+                {% for r in (paie.autres_retenues or []) %}
+                <tr><td>{{ r.libelle }}</td><td class="montant">- {{ '{:,.0f}'.format(r.montant or 0) }}</td></tr>
+                {% endfor %}
+
+                <tr class="section"><td>Total retenues</td><td class="montant">- {{ '{:,.0f}'.format(paie.total_retenues) }}</td></tr>
+
+                <tr class="net"><td>NET À PAYER</td><td class="montant">{{ '{:,.0f}'.format(paie.net_a_payer) }}</td></tr>
+
+                <tr><td>Charges patronales {{ paie.organisme_retraite }} ({{ paie.taux_retraite_patronal|round(2) }}%)</td><td class="montant">{{ '{:,.0f}'.format(paie.retraite_patronal) }}</td></tr>
+                <tr><td>Charges patronales {{ paie.organisme_amu }} ({{ paie.taux_amu_patronal|round(2) }}%)</td><td class="montant">{{ '{:,.0f}'.format(paie.amu_patronal) }}</td></tr>
+                {% if paie.formation_pro and paie.formation_pro > 0 %}
+                <tr><td>Taxe formation professionnelle</td><td class="montant">{{ '{:,.0f}'.format(paie.formation_pro) }}</td></tr>
+                {% endif %}
+                <tr class="section"><td>Total charges patronales</td><td class="montant">{{ '{:,.0f}'.format(paie.total_charges_patronales) }}</td></tr>
+            </tbody>
+        </table>
+
+        {% if paie.date_paiement %}
+        <p style="font-size:13px;">Payé le {{ paie.date_paiement.strftime('%d/%m/%Y') }}
+            {% if paie.mode_paiement %}— {{ paie.mode_paiement }}{% endif %}</p>
+        {% endif %}
+
+        <div class="footer-note">
+            Document généré le {{ date_actuelle }} — Taux {{ paie.organisme_retraite }}/{{ paie.organisme_amu }}/IRPP
+            appliqués selon les paramètres de paie (et les éventuelles dérogations individuelles) en
+            vigueur à la date de génération.
+        </div>
+
+        <div class="btn-row">
+            <button class="btn-fermer" onclick="fermerBulletin()"><i class="fas fa-times"></i> Fermer</button>
+            <button class="btn-print" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
+        </div>
+    </div>
+
+    <script>
+        function fermerBulletin() {
+            window.close();
+            setTimeout(function() {
+                if (!window.closed) {
+                    window.location.href = "{{ url_for('rh.page_paie') }}";
+                }
+            }, 500);
+        }
+    </script>
+</body>
+</html>

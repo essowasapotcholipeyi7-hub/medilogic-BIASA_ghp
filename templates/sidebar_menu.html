@@ -1,108 +1,302 @@
-<div class="sidebar" style="max-height: calc(100vh - 100px); overflow-y: auto;">
-    <h5 class="mb-3"><i class="fas fa-chart-line"></i> Menu</h5>
-    <div class="nav flex-column">
-        <!-- Principal -->
-        <a class="nav-link" href="{{ url_for('dashboard') }}">
-            <i class="fas fa-tachometer-alt"></i> Tableau de bord
-        </a>
-        <a class="nav-link" href="{{ url_for('patients') }}">
-            <i class="fas fa-users"></i> Patients
-        </a>
-<li class="nav-item">
-    <a class="nav-link" href="{{ url_for('prescriptions_recues') }}">
-        <i class="fas fa-prescription-bottle me-2 text-success"></i>
-        Prescriptions reçues
-        <span class="badge bg-danger ms-1" id="prescriptionBadge">0</span>
-    </a>
-</li>
-        <a class="nav-link" href="{{ url_for('actes_vente') }}">
-            <i class="fas fa-stethoscope"></i> LABO/RADIO/Actes & Vente
-        </a>
-        <a class="nav-link" href="{{ url_for('pharma_vente') }}">
-            <i class="fas fa-pills"></i> Pharmacie
-        </a>
-<!-- Dans sidebar_menu.html -->
-<a class="nav-link" href="{{ url_for('factures') }}">
-    <i class="fas fa-file-invoice"></i> Factures clients
-</a>
-        <!-- Référentiels AMU avec sous-menu -->
-        <div class="dropdown">
-            <a class="nav-link dropdown-toggle" href="#" id="amuDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                <i class="fas fa-database"></i> Référentiels AMU
-            </a>
-            <ul class="dropdown-menu" aria-labelledby="amuDropdown">
-                <li>
-                    <a class="dropdown-item" href="https://referentiels.amu.tg/#/providers" target="_blank">
-                        <i class="fas fa-hospital"></i> AMU-CNSS
+<!-- ============================================================
+     SIDEBAR MENU
+     ============================================================ -->
+<!-- ⭐ Ce fichier est TOUJOURS inclus depuis l'intérieur du vrai
+     <nav class="sidebar-nav"> de base.html (voir grep sur les 6 templates
+     qui l'incluent : tous étendent base.html). Il n'a donc plus besoin de
+     son propre wrapper .sidebar-wrapper/.sidebar#sidebarMenu — cet
+     enrobage, sans aucun style CSS le concernant (vérifié), portait quand
+     même la classe partagée "sidebar" et héritait donc des règles
+     responsive prévues pour le VRAI sidebar (#sidebar, dans base.html) :
+     sur mobile, il restait affiché en permanence par-dessus le contenu,
+     puisque ce n'est jamais lui que le bouton "masquer" cache. -->
+
+<h5 class="mb-3 menu-title"><i class="fas fa-bars me-2"></i><span class="menu-text">MENU</span></h5>
+
+<div class="nav flex-column">
+
+                <!-- ===== PRINCIPAL ===== -->
+                <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">
+                    <span class="menu-text">Tableau de bord</span>
+                </a>
+                
+                <a class="nav-link {% if request.endpoint == 'patients' %}active{% endif %}" href="{{ url_for('patients') }}">
+                    <span class="menu-text">Liste Patients</span>
+                </a>
+                
+                <a class="nav-link {% if request.endpoint == 'prescriptions_recues' %}active{% endif %}" href="{{ url_for('prescriptions_recues') }}">
+                    <span class="menu-text">Prescriptions reçues</span>
+                    <span class="badge bg-danger ms-1" id="prescriptionBadge">0</span>
+                </a>
+                
+                <a class="nav-link {% if request.endpoint == 'actes_vente' %}active{% endif %}" href="{{ url_for('actes_vente') }}">
+                    <span class="menu-text">Labo/Radio/Hospi/Actes&Vente</span>
+                </a>
+                
+                <a class="nav-link {% if request.endpoint == 'pharma_vente' %}active{% endif %}" href="{{ url_for('pharma_vente') }}">
+                    <span class="menu-text">Pharmacie&Vente</span>
+                </a>
+                
+                <a class="nav-link {% if request.endpoint == 'factures' %}active{% endif %}" href="{{ url_for('factures') }}">
+                    <span class="menu-text">Factures clients&Créances</span>
+                </a>
+
+                <!-- ===== FACTURES PROFORMA ===== -->
+                <a class="nav-link {% if request.endpoint == 'proformas' %}active{% endif %}" href="{{ url_for('proformas') }}">
+                    <span class="menu-text">Factures Proforma</span>
+                    <span class="badge bg-warning text-dark float-end" id="proformaBadge" style="display:none;">0</span>
+                </a>
+
+                
+                <!-- ===== RÉFÉRENTIELS AMU ===== -->
+                <div class="dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="amuDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        <span class="menu-text">Référentiels AMU</span>
                     </a>
-                </li>
-                <li>
-                    <a class="dropdown-item" href="https://prestaplus.inam.tg/Vue/index.php" target="_blank">
-                        <i class="fas fa-file-invoice"></i> AMU-INAM
+                    <ul class="dropdown-menu" aria-labelledby="amuDropdown">
+                        <li>
+                            <a class="dropdown-item" href="https://referentiels.amu.tg/#/providers" target="_blank">
+                                <i class="fas fa-external-link-alt me-2"></i> AMU-CNSS
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="https://prestaplus.inam.tg/Vue/index.php" target="_blank">
+                                <i class="fas fa-external-link-alt me-2"></i> AMU-INAM
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- ===== HISTORIQUE & RENDEZ-VOUS ===== -->
+                <a class="nav-link {% if request.endpoint == 'historique_ventes' %}active{% endif %}" href="{{ url_for('historique_ventes') }}">
+                    <span class="menu-text">Historique des ventes</span>
+                </a>
+
+                <a class="nav-link {% if request.endpoint == 'gestion_medecins' %}active{% endif %}" href="{{ url_for('gestion_medecins') }}">
+                    <span class="menu-text">Medecins&Activités</span>
+                </a>
+
+                <a class="nav-link {% if request.endpoint == 'protocoles.page_protocoles' %}active{% endif %}" href="{{ url_for('protocoles.page_protocoles') }}">
+                    <span class="menu-text">Protocoles et Modèles</span>
+                </a>
+
+                <a class="nav-link {% if request.endpoint == 'rendez_vous' %}active{% endif %}" href="{{ url_for('rendez_vous') }}">
+                    <span class="menu-text">Programmer Rendez-vous</span>
+                </a>
+
+                <a class="nav-link {% if request.endpoint == 'rappels' %}active{% endif %}" href="{{ url_for('rappels') }}">
+                    <span class="menu-text">Rappels des rendez-vous</span>
+                </a>
+
+
+                <!-- ===== CONSULTATION ===== -->
+                {% if session.role in ['admin', 'medecin', 'paramedical'] %}
+                    <a class="nav-link {% if request.endpoint == 'consultation' %}active{% endif %}" href="{{ url_for('consultation') }}">
+                        <span class="menu-text">Consultation & Prise en charge</span>
                     </a>
-                </li>
-            </ul>
-        </div>
+                {% endif %}
 
-        <!-- Historique et Rendez-vous -->
-        <a class="nav-link" href="{{ url_for('historique_ventes') }}">
-            <i class="fas fa-history"></i> Historique
-        </a>
-        <a class="nav-link" href="{{ url_for('rendez_vous') }}">
-            <i class="fas fa-calendar-alt"></i> Rendez-vous
-        </a>
-        <a class="nav-link" href="{{ url_for('rappels_rendez_vous') }}">
-            <i class="fas fa-bell"></i> Rappels
-        </a>
+                <!-- ===== GESTION DES STOCKS ===== -->
+                {% if session.role in ['admin', 'comptable', 'gestionnaire', 'pharmacien'] %}
+                <a class="nav-link {% if request.endpoint == 'gestion_stock' %}active{% endif %}" href="{{ url_for('gestion_stock') }}">
+                    <span class="menu-text">Gestion des stocks</span>
+                </a>
+                {% endif %}
 
-        <!-- ============================================ -->
-        <!-- FACTURES PROFORMA -->
-        <!-- ============================================ -->
-        <a class="nav-link {% if request.endpoint == 'proformas' %}active{% endif %}" href="{{ url_for('proformas') }}">
-            <i class="fas fa-file-invoice"></i> Factures Proforma
-            <span class="badge bg-warning text-dark float-end" id="proformaBadge" style="display:none;">0</span>
-        </a>
+                <!-- ===== ADMINISTRATION ===== -->
+                {% if session.is_admin %}                
+                <a class="nav-link {% if request.endpoint == 'statistiques_ventes' %}active{% endif %}" href="{{ url_for('statistiques_ventes') }}">
+                    <span class="menu-text">Statistiques ventes/assurances</span>
+                </a>
+                
+                <a class="nav-link {% if request.endpoint == 'historique_annulations' %}active{% endif %}" href="{{ url_for('historique_annulations') }}">
+                    <span class="menu-text">Historiques Annulations</span>
+                </a>
+                <a class="nav-link {% if request.path.startswith('/journal') %}active{% endif %}" href="{{ url_for('journal.page_journal') }}">
+                    <span class="menu-text">Journal des mouvements</span>
+                </a>
+                
+                <a class="nav-link {% if request.path.startswith('/rh') %}active{% endif %}" href="{{ url_for('rh.gestion_rh') }}">
+                    <span class="menu-text">Ressources humaines</span>
+                </a>
+                <a class="nav-link {% if request.endpoint == 'admin_finances' %}active{% endif %}" href="{{ url_for('admin_finances') }}">
+                    <span class="menu-text">Finances/Caisse&Charge</span>
+                </a>
+                
+                <a class="nav-link {% if request.path.startswith('/comptabilite') %}active{% endif %}" href="{{ url_for('comptabilite.index') }}">
+                    <span class="menu-text">Comptabilité</span>
+                </a>
+                
+                <a class="nav-link {% if request.endpoint == 'admin_structure' %}active{% endif %}" href="{{ url_for('admin_structure') }}">
+                    <span class="menu-text">Administration générale</span>
+                </a>
+                {% endif %}
 
-        <!-- Dans sidebar_menu.html pour afficher le bon menu -->
-        {% if session.role in ['admin', 'medecin', 'paramedical'] %}
-            <a class="nav-link" href="{{ url_for('consultation') }}">
-                <i class="fas fa-stethoscope"></i> Consultation & Prise en charge
-            </a>
-        {% endif %}
+                <!-- ===== GUIDE D'UTILISATION (visible à tous les utilisateurs) ===== -->
+                <a class="nav-link {% if request.endpoint == 'guide_utilisation' %}active{% endif %}" href="{{ url_for('guide_utilisation') }}">
+                    <i class="fas fa-book-open"></i>
+                    <span class="menu-text">Guide d'utilisation</span>
+                </a>
 
-<!-- Dans sidebar_menu.html -->
-{% if session.role in ['admin', 'comptable', 'gestionnaire', 'pharmacien'] %}
-<li class="nav-item">
-    <a class="nav-link" href="{{ url_for('gestion_stock') }}">
-        <i class="fas fa-boxes"></i> Gestion des stocks
-    </a>
-</li>
-{% endif %}
-
-        <!-- ============================================ -->
-        <!-- ADMINISTRATION -->
-        <!-- ============================================ -->
-        {% if session.is_admin %}
-        <a class="nav-link" href="{{ url_for('admin_finances') }}">
-            <i class="fas fa-coins"></i> Finances
-        </a>
-        <a class="nav-link" href="{{ url_for('statistiques_ventes') }}">
-            <i class="fas fa-chart-bar"></i> Statistiques ventes/assurances
-        </a>
-        <a class="nav-link" href="{{ url_for('historique_annulations') }}">
-            <i class="fas fa-ban"></i> Annulations
-        </a>
-        <a class="nav-link" href="{{ url_for('admin_structure') }}">
-            <i class="fas fa-cog"></i> Administration
-        </a>
-        {% endif %}
-    </div>
 </div>
 
+<!-- ============================================================
+     CSS POUR LE SIDEBAR COLLAPSIBLE - VERSION AMÉLIORÉE
+     ============================================================ -->
+<style>
+    /* ⭐ Les règles ci-dessous stylisent le CONTENU du menu (liens, titre,
+       dropdowns) — elles s'appliquent correctement au vrai #sidebar de
+       base.html via le sélecteur descendant ".sidebar X" puisque ce
+       contenu vit désormais directement dedans (plus de wrapper imbriqué).
+       Les anciennes règles qui redéfinissaient .sidebar lui-même (taille,
+       fond, position...) ont été retirées : elles entraient en conflit
+       avec le vrai conteneur #sidebar de base.html, en particulier son
+       comportement mobile (voir commentaire en haut du fichier). Le
+       mode "réduit" (.collapsed) a été retiré avec elles : rien ne pose
+       plus cette classe depuis la suppression du second toggleSidebar(). -->
+
+    /* ===== TITRE DU MENU ===== */
+    .menu-title {
+        padding: 0 15px 15px 15px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+        margin-bottom: 5px;
+        color: white;
+        font-size: 15px;
+        letter-spacing: 1px;
+        transition: all 0.3s ease;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    .menu-title i {
+        transition: all 0.3s ease;
+    }
+
+    /* ===== NAV ===== */
+    .sidebar .nav {
+        padding-bottom: 10px;
+    }
+
+    /* ===== LIENS - POLICES AGRANDIES ===== */
+    .sidebar .nav-link {
+        color: rgba(255,255,255,0.7);
+        padding: 11px 16px;
+        border-radius: 0;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        white-space: nowrap;
+        text-decoration: none;
+        border-left: 3px solid transparent;
+        flex-shrink: 0;
+        font-size: 15px;
+        font-weight: 500;
+    }
+
+    .sidebar .nav-link:hover {
+        background: rgba(255,255,255,0.1);
+        color: white;
+        transform: translateX(4px);
+    }
+
+    /* ⭐ ONGLET ACTIF - SURBRILLANCE */
+    .sidebar .nav-link.active {
+        background: rgba(102, 126, 234, 0.20);
+        color: white !important;
+        border-left-color: #667eea;
+        box-shadow: inset 0 0 20px rgba(102, 126, 234, 0.08);
+    }
+
+    .sidebar .nav-link.active i {
+        color: #667eea !important;
+    }
+
+    .sidebar .nav-link.active .menu-text {
+        color: white !important;
+        font-weight: 600;
+    }
+
+    .sidebar .nav-link i {
+        width: 24px;
+        margin-right: 12px;
+        font-size: 18px;
+        text-align: center;
+        flex-shrink: 0;
+        transition: all 0.3s ease;
+        color: rgba(255,255,255,0.5);
+    }
+
+    .sidebar .nav-link:hover i,
+    .sidebar .nav-link.active i {
+        color: #667eea;
+    }
+
+    .sidebar .nav-link .menu-text {
+        font-size: 15px;
+        transition: all 0.3s ease;
+    }
+
+    .sidebar .nav-link .badge {
+        margin-left: auto;
+        transition: all 0.3s ease;
+        font-size: 11px;
+        padding: 3px 10px;
+    }
+
+    /* ===== DROPDOWN ===== */
+    .sidebar .dropdown-toggle {
+        cursor: pointer;
+    }
+
+    .sidebar .dropdown-menu {
+        background: rgba(255,255,255,0.1);
+        border: none;
+        border-radius: 0;
+        padding: 0;
+    }
+
+    .sidebar .dropdown-item {
+        color: rgba(255,255,255,0.7);
+        padding: 8px 15px 8px 45px;
+        font-size: 14px;
+        transition: all 0.15s ease;
+    }
+
+    .sidebar .dropdown-item:hover {
+        background: rgba(255,255,255,0.15);
+        color: white;
+    }
+
+    .sidebar .dropdown-item i {
+        margin-right: 10px;
+        font-size: 14px;
+        color: rgba(255,255,255,0.4);
+    }
+
+    /* ===== RESPONSIVE (uniquement le contenu — la taille/position du
+       sidebar lui-même est gérée par base.html) ===== */
+    @media (max-width: 768px) {
+        .sidebar .nav-link {
+            font-size: 14px;
+            padding: 9px 14px;
+        }
+
+        .sidebar .nav-link i {
+            font-size: 16px;
+            width: 20px;
+        }
+    }
+</style>
+
 <script>
-// ============================================
+// ⭐ toggleSidebar()/restoreSidebarState() (bouton "réduire", état persistant)
+// vivent maintenant uniquement dans base.html, qui gère le vrai #sidebar —
+// retirées d'ici pour ne plus avoir deux fonctions de même nom ciblant
+// deux éléments différents.
+
+// ============================================================
 // LOADER
-// ============================================
+// ============================================================
 function showLoader() {
     let loader = document.getElementById('loaderOverlay');
     if (!loader) {
@@ -130,9 +324,9 @@ function hideLoader() {
     }
 }
 
-// ============================================
+// ============================================================
 // COMPTER LES PROFORMAS EN ATTENTE
-// ============================================
+// ============================================================
 function chargerProformaBadge() {
     fetch('/api/proformas/count')
         .then(response => response.json())
@@ -153,12 +347,12 @@ function chargerProformaBadge() {
         });
 }
 
-// ============================================
+// ============================================================
 // LOADER SUR LES LIENS DU MENU
-// ============================================
-document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+// ============================================================
+document.querySelectorAll('.sidebar .nav-link').forEach(function(link) {
     link.addEventListener('click', function(e) {
-        const href = this.getAttribute('href');
+        var href = this.getAttribute('href');
         if (href === '#' || href === 'javascript:void(0)' || this.getAttribute('target') === '_blank') {
             return;
         }
@@ -166,15 +360,15 @@ document.querySelectorAll('.sidebar .nav-link').forEach(link => {
     });
 });
 
-// ============================================
+// ============================================================
 // INITIALISATION
-// ============================================
+// ============================================================
 document.addEventListener('DOMContentLoaded', function() {
     hideLoader();
     chargerProformaBadge();
+    restoreSidebarState();
 });
 
-// Rafraîchir le badge toutes les 60 secondes
 setInterval(chargerProformaBadge, 60000);
 
 window.addEventListener('load', function() {
