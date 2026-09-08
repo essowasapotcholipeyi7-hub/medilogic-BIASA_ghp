@@ -361,12 +361,22 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
                             'credit': round(montant, 2)})
 
         libelle = f"Vente {vente.type} #{vente.id} — {vente.patient_nom}"
+        # ⭐ Le journal de caisse (CAI) doit montrer le montant RÉEL encaissé
+        # du patient, pas seulement les règlements de facture séparés — une
+        # vente où le patient donne de l'argent tout de suite (espèces ou
+        # banque) est un vrai mouvement de caisse/banque, pas juste "une
+        # vente". Seule une vente 100% prise en charge (assurance/crédit,
+        # rien d'encaissé sur le moment) reste classée en VTE.
+        if montant_effectif > 0:
+            journal_vente = 'CAI' if _compte_tresorerie(vente.mode_paiement) == '571' else 'BQ'
+        else:
+            journal_vente = 'VTE'
         ecriture = creer_ecriture(
             structure_id=structure_id,
             date_ecriture=(vente.date_vente.date() if vente.date_vente else datetime.utcnow().date()),
             libelle=libelle,
             lignes=lignes,
-            journal_code='VTE',
+            journal_code=journal_vente,
             piece_justificative=f"VTE-{vente.id}",
             auto=True,
             source_type='vente',
