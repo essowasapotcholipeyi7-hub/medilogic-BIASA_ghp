@@ -602,7 +602,9 @@ function verifierDisponibilites() {
             if (data.disponible) {
                 infoDiv.innerHTML = '<span class="text-success">Créneau disponible</span>';
             } else {
-                infoDiv.innerHTML = '<span class="text-danger">Créneau occupé</span>';
+                // Information seulement — un autre patient est déjà sur ce
+                // créneau, mais ça n'empêche pas d'en programmer un autre.
+                infoDiv.innerHTML = '<span class="text-warning">Un autre patient est déjà programmé à cette heure (vous pouvez quand même valider)</span>';
             }
         })
         .catch(() => {

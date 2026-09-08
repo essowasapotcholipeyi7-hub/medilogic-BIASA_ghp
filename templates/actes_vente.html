@@ -1878,6 +1878,14 @@ function finaliserVente() {
         net_a_payer: parseFloat(netAPayer),
         mode_paiement: document.getElementById('modePaiement').value,
         taux_assurance: parseFloat(tauxPrincipal),
+        // ⭐ FIX : le nom de l'assurance PRINCIPALE n'était jamais envoyé ici
+        // (seul assurance2_nom, la complémentaire, l'était) — côté serveur,
+        // data.get('assurance_nom', 'Assurance') retombait donc toujours sur
+        // le libellé générique 'Assurance', qui ne matche aucune clé connue
+        // dans compte_assurance() et atterrit sur le compte générique
+        // "Autres assurances" en comptabilité, quelle que soit l'assurance
+        // réellement enregistrée sur le patient (ex: AMU-CNSS, OLEA...).
+        assurance_nom: assurancePrincipaleActive && patientAssurance && patientAssurance !== 'non_assure' ? patientAssurance : 'non_assure',
         assurance2_nom: assurance2Active ? (patientAssurance2 || '') : '',
         taux_assurance2: assurance2Active ? parseFloat(tauxComplementaire || 0) : 0,
         societe_assurance2: assurance2Active ? (patientSocieteAssurance2 || '') : '',
@@ -1929,7 +1937,19 @@ function finaliserVente() {
         if(data.success) {
             panier = [];
             afficherPanier();
-            
+
+            // ⭐ FIX : si cette vente vient d'un "Finaliser le panier" depuis
+            // Prescriptions reçues (prescription_ids dans l'URL), marquer
+            // ces prescriptions comme facturées — sinon elles restent
+            // affichées indéfiniment "Au panier" alors qu'elles ont bien
+            // été vendues (vécu en test).
+            const prescriptionIdsUrl = new URLSearchParams(window.location.search).get('prescription_ids');
+            if (prescriptionIdsUrl) {
+                prescriptionIdsUrl.split(',').filter(id => id).forEach(id => {
+                    fetch(`/api/prescriptions/${id}/facturer`, { method: 'POST' }).catch(() => {});
+                });
+            }
+
             if (resteAPayer > 0) {
                 const dateEcheance = new Date();
                 dateEcheance.setDate(dateEcheance.getDate() + 7);

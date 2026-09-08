@@ -459,25 +459,42 @@ def generer_ecriture_paiement_facture(paiement, facture, user_nom='SYSTEME'):
 
 
 def generer_ecriture_remboursement_assurance(montant, assurance_nom, structure_id,
-                                              reference, source_id, user_nom='SYSTEME'):
+                                              reference, source_id, user_nom='SYSTEME',
+                                              numero_reference_versement=None,
+                                              date_versement=None):
     """Un assureur règle (par virement bancaire) le tiers-payant déjà
     reconnu en créance lors des ventes prises en charge. Débit banque,
-    crédit compte assurance."""
+    crédit compte assurance.
+
+    ⭐ Traçabilité : `numero_reference_versement` et `date_versement` sont les
+    pièces justificatives (référence du virement/versement bancaire + date)
+    exigées côté UI à l'encaissement — elles sont reportées ici dans le
+    libellé de la ligne banque (visible directement dans le journal/grand
+    livre) et dans le commentaire de l'écriture (visible au détail).
+    """
     try:
         montant = _to_float(montant)
         if montant <= 0:
             return None
 
         compte_num = compte_assurance(assurance_nom)
+        ref_txt = f" — réf. {numero_reference_versement}" if numero_reference_versement else ""
+        date_txt = f" du {date_versement}" if date_versement else ""
         lignes = [
-            {'numero_compte': '521', 'libelle': f"Virement {assurance_nom}", 'debit': montant},
-            {'numero_compte': compte_num, 'libelle': f"Solde tiers-payant {assurance_nom}", 'credit': montant},
+            {'numero_compte': '521', 'libelle': f"Virement {assurance_nom}{ref_txt}{date_txt}", 'debit': montant},
+            {'numero_compte': compte_num, 'libelle': f"Solde tiers-payant {assurance_nom}{ref_txt}", 'credit': montant},
         ]
+
+        commentaire = None
+        if numero_reference_versement or date_versement:
+            commentaire = (f"Pièce justificative du versement — "
+                            f"N° de référence : {numero_reference_versement or 'non renseigné'} — "
+                            f"Date de versement : {date_versement or 'non renseignée'}")
 
         return creer_ecriture(
             structure_id=structure_id,
             date_ecriture=datetime.utcnow().date(),
-            libelle=f"Remboursement assurance {assurance_nom} — {reference}",
+            libelle=f"Remboursement assurance {assurance_nom} — {reference}{ref_txt}",
             lignes=lignes,
             journal_code='BQ',
             piece_justificative=f"ASS-{source_id}",
@@ -485,6 +502,7 @@ def generer_ecriture_remboursement_assurance(montant, assurance_nom, structure_i
             source_type='paiement_assurance',
             source_id=source_id,
             user_nom=user_nom,
+            commentaire=commentaire,
         )
     except Exception as e:
         db.session.rollback()

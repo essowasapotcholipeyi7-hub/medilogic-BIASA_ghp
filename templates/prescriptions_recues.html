@@ -4,14 +4,20 @@
 
 {% block content %}
 <div class="container-fluid">
-    <!-- ⭐ PANIER FLOTTANT -->
+    <!-- ⭐ PANIER FLOTTANT — déplaçable (glisser depuis l'en-tête) et
+         repliable, pour ne plus rester coincé au-dessus des prescriptions -->
     <div id="panierFloating" class="position-fixed bottom-0 end-0 p-3" style="z-index: 1050; display: none;">
         <div class="card shadow-lg border-0" style="min-width: 280px; border-radius: 15px;">
-            <div class="card-header bg-success text-white rounded-top d-flex justify-content-between align-items-center">
-                <h6 class="mb-0"><i class="fas fa-shopping-cart me-2"></i>Mon panier</h6>
-                <span class="badge bg-light text-dark" id="panierCount">0</span>
+            <div class="card-header bg-success text-white rounded-top d-flex justify-content-between align-items-center" id="panierDragHandle" style="cursor: move;" title="Glisser pour déplacer">
+                <h6 class="mb-0"><i class="fas fa-shopping-cart me-2"></i><i class="fas fa-arrows-alt small me-1 opacity-50"></i>Mon panier</h6>
+                <div>
+                    <span class="badge bg-light text-dark me-1" id="panierCount">0</span>
+                    <button class="btn btn-sm btn-outline-light py-0 px-1" onclick="togglePanierReduit(event)" id="panierReduireBtn" title="Réduire/agrandir">
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                </div>
             </div>
-            <div class="card-body">
+            <div class="card-body" id="panierBody">
                 <div id="panierContent">
                     <p class="text-muted small mb-1">Total: <strong id="panierTotal">0 FCFA</strong></p>
                     <div id="panierItems" class="small" style="max-height: 150px; overflow-y: auto;"></div>
@@ -117,7 +123,7 @@
                                     <span class="badge bg-secondary ms-2">{{ items|length }} prescription(s)</span>
                                 </div>
                                 <div>
-                                    <button class="btn btn-sm btn-success" onclick="ajouterPanierGroupe({{ items|map(attribute='id')|list|tojson }})" title="Tout ajouter au panier">
+                                    <button class="btn btn-sm btn-success" onclick="ajouterPanierGroupe({{ items|selectattr('article_trouve')|map(attribute='id')|list|tojson }})" title="Ajouter au panier tout ce qui est disponible dans le catalogue (les articles en rouge sont exclus)">
                                         <i class="fas fa-cart-plus me-1"></i> Panier
                                     </button>
                                     <button class="btn btn-sm btn-info" onclick="imprimerMedicaments({{ patient_id }})" title="Imprimer toutes les prescriptions médicamenteuses">
@@ -144,8 +150,15 @@
                                         <tbody>
                                             {# ⭐ TRIER les items par date de prescription (plus récent en premier) #}
                                             {% for p in items|sort(attribute='date_prescription', reverse=True) %}
-                                            <tr id="presc-row-{{ p.id }}" data-type="pharma" data-patient="{{ patient_id }}" data-patient-nom="{{ patient_nom }}" data-patient-prenom="{{ patient_prenom }}">
-                                                <td><strong>{{ p.medicament }}</strong></td>
+                                            <tr id="presc-row-{{ p.id }}" data-type="pharma" data-patient="{{ patient_id }}" data-patient-nom="{{ patient_nom }}" data-patient-prenom="{{ patient_prenom }}" data-statut="{{ p.statut or 'EN_ATTENTE' }}" data-trouve="{{ 'true' if p.article_trouve else 'false' }}">
+                                                <td>
+                                                    {% if p.article_trouve %}
+                                                        <span class="badge bg-success me-1" title="Disponible dans le catalogue de la structure">●</span>
+                                                    {% else %}
+                                                        <span class="badge bg-danger me-1" title="Absent du catalogue de cette structure — le patient devra l'obtenir ailleurs">●</span>
+                                                    {% endif %}
+                                                    <strong>{{ p.medicament }}</strong>
+                                                </td>
                                                 <td>{{ p.dosage or '-' }}</td>
                                                 <td>{{ p.quantite or '1' }}</td>
                                                 <td class="text-end">{{ (p.prix_unitaire or 0)|int|format_currency }}</td>
@@ -230,7 +243,7 @@
                             <span class="badge bg-secondary ms-2">{{ items|length }} prescription(s)</span>
                         </div>
                         <div>
-                            <button class="btn btn-sm btn-success" onclick="ajouterPanierGroupe({{ items|map(attribute='id')|list|tojson }})" title="Tout ajouter au panier">
+                            <button class="btn btn-sm btn-success" onclick="ajouterPanierGroupe({{ items|selectattr('article_trouve')|map(attribute='id')|list|tojson }})" title="Ajouter au panier tout ce qui est disponible dans le catalogue (les articles en rouge sont exclus)">
                                 <i class="fas fa-cart-plus me-1"></i> Panier
                             </button>
                             <button class="btn btn-sm btn-info" onclick="imprimerActes({{ patient_id }})" title="Imprimer toutes les prescriptions d'actes">
@@ -254,8 +267,26 @@
                                 <tbody>
                                     {# ⭐ TRIER les items par date de prescription (plus récent en premier) #}
                                     {% for p in items|sort(attribute='date_prescription', reverse=True) %}
-                                    <tr id="presc-row-{{ p.id }}" data-type="actes" data-patient="{{ patient_id }}" data-patient-nom="{{ patient_nom }}" data-patient-prenom="{{ patient_prenom }}">
-                                        <td><strong>{{ p.medicament }}</strong></td>
+                                    <tr id="presc-row-{{ p.id }}" data-type="actes" data-patient="{{ patient_id }}" data-patient-nom="{{ patient_nom }}" data-patient-prenom="{{ patient_prenom }}" data-statut="{{ p.statut or 'EN_ATTENTE' }}" data-trouve="{{ 'true' if p.article_trouve else 'false' }}">
+                                        <td>
+                                            {% if p.article_trouve %}
+                                                <span class="badge bg-success me-1" title="Disponible dans le catalogue de la structure">●</span>
+                                            {% else %}
+                                                <span class="badge bg-danger me-1" title="Absent du catalogue de cette structure — le patient devra l'obtenir ailleurs">●</span>
+                                            {% endif %}
+                                            {# ⭐ Onglet global (étape 6 du plan) : cette table réunit déjà
+                                               3 sources (acte prescrit / acte posé / hospitalisation) dans le
+                                               même flux "Vendre" — un badge de type évite que la caissière
+                                               confonde une hospitalisation avec un simple acte. #}
+                                            {% if p.type_prescription == 'acte_pose' %}
+                                                <span class="badge bg-info text-dark me-1" title="Acte réalisé par un infirmier/médecin (onglet Actes posés)">Acte posé</span>
+                                            {% elif p.type_prescription == 'hospitalisation' %}
+                                                <span class="badge bg-dark me-1" title="Facturation d'un séjour d'hospitalisation">Hospitalisation</span>
+                                            {% else %}
+                                                <span class="badge bg-primary me-1" title="Acte prescrit en consultation">Acte prescrit</span>
+                                            {% endif %}
+                                            <strong>{{ p.medicament }}</strong>
+                                        </td>
                                         <td class="text-end fw-bold">{{ (p.prix_total or 0)|int|format_currency }}</td>
                                         <td>{{ p.prescripteur or '-' }}</td>
                                         <td>{{ p.date_prescription.strftime('%d/%m/%Y') if p.date_prescription else '-' }}</td>
@@ -408,15 +439,33 @@ function mettreAJourPanier() {
 // ============================================
 function mettreAJourStatutsPanier() {
     const idsDansPanier = panier.map(item => item.prescription_id);
-    
+
+    // ⭐ IMPORTANT : cette fonction ne doit jamais décider "En attente" par
+    // défaut pour une ligne qui n'est pas dans le panier de LA SESSION
+    // COURANTE. Avant ce fix, toute ligne réellement AU_PANIER (ajoutée par
+    // une session précédente jamais finalisée/vidée — onglet fermé, session
+    // expirée...) était réaffichée comme "En attente" avec un bouton
+    // "Ajouter", qui échouait ensuite côté serveur ("non trouvée ou déjà
+    // traitée") puisque la ligne n'était PAS réellement en attente. On se
+    // base maintenant sur data-statut (l'état réel en base au chargement de
+    // la page), et on ne touche pas du tout aux états terminaux
+    // (DELIVREE/FACTURE).
     document.querySelectorAll('#pharmaBody tr[id^="presc-row-"], #actesBody tr[id^="presc-row-"]').forEach(row => {
         const id = parseInt(row.id.replace('presc-row-', ''));
         const statutCell = row.querySelector('.statut-cell');
         const actionsCell = row.querySelector('.actions-cell');
-        
+
         if (!statutCell || !actionsCell) return;
-        
-        if (idsDansPanier.includes(id)) {
+
+        const statutServeur = row.dataset.statut || 'EN_ATTENTE';
+
+        if (statutServeur === 'DELIVREE' || statutServeur === 'FACTURE') {
+            // État terminal : rien à faire, on ne remet jamais en jeu une
+            // prescription déjà vendue.
+            return;
+        }
+
+        if (idsDansPanier.includes(id) || statutServeur === 'AU_PANIER') {
             statutCell.innerHTML = '<span class="badge bg-info">Au panier</span>';
             actionsCell.innerHTML = `
                 <div class="btn-group btn-group-sm">
@@ -426,26 +475,14 @@ function mettreAJourStatutsPanier() {
                 </div>
             `;
         } else {
-            const type = row.dataset.type;
-            if (type === 'pharma') {
-                statutCell.innerHTML = '<span class="badge bg-warning">En attente</span>';
-                actionsCell.innerHTML = `
-                    <div class="btn-group btn-group-sm">
-                        <button class="btn btn-info" onclick="voirDetails(${id})" title="Voir détails"><i class="fas fa-eye"></i></button>
-                        <button class="btn btn-success" onclick="ajouterPanier(${id})" title="Ajouter au panier"><i class="fas fa-cart-plus"></i></button>
-                        <button class="btn btn-secondary" onclick="imprimerPrescription(${id})" title="Imprimer"><i class="fas fa-print"></i></button>
-                    </div>
-                `;
-            } else {
-                statutCell.innerHTML = '<span class="badge bg-warning">En attente</span>';
-                actionsCell.innerHTML = `
-                    <div class="btn-group btn-group-sm">
-                        <button class="btn btn-info" onclick="voirDetails(${id})" title="Voir détails"><i class="fas fa-eye"></i></button>
-                        <button class="btn btn-success" onclick="ajouterPanier(${id})" title="Ajouter au panier"><i class="fas fa-cart-plus"></i></button>
-                        <button class="btn btn-secondary" onclick="imprimerPrescription(${id})" title="Imprimer"><i class="fas fa-print"></i></button>
-                    </div>
-                `;
-            }
+            statutCell.innerHTML = '<span class="badge bg-warning">En attente</span>';
+            actionsCell.innerHTML = `
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-info" onclick="voirDetails(${id})" title="Voir détails"><i class="fas fa-eye"></i></button>
+                    <button class="btn btn-success" onclick="ajouterPanier(${id})" title="Ajouter au panier"><i class="fas fa-cart-plus"></i></button>
+                    <button class="btn btn-secondary" onclick="imprimerPrescription(${id})" title="Imprimer"><i class="fas fa-print"></i></button>
+                </div>
+            `;
         }
     });
 }
@@ -454,68 +491,33 @@ function mettreAJourStatutsPanier() {
 // AJOUTER TOUT UN GROUPE
 // ============================================
 function ajouterToutGroupe(type) {
+    // ⭐ Délègue entièrement à ajouterPanierGroupe(), qui fait un fetch par
+    // ligne vers /api/prescriptions/<id>/ajouter-panier (endpoint réel) —
+    // l'ancienne version appelait /api/prescriptions/panier/mass, qui
+    // n'existe pas côté serveur : le bouton "Tout ajouter" ne marchait
+    // jamais réellement (l'UI optimiste faisait illusion un instant avant
+    // que chargerPanier() ne révèle que rien n'avait été ajouté).
     const container = type === 'pharma' ? '#pharmaBody' : '#actesBody';
     const rows = document.querySelectorAll(`${container} tr[id^="presc-row-"]`);
     const ids = [];
-    
+
     rows.forEach(row => {
         const id = parseInt(row.id.replace('presc-row-', ''));
+        // On exclut les articles non trouvés dans le catalogue (badge rouge)
+        // — pas de prix fiable, la caissière devra les traiter à la main.
+        if (row.dataset.trouve !== 'true') return;
         const statutCell = row.querySelector('.statut-cell');
         if (!statutCell || !statutCell.innerHTML.includes('Au panier')) {
             ids.push(id);
         }
     });
-    
+
     if (ids.length === 0) {
-        showToast('⚠️ Aucune prescription à ajouter (déjà toutes au panier)', 'warning');
+        showToast('⚠️ Aucune prescription disponible à ajouter (déjà au panier, ou absentes du catalogue)', 'warning');
         return;
     }
-    
-    if (!confirm(`Ajouter ${ids.length} prescription(s) au panier ?`)) return;
-    if (isAjoutEnCours) return;
-    isAjoutEnCours = true;
-    
-    // Mise à jour UI optimiste
-    ids.forEach(id => {
-        const row = document.getElementById(`presc-row-${id}`);
-        if (row) {
-            const statutCell = row.querySelector('.statut-cell');
-            const actionsCell = row.querySelector('.actions-cell');
-            if (statutCell) statutCell.innerHTML = '<span class="badge bg-info">Au panier</span>';
-            if (actionsCell) {
-                actionsCell.innerHTML = `
-                    <div class="btn-group btn-group-sm">
-                        <button class="btn btn-info" onclick="voirDetails(${id})" title="Voir détails"><i class="fas fa-eye"></i></button>
-                        <button class="btn btn-danger" onclick="retirerPanier(${id})" title="Retirer du panier"><i class="fas fa-trash"></i></button>
-                        <button class="btn btn-secondary" onclick="imprimerPrescription(${id})" title="Imprimer"><i class="fas fa-print"></i></button>
-                    </div>
-                `;
-            }
-        }
-    });
-    
-    // Appel API massif
-    fetch('/api/prescriptions/panier/mass', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ ids: ids, action: 'add' })
-    })
-    .then(response => response.json())
-    .then(data => {
-        isAjoutEnCours = false;
-        if (data.success) {
-            chargerPanier();
-            showToast(`✅ ${ids.length} prescriptions ajoutées au panier`, 'success');
-        } else {
-            showToast('❌ Erreur lors de l\'ajout', 'danger');
-            chargerPanier();
-        }
-    })
-    .catch(() => {
-        isAjoutEnCours = false;
-        showToast('❌ Erreur réseau', 'danger');
-        chargerPanier();
-    });
+
+    ajouterPanierGroupe(ids);
 }
 
 // ============================================
@@ -543,6 +545,7 @@ function ajouterPanierGroupe(ids) {
     idsFiltered.forEach(id => {
         const row = document.getElementById(`presc-row-${id}`);
         if (row) {
+            row.dataset.statut = 'AU_PANIER';
             const statutCell = row.querySelector('.statut-cell');
             const actionsCell = row.querySelector('.actions-cell');
             if (statutCell) statutCell.innerHTML = '<span class="badge bg-info">Au panier</span>';
@@ -558,31 +561,33 @@ function ajouterPanierGroupe(ids) {
         }
     });
     
-    // Appels API individuels
-    const promesses = idsFiltered.map(id => 
-        fetch(`/api/prescriptions/${id}/ajouter-panier`, { method: 'POST' })
-            .then(response => response.json())
-            .then(data => data.success ? 1 : 0)
-            .catch(() => 0)
-    );
-    
-    Promise.all(promesses)
-        .then(resultats => {
-            const success = resultats.reduce((a, b) => a + b, 0);
-            isAjoutEnCours = false;
-            chargerPanier();
-            
-            if (success === idsFiltered.length) {
-                showToast(`✅ ${success} prescriptions ajoutées au panier`, 'success');
-            } else {
-                showToast(`⚠️ ${success}/${idsFiltered.length} prescriptions ajoutées`, 'warning');
-            }
-        })
-        .catch(() => {
-            isAjoutEnCours = false;
-            chargerPanier();
-            showToast('⚠️ Erreur lors de l\'ajout', 'warning');
-        });
+    // ⭐ Appels API SÉQUENTIELS (un par un), volontairement pas en
+    // parallèle : le panier est stocké dans la session Flask (lecture →
+    // ajout → écriture à chaque requête) — plusieurs requêtes concurrentes
+    // se marchent dessus (la dernière écriture gagne et écrase les autres),
+    // ce qui laissait des prescriptions marquées "AU_PANIER" en base sans
+    // jamais apparaître dans le panier réellement affiché. Constaté en
+    // testant : sur 3 ajouts groupés, 1 seul restait dans le panier alors
+    // que les 3 passaient bien à AU_PANIER en base.
+    (async () => {
+        let success = 0;
+        for (const id of idsFiltered) {
+            try {
+                const response = await fetch(`/api/prescriptions/${id}/ajouter-panier`, { method: 'POST' });
+                const data = await response.json();
+                if (data.success) success++;
+            } catch (e) { /* ignoré, comptabilisé comme échec */ }
+        }
+
+        isAjoutEnCours = false;
+        chargerPanier();
+
+        if (success === idsFiltered.length) {
+            showToast(`✅ ${success} prescriptions ajoutées au panier`, 'success');
+        } else {
+            showToast(`⚠️ ${success}/${idsFiltered.length} prescriptions ajoutées`, 'warning');
+        }
+    })();
 }
 
 // ============================================
@@ -603,6 +608,7 @@ function ajouterPanier(id) {
     // Mise à jour UI optimiste
     const row = document.getElementById(`presc-row-${id}`);
     if (row) {
+        row.dataset.statut = 'AU_PANIER';
         const statutCell = row.querySelector('.statut-cell');
         const actionsCell = row.querySelector('.actions-cell');
         if (statutCell) statutCell.innerHTML = '<span class="badge bg-info">Au panier</span>';
@@ -642,6 +648,7 @@ function retirerPanier(id) {
     // Mise à jour UI optimiste
     const row = document.getElementById(`presc-row-${id}`);
     if (row) {
+        row.dataset.statut = 'EN_ATTENTE';
         const statutCell = row.querySelector('.statut-cell');
         const actionsCell = row.querySelector('.actions-cell');
         const type = row.dataset.type;
@@ -725,59 +732,134 @@ function viderPanier() {
 // ============================================
 // FINALISER LE PANIER
 // ============================================
-function finaliserPanier() {
+async function finaliserPanier() {
     if (panier.length === 0) {
         showToast('⚠️ Le panier est vide', 'warning');
         return;
     }
-    
-    // Récupérer le patient depuis le panier
-    let patientId = sessionStorage.getItem('selectedPatientId');
-    let patientNom = sessionStorage.getItem('selectedPatientName') || '';
-    let patientPrenom = sessionStorage.getItem('selectedPatientPrenom') || '';
-    
-    // Si pas de patient en session, prendre le premier du panier
+
+    // ⭐ Le patient vient D'ABORD du contenu réel du panier (ce qu'on
+    // s'apprête à vendre), pas d'un sessionStorage laissé par une visite
+    // antérieure de la page Patients — sinon on risque de présélectionner
+    // silencieusement le MAUVAIS patient sur la page de vente. On ne se
+    // rabat sur sessionStorage que si le panier lui-même ne sait pas qui
+    // c'est (ancien panier créé avant l'ajout de patient_id côté serveur).
+    const firstItem = panier[0];
+    let patientId = firstItem?.patient_id;
+    let patientNom = firstItem?.patient_nom || '';
+    let patientPrenom = firstItem?.patient_prenom || '';
+
     if (!patientId || patientId === 'null' || patientId === 'undefined') {
-        const firstItem = panier[0];
-        patientId = firstItem?.patient_id;
-        patientNom = firstItem?.patient_nom || '';
-        patientPrenom = firstItem?.patient_prenom || '';
+        patientId = sessionStorage.getItem('selectedPatientId');
+        patientNom = sessionStorage.getItem('selectedPatientName') || patientNom;
+        patientPrenom = sessionStorage.getItem('selectedPatientPrenom') || patientPrenom;
     }
-    
+
     if (!patientId || patientId === 'null' || patientId === 'undefined') {
-        showToast('⚠️ Veuillez d\'abord sélectionner un patient', 'warning');
+        showToast('⚠️ Patient introuvable pour ce panier — réessayez depuis "Ajouter au panier"', 'warning');
         return;
     }
-    
-    // Déterminer le type
-    const aDesActes = panier.some(item => item.type === 'acte');
-    const aDesMedicaments = panier.some(item => item.type === 'medicament');
-    
+
+    // ⭐ Garde-fou : un panier ne doit contenir que les articles d'UN SEUL
+    // patient (la vente qui suit est toujours pour un seul patient). Si des
+    // articles d'un autre patient s'y sont glissés, on prévient au lieu de
+    // les vendre silencieusement au mauvais patient.
+    const autrePatient = panier.find(item =>
+        (item.patient_nom || '') !== patientNom || (item.patient_prenom || '') !== patientPrenom
+    );
+    if (autrePatient) {
+        showToast(
+            `⚠️ Le panier contient des articles de plusieurs patients (dont ${autrePatient.patient_nom} ${autrePatient.patient_prenom}). Retirez-les avant de finaliser.`,
+            'danger'
+        );
+        return;
+    }
+
+    // ⭐ Déterminer le type de vente. "Actes" recouvre en réalité 4 valeurs
+    // possibles côté base (acte, actes, acte_pose, hospitalisation) — un
+    // panier ne contenant QUE des actes posés ou QUE de l'hospitalisation
+    // (sans jamais la valeur littérale 'acte') tombait auparavant dans le
+    // cas "mixte" et repartait à tort vers la vente PHARMACIE.
+    const estPharma = item => ['medicament', 'pharma', 'pharmacie'].includes(item.type);
+    const aDesActes = panier.some(item => !estPharma(item));
+    const aDesMedicaments = panier.some(estPharma);
+
     let type = 'mixte';
     if (aDesActes && !aDesMedicaments) type = 'actes';
     else if (aDesMedicaments && !aDesActes) type = 'pharma';
-    
+
+    if (type === 'mixte') {
+        showToast('⚠️ Le panier mélange médicaments et actes — finalisez-les séparément (retirez l\'un des deux types)', 'danger');
+        return;
+    }
+
     const total = panier.reduce((sum, item) => sum + (item.prix_total || 0), 0);
     const ids = panier.map(item => item.prescription_id).join(',');
-    
+
     let msg = `📋 Finaliser le panier ?\n\n`;
     msg += `👤 Patient: ${patientNom} ${patientPrenom}\n`;
     msg += `📦 ${panier.length} article(s)\n`;
     msg += `💰 Total: ${total.toLocaleString()} FCFA\n\n`;
-    msg += type === 'actes' ? '🔬 Vente d\'ACTES' : type === 'pharma' ? '💊 Vente PHARMACIE' : '📋 Panier mixte';
+    msg += type === 'actes' ? '🔬 Vente d\'ACTES' : '💊 Vente PHARMACIE';
     msg += `\n\nLe patient et les articles seront automatiquement chargés ✅`;
-    
+
     if (!confirm(msg)) return;
-    
+
+    // ⭐ actes_vente/pharma_vente ne lisent PAS l'URL pour savoir quel
+    // patient est sélectionné — elles lisent uniquement sessionStorage
+    // (mécanisme partagé avec la page "Patients", checkSelectedPatient()).
+    // Sans ceci, le patient n'était jamais réellement présélectionné à
+    // l'arrivée : la page de vente s'ouvrait sur "Aucun patient
+    // sélectionné" et il fallait le rechercher à nouveau manuellement.
+    // On récupère ses infos d'assurance (nécessaires au calcul de prise en
+    // charge) avant de rediriger.
+    try {
+        const resp = await fetch(`/api/patients/${patientId}`);
+        if (resp.ok) {
+            const infos = await resp.json();
+            sessionStorage.setItem('selectedPatientId', String(patientId));
+            sessionStorage.setItem('selectedPatientName', `${infos.nom || patientNom} ${infos.prenom || patientPrenom}`.trim());
+            sessionStorage.setItem('selectedPatientPrenom', infos.prenom || patientPrenom);
+            sessionStorage.setItem('selectedPatientAssurance', infos.type_assurance || 'non_assure');
+            sessionStorage.setItem('selectedPatientTaux', String(infos.taux_prise_charge || 0));
+            sessionStorage.setItem('selectedPatientNumero', infos.numero_assure || '');
+            sessionStorage.setItem('selectedPatientAssurance2', infos.assurance2_nom || '');
+            sessionStorage.setItem('selectedPatientTaux2', String(infos.taux_assurance2 || 0));
+            sessionStorage.setItem('selectedPatientNumero2', infos.numero_assure2 || '');
+            sessionStorage.setItem('selectedPatientSocieteAssurance2', infos.societe_assurance2 || '');
+        } else {
+            console.warn('Patient introuvable côté API, présélection partielle (nom seul)');
+            sessionStorage.setItem('selectedPatientId', String(patientId));
+            sessionStorage.setItem('selectedPatientName', `${patientNom} ${patientPrenom}`.trim());
+        }
+    } catch (e) {
+        console.warn('Erreur récupération infos patient, présélection partielle', e);
+        sessionStorage.setItem('selectedPatientId', String(patientId));
+        sessionStorage.setItem('selectedPatientName', `${patientNom} ${patientPrenom}`.trim());
+    }
+
     const baseUrl = type === 'actes' ? '/actes_vente' : '/pharma_vente';
     const url = `${baseUrl}?prescription_ids=${ids}&patient_id=${patientId}&patient_nom=${encodeURIComponent(patientNom)}&patient_prenom=${encodeURIComponent(patientPrenom)}`;
-    
+
     window.location.href = url;
 }
 
 // ============================================
 // VOIR DÉTAILS
 // ============================================
+function libelleTypePrescription(type) {
+    const labels = {
+        'medicament': 'Médicament',
+        'pharma': 'Médicament',
+        'pharmacie': 'Médicament',
+        'acte': 'Acte prescrit',
+        'actes': 'Acte prescrit',
+        'acte_pose': 'Acte posé',
+        'hospitalisation': 'Hospitalisation'
+    };
+    return labels[type] || type;
+}
+
 function voirDetails(id) {
     prescriptionIdActuel = id;
     
@@ -795,8 +877,12 @@ function voirDetails(id) {
                         </div>
                         <div class="col-md-6">
                             <h6><i class="fas fa-prescription me-2"></i>Prescription</h6>
-                            <p><strong>${p.medicament}</strong></p>
-                            <p class="text-muted small">Type: ${p.type}</p>
+                            <p>
+                                <span class="badge ${p.article_trouve ? 'bg-success' : 'bg-danger'} me-1">●</span>
+                                <strong>${p.medicament}</strong>
+                            </p>
+                            <p class="text-muted small">Type: ${libelleTypePrescription(p.type)}</p>
+                            ${!p.article_trouve ? '<p class="text-danger small mb-0"><i class="fas fa-triangle-exclamation me-1"></i>Absent du catalogue de cette structure — le patient devra l\'obtenir ailleurs.</p>' : ''}
                         </div>
                     </div>
                     <hr>
@@ -913,6 +999,97 @@ function togglePanier() {
     const floating = document.getElementById('panierFloating');
     floating.style.display = floating.style.display === 'block' ? 'none' : 'block';
 }
+
+// ============================================
+// PANIER FLOTTANT — DÉPLACEMENT & RÉDUCTION
+// ============================================
+// Le panier restait figé en bas à droite et cachait les prescriptions
+// en dessous. On le rend déplaçable (glisser depuis l'en-tête, souris ou
+// tactile) et réductible ; la position choisie est mémorisée pour cette
+// session de navigation.
+function togglePanierReduit(evt) {
+    if (evt) evt.stopPropagation();
+    const body = document.getElementById('panierBody');
+    const icon = document.querySelector('#panierReduireBtn i');
+    const reduit = body.style.display === 'none';
+    body.style.display = reduit ? 'block' : 'none';
+    if (icon) icon.className = reduit ? 'fas fa-chevron-down' : 'fas fa-chevron-up';
+}
+
+(function initPanierDraggable() {
+    const floating = document.getElementById('panierFloating');
+    const handle = document.getElementById('panierDragHandle');
+    if (!floating || !handle) return;
+
+    // Position sauvegardée (persiste tant que l'onglet reste ouvert) :
+    // sinon on garde la position par défaut (bas-droite, via les classes
+    // Bootstrap position-fixed bottom-0 end-0).
+    const posSauvee = sessionStorage.getItem('panierPosition');
+    if (posSauvee) {
+        try {
+            const { left, top } = JSON.parse(posSauvee);
+            floating.classList.remove('bottom-0', 'end-0');
+            floating.style.left = left + 'px';
+            floating.style.top = top + 'px';
+            floating.style.right = 'auto';
+            floating.style.bottom = 'auto';
+        } catch (e) { /* position invalide, on garde le défaut */ }
+    }
+
+    let dragging = false;
+    let offsetX = 0, offsetY = 0;
+
+    function pointFromEvent(e) {
+        return e.touches ? e.touches[0] : e;
+    }
+
+    function onDragStart(e) {
+        dragging = true;
+        const pt = pointFromEvent(e);
+        const rect = floating.getBoundingClientRect();
+        offsetX = pt.clientX - rect.left;
+        offsetY = pt.clientY - rect.top;
+        // Bascule d'un positionnement bottom/end à un positionnement
+        // left/top explicite dès qu'on commence à déplacer.
+        floating.classList.remove('bottom-0', 'end-0');
+        floating.style.right = 'auto';
+        floating.style.bottom = 'auto';
+        floating.style.left = rect.left + 'px';
+        floating.style.top = rect.top + 'px';
+        e.preventDefault();
+    }
+
+    function onDragMove(e) {
+        if (!dragging) return;
+        const pt = pointFromEvent(e);
+        const rect = floating.getBoundingClientRect();
+        let left = pt.clientX - offsetX;
+        let top = pt.clientY - offsetY;
+        // Reste toujours au moins partiellement visible dans le viewport
+        left = Math.max(0, Math.min(left, window.innerWidth - rect.width));
+        top = Math.max(0, Math.min(top, window.innerHeight - rect.height));
+        floating.style.left = left + 'px';
+        floating.style.top = top + 'px';
+        e.preventDefault();
+    }
+
+    function onDragEnd() {
+        if (!dragging) return;
+        dragging = false;
+        sessionStorage.setItem('panierPosition', JSON.stringify({
+            left: parseFloat(floating.style.left),
+            top: parseFloat(floating.style.top)
+        }));
+    }
+
+    handle.addEventListener('mousedown', onDragStart);
+    document.addEventListener('mousemove', onDragMove);
+    document.addEventListener('mouseup', onDragEnd);
+
+    handle.addEventListener('touchstart', onDragStart, { passive: false });
+    document.addEventListener('touchmove', onDragMove, { passive: false });
+    document.addEventListener('touchend', onDragEnd);
+})();
 
 function rafraichirPrescriptions() {
     const btn = document.querySelector('.btn-outline-primary');

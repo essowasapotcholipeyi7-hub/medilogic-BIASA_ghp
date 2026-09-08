@@ -1602,7 +1602,7 @@ def actes_vente():
                         SELECT * FROM prescriptions_recues
                         WHERE id = ANY(:ids)
                         AND structure_id = :structure_id
-                        AND type_prescription IN ('acte', 'actes')
+                        AND type_prescription IN ('acte', 'actes', 'acte_pose', 'hospitalisation')
                     """),
                     {"ids": ids_list, "structure_id": structure_id}
                 )
@@ -4121,6 +4121,105 @@ def api_creer_rendez_vous():
         }), 400
 
 
+@app.route('/api/rendez-vous/creer-externe', methods=['POST'])
+def api_creer_rendez_vous_externe():
+    """
+    API token (comme /api/prescriptions) : reçoit une demande de RDV poussée
+    depuis gestion_patients (consultation avec suivi programmé), sans passer
+    par une saisie manuelle à l'accueil.
+
+    Contrairement à /rendez_vous/api/creer (session-based), le patient et le
+    médecin ne sont pas des ID GHP connus côté appelant — on les retrouve par
+    nom, comme pour la réception des prescriptions (/api/prescriptions).
+    """
+    token = request.args.get('token')
+    if not token:
+        return jsonify({'success': False, 'error': 'Token manquant'}), 401
+
+    mapping = StructureMapping.query.filter_by(api_key=token, actif=True).first()
+    if not mapping:
+        return jsonify({'success': False, 'error': 'Token invalide'}), 401
+
+    data = request.json or {}
+    structure_id = mapping.local_structure_id
+
+    patient_nom = (data.get('patient_nom') or '').strip()
+    patient_prenom = (data.get('patient_prenom') or '').strip()
+    medecin_nom = (data.get('medecin_nom') or '').strip()
+    date_str = data.get('date')
+    heure = data.get('heure') or '08:00'
+    motif = (data.get('motif') or 'Suivi programmé').strip()
+    notes = data.get('notes') or ''
+    source_id = data.get('source_id')
+
+    if not patient_nom or not date_str:
+        return jsonify({'success': False, 'error': 'patient_nom et date sont obligatoires'}), 400
+
+    # ⭐ Dédoublonnage : si ce même suivi (source_id) a déjà été poussé, on ne
+    # recrée pas un doublon (une consultation peut être resauvegardée
+    # plusieurs fois avec la même date de suivi).
+    marqueur = f"[gestion_patients:consultation:{source_id}]"
+    if source_id and RendezVous.query.filter(
+        RendezVous.structure_id == structure_id,
+        RendezVous.notes.like(f"%{marqueur}%")
+    ).first():
+        return jsonify({'success': True, 'message': 'Déjà poussé précédemment', 'deja_existant': True})
+
+    patient = Patient.query.filter(
+        Patient.structure_id == structure_id,
+        db.func.lower(Patient.nom) == patient_nom.lower(),
+        db.func.lower(Patient.prenom) == patient_prenom.lower()
+    ).first()
+    if not patient:
+        return jsonify({'success': False, 'error': 'patient_introuvable'}), 404
+
+    def _tokens_nom(s):
+        # ⭐ Certaines structures saisissent "Dr" DANS le champ nom lui-même
+        # (ex. Medecin.nom = "Dr GASTON") plutôt que dans le champ titre
+        # dédié — une comparaison par sous-chaîne littérale échoue alors
+        # ("dr gaston" n'est ni un sous-mot de "gaston koffi" ni l'inverse).
+        # On compare par ensembles de mots (hors titres), plus robuste.
+        titres = {'dr', 'pr', 'docteur', 'professeur'}
+        return {
+            mot.strip('.').lower()
+            for mot in (s or '').split()
+            if mot.strip('.').lower() not in titres and mot.strip('.')
+        }
+
+    medecin = None
+    if medecin_nom:
+        medecin_tokens = _tokens_nom(medecin_nom)
+        for m in Medecin.query.filter_by(structure_id=structure_id, actif=True).all():
+            m_tokens = _tokens_nom(m.nom) | _tokens_nom(m.prenom)
+            if medecin_tokens & m_tokens:
+                medecin = m
+                break
+
+    if not medecin:
+        return jsonify({
+            'success': False,
+            'error': 'medecin_introuvable',
+            'message': f"Médecin \"{medecin_nom}\" non retrouvé dans le catalogue GHP de cette structure — le rendez-vous n'a pas pu être créé automatiquement, à programmer manuellement."
+        }), 404
+
+    succes, resultat = RendezVousService.creer_rendez_vous(
+        data={
+            'patient_id': patient.id,
+            'medecin_id': medecin.id,
+            'date': date_str,
+            'heure': heure,
+            'motif': motif,
+            'notes': f"{notes}\n{marqueur}".strip() if notes else marqueur
+        },
+        structure_id=structure_id,
+        utilisateur_nom='gestion_patients (auto)'
+    )
+
+    if succes:
+        return jsonify({'success': True, 'data': resultat})
+    return jsonify({'success': False, 'error': resultat.get('error', 'Erreur lors de la création')}), 400
+
+
 @app.route('/rendez_vous/api/<int:rdv_id>/confirmer', methods=['POST'])
 @login_required
 def api_confirmer_rendez_vous(rdv_id):
@@ -4132,7 +4231,7 @@ def api_confirmer_rendez_vous(rdv_id):
         structure_id=structure_id,
         utilisateur_nom=session.get('user_nom', 'Systeme')
     )
-    
+
     if succes:
         return jsonify({
             'success': True,
@@ -4219,7 +4318,7 @@ def api_liste_patients():
     structure_id = session.get('structure_id')
     
     patients = Patient.query.filter_by(structure_id=structure_id).order_by(Patient.nom).all()
-    
+
     result = []
     for p in patients:
         result.append({
@@ -4416,18 +4515,20 @@ def api_check_conflit():
     except ValueError:
         return jsonify({'success': False, 'error': 'Format de date invalide'}), 400
     
-    conflit = RendezVousService.verifier_conflit(
-        medecin_id=medecin_id,
-        date=date_obj,
-        heure=heure,
-        duree=duree
-    )
-    
-    return jsonify({
-        'success': True,
-        'disponible': conflit is None,
-        'conflit': conflit.to_dict() if conflit else None
-    })
+    try:
+        conflit = RendezVousService.verifier_conflit(
+            medecin_id=medecin_id,
+            date=date_obj,
+            heure=heure,
+            duree=duree
+        )
+        return jsonify({
+            'success': True,
+            'disponible': conflit is None,
+            'conflit': conflit.to_dict() if conflit else None
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/rendez_vous/api/disponibilites/<int:medecin_id>', methods=['GET'])
@@ -4736,7 +4837,6 @@ def api_add_rendez_vous():
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
-
 
 
 
@@ -8190,37 +8290,46 @@ def api_paiement_assurance(facture_id):
         structure_id = session.get('structure_id')
         montant = float(data.get('montant', 0))
         date_remboursement = data.get('date_remboursement')
-        
+
+        # ⭐ Pièces justificatives obligatoires (traçabilité de l'encaissement)
+        numero_reference_versement = (data.get('numero_reference_versement') or '').strip()
+        date_versement = data.get('date_versement')
+        if not numero_reference_versement or not date_versement:
+            return jsonify({'success': False, 'error': "Le numéro de référence du versement et la date de versement sont obligatoires pour tracer l'encaissement."}), 400
+
         # Recuperer la facture
         facture = db.execute_query("""
-            SELECT * FROM factures_assurance 
+            SELECT * FROM factures_assurance
             WHERE id = %s AND structure_id = %s
         """, (facture_id, structure_id))
-        
+
         if not facture:
             return jsonify({'success': False, 'error': 'Facture non trouvee'}), 404
-        
+
         f = facture[0]
         deja_rembourse = float(f.get('montant_rembourse', 0))
         nouveau_rembourse = deja_rembourse + montant
         total_facture = float(f.get('montant_facture', 0))
-        
+
         if nouveau_rembourse > total_facture:
             return jsonify({'success': False, 'error': 'Montant depasse le solde restant'}), 400
-        
+
         if nouveau_rembourse >= total_facture:
             statut = 'payee'
         else:
             statut = 'partielle'
-        
+
         # Mettre a jour la facture
         db.execute_query("""
-            UPDATE factures_assurance 
+            UPDATE factures_assurance
             SET montant_rembourse = %s,
                 statut = %s,
-                date_remboursement = %s
+                date_remboursement = %s,
+                numero_reference_versement = %s,
+                date_versement = %s
             WHERE id = %s AND structure_id = %s
-        """, (nouveau_rembourse, statut, date_remboursement, facture_id, structure_id))
+        """, (nouveau_rembourse, statut, date_remboursement,
+              numero_reference_versement, date_versement, facture_id, structure_id))
         
         # Ajouter a la caisse (recette)
         db.execute_query("""
@@ -8250,6 +8359,8 @@ def api_paiement_assurance(facture_id):
                 reference=f"Facture assurance #{facture_id} - {f.get('patient_nom')}",
                 source_id=facture_id,
                 user_nom=session.get('user_name', 'Admin'),
+                numero_reference_versement=numero_reference_versement,
+                date_versement=date_versement,
             )
             if ecriture_ass:
                 print(f"🧾 Écriture comptable #{ecriture_ass.id} générée pour le remboursement assurance #{facture_id}")
@@ -8513,7 +8624,9 @@ def api_get_factures_assurance():
                 created_at,
                 date_remboursement,
                 updated_at,
-                societe
+                societe,
+                numero_reference_versement,
+                date_versement
             FROM factures_assurance
             WHERE structure_id = %s
         """
@@ -8551,7 +8664,9 @@ def api_get_factures_assurance():
                     'details': f.get('details', []),
                     'created_at': str(f.get('created_at')) if f.get('created_at') else None,
                     'date_remboursement': str(f.get('date_remboursement')) if f.get('date_remboursement') else None,
-                    'updated_at': str(f.get('updated_at')) if f.get('updated_at') else None
+                    'updated_at': str(f.get('updated_at')) if f.get('updated_at') else None,
+                    'numero_reference_versement': f.get('numero_reference_versement'),
+                    'date_versement': str(f.get('date_versement')) if f.get('date_versement') else None
                 })
             else:
                 # Format tuple
@@ -8567,7 +8682,10 @@ def api_get_factures_assurance():
                     'details': f[7] if len(f) > 7 else [],
                     'created_at': str(f[9]) if len(f) > 9 and f[9] else None,
                     'date_remboursement': str(f[10]) if len(f) > 10 and f[10] else None,
-                    'updated_at': str(f[11]) if len(f) > 11 and f[11] else None
+                    'updated_at': str(f[11]) if len(f) > 11 and f[11] else None,
+                    'societe': f[12] if len(f) > 12 else None,
+                    'numero_reference_versement': f[13] if len(f) > 13 else None,
+                    'date_versement': str(f[14]) if len(f) > 14 and f[14] else None
                 })
         
         return jsonify(result)
@@ -8664,41 +8782,52 @@ def payer_facture_assurance(facture_id):
         data = request.json
         structure_id = session.get('structure_id')
         montant = float(data.get('montant', 0))
-        
+
         if montant <= 0:
             return jsonify({'success': False, 'error': 'Montant invalide'}), 400
-        
+
+        # ⭐ Pièces justificatives obligatoires (traçabilité de l'encaissement) :
+        # numéro de référence du virement/versement + sa date. Légitime pour
+        # pouvoir rapprocher chaque encaissement d'assurance avec le relevé
+        # bancaire — demandé explicitement pour la comptabilité.
+        numero_reference_versement = (data.get('numero_reference_versement') or '').strip()
+        date_versement = data.get('date_versement')
+        if not numero_reference_versement or not date_versement:
+            return jsonify({'success': False, 'error': "Le numéro de référence du versement et la date de versement sont obligatoires pour tracer l'encaissement."}), 400
+
         # Recuperer la facture
         facture = db.execute_query("""
-            SELECT * FROM factures_assurance 
+            SELECT * FROM factures_assurance
             WHERE id = %s AND structure_id = %s
         """, (facture_id, structure_id))
-        
+
         if not facture or len(facture) == 0:
             return jsonify({'success': False, 'error': 'Facture non trouvee'}), 404
-        
+
         f = facture[0]
         deja_rembourse = float(f.get('montant_rembourse', 0))
         total_facture = float(f.get('montant_total', 0))
-        
+
         if montant > (total_facture - deja_rembourse):
             return jsonify({'success': False, 'error': f'Montant depasse le solde restant'}), 400
-        
+
         nouveau_rembourse = deja_rembourse + montant
-        
+
         if nouveau_rembourse >= total_facture:
             statut = 'payee'
         else:
             statut = 'partielle'
-        
+
         # 1. Mettre a jour la facture
         db.execute_query("""
-            UPDATE factures_assurance 
-            SET montant_rembourse = %s, 
+            UPDATE factures_assurance
+            SET montant_rembourse = %s,
                 statut = %s,
-                date_remboursement = NOW()
+                date_remboursement = NOW(),
+                numero_reference_versement = %s,
+                date_versement = %s
             WHERE id = %s
-        """, (nouveau_rembourse, statut, facture_id))
+        """, (nouveau_rembourse, statut, numero_reference_versement, date_versement, facture_id))
         
         # 2. Ajouter le remboursement dans les recettes (CAISSE)
         assurance_name = f.get('assurance')
@@ -8742,6 +8871,8 @@ def payer_facture_assurance(facture_id):
                 reference=f"Facture assurance #{facture_id} - {f.get('mois_reference')}",
                 source_id=facture_id,
                 user_nom=session.get('user_name', 'Admin'),
+                numero_reference_versement=numero_reference_versement,
+                date_versement=date_versement,
             )
             if ecriture_ass:
                 print(f"🧾 Écriture comptable #{ecriture_ass.id} générée pour le remboursement assurance #{facture_id}")
@@ -11163,6 +11294,64 @@ def notify_consultation_app(patient_id, structure_id):
         print(f"❌ Erreur webhook: {e}")
         return False
 
+@app.route('/api/actes/disponibles', methods=['GET'])
+def api_actes_disponibles():
+    """
+    API token (comme /api/medicamentos) pour récupérer le catalogue
+    d'actes d'une structure — utilisée par gestion_patients pour la
+    recherche d'actes posés (onglet "Actes posés"), afin de matcher
+    contre le VRAI catalogue de la structure plutôt qu'une copie locale
+    qui pourrait diverger.
+
+    ⭐ Construit le nom de la feuille directement (struct_<id>_actes) au
+    lieu de passer par sheets_helper.set_structure()/structure_prefix
+    (état partagé entre requêtes concurrentes) — cette route n'a pas de
+    session (appel cross-app par token), donc pas question de dépendre
+    d'un état posé par une AUTRE requête en cours.
+    """
+    token = request.args.get('token')
+    if not token:
+        return jsonify({'error': 'Token manquant'}), 401
+
+    mapping = StructureMapping.query.filter_by(api_key=token, actif=True).first()
+    if not mapping:
+        return jsonify({'error': 'Token invalide'}), 401
+
+    try:
+        structure_id = mapping.source_structure_id
+        sheet_name = f"struct_{structure_id}_actes"
+        try:
+            worksheet = sheets_helper.spreadsheet.worksheet(sheet_name)
+            actes = worksheet.get_all_records()
+        except Exception:
+            actes = sheets_helper.get_all_records('actes', use_prefix=False)
+
+        result = []
+        for a in actes:
+            nom = a.get('nom') or ''
+            if nom:
+                # ⭐ prix/pbr inclus (en plus du nom) — utilisé par
+                # gestion_patients pour afficher un aperçu tarifaire avant
+                # envoi (ex. clôture d'hospitalisation), sans dupliquer le
+                # catalogue. Champs additifs, ignorés par les appelants qui
+                # ne s'intéressent qu'au nom (recherche d'actes posés).
+                try:
+                    prix = float(a.get('prix') or 0)
+                except (TypeError, ValueError):
+                    prix = 0
+                try:
+                    pbr = float(a.get('pbr') or 0)
+                except (TypeError, ValueError):
+                    pbr = 0
+                result.append({'nom': nom, 'prix': prix, 'pbr': pbr})
+        result.sort(key=lambda x: x['nom'])
+
+        return jsonify({'success': True, 'actes': result, 'total': len(result)})
+    except Exception as e:
+        print(f"❌ Erreur /api/actes/disponibles: {e}")
+        return jsonify({'success': False, 'actes': [], 'error': str(e)}), 500
+
+
 @app.route('/api/medicamentos', methods=['GET'])
 def api_medicamentos():
     """
@@ -11209,15 +11398,18 @@ def delivrer_prescription(id):
     Marquer une prescription comme délivrée (Pharmacie)
     """
     structure_id = session.get('structure_id')
-    
+
     if not structure_id:
         return jsonify({'success': False, 'message': 'Structure non trouvée'}), 401
-    
+
     try:
-        # ⭐ Vérifier que la prescription existe et est en attente
+        # ⭐ EN_ATTENTE (jamais touchée) ou AU_PANIER (déjà ajoutée au
+        # panier avant la vente — l'état réel une fois la vente terminée,
+        # voir finaliserPanier() -> pharma_vente) : les deux sont "pas
+        # encore délivrée".
         prescription = db.execute_query("""
-            SELECT * FROM prescriptions_recues 
-            WHERE id = %s AND structure_id = %s AND statut = 'EN_ATTENTE'
+            SELECT * FROM prescriptions_recues
+            WHERE id = %s AND structure_id = %s AND statut IN ('EN_ATTENTE', 'AU_PANIER')
         """, (id, structure_id))
         
         if not prescription:
@@ -11249,18 +11441,22 @@ def facturer_prescription(id):
         return jsonify({'success': False, 'message': 'Structure non trouvée'}), 401
     
     try:
-        # ⭐ Vérifier que la prescription existe et est en attente
+        # ⭐ Vérifier que la prescription existe et n'est pas déjà facturée.
+        # EN_ATTENTE (jamais touchée) ET AU_PANIER (ajoutée au panier avant
+        # la vente — l'état réel une fois la vente terminée, voir
+        # finaliserPanier() -> actes_vente) sont tous deux "pas encore
+        # facturés" légitimes ici.
         prescription = db.execute_query("""
-            SELECT * FROM prescriptions_recues 
-            WHERE id = %s AND structure_id = %s AND statut = 'EN_ATTENTE'
+            SELECT * FROM prescriptions_recues
+            WHERE id = %s AND structure_id = %s AND statut IN ('EN_ATTENTE', 'AU_PANIER')
         """, (id, structure_id))
-        
+
         if not prescription:
             return jsonify({'success': False, 'message': 'Prescription non trouvée ou déjà traitée'}), 404
-        
+
         # ⭐ Mettre à jour le statut
         db.execute_query("""
-            UPDATE prescriptions_recues 
+            UPDATE prescriptions_recues
             SET statut = 'FACTURE', facture_le = %s
             WHERE id = %s AND structure_id = %s
         """, (datetime.now().isoformat(), id, structure_id))
@@ -11305,11 +11501,29 @@ def api_receive_prescriptions():
         for p in prescriptions:
             # ⭐ Détecter le type de prescription
             type_presc = p.get('type_prescription') or 'medicament'
-            
+
+            # ⭐ Éviter les doublons : si cette prescription (même source_id,
+            # même structure, même type) a déjà été reçue, on ne la
+            # réinsère pas — sans ça, un rattrapage du scheduler (toutes
+            # les 5 min) qui retombe sur une prescription déjà envoyée
+            # créerait une 2e ligne identique dans prescriptions_recues.
+            # Le type est inclus dans la comparaison car gestion_patients a
+            # PLUSIEURS sources (Prescription, ActePose...) dont les ID sont
+            # des séquences indépendantes qui recommencent chacune à 1 — un
+            # acte posé #1 et une prescription #1 partagent donc le même
+            # source_id sans être la même chose (vécu en test : ça écrasait
+            # silencieusement l'un des deux avant ce fix).
+            deja_recue = db.execute_query("""
+                SELECT id FROM prescriptions_recues
+                WHERE source_id = %s AND structure_id = %s AND type_prescription = %s
+            """, (p.get('id'), structure_id, type_presc))
+            if deja_recue:
+                continue
+
             # ⭐ Récupérer le nom du patient depuis la prescription
             patient_nom = p.get('patient_nom') or ''
             patient_prenom = p.get('patient_prenom') or ''
-            
+
             # ⭐ Pour les actes, le nom est dans 'medicament' ou 'acte_nom'
             medicament = p.get('medicament') or p.get('acte_nom') or ''
             
@@ -11407,6 +11621,102 @@ def api_receive_prescriptions():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/protocoles/sync-externe', methods=['POST'])
+def api_sync_protocole_externe():
+    """
+    Reçoit, en miroir, les protocoles de soins / ordonnances-types /
+    bulletins d'examen-types créés côté gestion_patients (source réelle,
+    utilisée dans le vrai parcours de soins) — voir _pousser_protocole_ghp()
+    dans gestion_patients/app.py. Un seul endpoint générique pour les 3
+    modèles source, comme /api/prescriptions gère médicaments et actes via
+    un seul champ `type_prescription`.
+
+    Upsert idempotent sur (structure_id, source_app, source_model, source_id)
+    — jamais de doublon sur un retry (index unique partiel côté DB). Une
+    catégorie hors des 3 synchronisables est refusée : une source externe ne
+    doit jamais pouvoir créer/modifier un document 100% natif GHP
+    (protocole_patient, fiche_information, protocole_infirmier).
+    """
+    token = request.args.get('token')
+    if not token:
+        return jsonify({'success': False, 'error': 'Token manquant'}), 401
+
+    mapping = StructureMapping.query.filter_by(api_key=token, actif=True).first()
+    if not mapping:
+        return jsonify({'success': False, 'error': 'Token invalide'}), 401
+
+    try:
+        from models import ProtocoleMedical
+        from services.protocoles_service import ProtocolesService
+
+        data = request.json or {}
+        categorie = data.get('categorie')
+        if categorie not in ('protocole_soins', 'ordonnance_type', 'bulletin_examen'):
+            return jsonify({'success': False, 'error': 'Catégorie non synchronisable'}), 400
+
+        source_app = data.get('source_app') or 'gestion_patients'
+        source_model = data.get('source_model')
+        source_id = data.get('source_id')
+        if not source_model or not source_id:
+            return jsonify({'success': False, 'error': 'source_model/source_id manquants'}), 400
+
+        action = data.get('action', 'upsert')
+        structure_id = mapping.local_structure_id
+
+        existant = ProtocoleMedical.query.filter_by(
+            structure_id=structure_id, source_app=source_app,
+            source_model=source_model, source_id=source_id,
+        ).first()
+
+        if action == 'archive':
+            if existant and existant.statut != 'archive':
+                ProtocolesService.modifier(
+                    existant.id, structure_id, {'statut': 'archive'},
+                    utilisateur_nom=data.get('auteur_nom') or 'Sync gestion_patients',
+                )
+            return jsonify({'success': True, 'message': 'Archivé' if existant else 'Rien à archiver'})
+
+        payload = {
+            'categorie': categorie,
+            'titre': data.get('titre') or 'Sans titre',
+            'description': data.get('description', ''),
+            'contenu': data.get('contenu') or '',
+            'medicaments': data.get('medicaments') or [],
+            'examens': data.get('examens') or [],
+            'statut': 'publie' if data.get('actif', True) else 'archive',
+        }
+
+        if existant:
+            succes, resultat = ProtocolesService.modifier(
+                existant.id, structure_id, payload,
+                utilisateur_nom=data.get('auteur_nom') or 'Sync gestion_patients',
+            )
+            protocole_id = existant.id
+        else:
+            succes, resultat = ProtocolesService.creer(
+                payload, structure_id,
+                utilisateur_nom=data.get('auteur_nom') or 'Sync gestion_patients',
+            )
+            protocole_id = resultat.get('id') if succes else None
+            if succes and protocole_id:
+                p = ProtocoleMedical.query.get(protocole_id)
+                p.source_app = source_app
+                p.source_model = source_model
+                p.source_id = source_id
+                p.source_synced_at = datetime.utcnow()
+                db.session.commit()
+
+        if not succes:
+            return jsonify({'success': False, 'error': resultat.get('error', 'Erreur inconnue')}), 500
+
+        return jsonify({'success': True, 'protocole_id': protocole_id})
+
+    except Exception as e:
+        print(f"❌ Erreur sync protocole: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/prescriptions-recues')
 @login_required
 def prescriptions_recues():
@@ -11464,23 +11774,43 @@ def prescriptions_recues():
             type_presc = p.get('type_prescription') or 'medicament'
             nom_recherche = p.get('medicament') or ''
             nom_clean = nom_recherche.lower().strip()
-            
+
+            # ⭐ Le template groupe par patient_id (Jinja groupby → sorted()) :
+            # si 2+ lignes ont patient_id=NULL (patient non retrouvé côté
+            # GHP par nom/prénom exact), Python plante avec "'<' not
+            # supported between instances of 'NoneType' and 'NoneType'" et
+            # la page entière part en 500 — plus AUCUNE prescription
+            # visible, y compris celles d'autres patients bien identifiés.
+            # On neutralise avec un entier négatif regroupant les
+            # "non identifiés" plutôt que de laisser None.
+            if p.get('patient_id') is None:
+                p['patient_id'] = -1
+
             prix_unitaire = 0
             pbr = 0
-            
+            # ⭐ Indépendant du prix : un article trouvé à 0 F (prix pas
+            # encore renseigné) reste "trouvé" — seul un article ABSENT du
+            # catalogue de la structure doit ressortir en rouge (= la
+            # structure ne le propose pas, le patient devra l'obtenir
+            # ailleurs).
+            article_trouve = False
+
             if type_presc == 'medicament':
                 if nom_clean in produits_dict:
+                    article_trouve = True
                     prix_unitaire = produits_dict[nom_clean]['prix']
                     pbr = produits_dict[nom_clean]['pbr']
             else:
                 if nom_clean in actes_dict:
+                    article_trouve = True
                     prix_unitaire = actes_dict[nom_clean]['prix']
                     pbr = actes_dict[nom_clean]['pbr']
-            
+
             quantite = int(p.get('quantite', 1))
             p['prix_unitaire'] = prix_unitaire
             p['pbr'] = pbr
             p['prix_total'] = prix_unitaire * quantite
+            p['article_trouve'] = article_trouve
             
             # ⭐ Utiliser les noms déjà stockés
             p['patient_nom'] = p.get('patient_nom', 'Patient inconnu')
@@ -11576,12 +11906,8 @@ def prescription_details(id):
                 
                 if not found:
                     print(f"❌ Produit non trouvé: '{nom_recherche}'")
-                    return jsonify({
-                        'success': False,
-                        'message': f'Produit non trouvé: "{nom_recherche}"',
-                        'type': type_presc
-                    }), 404
-            
+                    match_info = "❌ Absent du catalogue de cette structure"
+
         else:  # acte
             prix_info = sheets_helper.get_prix_acte(structure_id, nom_recherche)
             
@@ -11606,12 +11932,8 @@ def prescription_details(id):
                 
                 if not found:
                     print(f"❌ Acte non trouvé: '{nom_recherche}'")
-                    return jsonify({
-                        'success': False,
-                        'message': f'Acte non trouvé: "{nom_recherche}"',
-                        'type': type_presc
-                    }), 404
-        
+                    match_info = "❌ Absent du catalogue de cette structure"
+
         quantite = int(p.get('quantite', 1))
         prix_total = prix_unitaire * quantite
         
@@ -11630,7 +11952,8 @@ def prescription_details(id):
                 'date_prescription': p.get('date_prescription'),
                 'prescripteur': p.get('prescripteur') or '',
                 'statut': p.get('statut') or 'EN_ATTENTE',
-                'match_info': match_info
+                'match_info': match_info,
+                'article_trouve': found
             }
         })
         
@@ -11656,14 +11979,23 @@ def prescription_ajouter_panier(id):
     
     try:
         # ⭐ Récupérer la prescription
+        # On accepte aussi AU_PANIER (pas seulement EN_ATTENTE) : une ligne
+        # peut rester bloquée à AU_PANIER si une session précédente l'a
+        # ajoutée sans jamais finaliser/vider (onglet fermé, session
+        # expirée...) — le rafraîchissement client-side de cette page
+        # réaffiche alors cette ligne comme "En attente" (car elle n'est
+        # dans AUCUN panier de session active), et un clic "Ajouter au
+        # panier" échouait avec "non trouvée ou déjà traitée" alors que
+        # rien ne semblait anormal à l'écran. Réajouter la "récupère" pour
+        # la session courante au lieu de bloquer.
         prescription = db.execute_query("""
-            SELECT * FROM prescriptions_recues 
-            WHERE id = %s AND structure_id = %s AND statut = 'EN_ATTENTE'
+            SELECT * FROM prescriptions_recues
+            WHERE id = %s AND structure_id = %s AND statut IN ('EN_ATTENTE', 'AU_PANIER')
         """, (id, structure_id))
-        
+
         if not prescription:
             return jsonify({'success': False, 'message': 'Prescription non trouvée ou déjà traitée'}), 404
-        
+
         p = prescription[0]
         
         # ⭐ Récupérer le prix depuis Sheets
@@ -11700,6 +12032,7 @@ def prescription_ajouter_panier(id):
             'quantite': quantite,
             'prix_unitaire': prix_unitaire,
             'prix_total': prix_total,
+            'patient_id': p.get('patient_id'),
             'patient_nom': p.get('patient_nom') or '',
             'patient_prenom': p.get('patient_prenom') or ''
         })

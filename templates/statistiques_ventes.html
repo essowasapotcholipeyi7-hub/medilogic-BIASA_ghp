@@ -286,11 +286,12 @@
                                         <th>Rembourse</th>
                                         <th>Reste</th>
                                         <th>Statut</th>
+                                        <th>Réf. versement</th>
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody id="facturesList">
-                                    <tr><td colspan="9" class="text-center">Selectionnez un mois</td></tr>
+                                    <tr><td colspan="10" class="text-center">Selectionnez un mois</td></tr>
                                 </tbody>
                                 <tfoot class="table-light">
                                     <tr class="fw-bold">
@@ -613,6 +614,16 @@
                         <label class="form-label">Montant du remboursement (FCFA)</label>
                         <input type="number" class="form-control" id="paiementMontant" required min="1">
                         <small class="text-muted" id="paiementResteHint"></small>
+                    </div>
+                    <hr>
+                    <p class="text-muted small mb-2"><i class="fas fa-file-invoice me-1"></i>Pièces justificatives du versement (obligatoire, pour la traçabilité)</p>
+                    <div class="mb-3">
+                        <label class="form-label">N° de référence du versement</label>
+                        <input type="text" class="form-control" id="paiementReference" required placeholder="Ex: référence du virement bancaire">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date de versement</label>
+                        <input type="date" class="form-control" id="paiementDateVersement" required>
                     </div>
                 </form>
             </div>
@@ -965,7 +976,7 @@ function chargerFactures() {
             let totalRestant = 0;
             
             if (!factures || factures.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9" class="text-center">Aucune facture pour ce mois</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="10" class="text-center">Aucune facture pour ce mois</td></tr>';
                 return;
             }
             
@@ -1007,7 +1018,15 @@ function chargerFactures() {
                     Math.round(reste).toLocaleString('fr-FR') + ' FCFA</span>';
                 row.insertCell(7).innerHTML = `<span class="badge ${statutClass}">${statutText}</span>`;
 
-                const actionCell = row.insertCell(8);
+                // ⭐ Pièce justificative du dernier versement encaissé (traçabilité)
+                if (f.numero_reference_versement) {
+                    const dateVersementFmt = f.date_versement ? new Date(f.date_versement + 'T00:00:00').toLocaleDateString('fr-FR') : '';
+                    row.insertCell(8).innerHTML = `<small>${f.numero_reference_versement}${dateVersementFmt ? '<br>' + dateVersementFmt : ''}</small>`;
+                } else {
+                    row.insertCell(8).innerHTML = '<span class="text-muted">-</span>';
+                }
+
+                const actionCell = row.insertCell(9);
                 let actionsHtml = `<button class="btn btn-sm btn-outline-secondary me-1" title="Bordereau (détail patients + impression)" onclick='voirBordereauFacture("${f.assurance}", ${JSON.stringify(f.societe || '')}, "${f.mois_reference}")'><i class="fas fa-file-invoice"></i></button>`;
                 if (f.statut !== 'payee') {
                     actionsHtml += `<button class="btn btn-sm btn-success" onclick='showPaiementModal(${f.id}, "${assuranceText}", "${f.mois_reference}", ${montantTotal}, ${montantRembourse})'>Encaisser</button>`;
@@ -1027,7 +1046,7 @@ function chargerFactures() {
         .catch(error => {
             console.error('Erreur:', error);
             document.getElementById('facturesList').innerHTML = 
-                '<tr><td colspan="8" class="text-center text-danger">Erreur de chargement</td></tr>';
+                '<tr><td colspan="10" class="text-center text-danger">Erreur de chargement</td></tr>';
         });
 }
 
@@ -1060,23 +1079,36 @@ function showPaiementModal(id, assurance, mois, total, deja) {
     const reste = total - deja;
     document.getElementById('paiementMontant').value = reste;
     document.getElementById('paiementResteHint').innerHTML = `Reste: ${Math.round(reste).toLocaleString()} FCFA`;
+    document.getElementById('paiementReference').value = '';
+    document.getElementById('paiementDateVersement').value = '';
     new bootstrap.Modal(modal).show();
 }
 
 function enregistrerPaiement() {
     const id = document.getElementById('paiementFactureId').value;
     const montant = parseFloat(document.getElementById('paiementMontant').value);
-    
+    const reference = document.getElementById('paiementReference').value.trim();
+    const dateVersement = document.getElementById('paiementDateVersement').value;
+
     if (!montant || montant <= 0) {
         alert('Montant valide requis');
         return;
     }
-    
+
+    if (!reference || !dateVersement) {
+        alert('Le numéro de référence du versement et la date de versement sont obligatoires (pièces justificatives).');
+        return;
+    }
+
     if (confirm(`Confirmer le remboursement de ${montant.toLocaleString()} FCFA ?`)) {
         fetch(`/api/assurances/factures/${id}/payer`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({montant: montant})
+            body: JSON.stringify({
+                montant: montant,
+                numero_reference_versement: reference,
+                date_versement: dateVersement
+            })
         })
         .then(r => r.json())
         .then(result => {

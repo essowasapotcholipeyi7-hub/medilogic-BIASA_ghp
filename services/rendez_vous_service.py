@@ -52,16 +52,10 @@ class RendezVousService:
             if not re.match(r'^([0-1][0-9]|2[0-3]):[0-5][0-9]$', data['heure']):
                 return False, {'error': 'Format d\'heure invalide'}
             
-            # Vérifier les conflits
-            conflit = cls.verifier_conflit(
-                data['medecin_id'],
-                date_rdv,
-                data['heure'],
-                data.get('duree', cls.DUREE_DEFAUT)
-            )
-            if conflit:
-                return False, {'error': f'Créneau déjà occupé'}
-            
+            # Note : on autorise volontairement plusieurs patients sur le même
+            # créneau (même médecin, même heure/minute) — un médecin peut avoir
+            # plusieurs patients programmés en même temps. Pas de blocage ici.
+
             # Créer le rendez-vous
             rdv = RendezVous(
                 structure_id=structure_id,
@@ -131,12 +125,14 @@ class RendezVousService:
         rendez_vous = query.all()
         
         # Convertir l'heure en minutes
-        h, m = map(int, heure.split(':'))
+        # (split(':')[:2] car certains rendez-vous existants ont été
+        #  enregistrés avec les secondes, ex. "08:00:00")
+        h, m = map(int, heure.split(':')[:2])
         debut = h * 60 + m
         fin = debut + duree
-        
+
         for rdv in rendez_vous:
-            h2, m2 = map(int, rdv.heure_rendez_vous.split(':'))
+            h2, m2 = map(int, rdv.heure_rendez_vous.split(':')[:2])
             rdv_debut = h2 * 60 + m2
             rdv_fin = rdv_debut + (rdv.duree or cls.DUREE_DEFAUT)
             
@@ -247,11 +243,9 @@ class RendezVousService:
             if not re.match(r'^([0-1][0-9]|2[0-3]):[0-5][0-9]$', nouvelle_heure):
                 return False, {'error': 'Format d\'heure invalide'}
             
-            # Vérifier conflit
-            conflit = cls.verifier_conflit(rdv.medecin_id, date_obj, nouvelle_heure, rdv.duree, rdv.id)
-            if conflit:
-                return False, {'error': 'Crénau déjà occupé'}
-            
+            # Pas de blocage sur créneau occupé (voir creer_rendez_vous) :
+            # plusieurs patients peuvent être programmés au même moment.
+
             ancienne_date = rdv.date_rendez_vous.isoformat()
             ancienne_heure = rdv.heure_rendez_vous
             

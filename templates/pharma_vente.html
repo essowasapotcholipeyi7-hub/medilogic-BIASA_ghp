@@ -1910,7 +1910,19 @@ function finaliserVente() {
         }
         
         console.log(`✅ Vente enregistrée avec ID: ${data.vente_id}`);
-        
+
+        // ⭐ FIX : si cette vente vient d'un "Finaliser le panier" depuis
+        // Prescriptions reçues (prescription_ids dans l'URL), il faut
+        // marquer ces prescriptions comme délivrées — sinon elles restent
+        // affichées indéfiniment "Au panier" dans Prescriptions reçues
+        // alors qu'elles ont bien été vendues (vécu en test).
+        const prescriptionIdsUrl = new URLSearchParams(window.location.search).get('prescription_ids');
+        if (prescriptionIdsUrl) {
+            prescriptionIdsUrl.split(',').filter(id => id).forEach(id => {
+                fetch(`/api/prescriptions/${id}/delivrer`, { method: 'POST' }).catch(() => {});
+            });
+        }
+
         if (resteAPayer > 0) {
             console.log(`📋 Création d'une facture pour le reste à payer: ${resteAPayer} FCFA`);
             
@@ -2112,18 +2124,38 @@ document.addEventListener('DOMContentLoaded', function() {
     
     if (articlesAuto && articlesAuto.length > 0) {
         console.log(`📦 ${articlesAuto.length} prescription(s) pharmaceutiques à charger automatiquement`);
-        
-        setTimeout(function() {
+
+        // ⭐ FIX : chargerProduits() est asynchrone (fetch de ~750 produits) et
+        // un simple setTimeout(1000) pariait qu'elle aurait fini à temps —
+        // vécu en test : le panier restait vide ("0 chargés sur 1") parce que
+        // le select ne contenait encore que l'option "-- Choisir --" quand
+        // le délai expirait. On attend maintenant réellement que le select
+        // soit peuplé (options.length > 1) avant de tenter le matching,
+        // avec un délai maximum de sécurité pour ne jamais bloquer.
+        function attendreProduitsChargesPuis(callback, tentative = 0) {
             const select = document.getElementById('produitSelect');
+            if (select && select.options.length > 1) {
+                callback(select);
+                return;
+            }
+            if (tentative >= 25) { // ~5s max (25 x 200ms)
+                console.warn('⚠️ Produits toujours pas chargés après 5s, abandon du chargement automatique');
+                if (select) callback(select);
+                return;
+            }
+            setTimeout(() => attendreProduitsChargesPuis(callback, tentative + 1), 200);
+        }
+
+        attendreProduitsChargesPuis(function(select) {
             console.log('🔍 Select trouvé:', select);
-            
+
             if (!select) {
                 console.error('❌ Select produitSelect non trouvé !');
                 return;
             }
-            
+
             console.log(`📋 Nombre d'options dans le select: ${select.options.length}`);
-            
+
             let articlesCharges = 0;
             
             function ajouterArticleSuivant(index) {
@@ -2144,10 +2176,22 @@ document.addEventListener('DOMContentLoaded', function() {
                 const article = articlesAuto[index];
                 console.log(`🔍 Traitement de l'article ${index + 1}/${articlesAuto.length}: ${article.nom}`);
                 
+                // ⭐ FIX : l'ID envoyé par le backend (colonne A brute lue via
+                // get_all_values()) et celui du <select> (rempli séparément
+                // via /api/produits, qui relit la même feuille mais avec sa
+                // propre logique de parsing) ne coïncident pas toujours
+                // (ex: "0000246" en texte brut vs number converti par
+                // gspread) — vécu en test : le panier restait vide malgré
+                // "1 prescription trouvée" côté backend. On matche donc
+                // D'ABORD par ID (rapide, cas normal), puis par NOM en repli
+                // (déjà la clé fiable utilisée côté backend pour retrouver
+                // le produit dans Sheets).
                 let trouve = false;
                 for (let i = 0; i < select.options.length; i++) {
                     const option = select.options[i];
-                    if (String(option.value) === String(article.id)) {
+                    const nomMatch = article.nom && option.dataset.nom &&
+                        option.dataset.nom.toLowerCase().trim() === String(article.nom).toLowerCase().trim();
+                    if (String(option.value) === String(article.id) || nomMatch) {
                         console.log(`✅ Produit trouvé: ${option.text}`);
                         
                         select.selectedIndex = i;
@@ -2179,8 +2223,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             ajouterArticleSuivant(0);
-            
-        }, 1000);
+        });
     } else {
         console.log('ℹ️ Aucun article à charger automatiquement');
     }
