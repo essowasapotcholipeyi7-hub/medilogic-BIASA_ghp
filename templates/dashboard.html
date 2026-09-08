@@ -92,13 +92,6 @@
 {% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-md-3 mb-4">
-        {% include 'sidebar_menu.html' %}
-    </div>
-
-    <!-- Contenu principal -->
-    <div class="col-md-9">
         <!-- 7 cartes statistiques modernes -->
         <div class="row g-3 mb-4">
             <div class="col-md-3 col-6">
@@ -251,8 +244,8 @@
                <div class="mb-3">
                     <label class="form-label fw-semibold">Format d'impression</label>
                     <select id="printFormat" class="form-control">
-                        <option value="80mm" selected>🎫 Format Ticket (80mm)</option>
-                        <option value="A4">📄 Format A4</option>
+                        <option value="80mm" selected>Format Ticket (80mm)</option>
+                        <option value="A4">Format A4</option>
                     </select>
                 </div>
                 <div class="row g-2" id="printOptions"></div>

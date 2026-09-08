@@ -3,14 +3,8 @@
 {% block title %}Historique des ventes{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-md-3 mb-4">
-        {% include 'sidebar_menu.html' %}
-    </div>
-
-    <div class="col-md-9">
         <!-- STATISTIQUES -->
-        <div class="card mb-3">
+        <div class="card mb-0">
             <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                 <h5><i class="fas fa-chart-pie"></i> Statistiques des ventes</h5>
                 <button class="btn btn-light btn-sm" onclick="imprimerStats()">
@@ -21,12 +15,12 @@
                 <div class="row mb-3">
                     <div class="col-md-8">
                         <div class="btn-group btn-group-sm flex-wrap" role="group">
-                            <button class="btn btn-outline-primary" onclick="changerPeriodeStats('aujourdhui')">📅 Aujourd'hui</button>
-                            <button class="btn btn-outline-primary" onclick="changerPeriodeStats('semaine')">📆 Semaine</button>
-                            <button class="btn btn-outline-primary" onclick="changerPeriodeStats('mois')">📅 Mois</button>
-                            <button class="btn btn-outline-primary" onclick="changerPeriodeStats('annee')">📊 Année</button>
-                            <button class="btn btn-outline-primary" onclick="changerPeriodeStats('tous')">📋 Toutes</button>
-                            <button class="btn btn-outline-primary" onclick="changerPeriodeStats('personnalise')">📅 Perso</button>
+                            <button class="btn btn-outline-primary" onclick="changerPeriodeStats('aujourdhui')">Aujourd'hui</button>
+                            <button class="btn btn-outline-primary" onclick="changerPeriodeStats('semaine')">Semaine</button>
+                            <button class="btn btn-outline-primary" onclick="changerPeriodeStats('mois')">Mois</button>
+                            <button class="btn btn-outline-primary" onclick="changerPeriodeStats('annee')">Année</button>
+                            <button class="btn btn-outline-primary" onclick="changerPeriodeStats('tous')">Toutes</button>
+                            <button class="btn btn-outline-primary" onclick="changerPeriodeStats('personnalise')">Perso</button>
                         </div>
                     </div>
                     <div class="col-md-4 text-end">
@@ -58,11 +52,23 @@
                     {% if session.is_admin %}
                     <div class="col-md-3 text-center">
                         <div class="border rounded p-2">
-                            <small class="text-muted">Chiffre d'affaires</small>
+                            <small class="text-muted">Espèces encaissées</small>
                             <h3 class="text-success mb-0" id="statCA">0 F</h3>
                         </div>
                     </div>
-                    {% endif %}
+                    <div class="col-md-3 text-center">
+                        <div class="border rounded p-2">
+                            <small class="text-muted">Créances assurances</small>
+                            <h3 class="text-warning mb-0" id="statCreances">0 F</h3>
+                        </div>
+                    </div>
+                    <div class="col-md-3 text-center">
+                        <div class="border rounded p-2">
+                            <small class="text-muted">CA total (avec assurances)</small>
+                            <h3 class="text-dark mb-0" id="statCATotal">0 F</h3>
+                        </div>
+                    </div>
+                    {% else %}
                     <div class="col-md-3 text-center">
                         <div class="border rounded p-2">
                             <small class="text-muted">Actes</small>
@@ -75,6 +81,7 @@
                             <h3 class="text-warning mb-0" id="statPharma">0</h3>
                         </div>
                     </div>
+                    {% endif %}
                 </div>
                
                 <div class="row mt-3">
@@ -107,7 +114,7 @@
         </div>
 
         <!-- FILTRES COMPACTS -->
-        <div class="card mb-3">
+        <div class="card mb-1">
             <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
                 <h6 class="mb-0"><i class="fas fa-filter"></i> Filtres</h6>
                 <button class="btn btn-light btn-sm" onclick="toggleFiltres()">
@@ -147,9 +154,18 @@
                         <label class="form-label small">Statut</label>
                         <select id="filtreStatutPaiement" class="form-control form-control-sm" onchange="filtrerHistorique()">
                             <option value="">Tous</option>
-                            <option value="total">✅ Payé</option>
-                            <option value="partiel">⚠️ Partiel</option>
-                            <option value="impaye">❌ Impayé</option>
+                            <option value="total">Payé</option>
+                            <option value="partiel">Partiel</option>
+                            <option value="impaye">Impayé</option>
+                        </select>
+                    </div>
+                    <!-- 🔥 NOUVEAU FILTRE AIDE HOSPITALIÈRE -->
+                    <div class="col-md-2">
+                        <label class="form-label small">Filtre aide</label>
+                        <select id="filtreAide" class="form-control form-control-sm" onchange="filtrerHistorique()">
+                            <option value="">Toutes</option>
+                            <option value="avec_aide">Avec aide hospitalière</option>
+                            <option value="sans_aide">Sans aide</option>
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -185,9 +201,15 @@
         <div class="card">
             <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
                 <h5><i class="fas fa-history"></i> Liste des ventes</h5>
-                <button class="btn btn-light btn-sm" onclick="imprimerHistorique()">
-                    <i class="fas fa-print"></i> Imprimer
-                </button>
+                <div>
+                    <button class="btn btn-light btn-sm me-1" onclick="imprimerHistorique()">
+                        <i class="fas fa-print"></i> Imprimer
+                    </button>
+                    <!-- 🔥 NOUVEAU BOUTON AIDES -->
+                    <button class="btn btn-warning btn-sm" onclick="imprimerAides()">
+                        <i class="fas fa-hand-holding-heart"></i> Aides
+                    </button>
+                </div>
             </div>
             <div class="card-body">
                 <div class="table-responsive">
@@ -196,17 +218,19 @@
                             <tr>
                                 <th style="width: 5%;">N°</th>
                                 <th style="width: 12%;">Date</th>
-                                <th style="width: 18%;">Patient</th>
+                                <th style="width: 15%;">Patient</th>
                                 <th style="width: 8%;">Type</th>
                                 <th style="width: 12%;">Montant</th>
                                 <th style="width: 10%;">Payé</th>
                                 <th style="width: 10%;">Reste</th>
-                                <th style="width: 15%;">Statut</th>
+                                <!-- 🔥 NOUVELLE COLONNE AIDE -->
+                                <th style="width: 8%;">Aide</th>
+                                <th style="width: 10%;">Statut</th>
                                 <th style="width: 10%;">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="ventesList">
-                            <tr><td colspan="9" class="text-center">Chargement...</td></tr>
+                            <tr><td colspan="10" class="text-center">Chargement...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -257,8 +281,8 @@
                 <div class="mb-3">
                     <label class="form-label fw-semibold">Format</label>
                     <select id="printFormat" class="form-control">
-                        <option value="80mm">🎫 Ticket (80mm)</option>
-                        <option value="A4">📄 A4</option>
+                        <option value="80mm">Ticket (80mm)</option>
+                        <option value="A4">A4</option>
                     </select>
                 </div>
                 <div class="d-grid gap-2">
@@ -345,7 +369,7 @@ function chargerHistorique() {
         })
         .then(function(ventes) {
             toutesLesVentes = ventes || [];
-            console.log('✅ Ventes chargées:', toutesLesVentes.length);
+            console.log('Ventes chargées:', toutesLesVentes.length);
             filtrerHistorique();
             changerPeriodeStats('tous');
             hideLoader();
@@ -353,7 +377,7 @@ function chargerHistorique() {
         .catch(function(error) {
             console.error('❌ Erreur:', error);
             document.getElementById('ventesList').innerHTML = 
-                '<tr><td colspan="9" class="text-center text-danger">❌ Erreur de chargement</td></tr>';
+                '<tr><td colspan="10" class="text-center text-danger">❌ Erreur de chargement</td></tr>';
             hideLoader();
         });
 }
@@ -364,7 +388,7 @@ function chargerHistorique() {
 function filtrerHistorique() {
     if (!toutesLesVentes || toutesLesVentes.length === 0) {
         document.getElementById('ventesList').innerHTML = 
-            '<tr><td colspan="9" class="text-center text-muted">Aucune vente trouvée</td></tr>';
+            '<tr><td colspan="10" class="text-center text-muted">Aucune vente trouvée</td></tr>';
         document.getElementById('resultCount').innerText = '0';
         ventesFiltrees = [];
         updatePagination();
@@ -378,6 +402,8 @@ function filtrerHistorique() {
     var dateDebut = document.getElementById('filtreDateDebut').value;
     var dateFin = document.getElementById('filtreDateFin').value;
     var filtreStatutPaiement = document.getElementById('filtreStatutPaiement').value;
+    // 🔥 NOUVEAU FILTRE AIDE
+    var filtreAide = document.getElementById('filtreAide').value;
     
     ventesFiltrees = [];
     
@@ -465,6 +491,13 @@ function filtrerHistorique() {
             }
         }
         
+        // 🔥 NOUVEAU FILTRE AIDE
+        if (visible && filtreAide) {
+            var aAide = (v.aide_hospitaliere || 0) > 0;
+            if (filtreAide === 'avec_aide' && !aAide) visible = false;
+            if (filtreAide === 'sans_aide' && aAide) visible = false;
+        }
+        
         if (visible) {
             ventesFiltrees.push(v);
         }
@@ -509,16 +542,26 @@ function afficherPageVentes(page) {
         var montantDonne = v.montant_donne || 0;
         var resteAPayer = v.reste_a_payer || 0;
         
+        // 🔥 AFFICHAGE AIDE HOSPITALIÈRE
+        var aideMontant = v.aide_hospitaliere || 0;
+        var aideTaux = v.taux_aide || 0;
+        var aideDisplay = '';
+        if (aideMontant > 0) {
+            aideDisplay = '<span class="badge bg-warning text-dark" title="Aide ' + aideTaux + '%">' + Math.round(aideMontant).toLocaleString() + ' F</span>';
+        } else {
+            aideDisplay = '<span class="text-muted">-</span>';
+        }
+        
         var statutPaiement = '';
         var statutBadge = '';
         if (resteAPayer > 0 && montantDonne === 0) {
             statutPaiement = '❌ Impayé';
             statutBadge = 'bg-dark';
         } else if (resteAPayer > 0 && montantDonne > 0) {
-            statutPaiement = '⚠️ Partiel';
+            statutPaiement = 'Partiel';
             statutBadge = 'bg-warning';
         } else {
-            statutPaiement = '✅ Total';
+            statutPaiement = 'Total';
             statutBadge = 'bg-success';
         }
         
@@ -533,6 +576,7 @@ function afficherPageVentes(page) {
         html += '<td class="text-end fw-bold">' + Math.round(netAPayer).toLocaleString() + ' F</td>';
         html += '<td class="text-end" style="color:#28a745;">' + Math.round(montantDonne).toLocaleString() + ' F</td>';
         html += '<td class="text-end" style="color:#dc3545;">' + Math.round(resteAPayer).toLocaleString() + ' F</td>';
+        html += '<td>' + aideDisplay + '</td>';  // 🔥 NOUVELLE COLONNE
         html += '<td><span class="badge ' + statutBadge + '">' + statutPaiement + '</span></td>';
         html += '<td>';
         html += '<button class="btn btn-sm btn-outline-info" onclick="voirDetailVente(' + (v.ID || start + i + 1) + ', \'' + v.type + '\')" title="Détails">';
@@ -547,7 +591,7 @@ function afficherPageVentes(page) {
         html += '</tr>';
     }
     
-    tbody.innerHTML = html || '<tr><td colspan="9" class="text-center text-muted">Aucun résultat</td></tr>';
+    tbody.innerHTML = html || '<tr><td colspan="10" class="text-center text-muted">Aucun résultat</td></tr>';
 }
 
 function updatePagination() {
@@ -604,6 +648,10 @@ function voirDetailVente(venteId, type) {
     
     document.getElementById('detailVenteId').textContent = venteId;
     
+    // 🔥 Récupérer les infos d'aide hospitalière
+    var tauxAide = v.taux_aide || 0;
+    var aideHospitaliere = v.aide_hospitaliere || 0;
+    
     var html = `
         <div class="row">
             <div class="col-md-6">
@@ -629,7 +677,8 @@ function voirDetailVente(venteId, type) {
             <div class="col-md-4">
                 <h6><i class="fas fa-shield-alt"></i> Assurances</h6>
                 <p>${v.assurance_nom || v.type_assurance || 'Non assuré'}</p>
-                ${v.assurance2_nom ? `<p class="text-muted small">+ ${v.assurance2_nom} (${v.taux_assurance2 || 0}%)</p>` : ''}
+                ${v.assurance2_nom ? `<p class="text-muted small">+ ${v.assurance2_nom} (${v.taux_assurance2 || 0}%)${v.societe_assurance2 ? ` — Société: ${v.societe_assurance2}` : ''}</p>` : ''}
+                ${tauxAide > 0 ? `<p class="text-muted small">Aide hospitalière: ${tauxAide}% (${Math.round(aideHospitaliere).toLocaleString()} F)</p>` : ''}
             </div>
         </div>
         <hr>
@@ -666,7 +715,7 @@ function reimprimerDepuisDetail() {
 }
 
 // ============================================
-// STATISTIQUES (inchangé)
+// STATISTIQUES
 // ============================================
 function changerPeriodeStats(periode) {
     periodeStatsCourante = periode;
@@ -721,17 +770,36 @@ function changerPeriodeStats(periode) {
 
 function calculerStats(debut, fin) {
     if (!toutesLesVentes || toutesLesVentes.length === 0) {
-        document.getElementById('statTotalVentes').innerText = '0';
-        document.getElementById('statCA').innerHTML = '0 F';
-        document.getElementById('statActes').innerText = '0';
-        document.getElementById('statPharma').innerText = '0';
-        document.getElementById('topActesTable').innerHTML = '<tr><td colspan="2" class="text-muted">Aucune donnée</td></tr>';
-        document.getElementById('topProduitsTable').innerHTML = '<tr><td colspan="2" class="text-muted">Aucune donnée</td></tr>';
+        var elTotalVentes = document.getElementById('statTotalVentes');
+        if (elTotalVentes) elTotalVentes.innerText = '0';
+        
+        var elCA = document.getElementById('statCA');
+        if (elCA) elCA.innerHTML = '0 F';
+        
+        var elCreances = document.getElementById('statCreances');
+        if (elCreances) elCreances.innerHTML = '0 F';
+        
+        var elCATotal = document.getElementById('statCATotal');
+        if (elCATotal) elCATotal.innerHTML = '0 F';
+        
+        var elActes = document.getElementById('statActes');
+        if (elActes) elActes.innerText = '0';
+        
+        var elPharma = document.getElementById('statPharma');
+        if (elPharma) elPharma.innerText = '0';
+        
+        var topActes = document.getElementById('topActesTable');
+        if (topActes) topActes.innerHTML = '<tr><td colspan="2" class="text-muted">Aucune donnée</td></tr>';
+        
+        var topProduits = document.getElementById('topProduitsTable');
+        if (topProduits) topProduits.innerHTML = '<tr><td colspan="2" class="text-muted">Aucune donnée</td></tr>';
         return;
     }
     
     var totalVentes = 0;
     var totalCA = 0;
+    var totalCreances = 0;
+    var totalCATotal = 0;
     var totalActes = 0;
     var totalPharma = 0;
     var actesCount = {};
@@ -746,7 +814,17 @@ function calculerStats(debut, fin) {
         }
         
         totalVentes++;
-        totalCA += v.montant_donne || 0;
+        
+        var recettePatient = (v.montant_donne || 0) - (v.rendu || 0);
+        if (recettePatient < 0) recettePatient = 0;
+        
+        var recetteAMU = v.prise_en_charge || 0;
+        var recetteCAC = v.prise_en_charge2 || 0;
+        var totalCreance = recetteAMU + recetteCAC;
+        
+        totalCA += recettePatient;
+        totalCreances += totalCreance;
+        totalCATotal += recettePatient + totalCreance;
         
         var typeVente = (v.type || '').toLowerCase();
         if (typeVente === 'actes' || typeVente === 'acte') {
@@ -764,12 +842,24 @@ function calculerStats(debut, fin) {
         }
     }
     
-    document.getElementById('statTotalVentes').innerText = totalVentes;
-    document.getElementById('statCA').innerHTML = Math.round(totalCA).toLocaleString() + ' F';
-    document.getElementById('statActes').innerText = totalActes;
-    document.getElementById('statPharma').innerText = totalPharma;
+    var elTotalVentes = document.getElementById('statTotalVentes');
+    if (elTotalVentes) elTotalVentes.innerText = totalVentes;
     
-    // Top 5 actes
+    var elCA = document.getElementById('statCA');
+    if (elCA) elCA.innerHTML = Math.round(totalCA).toLocaleString() + ' F';
+    
+    var elCreances = document.getElementById('statCreances');
+    if (elCreances) elCreances.innerHTML = Math.round(totalCreances).toLocaleString() + ' F';
+    
+    var elCATotal = document.getElementById('statCATotal');
+    if (elCATotal) elCATotal.innerHTML = Math.round(totalCATotal).toLocaleString() + ' F';
+    
+    var elActes = document.getElementById('statActes');
+    if (elActes) elActes.innerText = totalActes;
+    
+    var elPharma = document.getElementById('statPharma');
+    if (elPharma) elPharma.innerText = totalPharma;
+    
     var topActes = Object.keys(actesCount).sort(function(a, b) {
         return actesCount[b] - actesCount[a];
     }).slice(0, 5);
@@ -778,7 +868,11 @@ function calculerStats(debut, fin) {
     for (var j = 0; j < topActes.length; j++) {
         topActesHtml += '<tr><td>' + (j+1) + '. ' + topActes[j] + '</td><td class="text-end">' + actesCount[topActes[j]] + '</td></tr>';
     }
-    document.getElementById('topActesTable').innerHTML = topActesHtml || '<tr><td colspan="2" class="text-muted">Aucun acte</td></tr>';
+    
+    var topActesTable = document.getElementById('topActesTable');
+    if (topActesTable) {
+        topActesTable.innerHTML = topActesHtml || '<tr><td colspan="2" class="text-muted">Aucun acte</td></tr>';
+    }
     
     var topProduits = Object.keys(produitsCount).sort(function(a, b) {
         return produitsCount[b] - produitsCount[a];
@@ -788,7 +882,11 @@ function calculerStats(debut, fin) {
     for (var k = 0; k < topProduits.length; k++) {
         topProduitsHtml += '<tr><td>' + (k+1) + '. ' + topProduits[k] + '</td><td class="text-end">' + produitsCount[topProduits[k]] + '</td></tr>';
     }
-    document.getElementById('topProduitsTable').innerHTML = topProduitsHtml || '<tr><td colspan="2" class="text-muted">Aucun produit</td></tr>';
+    
+    var topProduitsTable = document.getElementById('topProduitsTable');
+    if (topProduitsTable) {
+        topProduitsTable.innerHTML = topProduitsHtml || '<tr><td colspan="2" class="text-muted">Aucun produit</td></tr>';
+    }
 }
 
 function appliquerStatsPersonnalise() {
@@ -819,6 +917,7 @@ function resetFiltres() {
     document.getElementById('filtreDateDebut').value = '';
     document.getElementById('filtreDateFin').value = '';
     document.getElementById('filtreStatutPaiement').value = '';
+    document.getElementById('filtreAide').value = '';  // 🔥 NOUVEAU
     document.getElementById('dateDebutGroup').style.display = 'none';
     document.getElementById('dateFinGroup').style.display = 'none';
     filtrerHistorique();
@@ -875,7 +974,7 @@ function annulerVente(venteId, type) {
     var motif = prompt("Motif de l'annulation :", "Annulation manuelle");
     if (motif === null) return;
     
-    if (confirm('⚠️ Annuler cette vente ?')) {
+    if (confirm('Annuler cette vente ?')) {
         showLoader('Annulation en cours...');
         
         fetch('/api/ventes/' + venteId + '/annuler', {
@@ -887,7 +986,7 @@ function annulerVente(venteId, type) {
         .then(function(data) {
             hideLoader();
             if (data.success) {
-                alert('✅ Vente annulée');
+                alert('Vente annulée');
                 location.reload();
             } else {
                 alert('❌ Erreur: ' + data.error);
@@ -904,26 +1003,149 @@ function annulerVente(venteId, type) {
 // IMPRESSION
 // ============================================
 function imprimerHistorique() {
-    var rows = document.querySelectorAll('#ventesList tr');
-    var printWindow = window.open('', '_blank');
-    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Historique des ventes</title>';
-    html += '<style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #ddd;padding:6px;}th{background:#667eea;color:white;}</style>';
-    html += '</head><body><h2>📋 HISTORIQUE DES VENTES</h2>';
-    html += '<div>' + new Date().toLocaleString() + '</div>';
-    html += '<table><thead><tr><th>N°</th><th>Date</th><th>Patient</th><th>Type</th><th>Montant</th><th>Payé</th><th>Reste</th><th>Statut</th></tr></thead><tbody>';
-    
-    for (var i = 0; i < rows.length; i++) {
-        var cells = rows[i].cells;
-        if (cells.length > 1 && rows[i].style.display !== 'none') {
-            html += '<tr>';
-            for (var j = 0; j < Math.min(cells.length - 1, 8); j++) {
-                html += '<td>' + (cells[j]?.innerText || '') + '</td>';
-            }
-            html += '</tr>';
-        }
+    if (!ventesFiltrees || ventesFiltrees.length === 0) {
+        alert('Aucune vente à imprimer');
+        return;
     }
     
-    html += '</tbody></table></body></html>';
+    var printWindow = window.open('', '_blank');
+    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Historique des ventes</title>';
+    html += '<style>';
+    html += 'body{font-family:Arial;padding:20px;font-size:12px;}';
+    html += 'h2{text-align:center;color:#333;margin-top:0;}';
+    html += '.header{text-align:center;margin-bottom:15px;color:#666;}';
+    html += 'table{width:100%;border-collapse:collapse;font-size:11px;}';
+    html += 'th{background:#667eea;color:white;padding:8px;text-align:left;border:1px solid #ddd;}';
+    html += 'td{padding:6px;border:1px solid #ddd;}';
+    html += '.text-end{text-align:right;}';
+    html += '.badge-actes{background:#007bff;color:white;padding:2px 6px;border-radius:3px;}';
+    html += '.badge-pharma{background:#28a745;color:white;padding:2px 6px;border-radius:3px;}';
+    html += '.badge-mixte{background:#8b5cf6;color:white;padding:2px 6px;border-radius:3px;}';  // 🔥 NOUVEAU
+    html += '.text-success{color:#28a745;}';
+    html += '.text-danger{color:#dc3545;}';
+    html += '.detail-cell{font-size:10px;color:#555;max-width:200px;}';
+    html += '.summary{display:flex;justify-content:center;gap:30px;margin:15px 0;padding:10px;background:#f8f9fa;border-radius:5px;}';
+    html += '.summary-item{text-align:center;}';
+    html += '.footer{text-align:center;margin-top:15px;color:#666;font-size:10px;border-top:1px solid #ddd;padding-top:10px;}';
+    html += '.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;padding:10px;background:#f8f9fa;border-radius:5px;border:1px solid #ddd;}';
+    html += '.toolbar .title{font-size:16px;font-weight:bold;color:#333;}';
+    html += '.btn-close{background:#dc3545;color:white;border:none;padding:8px 25px;border-radius:5px;cursor:pointer;font-size:14px;}';
+    html += '.btn-close:hover{background:#c82333;}';
+    html += '@media print{.toolbar{display:none;}}';
+    html += '</style>';
+    html += '</head><body>';
+    
+    html += '<div class="toolbar">';
+    html += '<span class="title">Historique des ventes</span>';
+    html += '<button class="btn-close" onclick="window.close()"><i class="fas fa-times"></i> Fermer</button>';
+    html += '</div>';
+    
+    html += '<div class="header">Généré le ' + new Date().toLocaleString('fr-FR') + '</div>';
+    
+    var totalCA = ventesFiltrees.reduce(function(sum, v) {
+        var caEffectif = (v.montant_donne || 0) - (v.rendu || 0);
+        return sum + (caEffectif > 0 ? caEffectif : 0);
+    }, 0);
+
+    var actesCount = ventesFiltrees.filter(function(v) { return v.type === 'actes'; }).length;
+    var pharmaCount = ventesFiltrees.filter(function(v) { return v.type === 'pharmacie' || v.type === 'pharma'; }).length;
+    var mixteCount = ventesFiltrees.filter(function(v) { return v.type === 'mixte'; }).length;  // 🔥 NOUVEAU
+    
+    html += '<div class="summary">';
+    html += '<div class="summary-item"><strong>Total ventes</strong><br>' + ventesFiltrees.length + '</div>';
+    html += '<div class="summary-item"><strong>CA (espèces)</strong><br>' + Math.round(totalCA).toLocaleString() + ' F</div>';
+    html += '<div class="summary-item"><strong>Actes</strong><br>' + actesCount + '</div>';
+    html += '<div class="summary-item"><strong>Pharmacie</strong><br>' + pharmaCount + '</div>';
+    html += '<div class="summary-item"><strong style="color:#8b5cf6;">Mixte</strong><br>' + mixteCount + '</div>';  // 🔥 NOUVEAU
+    html += '</div>';
+    
+    html += '<table>';
+    html += '<thead><tr>';
+    html += '<th>N°</th>';
+    html += '<th>Date</th>';
+    html += '<th>Patient</th>';
+    html += '<th>Type</th>';
+    html += '<th>Détails des articles</th>';
+    html += '<th class="text-end">Montant</th>';
+    html += '<th class="text-end">Payé</th>';
+    html += '<th class="text-end">Reste</th>';
+    html += '<th>Statut</th>';
+    html += '</tr></thead><tbody>';
+    
+    for (var i = 0; i < ventesFiltrees.length; i++) {
+        var v = ventesFiltrees[i];
+        var dateObj = v.date_vente ? new Date(v.date_vente) : null;
+        var dateStr = dateObj ? dateObj.toLocaleString('fr-FR') : '-';
+        
+        // 🔥🔥🔥 CORRECTION ICI 🔥🔥🔥
+        var typeLabel = '';
+        var badgeClass = '';
+        if (v.type === 'mixte') {
+            typeLabel = 'Mixte';
+            badgeClass = 'badge-mixte';
+        } else if (v.type === 'actes') {
+            typeLabel = 'Acte';
+            badgeClass = 'badge-actes';
+        } else if (v.type === 'pharma' || v.type === 'pharmacie') {
+            typeLabel = 'Pharmacie';
+            badgeClass = 'badge-pharma';
+        } else {
+            typeLabel = v.type || 'Inconnu';
+            badgeClass = 'badge-secondary';
+        }
+        
+        var details = v.detail || 'Aucun détail';
+        
+        if (v.detail_complet && v.detail_complet.length > 0) {
+            details = v.detail_complet.join(', ');
+        }
+        if (v.articles && v.articles.length > 0) {
+            var articlesListe = [];
+            for (var a = 0; a < v.articles.length; a++) {
+                var article = v.articles[a];
+                var nom = article.nom || 'Article';
+                var qte = article.quantite || 1;
+                articlesListe.push(nom + ' x' + qte);
+            }
+            if (articlesListe.length > 0) {
+                details = articlesListe.join(', ');
+            }
+        }
+        
+        var netAPayer = v.net_a_payer || 0;
+        var montantDonne = v.montant_donne || 0;
+        var resteAPayer = v.reste_a_payer || 0;
+        
+        var statutPaiement = '';
+        if (resteAPayer > 0 && montantDonne === 0) {
+            statutPaiement = 'Impayé';
+        } else if (resteAPayer > 0 && montantDonne > 0) {
+            statutPaiement = 'Partiel';
+        } else {
+            statutPaiement = 'Total';
+        }
+        
+        html += '<tr>';
+        html += '<td>#' + (v.ID || (i + 1)) + '</td>';
+        html += '<td>' + dateStr + '</td>';
+        html += '<td>' + (v.patient_nom || 'Patient') + '</td>';
+        html += '<td><span class="' + badgeClass + '">' + typeLabel + '</span></td>';
+        html += '<td class="detail-cell">' + details + '</td>';
+        html += '<td class="text-end">' + Math.round(netAPayer).toLocaleString() + ' F</td>';
+        html += '<td class="text-end text-success">' + Math.round(montantDonne).toLocaleString() + ' F</td>';
+        html += '<td class="text-end text-danger">' + Math.round(resteAPayer).toLocaleString() + ' F</td>';
+        html += '<td>' + statutPaiement + '</td>';
+        html += '</tr>';
+    }
+    
+    html += '</tbody></table>';
+    html += '<div class="footer">';
+    html += 'Total: ' + ventesFiltrees.length + ' ventes - CA (espèces): ' + Math.round(totalCA).toLocaleString() + ' FCFA<br>';
+    html += 'SSoftOneV10';
+    html += '</div>';
+    
+    html += '</body></html>';
+    
     printWindow.document.write(html);
     printWindow.document.close();
     setTimeout(function() { printWindow.print(); }, 500);
@@ -933,11 +1155,11 @@ function imprimerStats() {
     var printWindow = window.open('', '_blank');
     var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Statistiques</title>';
     html += '<style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #ddd;padding:6px;}th{background:#667eea;color:white;}.stat{display:inline-block;padding:10px;margin:5px;border:1px solid #ddd;border-radius:5px;min-width:100px;text-align:center;}</style>';
-    html += '</head><body><h2>📊 STATISTIQUES</h2>';
+    html += '</head><body><h2>STATISTIQUES</h2>';
     html += '<div>' + document.getElementById('periodeStatsLabel').innerText + '</div>';
     html += '<div>';
     html += '<div class="stat"><div>Total ventes</div><h3>' + document.getElementById('statTotalVentes').innerText + '</h3></div>';
-    html += '<div class="stat"><div>CA</div><h3>' + document.getElementById('statCA').innerText + '</h3></div>';
+    html += '<div class="stat"><div>CA (espèces)</div><h3>' + document.getElementById('statCA').innerText + '</h3></div>';
     html += '<div class="stat"><div>Actes</div><h3>' + document.getElementById('statActes').innerText + '</h3></div>';
     html += '<div class="stat"><div>Pharmacie</div><h3>' + document.getElementById('statPharma').innerText + '</h3></div>';
     html += '</div>';
@@ -949,6 +1171,124 @@ function imprimerStats() {
     setTimeout(function() { printWindow.print(); }, 500);
 }
 
+// ============================================
+// 🔥 NOUVELLE FONCTION IMPRIMER AIDES
+// ============================================
+function imprimerAides() {
+    var aides = ventesFiltrees.filter(function(v) {
+        return (v.aide_hospitaliere || 0) > 0;
+    });
+    
+    if (!aides || aides.length === 0) {
+        alert('Aucune aide hospitalière à imprimer');
+        return;
+    }
+    
+    var printWindow = window.open('', '_blank');
+    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Aides hospitalières</title>';
+    html += '<style>';
+    html += 'body{font-family:Arial;padding:20px;font-size:12px;}';
+    html += 'h2{text-align:center;color:#333;margin-top:0;}';
+    html += '.header{text-align:center;margin-bottom:15px;color:#666;}';
+    html += 'table{width:100%;border-collapse:collapse;font-size:11px;}';
+    html += 'th{background:#667eea;color:white;padding:8px;text-align:left;border:1px solid #ddd;}';
+    html += 'td{padding:6px;border:1px solid #ddd;}';
+    html += '.text-end{text-align:right;}';
+    html += '.text-success{color:#28a745;}';
+    html += '.badge-aide{background:#ffc107;color:#333;padding:2px 6px;border-radius:3px;}';
+    html += '.badge-mixte{background:#8b5cf6;color:white;padding:2px 6px;border-radius:3px;}';
+    html += '.summary{display:flex;justify-content:center;gap:30px;margin:15px 0;padding:10px;background:#f8f9fa;border-radius:5px;}';
+    html += '.summary-item{text-align:center;}';
+    html += '.footer{text-align:center;margin-top:15px;color:#666;font-size:10px;border-top:1px solid #ddd;padding-top:10px;}';
+    html += '.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;padding:10px;background:#f8f9fa;border-radius:5px;border:1px solid #ddd;}';
+    html += '.toolbar .title{font-size:16px;font-weight:bold;color:#333;}';
+    html += '.btn-close{background:#dc3545;color:white;border:none;padding:8px 25px;border-radius:5px;cursor:pointer;font-size:14px;}';
+    html += '.btn-close:hover{background:#c82333;}';
+    html += '@media print{.toolbar{display:none;}}';
+    html += '</style>';
+    html += '</head><body>';
+    
+    html += '<div class="toolbar">';
+    html += '<span class="title">Aides hospitalières</span>';
+    html += '<button class="btn-close" onclick="window.close()"><i class="fas fa-times"></i> Fermer</button>';
+    html += '</div>';
+    
+    html += '<div class="header">Généré le ' + new Date().toLocaleString('fr-FR') + '</div>';
+    
+    var totalAides = aides.length;
+    var totalMontantAide = aides.reduce(function(sum, v) {
+        return sum + (v.aide_hospitaliere || 0);
+    }, 0);
+    var totalSousTotal = aides.reduce(function(sum, v) {
+        return sum + (v.sous_total || 0);
+    }, 0);
+    
+    html += '<div class="summary">';
+    html += '<div class="summary-item"><strong>Patients aidés</strong><br>' + totalAides + '</div>';
+    html += '<div class="summary-item"><strong>Total aide</strong><br>' + Math.round(totalMontantAide).toLocaleString() + ' F</div>';
+    html += '<div class="summary-item"><strong>Total ventes</strong><br>' + Math.round(totalSousTotal).toLocaleString() + ' F</div>';
+    html += '</div>';
+    
+    html += '<table>';
+    html += '<thead><tr>';
+    html += '<th>N°</th>';
+    html += '<th>Date</th>';
+    html += '<th>Patient</th>';
+    html += '<th>Type</th>';
+    html += '<th>Taux aide</th>';
+    html += '<th class="text-end">Montant total</th>';
+    html += '<th class="text-end">Montant aidé</th>';
+    html += '</tr></thead><tbody>';
+    
+    for (var i = 0; i < aides.length; i++) {
+        var v = aides[i];
+        var dateObj = v.date_vente ? new Date(v.date_vente) : null;
+        var dateStr = dateObj ? dateObj.toLocaleDateString('fr-FR') : '-';
+        
+        // 🔥🔥🔥 CORRECTION ICI 🔥🔥🔥
+        var typeLabel = '';
+        if (v.type === 'mixte') {
+            typeLabel = 'Mixte';
+        } else if (v.type === 'actes') {
+            typeLabel = 'Acte';
+        } else if (v.type === 'pharma' || v.type === 'pharmacie') {
+            typeLabel = 'Pharmacie';
+        } else {
+            typeLabel = v.type || 'Inconnu';
+        }
+        
+        var tauxAide = v.taux_aide || 0;
+        var montantAide = v.aide_hospitaliere || 0;
+        var sousTotal = v.sous_total || 0;
+        
+        html += '<tr>';
+        html += '<td>#' + (v.ID || (i + 1)) + '</td>';
+        html += '<td>' + dateStr + '</td>';
+        html += '<td>' + (v.patient_nom || 'Patient') + '</td>';
+        html += '<td>' + typeLabel + '</td>';
+        html += '<td><span class="badge-aide">' + tauxAide + '%</span></td>';
+        html += '<td class="text-end">' + Math.round(sousTotal).toLocaleString() + ' F</td>';
+        html += '<td class="text-end text-success">' + Math.round(montantAide).toLocaleString() + ' F</td>';
+        html += '</tr>';
+    }
+    
+    html += '<tr style="font-weight:bold;border-top:2px solid #333;">';
+    html += '<td colspan="6" class="text-end">TOTAL :</td>';
+    html += '<td class="text-end text-success">' + Math.round(totalMontantAide).toLocaleString() + ' F</td>';
+    html += '</tr>';
+    
+    html += '</tbody></table>';
+    html += '<div class="footer">';
+    html += 'Total: ' + totalAides + ' patients aidés - Montant total: ' + Math.round(totalMontantAide).toLocaleString() + ' FCFA<br>';
+    html += 'SSoftOneV10';
+    html += '</div>';
+    
+    html += '</body></html>';
+    
+    printWindow.document.write(html);
+    printWindow.document.close();
+    setTimeout(function() { printWindow.print(); }, 500);
+}
 // ============================================
 // INITIALISATION
 // ============================================

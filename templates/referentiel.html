@@ -14,7 +14,7 @@
                 <a class="nav-link" href="{{ url_for('pharma_vente') }}"><i class="fas fa-pills"></i> Pharmacie</a>
                 <a class="nav-link" href="{{ url_for('historique_ventes') }}"><i class="fas fa-history"></i> Historique</a>
                 <a class="nav-link" href="{{ url_for('rendez_vous') }}"><i class="fas fa-calendar-alt"></i> Rendez-vous</a>
-                <a class="nav-link" href="{{ url_for('rappels_rendez_vous') }}"><i class="fas fa-bell"></i> Rappels</a>
+                <a class="nav-link" href="{{ url_for('rappels') }}"><i class="fas fa-bell"></i> Rappels</a>
                 {% if session.is_admin %}
                 <a class="nav-link" href="{{ url_for('admin_structure') }}"><i class="fas fa-cog"></i> Administration</a>
                 {% endif %}

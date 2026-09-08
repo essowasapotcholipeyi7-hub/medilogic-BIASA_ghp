@@ -21,7 +21,7 @@
                 <!-- Infos générales -->
                 <div class="row mb-4">
                     <div class="col-md-6">
-                        <h6>📋 Informations patient</h6>
+                        <h6>Informations patient</h6>
                         <p>
                             <strong>Nom :</strong> {{ facture.patient_nom }}<br>
                             <strong>Téléphone :</strong> {{ facture.patient_telephone or 'Non renseigné' }}<br>
@@ -33,12 +33,13 @@
                             <strong>Assurance :</strong> {{ facture.assurance_nom }} ({{ facture.taux_assurance }}%)<br>
                             {% if facture.assurance2_nom and facture.assurance2_nom != 'Aucune' %}
                             <strong>CAC :</strong> {{ facture.assurance2_nom }} ({{ facture.taux_assurance2 }}%)
+                            {% if facture.societe_assurance2 %}<br><strong>Société :</strong> {{ facture.societe_assurance2 }}{% endif %}
                             {% endif %}
                         </p>
                         {% endif %}
                     </div>
                     <div class="col-md-6 text-end">
-                        <h6>📊 Statut</h6>
+                        <h6>Statut</h6>
                         <span class="badge bg-{{ facture.statut_color }}" style="font-size: 14px; padding: 8px 20px;">
                             {{ facture.statut_label }}
                         </span>
@@ -47,7 +48,7 @@
                         <h4 class="text-danger">{{ facture.reste_a_payer|round(0)|int }} FCFA</h4>
                         <small class="text-muted">Reste à payer</small>
                         {% else %}
-                        <h4 class="text-success">✅ Payée</h4>
+                        <h4 class="text-success">Payée</h4>
                         <small class="text-muted">Facture entièrement réglée</small>
                         {% endif %}
                     </div>
@@ -124,7 +125,7 @@
                             </tr>
                             {% else %}
                             <tr style="color: #28a745; font-weight: bold; font-size: 1.2em; border-top: 2px solid #28a745;">
-                                <th colspan="3" class="text-end">✅ FACTURE PAYÉE</th>
+                                <th colspan="3" class="text-end">FACTURE PAYÉE</th>
                                 <th class="text-end">✓</th>
                             </tr>
                             {% endif %}
@@ -134,7 +135,7 @@
 
                 <!-- Historique des paiements -->
                 {% if paiements and paiements|length > 0 %}
-                <h6 class="mt-4">📜 Historique des paiements</h6>
+                <h6 class="mt-4">Historique des paiements</h6>
                 <div class="table-responsive">
                     <table class="table table-sm table-striped table-hover">
                         <thead>
@@ -153,7 +154,7 @@
                                 <td>{{ p.date_paiement.strftime('%d/%m/%Y %H:%M') if p.date_paiement else '-' }}</td>
                                 <td><strong style="color:#28a745;">{{ p.montant|round(0)|int }} FCFA</strong></td>
                                 <td>
-                                    {% set modes = {'especes': '💰 Espèces', 'carte': '💳 Carte', 'Moov_money': '📱 FLOOZ', 'Mixx_By_Yas': '📱 MIXX', 'orange_money': '📱 Orange Money', 'mtn_money': '📱 MTN Money', 'cheque': '📝 Chèque'} %}
+                                    {% set modes = {'especes': 'Espèces', 'carte': 'Carte', 'Moov_money': 'FLOOZ', 'Mixx_By_Yas': 'MIXX', 'orange_money': 'Orange Money', 'mtn_money': 'MTN Money', 'cheque': 'Chèque'} %}
                                     {{ modes[p.mode_paiement]|default(p.mode_paiement|default('Espèces')) }}
                                 </td>
                                 <td>{{ p.notes or '-' }}</td>
@@ -233,13 +234,13 @@
                 <div class="mb-3">
                     <label>Mode de paiement</label>
                     <select class="form-control" id="modePaiement">
-                        <option value="especes">💰 Espèces</option>
-                        <option value="carte">💳 Carte bancaire</option>
-                        <option value="Moov_money">📱 FLOOZ</option>
-                        <option value="Mixx_By_Yas">📱 MIXX By YAS</option>
-                        <option value="orange_money">📱 Orange Money</option>
-                        <option value="mtn_money">📱 MTN Money</option>
-                        <option value="cheque">📝 Chèque</option>
+                        <option value="especes">Espèces</option>
+                        <option value="carte">Carte bancaire</option>
+                        <option value="Moov_money">FLOOZ</option>
+                        <option value="Mixx_By_Yas">MIXX By YAS</option>
+                        <option value="orange_money">Orange Money</option>
+                        <option value="mtn_money">MTN Money</option>
+                        <option value="cheque">Chèque</option>
                     </select>
                 </div>
                 <div class="mb-3">
@@ -395,7 +396,7 @@ function confirmerPaiement(factureId) {
         hideProgress();
         
         if (data.success) {
-            alert(`✅ Paiement enregistré !\nMontant: ${montant.toLocaleString()} FCFA\nReste: ${data.reste_a_payer.toLocaleString()} FCFA`);
+            alert(`Paiement enregistré !\nMontant: ${montant.toLocaleString()} FCFA\nReste: ${data.reste_a_payer.toLocaleString()} FCFA`);
             
             bootstrap.Modal.getInstance(document.getElementById('paiementModal')).hide();
             
@@ -425,7 +426,7 @@ function confirmerPaiement(factureId) {
 // ANNULATION FACTURE
 // ============================================
 function annulerFacture(factureId) {
-    const motif = prompt('📝 Motif de l\'annulation :\n\n(Optionnel - laissez vide si aucun motif)');
+    const motif = prompt('Motif de l\'annulation :\n\n(Optionnel - laissez vide si aucun motif)');
     if (motif === null) return; // Annulé par l'utilisateur
     
     const msg = `⚠️ ANNULATION DE LA FACTURE\n\n`;
@@ -448,7 +449,7 @@ function annulerFacture(factureId) {
     .then(data => {
         hideProgress();
         if (data.success) {
-            alert('✅ Facture annulée avec succès');
+            alert('Facture annulée avec succès');
             location.reload();
         } else {
             alert('❌ Erreur: ' + (data.error || 'Erreur inconnue'));

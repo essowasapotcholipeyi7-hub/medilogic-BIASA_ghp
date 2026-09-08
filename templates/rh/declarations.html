@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}Déclarations mensuelles{% endblock %}
+
+{% block content %}
+        <div class="card">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h5 class="mb-0"><i class="fas fa-file-contract"></i> Déclarations mensuelles (IRPP, CNSS/CRT, AMU)</h5>
+                <div class="d-flex gap-2 align-items-center">
+                    <select class="form-select form-select-sm" id="declMois" style="width:auto"></select>
+                    <select class="form-select form-select-sm" id="declAnnee" style="width:auto"></select>
+                    <a href="{{ url_for('rh.page_paie') }}" class="btn btn-light btn-sm">
+                        <i class="fas fa-arrow-left"></i> Retour à la paie
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="alert" id="delaiAlert">
+                    <i class="fas fa-calendar-exclamation"></i>
+                    Déclarations de <strong id="delaiPeriode"></strong> à déposer avant le
+                    <strong id="delaiDate"></strong>.
+                </div>
+
+                <div class="row g-3" id="declarationsCards">
+                    <div class="col-12 text-center text-muted">Chargement...</div>
+                </div>
+
+                <div class="alert alert-secondary small mt-4">
+                    <i class="fas fa-info-circle"></i>
+                    Ces montants sont calculés à partir des bulletins de paie déjà générés pour la
+                    période (onglet <a href="{{ url_for('rh.page_paie') }}">Paie du mois</a>).
+                    Une carte n'apparaît que si des cotisations existent pour ce type sur la
+                    période sélectionnée (ex : pas de CRT si aucun agent public ce mois-là).
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const MOIS_NOMS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+const ICONES = {
+    'irpp': 'fa-percent', 'cnss': 'fa-building', 'crt': 'fa-landmark',
+    'amu-cnss': 'fa-shield-heart', 'amu-inam': 'fa-shield-heart',
+};
+const COULEURS = {
+    'irpp': 'warning', 'cnss': 'primary', 'crt': 'success',
+    'amu-cnss': 'info', 'amu-inam': 'info',
+};
+
+function initSelecteurs() {
+    const now = new Date();
+    const selMois = document.getElementById('declMois');
+    MOIS_NOMS.forEach((nom, idx) => {
+        const opt = document.createElement('option');
+        opt.value = idx + 1;
+        opt.textContent = nom;
+        if (idx + 1 === now.getMonth() + 1) opt.selected = true;
+        selMois.appendChild(opt);
+    });
+    selMois.onchange = chargerDeclarations;
+
+    const selAnnee = document.getElementById('declAnnee');
+    for (let a = now.getFullYear() - 1; a <= now.getFullYear() + 1; a++) {
+        const opt = document.createElement('option');
+        opt.value = a;
+        opt.textContent = a;
+        if (a === now.getFullYear()) opt.selected = true;
+        selAnnee.appendChild(opt);
+    }
+    selAnnee.onchange = chargerDeclarations;
+}
+
+function chargerDeclarations() {
+    const annee = document.getElementById('declAnnee').value;
+    const mois = document.getElementById('declMois').value;
+    const container = document.getElementById('declarationsCards');
+    container.innerHTML = '<div class="col-12 text-center text-muted">⏳ Chargement...</div>';
+
+    fetch(`/rh/api/declarations/summary?annee=${annee}&mois=${mois}`)
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('delaiPeriode').textContent = `${MOIS_NOMS[mois - 1]} ${annee}`;
+            document.getElementById('delaiDate').textContent = data.date_limite_label;
+            const alertEl = document.getElementById('delaiAlert');
+            alertEl.className = 'alert ' + (data.delai_depasse ? 'alert-danger' : 'alert-warning');
+
+            container.innerHTML = '';
+            let aucune = true;
+            Object.entries(data.declarations).forEach(([type, d]) => {
+                if (d.nb_employes === 0) return;
+                aucune = false;
+                const couleur = COULEURS[type] || 'secondary';
+                const icone = ICONES[type] || 'fa-file-invoice-dollar';
+                container.insertAdjacentHTML('beforeend', `
+                    <div class="col-md-4">
+                        <div class="card border-0 shadow-sm h-100">
+                            <div class="card-header bg-${couleur} bg-opacity-10">
+                                <i class="fas ${icone} text-${couleur}"></i> <strong>${d.label}</strong>
+                            </div>
+                            <div class="card-body">
+                                <div class="text-muted small">${d.nb_employes} salarié(s) concerné(s)</div>
+                                ${d.total_patronal > 0 ? `
+                                    <div class="d-flex justify-content-between"><span class="small">Part salariale</span><strong>${d.total_salarial.toLocaleString('fr-FR')} F</strong></div>
+                                    <div class="d-flex justify-content-between"><span class="small">Part patronale</span><strong>${d.total_patronal.toLocaleString('fr-FR')} F</strong></div>
+                                    <hr class="my-2">
+                                ` : ''}
+                                <div class="d-flex justify-content-between">
+                                    <span>Total à reverser</span>
+                                    <strong class="fs-5 text-${couleur}">${d.total.toLocaleString('fr-FR')} F</strong>
+                                </div>
+                            </div>
+                            <div class="card-footer bg-white">
+                                <a class="btn btn-sm btn-outline-${couleur} w-100" target="_blank"
+                                   href="/rh/declarations/${type}/print?annee=${annee}&mois=${mois}">
+                                    <i class="fas fa-print"></i> Imprimer la déclaration
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                `);
+            });
+            if (aucune) {
+                container.innerHTML = '<div class="col-12 text-center text-muted py-4">Aucun bulletin de paie généré pour cette période — voir <a href="' + '{{ url_for("rh.page_paie") }}' + '">Paie du mois</a>.</div>';
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            container.innerHTML = '<div class="col-12 text-center text-danger">Erreur de chargement</div>';
+        });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    initSelecteurs();
+    chargerDeclarations();
+});
+</script>
+{% endblock %}

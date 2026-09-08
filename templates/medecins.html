@@ -1,0 +1,711 @@
+{% extends "base.html" %}
+
+{% block title %}Gestion des medecins{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        cursor: pointer;
+    }
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    }
+    .btn-group .btn {
+        padding: 4px 8px;
+        font-size: 11px;
+    }
+    .modal-lg {
+        max-width: 900px;
+    }
+    .badge-statut {
+        font-size: 11px;
+        padding: 5px 10px;
+    }
+    .historique-item {
+        transition: all 0.2s ease;
+    }
+    .historique-item:hover {
+        background: #f8f9fa;
+    }
+    .chart-container {
+        position: relative;
+        height: 200px;
+        margin-top: 15px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+        <!-- Statistiques -->
+        <div class="row mb-4 g-3">
+            <div class="col-md-3">
+                <div class="card stat-card border-0 shadow-sm">
+                    <div class="card-body text-center">
+                        <h3 class="text-primary" id="totalMedecins">{{ medecins|length }}</h3>
+                        <small class="text-muted">Total medecins</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stat-card border-0 shadow-sm">
+                    <div class="card-body text-center">
+                        <h3 class="text-success" id="actifsMedecins">{{ medecins|selectattr('actif')|list|length }}</h3>
+                        <small class="text-muted">Actifs</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stat-card border-0 shadow-sm">
+                    <div class="card-body text-center">
+                        <h3 class="text-warning" id="inactifsMedecins">{{ medecins|rejectattr('actif')|list|length }}</h3>
+                        <small class="text-muted">Inactifs</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stat-card border-0 shadow-sm">
+                    <div class="card-body text-center">
+                        <h3 class="text-info" id="specialitesCount">{{ medecins|map(attribute='specialite')|unique|list|length }}</h3>
+                        <small class="text-muted">Specialites</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Liste des medecins -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-gradient-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-user-md me-2"></i> Liste des medecins</h5>
+                <button class="btn btn-light btn-sm" onclick="ouvrirAjoutMedecin()">
+                    <i class="fas fa-plus me-1"></i> Nouveau medecin
+                </button>
+            </div>
+            <div class="card-body">
+                <!-- Recherche -->
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="fas fa-search"></i></span>
+                            <input type="text" id="searchMedecin" class="form-control" 
+                                   placeholder="Rechercher un medecin..." onkeyup="filtrerMedecins()">
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <select id="filtreSpecialite" class="form-select" onchange="filtrerMedecins()">
+                            <option value="tous">Toutes les specialites</option>
+                            {% for medecin in medecins %}
+                            {% if medecin.specialite %}
+                            <option value="{{ medecin.specialite }}">{{ medecin.specialite }}</option>
+                            {% endif %}
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Tableau -->
+                <div class="table-responsive">
+                    <table class="table table-hover table-bordered" id="medecinsTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>ID</th>
+                                <th>Medecin</th>
+                                <th>Specialite</th>
+                                <th>Qualification</th>
+                                <th>Telephone</th>
+                                <th>Consultations</th>
+                                <th>Statut</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="medecinsList">
+                            {% for medecin in medecins %}
+                            <tr data-id="{{ medecin.id }}" data-specialite="{{ medecin.specialite }}">
+                                <td>{{ medecin.id }}</td>
+                                <td>
+                                    <strong>{{ medecin.titre }} {{ medecin.prenom }} {{ medecin.nom }}</strong>
+                                </td>
+                                <td>{{ medecin.specialite }}</td>
+                                <td>{{ medecin.qualification or '-' }}</td>
+                                <td>{{ medecin.telephone or '-' }}</td>
+                                <td class="text-center">
+                                    <span class="badge bg-primary">{{ medecin.nb_consultations }}</span>
+                                </td>
+                                <td>
+                                    {% if medecin.actif %}
+                                    <span class="badge bg-success">Actif</span>
+                                    {% else %}
+                                    <span class="badge bg-danger">Inactif</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-primary" onclick="voirHistorique({{ medecin.id }})" title="Historique">
+                                            <i class="fas fa-history"></i>
+                                        </button>
+                                        <button class="btn btn-outline-secondary" onclick="modifierMedecin({{ medecin.id }})" title="Modifier">
+                                            <i class="fas fa-pen"></i>
+                                        </button>
+                                        <button class="btn btn-outline-success" onclick="toggleMedecin({{ medecin.id }})" title="Activer/Desactiver">
+                                            <i class="fas fa-power-off"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="8" class="text-center text-muted py-4">
+                                    <i class="fas fa-user-md fa-3x mb-2"></i><br>
+                                    Aucun medecin enregistre
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- MODAL AJOUT/MODIFICATION MEDECIN -->
+<!-- ============================================================ -->
+<div class="modal fade" id="medecinModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="medecinModalTitle">
+                    <i class="fas fa-user-md me-2"></i> Nouveau medecin
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="medecinForm">
+                    <input type="hidden" id="medecinId" value="">
+                    
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Nom *</label>
+                            <input type="text" class="form-control" id="medecinNom" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Prenom</label>
+                            <input type="text" class="form-control" id="medecinPrenom">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Titre</label>
+                            <select class="form-select" id="medecinTitre">
+                                <option value="Dr">Dr</option>
+                                <option value="Pr">Pr</option>
+                                <option value="Mme">Mme</option>
+                                <option value="M.">M.</option>
+                            </select>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Specialite *</label>
+                            <input type="text" class="form-control" id="medecinSpecialite" required>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label">Qualification</label>
+                            <input type="text" class="form-control" id="medecinQualification" 
+                                   placeholder="Ex: Docteur en medecine, Specialiste en cardiologie">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Telephone</label>
+                            <input type="tel" class="form-control" id="medecinTelephone">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-control" id="medecinEmail">
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label">Honoraire consultation (FCFA)</label>
+                            <input type="number" class="form-control" id="medecinHonoraire" value="0">
+                        </div>
+                        <div class="col-md-12">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="medecinActif" checked>
+                                <label class="form-check-label" for="medecinActif">Actif</label>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="enregistrerMedecin()">
+                    <i class="fas fa-save me-1"></i> Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- MODAL HISTORIQUE MEDECIN -->
+<!-- ============================================================ -->
+<div class="modal fade" id="historiqueModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-history me-2"></i> Historique - <span id="historiqueMedecinNom"></span>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Statistiques -->
+                <div class="row g-2 mb-3" id="historiqueStats">
+                    <div class="col-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center p-2">
+                                <h5 class="text-primary" id="statTotal">0</h5>
+                                <small class="text-muted">Total RDV</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center p-2">
+                                <h5 class="text-success" id="statTermines">0</h5>
+                                <small class="text-muted">Termines</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center p-2">
+                                <h5 class="text-warning" id="statEnAttente">0</h5>
+                                <small class="text-muted">En attente</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center p-2">
+                                <h5 class="text-danger" id="statAnnules">0</h5>
+                                <small class="text-muted">Annules</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Graphique -->
+                <div class="chart-container">
+                    <canvas id="historiqueChart"></canvas>
+                </div>
+
+                <!-- Liste des consultations -->
+                <h6 class="text-muted mt-3">Dernieres consultations</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover" id="historiqueTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Heure</th>
+                                <th>Patient</th>
+                                <th>Motif</th>
+                                <th>Statut</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historiqueList">
+                            <tr>
+                                <td colspan="5" class="text-center text-muted">Chargement...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="imprimerHistoriqueMedecin()">
+                    <i class="fas fa-print me-1"></i> Imprimer PDF
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentMedecinId = null;
+let historiqueChart = null;
+let historiqueData = null;
+
+// ============================================================
+// FILTRES
+// ============================================================
+
+function filtrerMedecins() {
+    const search = document.getElementById('searchMedecin').value.toLowerCase();
+    const specialite = document.getElementById('filtreSpecialite').value;
+    
+    const rows = document.querySelectorAll('#medecinsList tr');
+    rows.forEach(row => {
+        if (row.cells.length < 8) return;
+        
+        const nom = row.cells[1]?.textContent.toLowerCase() || '';
+        const rowSpecialite = row.getAttribute('data-specialite') || '';
+        
+        let show = true;
+        if (search && !nom.includes(search)) show = false;
+        if (specialite !== 'tous' && rowSpecialite !== specialite) show = false;
+        
+        row.style.display = show ? '' : 'none';
+    });
+}
+
+// ============================================================
+// AJOUT / MODIFICATION
+// ============================================================
+
+function ouvrirAjoutMedecin() {
+    document.getElementById('medecinModalTitle').textContent = 'Nouveau medecin';
+    document.getElementById('medecinId').value = '';
+    document.getElementById('medecinForm').reset();
+    document.getElementById('medecinActif').checked = true;
+    document.getElementById('medecinNom').focus();
+    new bootstrap.Modal(document.getElementById('medecinModal')).show();
+}
+
+function modifierMedecin(id) {
+    currentMedecinId = id;
+    document.getElementById('medecinModalTitle').textContent = 'Modifier le medecin';
+    document.getElementById('medecinId').value = id;
+    
+    // Charger les donnees
+    fetch(`/api/medecins/${id}`)
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('medecinNom').value = data.nom || '';
+            document.getElementById('medecinPrenom').value = data.prenom || '';
+            document.getElementById('medecinTitre').value = data.titre || 'Dr';
+            document.getElementById('medecinSpecialite').value = data.specialite || '';
+            document.getElementById('medecinQualification').value = data.qualification || '';
+            document.getElementById('medecinTelephone').value = data.telephone || '';
+            document.getElementById('medecinEmail').value = data.email || '';
+            document.getElementById('medecinHonoraire').value = data.honoraire_consultation || 0;
+            document.getElementById('medecinActif').checked = data.actif !== false;
+            
+            new bootstrap.Modal(document.getElementById('medecinModal')).show();
+        })
+        .catch(error => {
+            showToast('Erreur lors du chargement du medecin', 'danger');
+        });
+}
+
+function enregistrerMedecin() {
+    const id = document.getElementById('medecinId').value;
+    const data = {
+        nom: document.getElementById('medecinNom').value.trim(),
+        prenom: document.getElementById('medecinPrenom').value.trim(),
+        titre: document.getElementById('medecinTitre').value,
+        specialite: document.getElementById('medecinSpecialite').value.trim(),
+        qualification: document.getElementById('medecinQualification').value.trim(),
+        telephone: document.getElementById('medecinTelephone').value.trim(),
+        email: document.getElementById('medecinEmail').value.trim(),
+        honoraire_consultation: parseFloat(document.getElementById('medecinHonoraire').value) || 0,
+        actif: document.getElementById('medecinActif').checked
+    };
+    
+    // Validation
+    if (!data.nom) {
+        showToast('Veuillez entrer le nom du medecin', 'warning');
+        document.getElementById('medecinNom').focus();
+        return;
+    }
+    if (!data.specialite) {
+        showToast('Veuillez entrer la specialite', 'warning');
+        document.getElementById('medecinSpecialite').focus();
+        return;
+    }
+    
+    const url = id ? `/api/medecins/${id}` : '/api/medecins';
+    const method = id ? 'PUT' : 'POST';
+    
+    showLoader('Enregistrement...');
+    
+    fetch(url, {
+        method: method,
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        hideLoader();
+        if (result.success) {
+            showToast(result.message, 'success');
+            bootstrap.Modal.getInstance(document.getElementById('medecinModal')).hide();
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast('Erreur: ' + result.error, 'danger');
+        }
+    })
+    .catch(() => {
+        hideLoader();
+        showToast('Erreur lors de l\'enregistrement', 'danger');
+    });
+}
+
+// ============================================================
+// ACTIVER / DESACTIVER
+// ============================================================
+
+function toggleMedecin(id) {
+    const row = document.querySelector(`tr[data-id="${id}"]`);
+    if (!row) return;
+    
+    const actif = row.cells[6]?.innerText.includes('Actif');
+    const action = actif ? 'desactiver' : 'activer';
+    
+    if (!confirm(`Voulez-vous ${action} ce medecin ?`)) return;
+    
+    showLoader('Mise a jour...');
+    
+    fetch(`/api/medecins/${id}/toggle`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(response => response.json())
+    .then(result => {
+        hideLoader();
+        if (result.success) {
+            showToast(result.message, 'success');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast('Erreur: ' + result.error, 'danger');
+        }
+    })
+    .catch(() => {
+        hideLoader();
+        showToast('Erreur lors de la mise a jour', 'danger');
+    });
+}
+
+// ============================================================
+// HISTORIQUE
+// ============================================================
+
+function voirHistorique(id) {
+    currentMedecinId = id;
+    
+    showLoader('Chargement de l\'historique...');
+    
+    fetch(`/api/medecins/${id}/historique`)
+        .then(response => response.json())
+        .then(data => {
+            hideLoader();
+            historiqueData = data;
+            
+            // Nom du medecin
+            document.getElementById('historiqueMedecinNom').textContent = 
+                `${data.info.titre} ${data.info.prenom} ${data.info.nom}`;
+            
+            // Statistiques
+            document.getElementById('statTotal').textContent = data.stats.total || 0;
+            document.getElementById('statTermines').textContent = data.stats.termines || 0;
+            document.getElementById('statEnAttente').textContent = 
+                (data.stats.programmes || 0) + (data.stats.confirmes || 0);
+            document.getElementById('statAnnules').textContent = 
+                (data.stats.annules || 0) + (data.stats.reportes || 0);
+            
+            // Graphique
+            creerGraphiqueHistorique(data.stats_mois || []);
+            
+            // Tableau
+            const tbody = document.getElementById('historiqueList');
+            if (!data.historique || data.historique.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted">Aucune consultation</td></tr>`;
+            } else {
+                tbody.innerHTML = data.historique.map(rdv => {
+                    const statutClass = {
+                        'termine': 'bg-success',
+                        'confirme': 'bg-primary',
+                        'programme': 'bg-warning text-dark',
+                        'annule': 'bg-danger',
+                        'reporte': 'bg-info'
+                    }[rdv.statut] || 'bg-secondary';
+                    
+                    const statutLabel = {
+                        'termine': 'Termine',
+                        'confirme': 'Confirme',
+                        'programme': 'Programme',
+                        'annule': 'Annule',
+                        'reporte': 'Reporte'
+                    }[rdv.statut] || rdv.statut;
+                    
+                    return `
+                        <tr class="historique-item">
+                            <td>${rdv.date_rdv || '-'}</td>
+                            <td>${rdv.heure_rdv || '-'}</td>
+                            <td><strong>${rdv.patient_nom || 'Patient'}</strong></td>
+                            <td>${rdv.motif || '-'}</td>
+                            <td><span class="badge ${statutClass}">${statutLabel}</span></td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+            
+            new bootstrap.Modal(document.getElementById('historiqueModal')).show();
+        })
+        .catch(error => {
+            hideLoader();
+            showToast('Erreur lors du chargement de l\'historique', 'danger');
+        });
+}
+
+function creerGraphiqueHistorique(data) {
+    const ctx = document.getElementById('historiqueChart').getContext('2d');
+    
+    if (historiqueChart) {
+        historiqueChart.destroy();
+    }
+    
+    if (!data || data.length === 0) {
+        document.querySelector('.chart-container').innerHTML = 
+            '<div class="text-center text-muted py-3">Aucune donnee mensuelle</div>';
+        return;
+    }
+    
+    const labels = data.map(d => {
+        const mois = ['Jan', 'Fev', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aout', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return mois[d.mois - 1] + ' ' + d.annee;
+    }).reverse();
+    
+    const values = data.map(d => d.total).reverse();
+    
+    historiqueChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Consultations',
+                data: values,
+                backgroundColor: 'rgba(102, 126, 234, 0.7)',
+                borderColor: 'rgba(102, 126, 234, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    }
+                }
+            }
+        }
+    });
+}
+
+// ============================================================
+// IMPRESSION HISTORIQUE
+// ============================================================
+
+function imprimerHistoriqueMedecin() {
+    if (!historiqueData || !historiqueData.historique || historiqueData.historique.length === 0) {
+        showToast('Aucune donnee a imprimer', 'warning');
+        return;
+    }
+    
+    const medecinNom = document.getElementById('historiqueMedecinNom').textContent;
+    const total = document.getElementById('statTotal').textContent;
+    const termines = document.getElementById('statTermines').textContent;
+    
+    let html = `<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Historique - ${medecinNom}</title>
+        <style>
+            body { font-family: 'Segoe UI', Arial, sans-serif; padding: 30px; }
+            h1 { color: #1a2a6c; border-bottom: 2px solid #667eea; padding-bottom: 10px; }
+            .stats { display: flex; gap: 20px; margin: 20px 0; }
+            .stat-box { background: #f5f7fb; padding: 15px 25px; border-radius: 10px; }
+            .stat-box .number { font-size: 24px; font-weight: 700; color: #1a2a6c; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+            th { background-color: #667eea; color: white; }
+            .footer { margin-top: 30px; text-align: center; font-size: 11px; color: #999; }
+            @media print { body { padding: 20px; } }
+        </style>
+    </head>
+    <body>
+        <h1>Historique des consultations</h1>
+        <p><strong>Medecin:</strong> ${medecinNom}</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleString('fr-FR')}</p>
+        
+        <div class="stats">
+            <div class="stat-box"><span class="number">${total}</span> Total</div>
+            <div class="stat-box"><span class="number">${termines}</span> Termines</div>
+        </div>
+        
+        <table>
+            <thead><tr><th>Date</th><th>Heure</th><th>Patient</th><th>Motif</th><th>Statut</th></tr></thead>
+            <tbody>
+                ${historiqueData.historique.map(rdv => `
+                    <tr>
+                        <td>${rdv.date_rdv || '-'}</td>
+                        <td>${rdv.heure_rdv || '-'}</td>
+                        <td>${rdv.patient_nom || 'Patient'}</td>
+                        <td>${rdv.motif || '-'}</td>
+                        <td>${rdv.statut || 'Programme'}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+        <div class="footer">Document genere par Medilogic-GHP</div>
+        <script>window.onload=function(){window.print();setTimeout(function(){window.close();},500);};<\/script>
+    </body>
+    </html>`;
+    
+    const win = window.open('', '_blank');
+    win.document.write(html);
+    win.document.close();
+}
+
+// ============================================================
+// UTILITAIRES
+// ============================================================
+
+function showLoader(message) {
+    const loader = document.getElementById('globalLoader');
+    if (loader) {
+        document.getElementById('loaderMessage').innerText = message;
+        loader.style.display = 'flex';
+    }
+}
+
+function hideLoader() {
+    const loader = document.getElementById('globalLoader');
+    if (loader) {
+        loader.style.display = 'none';
+    }
+}
+
+function showToast(message, type) {
+    const toast = document.getElementById('globalToast');
+    if (toast) {
+        toast.querySelector('.toast-body').innerText = message;
+        const bsToast = new bootstrap.Toast(toast);
+        bsToast.show();
+    } else {
+        alert(message);
+    }
+}
+
+// Initialisation
+document.addEventListener('DOMContentLoaded', function() {
+    // Rien de special
+});
+</script>
+{% endblock %}

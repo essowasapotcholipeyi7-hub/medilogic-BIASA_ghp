@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Impression - {{ protocole.titre }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: #f0f2f5;
+            padding: 20px;
+        }
+        .print-container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+            overflow: hidden;
+        }
+        .toolbar {
+            background: #1a2a6c;
+            padding: 15px 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .toolbar .title {
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .toolbar .btn {
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .toolbar .btn-print {
+            background: #28a745;
+            color: white;
+        }
+        .toolbar .btn-print:hover {
+            background: #218838;
+        }
+        .toolbar .btn-close {
+            background: #dc3545;
+            color: white;
+        }
+        .toolbar .btn-close:hover {
+            background: #c82333;
+        }
+        
+        .document-body {
+            padding: 30px 35px;
+        }
+        
+        /* ============================================================
+           EN-TÊTE AVEC BANDE BLEUE
+           ============================================================ */
+        
+        .recu-header {
+            background: #1a2a6c;
+            padding: 20px 30px;
+            color: white;
+            border-radius: 0;
+            margin: -30px -35px 20px -35px;
+        }
+        
+        .recu-header .top-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .recu-header .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .recu-header .logo-area img {
+            max-height: 50px;
+            max-width: 100px;
+            object-fit: contain;
+        }
+        
+        .recu-header .logo-area h1 {
+            font-size: 20px;
+            font-weight: 600;
+            margin: 0;
+            color: white;
+        }
+        
+        .recu-header .badge-rdv {
+            background: rgba(255,255,255,0.15);
+            padding: 5px 14px;
+            border-radius: 30px;
+            font-size: 12px;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .recu-header .sub-info {
+            margin-top: 10px;
+            font-size: 13px;
+            opacity: 0.9;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px 20px;
+        }
+        
+        .recu-header .sub-info span {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        /* ============================================================
+           RECHERCHE PATIENT ET MÉDECIN
+           ============================================================ */
+        
+        .search-container {
+            position: relative;
+        }
+        
+        .search-results {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            max-height: 200px;
+            overflow-y: auto;
+            background: white;
+            border: 1px solid #dce3ed;
+            border-radius: 0 0 6px 6px;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .search-results .result-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #f0f2f5;
+            font-size: 13px;
+        }
+        
+        .search-results .result-item:hover {
+            background-color: #e3f2fd;
+        }
+        
+        .search-results .result-item .nom {
+            font-weight: 600;
+            color: #1a2a3a;
+        }
+        
+        .search-results .result-item .info {
+            font-size: 11px;
+            color: #6c7a89;
+        }
+        
+        .selected-item {
+            display: none;
+            padding: 6px 12px;
+            background: #e8f5e9;
+            border-radius: 6px;
+            margin-top: 5px;
+            border: 1px solid #c8e6c9;
+            font-size: 14px;
+            font-weight: 500;
+            color: #1a2a3a;
+        }
+        
+        .selected-item .btn-close-small {
+            background: none;
+            border: none;
+            font-size: 18px;
+            color: #c62828;
+            cursor: pointer;
+            margin-left: 8px;
+            font-weight: 700;
+        }
+        
+        .selected-item .btn-close-small:hover {
+            color: #b71c1c;
+        }
+        
+        /* Zone de sélection */
+        .selection-area {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin: 15px 0 20px 0;
+            padding: 15px;
+            background: #f8faff;
+            border-radius: 8px;
+            border: 1px solid #e6ebf2;
+        }
+        
+        .selection-area label {
+            font-weight: 600;
+            font-size: 13px;
+            color: #1a2a3a;
+            display: block;
+            margin-bottom: 4px;
+        }
+        
+        /* Récapitulatif patient */
+        .info-patient {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 15px 0 20px 0;
+            padding: 12px 20px;
+            background: #e3f2fd;
+            border-radius: 8px;
+            border-left: 4px solid #1a2a6c;
+        }
+        
+        .info-patient .label {
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #6c7a89;
+            font-weight: 600;
+        }
+        
+        .info-patient .value {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1a2a3a;
+        }
+        
+        .info-patient .details {
+            font-size: 13px;
+            color: #6c7a89;
+        }
+        
+        /* Titre du document */
+        .doc-titre {
+            font-size: 22px;
+            font-weight: 700;
+            color: #1a2a6c;
+            margin: 15px 0 10px 0;
+            text-align: center;
+        }
+        
+        /* ============================================================
+           CONTENU DU DOCUMENT - FORMAT ORDONNANCE
+           ============================================================ */
+        
+        .doc-contenu-ordonnance {
+            font-weight: bold;  /* 🔥 AJOUTER CETTE LIGNE */
+            margin: 15px 0 20px 0;
+            padding: 20px 30px;
+            background: #fafcff;
+            border-radius: 8px;
+            border: 1px solid #eef2f7;
+            font-size: 15px;
+            line-height: 2;
+            min-height: 150px;
+            text-align: left;
+            font-family: 'Courier New', Courier, monospace;
+            white-space: pre-wrap;
+        }
+        
+        .doc-contenu-ordonnance .medicament-ligne {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            padding: 2px 0;
+            font-size: 15px;
+        }
+        
+        .doc-contenu-ordonnance .medicament-nom {
+            flex: 1;
+        }
+        
+        .doc-contenu-ordonnance .medicament-points {
+            flex: 0 1 50px;
+            border-bottom: 1px dotted #999;
+            margin: 0 10px;
+            height: 1.2em;
+        }
+        
+        .doc-contenu-ordonnance .medicament-quantite {
+            font-weight: 600;
+            min-width: 80px;
+            text-align: right;
+        }
+        
+        .doc-contenu-ordonnance .medicament-dosage {
+            color: #6c7a89;
+            font-size: 13px;
+        }
+        
+        /* ============================================================
+           CONTENU DU DOCUMENT - FORMAT STANDARD
+           ============================================================ */
+        
+        .doc-contenu-standard {
+            font-weight: bold;  /* 🔥 AJOUTER CETTE LIGNE */
+            margin: 15px 0 20px 0;
+            padding: 20px;
+            background: #fafcff;
+            border-radius: 8px;
+            border: 1px solid #eef2f7;
+            white-space: pre-wrap;
+            font-size: 14px;
+            line-height: 1.8;
+            min-height: 150px;
+            text-align: left;
+            word-wrap: break-word;
+        }
+        
+        /* ============================================================
+           SIGNATURE DU MÉDECIN
+           ============================================================ */
+        
+        .doc-signature {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #e6ebf2;
+            display: flex;
+            justify-content: flex-end;
+        }
+        
+        .doc-signature .medecin-sign {
+            text-align: center;
+            min-width: 200px;
+        }
+        
+        .doc-signature .medecin-sign .nom {
+            font-weight: 700;
+            font-size: 16px;
+            color: #1a2a3a;
+        }
+        
+        .doc-signature .medecin-sign .specialite {
+            font-size: 12px;
+            color: #6c7a89;
+        }
+        
+        .doc-signature .ligne {
+            width: 180px;
+            border-top: 1px solid #333;
+            margin: 8px auto 5px auto;
+        }
+        
+        /* Pied de page */
+        .doc-footer {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid #e6ebf2;
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: #8e9aaf;
+        }
+        
+        /* ============================================================
+           MEDIA PRINT
+           ============================================================ */
+        
+        @media print {
+            body { background: white; padding: 0; }
+            .print-container { box-shadow: none; border-radius: 0; }
+            .toolbar { display: none !important; }
+            .selection-area { display: none !important; }
+            .info-patient { background: #f5f5f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .structure-info { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .doc-header { border-bottom-color: #1a2a6c !important; }
+            .recu-header { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; background: #1a2a6c !important; }
+            .doc-contenu-ordonnance { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .doc-contenu-standard { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .doc-signature .ligne { border-top: 1px solid #333 !important; }
+        }
+        
+        /* ============================================================
+           MEDIA RESPONSIVE
+           ============================================================ */
+        
+        @media (max-width: 600px) {
+            .recu-header {
+                margin: -15px -15px 15px -15px;
+                padding: 15px;
+            }
+            .recu-header .top-row {
+                flex-direction: column;
+                gap: 10px;
+                text-align: center;
+            }
+            .recu-header .sub-info {
+                justify-content: center;
+            }
+            .selection-area {
+                grid-template-columns: 1fr;
+            }
+            .info-patient {
+                flex-direction: column;
+                text-align: center;
+                gap: 5px;
+            }
+            .doc-header {
+                flex-direction: column;
+                gap: 10px;
+                text-align: center;
+            }
+            .document-body {
+                padding: 15px;
+            }
+            .doc-signature {
+                justify-content: center;
+            }
+            .doc-contenu-ordonnance {
+                padding: 15px;
+                font-size: 13px;
+            }
+            .doc-contenu-ordonnance .medicament-ligne {
+                font-size: 13px;
+                flex-wrap: wrap;
+            }
+            .doc-contenu-ordonnance .medicament-points {
+                flex: 0 1 30px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="print-container">
+        <!-- Barre d'outils -->
+        <div class="toolbar">
+            <span class="title"><i class="fas fa-file-medical me-2"></i> {{ protocole.titre }}</span>
+            <div>
+                <button class="btn btn-print" onclick="imprimerDocument()">
+                    <i class="fas fa-print me-1"></i> Imprimer
+                </button>
+                <button class="btn btn-close" onclick="fermer()">
+                    <i class="fas fa-times me-1"></i> Fermer
+                </button>
+            </div>
+        </div>
+
+        <div class="document-body" id="documentBody">
+            
+            <!-- ============================================================
+                 EN-TÊTE AVEC BANDE BLEUE
+                 ============================================================ -->
+            <div class="recu-header">
+                <div class="top-row">
+                    <div class="logo-area">
+                        {% if structure and structure.logo_url %}
+                        <img src="{{ structure.logo_url }}" alt="Logo" id="structureLogo">
+                        {% endif %}
+                        <h1 id="structureNom">{{ structure.nom if structure else 'Hopital' }}</h1>
+                    </div>
+                    <div class="badge-rdv">DOC-{{ "%04d"|format(protocole.id) }}</div>
+                </div>
+                <div class="sub-info" style="white-space: pre-line;">
+                    {% if structure and structure.adresse %}
+                    <span id="structureAdresse">{{ structure.adresse }}</span>
+                    {% endif %}
+                    {% if structure and structure.telephone %}
+                    <span id="structureTelephone">Tel: {{ structure.telephone }}</span>
+                    {% endif %}
+                    {% if structure and structure.email %}
+                    <span id="structureEmail">Email: {{ structure.email }}</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- ============================================================
+                 SÉLECTION PATIENT ET MÉDECIN
+                 ============================================================ -->
+            <div class="selection-area" id="selectionArea">
+                <div>
+                    <label for="patientSearch"><i class="fas fa-user"></i> Patient</label>
+                    <div class="search-container">
+                        <input type="text" class="form-control" id="patientSearch" 
+                               placeholder="Rechercher un patient..." 
+                               onkeyup="rechercherPatient()" onfocus="rechercherPatient()">
+                        <div id="patientResults" class="search-results"></div>
+                        <input type="hidden" id="patientSelect" value="">
+                        <div id="patientSelected" class="selected-item">
+                            <span id="patientSelectedInfo">Aucun patient sélectionné</span>
+                            <button type="button" class="btn-close-small" onclick="deselectionnerPatient()">×</button>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <label for="medecinSearch"><i class="fas fa-user-md"></i> Médecin</label>
+                    <div class="search-container">
+                        <input type="text" class="form-control" id="medecinSearch" 
+                               placeholder="Rechercher un médecin..." 
+                               onkeyup="rechercherMedecin()" onfocus="rechercherMedecin()">
+                        <div id="medecinResults" class="search-results"></div>
+                        <input type="hidden" id="medecinSelect" value="">
+                        <div id="medecinSelected" class="selected-item">
+                            <span id="medecinSelectedInfo">Aucun médecin sélectionné</span>
+                            <button type="button" class="btn-close-small" onclick="deselectionnerMedecin()">×</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================================
+                 PATIENT (EN HAUT)
+                 ============================================================ -->
+            <div class="info-patient" id="infoPatient">
+                <div>
+                    <div class="label">Patient</div>
+                    <div class="value" id="patientNom">Aucun patient sélectionné</div>
+                </div>
+                <div class="details" id="patientDetails">
+                    <i class="fas fa-phone"></i> <span id="patientTelephone">-</span>
+                </div>
+            </div>
+
+            <!-- ============================================================
+                 TITRE DU DOCUMENT
+                 ============================================================ -->
+            <div class="doc-titre" id="docTitre">{{ protocole.titre }}</div>
+
+            <!-- ============================================================
+                 CONTENU DU DOCUMENT (ORDONNANCE OU STANDARD)
+                 ============================================================ -->
+            {% if protocole.categorie == 'ordonnance_type' %}
+            <div class="doc-contenu-ordonnance" id="docContenu">
+                {{ protocole.contenu }}
+            </div>
+            {% else %}
+            <div class="doc-contenu-standard" id="docContenu">
+                {{ protocole.contenu }}
+            </div>
+            {% endif %}
+
+            <!-- ============================================================
+                 MÉDECIN (EN BAS AVEC SIGNATURE)
+                 ============================================================ -->
+            <div class="doc-signature">
+                <div class="medecin-sign">
+                    <div class="ligne"></div>
+                    <div class="nom" id="medecinNom">_________________</div>
+                    <div class="specialite" id="medecinSpecialite"></div>
+                </div>
+            </div>
+
+            <!-- ============================================================
+                 PIED DE PAGE
+                 ============================================================ -->
+            <div class="doc-footer">
+                <span id="docDate">Généré le {{ now.strftime('%d/%m/%Y à %H:%M') }}</span>
+                <span id="docSignature">{{ structure.nom if structure else 'Hopital' }}</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // VARIABLES
+        // ============================================================
+        
+        var contenuOriginal = document.getElementById('docContenu').innerHTML;
+        var titreOriginal = document.getElementById('docTitre').textContent;
+        var patientsListe = [];
+        var medecinsListe = [];
+
+        // ============================================================
+        // CHARGER LES LISTES AU DÉMARRAGE
+        // ============================================================
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            chargerPatients();
+            chargerMedecins();
+            mettreAJourDocument();
+        });
+
+        function chargerPatients() {
+            fetch('/protocoles/api/patients/liste')
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        patientsListe = data.data;
+                    }
+                })
+                .catch(function(error) { console.error('Erreur chargement patients:', error); });
+        }
+
+        function chargerMedecins() {
+            fetch('/protocoles/api/medecins/liste')
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        medecinsListe = data.data;
+                    }
+                })
+                .catch(function(error) { console.error('Erreur chargement medecins:', error); });
+        }
+
+        // ============================================================
+        // RECHERCHE PATIENT
+        // ============================================================
+
+        function rechercherPatient() {
+            var input = document.getElementById('patientSearch');
+            var results = document.getElementById('patientResults');
+            var query = input.value.toLowerCase().trim();
+            
+            if (query.length === 0) {
+                results.style.display = 'none';
+                return;
+            }
+            
+            var matches = patientsListe.filter(function(p) {
+                var nom = (p.nom || '').toLowerCase();
+                var prenom = (p.prenom || '').toLowerCase();
+                var telephone = (p.telephone || '').toLowerCase();
+                return nom.includes(query) || prenom.includes(query) || telephone.includes(query);
+            });
+            
+            if (matches.length === 0) {
+                results.innerHTML = '<div class="result-item text-muted">Aucun patient trouvé</div>';
+                results.style.display = 'block';
+                return;
+            }
+            
+            results.innerHTML = '';
+            matches.slice(0, 15).forEach(function(p) {
+                var div = document.createElement('div');
+                div.className = 'result-item';
+                div.innerHTML = '<span class="nom">' + (p.nom || '') + ' ' + (p.prenom || '') + '</span>' +
+                                '<span class="info"> - ' + (p.telephone || '') + '</span>';
+                div.onclick = function() {
+                    selectionnerPatient(p);
+                };
+                results.appendChild(div);
+            });
+            
+            results.style.display = 'block';
+        }
+
+        function selectionnerPatient(patient) {
+            document.getElementById('patientResults').style.display = 'none';
+            document.getElementById('patientSelect').value = patient.id;
+            
+            var info = document.getElementById('patientSelectedInfo');
+            info.textContent = patient.nom + ' ' + (patient.prenom || '') + ' - ' + (patient.telephone || '');
+            document.getElementById('patientSelected').style.display = 'block';
+            
+            document.getElementById('patientSearch').value = patient.nom + ' ' + (patient.prenom || '');
+            document.getElementById('patientSearch').disabled = true;
+            
+            mettreAJourDocument();
+        }
+
+        function deselectionnerPatient() {
+            document.getElementById('patientSelect').value = '';
+            document.getElementById('patientSelected').style.display = 'none';
+            document.getElementById('patientSearch').value = '';
+            document.getElementById('patientSearch').disabled = false;
+            document.getElementById('patientSearch').focus();
+            mettreAJourDocument();
+        }
+
+        // ============================================================
+        // RECHERCHE MÉDECIN
+        // ============================================================
+
+        function rechercherMedecin() {
+            var input = document.getElementById('medecinSearch');
+            var results = document.getElementById('medecinResults');
+            var query = input.value.toLowerCase().trim();
+            
+            if (query.length === 0) {
+                results.style.display = 'none';
+                return;
+            }
+            
+            var matches = medecinsListe.filter(function(m) {
+                var nom = (m.nom || '').toLowerCase();
+                var prenom = (m.prenom || '').toLowerCase();
+                var specialite = (m.specialite || '').toLowerCase();
+                return nom.includes(query) || prenom.includes(query) || specialite.includes(query);
+            });
+            
+            if (matches.length === 0) {
+                results.innerHTML = '<div class="result-item text-muted">Aucun médecin trouvé</div>';
+                results.style.display = 'block';
+                return;
+            }
+            
+            results.innerHTML = '';
+            matches.slice(0, 15).forEach(function(m) {
+                var div = document.createElement('div');
+                div.className = 'result-item';
+                var nomComplet = (m.nom || '') + ' ' + (m.prenom || '');
+                div.innerHTML = '<span class="nom">' + nomComplet.trim() + '</span>' +
+                                '<span class="info"> - ' + (m.specialite || '') + '</span>';
+                div.onclick = function() {
+                    selectionnerMedecin(m);
+                };
+                results.appendChild(div);
+            });
+            
+            results.style.display = 'block';
+        }
+
+        function selectionnerMedecin(medecin) {
+            document.getElementById('medecinResults').style.display = 'none';
+            document.getElementById('medecinSelect').value = medecin.id;
+            
+            var nomComplet = (medecin.nom || '') + ' ' + (medecin.prenom || '');
+            var info = document.getElementById('medecinSelectedInfo');
+            info.textContent = nomComplet.trim() + ' - ' + (medecin.specialite || '');
+            document.getElementById('medecinSelected').style.display = 'block';
+            
+            document.getElementById('medecinSearch').value = nomComplet.trim();
+            document.getElementById('medecinSearch').disabled = true;
+            
+            mettreAJourDocument();
+        }
+
+        function deselectionnerMedecin() {
+            document.getElementById('medecinSelect').value = '';
+            document.getElementById('medecinSelected').style.display = 'none';
+            document.getElementById('medecinSearch').value = '';
+            document.getElementById('medecinSearch').disabled = false;
+            document.getElementById('medecinSearch').focus();
+            mettreAJourDocument();
+        }
+
+        // Fermer les résultats quand on clique ailleurs
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.search-container')) {
+                document.getElementById('patientResults').style.display = 'none';
+                document.getElementById('medecinResults').style.display = 'none';
+            }
+        });
+
+
+function nettoyerTitre(titre) {
+    // Si le titre contient "ORDONNANCE MEDICALE", garder seulement "ORDONNANCE MEDICALE"
+    if (titre.includes('ORDONNANCE MEDICALE')) {
+        return 'ORDONNANCE MEDICALE';
+    }
+    // Si le titre contient "BULLETIN D\'EXAMEN", garder seulement "BULLETIN D\'EXAMEN"
+    if (titre.includes('BULLETIN D\'EXAMEN')) {
+        return 'BULLETIN D\'EXAMEN';
+    }
+    // Pour les autres catégories, garder le titre original
+    return titre;
+}
+
+        // ============================================================
+        // METTRE À JOUR LE DOCUMENT
+        // ============================================================
+        
+function mettreAJourDocument() {
+    // 1. Récupérer le patient
+    var patientId = document.getElementById('patientSelect').value;
+    var patient = patientsListe.find(function(p) { return p.id == patientId; });
+    
+    var patientNom = '';
+    var patientPrenom = '';
+    var patientTel = '';
+    var patientComplet = '';
+    
+    if (patient) {
+        patientNom = patient.nom || '';
+        patientPrenom = patient.prenom || '';
+        patientTel = patient.telephone || '';
+        patientComplet = (patientNom + ' ' + patientPrenom).trim();
+    }
+    
+    // 2. Récupérer le médecin
+    var medecinId = document.getElementById('medecinSelect').value;
+    var medecin = medecinsListe.find(function(m) { return m.id == medecinId; });
+    
+    var medecinTitre = '';
+    var medecinNom = '';
+    var medecinPrenom = '';
+    var medecinSpecialite = '';
+    var medecinComplet = '';
+    
+    if (medecin) {
+        medecinTitre = medecin.titre || 'Dr';
+        medecinNom = medecin.nom || '';
+        medecinPrenom = medecin.prenom || '';
+        medecinSpecialite = medecin.specialite || '';
+        
+        // 🔥 CONSTRUIRE LE NOM COMPLET AVEC LE TITRE
+        var nomComplet = (medecinTitre ? medecinTitre + ' ' : '') + medecinNom + ' ' + (medecinPrenom || '');
+        medecinComplet = nomComplet.trim();
+    }
+    
+    // 3. Mettre à jour le patient (en haut)
+    document.getElementById('patientNom').textContent = patientComplet || 'Aucun patient sélectionné';
+    document.getElementById('patientTelephone').textContent = patientTel || '-';
+    
+    // 4. Mettre à jour le médecin (en bas)
+    document.getElementById('medecinNom').textContent = medecinComplet || '_________________';
+    document.getElementById('medecinSpecialite').textContent = medecinSpecialite ? '(' + medecinSpecialite + ')' : '';
+    
+    // 5. Mettre à jour le contenu
+    var contenu = contenuOriginal;
+    var dateAujourdhui = new Date().toLocaleDateString('fr-FR');
+    contenu = contenu.trim();
+    
+    // 🔥 REMPLACER UNIQUEMENT LE MÉDECIN (patient déjà en haut, date déjà dans le contenu)
+    contenu = contenu.replace(/\{\{medecin\}\}/g, medecinComplet || '__________');
+    contenu = contenu.replace(/\{\{medecin_nom\}\}/g, medecinComplet || '__________');
+    
+    // 🔥 REMPLACER LA DATE SI ELLE EXISTE DANS LE CONTENU (au cas où)
+    contenu = contenu.replace(/\{\{date\}\}/g, dateAujourdhui);
+    
+    document.getElementById('docContenu').innerHTML = contenu;
+
+    // 6. Mettre à jour le titre (nettoyé)
+    var titre = titreOriginal;
+    titre = nettoyerTitre(titre);
+    document.getElementById('docTitre').textContent = titre;
+    
+    // 6. Mettre à jour le titre
+    var titre = titreOriginal;
+    titre = titre.replace(/\{\{patient\}\}/g, patientComplet || '');
+    titre = titre.replace(/\{\{date\}\}/g, dateAujourdhui);
+    titre = nettoyerTitre(titre);
+
+    document.getElementById('docTitre').textContent = titre;
+}
+
+        // ============================================================
+        // IMPRESSION ET FERMETURE
+        // ============================================================
+        
+        function imprimerDocument() {
+            window.print();
+        }
+        
+        function fermer() {
+            window.close();
+        }
+        
+        // Raccourcis clavier
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'p') {
+                e.preventDefault();
+                imprimerDocument();
+            }
+            if (e.key === 'Escape') {
+                fermer();
+            }
+        });
+    </script>
+</body>
+</html>

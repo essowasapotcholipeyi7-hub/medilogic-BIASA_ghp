@@ -1,0 +1,414 @@
+{% extends "base.html" %}
+
+{% block title %}Guide d'utilisation{% endblock %}
+
+{% block extra_css %}
+<style>
+    .guide-hero {
+        background: linear-gradient(135deg, #1a2a6c, #667eea);
+        color: white;
+        border-radius: 14px;
+        padding: 28px 32px;
+        margin-bottom: 24px;
+    }
+    .guide-hero h4 { font-weight: 700; margin-bottom: 6px; }
+    .guide-hero p { opacity: .9; margin-bottom: 0; max-width: 70ch; }
+
+    .guide-toc {
+        position: sticky; top: 12px;
+    }
+    .guide-toc .card-header { font-weight: 700; }
+    .guide-toc a {
+        display: block; padding: 6px 10px; border-radius: 6px;
+        color: #333; text-decoration: none; font-size: 13.5px;
+    }
+    .guide-toc a:hover { background: #f0f2fa; color: #1a2a6c; }
+    .guide-toc .toc-sub { padding-left: 22px; font-size: 12.5px; color: #666; }
+
+    .guide-section {
+        scroll-margin-top: 12px;
+        margin-bottom: 22px;
+        page-break-inside: avoid;
+    }
+    .guide-section .card-header {
+        background: #1a2a6c; color: white; font-weight: 700;
+        display: flex; align-items: center; gap: 10px;
+    }
+    .guide-section .card-header i { width: 22px; text-align: center; }
+    .guide-section h6.sous-titre {
+        font-weight: 700; color: #1a2a6c; margin: 14px 0 6px;
+        font-size: 14px; text-transform: uppercase; letter-spacing: .3px;
+    }
+    .guide-section ol, .guide-section ul { margin-bottom: 10px; }
+    .guide-section .badge-role {
+        font-size: 10px; font-weight: 600; text-transform: uppercase;
+        letter-spacing: .3px;
+    }
+    .guide-astuce {
+        background: #eef1fb; border-left: 4px solid #1a2a6c;
+        border-radius: 6px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0;
+    }
+
+    #guideContenu { background: white; }
+
+    @media print {
+        .no-print-guide { display: none !important; }
+        .guide-toc { display: none !important; }
+        .guide-section { break-inside: avoid; }
+        #guideContenu { width: 100% !important; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    <div class="d-flex justify-content-between align-items-center mb-3 no-print-guide">
+        <h5 class="mb-0"><i class="fas fa-book-open me-2"></i>Guide d'utilisation</h5>
+        <button class="btn btn-primary btn-sm" id="btnTelechargerGuide" onclick="telechargerGuidePDF()">
+            <i class="fas fa-file-pdf me-1"></i> Télécharger en PDF
+        </button>
+    </div>
+
+    <div class="row g-4" id="guideContenu">
+        <!-- Sommaire (masqué à l'impression) -->
+        <div class="col-lg-3 no-print-guide">
+            <div class="card border-0 shadow-sm guide-toc">
+                <div class="card-header bg-light">Sommaire</div>
+                <div class="card-body py-2">
+                    <a href="#presentation"><i class="fas fa-circle-info me-1"></i> Présentation</a>
+                    <a href="#tableau-de-bord"><i class="fas fa-gauge me-1"></i> Tableau de bord</a>
+                    <a href="#patients"><i class="fas fa-users me-1"></i> Patients</a>
+                    <a href="#rendez-vous"><i class="fas fa-calendar-days me-1"></i> Rendez-vous</a>
+                    <a href="#consultation"><i class="fas fa-stethoscope me-1"></i> Consultation</a>
+                    <a href="#actes-ventes"><i class="fas fa-notes-medical me-1"></i> Actes &amp; Ventes</a>
+                    <a href="#pharmacie"><i class="fas fa-pills me-1"></i> Pharmacie &amp; Stock</a>
+                    <a href="#factures"><i class="fas fa-file-invoice me-1"></i> Factures &amp; Créances</a>
+                    <a href="#proformas"><i class="fas fa-file-signature me-1"></i> Factures Proforma</a>
+                    <a href="#historique"><i class="fas fa-clock-rotate-left me-1"></i> Historique des ventes</a>
+                    <a href="#statistiques"><i class="fas fa-chart-line me-1"></i> Statistiques</a>
+                    <a href="#rh"><i class="fas fa-people-group me-1"></i> Ressources humaines</a>
+                    <span class="toc-sub">→ Personnel, congés, paie</span>
+                    <span class="toc-sub">→ Pointage empreinte / visage</span>
+                    <a href="#comptabilite"><i class="fas fa-calculator me-1"></i> Comptabilité</a>
+                    <a href="#journal"><i class="fas fa-list-check me-1"></i> Journal des mouvements</a>
+                    <a href="#administration"><i class="fas fa-gear me-1"></i> Administration</a>
+                    <a href="#astuces"><i class="fas fa-lightbulb me-1"></i> Astuces générales</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Contenu -->
+        <div class="col-lg-9">
+            <div class="guide-hero">
+                <h4><i class="fas fa-hospital me-2"></i>{{ session.get('structure_nom') or 'Medilogic' }}</h4>
+                <p>
+                    Ce guide explique, section par section, ce que fait chaque partie de l'application et
+                    comment l'utiliser au quotidien. Il ne remplace pas une formation, mais permet de
+                    retrouver rapidement la marche à suivre pour une tâche précise. Certaines sections
+                    (repérées <span class="badge bg-warning text-dark badge-role">Admin</span>) ne sont
+                    visibles que par les comptes administrateur.
+                </p>
+            </div>
+
+            <!-- PRÉSENTATION -->
+            <div class="card border-0 shadow-sm guide-section" id="presentation">
+                <div class="card-header"><i class="fas fa-circle-info"></i> Présentation générale</div>
+                <div class="card-body">
+                    <p>
+                        L'application couvre l'ensemble du fonctionnement d'une structure de santé : accueil
+                        et dossier des patients, rendez-vous, consultations, ventes d'actes médicaux et de
+                        pharmacie, facturation (y compris la prise en charge par les assurances/AMU),
+                        comptabilité aux normes OHADA, et gestion du personnel (paie, congés, pointage).
+                    </p>
+                    <p class="mb-0">
+                        Le menu à gauche donne accès à tous les modules. Sur téléphone ou tablette, il est
+                        replié par défaut : touchez l'icône <i class="fas fa-bars"></i> en haut à gauche pour
+                        l'ouvrir.
+                    </p>
+                </div>
+            </div>
+
+            <!-- TABLEAU DE BORD -->
+            <div class="card border-0 shadow-sm guide-section" id="tableau-de-bord">
+                <div class="card-header"><i class="fas fa-gauge"></i> Tableau de bord</div>
+                <div class="card-body">
+                    <p>
+                        Page d'accueil après connexion. Elle donne en un coup d'œil : le nombre de patients,
+                        d'actes et de ventes pharmacie du jour, le total à payer par les patients, et les
+                        dernières activités de la structure (dernières ventes, factures, rendez-vous...).
+                    </p>
+                    <p class="mb-0">C'est aussi ici que s'affiche le bandeau orange de mode hors-ligne si la connexion au serveur principal est coupée (voir <a href="#astuces">Astuces générales</a>).</p>
+                </div>
+            </div>
+
+            <!-- PATIENTS -->
+            <div class="card border-0 shadow-sm guide-section" id="patients">
+                <div class="card-header"><i class="fas fa-users"></i> Patients</div>
+                <div class="card-body">
+                    <h6 class="sous-titre">Enregistrer un nouveau patient</h6>
+                    <ol>
+                        <li>Menu <strong>Liste Patients</strong>.</li>
+                        <li>Bouton <strong>Enregistrer patient</strong> (ou équivalent en haut de la liste).</li>
+                        <li>Renseigner l'identité, le contact, et l'assurance/AMU si le patient en a une.</li>
+                        <li>Valider — le patient apparaît immédiatement dans la liste et devient sélectionnable partout dans l'application.</li>
+                    </ol>
+                    <h6 class="sous-titre">Retrouver un patient</h6>
+                    <p>La barre de recherche en haut de la liste filtre par nom, prénom ou téléphone au fur et à mesure de la saisie.</p>
+                    <div class="guide-astuce">
+                        <i class="fas fa-lightbulb me-1"></i>
+                        Une fois un patient sélectionné (bandeau bleu "Patient actuel" en haut de l'écran), il
+                        reste actif pendant que vous naviguez entre les modules (vente, facture, rendez-vous...)
+                        — pas besoin de le rechercher à nouveau à chaque écran.
+                    </div>
+                </div>
+            </div>
+
+            <!-- RENDEZ-VOUS -->
+            <div class="card border-0 shadow-sm guide-section" id="rendez-vous">
+                <div class="card-header"><i class="fas fa-calendar-days"></i> Rendez-vous</div>
+                <div class="card-body">
+                    <p>Menu <strong>Patients → Programmer Rendez-vous</strong> : choisir le patient, le médecin/service, la date et l'heure.</p>
+                    <p class="mb-0">Le menu <strong>Rappels des rendez-vous</strong> liste les rendez-vous à venir pour relancer les patients (par téléphone) avant leur venue.</p>
+                </div>
+            </div>
+
+            <!-- CONSULTATION -->
+            <div class="card border-0 shadow-sm guide-section" id="consultation">
+                <div class="card-header"><i class="fas fa-stethoscope"></i> Consultation
+                    <span class="badge bg-warning text-dark badge-role ms-2">Médecin / Paramédical</span>
+                </div>
+                <div class="card-body mb-0">
+                    <p class="mb-0">
+                        Écran de prise en charge médicale : antécédents, examen, diagnostic, prescriptions
+                        (médicaments et actes complémentaires). Les prescriptions saisies ici arrivent ensuite
+                        dans <strong>Prescriptions reçues</strong> pour la pharmacie/le plateau technique.
+                    </p>
+                </div>
+            </div>
+
+            <!-- ACTES & VENTES -->
+            <div class="card border-0 shadow-sm guide-section" id="actes-ventes">
+                <div class="card-header"><i class="fas fa-notes-medical"></i> Actes &amp; Ventes (Labo / Radio / Hospitalisation)</div>
+                <div class="card-body">
+                    <h6 class="sous-titre">Vendre un acte</h6>
+                    <ol>
+                        <li>Sélectionner le patient (liste des patients, ou bandeau "Patient actuel" déjà actif).</li>
+                        <li>Menu <strong>Labo/Radio/Hospi/Actes&amp;Vente</strong>.</li>
+                        <li>Rechercher l'acte dans la liste (consultation, examen, acte technique...).</li>
+                        <li>Indiquer la quantité, puis valider.</li>
+                        <li>Si le patient a une assurance/AMU enregistrée, la prise en charge est calculée automatiquement ; seul le reste à charge est demandé au patient.</li>
+                        <li>Choisir le mode de paiement (espèces, carte, mobile money, virement...) et encaisser.</li>
+                    </ol>
+                    <p class="mb-0">Un reçu est généré et peut être imprimé immédiatement.</p>
+                </div>
+            </div>
+
+            <!-- PHARMACIE -->
+            <div class="card border-0 shadow-sm guide-section" id="pharmacie">
+                <div class="card-header"><i class="fas fa-pills"></i> Pharmacie &amp; Stock</div>
+                <div class="card-body">
+                    <h6 class="sous-titre">Vendre un médicament</h6>
+                    <p>Menu <strong>Pharmacie&amp;Vente</strong> : même principe que pour les actes — rechercher le produit, indiquer la quantité, encaisser. Le stock est décrémenté automatiquement.</p>
+                    <h6 class="sous-titre">Gérer le stock</h6>
+                    <p class="mb-0">Menu <strong>Gestion des stocks</strong> : ajouter de nouveaux produits, ajuster les quantités (réception de commande, inventaire), suivre les seuils d'alerte et les péremptions.</p>
+                </div>
+            </div>
+
+            <!-- FACTURES -->
+            <div class="card border-0 shadow-sm guide-section" id="factures">
+                <div class="card-header"><i class="fas fa-file-invoice"></i> Factures clients &amp; Créances</div>
+                <div class="card-body">
+                    <p>
+                        Une facture regroupe les montants restant dus par un patient (ventes non intégralement
+                        réglées, ou paiement différé). Depuis <strong>Factures clients&amp;Créances</strong> :
+                    </p>
+                    <ul>
+                        <li>Consulter la liste des créances par patient, avec le solde restant.</li>
+                        <li>Enregistrer un paiement (total ou partiel) — le solde se met à jour automatiquement.</li>
+                        <li>Imprimer la facture ou le reçu de paiement.</li>
+                    </ul>
+                    <p class="mb-0">Les remboursements par les assureurs/AMU se suivent de la même manière, avec leur propre échéancier.</p>
+                </div>
+            </div>
+
+            <!-- PROFORMAS -->
+            <div class="card border-0 shadow-sm guide-section" id="proformas">
+                <div class="card-header"><i class="fas fa-file-signature"></i> Factures Proforma</div>
+                <div class="card-body mb-0">
+                    <p class="mb-0">
+                        Un proforma est un devis (montant estimé avant réalisation, par exemple pour une
+                        hospitalisation ou des lunettes). Menu <strong>Factures Proforma</strong> : le créer, le
+                        modifier tant qu'il n'est pas confirmé, puis le convertir en vente/facture réelle une
+                        fois accepté par le patient.
+                    </p>
+                </div>
+            </div>
+
+            <!-- HISTORIQUE -->
+            <div class="card border-0 shadow-sm guide-section" id="historique">
+                <div class="card-header"><i class="fas fa-clock-rotate-left"></i> Historique des ventes</div>
+                <div class="card-body mb-0">
+                    <p>Liste complète et filtrable (période, type acte/pharmacie, statut de paiement) de toutes les ventes de la structure. Chaque ligne permet de rouvrir le reçu ou la facture correspondante pour la réimprimer.</p>
+                    <p class="mb-0">En cas d'erreur de saisie, c'est également depuis cet écran (ou <strong>Historiques Annulations</strong>) qu'une vente peut être annulée — l'annulation reste tracée, elle ne fait pas disparaître l'opération sans laisser de trace.</p>
+                </div>
+            </div>
+
+            <!-- STATISTIQUES -->
+            <div class="card border-0 shadow-sm guide-section" id="statistiques">
+                <div class="card-header"><i class="fas fa-chart-line"></i> Statistiques des ventes</div>
+                <div class="card-body mb-0">
+                    <p class="mb-0">
+                        Vue chiffrée de l'activité (aujourd'hui / semaine / mois / année) : total des ventes,
+                        répartition par assurance, montants encaissés vs restant dû. Utile pour un point rapide
+                        sans avoir à ouvrir la comptabilité.
+                    </p>
+                </div>
+            </div>
+
+            <!-- RH -->
+            <div class="card border-0 shadow-sm guide-section" id="rh">
+                <div class="card-header"><i class="fas fa-people-group"></i> Ressources humaines
+                    <span class="badge bg-warning text-dark badge-role ms-2">Admin</span>
+                </div>
+                <div class="card-body">
+                    <p>Menu <strong>Ressources humaines</strong> — hub unique avec plusieurs onglets :</p>
+
+                    <h6 class="sous-titre">Personnel</h6>
+                    <p>Liste des employés, fiche individuelle (poste, service, salaire de base, secteur privé/public — qui détermine automatiquement le régime de retraite CNSS ou CRT).</p>
+
+                    <h6 class="sous-titre">Congés &amp; Permissions</h6>
+                    <p>Demande, validation et suivi du solde de congés de chaque employé.</p>
+
+                    <h6 class="sous-titre">Paie</h6>
+                    <ol>
+                        <li>Onglet <strong>Plus → Paie</strong> : choisir le mois, générer la paie de chaque employé (calcul automatique CNSS/CRT, AMU, IRPP selon le profil de l'employé).</li>
+                        <li>Vérifier le bulletin, puis marquer la paie comme payée une fois le salaire versé.</li>
+                        <li>Onglet <strong>Déclarations</strong> : récapitulatif mensuel à déposer auprès de chaque organisme (CNSS, CRT, AMU, impôts) avant le 15 du mois suivant.</li>
+                    </ol>
+
+                    <h6 class="sous-titre">Pointage (empreinte / visage)</h6>
+                    <p>Onglet <strong>Pointage</strong> :</p>
+                    <ul>
+                        <li>Régler les horaires de la structure (heure de début/fin, tolérance de retard, jours travaillés).</li>
+                        <li>Enregistrer l'empreinte ou le visage de chaque employé (une seule fois par poste utilisé pour pointer).</li>
+                        <li>Ouvrir la <strong>borne de pointage</strong> (bouton dédié) sur le poste où le personnel doit pointer — écran plein écran, sans réglages, à laisser affiché toute la journée.</li>
+                    </ul>
+                    <div class="guide-astuce">
+                        <i class="fas fa-lightbulb me-1"></i>
+                        L'empreinte et le visage ne fonctionnent que si la page est ouverte en <code>https://</code>
+                        ou sur <code>http://localhost</code> — pas via une simple adresse IP locale (règle de
+                        sécurité des navigateurs). Sur une tablette, ouvrez directement le site en ligne.
+                    </div>
+                </div>
+            </div>
+
+            <!-- COMPTABILITÉ -->
+            <div class="card border-0 shadow-sm guide-section" id="comptabilite">
+                <div class="card-header"><i class="fas fa-calculator"></i> Comptabilité
+                    <span class="badge bg-warning text-dark badge-role ms-2">Admin / Comptable</span>
+                </div>
+                <div class="card-body">
+                    <p>
+                        Chaque vente, paiement, dépense et salaire génère automatiquement son écriture
+                        comptable, conforme au plan comptable SYSCOHADA (norme OHADA) — rien à saisir en double.
+                    </p>
+                    <ul>
+                        <li><strong>Tableau de bord</strong> : deux indicateurs de caisse toujours visibles — la trésorerie réellement disponible (espèces + banque) et le chiffre d'affaires de la période (vendu, encaissé ou non).</li>
+                        <li><strong>Écritures / Plan comptable</strong> : consultation détaillée, saisie manuelle si besoin (soumise à validation).</li>
+                        <li><strong>Journal &amp; Rapports</strong> : bilan, compte de résultat, TAFIRE, grand livre.</li>
+                        <li><strong>Rapprochement bancaire</strong> : importer un relevé (CSV/Excel) et le faire correspondre automatiquement aux écritures.</li>
+                        <li><strong>Plus</strong> : budget, exercice comptable, créances douteuses, immobilisations, TAFIRE.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- JOURNAL -->
+            <div class="card border-0 shadow-sm guide-section" id="journal">
+                <div class="card-header"><i class="fas fa-list-check"></i> Journal des mouvements</div>
+                <div class="card-body mb-0">
+                    <p class="mb-0">
+                        Historique de toutes les actions importantes de la structure (ventes, paiements,
+                        annulations, factures, congés approuvés, salaires payés...), filtrable par catégorie et
+                        par période, avec export CSV et impression. Utile pour retracer "qui a fait quoi, quand".
+                    </p>
+                </div>
+            </div>
+
+            <!-- ADMINISTRATION -->
+            <div class="card border-0 shadow-sm guide-section" id="administration">
+                <div class="card-header"><i class="fas fa-gear"></i> Administration
+                    <span class="badge bg-warning text-dark badge-role ms-2">Admin</span>
+                </div>
+                <div class="card-body mb-0">
+                    <p class="mb-0">
+                        Réglages de la structure (nom, logo, coordonnées), gestion des comptes utilisateurs et de
+                        leurs rôles (caissier, médecin, comptable, gestionnaire...), et historique des ventes
+                        annulées.
+                    </p>
+                </div>
+            </div>
+
+            <!-- ASTUCES -->
+            <div class="card border-0 shadow-sm guide-section" id="astuces">
+                <div class="card-header"><i class="fas fa-lightbulb"></i> Astuces générales</div>
+                <div class="card-body mb-0">
+                    <ul class="mb-0">
+                        <li><strong>Imprimer</strong> : chaque reçu/facture/bulletin dispose de son propre bouton Imprimer — le menu et les boutons n'apparaissent jamais sur le document imprimé.</li>
+                        <li><strong>Mode hors-ligne</strong> : si la connexion internet est coupée, un bandeau orange s'affiche et l'application continue de fonctionner normalement ; tout se synchronise automatiquement au retour de la connexion, sans action de votre part.</li>
+                        <li><strong>Menu réduit</strong> : sur téléphone/tablette, le bouton <i class="fas fa-bars"></i> (ou la flèche en haut du menu) permet d'afficher/masquer la barre latérale pour gagner de la place.</li>
+                        <li><strong>Ce guide</strong> : le bouton en haut de cette page télécharge cette même page au format PDF, à conserver ou partager.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="text-center text-muted small mt-3 mb-2 no-print-guide">
+                Document généré le <span id="dateGenerationGuide"></span> — Medilogic-GHP
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('dateGenerationGuide').textContent = new Date().toLocaleDateString('fr-FR', {
+    day: 'numeric', month: 'long', year: 'numeric'
+});
+
+function telechargerGuidePDF() {
+    const btn = document.getElementById('btnTelechargerGuide');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Génération...';
+
+    const element = document.getElementById('guideContenu');
+    const opt = {
+        margin: [0.4, 0.3, 0.4, 0.3],
+        filename: 'guide_utilisation_medilogic.pdf',
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'], avoid: '.guide-section' }
+    };
+
+    // La colonne "Sommaire" (col-lg-3) est masquée par no-print-guide au
+    // moment du rendu (mêmes règles CSS que @media print) pour que le PDF
+    // ne montre que le contenu, en pleine largeur.
+    document.querySelectorAll('.no-print-guide').forEach(el => el.style.display = 'none');
+    const col = document.querySelector('#guideContenu > .col-lg-9');
+    const originalClass = col.className;
+    col.className = 'col-12';
+
+    html2pdf().set(opt).from(element).save().then(() => {
+        document.querySelectorAll('.no-print-guide').forEach(el => el.style.display = '');
+        col.className = originalClass;
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }).catch(() => {
+        document.querySelectorAll('.no-print-guide').forEach(el => el.style.display = '');
+        col.className = originalClass;
+        btn.disabled = false;
+        btn.innerHTML = original;
+    });
+}
+</script>
+{% endblock %}

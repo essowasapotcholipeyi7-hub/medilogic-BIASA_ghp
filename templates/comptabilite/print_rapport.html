@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ titre }} - Rapport comptable</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+            background: white;
+            padding: 40px;
+            color: #1a2a3a;
+        }
+        
+        .rapport-container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+        
+        /* ===== EN-TETE ===== */
+        .rapport-header {
+            text-align: center;
+            padding: 30px 0 20px 0;
+            border-bottom: 3px solid #1a2a6c;
+            margin-bottom: 25px;
+        }
+        
+        .rapport-header .logo-area {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .rapport-header .logo-area img {
+            max-height: 60px;
+            max-width: 120px;
+            object-fit: contain;
+        }
+        
+        .rapport-header h1 {
+            font-size: 22px;
+            color: #1a2a6c;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+        
+        .rapport-header .sub-info {
+            font-size: 12px;
+            color: #6c7a89;
+            margin-top: 5px;
+        }
+        
+        .rapport-header .titre-rapport {
+            font-size: 20px;
+            font-weight: 600;
+            color: #2d4373;
+            margin-top: 10px;
+            background: #f5f7fb;
+            padding: 8px 25px;
+            border-radius: 8px;
+            display: inline-block;
+        }
+        
+        .rapport-header .period {
+            font-size: 13px;
+            color: #6c7a89;
+            margin-top: 5px;
+        }
+        
+        .rapport-header .generated {
+            font-size: 10px;
+            color: #8e9aaf;
+            margin-top: 8px;
+        }
+        
+        /* ===== STATISTIQUES ===== */
+        .stat-boxes {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin: 20px 0 25px 0;
+        }
+        
+        .stat-box {
+            background: #f8faff;
+            border-radius: 10px;
+            padding: 12px 15px;
+            text-align: center;
+            border-left: 3px solid #667eea;
+        }
+        
+        .stat-box .number {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1a2a6c;
+        }
+        
+        .stat-box .label {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: #8e9aaf;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        
+        /* ===== TABLEAU ===== */
+        .table-container {
+            margin-top: 20px;
+            overflow-x: auto;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        
+        th {
+            background: #1a2a6c;
+            color: white;
+            padding: 10px 12px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        td {
+            padding: 8px 12px;
+            border-bottom: 1px solid #e6ebf2;
+            color: #3d4f60;
+        }
+        
+        tr:hover td {
+            background: #f8faff;
+        }
+        
+        .text-end {
+            text-align: right;
+        }
+        
+        .text-center {
+            text-align: center;
+        }
+        
+        .fw-bold {
+            font-weight: 600;
+        }
+        
+        .text-success {
+            color: #28a745;
+        }
+        
+        .text-danger {
+            color: #dc3545;
+        }
+        
+        .text-primary {
+            color: #1a2a6c;
+        }
+        
+        .text-muted {
+            color: #8e9aaf;
+        }
+        
+        .badge-statut {
+            display: inline-block;
+            padding: 2px 12px;
+            border-radius: 20px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+        
+        .badge-statut.produit {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .badge-statut.charge {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .badge-statut.actif {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .badge-statut.passif {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .badge-statut.capitaux {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        
+        /* ===== FOOTER ===== */
+        .rapport-footer {
+            margin-top: 30px;
+            padding-top: 15px;
+            border-top: 2px solid #e6ebf2;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            font-size: 10px;
+            color: #8e9aaf;
+        }
+        
+        .rapport-footer .signature {
+            display: flex;
+            gap: 40px;
+        }
+        
+        .rapport-footer .signature .sig-item {
+            text-align: center;
+        }
+        
+        .rapport-footer .signature .sig-item .line {
+            width: 150px;
+            border-top: 1px solid #1a2a6c;
+            margin-top: 30px;
+        }
+        
+        .rapport-footer .signature .sig-item .label {
+            font-size: 9px;
+            color: #8e9aaf;
+        }
+        
+        .rapport-footer .right {
+            font-weight: 500;
+            color: #1a2a6c;
+        }
+        
+        .page-break {
+            page-break-after: always;
+            border: none;
+        }
+        
+        /* ===== BILAN/RESULTAT SPECIFIQUE ===== */
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1a2a6c;
+            padding: 8px 0;
+            margin-top: 15px;
+            border-bottom: 2px solid #e6ebf2;
+        }
+        
+        .bg-primary-light {
+            background: #e8edf5;
+        }
+        
+        .bg-success-light {
+            background: #e8f5ed;
+        }
+        
+        .bg-danger-light {
+            background: #f5e8ed;
+        }
+        
+        .bg-warning-light {
+            background: #f5f0e8;
+        }
+        
+        .bg-info-light {
+            background: #e8f0f5;
+        }
+        
+        /* ===== MEDIA PRINT ===== */
+        @media print {
+            body {
+                padding: 20px;
+                background: white;
+            }
+            
+            .rapport-header {
+                padding: 15px 0;
+            }
+            
+            .rapport-header .logo-area img {
+                max-height: 45px;
+            }
+            
+            th {
+                background: #1a2a6c !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            
+            .stat-box {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            
+            .badge-statut {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            
+            .bg-primary-light,
+            .bg-success-light,
+            .bg-danger-light,
+            .bg-warning-light,
+            .bg-info-light {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            
+            .rapport-footer .signature .sig-item .line {
+                border-top: 1px solid #1a2a6c !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            
+            .page-break {
+                page-break-after: always;
+            }
+            
+            .no-print {
+                display: none !important;
+            }
+        }
+        
+        /* ===== BOUTONS D'IMPRESSION ===== */
+        .no-print {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn-print {
+            background: #1a2a6c;
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(26, 42, 108, 0.3);
+            transition: all 0.3s ease;
+        }
+        
+        .btn-print:hover {
+            background: #2d4373;
+            transform: translateY(-2px);
+        }
+        
+        .btn-close-pdf {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(220, 53, 69, 0.3);
+            transition: all 0.3s ease;
+        }
+        
+        .btn-close-pdf:hover {
+            background: #c82333;
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body>
+    <!-- Boutons d'action (cachés à l'impression) -->
+    <div class="no-print">
+        <button class="btn-print" onclick="imprimerPDF()">
+            <i class="fas fa-print"></i> Imprimer PDF
+        </button>
+        <button class="btn-close-pdf" onclick="fermerFenetre()">
+            <i class="fas fa-times"></i> Fermer
+        </button>
+    </div>
+
+    <div class="rapport-container">
+        <!-- ===== EN-TETE ===== -->
+        <div class="rapport-header">
+            <div class="logo-area">
+                <img id="structureLogo" src="" alt="Logo" style="display:none;">
+                <h1 id="structureNom">Mon Etablissement</h1>
+            </div>
+            <div class="sub-info">
+                <span id="structureAdresse"></span>
+                <span id="structureTel"></span>
+                <span id="structureEmail"></span>
+            </div>
+            <div class="titre-rapport">{{ titre }}</div>
+            <div class="period">
+                {% if date_debut and date_fin %}
+                Période du {{ date_debut }} au {{ date_fin }}
+                {% elif date_debut %}
+                À partir du {{ date_debut }}
+                {% elif date_fin %}
+                Au {{ date_fin }}
+                {% else %}
+                Toutes les périodes
+                {% endif %}
+            </div>
+            <div class="generated">
+                Généré le {{ now.strftime('%d/%m/%Y à %H:%M') }}
+            </div>
+        </div>
+
+        <!-- ===== CONTENU ===== -->
+        {% if type_rapport == 'journal' %}
+            <!-- JOURNAL -->
+            <div class="stat-boxes">
+                <div class="stat-box">
+                    <div class="number">{{ data|length }}</div>
+                    <div class="label">Lignes</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number">{{ data|sum(attribute='debit')|round(2) }} F</div>
+                    <div class="label">Total Débit</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number">{{ data|sum(attribute='credit')|round(2) }} F</div>
+                    <div class="label">Total Crédit</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number {% if (data|sum(attribute='debit') - data|sum(attribute='credit'))|round(2) >= 0 %}text-success{% else %}text-danger{% endif %}">
+                        {{ (data|sum(attribute='debit') - data|sum(attribute='credit'))|round(2) }} F
+                    </div>
+                    <div class="label">Solde</div>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:12%">Date</th>
+                            <th style="width:12%">Pièce</th>
+                            <th style="width:25%">Libellé</th>
+                            <th style="width:25%">Compte</th>
+                            <th style="width:13%">Débit</th>
+                            <th style="width:13%">Crédit</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in data %}
+                        <tr>
+                            <td>{{ item.date or '-' }}</td>
+                            <td><strong>{{ item.piece or '-' }}</strong></td>
+                            <td>{{ item.libelle or '-' }}</td>
+                            <td>{{ item.compte_numero or '' }} - {{ item.compte_nom or '' }}</td>
+                            <td class="text-end">{{ (item.debit or 0)|round(2) }} F</td>
+                            <td class="text-end">{{ (item.credit or 0)|round(2) }} F</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot style="font-weight:bold; background:#f5f7fb;">
+                        <tr>
+                            <td colspan="4" class="text-end">TOTAUX</td>
+                            <td class="text-end">{{ data|sum(attribute='debit')|round(2) }} F</td>
+                            <td class="text-end">{{ data|sum(attribute='credit')|round(2) }} F</td>
+                        </tr>
+                        <tr style="background:#e8edf5;">
+                            <td colspan="4" class="text-end">SOLDE</td>
+                            <td colspan="2" class="text-end {% if (data|sum(attribute='debit') - data|sum(attribute='credit'))|round(2) >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                {{ (data|sum(attribute='debit') - data|sum(attribute='credit'))|round(2) }} F
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+        {% elif type_rapport == 'grand_livre' %}
+            <!-- GRAND LIVRE -->
+            <div class="stat-boxes">
+                <div class="stat-box">
+                    <div class="number">{{ data|length }}</div>
+                    <div class="label">Lignes</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number">{{ data|sum(attribute='debit')|round(2) }} F</div>
+                    <div class="label">Total Débit</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number">{{ data|sum(attribute='credit')|round(2) }} F</div>
+                    <div class="label">Total Crédit</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number {% if (data|sum(attribute='debit') - data|sum(attribute='credit'))|round(2) >= 0 %}text-success{% else %}text-danger{% endif %}">
+                        {{ (data|sum(attribute='debit') - data|sum(attribute='credit'))|round(2) }} F
+                    </div>
+                    <div class="label">Solde</div>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:12%">Date</th>
+                            <th style="width:25%">Compte</th>
+                            <th style="width:25%">Libellé</th>
+                            <th style="width:13%">Débit</th>
+                            <th style="width:13%">Crédit</th>
+                            <th style="width:12%">Solde</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% set ns = namespace(solde=0) %}
+                        {% for item in data %}
+                        {% set ns.solde = ns.solde + (item.debit or 0) - (item.credit or 0) %}
+                        <tr>
+                            <td>{{ item.date or '-' }}</td>
+                            <td>{{ item.compte_numero or '' }} - {{ item.compte_nom or '' }}</td>
+                            <td>{{ item.libelle or '-' }}</td>
+                            <td class="text-end">{{ (item.debit or 0)|round(2) }} F</td>
+                            <td class="text-end">{{ (item.credit or 0)|round(2) }} F</td>
+                            <td class="text-end fw-bold {% if ns.solde >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                {{ ns.solde|round(2) }} F
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot style="font-weight:bold; background:#f5f7fb;">
+                        <tr>
+                            <td colspan="3" class="text-end">TOTAUX</td>
+                            <td class="text-end">{{ data|sum(attribute='debit')|round(2) }} F</td>
+                            <td class="text-end">{{ data|sum(attribute='credit')|round(2) }} F</td>
+                            <td class="text-end {% if (data|sum(attribute='debit') - data|sum(attribute='credit'))|round(2) >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                {{ (data|sum(attribute='debit') - data|sum(attribute='credit'))|round(2) }} F
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+        {% elif type_rapport == 'balance' %}
+            <!-- BALANCE -->
+            <div class="stat-boxes">
+                <div class="stat-box">
+                    <div class="number">{{ data|length }}</div>
+                    <div class="label">Comptes</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number">{{ data|sum(attribute='total_debit')|round(2) }} F</div>
+                    <div class="label">Total Débit</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number">{{ data|sum(attribute='total_credit')|round(2) }} F</div>
+                    <div class="label">Total Crédit</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number {% if (data|sum(attribute='total_debit') - data|sum(attribute='total_credit'))|round(2) >= 0 %}text-success{% else %}text-danger{% endif %}">
+                        {{ (data|sum(attribute='total_debit') - data|sum(attribute='total_credit'))|round(2) }} F
+                    </div>
+                    <div class="label">Solde</div>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:35%">Compte</th>
+                            <th style="width:20%">Total Débit</th>
+                            <th style="width:20%">Total Crédit</th>
+                            <th style="width:25%">Solde</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in data %}
+                        <tr>
+                            <td><strong>{{ item.compte_numero or '' }} - {{ item.compte_nom or '' }}</strong></td>
+                            <td class="text-end">{{ (item.total_debit or 0)|round(2) }} F</td>
+                            <td class="text-end">{{ (item.total_credit or 0)|round(2) }} F</td>
+                            <td class="text-end fw-bold {% if (item.solde or 0) >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                {{ (item.solde or 0)|round(2) }} F
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot style="font-weight:bold; background:#f5f7fb;">
+                        <tr>
+                            <td class="text-end">TOTAUX</td>
+                            <td class="text-end">{{ data|sum(attribute='total_debit')|round(2) }} F</td>
+                            <td class="text-end">{{ data|sum(attribute='total_credit')|round(2) }} F</td>
+                            <td class="text-end {% if (data|sum(attribute='total_debit') - data|sum(attribute='total_credit'))|round(2) >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                {{ (data|sum(attribute='total_debit') - data|sum(attribute='total_credit'))|round(2) }} F
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+        {% elif type_rapport == 'resultat' %}
+            <!-- COMPTE DE RESULTAT -->
+            <div class="stat-boxes">
+                <div class="stat-box">
+                    <div class="number">{{ (data.produits|length + data.charges|length) if data.produits and data.charges else 0 }}</div>
+                    <div class="label">Lignes</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number text-success">{{ (data.total_produits or 0)|round(2) }} F</div>
+                    <div class="label">Total Produits</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number text-danger">{{ (data.total_charges or 0)|round(2) }} F</div>
+                    <div class="label">Total Charges</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number {% if (data.resultat or 0) >= 0 %}text-success{% else %}text-danger{% endif %}" style="font-size:22px;">
+                        {{ (data.resultat or 0)|round(2) }} F
+                    </div>
+                    <div class="label">{{ data.resultat_text or 'Bénéfice' }}</div>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:50%">Compte</th>
+                            <th style="width:30%">Montant</th>
+                            <th style="width:20%">Catégorie</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if data.produits and data.produits|length > 0 %}
+                        <tr class="bg-success-light">
+                            <td colspan="3"><strong>PRODUITS (Revenus)</strong></td>
+                        </tr>
+                        {% for p in data.produits %}
+                        <tr>
+                            <td>{{ p.numero or '' }} - {{ p.nom or '' }}</td>
+                            <td class="text-end text-success">{{ (p.montant or 0)|round(2) }} F</td>
+                            <td><span class="badge-statut produit">Produit</span></td>
+                        </tr>
+                        {% endfor %}
+                        <tr style="font-weight:bold; background:#e8f5ed;">
+                            <td>TOTAL PRODUITS</td>
+                            <td class="text-end text-success">{{ (data.total_produits or 0)|round(2) }} F</td>
+                            <td></td>
+                        </tr>
+                        {% endif %}
+
+                        {% if data.charges and data.charges|length > 0 %}
+                        <tr class="bg-danger-light">
+                            <td colspan="3"><strong>CHARGES (Dépenses)</strong></td>
+                        </tr>
+                        {% for c in data.charges %}
+                        <tr>
+                            <td>{{ c.numero or '' }} - {{ c.nom or '' }}</td>
+                            <td class="text-end text-danger">{{ (c.montant or 0)|round(2) }} F</td>
+                            <td><span class="badge-statut charge">Charge</span></td>
+                        </tr>
+                        {% endfor %}
+                        <tr style="font-weight:bold; background:#f5e8ed;">
+                            <td>TOTAL CHARGES</td>
+                            <td class="text-end text-danger">{{ (data.total_charges or 0)|round(2) }} F</td>
+                            <td></td>
+                        </tr>
+                        {% endif %}
+
+                        <tr style="font-weight:bold; background:#e8edf5; font-size:16px;">
+                            <td>RESULTAT NET</td>
+                            <td class="text-end {% if (data.resultat or 0) >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                {{ (data.resultat or 0)|round(2) }} F
+                            </td>
+                            <td>
+                                <span class="badge-statut {% if (data.resultat or 0) >= 0 %}produit{% else %}charge{% endif %}" style="font-size:12px;">
+                                    {{ data.resultat_text or 'Bénéfice' }}
+                                </span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+        {% elif type_rapport == 'bilan' %}
+            <!-- BILAN -->
+            <div class="stat-boxes">
+                <div class="stat-box">
+                    <div class="number">{{ (data.actifs|length + data.passifs|length + data.capitaux_propres|length) if data.actifs and data.passifs and data.capitaux_propres else 0 }}</div>
+                    <div class="label">Lignes</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number text-primary">{{ (data.total_actif or 0)|round(2) }} F</div>
+                    <div class="label">Total Actif</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number text-warning">{{ (data.total_passif or 0)|round(2) }} F</div>
+                    <div class="label">Total Passif</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number {% if data.est_equilibre %}text-success{% else %}text-danger{% endif %}" style="font-size:14px;">
+                        {% if data.est_equilibre %}EQUILIBRE{% else %}DESEQUILIBRE{% endif %}
+                    </div>
+                    <div class="label">Statut</div>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:50%">Compte</th>
+                            <th style="width:30%">Montant</th>
+                            <th style="width:20%">Catégorie</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if data.actifs and data.actifs|length > 0 %}
+                        <tr class="bg-primary-light">
+                            <td colspan="3"><strong>ACTIFS (Ce que possede la structure)</strong></td>
+                        </tr>
+                        {% for a in data.actifs %}
+                        <tr>
+                            <td>{{ a.numero or '' }} - {{ a.nom or '' }}</td>
+                            <td class="text-end text-primary">{{ (a.montant or 0)|round(2) }} F</td>
+                            <td><span class="badge-statut actif">Actif</span></td>
+                        </tr>
+                        {% endfor %}
+                        <tr style="font-weight:bold; background:#e8edf5;">
+                            <td>TOTAL ACTIFS</td>
+                            <td class="text-end text-primary">{{ (data.total_actif or 0)|round(2) }} F</td>
+                            <td></td>
+                        </tr>
+                        {% endif %}
+
+                        {% if data.passifs and data.passifs|length > 0 %}
+                        <tr class="bg-warning-light">
+                            <td colspan="3"><strong>PASSIFS (Dettes de la structure)</strong></td>
+                        </tr>
+                        {% for p in data.passifs %}
+                        <tr>
+                            <td>{{ p.numero or '' }} - {{ p.nom or '' }}</td>
+                            <td class="text-end text-warning">{{ (p.montant or 0)|round(2) }} F</td>
+                            <td><span class="badge-statut passif">Passif</span></td>
+                        </tr>
+                        {% endfor %}
+                        <tr style="font-weight:bold; background:#f5f0e8;">
+                            <td>TOTAL PASSIFS</td>
+                            <td class="text-end text-warning">{{ (data.total_passif or 0)|round(2) }} F</td>
+                            <td></td>
+                        </tr>
+                        {% endif %}
+
+                        {% if data.capitaux_propres and data.capitaux_propres|length > 0 %}
+                        <tr class="bg-info-light">
+                            <td colspan="3"><strong>CAPITAUX PROPRES</strong></td>
+                        </tr>
+                        {% for c in data.capitaux_propres %}
+                        <tr>
+                            <td>{{ c.numero or '' }} - {{ c.nom or '' }}</td>
+                            <td class="text-end text-info">{{ (c.montant or 0)|round(2) }} F</td>
+                            <td><span class="badge-statut capitaux">Capitaux propres</span></td>
+                        </tr>
+                        {% endfor %}
+                        <tr style="font-weight:bold; background:#e8f0f5;">
+                            <td>TOTAL CAPITAUX PROPRES</td>
+                            <td class="text-end text-info">{{ (data.total_capitaux or 0)|round(2) }} F</td>
+                            <td></td>
+                        </tr>
+                        {% endif %}
+
+                        <tr style="font-weight:bold; background:#e8edf5; font-size:14px;">
+                            <td>{% if data.est_equilibre %}✓{% else %}✗{% endif %} EQUILIBRE</td>
+                            <td class="text-end">
+                                {{ (data.total_actif or 0)|round(2) }} = {{ ((data.total_passif or 0) + (data.total_capitaux or 0))|round(2) }} F
+                            </td>
+                            <td>
+                                <span class="badge-statut {% if data.est_equilibre %}produit{% else %}charge{% endif %}" style="font-size:12px;">
+                                    {% if data.est_equilibre %}Equilibre{% else %}Deséquilibre{% endif %}
+                                </span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+        {% else %}
+            <div class="text-center text-muted" style="padding:50px 0;">
+                <p>Aucune donnee disponible pour ce rapport</p>
+            </div>
+        {% endif %}
+
+        <!-- ===== PIED DE PAGE ===== -->
+        <div class="rapport-footer">
+            <div class="signature">
+                <div class="sig-item">
+                    <div class="line"></div>
+                    <div class="label">Le comptable</div>
+                </div>
+                <div class="sig-item">
+                    <div class="line"></div>
+                    <div class="label">Le responsable</div>
+                </div>
+            </div>
+            <div class="right" id="footerNom">
+                Mon Etablissement - {{ now.strftime('%d/%m/%Y') }}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // CHARGER LES INFOS DE LA STRUCTURE DEPUIS localStorage
+        // ============================================================
+        
+        function chargerStructure() {
+            // Récupérer les infos depuis localStorage
+            const nom = localStorage.getItem('structureNom') || 'Mon Etablissement';
+            const telephone = localStorage.getItem('structureTelephone') || '';
+            const email = localStorage.getItem('structureEmail') || '';
+            const adresse = localStorage.getItem('structureAdresse') || '';
+            const logo = localStorage.getItem('structureLogo') || '';
+            
+            // Mettre à jour l'en-tête
+            document.getElementById('structureNom').textContent = nom;
+            document.getElementById('footerNom').textContent = nom + ' - ' + new Date().toLocaleDateString('fr-FR');
+            
+            // Mettre à jour les coordonnées
+            const adresseEl = document.getElementById('structureAdresse');
+            const telEl = document.getElementById('structureTel');
+            const emailEl = document.getElementById('structureEmail');
+            
+            let infos = [];
+            if (adresse) infos.push(adresse);
+            if (telephone) infos.push('Tel: ' + telephone);
+            if (email) infos.push('Email: ' + email);
+            
+            if (infos.length > 0) {
+                adresseEl.textContent = infos.join(' | ');
+            }
+            
+            // Logo
+            if (logo) {
+                const logoImg = document.getElementById('structureLogo');
+                logoImg.src = logo;
+                logoImg.style.display = 'inline';
+            }
+        }
+
+// ============================================================
+// IMPRESSION ET FERMETURE AUTOMATIQUE
+// ============================================================
+
+let impressionLancee = false;
+
+// Fonction pour imprimer
+function imprimerPDF() {
+    if (!impressionLancee) {
+        impressionLancee = true;
+        window.print();
+    }
+}
+
+// Fonction pour fermer la fenêtre
+function fermerFenetre() {
+    if (confirm('Voulez-vous fermer cette fenêtre ?')) {
+        window.close();
+    }
+}
+
+// ===== IMPRESSION AUTOMATIQUE AU CHARGEMENT =====
+window.onload = function() {
+    // Charger les infos de la structure si besoin
+    if (typeof chargerStructure === 'function') {
+        chargerStructure();
+    }
+    
+    // Lancer l'impression automatique après un délai
+    setTimeout(function() {
+        if (!impressionLancee) {
+            impressionLancee = true;
+            window.print();
+        }
+    }, 800);
+};
+
+// ===== FERMETURE AUTOMATIQUE APRÈS IMPRESSION =====
+window.addEventListener('afterprint', function() {
+    if (impressionLancee) {
+        setTimeout(function() {
+            try {
+                window.close();
+            } catch(e) {
+                console.log('⚠️ Fermeture automatique impossible');
+            }
+        }, 600);
+    }
+});
+
+// ===== RACCOURCIS CLAVIER =====
+document.addEventListener('keydown', function(e) {
+    // Echap pour fermer
+    if (e.key === 'Escape') {
+        fermerFenetre();
+    }
+    // Ctrl+P pour imprimer
+    if (e.ctrlKey && e.key === 'p') {
+        e.preventDefault();
+        imprimerPDF();
+    }
+});
+
+// ===== FALLBACK: SI L'UTILISATEUR ANNULE L'IMPRESSION =====
+// Si l'utilisateur clique sur "Annuler" dans la fenêtre d'impression,
+// on remet le flag à false pour permettre une nouvelle tentative
+window.addEventListener('beforeprint', function() {
+    console.log('🖨️ Impression en cours...');
+});
+
+console.log('✅ Rapport chargé - Impression automatique dans 800ms');
+console.log('ℹ️ La fenêtre se fermera automatiquement après l\'impression');
+
+</script>
+</body>
+</html>

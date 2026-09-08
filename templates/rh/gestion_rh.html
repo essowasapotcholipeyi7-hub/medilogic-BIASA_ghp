@@ -1,0 +1,2827 @@
+{% extends "base.html" %}
+
+{% block title %}Gestion des Ressources Humaines{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Styles RH */
+    .rh-tabs .nav-link {
+        border-radius: 12px 12px 0 0;
+        padding: 10px 20px;
+        margin-right: 4px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        border: none;
+        color: #495057;
+        background: #f8f9fa;
+    }
+    
+    .rh-tabs .nav-link.active {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        border: none;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+    }
+    
+    .rh-tabs .nav-link:hover:not(.active) {
+        background: #e9ecef;
+        transform: translateY(-2px);
+    }
+    
+    .tab-pane {
+        padding-top: 20px;
+        animation: fadeIn 0.3s ease;
+    }
+    
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* Badges de statut */
+    .badge-status {
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-weight: 500;
+        font-size: 12px;
+    }
+    
+    /* Tableaux */
+    .table-rh th {
+        background: #f8f9fa;
+        border-bottom: 2px solid #dee2e6;
+        font-weight: 600;
+        font-size: 13px;
+        white-space: nowrap;
+    }
+    
+    .table-rh td {
+        vertical-align: middle;
+        font-size: 13px;
+    }
+    
+    /* Cards Dashboard */
+    .stat-card {
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+        transition: transform 0.3s ease;
+        cursor: pointer;
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    }
+    
+    .stat-card .number {
+        font-size: 32px;
+        font-weight: 700;
+    }
+    
+    .stat-card .label {
+        font-size: 14px;
+        opacity: 0.8;
+        margin-top: 5px;
+    }
+
+    .btn-loading {
+        opacity: 0.7;
+        cursor: wait !important;
+        pointer-events: none;
+    }
+    
+    .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+
+        <!-- Contenu principal -->
+        <div class="col-md-10 col-lg-10">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fas fa-users-cog me-2"></i> Gestion des Ressources Humaines
+                    </h5>
+                    <div>
+                        <button class="btn btn-light btn-sm me-2" onclick="rafraichirTout()">
+                            <i class="fas fa-sync-alt"></i> Rafraîchir
+                        </button>
+                        <span class="badge bg-light text-dark" id="derniereMiseAJour">
+                            <i class="far fa-clock"></i> <span id="heureMiseAJour">-</span>
+                        </span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    
+                    <!-- ========================================= -->
+                    <!-- ONGLETS RH - CORRIGÉS                      -->
+                    <!-- ========================================= -->
+                    <ul class="nav nav-tabs rh-tabs" id="rhTabs" role="tablist">
+                        <li class="nav-item">
+                            <button class="nav-link" id="dashboardrh-tab"
+                                    data-bs-toggle="tab" data-bs-target="#dashboardrh"
+                                    type="button" role="tab">
+                                <i class="fas fa-chart-pie me-1"></i> Tableau de bord
+                            </button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link active" id="personnel-tab"
+                                    data-bs-toggle="tab" data-bs-target="#personnel"
+                                    type="button" role="tab">
+                                <i class="fas fa-user-friends me-1"></i> Personnel
+                                <span class="badge bg-secondary ms-1" id="badgePersonnel">0</span>
+                            </button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link" id="pointage-tab"
+                                    data-bs-toggle="tab" data-bs-target="#pointage"
+                                    type="button" role="tab" onclick="chargerPointageDuJour()">
+                                <i class="fas fa-fingerprint me-1"></i> Pointage
+                            </button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link" id="conges-tab"
+                                    data-bs-toggle="tab" data-bs-target="#conges"
+                                    type="button" role="tab">
+                                <i class="fas fa-calendar-alt me-1"></i> Congés
+                                <span class="badge bg-warning text-dark ms-1" id="badgeCongesAttente">0</span>
+                            </button>
+                        </li>
+                        <li class="nav-item dropdown">
+                            <button class="nav-link dropdown-toggle" id="rhPlus-tab" data-bs-toggle="dropdown" type="button" aria-expanded="false">
+                                <i class="fas fa-ellipsis"></i> Plus
+                            </button>
+                            <ul class="dropdown-menu" aria-labelledby="rhPlus-tab">
+                                <li>
+                                    <button class="dropdown-item" id="permissions-tab"
+                                            data-bs-toggle="tab" data-bs-target="#permissions" type="button" role="tab">
+                                        <i class="fas fa-door-open me-2"></i>Permissions
+                                    </button>
+                                </li>
+                                <li>
+                                    <button class="dropdown-item" id="services-tab"
+                                            data-bs-toggle="tab" data-bs-target="#services" type="button" role="tab">
+                                        <i class="fas fa-building me-2"></i>Services
+                                    </button>
+                                </li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li>
+                                    <a class="dropdown-item" href="{{ url_for('rh.page_paie') }}">
+                                        <i class="fas fa-money-check-dollar me-2"></i>Paie (salaires)
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="{{ url_for('rh.page_declarations') }}">
+                                        <i class="fas fa-file-invoice me-2"></i>Déclarations mensuelles
+                                    </a>
+                                </li>
+                            </ul>
+                        </li>
+                    </ul>
+
+                    <!-- ========================================= -->
+                    <!-- CONTENU DES ONGLETS                      -->
+                    <!-- ========================================= -->
+                    <div class="tab-content" id="rhTabContent">
+
+                        <!-- ========================= -->
+                        <!-- ONGLET SERVICES           -->
+                        <!-- ========================= -->
+                        <div class="tab-pane fade" id="services" role="tabpanel">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="mb-0"><i class="fas fa-building me-2"></i>Gestion des services</h6>
+                                <button class="btn btn-primary btn-sm" onclick="ouvrirAjoutService()">
+                                    <i class="fas fa-plus me-1"></i> Nouveau service
+                                </button>
+                            </div>
+                            
+                            <div class="table-responsive">
+                                <table class="table table-hover table-sm table-bordered table-rh">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Nom</th>
+                                            <th>Responsable</th>
+                                            <th>Employés</th>
+                                            <th class="text-center">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="servicesBody">
+                                        <tr><td colspan="5" class="text-center text-muted">
+                                            <i class="fas fa-spinner fa-spin me-2"></i> Chargement...
+                                        </td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- ========================= -->
+                        <!-- ONGLET PERSONNEL          -->
+                        <!-- ========================= -->
+                        <div class="tab-pane fade show active" id="personnel" role="tabpanel">
+                            <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap">
+                                <h6 class="mb-0"><i class="fas fa-users me-2"></i>Gestion du personnel</h6>
+                                <div>
+                                    <button class="btn btn-success btn-sm" id="btnNouvelEmploye" onclick="ouvrirAjoutEmploye()">
+                                        <i class="fas fa-user-plus me-1"></i> Nouvel employé
+                                    </button>>
+                                    <button class="btn btn-outline-secondary btn-sm" onclick="mettreAJourStatuts()">
+                                        <i class="fas fa-sync me-1"></i> MàJ statuts
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Filtres -->
+                            <div class="row g-2 mb-3">
+                                <div class="col-md-4">
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                        <input type="text" class="form-control" id="searchEmploye" 
+                                               placeholder="Rechercher..." onkeyup="filtrerEmployes()">
+                                        <button class="btn btn-outline-secondary" onclick="reinitialiserRechercheEmploye()" type="button">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <select class="form-select form-select-sm" id="filtreService" onchange="filtrerEmployes()">
+                                        <option value="">Tous les services</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <select class="form-select form-select-sm" id="filtreStatut" onchange="filtrerEmployes()">
+                                        <option value="">Tous les statuts</option>
+                                        <option value="Actif">Actif</option>
+                                        <option value="En conge">En congé</option>
+                                        <option value="Inactif">Inactif</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2 text-end">
+                                    <span class="badge bg-secondary" id="totalEmployes">0</span>
+                                    <small class="text-muted ms-1">employés</small>
+                                </div>
+                            </div>
+
+                            <!-- Tableau -->
+                            <div class="table-responsive">
+                                <table class="table table-hover table-sm table-bordered table-rh">
+                                    <thead>
+                                        <tr>
+                                            <th>Matricule</th>
+                                            <th>Nom</th>
+                                            <th>Prénom</th>
+                                            <th>Service</th>
+                                            <th>Poste</th>
+                                            <th>Tél.</th>
+                                            <th>Solde</th>
+                                            <th>Statut</th>
+                                            <th class="text-center">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="employesBody">
+                                        <tr><td colspan="9" class="text-center text-muted">
+                                            <i class="fas fa-spinner fa-spin me-2"></i> Chargement...
+                                        </td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Pagination -->
+                            <div class="d-flex justify-content-center mt-3">
+                                <nav>
+                                    <ul class="pagination pagination-sm" id="paginationEmployes"></ul>
+                                </nav>
+                            </div>
+                        </div>
+
+                        <!-- ========================= -->
+                        <!-- ONGLET POINTAGE (empreinte)-->
+                        <!-- ========================= -->
+                        <div class="tab-pane fade" id="pointage" role="tabpanel">
+
+                            <div class="alert alert-info small" id="alertePointageContexte">
+                                <i class="fas fa-circle-info me-1"></i>
+                                Le pointage par empreinte <strong>et</strong> par visage (caméra) ne sont
+                                utilisables par le navigateur que sur <code>http://localhost:&lt;port&gt;</code>
+                                ou en HTTPS — pas sur une adresse IP locale en http:// simple (règle de
+                                sécurité imposée par les navigateurs, pour l'empreinte comme pour la caméra).
+                            </div>
+
+                            <div class="row g-3 mb-4">
+                                <!-- Borne de pointage : PAS de bouton "Pointer" ici, exprès — cet
+                                     onglet est réservé à l'administration (réglages, empreintes).
+                                     Le personnel utilise la borne plein écran (aucun réglage dessus,
+                                     rien à modifier), à ouvrir sur le poste dédié (accueil...). -->
+                                <div class="col-lg-5">
+                                    <div class="card border-0 shadow-sm h-100" style="background:linear-gradient(135deg,#667eea,#764ba2);">
+                                        <div class="card-body text-white text-center py-4">
+                                            <i class="fas fa-fingerprint" style="font-size:56px;"></i>
+                                            <h5 class="mt-2 mb-1">Borne de pointage</h5>
+                                            <p class="small opacity-75 mb-3">
+                                                Écran séparé, sans aucun réglage — à laisser ouvert sur le poste
+                                                où le personnel pointe (rien d'administratif dessus).
+                                            </p>
+                                            <a href="{{ url_for('rh.page_borne_pointage') }}" target="_blank" class="btn btn-light btn-lg w-100">
+                                                <i class="fas fa-arrow-up-right-from-square me-2"></i> Ouvrir la borne
+                                            </a>
+                                            <button class="btn btn-outline-light btn-sm w-100 mt-2" onclick="pointer()">
+                                                <i class="fas fa-vial me-1"></i> Tester ici (admin)
+                                            </button>
+                                            <div id="resultatPointage" class="mt-3 small"></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Réglages -->
+                                <div class="col-lg-7">
+                                    <div class="card border-0 shadow-sm h-100">
+                                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                            <span><i class="fas fa-sliders me-2"></i>Règles de pointage</span>
+                                            <button class="btn btn-sm btn-primary" onclick="sauvegarderParametragePointage()">
+                                                <i class="fas fa-save me-1"></i> Enregistrer
+                                            </button>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="row g-2">
+                                                <div class="col-4">
+                                                    <label class="form-label small fw-bold">Heure de début</label>
+                                                    <input type="time" class="form-control form-control-sm" id="paramHeureDebut">
+                                                </div>
+                                                <div class="col-4">
+                                                    <label class="form-label small fw-bold">Heure de fin</label>
+                                                    <input type="time" class="form-control form-control-sm" id="paramHeureFin">
+                                                </div>
+                                                <div class="col-4">
+                                                    <label class="form-label small fw-bold">Tolérance retard (min)</label>
+                                                    <input type="number" min="0" class="form-control form-control-sm" id="paramTolerance">
+                                                </div>
+                                            </div>
+                                            <label class="form-label small fw-bold mt-3 d-block">Jours travaillés</label>
+                                            <div class="d-flex flex-wrap gap-2" id="paramJoursTravailles">
+                                                <!-- généré en JS -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="row g-3 mb-3">
+                                <div class="col-12">
+                                    <div class="card border-0 shadow-sm h-100">
+                                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                            <span><i class="fas fa-list-check me-2"></i>Pointages du jour</span>
+                                            <input type="date" class="form-control form-control-sm w-auto" id="datePointage" onchange="chargerPointageDuJour()">
+                                        </div>
+                                        <div class="card-body p-0">
+                                            <div class="table-responsive">
+                                                <table class="table table-sm table-hover table-rh mb-0">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Employé</th><th>Arrivée</th><th>Statut</th>
+                                                            <th>Départ</th><th>Durée</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody id="pointagesDuJourBody">
+                                                        <tr><td colspan="5" class="text-center text-muted py-3">Chargement...</td></tr>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                            <div id="absentsDuJour" class="p-2 small text-muted"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="row g-3 mb-4">
+                                <!-- Empreintes enregistrées -->
+                                <div class="col-lg-6">
+                                    <div class="card border-0 shadow-sm h-100">
+                                        <div class="card-header bg-light">
+                                            <i class="fas fa-id-card me-2"></i>Empreintes enregistrées
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="input-group input-group-sm mb-3">
+                                                <select class="form-select" id="selectEmployeEmpreinte"></select>
+                                                <button class="btn btn-success" onclick="enregistrerEmpreinte()">
+                                                    <i class="fas fa-fingerprint me-1"></i> Enregistrer une empreinte
+                                                </button>
+                                            </div>
+                                            <div id="listeEmpreintes" style="max-height:220px; overflow-y:auto;">
+                                                <p class="text-muted small">Chargement...</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Visages enregistrés (reconnaissance faciale, webcam standard) -->
+                                <div class="col-lg-6">
+                                    <div class="card border-0 shadow-sm h-100">
+                                        <div class="card-header bg-light">
+                                            <i class="fas fa-camera-retro me-2"></i>Visages enregistrés
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="input-group input-group-sm mb-2">
+                                                <select class="form-select" id="selectEmployeVisage"></select>
+                                                <button class="btn btn-success" onclick="ouvrirCaptureVisage()">
+                                                    <i class="fas fa-camera me-1"></i> Enregistrer un visage
+                                                </button>
+                                            </div>
+                                            <div id="zoneCaptureVisage" style="display:none;" class="text-center mb-2 p-2 bg-light rounded">
+                                                <video id="videoEnrolementVisage" autoplay muted playsinline style="width:100%; max-width:280px; border-radius:8px; transform:scaleX(-1);"></video>
+                                                <div class="mt-2">
+                                                    <button class="btn btn-sm btn-primary" onclick="capturerVisage()"><i class="fas fa-check"></i> Capturer</button>
+                                                    <button class="btn btn-sm btn-outline-secondary" onclick="fermerCaptureVisage()">Annuler</button>
+                                                </div>
+                                                <div class="small text-muted mt-1" id="statutCaptureVisage"></div>
+                                            </div>
+                                            <div id="listeVisages" style="max-height:220px; overflow-y:auto;">
+                                                <p class="text-muted small">Chargement...</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Résumé mensuel -->
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-header bg-light d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                    <span><i class="fas fa-calendar-days me-2"></i>Résumé de la période</span>
+                                    <div class="d-flex gap-2">
+                                        <input type="date" class="form-control form-control-sm" id="resumeDateDebut">
+                                        <input type="date" class="form-control form-control-sm" id="resumeDateFin">
+                                        <button class="btn btn-sm btn-outline-primary" onclick="chargerResumePointage()">
+                                            <i class="fas fa-search me-1"></i> Voir
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="card-body p-0">
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-hover table-rh mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th>Employé</th><th>Jours ouvrés</th><th>Présent</th>
+                                                    <th>Retards</th><th>Absences</th><th>Heures travaillées</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="resumePointageBody">
+                                                <tr><td colspan="6" class="text-center text-muted py-3">Choisissez une période</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ========================= -->
+                        <!-- ONGLET CONGÉS             -->
+                        <!-- ========================= -->
+                        <div class="tab-pane fade" id="conges" role="tabpanel">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="mb-0"><i class="fas fa-calendar-alt me-2"></i>Gestion des congés</h6>
+                                <button class="btn btn-warning btn-sm" id="btnDemanderConge" onclick="ouvrirDemandeConge()">
+                                    <i class="fas fa-calendar-plus me-1"></i> Demander un congé
+                                </button>
+                            </div>
+
+                            <!-- Filtres -->
+                            <div class="row g-2 mb-3">
+                                <div class="col-md-4">
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                        <input type="text" class="form-control" id="searchConge" 
+                                               placeholder="Rechercher..." onkeyup="filtrerConges()">
+                                        <button class="btn btn-outline-secondary" onclick="reinitialiserRechercheConge()" type="button">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <select class="form-select form-select-sm" id="filtreStatutConge" onchange="filtrerConges()">
+                                        <option value="">Tous les statuts</option>
+                                        <option value="en_attente">En attente</option>
+                                        <option value="approuve">Approuvé</option>
+                                        <option value="refuse">Refusé</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <select class="form-select form-select-sm" id="filtreTypeConge" onchange="filtrerConges()">
+                                        <option value="">Tous les types</option>
+                                        <option value="annuel">Annuel</option>
+                                        <option value="maladie">Maladie</option>
+                                        <option value="maternite">Maternité</option>
+                                        <option value="paternite">Paternité</option>
+                                        <option value="sans_solde">Sans solde</option>
+                                        <option value="exceptionnel">Exceptionnel</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2 text-end">
+                                    <span class="badge bg-secondary" id="totalConges">0</span>
+                                    <small class="text-muted ms-1">demandes</small>
+                                </div>
+                            </div>
+
+                            <!-- Tableau -->
+                            <div class="table-responsive">
+                                <table class="table table-hover table-sm table-bordered table-rh">
+                                    <thead>
+                                        <tr>
+                                            <th>Employé</th>
+                                            <th>Type</th>
+                                            <th>Début</th>
+                                            <th>Fin</th>
+                                            <th>Jours</th>
+                                            <th>Année</th>
+                                            <th>Statut</th>
+                                            <th class="text-center">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="congesBody">
+                                        <tr><td colspan="8" class="text-center text-muted">
+                                            <i class="fas fa-spinner fa-spin me-2"></i> Chargement...
+                                        </td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Pagination -->
+                            <div class="d-flex justify-content-center mt-3">
+                                <nav>
+                                    <ul class="pagination pagination-sm" id="paginationConges"></ul>
+                                </nav>
+                            </div>
+                        </div>
+
+                        <!-- ========================= -->
+                        <!-- ONGLET PERMISSIONS        -->
+                        <!-- ========================= -->
+                        <div class="tab-pane fade" id="permissions" role="tabpanel">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="mb-0"><i class="fas fa-door-open me-2"></i>Gestion des permissions</h6>
+                                <button class="btn btn-info btn-sm" id="btnDemanderPermission" onclick="ouvrirDemandePermission()">
+                                    <i class="fas fa-door-open me-1"></i> Demander une permission
+                                </button>
+                            </div>
+
+                            <!-- Filtres -->
+                            <div class="row g-2 mb-3">
+                                <div class="col-md-4">
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                        <input type="text" class="form-control" id="searchPermission" 
+                                               placeholder="Rechercher..." onkeyup="filtrerPermissions()">
+                                        <button class="btn btn-outline-secondary" onclick="reinitialiserRecherchePermission()" type="button">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <select class="form-select form-select-sm" id="filtreStatutPermission" onchange="filtrerPermissions()">
+                                        <option value="">Tous les statuts</option>
+                                        <option value="en_attente">En attente</option>
+                                        <option value="approuve">Approuvé</option>
+                                        <option value="refuse">Refusé</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-5 text-end">
+                                    <span class="badge bg-secondary" id="totalPermissions">0</span>
+                                    <small class="text-muted ms-1">demandes</small>
+                                </div>
+                            </div>
+
+                            <!-- Tableau -->
+                            <div class="table-responsive">
+                                <table class="table table-hover table-sm table-bordered table-rh">
+                                    <thead>
+                                        <tr>
+                                            <th>Employé</th>
+                                            <th>Type</th>
+                                            <th>Période</th>
+                                            <th>Heures</th>
+                                            <th>Jours</th>
+                                            <th>Motif</th>
+                                            <th>Statut</th>
+                                            <th class="text-center">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="permissionsBody">
+                                        <tr><td colspan="8" class="text-center text-muted">
+                                            <i class="fas fa-spinner fa-spin me-2"></i> Chargement...
+                                        </td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- ========================= -->
+                        <!-- ONGLET TABLEAU DE BORD    -->
+                        <!-- ========================= -->
+                        <div class="tab-pane fade" id="dashboardrh" role="tabpanel">
+                            <h6 class="mb-3"><i class="fas fa-chart-pie me-2"></i>Tableau de bord RH</h6>
+                            
+                            <!-- Statistiques -->
+                            <div class="row g-3 mb-4">
+                                <div class="col-md-3 col-6">
+                                    <div class="stat-card bg-primary text-white">
+                                        <div class="number" id="statTotalEmployes">0</div>
+                                        <div class="label">Total employés</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <div class="stat-card bg-success text-white">
+                                        <div class="number" id="statActifs">0</div>
+                                        <div class="label">Actifs</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <div class="stat-card bg-warning text-dark">
+                                        <div class="number" id="statEnConge">0</div>
+                                        <div class="label">En congé</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <div class="stat-card bg-danger text-white">
+                                        <div class="number" id="statDemandesAttente">0</div>
+                                        <div class="label">Demandes en attente</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Alertes -->
+                            <div class="card">
+                                <div class="card-header bg-warning">
+                                    <i class="fas fa-bell me-2"></i> Alertes et notifications
+                                </div>
+                                <div class="card-body" id="alertesRH">
+                                    <div class="text-muted text-center">
+                                        <i class="fas fa-spinner fa-spin me-2"></i> Chargement des alertes...
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Graphiques (placeholder) -->
+                            <div class="row mt-4">
+                                <div class="col-md-6">
+                                    <div class="card">
+                                        <div class="card-header bg-light">
+                                            <small><i class="fas fa-chart-bar me-1"></i> Répartition par service</small>
+                                        </div>
+                                        <div class="card-body text-center text-muted" style="height:200px;">
+                                            <canvas id="chartServices" style="max-height:180px;"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card">
+                                        <div class="card-header bg-light">
+                                            <small><i class="fas fa-chart-line me-1"></i> Évolution des congés</small>
+                                        </div>
+                                        <div class="card-body text-center text-muted" style="height:200px;">
+                                            <canvas id="chartConges" style="max-height:180px;"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div> <!-- Fin tab-content -->
+                </div> <!-- Fin card-body -->
+            </div> <!-- Fin card -->
+        </div> <!-- Fin col -->
+    </div> <!-- Fin row -->
+</div> <!-- Fin container-fluid -->
+
+<!-- ============================================================ -->
+<!-- MODALS                                                       -->
+<!-- ============================================================ -->
+
+<!-- ⭐ MODAL SERVICE -->
+<div class="modal fade" id="serviceModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><span id="serviceModalTitle">Ajouter un service</span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="serviceForm" onsubmit="return false;">
+                    <input type="hidden" id="serviceId">
+                    <div class="mb-3">
+                        <label class="form-label">Nom du service *</label>
+                        <input type="text" class="form-control" id="serviceNom" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Responsable</label>
+                        <input type="text" class="form-control" id="serviceResponsable">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-primary" onclick="sauvegarderService()">
+                    <i class="fas fa-save me-1"></i> Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ⭐ MODAL EMPLOYÉ -->
+<div class="modal fade" id="employeModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-user-plus me-2"></i> <span id="employeModalTitle">Ajouter un employé</span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="employeForm" onsubmit="return false;">
+                    <div class="row">
+                        <!-- Identité -->
+                        <div class="col-md-6">
+                            <div class="card bg-light mb-2">
+                                <div class="card-header bg-info text-white py-1">
+                                    <small><i class="fas fa-id-card me-1"></i> Identité</small>
+                                </div>
+                                <div class="card-body py-2">
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Nom *</label>
+                                            <input type="text" class="form-control form-control-sm" id="empNom" required>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Prénom *</label>
+                                            <input type="text" class="form-control form-control-sm" id="empPrenom" required>
+                                        </div>
+                                    </div>
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Sexe *</label>
+                                            <select class="form-select form-select-sm" id="empSexe" required>
+                                                <option value="">Sélectionner</option>
+                                                <option value="Masculin">Masculin</option>
+                                                <option value="Feminin">Féminin</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Date naissance</label>
+                                            <input type="date" class="form-control form-control-sm" id="empDateNaissance" 
+                                                   onchange="calculerAge()">
+                                        </div>
+                                    </div>
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Téléphone *</label>
+                                            <input type="tel" class="form-control form-control-sm" id="empTelephone" required>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Email</label>
+                                            <input type="email" class="form-control form-control-sm" id="empEmail">
+                                        </div>
+                                    </div>
+                                    <div class="row g-2">
+                                        <div class="col-md-12">
+                                            <label class="form-label small">Quartier</label>
+                                            <input type="text" class="form-control form-control-sm" id="empQuartier">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Professionnel -->
+                        <div class="col-md-6">
+                            <div class="card bg-light mb-2">
+                                <div class="card-header bg-success text-white py-1">
+                                    <small><i class="fas fa-briefcase me-1"></i> Professionnel</small>
+                                </div>
+                                <div class="card-body py-2">
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Service *</label>
+                                            <select class="form-select form-select-sm" id="empService" required>
+                                                <option value="">Sélectionner</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Poste *</label>
+                                            <input type="text" class="form-control form-control-sm" id="empPoste" required>
+                                        </div>
+                                    </div>
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Date embauche *</label>
+                                            <input type="date" class="form-control form-control-sm" id="empDateEmbauche" required>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Type contrat</label>
+                                            <select class="form-select form-select-sm" id="empTypeContrat">
+                                                <option value="CDI">CDI</option>
+                                                <option value="CDD">CDD</option>
+                                                <option value="Stage">Stage</option>
+                                                <option value="Apprentissage">Apprentissage</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="row g-2">
+                                        <div class="col-md-12">
+                                            <label class="form-label small">Personne à prévenir</label>
+                                            <input type="text" class="form-control form-control-sm" id="empPrevenir">
+                                        </div>
+                                    </div>
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Tél. prévenir</label>
+                                            <input type="tel" class="form-control form-control-sm" id="empTelephonePrevenir">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Lien parenté</label>
+                                            <input type="text" class="form-control form-control-sm" id="empLienParente">
+                                        </div>
+                                    </div>
+                                    <div class="row g-2">
+                                        <div class="col-md-12">
+                                            <label class="form-label small">Statut</label>
+                                            <select class="form-select form-select-sm" id="empStatut">
+                                                <option value="Actif">Actif</option>
+                                                <option value="En conge">En congé</option>
+                                                <option value="Inactif">Inactif</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-primary" onclick="sauvegarderEmploye()">
+                    <i class="fas fa-save me-1"></i> <span id="employeBtnTexte">Enregistrer</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ⭐ MODAL CONGÉ -->
+<div class="modal fade" id="congeModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title"><i class="fas fa-calendar-plus me-2"></i> Demander un congé</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="congeForm" onsubmit="return false;">
+                    <div class="mb-2">
+                        <label class="form-label small">Employé *</label>
+                        <select class="form-select form-select-sm" id="congeEmploye" required>
+                            <option value="">Sélectionner</option>
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Type de congé *</label>
+                        <select class="form-select form-select-sm" id="congeType" required>
+                            <option value="annuel">Annuel (payé)</option>
+                            <option value="maladie">Maladie</option>
+                            <option value="maternite">Maternité</option>
+                            <option value="paternite">Paternité</option>
+                            <option value="sans_solde">Sans solde</option>
+                            <option value="exceptionnel">Exceptionnel</option>
+                        </select>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label small">Date début *</label>
+                            <input type="date" class="form-control form-control-sm" id="congeDebut" 
+                                   required onchange="calculerJoursConge()">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Date fin *</label>
+                            <input type="date" class="form-control form-control-sm" id="congeFin" 
+                                   required onchange="calculerJoursConge()">
+                        </div>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label small">Nombre de jours</label>
+                            <input type="text" class="form-control form-control-sm" id="congeJours" readonly>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Date reprise</label>
+                            <input type="text" class="form-control form-control-sm" id="congeReprise" readonly>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Motif</label>
+                        <textarea class="form-control form-control-sm" id="congeMotif" rows="2"></textarea>
+                    </div>
+                    
+                    <div class="alert alert-info py-1" id="soldeInfo" style="display:none; font-size:12px;">
+                        <i class="fas fa-info-circle me-1"></i> 
+                        Solde de congés restant: <strong id="soldeRestant">0</strong> jours
+                    </div>
+                    
+                    <div class="mb-2">
+                        <label class="form-label small text-danger">Signataire (Directeur/Responsable) *</label>
+                        <input type="text" class="form-control form-control-sm" id="congeSignataire" 
+                               placeholder="Nom du signataire" required>
+                        <small class="text-muted">Ce nom apparaîtra sur l'autorisation</small>
+                    </div>
+                    
+                    <div id="congeAlerte" class="alert alert-warning py-1" style="display:none; font-size:12px;">
+                        <i class="fas fa-exclamation-triangle me-1"></i> <span id="congeAlerteMessage"></span>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-warning" onclick="sauvegarderConge()">
+                    <i class="fas fa-paper-plane me-1"></i> Soumettre
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ⭐ MODAL PERMISSION -->
+<div class="modal fade" id="permissionModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="fas fa-door-open me-2"></i> Demander une permission</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="permissionForm" onsubmit="return false;">
+                    <div class="mb-2">
+                        <label class="form-label small">Employé *</label>
+                        <select class="form-select form-select-sm" id="permEmploye" required>
+                            <option value="">Sélectionner</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-2">
+                        <label class="form-label small">Type de permission *</label>
+                        <select class="form-select form-select-sm" id="permType" required onchange="changerTypePermission()">
+                            <option value="heures">Quelques heures</option>
+                            <option value="journee">Une journée</option>
+                            <option value="plusieurs_jours">Plusieurs jours</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Section Heures -->
+                    <div id="permHeuresSection">
+                        <div class="mb-2">
+                            <label class="form-label small">Date *</label>
+                            <input type="date" class="form-control form-control-sm" id="permDate" required>
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-md-6">
+                                <label class="form-label small">Heure début *</label>
+                                <input type="time" class="form-control form-control-sm" id="permHeureDebut" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small">Heure fin *</label>
+                                <input type="time" class="form-control form-control-sm" id="permHeureFin" required>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Section Jours -->
+                    <div id="permJoursSection" style="display:none;">
+                        <div class="row g-2">
+                            <div class="col-md-6">
+                                <label class="form-label small">Date début *</label>
+                                <input type="date" class="form-control form-control-sm" id="permDateDebut" 
+                                       required onchange="calculerJoursPermission()">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small">Date fin *</label>
+                                <input type="date" class="form-control form-control-sm" id="permDateFin" 
+                                       required onchange="calculerJoursPermission()">
+                            </div>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small">Nombre de jours</label>
+                            <input type="text" class="form-control form-control-sm" id="permNbJours" readonly>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-2">
+                        <label class="form-label small">Motif *</label>
+                        <textarea class="form-control form-control-sm" id="permMotif" rows="2" required></textarea>
+                    </div>
+                    
+                    <div class="mb-2">
+                        <label class="form-label small text-danger">Signataire (Directeur/Responsable) *</label>
+                        <input type="text" class="form-control form-control-sm" id="permSignataire" 
+                               placeholder="Nom du signataire" required>
+                        <small class="text-muted">Ce nom apparaîtra sur l'autorisation</small>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-info" onclick="sauvegarderPermission()">
+                    <i class="fas fa-paper-plane me-1"></i> Soumettre
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- JAVASCRIPT                                                    -->
+<!-- ============================================================ -->
+<script>
+// ============================================
+// CONFIGURATION
+// ============================================
+const ITEMS_PAR_PAGE = 10;
+let tousEmployes = [];
+let tousConges = [];
+let toutesPermissions = [];
+let employesFiltres = [];
+let congesFiltres = [];
+let permissionsFiltres = [];
+let pageEmployes = 1;
+let pageConges = 1;
+
+// ============================================
+// UTILITAIRES
+// ============================================
+function showLoader(message = 'Chargement...') {
+    // Implémentez votre loader ici
+    console.log('.', message);
+}
+
+function hideLoader() {
+    console.log('Chargement terminé');
+}
+
+function getDateFr(dateStr) {
+    if (!dateStr) return '-';
+    try {
+        const d = new Date(dateStr);
+        return d.toLocaleDateString('fr-FR');
+    } catch {
+        return dateStr;
+    }
+}
+
+function getStatutBadge(statut) {
+    const classes = {
+        'en_attente': 'bg-warning text-dark',
+        'approuve': 'bg-success',
+        'refuse': 'bg-danger',
+        'termine': 'bg-secondary'
+    };
+    const labels = {
+        'en_attente': 'En attente',
+        'approuve': 'Approuvé',
+        'refuse': 'Refusé',
+        'termine': 'Terminé'
+    };
+    return `<span class="badge ${classes[statut] || 'bg-secondary'} badge-status">${labels[statut] || statut}</span>`;
+}
+
+function getStatutEmployeBadge(statut) {
+    const classes = {
+        'Actif': 'bg-success',
+        'En conge': 'bg-warning text-dark',
+        'Inactif': 'bg-danger',
+        'en_attente': 'bg-warning text-dark'
+    };
+    return `<span class="badge ${classes[statut] || 'bg-secondary'} badge-status">${statut}</span>`;
+}
+
+// ============================================
+// RAFRAÎCHIR TOUT
+// ============================================
+function rafraichirTout() {
+    const now = new Date();
+    document.getElementById('heureMiseAJour').textContent = now.toLocaleTimeString('fr-FR');
+    
+    chargerEmployes();
+    chargerConges();
+    chargerPermissions();
+    chargerServices();
+    chargerDashboard();
+}
+
+// ============================================
+// SERVICES
+// ============================================
+function chargerServices() {
+    const tbody = document.getElementById('servicesBody');
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted"><i class="fas fa-spinner fa-spin me-2"></i> Chargement...</td></tr>';
+    
+    fetch('/rh/api/services')
+        .then(r => r.json())
+        .then(data => {
+            tbody.innerHTML = '';
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Aucun service trouvé</td></tr>';
+                return;
+            }
+            
+            data.forEach(s => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${s.id}</td>
+                        <td><strong>${s.nom}</strong></td>
+                        <td>${s.responsable || '-'}</td>
+                        <td><span class="badge bg-info">${s.nb_employes || 0}</span></td>
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-warning" onclick="modifierService(${s.id})" title="Modifier">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="supprimerService(${s.id})" title="Supprimer">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+        })
+        .catch(error => {
+            console.error('Erreur chargement services:', error);
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Erreur de chargement</td></tr>';
+        });
+}
+
+function ouvrirAjoutService() {
+    document.getElementById('serviceModalTitle').textContent = 'Ajouter un service';
+    document.getElementById('serviceForm').reset();
+    document.getElementById('serviceId').value = '';
+    new bootstrap.Modal(document.getElementById('serviceModal')).show();
+}
+
+function sauvegarderService() {
+    const id = document.getElementById('serviceId').value;
+    const nom = document.getElementById('serviceNom').value.trim();
+    const responsable = document.getElementById('serviceResponsable').value.trim();
+    
+    if (!nom) {
+        alert('Veuillez saisir le nom du service');
+        return;
+    }
+    
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? `/rh/api/services/${id}` : '/rh/api/services';
+    
+    fetch(url, {
+        method: method,
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({nom, responsable})
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert(id ? 'Service modifié avec succès !' : 'Service ajouté avec succès !');
+            bootstrap.Modal.getInstance(document.getElementById('serviceModal')).hide();
+            chargerServices();
+        } else {
+            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('Erreur: ' + error));
+}
+
+function modifierService(id) {
+    fetch('/rh/api/services')
+        .then(r => r.json())
+        .then(services => {
+            const service = services.find(s => s.id === id);
+            if (service) {
+                document.getElementById('serviceModalTitle').textContent = 'Modifier le service';
+                document.getElementById('serviceId').value = id;
+                document.getElementById('serviceNom').value = service.nom;
+                document.getElementById('serviceResponsable').value = service.responsable || '';
+                new bootstrap.Modal(document.getElementById('serviceModal')).show();
+            }
+        })
+        .catch(error => alert('Erreur: ' + error));
+}
+
+function supprimerService(id) {
+    if (!confirm('Voulez-vous vraiment supprimer ce service ?')) return;
+    
+    fetch(`/rh/api/services/${id}`, {method: 'DELETE'})
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                alert('Service supprimé avec succès !');
+                chargerServices();
+            } else {
+                alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+            }
+        })
+        .catch(error => alert('Erreur: ' + error));
+}
+
+// ============================================
+// EMPLOYÉS
+// ============================================
+function chargerEmployes() {
+    const tbody = document.getElementById('employesBody');
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted"><i class="fas fa-spinner fa-spin me-2"></i> Chargement...</td></tr>';
+    
+    fetch('/rh/api/employes')
+        .then(r => r.json())
+        .then(data => {
+            tousEmployes = data || [];
+            employesFiltres = [...tousEmployes];
+            document.getElementById('totalEmployes').textContent = tousEmployes.length;
+            document.getElementById('badgePersonnel').textContent = tousEmployes.length;
+            chargerFiltresServices();
+            afficherEmployes();
+        })
+        .catch(error => {
+            console.error('Erreur chargement employés:', error);
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-danger">Erreur de chargement</td></tr>';
+        });
+}
+
+function chargerFiltresServices() {
+    const select = document.getElementById('filtreService');
+    const services = [...new Set(tousEmployes.map(e => e.service).filter(s => s))];
+    select.innerHTML = '<option value="">Tous les services</option>';
+    services.forEach(s => {
+        select.innerHTML += `<option value="${s}">${s}</option>`;
+    });
+}
+
+function afficherEmployes() {
+    const tbody = document.getElementById('employesBody');
+    const debut = (pageEmployes - 1) * ITEMS_PAR_PAGE;
+    const fin = Math.min(debut + ITEMS_PAR_PAGE, employesFiltres.length);
+    const pageData = employesFiltres.slice(debut, fin);
+    
+    tbody.innerHTML = '';
+    
+    if (pageData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">Aucun employé trouvé</td></tr>';
+        mettreAJourPagination('employes');
+        return;
+    }
+    
+    pageData.forEach(e => {
+        const solde = e.solde_conges || 0;
+        let soldeClass = 'text-success';
+        let soldeIcon = '.';
+        if (solde <= 0) {
+            soldeClass = 'text-danger';
+            soldeIcon = '.';
+        } else if (solde < 5) {
+            soldeClass = 'text-warning';
+            soldeIcon = '.';
+        }
+        
+        tbody.innerHTML += `
+            <tr>
+                <td><strong>${e.matricule}</strong></td>
+                <td>${e.nom}</td>
+                <td>${e.prenom}</td>
+                <td>${e.service || '-'}</td>
+                <td>${e.poste || '-'}</td>
+                <td>${e.telephone || '-'}</td>
+                <td><span class="${soldeClass}">${soldeIcon} ${solde} jrs</span></td>
+                <td>${getStatutEmployeBadge(e.statut)}</td>
+                <td class="text-center">
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-info" onclick="voirEmploye(${e.id})" title="Détails">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-warning" onclick="modifierEmploye(${e.id})" title="Modifier">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn btn-danger" onclick="supprimerEmploye(${e.id})" title="Supprimer">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    });
+    
+    mettreAJourPagination('employes');
+}
+
+function mettreAJourPagination(type) {
+    let total, page, paginationId;
+    if (type === 'employes') {
+        total = employesFiltres.length;
+        page = pageEmployes;
+        paginationId = 'paginationEmployes';
+    } else if (type === 'conges') {
+        total = congesFiltres.length;
+        page = pageConges;
+        paginationId = 'paginationConges';
+    } else {
+        return;
+    }
+    
+    const totalPages = Math.ceil(total / ITEMS_PAR_PAGE);
+    const pagination = document.getElementById(paginationId);
+    
+    if (!pagination || totalPages <= 1) {
+        pagination.innerHTML = '';
+        return;
+    }
+    
+    let html = `<li class="page-item ${page === 1 ? 'disabled' : ''}">
+                    <a class="page-link" href="#" onclick="changerPage('${type}', ${page - 1}); return false;">«</a>
+                </li>`;
+    
+    for (let i = 1; i <= totalPages; i++) {
+        html += `<li class="page-item ${i === page ? 'active' : ''}">
+                    <a class="page-link" href="#" onclick="changerPage('${type}', ${i}); return false;">${i}</a>
+                 </li>`;
+    }
+    
+    html += `<li class="page-item ${page === totalPages ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="changerPage('${type}', ${page + 1}); return false;">»</a>
+             </li>`;
+    pagination.innerHTML = html;
+}
+
+function changerPage(type, page) {
+    if (type === 'employes') {
+        const totalPages = Math.ceil(employesFiltres.length / ITEMS_PAR_PAGE);
+        if (page < 1 || page > totalPages) return;
+        pageEmployes = page;
+        afficherEmployes();
+    } else if (type === 'conges') {
+        const totalPages = Math.ceil(congesFiltres.length / ITEMS_PAR_PAGE);
+        if (page < 1 || page > totalPages) return;
+        pageConges = page;
+        afficherConges();
+    }
+}
+
+function filtrerEmployes() {
+    const search = document.getElementById('searchEmploye').value.toLowerCase().trim();
+    const service = document.getElementById('filtreService').value;
+    const statut = document.getElementById('filtreStatut').value;
+    
+    employesFiltres = tousEmployes.filter(e => {
+        let match = true;
+        if (search) {
+            const texte = `${e.nom} ${e.prenom} ${e.matricule} ${e.email || ''}`.toLowerCase();
+            if (!texte.includes(search)) match = false;
+        }
+        if (service && e.service !== service) match = false;
+        if (statut && e.statut !== statut) match = false;
+        return match;
+    });
+    
+    pageEmployes = 1;
+    afficherEmployes();
+}
+
+function reinitialiserRechercheEmploye() {
+    document.getElementById('searchEmploye').value = '';
+    filtrerEmployes();
+}
+
+function ouvrirAjoutEmploye() {
+    // ⭐ Récupérer le bouton par son ID au lieu de event.target
+    const btn = document.getElementById('btnNouvelEmploye');
+    if (!btn) {
+        console.error('Bouton btnNouvelEmploye non trouvé');
+        // Fallback: ouvrir directement
+        ouvrirAjoutEmployeSimple();
+        return;
+    }
+    
+    boutonAvecLoader(btn, function(reactiver) {
+        console.log("🔵 Ouverture du formulaire d'ajout d'employe");
+        
+        // Réinitialiser le formulaire
+        document.getElementById('employeForm').reset();
+        
+        const statutSelect = document.getElementById('empStatut');
+        if (statutSelect) {
+            statutSelect.value = 'Actif';
+        }
+        
+        const serviceSelect = document.getElementById('empService');
+        if (!serviceSelect) {
+            console.error('Select empService non trouve');
+            const modal = new bootstrap.Modal(document.getElementById('employeModal'));
+            modal.show();
+            reactiver();
+            return;
+        }
+        
+        serviceSelect.innerHTML = '<option value="">Chargement des services...</option>';
+        
+        fetch('/rh/api/services')
+            .then(response => response.json())
+            .then(services => {
+                console.log('Services charges:', services.length);
+                serviceSelect.innerHTML = '<option value="">Selectionner un service</option>';
+                services.forEach(s => {
+                    serviceSelect.innerHTML += `<option value="${s.id}">${s.nom}</option>`;
+                });
+                const modal = new bootstrap.Modal(document.getElementById('employeModal'));
+                modal.show();
+                reactiver();
+            })
+            .catch(error => {
+                console.error('Erreur chargement services:', error);
+                serviceSelect.innerHTML = '<option value="">Erreur de chargement</option>';
+                const modal = new bootstrap.Modal(document.getElementById('employeModal'));
+                modal.show();
+                reactiver();
+            });
+    });
+}
+
+// ⭐ Fonction de fallback
+function ouvrirAjoutEmployeSimple() {
+    document.getElementById('employeForm').reset();
+    const serviceSelect = document.getElementById('empService');
+    if (serviceSelect) {
+        serviceSelect.innerHTML = '<option value="">Chargement...</option>';
+        fetch('/rh/api/services')
+            .then(r => r.json())
+            .then(services => {
+                serviceSelect.innerHTML = '<option value="">Selectionner un service</option>';
+                services.forEach(s => {
+                    serviceSelect.innerHTML += `<option value="${s.id}">${s.nom}</option>`;
+                });
+            })
+            .catch(error => console.error('Erreur:', error));
+    }
+    new bootstrap.Modal(document.getElementById('employeModal')).show();
+}
+
+function modifierEmploye(id) {
+    const btn = event?.target;
+    if (!btn) return;
+    
+    boutonAvecLoader(btn, function(reactiver) {
+        console.log('Modification employé ID:', id);
+        
+        fetch(`/rh/api/employes/${id}`)
+            .then(response => response.json())
+            .then(data => {
+                console.log('📦 Données employé:', data);
+                
+                document.getElementById('employeModalTitle').textContent = 'Modifier l\'employé';
+                document.getElementById('empNomRH').value = data.nom;
+                document.getElementById('empPrenomRH').value = data.prenom;
+                document.getElementById('empSexeRH').value = data.sexe;
+                
+                if (data.date_naissance) {
+                    const parts = data.date_naissance.split('/');
+                    if (parts.length === 3) {
+                        document.getElementById('empDateNaissanceRH').value = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                    }
+                }
+                
+                document.getElementById('empTelephoneRH').value = data.telephone || '';
+                document.getElementById('empEmailRH').value = data.email || '';
+                document.getElementById('empQuartierRH').value = data.quartier || '';
+                document.getElementById('empPosteRH').value = data.poste || '';
+                
+                if (data.date_embauche) {
+                    const parts = data.date_embauche.split('/');
+                    if (parts.length === 3) {
+                        document.getElementById('empDateEmbaucheRH').value = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                    }
+                }
+                
+                document.getElementById('empTypeContratRH').value = data.type_contrat || 'CDI';
+                document.getElementById('empPrevenirRH').value = data.personne_a_prevenir || '';
+                document.getElementById('empTelephonePrevenirRH').value = data.telephone_prevenir || '';
+                document.getElementById('empLienParenteRH').value = data.lien_parente || '';
+                
+                const statutSelect = document.getElementById('empStatutRH');
+                if (statutSelect) {
+                    statutSelect.value = data.statut || 'Actif';
+                }
+
+                const serviceSelect = document.getElementById('empServiceRH');
+                fetch('/rh/api/services')
+                    .then(r => r.json())
+                    .then(services => {
+                        serviceSelect.innerHTML = '<option value="">Selectionner un service</option>';
+                        services.forEach(s => {
+                            const selected = s.id === data.service_id ? 'selected' : '';
+                            serviceSelect.innerHTML += `<option value="${s.id}" ${selected}>${s.nom}</option>`;
+                        });
+                        
+                        const modal = new bootstrap.Modal(document.getElementById('employeModalRH'));
+                        modal.show();
+                        reactiver();
+                    })
+                    .catch(error => {
+                        console.error('Erreur chargement services:', error);
+                        const modal = new bootstrap.Modal(document.getElementById('employeModalRH'));
+                        modal.show();
+                        reactiver();
+                    });
+                
+                document.getElementById('employeModalRH').dataset.employeId = id;
+            })
+            .catch(error => {
+                console.error('❌ Erreur chargement employé:', error);
+                alert('Erreur de chargement: ' + error);
+                reactiver();
+            });
+    });
+}
+
+function supprimerEmploye(id) {
+    const employe = tousEmployes.find(e => e.id === id);
+    if (!employe) return;
+    
+    if (!confirm(`Voulez-vous vraiment supprimer l'employé ${employe.nom} ${employe.prenom} (${employe.matricule}) ?\n\nCette action est irréversible.`)) {
+        return;
+    }
+    
+    fetch(`/rh/employe/${id}`, {method: 'DELETE'})
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                alert('Employé supprimé avec succès !');
+                chargerEmployes();
+            } else {
+                alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            }
+        })
+        .catch(error => alert('❌ Erreur: ' + error));
+}
+
+function sauvegarderEmploye() {
+    const id = document.getElementById('employeModal').dataset.employeId;
+    const isEdit = id && id !== '';
+    
+    const data = {
+        nom: document.getElementById('empNom').value.trim(),
+        prenom: document.getElementById('empPrenom').value.trim(),
+        sexe: document.getElementById('empSexe').value,
+        date_naissance: document.getElementById('empDateNaissance').value,
+        telephone: document.getElementById('empTelephone').value.trim(),
+        email: document.getElementById('empEmail').value.trim(),
+        quartier: document.getElementById('empQuartier').value.trim(),
+        service_id: document.getElementById('empService').value,
+        poste: document.getElementById('empPoste').value.trim(),
+        date_embauche: document.getElementById('empDateEmbauche').value,
+        type_contrat: document.getElementById('empTypeContrat').value,
+        personne_a_prevenir: document.getElementById('empPrevenir').value.trim(),
+        telephone_prevenir: document.getElementById('empTelephonePrevenir').value.trim(),
+        lien_parente: document.getElementById('empLienParente').value.trim(),
+        statut: document.getElementById('empStatut').value
+    };
+    
+    // Validation
+    if (!data.nom || !data.prenom || !data.sexe || !data.telephone || !data.service_id || !data.poste || !data.date_embauche) {
+        alert('Veuillez remplir tous les champs obligatoires (*)');
+        return;
+    }
+    
+    const method = isEdit ? 'PUT' : 'POST';
+    const url = isEdit ? `/rh/employe/${id}` : '/rh/employe/ajouter';
+    
+    fetch(url, {
+        method: method,
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert(isEdit ? 'Employé modifié avec succès !' : 'Employé ajouté avec succès !');
+            bootstrap.Modal.getInstance(document.getElementById('employeModal')).hide();
+            chargerEmployes();
+        } else {
+            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('❌ Erreur: ' + error));
+}
+
+function voirEmploye(id) {
+    window.open(`/rh/employe/${id}`, '_blank');
+}
+
+function mettreAJourStatuts() {
+    showLoader('Mise à jour des statuts...');
+    fetch('/rh/api/update_all_status', {method: 'POST'})
+        .then(r => r.json())
+        .then(result => {
+            hideLoader();
+            if (result.success) {
+                alert(`${result.message}\nStatuts: ${JSON.stringify(result.stats)}`);
+                chargerEmployes();
+            } else {
+                alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            }
+        })
+        .catch(error => {
+            hideLoader();
+            alert('❌ Erreur: ' + error);
+        });
+}
+
+// ============================================
+// CONGÉS
+// ============================================
+function chargerConges() {
+    const tbody = document.getElementById('congesBody');
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted"><i class="fas fa-spinner fa-spin me-2"></i> Chargement...</td></tr>';
+    
+    fetch('/rh/api/conges')
+        .then(r => r.json())
+        .then(data => {
+            tousConges = data || [];
+            congesFiltres = [...tousConges];
+            document.getElementById('totalConges').textContent = tousConges.length;
+            const attente = tousConges.filter(c => c.statut === 'en_attente').length;
+            document.getElementById('badgeCongesAttente').textContent = attente;
+            pageConges = 1;
+            afficherConges();
+        })
+        .catch(error => {
+            console.error('Erreur chargement congés:', error);
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">Erreur de chargement</td></tr>';
+        });
+}
+
+function afficherConges() {
+    const tbody = document.getElementById('congesBody');
+    const debut = (pageConges - 1) * ITEMS_PAR_PAGE;
+    const fin = Math.min(debut + ITEMS_PAR_PAGE, congesFiltres.length);
+    const pageData = congesFiltres.slice(debut, fin);
+    
+    tbody.innerHTML = '';
+    
+    if (pageData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">Aucun congé trouvé</td></tr>';
+        mettreAJourPagination('conges');
+        return;
+    }
+    
+    pageData.forEach(c => {
+        const actions = [];
+        
+        if (c.statut === 'en_attente') {
+            actions.push(`
+                <button class="btn btn-sm btn-success" onclick="changerStatutConge(${c.id}, 'approuve')" title="Approuver">
+                    <i class="fas fa-check"></i>
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="changerStatutConge(${c.id}, 'refuse')" title="Refuser">
+                    <i class="fas fa-times"></i>
+                </button>
+            `);
+        }
+        
+        if (c.statut === 'approuve') {
+            actions.push(`
+                <button class="btn btn-sm btn-info" onclick="window.open('/rh/conge/${c.id}/autorisation', '_blank')" title="Imprimer">
+                    <i class="fas fa-print"></i>
+                </button>
+            `);
+        }
+        
+        tbody.innerHTML += `
+            <tr>
+                <td><strong>${c.employe_nom}</strong></td>
+                <td>${c.type_conge}</td>
+                <td>${c.date_debut}</td>
+                <td>${c.date_fin}</td>
+                <td>${c.nombre_jours || 0}</td>
+                <td>${c.annee_utilisation || '-'}</td>
+                <td>${getStatutBadge(c.statut)}</td>
+                <td class="text-center">
+                    <div class="btn-group btn-group-sm">
+                        ${actions.join('')}
+                    </div>
+                </td>
+            </tr>
+        `;
+    });
+    
+    mettreAJourPagination('conges');
+}
+
+function filtrerConges() {
+    const search = document.getElementById('searchConge').value.toLowerCase().trim();
+    const statut = document.getElementById('filtreStatutConge').value;
+    const type = document.getElementById('filtreTypeConge').value;
+    
+    congesFiltres = tousConges.filter(c => {
+        let match = true;
+        if (search && !c.employe_nom.toLowerCase().includes(search)) match = false;
+        if (statut && c.statut !== statut) match = false;
+        if (type && c.type_conge !== type) match = false;
+        return match;
+    });
+    
+    pageConges = 1;
+    afficherConges();
+}
+
+function reinitialiserRechercheConge() {
+    document.getElementById('searchConge').value = '';
+    filtrerConges();
+}
+
+function ouvrirDemandeConge() {
+    // ⭐ Récupérer le bouton par son ID
+    const btn = document.getElementById('btnDemanderConge');
+    if (!btn) {
+        console.error('Bouton btnDemanderConge non trouvé');
+        ouvrirDemandeCongeSimple();
+        return;
+    }
+    
+    boutonAvecLoader(btn, function(reactiver) {
+        fetch('/rh/api/employes')
+            .then(r => r.json())
+            .then(employes => {
+                const select = document.getElementById('congeEmploye');
+                select.innerHTML = '<option value="">Selectionner</option>';
+                employes.forEach(e => {
+                    select.innerHTML += `<option value="${e.id}" data-solde="${e.solde_conges || 0}">${e.nom} ${e.prenom} (${e.matricule}) - Solde: ${e.solde_conges || 0} jours</option>`;
+                });
+                
+                document.getElementById('congeForm').reset();
+                document.getElementById('congeJours').value = '';
+                document.getElementById('congeReprise').value = '';
+                document.getElementById('congeAlerte').style.display = 'none';
+                new bootstrap.Modal(document.getElementById('congeModal')).show();
+                reactiver();
+            })
+            .catch(error => {
+                console.error('Erreur chargement employés:', error);
+                new bootstrap.Modal(document.getElementById('congeModal')).show();
+                reactiver();
+            });
+    });
+}
+
+function ouvrirDemandeCongeSimple() {
+    fetch('/rh/api/employes')
+        .then(r => r.json())
+        .then(employes => {
+            const select = document.getElementById('congeEmploye');
+            select.innerHTML = '<option value="">Selectionner</option>';
+            employes.forEach(e => {
+                select.innerHTML += `<option value="${e.id}">${e.nom} ${e.prenom} (${e.matricule})</option>`;
+            });
+            new bootstrap.Modal(document.getElementById('congeModal')).show();
+        })
+        .catch(error => {
+            console.error('Erreur:', error);
+            new bootstrap.Modal(document.getElementById('congeModal')).show();
+        });
+}
+
+function calculerJoursConge() {
+    const debut = document.getElementById('congeDebut').value;
+    const fin = document.getElementById('congeFin').value;
+    
+    if (!debut || !fin) return;
+    
+    const d1 = new Date(debut);
+    const d2 = new Date(fin);
+    
+    if (d2 < d1) {
+        document.getElementById('congeJours').value = 'Date invalide';
+        document.getElementById('congeReprise').value = '';
+        return;
+    }
+    
+    let jours = 0;
+    let current = new Date(d1);
+    while (current <= d2) {
+        if (current.getDay() !== 0 && current.getDay() !== 6) jours++;
+        current.setDate(current.getDate() + 1);
+    }
+    document.getElementById('congeJours').value = jours + ' jours';
+    
+    let reprise = new Date(d2);
+    reprise.setDate(reprise.getDate() + 1);
+    while (reprise.getDay() === 0 || reprise.getDay() === 6) {
+        reprise.setDate(reprise.getDate() + 1);
+    }
+    document.getElementById('congeReprise').value = reprise.toLocaleDateString('fr-FR');
+}
+
+function sauvegarderConge() {
+    const signataire = document.getElementById('congeSignataire').value.trim();
+    
+    if (!signataire) {
+        alert('Le nom du signataire est obligatoire.');
+        document.getElementById('congeSignataire').focus();
+        return;
+    }
+    
+    const data = {
+        employe_id: document.getElementById('congeEmploye').value,
+        type_conge: document.getElementById('congeType').value,
+        date_debut: document.getElementById('congeDebut').value,
+        date_fin: document.getElementById('congeFin').value,
+        motif: document.getElementById('congeMotif').value,
+        signataire: signataire
+    };
+    
+    if (!data.employe_id) {
+        alert('Veuillez sélectionner un employé');
+        return;
+    }
+    
+    if (!data.date_debut || !data.date_fin) {
+        alert('Veuillez remplir les dates de début et de fin');
+        return;
+    }
+    
+    if (data.date_debut > data.date_fin) {
+        alert('La date de fin doit être après la date de début');
+        return;
+    }
+    
+    showLoader('Envoi de la demande...');
+    
+    fetch('/rh/conge/demander', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(result => {
+        hideLoader();
+        
+        if (result.success) {
+            alert(`Demande de congé soumise avec succès !\nSolde restant: ${result.solde_restant} jours`);
+            bootstrap.Modal.getInstance(document.getElementById('congeModal')).hide();
+            chargerConges();
+        } else if (result.solde_insuffisant && result.annees_futures) {
+            // Proposer les années futures
+            let options = result.annees_futures.map(a => 
+                `${a.annee} (${a.solde} jours disponibles)`
+            ).join('\n');
+            
+            const choix = prompt(
+                `${result.message}\n\n` +
+                `Années futures disponibles:\n${options}\n\n` +
+                `Entrez l'année souhaitée (ex: ${result.annees_futures[0]?.annee || ''}) :`
+            );
+            
+            if (choix) {
+                const anneeChoisie = parseInt(choix);
+                const anneeTrouvee = result.annees_futures.find(a => a.annee === anneeChoisie);
+                
+                if (anneeTrouvee) {
+                    const dateDebutParts = data.date_debut.split('-');
+                    const dateFinParts = data.date_fin.split('-');
+                    
+                    const newData = {
+                        ...data,
+                        annee_choisie: anneeChoisie,
+                        date_debut: `${anneeChoisie}-${dateDebutParts[1]}-${dateDebutParts[2]}`,
+                        date_fin: `${anneeChoisie}-${dateFinParts[1]}-${dateFinParts[2]}`
+                    };
+                    
+                    showLoader('Envoi de la demande...');
+                    
+                    fetch('/rh/conge/demander', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(newData)
+                    })
+                    .then(r => r.json())
+                    .then(result2 => {
+                        hideLoader();
+                        if (result2.success) {
+                            alert(`Demande de congé soumise avec succès (sur ${anneeChoisie}) !`);
+                            bootstrap.Modal.getInstance(document.getElementById('congeModal')).hide();
+                            chargerConges();
+                        } else {
+                            alert('❌ Erreur: ' + (result2.error || 'Erreur inconnue'));
+                        }
+                    })
+                    .catch(error => {
+                        hideLoader();
+                        alert('❌ Erreur: ' + error);
+                    });
+                } else {
+                    alert('❌ Année invalide. Veuillez recommencer.');
+                }
+            }
+        } else {
+            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => {
+        hideLoader();
+        console.error('❌ Erreur:', error);
+        alert('❌ Erreur lors de l\'envoi: ' + error);
+    });
+}
+
+function changerStatutConge(id, statut) {
+    if (!confirm(`Confirmer le changement de statut vers "${statut}" ?`)) return;
+    
+    fetch(`/rh/conge/${id}/statut`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({statut: statut})
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert(`Statut mis à jour en "${statut}"`);
+            chargerConges();
+            chargerDashboard();
+        } else {
+            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('❌ Erreur: ' + error));
+}
+
+// ============================================
+// PERMISSIONS
+// ============================================
+function chargerPermissions() {
+    const tbody = document.getElementById('permissionsBody');
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted"><i class="fas fa-spinner fa-spin me-2"></i> Chargement...</td></tr>';
+    
+    fetch('/rh/api/permissions')
+        .then(r => r.json())
+        .then(data => {
+            toutesPermissions = data || [];
+            permissionsFiltres = [...toutesPermissions];
+            document.getElementById('totalPermissions').textContent = toutesPermissions.length;
+            afficherPermissions();
+        })
+        .catch(error => {
+            console.error('Erreur chargement permissions:', error);
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">Erreur de chargement</td></tr>';
+        });
+}
+
+function afficherPermissions() {
+    const tbody = document.getElementById('permissionsBody');
+    tbody.innerHTML = '';
+    
+    if (permissionsFiltres.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">Aucune permission trouvée</td></tr>';
+        return;
+    }
+    
+    permissionsFiltres.forEach(p => {
+        let typeLabel = p.type_permission;
+        let periode = '-';
+        let heures = '-';
+        let jours = '-';
+        
+        if (p.type_permission === 'heures') {
+            typeLabel = 'Heures';
+            periode = p.date_permission || '-';
+            heures = `${p.heure_debut || '-'} → ${p.heure_fin || '-'}`;
+            jours = '1';
+        } else if (p.type_permission === 'journee') {
+            typeLabel = 'Journée';
+            periode = p.date_debut || '-';
+            jours = '1';
+        } else if (p.type_permission === 'plusieurs_jours') {
+            typeLabel = 'Plusieurs jours';
+            periode = `${p.date_debut || '-'} → ${p.date_fin || '-'}`;
+            jours = p.nombre_jours || '-';
+        }
+        
+        const actions = [];
+        if (p.statut === 'en_attente') {
+            actions.push(`
+                <button class="btn btn-sm btn-success" onclick="changerStatutPermission(${p.id}, 'approuve')" title="Approuver">
+                    <i class="fas fa-check"></i>
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="changerStatutPermission(${p.id}, 'refuse')" title="Refuser">
+                    <i class="fas fa-times"></i>
+                </button>
+            `);
+        }
+        if (p.statut === 'approuve') {
+            actions.push(`
+                <button class="btn btn-sm btn-info" onclick="window.open('/rh/permission/${p.id}/autorisation', '_blank')" title="Imprimer">
+                    <i class="fas fa-print"></i>
+                </button>
+            `);
+        }
+        
+        tbody.innerHTML += `
+            <tr>
+                <td><strong>${p.employe_nom}</strong></td>
+                <td><span class="badge bg-info">${typeLabel}</span></td>
+                <td>${periode}</td>
+                <td>${heures}</td>
+                <td>${jours}</td>
+                <td>${p.motif || '-'}</td>
+                <td>${getStatutBadge(p.statut)}</td>
+                <td class="text-center">
+                    <div class="btn-group btn-group-sm">
+                        ${actions.join('')}
+                    </div>
+                </td>
+            </tr>
+        `;
+    });
+}
+
+function filtrerPermissions() {
+    const search = document.getElementById('searchPermission').value.toLowerCase().trim();
+    const statut = document.getElementById('filtreStatutPermission').value;
+    
+    permissionsFiltres = toutesPermissions.filter(p => {
+        let match = true;
+        if (search && !p.employe_nom.toLowerCase().includes(search)) match = false;
+        if (statut && p.statut !== statut) match = false;
+        return match;
+    });
+    
+    afficherPermissions();
+}
+
+function reinitialiserRecherchePermission() {
+    document.getElementById('searchPermission').value = '';
+    filtrerPermissions();
+}
+
+function ouvrirDemandePermission() {
+    // ⭐ Récupérer le bouton par son ID
+    const btn = document.getElementById('btnDemanderPermission');
+    if (!btn) {
+        console.error('Bouton btnDemanderPermission non trouvé');
+        ouvrirDemandePermissionSimple();
+        return;
+    }
+    
+    boutonAvecLoader(btn, function(reactiver) {
+        fetch('/rh/api/employes')
+            .then(r => r.json())
+            .then(employes => {
+                const select = document.getElementById('permEmploye');
+                select.innerHTML = '<option value="">Selectionner</option>';
+                employes.forEach(e => {
+                    select.innerHTML += `<option value="${e.id}">${e.nom} ${e.prenom} (${e.matricule})</option>`;
+                });
+                
+                document.getElementById('permissionForm').reset();
+                document.getElementById('permHeuresSection').style.display = 'block';
+                document.getElementById('permJoursSection').style.display = 'none';
+                new bootstrap.Modal(document.getElementById('permissionModal')).show();
+                reactiver();
+            })
+            .catch(error => {
+                console.error('Erreur chargement employés:', error);
+                new bootstrap.Modal(document.getElementById('permissionModal')).show();
+                reactiver();
+            });
+    });
+}
+
+function ouvrirDemandePermissionSimple() {
+    fetch('/rh/api/employes')
+        .then(r => r.json())
+        .then(employes => {
+            const select = document.getElementById('permEmploye');
+            select.innerHTML = '<option value="">Selectionner</option>';
+            employes.forEach(e => {
+                select.innerHTML += `<option value="${e.id}">${e.nom} ${e.prenom} (${e.matricule})</option>`;
+            });
+            new bootstrap.Modal(document.getElementById('permissionModal')).show();
+        })
+        .catch(error => {
+            console.error('Erreur:', error);
+            new bootstrap.Modal(document.getElementById('permissionModal')).show();
+        });
+}
+
+function changerTypePermission() {
+    const type = document.getElementById('permType').value;
+    const heuresSection = document.getElementById('permHeuresSection');
+    const joursSection = document.getElementById('permJoursSection');
+    
+    if (type === 'heures') {
+        heuresSection.style.display = 'block';
+        joursSection.style.display = 'none';
+    } else {
+        heuresSection.style.display = 'none';
+        joursSection.style.display = 'block';
+        calculerJoursPermission();
+    }
+}
+
+function calculerJoursPermission() {
+    const dateDebut = document.getElementById('permDateDebut').value;
+    const dateFin = document.getElementById('permDateFin').value;
+    
+    if (!dateDebut || !dateFin) {
+        document.getElementById('permNbJours').value = '';
+        return;
+    }
+    
+    const d1 = new Date(dateDebut);
+    const d2 = new Date(dateFin);
+    
+    if (d2 < d1) {
+        document.getElementById('permNbJours').value = 'Date invalide';
+        return;
+    }
+    
+    const diffTime = Math.abs(d2 - d1);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    document.getElementById('permNbJours').value = diffDays + ' jour(s)';
+}
+
+function sauvegarderPermission() {
+    const signataire = document.getElementById('permSignataire').value.trim();
+    
+    if (!signataire) {
+        alert('Le nom du signataire est obligatoire.');
+        document.getElementById('permSignataire').focus();
+        return;
+    }
+    
+    const type = document.getElementById('permType').value;
+    const data = {
+        employe_id: document.getElementById('permEmploye').value,
+        type_permission: type,
+        motif: document.getElementById('permMotif').value.trim(),
+        signataire: signataire
+    };
+    
+    if (!data.employe_id) {
+        alert('Veuillez sélectionner un employé');
+        return;
+    }
+    
+    if (!data.motif) {
+        alert('Veuillez saisir le motif');
+        document.getElementById('permMotif').focus();
+        return;
+    }
+    
+    if (type === 'heures') {
+        data.date_permission = document.getElementById('permDate').value;
+        data.heure_debut = document.getElementById('permHeureDebut').value;
+        data.heure_fin = document.getElementById('permHeureFin').value;
+        
+        if (!data.date_permission || !data.heure_debut || !data.heure_fin) {
+            alert('Veuillez remplir tous les champs (date et heures)');
+            return;
+        }
+    } else {
+        data.date_debut = document.getElementById('permDateDebut').value;
+        data.date_fin = document.getElementById('permDateFin').value;
+        
+        if (!data.date_debut || !data.date_fin) {
+            alert('Veuillez remplir les dates de début et de fin');
+            return;
+        }
+    }
+    
+    showLoader('Envoi de la demande...');
+    
+    fetch('/rh/permission/demander', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(result => {
+        hideLoader();
+        if (result.success) {
+            alert('Demande de permission soumise avec succès !');
+            bootstrap.Modal.getInstance(document.getElementById('permissionModal')).hide();
+            chargerPermissions();
+        } else {
+            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => {
+        hideLoader();
+        alert('❌ Erreur: ' + error);
+    });
+}
+
+function changerStatutPermission(id, statut) {
+    if (!confirm(`Confirmer le changement de statut vers "${statut}" ?`)) return;
+    
+    fetch(`/rh/permission/${id}/statut`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({statut: statut})
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert(`Statut mis à jour en "${statut}"`);
+            chargerPermissions();
+            chargerDashboard();
+        } else {
+            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('❌ Erreur: ' + error));
+}
+
+// ============================================
+// TABLEAU DE BORD
+// ============================================
+function chargerDashboard() {
+    // Mettre à jour les statuts d'abord
+    fetch('/rh/api/update_conge_status', {method: 'POST'})
+        .then(() => fetch('/rh/api/dashboard/stats'))
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('statTotalEmployes').textContent = data.total_employes || 0;
+            document.getElementById('statActifs').textContent = data.actifs || 0;
+            document.getElementById('statEnConge').textContent = data.en_conge || 0;
+            document.getElementById('statDemandesAttente').textContent = data.demandes_attente || 0;
+            chargerAlertes();
+        })
+        .catch(error => {
+            console.error('Erreur dashboard:', error);
+            // Fallback
+            fetch('/rh/api/dashboard/stats')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('statTotalEmployes').textContent = data.total_employes || 0;
+                    document.getElementById('statActifs').textContent = data.actifs || 0;
+                    document.getElementById('statEnConge').textContent = data.en_conge || 0;
+                    document.getElementById('statDemandesAttente').textContent = data.demandes_attente || 0;
+                });
+        });
+}
+
+function chargerAlertes() {
+    const container = document.getElementById('alertesRH');
+    container.innerHTML = '<div class="text-muted text-center"><i class="fas fa-spinner fa-spin me-2"></i> Chargement des alertes...</div>';
+    
+    fetch('/rh/api/conges?statut=en_attente')
+        .then(r => r.json())
+        .then(attentes => {
+            let alertes = [];
+            
+            // Demandes en attente
+            const nbAttentes = attentes ? attentes.length : 0;
+            if (nbAttentes > 0) {
+                alertes.push(`${nbAttentes} demande(s) de congé en attente d'approbation`);
+            }
+            
+            return fetch('/rh/api/conges?statut=approuve')
+                .then(r => r.json())
+                .then(conges => {
+                    const today = new Date();
+                    const todayStr = today.toISOString().split('T')[0];
+                    
+                    // Congés en cours
+                    const congesEnCours = conges.filter(c => {
+                        if (!c.date_debut || !c.date_fin) return false;
+                        const dateDebut = c.date_debut.split('/').reverse().join('-');
+                        const dateFin = c.date_fin.split('/').reverse().join('-');
+                        return dateDebut <= todayStr && dateFin >= todayStr;
+                    });
+                    
+                    congesEnCours.forEach(c => {
+                        alertes.push(`${c.employe_nom} est en congé jusqu'au ${c.date_fin}`);
+                    });
+                    
+                    // Congés à venir (dans 3 jours)
+                    const dans3Jours = new Date();
+                    dans3Jours.setDate(dans3Jours.getDate() + 3);
+                    const dans3JoursStr = dans3Jours.toISOString().split('T')[0];
+                    
+                    conges.filter(c => {
+                        if (!c.date_debut) return false;
+                        const dateDebut = c.date_debut.split('/').reverse().join('-');
+                        return dateDebut > todayStr && dateDebut <= dans3JoursStr;
+                    }).forEach(c => {
+                        alertes.push(`${c.employe_nom} commence son congé le ${c.date_debut}`);
+                    });
+                    
+                    if (alertes.length === 0) {
+                        container.innerHTML = '<div class="text-success text-center">Aucune alerte à signaler</div>';
+                    } else {
+                        container.innerHTML = alertes.map(a => 
+                            `<div class="alert alert-warning py-1 mb-1" style="font-size:13px;">${a}</div>`
+                        ).join('');
+                    }
+                });
+        })
+        .catch(error => {
+            console.error('Erreur alertes:', error);
+            container.innerHTML = '<div class="text-muted text-center">Impossible de charger les alertes</div>';
+        });
+}
+
+// ============================================
+// CALCULS
+// ============================================
+function calculerAge() {
+    const dateNaiss = document.getElementById('empDateNaissance').value;
+    if (dateNaiss) {
+        const naissance = new Date(dateNaiss);
+        const aujourdhui = new Date();
+        let age = aujourdhui.getFullYear() - naissance.getFullYear();
+        if (aujourdhui.getMonth() < naissance.getMonth() || 
+            (aujourdhui.getMonth() === naissance.getMonth() && aujourdhui.getDate() < naissance.getDate())) {
+            age--;
+        }
+        // Afficher l'âge
+        const input = document.getElementById('empDateNaissance');
+        const existingBadge = input.parentElement.querySelector('.badge-age');
+        if (existingBadge) existingBadge.remove();
+        input.insertAdjacentHTML('afterend', `<span class="badge bg-info ms-2 badge-age">${age} ans</span>`);
+    }
+}
+
+// ============================================================
+// MÉTHODE UNIVERSELLE POUR TOUS LES BOUTONS
+// ============================================================
+
+function boutonAvecLoader(btn, callback) {
+    // Désactiver et changer le texte
+    const originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Chargement...';
+    
+    // Exécuter la fonction
+    try {
+        callback(() => {
+            // Callback pour réactiver
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        });
+    } catch (error) {
+        console.error('Erreur:', error);
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+    }
+}
+
+// ============================================
+// INITIALISATION - SIMPLIFIÉE
+// ============================================
+
+let donneesChargees = false;
+
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Initialisation du module RH...');
+    
+    const now = new Date();
+    document.getElementById('heureMiseAJour').textContent = now.toLocaleTimeString('fr-FR');
+    
+    // ⭐ Charger UNE SEULE FOIS
+    chargerToutesLesDonnees();
+
+    // ⭐ Activer l'onglet ciblé par l'URL (ex: /rh/dashboard -> #dashboardrh)
+    if (window.location.hash) {
+        const tabButton = document.getElementById(window.location.hash.substring(1) + '-tab');
+        if (tabButton) {
+            new bootstrap.Tab(tabButton).show();
+        }
+    }
+});
+
+function chargerToutesLesDonnees() {
+    if (donneesChargees) return;
+
+    console.log('📦 Chargement initial...');
+    chargerEmployes();
+    chargerConges();
+    chargerPermissions();
+    chargerServices();
+    chargerDashboard();
+    chargerParametragePointage();
+    chargerListeEmpreintes();
+    chargerListeVisages();
+
+    donneesChargees = true;
+}
+
+// ============================================================
+// POINTAGE PAR EMPREINTE (WebAuthn)
+// ============================================================
+
+const JOURS_SEMAINE = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+
+function webauthnDisponible() {
+    return !!(window.SimpleWebAuthnBrowser && SimpleWebAuthnBrowser.browserSupportsWebAuthn());
+}
+
+function chargerParametragePointage() {
+    fetch('/rh/api/pointage/parametrage')
+        .then(r => r.json())
+        .then(p => {
+            document.getElementById('paramHeureDebut').value = p.heure_debut;
+            document.getElementById('paramHeureFin').value = p.heure_fin;
+            document.getElementById('paramTolerance').value = p.tolerance_retard_minutes;
+
+            const zone = document.getElementById('paramJoursTravailles');
+            zone.innerHTML = JOURS_SEMAINE.map((nom, i) => `
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="checkbox" value="${i}" id="jourTravaille${i}"
+                           ${p.jours_travailles.includes(i) ? 'checked' : ''}>
+                    <label class="form-check-label small" for="jourTravaille${i}">${nom}</label>
+                </div>`).join('');
+
+            // Aujourd'hui par défaut pour les filtres de date
+            const aujourdhui = new Date().toISOString().split('T')[0];
+            if (!document.getElementById('datePointage').value) document.getElementById('datePointage').value = aujourdhui;
+            if (!document.getElementById('resumeDateFin').value) {
+                document.getElementById('resumeDateFin').value = aujourdhui;
+                document.getElementById('resumeDateDebut').value = aujourdhui.slice(0, 8) + '01';
+            }
+        })
+        .catch(err => console.error('Erreur chargement paramétrage pointage:', err));
+}
+
+function sauvegarderParametragePointage() {
+    const jours = [];
+    JOURS_SEMAINE.forEach((_, i) => { if (document.getElementById('jourTravaille' + i).checked) jours.push(i); });
+
+    fetch('/rh/api/pointage/parametrage', {
+        method: 'PUT', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            heure_debut: document.getElementById('paramHeureDebut').value,
+            heure_fin: document.getElementById('paramHeureFin').value,
+            tolerance_retard_minutes: parseInt(document.getElementById('paramTolerance').value || 0),
+            jours_travailles: jours,
+        })
+    })
+    .then(r => r.json())
+    .then(d => alert(d.success ? 'Règles de pointage enregistrées.' : ('Erreur : ' + d.message)))
+    .catch(() => alert('Erreur réseau.'));
+}
+
+function chargerListeEmpreintes() {
+    fetch('/rh/api/empreintes')
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success) return;
+
+            const select = document.getElementById('selectEmployeEmpreinte');
+            select.innerHTML = d.data.map(e => `<option value="${e.employe_id}">${e.employe_nom}</option>`).join('');
+
+            const zone = document.getElementById('listeEmpreintes');
+            const avecEmpreintes = d.data.filter(e => e.empreintes.length > 0);
+            if (avecEmpreintes.length === 0) {
+                zone.innerHTML = '<p class="text-muted small">Aucune empreinte enregistrée pour le moment.</p>';
+                return;
+            }
+            zone.innerHTML = avecEmpreintes.map(e => `
+                <div class="mb-2 pb-2 border-bottom">
+                    <div class="fw-bold small">${e.employe_nom}</div>
+                    ${e.empreintes.map(emp => `
+                        <div class="d-flex justify-content-between align-items-center small text-muted">
+                            <span><i class="fas fa-fingerprint me-1"></i>${emp.libelle_appareil || 'Appareil'} — depuis le ${emp.created_at}</span>
+                            <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="supprimerEmpreinte(${emp.id})" title="Révoquer">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>`).join('')}
+                </div>`).join('');
+        })
+        .catch(err => console.error('Erreur chargement empreintes:', err));
+}
+
+function supprimerEmpreinte(empreinteId) {
+    if (!confirm('Révoquer cette empreinte ? L\'employé ne pourra plus pointer avec, jusqu\'à un nouvel enregistrement.')) return;
+    fetch('/rh/api/empreintes/' + empreinteId, {method: 'DELETE'})
+        .then(r => r.json())
+        .then(d => { if (d.success) chargerListeEmpreintes(); else alert('Erreur : ' + d.message); });
+}
+
+async function enregistrerEmpreinte() {
+    const employeId = document.getElementById('selectEmployeEmpreinte').value;
+    if (!employeId) { alert('Sélectionnez un employé.'); return; }
+    if (!webauthnDisponible()) {
+        alert("Ce poste/navigateur ne supporte pas l'empreinte (WebAuthn). Utilisez http://localhost:<port> sur un poste équipé d'un lecteur d'empreinte compatible Windows Hello.");
+        return;
+    }
+    try {
+        const rOpt = await fetch('/rh/api/empreintes/enregistrer/options', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({employe_id: parseInt(employeId)})
+        });
+        const dOpt = await rOpt.json();
+        if (!dOpt.success) { alert(dOpt.message); return; }
+
+        const attestation = await SimpleWebAuthnBrowser.startRegistration(dOpt.options);
+        const libelle = prompt("Nom de cet appareil (ex : PC accueil)", navigator.platform || 'Ce poste') || 'Ce poste';
+
+        const rVer = await fetch('/rh/api/empreintes/enregistrer/verifier', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({credential: attestation, libelle_appareil: libelle})
+        });
+        const dVer = await rVer.json();
+        if (dVer.success) {
+            alert('Empreinte enregistrée avec succès.');
+            chargerListeEmpreintes();
+        } else {
+            alert("Échec de l'enregistrement : " + dVer.message);
+        }
+    } catch (err) {
+        console.error(err);
+        alert("Échec de l'enregistrement de l'empreinte : " + (err.message || err));
+    }
+}
+
+async function pointer() {
+    const btn = document.getElementById('btnPointer');
+    const resultat = document.getElementById('resultatPointage');
+
+    if (!webauthnDisponible()) {
+        resultat.innerHTML = '<span class="text-warning"><i class="fas fa-triangle-exclamation me-1"></i>Empreinte non disponible sur ce poste/navigateur.</span>';
+        return;
+    }
+
+    btn.disabled = true;
+    resultat.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Posez le doigt sur le capteur...';
+
+    try {
+        const rOpt = await fetch('/rh/api/pointage/webauthn/options', {method: 'POST'});
+        const dOpt = await rOpt.json();
+        if (!dOpt.success) {
+            resultat.innerHTML = '<span class="text-warning">' + dOpt.message + '</span>';
+            return;
+        }
+
+        const assertion = await SimpleWebAuthnBrowser.startAuthentication(dOpt.options);
+
+        const rVer = await fetch('/rh/api/pointage/webauthn/verifier', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({credential: assertion})
+        });
+        const dVer = await rVer.json();
+
+        if (dVer.success) {
+            const d = dVer.data;
+            if (d.type === 'arrivee') {
+                const statutTxt = d.statut === 'retard' ? `retard de ${d.retard_minutes} min` : 'à l\'heure';
+                resultat.innerHTML = `<span class="text-success"><i class="fas fa-circle-check me-1"></i>Bonjour ${d.employe_nom} — arrivée ${d.heure} (${statutTxt})</span>`;
+            } else {
+                resultat.innerHTML = `<span class="text-success"><i class="fas fa-circle-check me-1"></i>Au revoir ${d.employe_nom} — départ ${d.heure}</span>`;
+            }
+            chargerPointageDuJour();
+        } else {
+            resultat.innerHTML = '<span class="text-danger">' + dVer.message + '</span>';
+        }
+    } catch (err) {
+        console.error(err);
+        resultat.innerHTML = '<span class="text-danger">Échec : ' + (err.message || err) + '</span>';
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function chargerPointageDuJour() {
+    const jour = document.getElementById('datePointage').value || new Date().toISOString().split('T')[0];
+    fetch('/rh/api/pointage/liste?date=' + jour)
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success) return;
+            const tbody = document.getElementById('pointagesDuJourBody');
+            if (d.pointages.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">Aucun pointage ce jour</td></tr>';
+            } else {
+                tbody.innerHTML = d.pointages.map(p => `
+                    <tr>
+                        <td>${p.employe_nom}</td>
+                        <td>${p.heure_arrivee || '-'}</td>
+                        <td>${p.statut_arrivee === 'retard'
+                            ? `<span class="badge bg-warning text-dark">Retard ${p.retard_minutes}min</span>`
+                            : (p.heure_arrivee ? '<span class="badge bg-success">À l\'heure</span>' : '-')}</td>
+                        <td>${p.heure_depart || '-'}</td>
+                        <td>${p.duree_travaillee_minutes != null ? Math.floor(p.duree_travaillee_minutes/60) + 'h' + String(p.duree_travaillee_minutes%60).padStart(2,'0') : '-'}</td>
+                    </tr>`).join('');
+            }
+            const absDiv = document.getElementById('absentsDuJour');
+            absDiv.innerHTML = d.absents.length > 0
+                ? '<i class="fas fa-user-clock me-1"></i>Pas encore pointé : ' + d.absents.map(a => a.employe_nom).join(', ')
+                : '';
+        })
+        .catch(err => console.error('Erreur chargement pointages du jour:', err));
+}
+
+function chargerResumePointage() {
+    const debut = document.getElementById('resumeDateDebut').value;
+    const fin = document.getElementById('resumeDateFin').value;
+    if (!debut || !fin) return;
+
+    fetch(`/rh/api/pointage/resume?date_debut=${debut}&date_fin=${fin}`)
+        .then(r => r.json())
+        .then(d => {
+            const tbody = document.getElementById('resumePointageBody');
+            if (!d.success || d.data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Aucune donnée</td></tr>';
+                return;
+            }
+            tbody.innerHTML = d.data.map(r => `
+                <tr>
+                    <td>${r.employe_nom}</td>
+                    <td>${r.jours_ouvres}</td>
+                    <td>${r.jours_presents}</td>
+                    <td>${r.jours_retard > 0 ? `<span class="text-warning fw-bold">${r.jours_retard}</span>` : 0}</td>
+                    <td>${r.jours_absents > 0 ? `<span class="text-danger fw-bold">${r.jours_absents}</span>` : 0}</td>
+                    <td>${r.heures_travaillees} h</td>
+                </tr>`).join('');
+        })
+        .catch(err => console.error('Erreur chargement résumé pointage:', err));
+}
+
+// ============================================================
+// POINTAGE PAR VISAGE (webcam standard, face-api.js)
+// ============================================================
+
+const MODELES_VISAGE_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
+let modelesVisageCharges = false;
+let fluxCameraEnrolement = null;
+
+async function chargerModelesVisage() {
+    if (modelesVisageCharges) return true;
+    if (typeof faceapi === 'undefined') return false;
+    try {
+        await Promise.all([
+            faceapi.nets.tinyFaceDetector.loadFromUri(MODELES_VISAGE_URL),
+            faceapi.nets.faceLandmark68Net.loadFromUri(MODELES_VISAGE_URL),
+            faceapi.nets.faceRecognitionNet.loadFromUri(MODELES_VISAGE_URL),
+        ]);
+        modelesVisageCharges = true;
+        return true;
+    } catch (err) {
+        console.error('Erreur chargement modèles reconnaissance faciale:', err);
+        return false;
+    }
+}
+
+function chargerListeVisages() {
+    fetch('/rh/api/visages')
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success) return;
+
+            const select = document.getElementById('selectEmployeVisage');
+            select.innerHTML = d.data.map(e => `<option value="${e.employe_id}">${e.employe_nom}</option>`).join('');
+
+            const zone = document.getElementById('listeVisages');
+            const avecVisages = d.data.filter(e => e.visages.length > 0);
+            if (avecVisages.length === 0) {
+                zone.innerHTML = '<p class="text-muted small">Aucun visage enregistré pour le moment.</p>';
+                return;
+            }
+            zone.innerHTML = avecVisages.map(e => `
+                <div class="mb-2 pb-2 border-bottom">
+                    <div class="fw-bold small">${e.employe_nom}</div>
+                    ${e.visages.map(v => `
+                        <div class="d-flex justify-content-between align-items-center small text-muted">
+                            <span><i class="fas fa-camera-retro me-1"></i>${v.libelle || 'Visage'} — depuis le ${v.created_at}</span>
+                            <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="supprimerVisage(${v.id})" title="Révoquer">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>`).join('')}
+                </div>`).join('');
+        })
+        .catch(err => console.error('Erreur chargement visages:', err));
+}
+
+function supprimerVisage(visageId) {
+    if (!confirm("Révoquer ce visage ? L'employé ne pourra plus pointer avec, jusqu'à un nouvel enregistrement.")) return;
+    fetch('/rh/api/visages/' + visageId, {method: 'DELETE'})
+        .then(r => r.json())
+        .then(d => { if (d.success) chargerListeVisages(); else alert('Erreur : ' + d.message); });
+}
+
+async function ouvrirCaptureVisage() {
+    const employeId = document.getElementById('selectEmployeVisage').value;
+    if (!employeId) { alert('Sélectionnez un employé.'); return; }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert("Caméra non disponible sur ce poste/navigateur (nécessite http://localhost ou HTTPS).");
+        return;
+    }
+
+    const zone = document.getElementById('zoneCaptureVisage');
+    const statut = document.getElementById('statutCaptureVisage');
+    zone.style.display = '';
+    statut.textContent = 'Chargement des modèles de reconnaissance...';
+
+    const ok = await chargerModelesVisage();
+    if (!ok) {
+        statut.textContent = "Échec du chargement des modèles (vérifiez la connexion internet).";
+        return;
+    }
+
+    try {
+        fluxCameraEnrolement = await navigator.mediaDevices.getUserMedia({video: {width: 320, height: 240}});
+        const video = document.getElementById('videoEnrolementVisage');
+        video.srcObject = fluxCameraEnrolement;
+        statut.textContent = 'Positionnez le visage bien en face, puis cliquez sur Capturer.';
+    } catch (err) {
+        console.error(err);
+        statut.textContent = "Impossible d'accéder à la caméra : " + (err.message || err);
+    }
+}
+
+function fermerCaptureVisage() {
+    if (fluxCameraEnrolement) {
+        fluxCameraEnrolement.getTracks().forEach(t => t.stop());
+        fluxCameraEnrolement = null;
+    }
+    document.getElementById('zoneCaptureVisage').style.display = 'none';
+}
+
+async function capturerVisage() {
+    const employeId = document.getElementById('selectEmployeVisage').value;
+    const video = document.getElementById('videoEnrolementVisage');
+    const statut = document.getElementById('statutCaptureVisage');
+
+    statut.textContent = 'Analyse du visage...';
+    const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+        .withFaceLandmarks().withFaceDescriptor();
+
+    if (!detection) {
+        statut.textContent = "Aucun visage détecté — repositionnez-vous et réessayez.";
+        return;
+    }
+
+    const libelle = prompt("Nom de cet enregistrement (ex : lumière du matin)", "Visage principal") || 'Visage principal';
+
+    fetch('/rh/api/visages/enregistrer', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({employe_id: parseInt(employeId), descripteur: Array.from(detection.descriptor), libelle})
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.success) {
+            alert('Visage enregistré avec succès.');
+            fermerCaptureVisage();
+            chargerListeVisages();
+        } else {
+            statut.textContent = 'Échec : ' + d.message;
+        }
+    })
+    .catch(err => { statut.textContent = 'Erreur réseau : ' + err; });
+}
+
+// ⭐ Rafraîchir sur demande
+function rafraichirTout() {
+    const btn = event?.target?.closest('button');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Rafraîchissement...';
+    }
+    
+    const now = new Date();
+    document.getElementById('heureMiseAJour').textContent = now.toLocaleTimeString('fr-FR');
+    
+    // Réinitialiser pour forcer le rechargement
+    tousEmployes = [];
+    tousConges = [];
+    toutesPermissions = [];
+    
+    chargerEmployes();
+    chargerConges();
+    chargerPermissions();
+    chargerServices();
+    chargerDashboard();
+    
+    setTimeout(() => {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-sync-alt me-1"></i> Rafraîchir';
+        }
+    }, 800);
+}
+
+</script>
+{% endblock %}
+
+{% block scripts %}
+<!-- Pointage par empreinte : pilote l'API WebAuthn du navigateur (mêmes
+     capteurs que Windows Hello) — convertit les échanges avec le serveur
+     dans les deux formats (base64url <-> ArrayBuffer) attendus par les
+     navigateurs, en accord avec la librairie Python webauthn côté serveur. -->
+<script src="https://cdn.jsdelivr.net/npm/@simplewebauthn/browser@10.0.0/dist/bundle/index.umd.min.js"></script>
+<!-- Pointage par visage : détection + calcul du descripteur facial (128
+     nombres) entièrement dans le navigateur, via une webcam standard — la
+     photo elle-même ne quitte jamais l'appareil. Modèles chargés à la
+     demande (pas au chargement de la page) par chargerModelesVisage(). -->
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+{% endblock %}

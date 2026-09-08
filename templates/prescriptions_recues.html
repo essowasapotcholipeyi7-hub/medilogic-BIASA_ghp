@@ -87,7 +87,7 @@
         </li>
     </ul>
 
-    <div class="tab-content">
+<div class="tab-content">
         <!-- ═══════════════════════════════════════════ -->
         <!-- PHARMACIE -->
         <!-- ═══════════════════════════════════════════ -->
@@ -104,8 +104,10 @@
                 </div>
                 <div class="card-body" id="pharmaBody">
                     {% if prescriptions_pharma %}
+                        {# ⭐ TRIER par date de prescription la plus récente en premier #}
                         {% set grouped = prescriptions_pharma|groupby('patient_id') %}
-                        {% for patient_id, items in grouped %}
+                        {% set sorted_groups = grouped|sort(attribute='1.0.date_prescription', reverse=True) %}
+                        {% for patient_id, items in sorted_groups %}
                         {% set patient_nom = items[0].patient_nom %}
                         {% set patient_prenom = items[0].patient_prenom %}
                         <div class="card mb-3 border-success" data-patient-id="{{ patient_id }}">
@@ -140,7 +142,8 @@
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {% for p in items %}
+                                            {# ⭐ TRIER les items par date de prescription (plus récent en premier) #}
+                                            {% for p in items|sort(attribute='date_prescription', reverse=True) %}
                                             <tr id="presc-row-{{ p.id }}" data-type="pharma" data-patient="{{ patient_id }}" data-patient-nom="{{ patient_nom }}" data-patient-prenom="{{ patient_prenom }}">
                                                 <td><strong>{{ p.medicament }}</strong></td>
                                                 <td>{{ p.dosage or '-' }}</td>
@@ -198,108 +201,109 @@
             </div>
         </div>
 
-        <!-- ═══════════════════════════════════════════ -->
-        <!-- ACTES -->
-        <!-- ═══════════════════════════════════════════ -->
-        <div class="tab-pane fade" id="actes" role="tabpanel">
-            <div class="card">
-                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="fas fa-stethoscope me-2"></i>Prescriptions d'actes</h5>
-                    <div>
-                        <button class="btn btn-light btn-sm me-1" onclick="ajouterToutGroupe('actes')" title="Tout ajouter au panier">
-                            <i class="fas fa-cart-plus me-1 text-success"></i> Tout ajouter
-                        </button>
-                        <span class="badge bg-light text-dark">{{ prescriptions_actes|length }}</span>
+<!-- ═══════════════════════════════════════════ -->
+<!-- ACTES -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="tab-pane fade" id="actes" role="tabpanel">
+    <div class="card">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-stethoscope me-2"></i>Prescriptions d'actes</h5>
+            <div>
+                <button class="btn btn-light btn-sm me-1" onclick="ajouterToutGroupe('actes')" title="Tout ajouter au panier">
+                    <i class="fas fa-cart-plus me-1 text-success"></i> Tout ajouter
+                </button>
+                <span class="badge bg-light text-dark">{{ prescriptions_actes|length }}</span>
+            </div>
+        </div>
+        <div class="card-body" id="actesBody">
+            {% if prescriptions_actes %}
+                {# ⭐ TRIER par date de prescription la plus récente en premier #}
+                {% set grouped = prescriptions_actes|groupby('patient_id') %}
+                {% set sorted_groups = grouped|sort(attribute='1.0.date_prescription', reverse=True) %}
+                {% for patient_id, items in sorted_groups %}
+                {% set patient_nom = items[0].patient_nom %}
+                {% set patient_prenom = items[0].patient_prenom %}
+                <div class="card mb-3 border-primary" data-patient-id="{{ patient_id }}">
+                    <div class="card-header bg-primary bg-opacity-10 d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong><i class="fas fa-user me-2"></i>{{ patient_nom }} {{ patient_prenom }}</strong>
+                            <span class="badge bg-secondary ms-2">{{ items|length }} prescription(s)</span>
+                        </div>
+                        <div>
+                            <button class="btn btn-sm btn-success" onclick="ajouterPanierGroupe({{ items|map(attribute='id')|list|tojson }})" title="Tout ajouter au panier">
+                                <i class="fas fa-cart-plus me-1"></i> Panier
+                            </button>
+                            <button class="btn btn-sm btn-info" onclick="imprimerActes({{ patient_id }})" title="Imprimer toutes les prescriptions d'actes">
+                                <i class="fas fa-print me-1"></i> Imprimer
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover table-striped mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Acte</th>
+                                        <th>Prix</th>
+                                        <th>Prescripteur</th>
+                                        <th>Date</th>
+                                        <th>Statut</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {# ⭐ TRIER les items par date de prescription (plus récent en premier) #}
+                                    {% for p in items|sort(attribute='date_prescription', reverse=True) %}
+                                    <tr id="presc-row-{{ p.id }}" data-type="actes" data-patient="{{ patient_id }}" data-patient-nom="{{ patient_nom }}" data-patient-prenom="{{ patient_prenom }}">
+                                        <td><strong>{{ p.medicament }}</strong></td>
+                                        <td class="text-end fw-bold">{{ (p.prix_total or 0)|int|format_currency }}</td>
+                                        <td>{{ p.prescripteur or '-' }}</td>
+                                        <td>{{ p.date_prescription.strftime('%d/%m/%Y') if p.date_prescription else '-' }}</td>
+                                        <td class="statut-cell">
+                                            {% set statut = p.statut or 'EN_ATTENTE' %}
+                                            {% if statut == 'EN_ATTENTE' %}
+                                                <span class="badge bg-warning">En attente</span>
+                                            {% elif statut == 'AU_PANIER' %}
+                                                <span class="badge bg-info">Au panier</span>
+                                            {% elif statut == 'FACTURE' %}
+                                                <span class="badge bg-primary">Facturée ✅</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">{{ statut }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="actions-cell">
+                                            <div class="btn-group btn-group-sm">
+                                                <button class="btn btn-info" onclick="voirDetails({{ p.id }})" title="Voir détails">
+                                                    <i class="fas fa-eye"></i>
+                                                </button>
+                                                {% if statut == 'EN_ATTENTE' %}
+                                                <button class="btn btn-success" onclick="ajouterPanier({{ p.id }})" title="Ajouter au panier">
+                                                    <i class="fas fa-cart-plus"></i>
+                                                </button>
+                                                {% endif %}
+                                                {% if statut == 'AU_PANIER' %}
+                                                <button class="btn btn-danger" onclick="retirerPanier({{ p.id }})" title="Retirer du panier">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                                {% endif %}
+                                                <button class="btn btn-secondary" onclick="imprimerPrescription({{ p.id }})" title="Imprimer">
+                                                    <i class="fas fa-print"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
-                <div class="card-body" id="actesBody">
-                    {% if prescriptions_actes %}
-                        {% set grouped = prescriptions_actes|groupby('patient_id') %}
-                        {% for patient_id, items in grouped %}
-                        {% set patient_nom = items[0].patient_nom %}
-                        {% set patient_prenom = items[0].patient_prenom %}
-                        <div class="card mb-3 border-primary" data-patient-id="{{ patient_id }}">
-                            <div class="card-header bg-primary bg-opacity-10 d-flex justify-content-between align-items-center">
-                                <div>
-                                    <strong><i class="fas fa-user me-2"></i>{{ patient_nom }} {{ patient_prenom }}</strong>
-                                    <span class="badge bg-secondary ms-2">{{ items|length }} prescription(s)</span>
-                                </div>
-                                <div>
-                                    <button class="btn btn-sm btn-success" onclick="ajouterPanierGroupe({{ items|map(attribute='id')|list|tojson }})" title="Tout ajouter au panier">
-                                        <i class="fas fa-cart-plus me-1"></i> Panier
-                                    </button>
-                                    <button class="btn btn-sm btn-info" onclick="imprimerActes({{ patient_id }})" title="Imprimer toutes les prescriptions d'actes">
-                                        <i class="fas fa-print me-1"></i> Imprimer
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="card-body">
-                                <div class="table-responsive">
-                                    <table class="table table-sm table-hover table-striped mb-0">
-                                        <thead>
-                                            <tr>
-                                                <th>Acte</th>
-                                                <th>Prix</th>
-                                                <th>Prescripteur</th>
-                                                <th>Date</th>
-                                                <th>Statut</th>
-                                                <th>Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {% for p in items %}
-                                            <tr id="presc-row-{{ p.id }}" data-type="actes" data-patient="{{ patient_id }}" data-patient-nom="{{ patient_nom }}" data-patient-prenom="{{ patient_prenom }}">
-                                                <td><strong>{{ p.medicament }}</strong></td>
-                                                <td class="text-end fw-bold">{{ (p.prix_total or 0)|int|format_currency }}</td>
-                                                <td>{{ p.prescripteur or '-' }}</td>
-                                                <td>{{ p.date_prescription.strftime('%d/%m/%Y') if p.date_prescription else '-' }}</td>
-                                                <td class="statut-cell">
-                                                    {% set statut = p.statut or 'EN_ATTENTE' %}
-                                                    {% if statut == 'EN_ATTENTE' %}
-                                                        <span class="badge bg-warning">En attente</span>
-                                                    {% elif statut == 'AU_PANIER' %}
-                                                        <span class="badge bg-info">Au panier</span>
-                                                    {% elif statut == 'FACTURE' %}
-                                                        <span class="badge bg-primary">Facturée ✅</span>
-                                                    {% else %}
-                                                        <span class="badge bg-secondary">{{ statut }}</span>
-                                                    {% endif %}
-                                                </td>
-                                                <td class="actions-cell">
-                                                    <div class="btn-group btn-group-sm">
-                                                        <button class="btn btn-info" onclick="voirDetails({{ p.id }})" title="Voir détails">
-                                                            <i class="fas fa-eye"></i>
-                                                        </button>
-                                                        {% if statut == 'EN_ATTENTE' %}
-                                                        <button class="btn btn-success" onclick="ajouterPanier({{ p.id }})" title="Ajouter au panier">
-                                                            <i class="fas fa-cart-plus"></i>
-                                                        </button>
-                                                        {% endif %}
-                                                        {% if statut == 'AU_PANIER' %}
-                                                        <button class="btn btn-danger" onclick="retirerPanier({{ p.id }})" title="Retirer du panier">
-                                                            <i class="fas fa-trash"></i>
-                                                        </button>
-                                                        {% endif %}
-                                                        <button class="btn btn-secondary" onclick="imprimerPrescription({{ p.id }})" title="Imprimer">
-                                                            <i class="fas fa-print"></i>
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                            {% endfor %}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    {% else %}
-                        <div class="alert alert-info text-center">
-                            <i class="fas fa-info-circle me-2"></i>Aucune prescription d'acte reçue
-                        </div>
-                    {% endif %}
+                {% endfor %}
+            {% else %}
+                <div class="alert alert-info text-center">
+                    <i class="fas fa-info-circle me-2"></i>Aucune prescription d'acte reçue
                 </div>
-            </div>
+            {% endif %}
         </div>
     </div>
 </div>

@@ -3,6 +3,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 from config import Config
 import json
 import os
+import re
 import time
 import sys
 import base64
@@ -156,6 +157,23 @@ class SheetsHelper:
             traceback.print_exc()
             return []
 
+
+    def format_adresse(self, adresse):
+        """
+        Formate l'adresse en remplaçant les virgules par des sauts de ligne
+        """
+        if not adresse:
+            return ""
+    
+        # Remplacer les virgules suivies d'un espace par un saut de ligne
+        adresse_formatee = adresse.replace(', ', '\n').replace(',', '\n')
+    
+        # Nettoyer les espaces en trop
+        adresse_formatee = '\n'.join([l.strip() for l in adresse_formatee.split('\n') if l.strip()])
+    
+        return adresse_formatee
+
+
     def get_prix_produit(self, structure_id, nom_produit):
         """
         Récupère le prix d'un produit avec cache
@@ -230,6 +248,23 @@ class SheetsHelper:
         self._prix_cache = {}
         print("🧹 Cache des prix vidé")
 
+    def get_user_by_id(self, user_id, structure_id):
+        """Récupère un utilisateur par son ID depuis Google Sheets"""
+        try:
+            records = self.get_all_records('users', use_prefix=True)
+            
+            for record in records:
+                if str(record.get('ID')) == str(user_id):
+                    nom = record.get('nom', '')
+                    prenom = record.get('prenom', '')
+                    if prenom:
+                        return f"{prenom} {nom}"
+                    return nom
+            return None
+        except Exception as e:
+            print(f"Erreur récupération utilisateur: {e}")
+            return None
+
     
     def set_structure(self, structure_id, structure_nom=None):
         """Définit la structure active - FORMAT: struct_ID"""
@@ -265,8 +300,33 @@ class SheetsHelper:
             return data
         except Exception as e:
             print(f"⚠️ Feuille {sheet_name} non trouvée: {e}")
+            # ⭐ Repli sur le miroir local (Postgres) si Sheets est injoignable
+            # ou si la feuille est momentanément inaccessible — voir
+            # utils/sheets_mirror.py. Inoffensif si le miroir n'est pas
+            # configuré sur cette machine (retombe sur [] comme avant).
+            #
+            # Important : on extrait le structure_id du NOM DE LA FEUILLE
+            # (sheet_name), pas de self.structure_id — ce dernier est un état
+            # partagé sur l'instance unique sheets_helper et peut changer
+            # entre-temps (une requête web pour une autre structure, pendant
+            # que le thread de fond synchronise) : le lire ici mélangerait
+            # les données de structures différentes.
+            try:
+                from utils.sheets_mirror import get_mirrored_records, get_all_mirrored_structures
+                if use_prefix:
+                    m = re.match(r'^struct_(\d+)_', sheet_name)
+                    mirror_data = get_mirrored_records(int(m.group(1)), base_name) if m else []
+                elif base_name == 'structures':
+                    mirror_data = get_all_mirrored_structures()
+                else:
+                    mirror_data = []
+                if mirror_data:
+                    print(f"↩️ Repli miroir local pour {sheet_name} ({len(mirror_data)} ligne(s))")
+                    return mirror_data
+            except Exception:
+                pass
             return []
-    
+
     def get_all_records_with_headers(self, base_name, use_prefix=True, force_refresh=False):
         """Récupère tous les enregistrements avec les en-têtes"""
         sheet_name = self.get_sheet_name(base_name) if use_prefix else base_name
@@ -682,6 +742,7 @@ class SheetsHelper:
             self._batch_operations = []
         except Exception as e:
             print(f"❌ Erreur batch: {e}")
+
     
     # ============================================
     # INITIALISATION DES FEUILLES

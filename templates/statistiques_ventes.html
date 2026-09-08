@@ -35,16 +35,13 @@
         color: white;
         border: none;
     }
+    .card-header {
+        border-radius: 15px 15px 0 0 !important;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-md-3 mb-4">
-        {% include 'sidebar_menu.html' %}
-    </div>
-
-    <div class="col-md-9">
         <!-- Onglets -->
         <ul class="nav nav-tabs mb-4" id="statsTab" role="tablist">
             <li class="nav-item">
@@ -57,10 +54,14 @@
                     <i class="fas fa-shield-alt"></i> Assurances
                 </button>
             </li>
+            <li class="nav-item">
+                <button class="nav-link" id="statsassurances-tab" data-bs-toggle="tab" data-bs-target="#statsassurances" type="button" role="tab">
+                    <i class="fas fa-chart-pie"></i> Statistiques & Assurances
+                </button>
+            </li>
         </ul>
 
         <div class="tab-content">
-
             <!-- ========== ONGLET VENTES ========== -->
             <div class="tab-pane fade show active" id="ventes" role="tabpanel">
                 <div class="card">
@@ -68,7 +69,6 @@
                         <h5><i class="fas fa-chart-bar"></i> Statistiques des ventes</h5>
                     </div>
                     <div class="card-body">
-
                         <!-- Cartes recap -->
                         <div class="row g-3 mb-4">
                             <div class="col-md-3">
@@ -126,7 +126,7 @@
                                 </div>
                                 <div class="col-md-2">
                                     <label class="form-label small">Type</label>
-                                    <select id="filtreType" class="form-control form-control-sm" onchange="appliquerFiltres()">
+                                    <select id="filtreType" class="form-control form-control-sm">
                                         <option value="tous">Tous</option>
                                         <option value="actes">Actes</option>
                                         <option value="pharmacie">Pharmacie</option>
@@ -134,7 +134,7 @@
                                 </div>
                                 <div class="col-md-2">
                                     <label class="form-label small">Statut paiement</label>
-                                    <select id="filtreStatutPaiement" class="form-control form-control-sm" onchange="appliquerFiltres()">
+                                    <select id="filtreStatutPaiement" class="form-control form-control-sm">
                                         <option value="tous">Tous</option>
                                         <option value="total">✅ Total</option>
                                         <option value="partiel">⚠️ Partiel</option>
@@ -146,12 +146,12 @@
                                 <div class="col-md-3">
                                     <label class="form-label small">Patient</label>
                                     <input type="text" id="filtrePatient" class="form-control form-control-sm" 
-                                           placeholder="Nom du patient" onkeyup="appliquerFiltres()">
+                                           placeholder="Nom du patient">
                                 </div>
                                 <div class="col-md-3">
                                     <label class="form-label small">Vendeur</label>
                                     <input type="text" id="filtreVendeur" class="form-control form-control-sm" 
-                                           placeholder="Nom du vendeur" onkeyup="appliquerFiltres()">
+                                           placeholder="Nom du vendeur">
                                 </div>
                                 <div class="col-md-6 d-flex gap-2">
                                     <button class="btn btn-primary btn-sm" onclick="appliquerFiltres()">
@@ -280,6 +280,7 @@
                                     <tr>
                                         <th>Mois</th>
                                         <th>Assurance</th>
+                                        <th>Société</th>
                                         <th>Type</th>
                                         <th>Montant total</th>
                                         <th>Rembourse</th>
@@ -289,11 +290,11 @@
                                     </tr>
                                 </thead>
                                 <tbody id="facturesList">
-                                    <tr><td colspan="8" class="text-center">Selectionnez un mois</td></tr>
+                                    <tr><td colspan="9" class="text-center">Selectionnez un mois</td></tr>
                                 </tbody>
                                 <tfoot class="table-light">
                                     <tr class="fw-bold">
-                                        <td colspan="3" class="text-end">Total :</td>
+                                        <td colspan="4" class="text-end">Total :</td>
                                         <td id="totalFacturesFooter">0 FCFA</td>
                                         <td id="totalRembourseFooter">0 FCFA</td>
                                         <td id="totalResteFooter">0 FCFA</td>
@@ -305,11 +306,283 @@
                     </div>
                 </div>
             </div>
+
+            <!-- ========== ONGLET STATISTIQUES & ASSURANCES ========== -->
+            <div class="tab-pane fade" id="statsassurances" role="tabpanel">
+                <div class="card">
+                    <div class="card-header" style="background: linear-gradient(135deg, #667eea, #764ba2); color: white;">
+                        <h5><i class="fas fa-chart-pie"></i> Statistiques & Assurances</h5>
+                    </div>
+                    <div class="card-body">
+
+                        <!-- FILTRES -->
+                        <div class="filter-bar">
+                            <div class="row g-2 align-items-end">
+                                <div class="col-md-2">
+                                    <label class="form-label small">Période</label>
+                                    <select class="form-control form-control-sm" id="statsPeriode" onchange="changerPeriodeStats()">
+                                        <option value="aujourdhui">Aujourd'hui</option>
+                                        <option value="semaine">Cette semaine</option>
+                                        <option value="mois" selected>Ce mois</option>
+                                        <option value="annee">Cette année</option>
+                                        <option value="personnalise">Personnalisé</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2" id="statsDateDebutGroup" style="display:none;">
+                                    <label class="form-label small">Date début</label>
+                                    <input type="date" class="form-control form-control-sm" id="statsDateDebut">
+                                </div>
+                                <div class="col-md-2" id="statsDateFinGroup" style="display:none;">
+                                    <label class="form-label small">Date fin</label>
+                                    <input type="date" class="form-control form-control-sm" id="statsDateFin">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small">Assurance</label>
+                                    <select class="form-control form-control-sm" id="statsFiltreAssurance" onchange="onChangeFiltreAssurance()">
+                                        <option value="toutes">Toutes</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2" id="statsFiltreSocieteGroup" style="display:none;">
+                                    <label class="form-label small">Société souscriptrice</label>
+                                    <select class="form-control form-control-sm" id="statsFiltreSociete" onchange="chargerStatsAssurances()">
+                                        <option value="toutes">Toutes les sociétés</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small">Type d'assurance</label>
+                                    <select class="form-control form-control-sm" id="statsFiltreTypeAssurance" onchange="chargerStatsAssurances()">
+                                        <option value="toutes">Toutes</option>
+                                        <option value="principale">Assurance principale</option>
+                                        <option value="complementaire">Assurance complémentaire</option>
+                                        <option value="double">Double assurance</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <button class="btn btn-primary btn-sm w-100" onclick="chargerStatsAssurances()">
+                                        <i class="fas fa-sync-alt"></i> Actualiser
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SOCIÉTÉS SOUSCRIPTRICES PAR ASSURANCE COMPLÉMENTAIRE -->
+                        <div class="card mb-4" id="cardSocietesParAssurance" style="display:none;">
+                            <div class="card-header bg-secondary text-white">
+                                <i class="fas fa-building"></i> Sociétés souscriptrices — <span id="societesAssuranceLabel"></span>
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-2" id="societesParAssuranceList"></div>
+                            </div>
+                        </div>
+
+                        <!-- CARTES RÉCAPITULATIVES -->
+                        <div class="row g-3 mb-4" id="statsRecap">
+                            <div class="col-md-3">
+                                <div class="card stats-card border-0 shadow-sm bg-primary bg-opacity-10">
+                                    <div class="card-body text-center">
+                                        <h3 class="text-primary" id="statsTotalPatients">0</h3>
+                                        <small class="text-muted">Total patients</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card stats-card border-0 shadow-sm bg-success bg-opacity-10">
+                                    <div class="card-body text-center">
+                                        <h3 class="text-success" id="statsTotalCA">0 FCFA</h3>
+                                        <small class="text-muted">Chiffre d'affaires</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card stats-card border-0 shadow-sm bg-warning bg-opacity-10">
+                                    <div class="card-body text-center">
+                                        <h3 class="text-warning" id="statsTotalActes">0</h3>
+                                        <small class="text-muted">Total actes</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card stats-card border-0 shadow-sm bg-info bg-opacity-10">
+                                    <div class="card-body text-center">
+                                        <h3 class="text-info" id="statsTotalVentes">0</h3>
+                                        <small class="text-muted">Total ventes</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SECTION 1 : STATISTIQUES PAR CATÉGORIE -->
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <span><i class="fas fa-chart-bar"></i> Statistiques par catégorie d'actes</span>
+                                <button class="btn btn-sm btn-success" onclick="exporterStatsCategorieCSV()">
+                                    <i class="fas fa-file-excel"></i> Exporter CSV
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-7">
+                                        <div id="categorieChartContainer" style="height:250px;">
+                                            <div id="categorieBars"></div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-5">
+                                        <div class="table-responsive">
+                                            <table class="table table-sm table-hover" id="statsCategorieTable">
+                                                <thead class="table-light">
+                                                    <tr>
+                                                        <th>Catégorie</th>
+                                                        <th>Actes</th>
+                                                        <th>Montant</th>
+                                                        <th>%</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="statsCategorieBody">
+                                                    <tr><td colspan="4" class="text-center text-muted">Chargement...</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+<!-- SECTION 2 : PATIENTS PAR ASSURANCE -->
+<div class="card mb-4">
+    <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+        <span><i class="fas fa-shield-alt"></i> Patients par assurance - Détail pour dépôt de dossier</span>
+        <div>
+            <button class="btn btn-warning btn-sm me-2" onclick="imprimerBordereauAssurance()" title="Document détaillé prêt à envoyer à la compagnie (sélectionnez une assurance dans le filtre ci-dessus)">
+                <i class="fas fa-file-invoice"></i> Bordereau compagnie
+            </button>
+            <button class="btn btn-light btn-sm me-2" onclick="imprimerListeAssurance()">
+                <i class="fas fa-print"></i> Imprimer
+            </button>
+            <button class="btn btn-light btn-sm" onclick="exporterListeAssuranceCSV()">
+                <i class="fas fa-file-excel"></i> Exporter CSV
+            </button>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-sm mb-0" id="assurancePatientsTable">
+                <thead class="table-light">
+                    <tr>
+                        <th>Assurance</th>
+                        <th>Société</th>
+                        <th>Patient</th>
+                        <th>N° Assuré</th>
+                        <th>Date</th>
+                        <th>Qte</th>
+                        <th>Montant bénéficiaire</th>
+                        <th>Part assurance</th>
+                        <th>Double assurance</th>
+                    </tr>
+                </thead>
+                <tbody id="assurancePatientsBody">
+                    <tr><td colspan="9" class="text-center text-muted">Chargement...</td></tr>
+                </tbody>
+                <tfoot class="table-light" id="assurancePatientsFooter">
+                    <tr class="fw-bold">
+                        <td colspan="6" class="text-end">TOTAUX :</td>
+                        <td id="assuranceTotalBeneficiaire">0 FCFA</td>
+                        <td id="assuranceTotalPartAssurance">0 FCFA</td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
         </div>
     </div>
 </div>
 
-<!-- Modal Paiement Assurance -->
+<!-- MODAL DÉTAIL PATIENT (articles payés, dates, part assuré/assurance) -->
+<div class="modal fade" id="detailArticlesAssuranceModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="fas fa-file-medical"></i> Détail — <span id="detailArticlesPatientNom"></span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="detailArticlesBody"></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+                        <!-- SECTION 3 : STATISTIQUES DES PATIENTS PAR PÉRIODE -->
+                        <div class="card">
+                            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                                <span><i class="fas fa-users"></i> Statistiques des patients par période</span>
+                                <button class="btn btn-light btn-sm" onclick="exporterStatsPatientsCSV()">
+                                    <i class="fas fa-file-excel"></i> Exporter CSV
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-3 mb-3">
+                                    <div class="col-md-3">
+                                        <div class="card bg-primary bg-opacity-10 border-0 text-center">
+                                            <div class="card-body py-2">
+                                                <h5 class="text-primary" id="statsPatientsAujourdhui">0</h5>
+                                                <small>Aujourd'hui</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="card bg-info bg-opacity-10 border-0 text-center">
+                                            <div class="card-body py-2">
+                                                <h5 class="text-info" id="statsPatientsSemaine">0</h5>
+                                                <small>Cette semaine</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="card bg-warning bg-opacity-10 border-0 text-center">
+                                            <div class="card-body py-2">
+                                                <h5 class="text-warning" id="statsPatientsMois">0</h5>
+                                                <small>Ce mois</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="card bg-success bg-opacity-10 border-0 text-center">
+                                            <div class="card-body py-2">
+                                                <h5 class="text-success" id="statsPatientsAnnee">0</h5>
+                                                <small>Cette année</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-hover" id="statsPatientsTable">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Patient</th>
+                                                <th>Période</th>
+                                                <th>Nb visites</th>
+                                                <th>Montant total</th>
+                                                <th>Assurance</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="statsPatientsBody">
+                                            <tr><td colspan="5" class="text-center text-muted">Chargement...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- ========== MODAL PAIEMENT ASSURANCE ========== -->
 <div class="modal fade" id="paiementModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -352,10 +625,60 @@
 </div>
 
 <script>
-// ========== VARIABLES GLOBALES ==========
+// ============================================================
+// VARIABLES GLOBALES
+// ============================================================
 let toutesLesVentes = [];
+let statsData = null;
+let chargementEnCours = false;
+let assurancesChargees = false;
 
-// ========== ONGLET VENTES ==========
+// ============================================================
+// INITIALISATION
+// ============================================================
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialiser le mois pour les factures
+    const factureMois = document.getElementById('factureMois');
+    if (factureMois) {
+        const now = new Date();
+        const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        factureMois.value = currentMonth;
+    }
+    
+    // Charger les ventes
+    chargerVentes();
+    
+    // Initialiser les dates pour les stats
+    const now = new Date();
+    document.getElementById('statsDateDebut').value = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+    document.getElementById('statsDateFin').value = now.toISOString().split('T')[0];
+    
+    // Charger les assurances puis les stats
+    chargerAssurances().then(() => {
+        chargerStatsAssurances();
+    });
+    
+    // Recharger les stats quand l'onglet est activé
+    document.getElementById('statsassurances-tab').addEventListener('shown.bs.tab', function() {
+        chargerAssurances().then(() => {
+            chargerStatsAssurances();
+        });
+    });
+    
+    // Ajouter les écouteurs d'événements pour les filtres
+    document.getElementById('filtreType')?.addEventListener('change', appliquerFiltres);
+    document.getElementById('filtreStatutPaiement')?.addEventListener('change', appliquerFiltres);
+    document.getElementById('filtrePatient')?.addEventListener('input', appliquerFiltres);
+    document.getElementById('filtreVendeur')?.addEventListener('input', appliquerFiltres);
+    document.getElementById('filtreDateDebut')?.addEventListener('change', appliquerFiltres);
+    document.getElementById('filtreDateFin')?.addEventListener('change', appliquerFiltres);
+    document.getElementById('filtreHeureDebut')?.addEventListener('change', appliquerFiltres);
+    document.getElementById('filtreHeureFin')?.addEventListener('change', appliquerFiltres);
+});
+
+// ============================================================
+// ONGLET VENTES
+// ============================================================
 function chargerVentes() {
     const ventesList = document.getElementById('ventesStatsList');
     if (!ventesList) return;
@@ -396,7 +719,8 @@ function afficherVentes(ventes) {
         const netAPayer = vente.net_a_payer || 0;
         const pbr = vente.base_remboursement || 0;
         
-        totalPaye += montantDonne;
+        const caEffectif = montantDonne - (vente.rendu || 0);
+        totalPaye += caEffectif > 0 ? caEffectif : 0;
         totalReste += resteAPayer;
         
         if (vente.type === 'actes') totalActes++;
@@ -404,7 +728,7 @@ function afficherVentes(ventes) {
         
         const row = tbody.insertRow();
         
-        let dateStr = '', heureStr = '';
+        let dateStr = '-', heureStr = '-';
         if (vente.date_vente) {
             try {
                 const dateObj = new Date(vente.date_vente);
@@ -415,9 +739,7 @@ function afficherVentes(ventes) {
             } catch(e) {}
         }
         
-        // 🔥 Déterminer le statut de paiement
-        var statutPaiement = '';
-        var statutBadge = '';
+        let statutPaiement, statutBadge;
         if (resteAPayer > 0 && montantDonne === 0) {
             statutPaiement = '❌ Impayé';
             statutBadge = 'bg-dark';
@@ -429,65 +751,65 @@ function afficherVentes(ventes) {
             statutBadge = 'bg-success';
         }
         
-        // 🔥 Assurances
-        var assurance1 = vente.assurance_nom || vente.type_assurance || 'Non assuré';
-        if (assurance1 === 'amu_cnss') assurance1 = 'AMU-CNSS';
-        else if (assurance1 === 'amu_inam') assurance1 = 'AMU-INAM';
+        let assurance1 = vente.assurance_nom || vente.type_assurance || 'Non assuré';
+        if (assurance1 === 'amu-cnss') assurance1 = 'AMU-CNSS';
+        else if (assurance1 === 'amu-inam') assurance1 = 'AMU-INAM';
         else if (assurance1 === 'non_assure') assurance1 = 'Non assuré';
         
-        var assurance2 = vente.assurance2_nom || '';
-        var assurancesText = assurance1;
+        let assurance2 = vente.assurance2_nom || '';
+        let assurancesText = assurance1;
         if (assurance2 && assurance2 !== '' && assurance2 !== 'Aucune') {
             assurancesText += ' + ' + assurance2 + ' (' + (vente.taux_assurance2 || 0) + '%)';
         }
         
         row.insertCell(0).innerHTML = vente.ID || '-';
-        row.insertCell(1).innerHTML = dateStr || '-';
-        row.insertCell(2).innerHTML = heureStr || '-';
+        row.insertCell(1).innerHTML = dateStr;
+        row.insertCell(2).innerHTML = heureStr;
         row.insertCell(3).innerHTML = vente.patient_nom || '-';
         
         const typeCell = row.insertCell(4);
-        typeCell.innerHTML = (vente.type === 'actes') ? '<span class="badge bg-primary">Acte</span>' : '<span class="badge bg-success">Pharmacie</span>';
+        typeCell.innerHTML = (vente.type === 'actes') ? 
+            '<span class="badge bg-primary">Acte</span>' : 
+            '<span class="badge bg-success">Pharmacie</span>';
         
         row.insertCell(5).innerHTML = vente.detail || '-';
         row.insertCell(6).innerHTML = (pbr > 0 ? Math.round(pbr).toLocaleString('fr-FR') + ' F' : '-');
         row.insertCell(7).innerHTML = Math.round(netAPayer).toLocaleString('fr-FR') + ' F';
-        row.insertCell(8).innerHTML = '<span style="color:#28a745;font-weight:bold;">' + Math.round(montantDonne).toLocaleString('fr-FR') + ' F</span>';
-        row.insertCell(9).innerHTML = '<span style="color:#dc3545;font-weight:bold;">' + Math.round(resteAPayer).toLocaleString('fr-FR') + ' F</span>';
+        row.insertCell(8).innerHTML = '<span style="color:#28a745;font-weight:bold;">' + 
+            Math.round(montantDonne).toLocaleString('fr-FR') + ' F</span>';
+        row.insertCell(9).innerHTML = '<span style="color:#dc3545;font-weight:bold;">' + 
+            Math.round(resteAPayer).toLocaleString('fr-FR') + ' F</span>';
         row.insertCell(10).innerHTML = '<span class="badge ' + statutBadge + '">' + statutPaiement + '</span>';
         row.insertCell(11).innerHTML = assurancesText;
         row.insertCell(12).innerHTML = vente.created_by_nom || '-';
         
         const statutCell = row.insertCell(13);
         const statut = vente.statut || 'validee';
-        statutCell.innerHTML = (statut === 'annulee') ? '<span class="badge bg-danger">Annulee</span>' : '<span class="badge bg-success">Validee</span>';
+        statutCell.innerHTML = (statut === 'annulee') ? 
+            '<span class="badge bg-danger">Annulee</span>' : 
+            '<span class="badge bg-success">Validee</span>';
     });
     
-    const totalPayeFooter = document.getElementById('totalPayeFooter');
-    const totalResteFooter = document.getElementById('totalResteFooter');
-    if (totalPayeFooter) totalPayeFooter.innerHTML = Math.round(totalPaye).toLocaleString('fr-FR') + ' FCFA';
-    if (totalResteFooter) totalResteFooter.innerHTML = Math.round(totalReste).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('totalPayeFooter').innerHTML = Math.round(totalPaye).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('totalResteFooter').innerHTML = Math.round(totalReste).toLocaleString('fr-FR') + ' FCFA';
 }
+
 function updateStats(ventes) {
     let totalMontant = 0;
     let totalActes = 0;
     let totalPharma = 0;
     
     ventes.forEach(vente => {
-        totalMontant += (vente.montant_donne || 0);
+        const caEffectif = (vente.montant_donne || 0) - (vente.rendu || 0);
+        totalMontant += caEffectif > 0 ? caEffectif : 0;
         if (vente.type === 'actes') totalActes++;
         else if (vente.type === 'pharmacie' || vente.type === 'pharma') totalPharma++;
     });
     
-    const totalVentesEl = document.getElementById('totalVentes');
-    const totalCAEl = document.getElementById('totalCA');
-    const totalActesEl = document.getElementById('totalActes');
-    const totalPharmaEl = document.getElementById('totalPharma');
-    
-    if (totalVentesEl) totalVentesEl.innerHTML = ventes.length;
-    if (totalCAEl) totalCAEl.innerHTML = Math.round(totalMontant).toLocaleString('fr-FR') + ' FCFA';
-    if (totalActesEl) totalActesEl.innerHTML = totalActes;
-    if (totalPharmaEl) totalPharmaEl.innerHTML = totalPharma;
+    document.getElementById('totalVentes').innerHTML = ventes.length;
+    document.getElementById('totalCA').innerHTML = Math.round(totalMontant).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('totalActes').innerHTML = totalActes;
+    document.getElementById('totalPharma').innerHTML = totalPharma;
 }
 
 function appliquerFiltres() {
@@ -506,27 +828,30 @@ function appliquerFiltres() {
         let dateVente = '', heureVente = '';
         if (vente.date_vente) {
             dateVente = vente.date_vente.split('T')[0] || vente.date_vente.split(' ')[0];
-            heureVente = vente.date_vente.split('T')[1]?.substring(0, 5) || vente.date_vente.split(' ')[1]?.substring(0, 5);
+            heureVente = vente.date_vente.split('T')[1]?.substring(0, 5) || 
+                         vente.date_vente.split(' ')[1]?.substring(0, 5) || '';
         }
         
         const patient = (vente.patient_nom || '').toLowerCase();
         const vendeur = (vente.created_by_nom || '').toLowerCase();
         const type = vente.type;
-        
-        // 🔥 Filtre statut paiement
         const reste = vente.reste_a_payer || 0;
         const montantDonne = vente.montant_donne || 0;
         const netAPayer = vente.net_a_payer || 0;
         
+        // Filtres date
         if (dateDebut && dateFin && dateVente) {
             if (dateVente < dateDebut || dateVente > dateFin) return false;
         }
         if (heureDebut && heureFin && heureVente) {
             if (heureVente < heureDebut || heureVente > heureFin) return false;
         }
+        
+        // Filtres texte
         if (filtrePatient && !patient.includes(filtrePatient)) return false;
         if (filtreVendeur && !vendeur.includes(filtreVendeur)) return false;
         
+        // Filtre type
         if (filtreType !== 'tous') {
             if (filtreType === 'pharmacie') {
                 if (type !== 'pharmacie' && type !== 'pharma') return false;
@@ -535,6 +860,7 @@ function appliquerFiltres() {
             }
         }
         
+        // Filtre statut paiement
         if (filtreStatutPaiement !== 'tous') {
             if (filtreStatutPaiement === 'total') {
                 if (reste > 0 || montantDonne < netAPayer) return false;
@@ -552,15 +878,14 @@ function appliquerFiltres() {
 }
 
 function resetFiltres() {
-    const fields = ['filtreDateDebut', 'filtreDateFin', 'filtreHeureDebut', 'filtreHeureFin', 'filtrePatient', 'filtreVendeur'];
-    fields.forEach(id => {
+    ['filtreDateDebut', 'filtreDateFin', 'filtreHeureDebut', 'filtreHeureFin', 
+     'filtrePatient', 'filtreVendeur'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
     });
-    const filtreType = document.getElementById('filtreType');
-    const filtreStatutPaiement = document.getElementById('filtreStatutPaiement');
-    if (filtreType) filtreType.value = 'tous';
-    if (filtreStatutPaiement) filtreStatutPaiement.value = 'tous';
+    
+    document.getElementById('filtreType').value = 'tous';
+    document.getElementById('filtreStatutPaiement').value = 'tous';
     
     if (toutesLesVentes.length > 0) {
         afficherVentes(toutesLesVentes);
@@ -574,8 +899,10 @@ function exporterCSV() {
     
     rows.forEach(row => {
         const cells = row.cells;
-        if (cells.length > 1 && cells[0].innerText !== 'Chargement...') {
-            csvContent += `"${cells[0].innerText}";"${cells[1].innerText}";"${cells[2].innerText}";"${cells[3].innerText}";"${cells[4].innerText}";"${cells[5].innerText}";"${cells[6].innerText}";"${cells[7].innerText}";"${cells[8].innerText}";"${cells[9].innerText}";"${cells[10].innerText}";"${cells[11].innerText}";"${cells[12].innerText}";"${cells[13].innerText}"\n`;
+        if (cells.length > 1 && cells[0].innerText !== 'Chargement...' && 
+            cells[0].innerText !== 'Aucune vente enregistree') {
+            const rowData = Array.from(cells).map(cell => `"${cell.innerText.trim()}"`);
+            csvContent += rowData.join(';') + '\n';
         }
     });
     
@@ -587,12 +914,14 @@ function exporterCSV() {
     URL.revokeObjectURL(link.href);
 }
 
-// ========== ASSURANCES ==========
+// ============================================================
+// ONGLET ASSURANCES
+// ============================================================
 function genererFactures() {
     const moisInput = document.getElementById('factureMois');
     if (!moisInput) return;
-    let mois = moisInput.value;
     
+    const mois = moisInput.value;
     if (!mois) {
         alert('Veuillez selectionner un mois');
         return;
@@ -607,10 +936,10 @@ function genererFactures() {
         .then(r => r.json())
         .then(result => {
             if (result.success) {
-                alert(`Factures generees !\n${result.total_ventes} ventes traitees`);
+                alert(`Factures generees !\n${result.total_ventes || 0} ventes traitees`);
                 chargerFactures();
             } else {
-                alert('Erreur: ' + result.error);
+                alert('Erreur: ' + (result.error || 'Erreur inconnue'));
             }
         })
         .catch(error => alert('Erreur: ' + error));
@@ -635,6 +964,11 @@ function chargerFactures() {
             let totalRembourseAll = 0;
             let totalRestant = 0;
             
+            if (!factures || factures.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center">Aucune facture pour ce mois</td></tr>';
+                return;
+            }
+            
             factures.forEach(f => {
                 const montantTotal = parseFloat(f.montant_total) || 0;
                 const montantRembourse = parseFloat(f.montant_rembourse) || 0;
@@ -645,8 +979,8 @@ function chargerFactures() {
                 totalRestant += reste;
                 
                 let assuranceText = f.assurance;
-                if (f.assurance === 'amu_cnss') assuranceText = 'AMU-CNSS';
-                if (f.assurance === 'amu_inam') assuranceText = 'AMU-INAM';
+                if (assuranceText === 'amu-cnss') assuranceText = 'AMU-CNSS';
+                if (assuranceText === 'amu-inam') assuranceText = 'AMU-INAM';
                 
                 const typeAssurance = f.type_assurance || 'principale';
                 const typeLabel = typeAssurance === 'principale' ? 'Principale' : 'Complémentaire';
@@ -659,36 +993,59 @@ function chargerFactures() {
                 
                 const row = tbody.insertRow();
                 row.insertCell(0).innerHTML = f.mois_reference;
-                row.insertCell(1).innerHTML = assuranceText;
-                row.insertCell(2).innerHTML = `<span class="badge ${typeBadge}">${typeLabel}</span>`;
-                row.insertCell(3).innerHTML = Math.round(montantTotal).toLocaleString('fr-FR') + ' FCFA';
-                row.insertCell(4).innerHTML = Math.round(montantRembourse).toLocaleString('fr-FR') + ' FCFA';
-                row.insertCell(5).innerHTML = '<span class="text-danger">' + Math.round(reste).toLocaleString('fr-FR') + ' FCFA</span>';
-                row.insertCell(6).innerHTML = `<span class="badge ${statutClass}">${statutText}</span>`;
-                
-                const actionCell = row.insertCell(7);
+                // ⭐ Nom de la compagnie cliquable : ouvre directement le
+                // bordereau (patients concernés, prestations, montants,
+                // total en lettres) pour cette assurance/société/mois —
+                // flux fluide, un clic pour passer de la liste au document
+                // à envoyer à la compagnie.
+                row.insertCell(1).innerHTML = `<a href="#" onclick='voirBordereauFacture("${f.assurance}", ${JSON.stringify(f.societe || '')}, "${f.mois_reference}"); return false;'>${assuranceText}</a>`;
+                row.insertCell(2).innerHTML = f.societe ? `<small>${f.societe}</small>` : '-';
+                row.insertCell(3).innerHTML = `<span class="badge ${typeBadge}">${typeLabel}</span>`;
+                row.insertCell(4).innerHTML = Math.round(montantTotal).toLocaleString('fr-FR') + ' FCFA';
+                row.insertCell(5).innerHTML = Math.round(montantRembourse).toLocaleString('fr-FR') + ' FCFA';
+                row.insertCell(6).innerHTML = '<span class="text-danger">' +
+                    Math.round(reste).toLocaleString('fr-FR') + ' FCFA</span>';
+                row.insertCell(7).innerHTML = `<span class="badge ${statutClass}">${statutText}</span>`;
+
+                const actionCell = row.insertCell(8);
+                let actionsHtml = `<button class="btn btn-sm btn-outline-secondary me-1" title="Bordereau (détail patients + impression)" onclick='voirBordereauFacture("${f.assurance}", ${JSON.stringify(f.societe || '')}, "${f.mois_reference}")'><i class="fas fa-file-invoice"></i></button>`;
                 if (f.statut !== 'payee') {
-                    actionCell.innerHTML = `<button class="btn btn-sm btn-success" onclick='showPaiementModal(${f.id}, "${assuranceText}", "${f.mois_reference}", ${montantTotal}, ${montantRembourse})'>Encaisser</button>`;
+                    actionsHtml += `<button class="btn btn-sm btn-success" onclick='showPaiementModal(${f.id}, "${assuranceText}", "${f.mois_reference}", ${montantTotal}, ${montantRembourse})'>Encaisser</button>`;
                 } else {
-                    actionCell.innerHTML = '<span class="badge bg-success">Regle</span>';
+                    actionsHtml += '<span class="badge bg-success">Regle</span>';
                 }
+                actionCell.innerHTML = actionsHtml;
             });
             
-            const totalAFacturer = document.getElementById('totalAFacturer');
-            const totalDejaPaye = document.getElementById('totalDejaPaye');
-            const totalRestantDu = document.getElementById('totalRestantDu');
-            const totalFacturesFooter = document.getElementById('totalFacturesFooter');
-            const totalRembourseFooter = document.getElementById('totalRembourseFooter');
-            const totalResteFooter = document.getElementById('totalResteFooter');
-            
-            if (totalAFacturer) totalAFacturer.innerHTML = Math.round(totalRestant).toLocaleString('fr-FR') + ' FCFA';
-            if (totalDejaPaye) totalDejaPaye.innerHTML = Math.round(totalRembourseAll).toLocaleString('fr-FR') + ' FCFA';
-            if (totalRestantDu) totalRestantDu.innerHTML = Math.round(totalRestant).toLocaleString('fr-FR') + ' FCFA';
-            if (totalFacturesFooter) totalFacturesFooter.innerHTML = Math.round(totalMontantFactures).toLocaleString('fr-FR') + ' FCFA';
-            if (totalRembourseFooter) totalRembourseFooter.innerHTML = Math.round(totalRembourseAll).toLocaleString('fr-FR') + ' FCFA';
-            if (totalResteFooter) totalResteFooter.innerHTML = Math.round(totalRestant).toLocaleString('fr-FR') + ' FCFA';
+            document.getElementById('totalAFacturer').innerHTML = Math.round(totalRestant).toLocaleString('fr-FR') + ' FCFA';
+            document.getElementById('totalDejaPaye').innerHTML = Math.round(totalRembourseAll).toLocaleString('fr-FR') + ' FCFA';
+            document.getElementById('totalRestantDu').innerHTML = Math.round(totalRestant).toLocaleString('fr-FR') + ' FCFA';
+            document.getElementById('totalFacturesFooter').innerHTML = Math.round(totalMontantFactures).toLocaleString('fr-FR') + ' FCFA';
+            document.getElementById('totalRembourseFooter').innerHTML = Math.round(totalRembourseAll).toLocaleString('fr-FR') + ' FCFA';
+            document.getElementById('totalResteFooter').innerHTML = Math.round(totalRestant).toLocaleString('fr-FR') + ' FCFA';
         })
-        .catch(error => console.error('Erreur:', error));
+        .catch(error => {
+            console.error('Erreur:', error);
+            document.getElementById('facturesList').innerHTML = 
+                '<tr><td colspan="8" class="text-center text-danger">Erreur de chargement</td></tr>';
+        });
+}
+
+// ⭐ Ouvre le bordereau (détail des patients concernés + impression) pour
+// une ligne de la génération mensuelle des factures assurance — c'est le
+// document à joindre/adresser à la compagnie (voir aussi le bouton
+// "Bordereau compagnie" de l'onglet Statistiques & Assurances).
+function voirBordereauFacture(assurance, societe, moisReference) {
+    const [annee, mois] = moisReference.split('-').map(Number);
+    const dateDebut = `${moisReference}-01`;
+    const dernierJour = new Date(annee, mois, 0).getDate();
+    const dateFin = `${moisReference}-${String(dernierJour).padStart(2, '0')}`;
+
+    let url = `/api/statistiques/assurance/bordereau?assurance=${encodeURIComponent(assurance)}&periode=personnalise&date_debut=${dateDebut}&date_fin=${dateFin}`;
+    if (societe) {
+        url += `&societe=${encodeURIComponent(societe)}`;
+    }
+    window.open(url, '_blank');
 }
 
 function showPaiementModal(id, assurance, mois, total, deja) {
@@ -724,11 +1081,11 @@ function enregistrerPaiement() {
         .then(r => r.json())
         .then(result => {
             if (result.success) {
-                alert(`Remboursement enregistre !`);
+                alert('Remboursement enregistre !');
                 bootstrap.Modal.getInstance(document.getElementById('paiementModal')).hide();
                 chargerFactures();
             } else {
-                alert('Erreur: ' + result.error);
+                alert('Erreur: ' + (result.error || 'Erreur inconnue'));
             }
         })
         .catch(error => alert('Erreur: ' + error));
@@ -739,15 +1096,793 @@ function rafraichirFactures() {
     chargerFactures();
 }
 
-// ========== INITIALISATION ==========
-document.addEventListener('DOMContentLoaded', function() {
-    const factureMois = document.getElementById('factureMois');
-    if (factureMois) {
-        const now = new Date();
-        const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-        factureMois.value = currentMonth;
+// ============================================================
+// ONGLET STATISTIQUES & ASSURANCES
+// ============================================================
+
+// ⭐ Fonction pour formater une date en YYYY-MM-DD
+function formatDateInput(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function changerPeriodeStats() {
+    const periode = document.getElementById('statsPeriode').value;
+    const dateDebutGroup = document.getElementById('statsDateDebutGroup');
+    const dateFinGroup = document.getElementById('statsDateFinGroup');
+    const dateDebutInput = document.getElementById('statsDateDebut');
+    const dateFinInput = document.getElementById('statsDateFin');
+    
+    console.log('🔄 Période changée:', periode);
+    
+    if (periode === 'personnalise') {
+        dateDebutGroup.style.display = 'block';
+        dateFinGroup.style.display = 'block';
+        // ⭐ Pour personnalisé, on ne charge pas automatiquement
+        return;
+    } else {
+        dateDebutGroup.style.display = 'none';
+        dateFinGroup.style.display = 'none';
     }
-    chargerVentes();
-});
+    
+    const now = new Date();
+    let debut = new Date(now);
+    
+    switch(periode) {
+        case 'aujourdhui':
+            // ⭐ Déjà aujourd'hui
+            break;
+        case 'semaine':
+            debut = new Date(now);
+            debut.setDate(now.getDate() - now.getDay());
+            break;
+        case 'mois':
+            debut = new Date(now.getFullYear(), now.getMonth(), 1);
+            break;
+        case 'annee':
+            debut = new Date(now.getFullYear(), 0, 1);
+            break;
+        default:
+            debut = new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+    
+    // ⭐ METTRE À JOUR LES CHAMPS DE DATE
+    const dateDebut = formatDateInput(debut);
+    const dateFin = formatDateInput(now);
+    
+    if (dateDebutInput) {
+        dateDebutInput.value = dateDebut;
+        console.log('📅 Date début mise à jour:', dateDebut);
+    }
+    if (dateFinInput) {
+        dateFinInput.value = dateFin;
+        console.log('📅 Date fin mise à jour:', dateFin);
+    }
+    
+    // ⭐ Mettre à jour le label
+    const labelEl = document.getElementById('periodeStatsLabel');
+    if (labelEl) {
+        const libelles = {
+            'aujourdhui': "Aujourd'hui",
+            'semaine': `Semaine du ${dateDebut}`,
+            'mois': `Mois de ${debut.toLocaleString('fr-FR', {month: 'long', year: 'numeric'})}`,
+            'annee': `Année ${now.getFullYear()}`
+        };
+        labelEl.textContent = libelles[periode] || 'Toutes les périodes';
+    }
+    
+    // ⭐ Recharger les stats
+    chargerStatsAssurances();
+}
+
+// ⭐ Charger les assurances dynamiquement
+function chargerAssurances() {
+    return new Promise((resolve) => {
+        const select = document.getElementById('statsFiltreAssurance');
+        if (!select) {
+            resolve();
+            return;
+        }
+        
+        const currentValue = select.value;
+        
+        fetch('/api/statistiques/assurances/liste')
+            .then(response => response.json())
+            .then(data => {
+                select.innerHTML = '<option value="toutes">Toutes les assurances</option>';
+                
+                if (data && data.length > 0) {
+                    data.forEach(item => {
+                        const option = document.createElement('option');
+                        option.value = item.key;
+                        
+                        // ⭐ Labels personnalisés
+                        let label = item.label;
+                        if (item.key === 'amu_cnss' || item.key === 'amu-cnss') {
+                            label = 'AMU-CNSS';
+                        } else if (item.key === 'amu_inam' || item.key === 'amu-inam') {
+                            label = 'AMU-INAM';
+                        } else if (item.key === 'non_assure') {
+                            label = 'Non assuré';
+                        } else {
+                            label = item.label || item.key.toUpperCase();
+                        }
+                        
+                        option.textContent = `${label} (${item.nb_patients} patients)`;
+                        option.dataset.type = item.type || '';
+
+                        if (option.value === currentValue) {
+                            option.selected = true;
+                        }
+                        select.appendChild(option);
+                    });
+                }
+                resolve();
+            })
+            .catch(error => {
+                console.error('Erreur chargement assurances:', error);
+                resolve();
+            });
+    });
+}
+// ⭐ Quand l'assurance change : affiche/masque le filtre "Société
+// souscriptrice" (uniquement pertinent pour une assurance complémentaire)
+// et le repeuple via l'autocomplétion déjà utilisée dans la fiche patient.
+function onChangeFiltreAssurance() {
+    const select = document.getElementById('statsFiltreAssurance');
+    const societeGroup = document.getElementById('statsFiltreSocieteGroup');
+    const societeSelect = document.getElementById('statsFiltreSociete');
+    const type = select.selectedOptions[0]?.dataset.type || '';
+
+    if (type === 'complementaire') {
+        societeGroup.style.display = 'block';
+        fetch(`/api/societes-assurance?assurance=${encodeURIComponent(select.value.toUpperCase())}`)
+            .then(r => r.json())
+            .then(societes => {
+                societeSelect.innerHTML = '<option value="toutes">Toutes les sociétés</option>';
+                (societes || []).forEach(nom => {
+                    const opt = document.createElement('option');
+                    opt.value = nom;
+                    opt.textContent = nom;
+                    societeSelect.appendChild(opt);
+                });
+            })
+            .catch(() => { societeSelect.innerHTML = '<option value="toutes">Toutes les sociétés</option>'; });
+    } else {
+        societeGroup.style.display = 'none';
+        societeSelect.innerHTML = '<option value="toutes">Toutes les sociétés</option>';
+    }
+
+    chargerStatsAssurances();
+}
+
+function chargerStatsAssurances() {
+    if (chargementEnCours) {
+        console.log('⏳ Chargement déjà en cours...');
+        return;
+    }
+    
+    chargementEnCours = true;
+    
+    const periode = document.getElementById('statsPeriode').value;
+    let dateDebut = document.getElementById('statsDateDebut').value;
+    let dateFin = document.getElementById('statsDateFin').value;
+    const assurance = document.getElementById('statsFiltreAssurance').value;
+    const typeAssurance = document.getElementById('statsFiltreTypeAssurance')?.value || 'toutes';
+    const categorie = document.getElementById('statsFiltreCategorie')?.value || 'toutes';
+    
+    // ⭐ Si période = aujourd'hui, on envoie la date du jour
+    if (periode === 'aujourdhui') {
+        const now = new Date();
+        dateDebut = formatDateInput(now);
+        dateFin = formatDateInput(now);
+        document.getElementById('statsDateDebut').value = dateDebut;
+        document.getElementById('statsDateFin').value = dateFin;
+    }
+    
+    // ⭐ Si période = semaine, mois, année, s'assurer que les dates sont remplies
+    if (periode === 'semaine' || periode === 'mois' || periode === 'annee') {
+        if (!dateDebut || !dateFin) {
+            const now = new Date();
+            let debut = new Date(now);
+            
+            if (periode === 'semaine') {
+                debut.setDate(now.getDate() - now.getDay());
+            } else if (periode === 'mois') {
+                debut = new Date(now.getFullYear(), now.getMonth(), 1);
+            } else if (periode === 'annee') {
+                debut = new Date(now.getFullYear(), 0, 1);
+            }
+            
+            dateDebut = formatDateInput(debut);
+            dateFin = formatDateInput(now);
+            document.getElementById('statsDateDebut').value = dateDebut;
+            document.getElementById('statsDateFin').value = dateFin;
+        }
+    }
+    
+    console.log('📅 Période:', periode, 'Début:', dateDebut, 'Fin:', dateFin);
+    
+    let url = `/api/statistiques/stats?periode=${periode}`;
+    if (dateDebut) url += `&date_debut=${dateDebut}`;
+    if (dateFin) url += `&date_fin=${dateFin}`;
+    if (assurance !== 'toutes') url += `&assurance=${assurance}`;
+    if (typeAssurance !== 'toutes') url += `&type_assurance=${typeAssurance}`;
+    if (categorie !== 'toutes') url += `&categorie=${categorie}`;
+    
+    console.log('📊 URL appelée:', url);
+    
+    // Afficher le chargement
+    const statsTotalPatients = document.getElementById('statsTotalPatients');
+    const statsTotalCA = document.getElementById('statsTotalCA');
+    const statsTotalActes = document.getElementById('statsTotalActes');
+    const statsTotalVentes = document.getElementById('statsTotalVentes');
+    const statsCategorieBody = document.getElementById('statsCategorieBody');
+    const assurancePatientsBody = document.getElementById('assurancePatientsBody');
+    const statsPatientsBody = document.getElementById('statsPatientsBody');
+    
+    if (statsTotalPatients) statsTotalPatients.textContent = '...';
+    if (statsTotalCA) statsTotalCA.textContent = '... FCFA';
+    if (statsTotalActes) statsTotalActes.textContent = '...';
+    if (statsTotalVentes) statsTotalVentes.textContent = '...';
+    if (statsCategorieBody) statsCategorieBody.innerHTML = 
+        '<tr><td colspan="4" class="text-center"><i class="fas fa-spinner fa-spin"></i> Chargement...</td></tr>';
+    if (assurancePatientsBody) assurancePatientsBody.innerHTML = 
+        '<tr><td colspan="8" class="text-center"><i class="fas fa-spinner fa-spin"></i> Chargement...</td></tr>';
+    if (statsPatientsBody) statsPatientsBody.innerHTML = 
+        '<tr><td colspan="5" class="text-center"><i class="fas fa-spinner fa-spin"></i> Chargement...</td></tr>';
+    
+    fetch(url)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Erreur HTTP: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (!data || !data.success) {
+                throw new Error(data?.error || 'Erreur inconnue');
+            }
+            
+            statsData = data;
+            
+            if (statsTotalPatients) statsTotalPatients.textContent = data.stats_globales?.total_patients || 0;
+            if (statsTotalCA) statsTotalCA.textContent = 
+                (data.stats_globales?.total_ca || 0).toLocaleString('fr-FR') + ' FCFA';
+            if (statsTotalActes) statsTotalActes.textContent = data.stats_globales?.total_actes || 0;
+            if (statsTotalVentes) statsTotalVentes.textContent = data.stats_globales?.total_ventes || 0;
+            
+            afficherStatsCategories(data.stats_actes);
+
+            // ⭐ Filtre société (client-side : le backend renvoie déjà le
+            // champ `societe` sur chaque ligne d'assurance complémentaire)
+            const societeSelect = document.getElementById('statsFiltreSociete');
+            const societeFiltre = societeSelect && societeSelect.closest('div').style.display !== 'none'
+                ? societeSelect.value : 'toutes';
+            let patientsAssurances = data.patients_par_assurance || [];
+            if (societeFiltre && societeFiltre !== 'toutes') {
+                patientsAssurances = patientsAssurances.filter(p => (p.societe || '') === societeFiltre);
+            }
+            afficherPatientsAssurances(patientsAssurances);
+            afficherSocietesParAssurance(data.stats_assurances || []);
+            mettreAJourStatsPatients(data.ventes || []);
+            
+            console.log('✅ Statistiques chargées avec succès');
+        })
+        .catch(error => {
+            console.error('❌ Erreur:', error);
+            if (statsCategorieBody) statsCategorieBody.innerHTML = 
+                `<tr><td colspan="4" class="text-center text-danger">Erreur: ${error.message}</td></tr>`;
+            if (assurancePatientsBody) assurancePatientsBody.innerHTML = 
+                `<tr><td colspan="8" class="text-center text-danger">Erreur: ${error.message}</td></tr>`;
+            if (statsPatientsBody) statsPatientsBody.innerHTML = 
+                `<tr><td colspan="5" class="text-center text-danger">Erreur: ${error.message}</td></tr>`;
+        })
+        .finally(() => {
+            chargementEnCours = false;
+        });
+}
+function afficherStatsCategories(statsActes) {
+    const tbody = document.getElementById('statsCategorieBody');
+    const barsContainer = document.getElementById('categorieBars');
+    tbody.innerHTML = '';
+    
+    if (!statsActes || Object.keys(statsActes).length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Aucune donnée</td></tr>';
+        barsContainer.innerHTML = '<div class="text-center text-muted">Aucune donnée</div>';
+        return;
+    }
+    
+    const categories = [
+        {key: 'consultation', label: 'Consultation', color: '#4e73df'},
+        {key: 'laboratoire', label: 'Laboratoire', color: '#1cc88a'},
+        {key: 'imagerie', label: 'Imagerie', color: '#36b9cc'},
+        {key: 'hospitalisation', label: 'Hospitalisation', color: '#f6c23e'},
+        {key: 'lunettes', label: 'Lunettes', color: '#e74a3b'},
+        {key: 'pharmacie', label: 'Pharmacie', color: '#858796'},
+        {key: 'autres', label: 'Autres', color: '#6c757d'}
+    ];
+    
+    let totalGeneral = 0;
+    categories.forEach(cat => {
+        if (statsActes[cat.key]) {
+            totalGeneral += statsActes[cat.key].total || 0;
+        }
+    });
+    
+    let barsHtml = '';
+    categories.forEach(cat => {
+        const data = statsActes[cat.key];
+        if (data && (data.total || 0) > 0) {
+            const pourcentage = totalGeneral > 0 ? ((data.total / totalGeneral) * 100).toFixed(1) : 0;
+            
+            const row = tbody.insertRow();
+            row.innerHTML = `
+                <td><span class="badge" style="background:${cat.color}20;color:${cat.color}">${cat.label}</span></td>
+                <td>${data.nb_actes || 0}</td>
+                <td class="fw-bold">${(data.total || 0).toLocaleString('fr-FR')} FCFA</td>
+                <td>${pourcentage}%</td>
+            `;
+            
+            barsHtml += `
+                <div class="mb-2">
+                    <div class="d-flex justify-content-between small">
+                        <span>${cat.label}</span>
+                        <span>${(data.total || 0).toLocaleString('fr-FR')} F (${pourcentage}%)</span>
+                    </div>
+                    <div style="width:100%;height:20px;background:#e9ecef;border-radius:10px;overflow:hidden;">
+                        <div style="width:${pourcentage}%;height:100%;background:${cat.color};border-radius:10px;transition:width 0.5s ease;"></div>
+                    </div>
+                </div>
+            `;
+        }
+    });
+    
+    barsContainer.innerHTML = barsHtml || '<div class="text-center text-muted">Aucune donnée</div>';
+}
+
+
+function afficherPatientsAssurances(patients) {
+    const tbody = document.getElementById('assurancePatientsBody');
+    tbody.innerHTML = '';
+
+    if (!patients || patients.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">Aucun patient trouvé</td></tr>';
+        document.getElementById('assuranceTotalBeneficiaire').textContent = '0 FCFA';
+        document.getElementById('assuranceTotalPartAssurance').textContent = '0 FCFA';
+        return;
+    }
+
+    let patientsUniques = new Set();
+    let totalBeneficiaire = 0;
+    let totalPartAssurance = 0;
+
+    patients.forEach(p => {
+        let assuranceDisplay = p.assurance_label || p.assurance || 'Non assuré';
+        let badgeClass = 'bg-info';
+
+        if (p.assurance === 'non_assure') {
+            badgeClass = 'bg-secondary';
+        } else if (p.assurance === 'amu_cnss' || p.assurance === 'amu-cnss') {
+            badgeClass = 'bg-success';
+        } else if (p.assurance === 'amu_inam' || p.assurance === 'amu-inam') {
+            badgeClass = 'bg-primary';
+        } else {
+            badgeClass = 'bg-info';
+        }
+
+        let doubleBadge = p.est_double_assurance
+            ? '<span class="badge bg-warning text-dark">Double assurance</span>'
+            : '';
+
+        let numeroAssure = p.numero_assure || '-';
+        if (p.type_assurance === 'complementaire' && p.numero_assure2) {
+            numeroAssure = p.numero_assure2;
+        }
+
+        // ⭐ Montants
+        let montantBeneficiaire = p.montant_beneficiaire || 0;
+        let partAssurance = p.part_assurance || 0;
+
+        const row = tbody.insertRow();
+        row.innerHTML = `
+            <td><span class="badge ${badgeClass}">${assuranceDisplay}</span></td>
+            <td>${p.societe ? `<small>${p.societe}</small>` : '-'}</td>
+            <td><strong>${p.patient_nom}</strong></td>
+            <td>${numeroAssure}</td>
+            <td>${p.derniere_visite || '-'}</td>
+            <td>${p.nb_actes || 0}</td>
+            <td class="fw-bold">${montantBeneficiaire.toLocaleString('fr-FR')} FCFA</td>
+            <td>${partAssurance.toLocaleString('fr-FR')} FCFA</td>
+            <td>${doubleBadge}</td>
+        `;
+        if (p.details) {
+            row.style.cursor = 'pointer';
+            row.title = 'Cliquer pour voir le détail des articles payés';
+            row.onclick = () => afficherDetailArticlesPatientAssurance(p);
+        }
+
+        // ⭐ Montant bénéficiaire : chaque patient compté une seule fois
+        if (!patientsUniques.has(p.patient_id)) {
+            patientsUniques.add(p.patient_id);
+            totalBeneficiaire += montantBeneficiaire;
+        }
+
+        totalPartAssurance += partAssurance;
+    });
+
+    document.getElementById('assuranceTotalBeneficiaire').textContent = totalBeneficiaire.toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('assuranceTotalPartAssurance').textContent = totalPartAssurance.toLocaleString('fr-FR') + ' FCFA';
+}
+
+// ⭐ Détail au clic : articles payés, dates, part assuré / part assurance
+// pour un patient (ligne assurance complémentaire ou société).
+function afficherDetailArticlesPatientAssurance(p) {
+    document.getElementById('detailArticlesPatientNom').textContent = p.patient_nom || '';
+
+    const articles = (p.details_complet && p.details_complet.length)
+        ? p.details_complet.map(a => `<li>${a}</li>`).join('')
+        : '<li class="text-muted">Aucun détail disponible</li>';
+
+    const dates = (p.dates_ventes && p.dates_ventes.length)
+        ? p.dates_ventes.join(', ')
+        : (p.derniere_visite || '-');
+
+    document.getElementById('detailArticlesBody').innerHTML = `
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <strong>Assurance :</strong> ${p.assurance_label || p.assurance || '-'}
+                ${p.societe ? `<br><strong>Société :</strong> ${p.societe}` : ''}
+            </div>
+            <div class="col-md-6">
+                <strong>N° assuré :</strong> ${p.numero_assure2 || p.numero_assure || '-'}<br>
+                <strong>Date(s) de vente :</strong> ${dates}
+            </div>
+        </div>
+        <h6><i class="fas fa-pills"></i> Articles payés</h6>
+        <ul>${articles}</ul>
+        <div class="row mt-3">
+            <div class="col-md-6">
+                <div class="card bg-success bg-opacity-10 border-0">
+                    <div class="card-body text-center">
+                        <div class="text-muted small">Part assurance</div>
+                        <div class="fw-bold fs-5">${(p.part_assurance || 0).toLocaleString('fr-FR')} FCFA</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card bg-warning bg-opacity-10 border-0">
+                    <div class="card-body text-center">
+                        <div class="text-muted small">Part patient / bénéficiaire</div>
+                        <div class="fw-bold fs-5">${(p.montant_beneficiaire || 0).toLocaleString('fr-FR')} FCFA</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    new bootstrap.Modal(document.getElementById('detailArticlesAssuranceModal')).show();
+}
+
+// ⭐ Sociétés souscriptrices de l'assurance complémentaire actuellement
+// filtrée : cliquer sur une société applique le filtre société + rouvre
+// le détail (patients concernés, articles payés...) dans le tableau du bas.
+function afficherSocietesParAssurance(statsAssurances) {
+    const card = document.getElementById('cardSocietesParAssurance');
+    const list = document.getElementById('societesParAssuranceList');
+    const assurance = document.getElementById('statsFiltreAssurance').value;
+
+    if (assurance === 'toutes' || assurance === 'non_assure') {
+        card.style.display = 'none';
+        return;
+    }
+
+    const entry = (statsAssurances || []).find(a => a.assurance === assurance.toLowerCase());
+    if (!entry || !entry.societes || entry.societes.length === 0) {
+        card.style.display = 'none';
+        return;
+    }
+
+    document.getElementById('societesAssuranceLabel').textContent = entry.assurance_label;
+    const societeActive = document.getElementById('statsFiltreSociete')?.value || 'toutes';
+
+    list.innerHTML = entry.societes.map(s => `
+        <div class="col-md-3">
+            <div class="card ${s.societe === societeActive ? 'border-primary border-2' : 'border-0'} shadow-sm h-100"
+                 style="cursor:pointer;" onclick="filtrerParSociete('${s.societe.replace(/'/g, "\\'")}')">
+                <div class="card-body p-2">
+                    <div class="fw-bold small">${s.societe}</div>
+                    <div class="text-muted" style="font-size:11px;">${s.nb_patients} patient(s) — ${s.nb_ventes} vente(s)</div>
+                    <div class="text-success small">${s.prise_en_charge.toLocaleString('fr-FR')} FCFA pris en charge</div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    card.style.display = 'block';
+}
+
+function filtrerParSociete(nomSociete) {
+    const select = document.getElementById('statsFiltreSociete');
+    if (!select) return;
+    if (![...select.options].some(o => o.value === nomSociete)) {
+        const opt = document.createElement('option');
+        opt.value = nomSociete;
+        opt.textContent = nomSociete;
+        select.appendChild(opt);
+    }
+    select.value = nomSociete;
+    chargerStatsAssurances();
+    document.getElementById('assurancePatientsTable')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function mettreAJourStatsPatients(ventes) {
+    if (!ventes || ventes.length === 0) {
+        document.getElementById('statsPatientsAujourdhui').textContent = '0';
+        document.getElementById('statsPatientsSemaine').textContent = '0';
+        document.getElementById('statsPatientsMois').textContent = '0';
+        document.getElementById('statsPatientsAnnee').textContent = '0';
+        document.getElementById('statsPatientsBody').innerHTML = 
+            '<tr><td colspan="5" class="text-center text-muted">Aucune donnée</td></tr>';
+        return;
+    }
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const debutSemaine = new Date(today);
+    debutSemaine.setDate(today.getDate() - today.getDay());
+    
+    const debutMois = new Date(today.getFullYear(), today.getMonth(), 1);
+    const debutAnnee = new Date(today.getFullYear(), 0, 1);
+    
+    const patientsAujourdhui = new Set();
+    const patientsSemaine = new Set();
+    const patientsMois = new Set();
+    const patientsAnnee = new Set();
+    
+    ventes.forEach(v => {
+        const dateVente = new Date(v.date_vente);
+        dateVente.setHours(0, 0, 0, 0);
+        
+        if (dateVente.getTime() === today.getTime()) {
+            patientsAujourdhui.add(v.patient_id);
+        }
+        if (dateVente >= debutSemaine) {
+            patientsSemaine.add(v.patient_id);
+        }
+        if (dateVente >= debutMois) {
+            patientsMois.add(v.patient_id);
+        }
+        if (dateVente >= debutAnnee) {
+            patientsAnnee.add(v.patient_id);
+        }
+    });
+    
+    document.getElementById('statsPatientsAujourdhui').textContent = patientsAujourdhui.size;
+    document.getElementById('statsPatientsSemaine').textContent = patientsSemaine.size;
+    document.getElementById('statsPatientsMois').textContent = patientsMois.size;
+    document.getElementById('statsPatientsAnnee').textContent = patientsAnnee.size;
+    
+    afficherStatsPatientsList(ventes);
+}
+
+function afficherStatsPatientsList(ventes) {
+    const tbody = document.getElementById('statsPatientsBody');
+    tbody.innerHTML = '';
+    
+    if (!ventes || ventes.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Aucune donnée</td></tr>';
+        return;
+    }
+    
+    const patientsMap = {};
+    ventes.forEach(v => {
+        const id = v.patient_id;
+        if (!patientsMap[id]) {
+            patientsMap[id] = {
+                nom: v.patient_nom || 'Patient',
+                assurance: v.assurance || 'non_assure',      // ⭐ Assurance principale (Patient.type_assurance)
+                assurance2: v.assurance2_nom || '',          // ⭐ Assurance complémentaire (Vente.assurance2_nom)
+                numero_assure: v.numero_assure || '',
+                numero_assure2: v.numero_assure2 || '',
+                nb_visites: 0,
+                total_montant: 0,
+                dernier_visite: v.date_vente
+            };
+        }
+        patientsMap[id].nb_visites += 1;
+        patientsMap[id].total_montant += parseFloat(v.net_a_payer || 0);
+        if (new Date(v.date_vente) > new Date(patientsMap[id].dernier_visite)) {
+            patientsMap[id].dernier_visite = v.date_vente;
+        }
+    });
+    
+    const patientsList = Object.values(patientsMap);
+    patientsList.sort((a, b) => new Date(b.dernier_visite) - new Date(a.dernier_visite));
+    
+    patientsList.slice(0, 20).forEach(p => {
+        // ⭐ Gérer l'assurance principale
+        let assuranceLabel = p.assurance || 'non_assure';
+        let badgeClass = 'bg-info';
+        let displayLabel = '';
+        
+        // ⭐ Déterminer le label et la couleur pour l'assurance principale
+        if (assuranceLabel === 'amu-cnss' || assuranceLabel === 'amu_cnss') {
+            displayLabel = 'AMU-CNSS';
+            badgeClass = 'bg-success';
+        } else if (assuranceLabel === 'amu-inam' || assuranceLabel === 'amu_inam') {
+            displayLabel = 'AMU-INAM';
+            badgeClass = 'bg-primary';
+        } else if (assuranceLabel === 'non_assure' || assuranceLabel === '') {
+            displayLabel = 'Non assuré';
+            badgeClass = 'bg-secondary';
+        } else {
+            displayLabel = assuranceLabel.toUpperCase();
+            badgeClass = 'bg-info';
+        }
+        
+        // ⭐ Ajouter l'assurance complémentaire si elle existe
+        let assurance2Label = '';
+        if (p.assurance2 && p.assurance2 !== '' && p.assurance2 !== 'Aucune') {
+            let label2 = p.assurance2;
+            if (label2 === 'amu-cnss' || label2 === 'amu_cnss') label2 = 'AMU-CNSS';
+            else if (label2 === 'amu-inam' || label2 === 'amu_inam') label2 = 'AMU-INAM';
+            else label2 = label2.toUpperCase();
+            assurance2Label = ` + ${label2}`;
+        }
+        
+        // ⭐ Afficher les numéros de carte si disponibles
+        let numeroDisplay = '';
+        if (p.numero_assure && p.numero_assure !== '') {
+            numeroDisplay = p.numero_assure;
+            if (p.numero_assure2 && p.numero_assure2 !== '') {
+                numeroDisplay += ` / ${p.numero_assure2}`;
+            }
+        }
+        
+        const row = tbody.insertRow();
+        row.innerHTML = `
+            <td><strong>${p.nom}</strong>${numeroDisplay ? ` <small class="text-muted">(${numeroDisplay})</small>` : ''}</td>
+            <td>${new Date(p.dernier_visite).toLocaleDateString('fr-FR')}</td>
+            <td>${p.nb_visites}</td>
+            <td>${p.total_montant.toLocaleString('fr-FR')} FCFA</td>
+            <td><span class="badge ${badgeClass}">${displayLabel}${assurance2Label}</span></td>
+        `;
+    });
+    
+    if (patientsList.length > 20) {
+        const row = tbody.insertRow();
+        row.innerHTML = `<td colspan="5" class="text-center text-muted">... et ${patientsList.length - 20} autres patients</td>`;
+    }
+}
+
+function exporterStatsCategorieCSV() {
+    if (!statsData) {
+        alert('Aucune donnée à exporter');
+        return;
+    }
+    
+    let csv = "Catégorie;Nombre d'actes;Montant;% du CA\n";
+    const categories = ['consultation', 'laboratoire', 'imagerie', 'hospitalisation', 'lunettes', 'pharmacie', 'autres'];
+    const labels = ['Consultation', 'Laboratoire', 'Imagerie', 'Hospitalisation', 'Lunettes', 'Pharmacie', 'Autres'];
+    
+    let totalGeneral = 0;
+    categories.forEach(cat => {
+        if (statsData.stats_actes && statsData.stats_actes[cat]) {
+            totalGeneral += statsData.stats_actes[cat].total || 0;
+        }
+    });
+    
+    categories.forEach((cat, i) => {
+        const data = statsData.stats_actes ? statsData.stats_actes[cat] : null;
+        if (data && (data.total || 0) > 0) {
+            const pourcentage = totalGeneral > 0 ? ((data.total / totalGeneral) * 100).toFixed(1) : 0;
+            csv += `${labels[i]};${data.nb_actes || 0};${(data.total || 0).toFixed(2)};${pourcentage}%\n`;
+        }
+    });
+    
+    const blob = new Blob(["\uFEFF" + csv], {type: 'text/csv;charset=utf-8;'});
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'statistiques_categories.csv';
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
+
+function exporterListeAssuranceCSV() {
+    const rows = document.querySelectorAll('#assurancePatientsBody tr');
+    let csv = "Assurance;Société;Patient;N° Assuré;Date;Actes;Montant bénéficiaire;Part assurance;Double assurance\n";
+
+    rows.forEach(row => {
+        const cells = row.cells;
+        if (cells.length > 1 && cells[0].innerText !== 'Chargement...' && cells[0].innerText !== 'Aucun patient trouvé') {
+            csv += `"${cells[0].innerText}";"${cells[1].innerText}";"${cells[2].innerText}";"${cells[3].innerText}";"${cells[4].innerText}";"${cells[5].innerText}";"${cells[6].innerText}";"${cells[7].innerText}";"${cells[8].innerText}"\n`;
+        }
+    });
+
+    // Ajouter les totaux
+    csv += `;;;TOTAUX;${document.getElementById('assuranceTotalBeneficiaire').innerText};${document.getElementById('assuranceTotalPartAssurance').innerText}\n`;
+
+    const blob = new Blob(["\uFEFF" + csv], {type: 'text/csv;charset=utf-8;'});
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'liste_patients_assurance.csv';
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
+
+function imprimerBordereauAssurance() {
+    const assurance = document.getElementById('statsFiltreAssurance').value;
+    if (!assurance || assurance === 'toutes') {
+        showToast ? showToast('Sélectionnez d\'abord une compagnie d\'assurance dans le filtre', 'warning')
+                  : alert('Sélectionnez d\'abord une compagnie d\'assurance dans le filtre');
+        return;
+    }
+
+    const periode = document.getElementById('statsPeriode').value;
+    const dateDebut = document.getElementById('statsDateDebut').value;
+    const dateFin = document.getElementById('statsDateFin').value;
+
+    let url = `/api/statistiques/assurance/bordereau?assurance=${encodeURIComponent(assurance)}&periode=${periode}`;
+    if (dateDebut) url += `&date_debut=${dateDebut}`;
+    if (dateFin) url += `&date_fin=${dateFin}`;
+
+    const societeSelect = document.getElementById('statsFiltreSociete');
+    const societeGroup = document.getElementById('statsFiltreSocieteGroup');
+    if (societeSelect && societeGroup.style.display !== 'none' && societeSelect.value !== 'toutes') {
+        url += `&societe=${encodeURIComponent(societeSelect.value)}`;
+    }
+
+    window.open(url, '_blank');
+}
+
+// ⭐ CORRIGÉ : l'ancienne version faisait un window.open('', ...) +
+// document.write() qui référençait des IDs DOM inexistants
+// (assuranceTotalMontant/PriseEnCharge/Reste) → plantage silencieux avant
+// même l'ouverture de l'aperçu, sans en-tête structure. Remplacé par une
+// vraie page imprimable côté serveur (mêmes filtres que le tableau
+// affiché), avec le même en-tête que les autres documents.
+function imprimerListeAssurance() {
+    const periode = document.getElementById('statsPeriode').value;
+    const dateDebut = document.getElementById('statsDateDebut').value;
+    const dateFin = document.getElementById('statsDateFin').value;
+    const assurance = document.getElementById('statsFiltreAssurance').value;
+    const typeAssurance = document.getElementById('statsFiltreTypeAssurance')?.value || 'toutes';
+
+    let url = `/api/statistiques/assurance/liste-patients/print?periode=${periode}&assurance=${encodeURIComponent(assurance)}&type_assurance=${typeAssurance}`;
+    if (dateDebut) url += `&date_debut=${dateDebut}`;
+    if (dateFin) url += `&date_fin=${dateFin}`;
+
+    const societeSelect = document.getElementById('statsFiltreSociete');
+    const societeGroup = document.getElementById('statsFiltreSocieteGroup');
+    if (societeSelect && societeGroup.style.display !== 'none' && societeSelect.value !== 'toutes') {
+        url += `&societe=${encodeURIComponent(societeSelect.value)}`;
+    }
+
+    window.open(url, '_blank');
+}
+
+function exporterStatsPatientsCSV() {
+    const rows = document.querySelectorAll('#statsPatientsBody tr');
+    let csv = "Patient;Dernière visite;Nb visites;Montant total;Assurance\n";
+    
+    rows.forEach(row => {
+        const cells = row.cells;
+        if (cells.length > 1 && cells[0].innerText !== 'Chargement...' && 
+            cells[0].innerText !== 'Aucune donnée') {
+            csv += `"${cells[0].innerText}";"${cells[1].innerText}";"${cells[2].innerText}";"${cells[3].innerText}";"${cells[4].innerText}"\n`;
+        }
+    });
+    
+    const blob = new Blob(["\uFEFF" + csv], {type: 'text/csv;charset=utf-8;'});
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'statistiques_patients.csv';
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
 </script>
 {% endblock %}

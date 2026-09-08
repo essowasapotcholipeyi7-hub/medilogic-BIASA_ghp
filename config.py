@@ -13,6 +13,12 @@ class Config:
     # ⭐ SQLAlchemy
     SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', 'postgresql://...')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # ⭐ Bascule hors-ligne (voir utils/db_failover.py) : n'existe que si
+    # DATABASE_URL_LOCAL est définie (jamais le cas sur Render) — sinon
+    # aucun changement de comportement.
+    _DATABASE_URL_LOCAL = os.getenv('DATABASE_URL_LOCAL')
+    SQLALCHEMY_BINDS = {'local': _DATABASE_URL_LOCAL} if _DATABASE_URL_LOCAL else {}
     
     # ⭐ Google Sheets
     SPREADSHEET_ID = os.getenv('SPREADSHEET_ID', '1yLVp-zwjCFhYx5VZVZN1HXRRgYEyak8kiHHtwWpkLEE')

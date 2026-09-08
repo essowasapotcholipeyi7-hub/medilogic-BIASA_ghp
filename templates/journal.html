@@ -1,0 +1,571 @@
+{% extends "base.html" %}
+
+{% block title %}Journal des Mouvements{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card {
+        transition: transform 0.2s ease;
+        cursor: default;
+    }
+    .stat-card:hover {
+        transform: translateY(-3px);
+    }
+    .stat-card .stat-icon {
+        font-size: 28px;
+        opacity: 0.7;
+    }
+    .badge-categorie {
+        font-size: 10px;
+        padding: 3px 10px;
+        border-radius: 12px;
+    }
+    .badge-categorie.vente_actes { background: #e3f2fd; color: #0d47a1; }
+    .badge-categorie.vente_pharmacie { background: #e8f5e9; color: #1b5e20; }
+    .badge-categorie.vente_lunettes { background: #fff3e0; color: #e65100; }
+    .badge-categorie.annulation_vente { background: #fce4ec; color: #880e4f; }
+    .badge-categorie.paiement_facture { background: #e0f7fa; color: #006064; }
+    .badge-categorie.paiement_assurance { background: #f3e5f5; color: #4a148c; }
+    .badge-categorie.facture_emise { background: #e8eaf6; color: #1a237e; }
+    .badge-categorie.recette_encaisee { background: #d4edda; color: #155724; }
+    .badge-categorie.depense_enregistree { background: #f8d7da; color: #721c24; }
+    .badge-categorie.proforma_cree { background: #fff8e1; color: #e65100; }
+    .badge-categorie.rendez_vous_pris { background: #e3f2fd; color: #0d47a1; }
+    .badge-categorie.consultation_terminee { background: #e8f5e9; color: #1b5e20; }
+    
+    .montant-credit { color: #28a745; font-weight: 600; }
+    .montant-debit { color: #dc3545; font-weight: 600; }
+    .montant-neutre { color: #6c757d; }
+    
+    .filtres-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: end;
+    }
+    .filtres-bar .form-control,
+    .filtres-bar .form-select {
+        min-width: 150px;
+    }
+    
+    .mouvement-row {
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+    .mouvement-row:hover {
+        background: #f8f9fa;
+    }
+    
+    .detail-modal .modal-body {
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+
+    /* ⭐ Impression : voir aussi les règles globales dans base.html
+       (.no-print masque déjà .sidebar/.btn/boutons). Ici on masque en
+       plus les filtres/pagination (sans intérêt sur papier) et on affiche
+       une zone dédiée avec TOUS les résultats filtrés (pas seulement la
+       page affichée à l'écran) + un en-tête imprimable. */
+    .print-only { display: none; }
+    @media print {
+        .print-only { display: block !important; }
+        .filtres-bar-card, #statsCards { display: none !important; }
+        .print-header {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 14px;
+        }
+        .print-header h4 { margin: 0; }
+        .print-header .meta { text-align: right; font-size: 12px; color: #444; }
+        .print-kpis { display: flex; gap: 14px; margin-bottom: 14px; }
+        .print-kpis div { flex: 1; border: 1px solid #ccc; border-radius: 6px; padding: 8px 10px; }
+        .print-kpis .label { font-size: 10px; text-transform: uppercase; color: #666; }
+        .print-kpis .valeur { font-size: 15px; font-weight: 700; }
+        table.print-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        table.print-table th, table.print-table td { border: 1px solid #ccc; padding: 4px 6px; text-align: left; }
+        table.print-table th { background: #eee; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+    <!-- En-tête -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5><i class="fas fa-book me-2"></i> Journal des Mouvements</h5>
+        <div>
+            <button class="btn btn-outline-secondary btn-sm" onclick="exporterCSV()">
+                <i class="fas fa-file-excel me-1"></i> Exporter CSV
+            </button>
+            <button class="btn btn-outline-secondary btn-sm" onclick="imprimerJournal()" id="btnImprimer">
+                <i class="fas fa-print me-1"></i> Imprimer
+            </button>
+        </div>
+    </div>
+
+    <!-- Statistiques -->
+    <div class="row g-3 mb-3" id="statsCards">
+        <div class="col-md-3">
+            <div class="card stat-card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <div class="stat-icon text-primary"><i class="fas fa-list"></i></div>
+                    <h3 class="mb-0" id="statTotal">0</h3>
+                    <small class="text-muted">Total mouvements</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <div class="stat-icon text-success"><i class="fas fa-arrow-up"></i></div>
+                    <h3 class="mb-0 text-success" id="statCredits">0 F</h3>
+                    <small class="text-muted">Total crédits</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <div class="stat-icon text-danger"><i class="fas fa-arrow-down"></i></div>
+                    <h3 class="mb-0 text-danger" id="statDebits">0 F</h3>
+                    <small class="text-muted">Total débits</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <div class="stat-icon text-info"><i class="fas fa-calculator"></i></div>
+                    <h3 class="mb-0 text-info" id="statSolde">0 F</h3>
+                    <small class="text-muted">Solde</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filtres -->
+    <div class="card shadow-sm mb-3 filtres-bar-card">
+        <div class="card-body">
+            <div class="filtres-bar">
+                <div>
+                    <label class="form-label small fw-bold">Catégorie</label>
+                    <select id="filtreCategorie" class="form-select form-select-sm" onchange="chargerMouvements()">
+                        {% for cat in categories %}
+                        <option value="{{ cat.id }}">{{ cat.nom }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label small fw-bold">Du</label>
+                    <input type="date" id="filtreDateDebut" class="form-control form-control-sm" 
+                           value="{{ today }}" onchange="chargerMouvements()">
+                </div>
+                <div>
+                    <label class="form-label small fw-bold">Au</label>
+                    <input type="date" id="filtreDateFin" class="form-control form-control-sm" 
+                           value="{{ today }}" onchange="chargerMouvements()">
+                </div>
+                <div style="flex:1; min-width:200px;">
+                    <label class="form-label small fw-bold">Rechercher</label>
+                    <input type="text" id="filtreSearch" class="form-control form-control-sm" 
+                           placeholder="Patient, description..." onkeyup="chargerMouvementsDelayed()">
+                </div>
+                <div>
+                    <button class="btn btn-primary btn-sm" onclick="chargerMouvements()">
+                        <i class="fas fa-search me-1"></i> Filtrer
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="resetFiltres()">
+                        <i class="fas fa-undo me-1"></i> Réinitialiser
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Zone d'impression : en-tête + KPI + tableau COMPLET (pas seulement
+         la page à l'écran), générée par imprimerJournal() juste avant print() -->
+    <div class="print-only" id="zoneImpression">
+        <div class="print-header">
+            <div>
+                <h4>{{ session.get('structure_nom') or 'Structure' }}</h4>
+                <div>Journal des mouvements</div>
+            </div>
+            <div class="meta">
+                <div id="printPeriode">Période : -</div>
+                <div>Édité le <span id="printDateEdition"></span></div>
+            </div>
+        </div>
+        <div class="print-kpis">
+            <div><div class="label">Mouvements</div><div class="valeur" id="printStatTotal">0</div></div>
+            <div><div class="label">Crédits</div><div class="valeur" id="printStatCredits">0 F</div></div>
+            <div><div class="label">Débits</div><div class="valeur" id="printStatDebits">0 F</div></div>
+            <div><div class="label">Solde</div><div class="valeur" id="printStatSolde">0 F</div></div>
+        </div>
+        <table class="print-table">
+            <thead>
+                <tr>
+                    <th>Date/Heure</th>
+                    <th>Catégorie</th>
+                    <th>Description</th>
+                    <th>Patient</th>
+                    <th>Utilisateur</th>
+                    <th>Montant</th>
+                </tr>
+            </thead>
+            <tbody id="printMouvementsList"></tbody>
+        </table>
+    </div>
+
+    <!-- Liste -->
+    <div class="card shadow-sm no-print">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <span><i class="fas fa-list me-2"></i> Mouvements</span>
+            <span class="badge bg-secondary" id="totalCount">0</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:50px;">#</th>
+                            <th style="width:150px;">Date/Heure</th>
+                            <th>Catégorie</th>
+                            <th>Description</th>
+                            <th>Patient</th>
+                            <th style="width:120px;">Montant</th>
+                        </tr>
+                    </thead>
+                    <tbody id="mouvementsList">
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">
+                                <i class="fas fa-spinner fa-spin me-2"></i> Chargement...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer d-flex justify-content-between align-items-center">
+            <span class="text-muted small" id="infoPagination">Affichage de 0 à 0 sur 0</span>
+            <div>
+                <button class="btn btn-outline-secondary btn-sm" id="btnPrev" onclick="changerPage(-1)">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <span class="mx-2" id="pageInfo">Page 1</span>
+                <button class="btn btn-outline-secondary btn-sm" id="btnNext" onclick="changerPage(1)">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Détails -->
+<div class="modal fade" id="detailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h6 class="modal-title"><i class="fas fa-info-circle me-2"></i> Détails du mouvement</h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body detail-modal" id="detailContent">
+                <p class="text-muted">Chargement...</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ============================================================
+// VARIABLES
+// ============================================================
+
+var currentPage = 0;
+var pageSize = 50;
+var totalItems = 0;
+var rechercheTimeout = null;
+
+// ============================================================
+// CHARGER LES MOUVEMENTS
+// ============================================================
+
+function chargerMouvements() {
+    var categorie = document.getElementById('filtreCategorie').value;
+    var dateDebut = document.getElementById('filtreDateDebut').value;
+    var dateFin = document.getElementById('filtreDateFin').value;
+    var search = document.getElementById('filtreSearch').value;
+    
+    var url = '/journal/api/liste?';
+    url += 'categorie=' + categorie + '&';
+    url += 'date_debut=' + dateDebut + '&';
+    url += 'date_fin=' + dateFin + '&';
+    url += 'search=' + encodeURIComponent(search) + '&';
+    url += 'limit=' + pageSize + '&';
+    url += 'offset=' + (currentPage * pageSize);
+    
+    fetch(url)
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (data.success) {
+                afficherMouvements(data.data);
+                afficherStats(data.stats);
+                document.getElementById('totalCount').textContent = data.total;
+                totalItems = data.total;
+                mettreAJourPagination();
+            }
+        })
+        .catch(function(error) {
+            console.error('Erreur:', error);
+            document.getElementById('mouvementsList').innerHTML = 
+                '<tr><td colspan="6" class="text-center text-danger py-4">Erreur de chargement</td></tr>';
+        });
+}
+
+function chargerMouvementsDelayed() {
+    if (rechercheTimeout) {
+        clearTimeout(rechercheTimeout);
+    }
+    rechercheTimeout = setTimeout(function() {
+        currentPage = 0;
+        chargerMouvements();
+    }, 500);
+}
+
+// ============================================================
+// AFFICHER LES MOUVEMENTS
+// ============================================================
+
+function afficherMouvements(mouvements) {
+    var tbody = document.getElementById('mouvementsList');
+    
+    if (!mouvements || mouvements.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">' +
+                          '<i class="fas fa-inbox fa-3x mb-2"></i><br>Aucun mouvement trouvé</td></tr>';
+        return;
+    }
+    
+    var html = '';
+    mouvements.forEach(function(m) {
+        var categorieClass = 'badge-categorie ' + m.categorie;
+        var montantClass = 'montant-' + m.type_montant;
+        
+        html += '<tr class="mouvement-row" onclick="voirDetails(' + m.id + ')">';
+        html += '<td>' + m.id + '</td>';
+        html += '<td>' + m.date_affichage + '</td>';
+        html += '<td><span class="badge-categorie ' + categorieClass + '">' + m.categorie_label + '</span></td>';
+        html += '<td>' + (m.description || '-') + '</td>';
+        html += '<td>' + (m.patient_nom || '-') + '</td>';
+        html += '<td class="' + montantClass + '">' + m.montant_affichage + '</td>';
+        html += '</tr>';
+    });
+    
+    tbody.innerHTML = html;
+}
+
+// ============================================================
+// AFFICHER LES STATISTIQUES
+// ============================================================
+
+function afficherStats(stats) {
+    if (!stats) return;
+    
+    document.getElementById('statTotal').textContent = stats.total || 0;
+    document.getElementById('statCredits').textContent = (stats.credits || 0).toLocaleString() + ' F';
+    document.getElementById('statDebits').textContent = (stats.debits || 0).toLocaleString() + ' F';
+    document.getElementById('statSolde').textContent = (stats.solde || 0).toLocaleString() + ' F';
+}
+
+// ============================================================
+// PAGINATION
+// ============================================================
+
+function mettreAJourPagination() {
+    var totalPages = Math.ceil(totalItems / pageSize);
+    document.getElementById('pageInfo').textContent = 'Page ' + (currentPage + 1) + ' / ' + (totalPages || 1);
+    document.getElementById('btnPrev').disabled = currentPage === 0;
+    document.getElementById('btnNext').disabled = currentPage >= totalPages - 1;
+    
+    var debut = currentPage * pageSize + 1;
+    var fin = Math.min((currentPage + 1) * pageSize, totalItems);
+    document.getElementById('infoPagination').textContent = 
+        'Affichage de ' + debut + ' à ' + fin + ' sur ' + totalItems;
+}
+
+function changerPage(delta) {
+    var totalPages = Math.ceil(totalItems / pageSize);
+    var nouvellePage = currentPage + delta;
+    if (nouvellePage < 0 || nouvellePage >= totalPages) return;
+    currentPage = nouvellePage;
+    chargerMouvements();
+}
+
+// ============================================================
+// VOIR LES DÉTAILS D'UN MOUVEMENT
+// ============================================================
+
+function voirDetails(id) {
+    fetch('/journal/api/' + id)
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (data.success) {
+                afficherDetails(data.data);
+            } else {
+                alert('Erreur: ' + (data.error || 'Impossible de charger les détails'));
+            }
+        })
+        .catch(function(error) {
+            console.error('Erreur:', error);
+            alert('Erreur de chargement');
+        });
+}
+
+function afficherDetails(m) {
+    var content = document.getElementById('detailContent');
+    
+    var html = '';
+    html += '<div class="row">';
+    html += '  <div class="col-md-6">';
+    html += '    <p><strong>Date :</strong> ' + m.date_affichage + '</p>';
+    html += '    <p><strong>Catégorie :</strong> ' + m.categorie_label + '</p>';
+    html += '    <p><strong>Description :</strong> ' + (m.description || '-') + '</p>';
+    html += '  </div>';
+    html += '  <div class="col-md-6">';
+    html += '    <p><strong>Montant :</strong> <span class="' + ('montant-' + m.type_montant) + '">' + m.montant_affichage + '</span></p>';
+    html += '    <p><strong>Patient :</strong> ' + (m.patient_nom || '-') + '</p>';
+    html += '    <p><strong>Utilisateur :</strong> ' + (m.utilisateur_nom || '-') + '</p>';
+    html += '  </div>';
+    html += '</div>';
+    
+    if (m.details && Object.keys(m.details).length > 0) {
+        html += '<hr><h6 class="mb-2">Détails supplémentaires</h6>';
+        html += '<pre style="background:#f5f7fa; padding:10px; border-radius:6px; font-size:12px;">' + 
+                JSON.stringify(m.details, null, 2) + '</pre>';
+    }
+    
+    content.innerHTML = html;
+    
+    var modal = new bootstrap.Modal(document.getElementById('detailModal'), {
+        backdrop: false,
+        keyboard: true
+    });
+    modal.show();
+}
+
+// ============================================================
+// EXPORTER CSV
+// ============================================================
+
+function exporterCSV() {
+    var categorie = document.getElementById('filtreCategorie').value;
+    var dateDebut = document.getElementById('filtreDateDebut').value;
+    var dateFin = document.getElementById('filtreDateFin').value;
+    var search = document.getElementById('filtreSearch').value;
+    
+    var url = '/journal/api/export?';
+    url += 'categorie=' + categorie + '&';
+    url += 'date_debut=' + dateDebut + '&';
+    url += 'date_fin=' + dateFin + '&';
+    url += 'search=' + encodeURIComponent(search);
+    
+    window.open(url, '_blank');
+}
+
+// ============================================================
+// IMPRIMER (en-tête + TOUS les résultats filtrés, pas seulement la page)
+// ============================================================
+
+function imprimerJournal() {
+    var categorie = document.getElementById('filtreCategorie').value;
+    var dateDebut = document.getElementById('filtreDateDebut').value;
+    var dateFin = document.getElementById('filtreDateFin').value;
+    var search = document.getElementById('filtreSearch').value;
+    var btn = document.getElementById('btnImprimer');
+
+    var url = '/journal/api/liste?';
+    url += 'categorie=' + categorie + '&';
+    url += 'date_debut=' + dateDebut + '&';
+    url += 'date_fin=' + dateFin + '&';
+    url += 'search=' + encodeURIComponent(search) + '&';
+    url += 'limit=5000&offset=0';
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Préparation...';
+
+    fetch(url)
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (!data.success) { throw new Error('Echec du chargement'); }
+
+            var libelleCategorie = document.getElementById('filtreCategorie').selectedOptions[0].textContent;
+            document.getElementById('printPeriode').textContent =
+                'Catégorie : ' + libelleCategorie + ' — du ' + formaterDateFr(dateDebut) + ' au ' + formaterDateFr(dateFin) +
+                (search ? ' — recherche : "' + search + '"' : '');
+            document.getElementById('printDateEdition').textContent = new Date().toLocaleString('fr-FR');
+
+            var s = data.stats || {};
+            document.getElementById('printStatTotal').textContent = s.total || 0;
+            document.getElementById('printStatCredits').textContent = (s.credits || 0).toLocaleString() + ' F';
+            document.getElementById('printStatDebits').textContent = (s.debits || 0).toLocaleString() + ' F';
+            document.getElementById('printStatSolde').textContent = (s.solde || 0).toLocaleString() + ' F';
+
+            var tbody = document.getElementById('printMouvementsList');
+            if (!data.data || data.data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Aucun mouvement</td></tr>';
+            } else {
+                var html = '';
+                data.data.forEach(function(m) {
+                    html += '<tr>';
+                    html += '<td>' + m.date_affichage + '</td>';
+                    html += '<td>' + m.categorie_label + '</td>';
+                    html += '<td>' + (m.description || '-') + '</td>';
+                    html += '<td>' + (m.patient_nom || '-') + '</td>';
+                    html += '<td>' + (m.utilisateur_nom || '-') + '</td>';
+                    html += '<td>' + m.montant_affichage + '</td>';
+                    html += '</tr>';
+                });
+                tbody.innerHTML = html;
+            }
+
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-print me-1"></i> Imprimer';
+            window.print();
+        })
+        .catch(function(error) {
+            console.error('Erreur:', error);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-print me-1"></i> Imprimer';
+            alert("Impossible de préparer l'impression.");
+        });
+}
+
+function formaterDateFr(iso) {
+    if (!iso) return '-';
+    var p = iso.split('-');
+    return p.length === 3 ? (p[2] + '/' + p[1] + '/' + p[0]) : iso;
+}
+
+// ============================================================
+// RÉINITIALISER LES FILTRES
+// ============================================================
+
+function resetFiltres() {
+    document.getElementById('filtreCategorie').value = 'toutes';
+    document.getElementById('filtreSearch').value = '';
+    var today = new Date().toISOString().split('T')[0];
+    document.getElementById('filtreDateDebut').value = today;
+    document.getElementById('filtreDateFin').value = today;
+    currentPage = 0;
+    chargerMouvements();
+}
+
+// ============================================================
+// INITIALISATION
+// ============================================================
+
+document.addEventListener('DOMContentLoaded', function() {
+    chargerMouvements();
+});
+</script>
+{% endblock %}

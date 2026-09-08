@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autorisation d'absence</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Times New Roman', 'Georgia', serif;
+            background: #f0f2f5;
+            padding: 30px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        
+        .document-container {
+            max-width: 750px;
+            width: 100%;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.1);
+            padding: 35px 45px;
+            margin: 0 auto;
+            page-break-inside: avoid;
+        }
+        
+        .header {
+            text-align: center;
+            border-bottom: 3px solid #1a2a6c;
+            padding-bottom: 12px;
+            margin-bottom: 15px;
+        }
+        
+        .header .logo {
+            font-size: 22px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: #1a2a6c;
+            letter-spacing: 1px;
+        }
+        
+        .header .contact {
+            font-size: 11px;
+            color: #6c7a89;
+            margin-top: 4px;
+        }
+        
+        .numero {
+            text-align: right;
+            font-size: 12px;
+            color: #555;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        
+        .title {
+            text-align: center;
+            font-size: 20px;
+            font-weight: 700;
+            text-transform: uppercase;
+            text-decoration: underline;
+            margin: 10px 0 18px 0;
+            color: #1a2a6c;
+            letter-spacing: 2px;
+        }
+        
+        .content {
+            font-size: 14px;
+            line-height: 1.8;
+            text-align: justify;
+            color: #1a2a3a;
+        }
+        
+        .content p { margin-bottom: 8px; }
+        
+        .content .nom {
+            font-size: 16px;
+            font-weight: 700;
+            text-align: center;
+            margin: 10px 0 5px 0;
+            color: #1a2a6c;
+        }
+        
+        .content .nom .matricule {
+            font-size: 12px;
+            font-weight: 400;
+            color: #555;
+            display: block;
+            margin-top: 3px;
+        }
+        
+        .content .details {
+            text-align: center;
+            font-weight: 600;
+            margin: 12px 0;
+            padding: 12px 20px;
+            background: #f8faff;
+            border-radius: 6px;
+            border-left: 4px solid #1a2a6c;
+        }
+        
+        .content .details .periode {
+            font-size: 16px;
+            color: #1a2a6c;
+        }
+        
+        .content .details .sous-details {
+            font-size: 13px;
+            font-weight: 400;
+            color: #555;
+        }
+        
+        .content .motif {
+            margin: 10px 0;
+            padding: 8px 15px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border-left: 3px solid #28a745;
+        }
+        
+        .content .motif strong { color: #1a2a6c; }
+        
+        .signatures {
+            margin-top: 25px;
+            padding-top: 15px;
+            border-top: 2px solid #e6ebf2;
+        }
+        
+        .signatures table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .signatures td {
+            width: 33.33%;
+            text-align: center;
+            padding: 18px 8px 6px 8px;
+            border-top: 1px solid #1a2a6c;
+            font-size: 11px;
+            color: #3d4f60;
+            vertical-align: top;
+        }
+        
+        .signatures td strong {
+            font-size: 12px;
+            color: #1a2a3a;
+            display: block;
+            margin-bottom: 6px;
+        }
+        
+        .signatures td .line {
+            margin-top: 4px;
+            font-size: 10px;
+            color: #8e9aaf;
+        }
+        
+        .cachet-section {
+            text-align: center;
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px dashed #dce3ed;
+        }
+        
+        .cachet-section .cachet-box {
+            display: inline-block;
+            padding: 10px 40px;
+            border: 2px dashed #1a2a6c;
+            border-radius: 8px;
+            font-size: 12px;
+            color: #1a2a6c;
+            font-weight: 600;
+            letter-spacing: 2px;
+            min-width: 200px;
+        }
+        
+        .footer {
+            text-align: center;
+            font-size: 10px;
+            color: #8e9aaf;
+            margin-top: 18px;
+            border-top: 1px solid #e6ebf2;
+            padding-top: 8px;
+        }
+        
+        .footer .generated {
+            font-size: 9px;
+            color: #b0b8c5;
+        }
+        
+        .no-print {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn-print {
+            padding: 8px 25px;
+            background: #1a2a6c;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: 'Arial', sans-serif;
+            box-shadow: 0 4px 15px rgba(26, 42, 108, 0.3);
+        }
+        
+        .btn-print:hover { background: #2d4373; transform: translateY(-2px); }
+        
+        .btn-close {
+            padding: 8px 25px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: 'Arial', sans-serif;
+            box-shadow: 0 4px 15px rgba(220, 53, 69, 0.3);
+        }
+        
+        .btn-close:hover { background: #c82333; }
+        
+        @media print {
+            body { background: white; padding: 0; margin: 0; display: block; }
+            .document-container { border-radius: 0; box-shadow: none; padding: 30px 40px; max-width: 100%; }
+            .no-print { display: none !important; }
+        }
+        
+        @media (max-width: 600px) {
+            .document-container { padding: 20px 25px; }
+            .header .logo { font-size: 18px; }
+            .title { font-size: 17px; }
+            .signatures td { font-size: 10px; padding: 12px 4px 4px 4px; }
+            .content { font-size: 13px; }
+            .no-print { flex-direction: column; align-items: center; top: 10px; right: 10px; }
+            .btn-print, .btn-close { padding: 6px 15px; font-size: 12px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="document-container">
+        <!-- ===== EN-TÊTE ===== -->
+        <div class="header">
+            <div class="logo" id="structureNom">Chargement...</div>
+            <div class="contact" id="structureContact">
+                <span id="structureAdresse">Chargement...</span><br>
+                Tél: <span id="structureTelephone">Chargement...</span> | 
+                Email: <span id="structureEmail">Chargement...</span>
+            </div>
+        </div>
+
+        <div class="numero">N° ORDRE : <strong>{{ numero_ordre }}</strong></div>
+
+        <div class="title">Autorisation d'absence</div>
+
+        <div class="content">
+            <p>
+                Je soussigné(e), <strong>{{ signataire }}</strong>, 
+                <strong id="structureNomTexte">Chargement...</strong>,
+            </p>
+
+            <p>
+                Autorise <strong>{{ titre }} {{ employe.nom }} {{ employe.prenom }}</strong>,
+            </p>
+
+            <div class="nom">
+                {{ employe.nom }} {{ employe.prenom }}
+                <span class="matricule">
+                    Matricule : {{ employe.matricule }} | Service : {{ employe.service.nom if employe.service else '-' }} | Poste : {{ employe.poste }}
+                </span>
+            </div>
+
+            <p>
+                à s'absenter de son poste de travail,
+            </p>
+
+            <div class="details">
+                {% if permission.type_permission == 'heures' %}
+                    <div class="periode">
+                        {{ permission.date_permission.strftime('%d/%m/%Y') if permission.date_permission else '-' }}
+                    </div>
+                    <div class="sous-details">
+                        De : <strong>{{ permission.heure_debut.strftime('%H:%M') if permission.heure_debut else '-' }}</strong>
+                        à : <strong>{{ permission.heure_fin.strftime('%H:%M') if permission.heure_fin else '-' }}</strong>
+                    </div>
+                {% else %}
+                    <div class="periode">
+                        Du <strong>{{ permission.date_debut.strftime('%d/%m/%Y') if permission.date_debut else '-' }}</strong>
+                        au <strong>{{ permission.date_fin.strftime('%d/%m/%Y') if permission.date_fin else '-' }}</strong> inclus
+                    </div>
+                    <div class="sous-details">
+                        ({{ permission.nombre_jours }} jours)
+                    </div>
+                {% endif %}
+            </div>
+
+            <div class="motif">
+                <strong>Motif :</strong> {{ permission.motif }}
+            </div>
+
+            <p style="font-style: italic; color: #555; font-size: 13px; margin-top: 10px;">
+                Le présent document est délivré à l'intéressé pour servir et valoir ce que de droit.
+            </p>
+        </div>
+
+        <div class="signatures">
+            <table>
+                <tr>
+                    <td>
+                        <strong>Visa du Chef de service</strong>
+                        <div class="line">Signature : ......................</div>
+                        <div class="line">Nom : ......................</div>
+                        <div class="line">Date : {{ date_actuelle }}</div>
+                    </td>
+                    <td>
+                        <strong>Visa du Responsable GRH</strong>
+                        <div class="line">Signature : ......................</div>
+                        <div class="line">Nom : ......................</div>
+                        <div class="line">Date : {{ date_actuelle }}</div>
+                    </td>
+                    <td>
+                        <strong>Visa du Directeur Général</strong>
+                        <div class="line">Signature : ......................</div>
+                        <div class="line">Nom : {{ signataire }}</div>
+                        <div class="line">Date : {{ date_actuelle }}</div>
+                    </td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="cachet-section">
+            <div class="cachet-box">CACHET DE L'ÉTABLISSEMENT</div>
+        </div>
+
+        <div class="footer">
+            <div id="footerText">Document généré le {{ date_actuelle }}</div>
+            <div class="generated">SSoftOneV10</div>
+        </div>
+    </div>
+
+    <div class="no-print">
+        <button class="btn-print" onclick="imprimerDocument()"><i class="fas fa-print"></i> Imprimer</button>
+        <button class="btn-close" onclick="fermerFenetre()"><i class="fas fa-times"></i> Fermer</button>
+    </div>
+
+    <script>
+        // ============================================================
+        // CHARGER LES INFOS DE LA STRUCTURE DEPUIS localStorage
+        // ============================================================
+        
+        function chargerStructure() {
+            // Récupérer les infos depuis localStorage
+            const nom = localStorage.getItem('structureNom');
+            const telephone = localStorage.getItem('structureTelephone');
+            const email = localStorage.getItem('structureEmail');
+            const adresse = localStorage.getItem('structureAdresse');
+            
+            // Vérifier si les données existent
+            if (!nom) {
+                // Si localStorage est vide, afficher un message d'erreur
+                document.getElementById('structureNom').textContent = 'ERREUR: Structure non chargée';
+                document.getElementById('structureNomTexte').textContent = 'ERREUR: Structure non chargée';
+                document.getElementById('structureAdresse').textContent = 'Veuillez vous reconnecter';
+                document.getElementById('structureTelephone').textContent = '---';
+                document.getElementById('structureEmail').textContent = '---';
+                document.getElementById('footerText').textContent = 'Document généré le ' + new Date().toLocaleDateString('fr-FR');
+                return;
+            }
+            
+            // Mettre à jour l'en-tête
+            document.getElementById('structureNom').textContent = nom;
+            document.getElementById('structureNomTexte').textContent = nom;
+            
+            // Mettre à jour le contact
+            document.getElementById('structureAdresse').textContent = adresse || '';
+            document.getElementById('structureTelephone').textContent = telephone || '';
+            document.getElementById('structureEmail').textContent = email || '';
+            
+            // Mettre à jour le footer
+            document.getElementById('footerText').textContent = `Document généré par ${nom} le {{ date_actuelle }}`;
+            
+            console.log('✅ Structure chargée depuis localStorage');
+        }
+        
+        // ============================================================
+        // IMPRESSION ET FERMETURE
+        // ============================================================
+        
+        let impressionLancee = false;
+        
+        function imprimerDocument() {
+            if (!impressionLancee) {
+                impressionLancee = true;
+                window.print();
+            }
+        }
+        
+        function fermerFenetre() {
+            if (confirm('Voulez-vous fermer cette fenêtre ?')) {
+                window.close();
+            }
+        }
+        
+        // Charger les infos au démarrage
+        document.addEventListener('DOMContentLoaded', function() {
+            chargerStructure();
+        });
+        
+        // Fermeture automatique après impression
+        window.addEventListener('afterprint', function() {
+            if (impressionLancee) {
+                setTimeout(function() {
+                    try {
+                        window.close();
+                    } catch(e) {}
+                }, 600);
+            }
+        });
+        
+        // Raccourcis clavier
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'p') {
+                e.preventDefault();
+                imprimerDocument();
+            }
+            if (e.key === 'Escape') {
+                fermerFenetre();
+            }
+        });
+    </script>
+</body>
+</html>

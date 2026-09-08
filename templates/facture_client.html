@@ -129,7 +129,7 @@
                             <img src="{{ structure_logo }}" alt="Logo" style="max-height: 80px; max-width: 150px; background: white; padding: 5px; border-radius: 8px;">
                             {% endif %}
                             <div>
-                                <h2 style="margin: 0;">{{ structure_nom or "Medilogic-GHP" }}</h2>
+                                <h2 style="margin: 0;">{{ structure_nom or "SSoftone V10" }}</h2>
                                 <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.9;">
                                     <i class="fas fa-map-marker-alt"></i> {{ structure_adresse or "" }}<br>
                                     <i class="fas fa-phone"></i> {{ structure_telephone or "" }} | 
@@ -169,6 +169,9 @@
         <br>
         {% if numero_assure2 and numero_assure2 != '' %}
         <strong>N° Assuré 2 :</strong> {{ numero_assure2 }}<br>
+        {% endif %}
+        {% if societe_assurance2 and societe_assurance2 != '' %}
+        <strong>Société :</strong> {{ societe_assurance2 }}<br>
         {% endif %}
         {# 🔥 AFFICHER LE TAUX ORIGINAL EN RÉFÉRENCE #}
         {% if taux_modifie and taux_modifie == true and taux_original and taux_original > 0 %}

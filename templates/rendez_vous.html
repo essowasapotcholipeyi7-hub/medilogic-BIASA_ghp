@@ -4,20 +4,9 @@
 
 {% block extra_css %}
 <style>
-    #rendezVousTable th, 
-    #rendezVousTable td {
+    #rendezVousTable th, #rendezVousTable td {
         vertical-align: middle !important;
     }
-    
-    /* Largeurs responsives */
-    #rendezVousTable th:nth-child(1) { width: 5%; }  /* ID */
-    #rendezVousTable th:nth-child(2) { width: 18%; } /* Patient */
-    #rendezVousTable th:nth-child(3) { width: 12%; } /* Téléphone */
-    #rendezVousTable th:nth-child(4) { width: 10%; } /* Date */
-    #rendezVousTable th:nth-child(5) { width: 8%; }  /* Heure */
-    #rendezVousTable th:nth-child(6) { width: 20%; } /* Motif */
-    #rendezVousTable th:nth-child(7) { width: 10%; } /* Statut */
-    #rendezVousTable th:nth-child(8) { width: 17%; } /* Actions */
     
     .badge {
         font-size: 11px;
@@ -45,19 +34,44 @@
         box-shadow: 0 5px 15px rgba(0,0,0,0.1);
     }
     
-    .rdv-card {
-        border-left: 4px solid;
-        transition: all 0.2s ease;
+    .filtre-actif {
+        background-color: #e3f2fd !important;
+        border-color: #0d6efd !important;
     }
     
-    .rdv-card:hover {
-        transform: translateX(5px);
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    .toast-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 9999;
+    }
+    
+    .loader-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        z-index: 9998;
+        justify-content: center;
+        align-items: center;
+    }
+    
+    .loader-overlay.show {
+        display: flex;
+    }
+    
+    .loader-content {
+        background: white;
+        padding: 30px;
+        border-radius: 10px;
+        text-align: center;
     }
     
     @media (max-width: 992px) {
-        #rendezVousTable th,
-        #rendezVousTable td {
+        #rendezVousTable th, #rendezVousTable td {
             white-space: normal;
         }
         .btn-group .btn {
@@ -65,253 +79,425 @@
             font-size: 10px;
         }
     }
+
+/* Style pour la recherche de patient */
+#patientResults {
+    position: absolute;
+    z-index: 1000;
+    width: 100%;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+#patientResults .list-group-item:hover {
+    background-color: #f0f4ff;
+}
+
+#patientSelected {
+    display: none;
+    padding: 5px 10px;
+    background: #e8f5e9;
+    border-radius: 4px;
+}
+
+#patientSelected .badge {
+    font-size: 14px;
+    padding: 8px 12px;
+}
+
+/* ============================================================
+   CORRECTION SPECIFIQUE POUR LE MODAL REPORTER
+   ============================================================ */
+
+/* Forcer le modal reporter à être au-dessus de tout */
+#reporterModal {
+    z-index: 9999 !important;
+}
+
+#reporterModal .modal-dialog {
+    z-index: 9999 !important;
+}
+
+#reporterModal .modal-content {
+    z-index: 9999 !important;
+    pointer-events: auto !important;
+}
+
+#reporterModal .modal-body {
+    pointer-events: auto !important;
+}
+
+#reporterModal .modal-body input,
+#reporterModal .modal-body textarea,
+#reporterModal .modal-body select,
+#reporterModal .modal-body button,
+#reporterModal .modal-footer button {
+    pointer-events: auto !important;
+    opacity: 1 !important;
+}
+
+/* Supprimer l'effet de blocage du backdrop */
+#reporterModal .modal-backdrop {
+    z-index: 9998 !important;
+}
+
+/* Forcer les champs à être interactifs */
+#reporterModal input:disabled,
+#reporterModal textarea:disabled {
+    opacity: 1 !important;
+    background-color: white !important;
+}
+
+/* Correction pour le body quand le modal est ouvert */
+body.modal-open {
+    overflow: visible !important;
+}
+
+/* Supprimer l'overlay qui bloque */
+.modal-backdrop {
+    z-index: 1040 !important;
+}
+
+/* Forcer le modal à être au-dessus du backdrop */
+.modal.show {
+    z-index: 1055 !important;
+}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-md-3 mb-4">
-        {% include 'sidebar_menu.html' %}
+<!-- Loader -->
+<div class="loader-overlay" id="globalLoader">
+    <div class="loader-content">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p class="mt-2" id="loaderMessage">Chargement...</p>
     </div>
+</div>
 
-    <div class="col-md-9">
-        <!-- Statistiques améliorées -->
-        <div class="row mb-4 g-3">
-            <div class="col-md-4">
-                <div class="card stat-card border-0 shadow-sm">
-                    <div class="card-body text-center">
-                        <div class="rounded-circle bg-primary bg-opacity-10 p-3 mx-auto mb-2" style="width: 60px; height: 60px;">
-                            <i class="fas fa-calendar-day text-primary fa-2x"></i>
-                        </div>
-                        <h3 class="mb-1 text-primary" id="statsAujourdhui">0</h3>
-                        <small class="text-muted">Rendez-vous aujourd'hui</small>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card stat-card border-0 shadow-sm">
-                    <div class="card-body text-center">
-                        <div class="rounded-circle bg-warning bg-opacity-10 p-3 mx-auto mb-2" style="width: 60px; height: 60px;">
-                            <i class="fas fa-calendar-week text-warning fa-2x"></i>
-                        </div>
-                        <h3 class="mb-1 text-warning" id="statsSemaine">0</h3>
-                        <small class="text-muted">Cette semaine</small>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card stat-card border-0 shadow-sm">
-                    <div class="card-body text-center">
-                        <div class="rounded-circle bg-info bg-opacity-10 p-3 mx-auto mb-2" style="width: 60px; height: 60px;">
-                            <i class="fas fa-clock text-info fa-2x"></i>
-                        </div>
-                        <h3 class="mb-1 text-info" id="statsEnAttente">0</h3>
-                        <small class="text-muted">En attente</small>
-                    </div>
+<!-- Toast -->
+<div class="toast-container">
+    <div id="globalToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast-header">
+            <strong class="me-auto" id="toastTitle">Notification</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+        </div>
+        <div class="toast-body" id="toastMessage"></div>
+    </div>
+</div>
+
+<div class="container-fluid py-3">
+    <!-- Statistiques -->
+    <div class="row mb-4 g-3">
+        <div class="col-md-3">
+            <div class="card stat-card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <h3 class="mb-1 text-primary" id="statsAujourdhui">0</h3>
+                    <small class="text-muted">Aujourd'hui</small>
                 </div>
             </div>
         </div>
-
-        <!-- Formulaire ajout rendez-vous amélioré -->
-        <div class="card shadow-sm mb-4">
-            <div class="card-header bg-gradient-primary text-white">
-                <h5 class="mb-0"><i class="fas fa-plus-circle me-2"></i> Nouveau rendez-vous</h5>
+        <div class="col-md-3">
+            <div class="card stat-card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <h3 class="mb-1 text-warning" id="statsSemaine">0</h3>
+                    <small class="text-muted">Cette semaine</small>
+                </div>
             </div>
-            <div class="card-body">
-                <div class="row mb-3">
-                    <div class="col-md-12">
-                        <div class="input-group">
-                            <span class="input-group-text bg-white">
-                                <i class="fas fa-search text-primary"></i>
-                            </span>
-                            <input type="text" id="searchPatientRdv" class="form-control" 
-                                   placeholder="Rechercher un patient par nom, prénom ou téléphone..." 
-                                   onkeyup="filtrerPatientsRdv()">
-                            <button class="btn btn-outline-secondary" onclick="clearSearchPatientRdv()" type="button">
-                                <i class="fas fa-times"></i>
-                            </button>
-                            <button class="btn btn-primary" onclick="showAddPatientModal()" type="button">
-                                <i class="fas fa-user-plus"></i> Nouveau patient
-                            </button>
-                        </div>
-                        <div class="text-muted small mt-1">
-                            <i class="fas fa-info-circle"></i> <span id="patientRdvCount">0</span> patient(s) trouvé(s)
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <h3 class="mb-1 text-info" id="statsMois">0</h3>
+                    <small class="text-muted">Ce mois</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <h3 class="mb-1 text-success" id="statsTotal">0</h3>
+                    <small class="text-muted">Total</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filtres -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-light">
+            <h6 class="mb-0"><i class="fas fa-filter me-2"></i>Filtres</h6>
+        </div>
+        <div class="card-body">
+            <form id="filtreForm" method="GET" action="{{ url_for('rendez_vous') }}">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label small fw-bold">Période</label>
+                        <select id="filtrePeriode" name="periode" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="tous" {% if periode == 'tous' %}selected{% endif %}>Tous</option>
+                            <option value="aujourdhui" {% if periode == 'aujourdhui' %}selected{% endif %}>Aujourd'hui</option>
+                            <option value="semaine" {% if periode == 'semaine' %}selected{% endif %}>Cette semaine</option>
+                            <option value="mois" {% if periode == 'mois' %}selected{% endif %}>Ce mois</option>
+                            <option value="personnalise" {% if periode == 'personnalise' %}selected{% endif %}>Personnalisé</option>
+                        </select>
+                    </div>
+                    
+                    <div class="col-md-3" id="periodePersonnalisee" style="{% if periode != 'personnalise' %}display:none;{% endif %}">
+                        <label class="form-label small fw-bold">Du</label>
+                        <div class="d-flex gap-2">
+                            <input type="date" id="dateDebut" name="date_debut" class="form-control form-control-sm" value="{{ date_debut or '' }}">
+                            <input type="date" id="dateFin" name="date_fin" class="form-control form-control-sm" value="{{ date_fin or '' }}">
                         </div>
                     </div>
-                </div>
-                
-                <div class="row g-3">
-                    <div class="col-md-5">
-                        <label class="form-label fw-bold">
-                            <i class="fas fa-user me-1"></i> Patient
-                        </label>
-                        <select class="form-select" id="patientSelect" size="5" style="height: auto;">
-                            <option value="">-- Sélectionner un patient --</option>
-                            {% for patient in patients %}
-                            <option value="{{ patient.ID }}" 
-                                    data-nom="{{ patient.nom }}" 
-                                    data-prenom="{{ patient.prenom }}" 
-                                    data-tel="{{ patient.telephone }}">
-                                {{ patient.nom }} {{ patient.prenom }} - {{ patient.telephone }}
+                    
+                    <div class="col-md-2">
+                        <label class="form-label small fw-bold">Statut</label>
+                        <select name="statut" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="tous" {% if statut == 'tous' %}selected{% endif %}>Tous</option>
+                            <option value="programme" {% if statut == 'programme' %}selected{% endif %}>Programmé</option>
+                            <option value="confirme" {% if statut == 'confirme' %}selected{% endif %}>Confirmé</option>
+                            <option value="termine" {% if statut == 'termine' %}selected{% endif %}>Terminé</option>
+                            <option value="annule" {% if statut == 'annule' %}selected{% endif %}>Annulé</option>
+                            <option value="reporte" {% if statut == 'reporte' %}selected{% endif %}>Reporté</option>
+                        </select>
+                    </div>
+                    
+                    <div class="col-md-2">
+                        <label class="form-label small fw-bold">Médecin</label>
+                        <select name="medecin_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">Tous</option>
+                            {% for medecin in medecins %}
+                            <option value="{{ medecin.id }}" {% if medecin_id == medecin.id %}selected{% endif %}>
+                                {{ medecin.titre }} {{ medecin.nom }}
                             </option>
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="col-md-3">
-                        <label class="form-label fw-bold">
-                            <i class="fas fa-calendar me-1"></i> Date
-                        </label>
-                        <input type="date" class="form-control" id="dateRendezVous" min="{{ today }}">
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label fw-bold">
-                            <i class="fas fa-clock me-1"></i> Heure
-                        </label>
-                        <input type="time" class="form-control" id="heureRendezVous">
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label fw-bold">
-                            <i class="fas fa-stethoscope me-1"></i> Motif <span class="text-danger">*</span>
-                        </label>
-                        <input type="text" class="form-control" id="motif" 
-                               placeholder="Ex: Consultation /Dr, Examen médical, Vaccination..."
-                               required>
-                    </div>
-                </div>
-                <div class="row mt-3">
-                    <div class="col-md-12">
-                        <button class="btn btn-primary" onclick="ajouterRendezVous()">
-                            <i class="fas fa-calendar-plus me-1"></i> Prendre rendez-vous
+                    
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary btn-sm w-100">
+                            <i class="fas fa-search me-1"></i> Appliquer
                         </button>
                     </div>
                 </div>
-            </div>
+            </form>
         </div>
+    </div>
 
-        <!-- Liste des rendez-vous -->
-        <div class="card shadow-sm">
-            <div class="card-header bg-gradient-info text-white d-flex justify-content-between align-items-center">
-                <h5 class="mb-0"><i class="fas fa-list me-2"></i> Liste des rendez-vous</h5>
-                <div>
-                    <button class="btn btn-light btn-sm me-2" onclick="imprimerRendezVous()">
-                        <i class="fas fa-print me-1"></i> Imprimer
-                    </button>
-                    <button class="btn btn-light btn-sm" onclick="exporterRendezVousCSV()">
-                        <i class="fas fa-file-excel me-1"></i> Exporter
-                    </button>
-                </div>
-            </div>
-            <div class="card-body">
-                <div class="row g-2 mb-3">
-                    <div class="col-md-4">
-                        <label class="form-label small">Filtrer par statut</label>
-                        <select id="filtreStatut" class="form-select form-select-sm" onchange="filtrerRendezVous()">
-                            <option value="tous">Tous les statuts</option>
-                            <option value="programme">📋 Programmé</option>
-                            <option value="confirme">✅ Confirmé</option>
-                            <option value="termine">✔️ Terminé</option>
-                            <option value="annule">❌ Annulé</option>
-                            <option value="reporte">🔄 Reporté</option>
-                            <option value="depasse">⏰ Dépassés</option>
+    <!-- Formulaire ajout rendez-vous -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary text-white">
+            <h6 class="mb-0"><i class="fas fa-plus-circle me-2"></i> Nouveau rendez-vous</h6>
+        </div>
+        <div class="card-body">
+            <form id="formRendezVous">
+                <div class="row g-3">
+<div class="col-md-4">
+    <label class="form-label fw-bold small">Patient</label>
+    <div class="input-group">
+        <input type="text" class="form-control" id="patientSearch" 
+               placeholder="Rechercher par nom, prénom ou téléphone..." 
+               onkeyup="rechercherPatient()" onfocus="rechercherPatient()">
+        <button class="btn btn-outline-secondary" type="button" onclick="viderRecherchePatient()">
+            <i class="fas fa-times"></i>
+        </button>
+        <a href="{{ url_for('patients') }}" class="btn btn-primary" target="_blank">
+            <i class="fas fa-user-plus"></i>
+        </a>
+    </div>
+    <input type="hidden" id="patientSelect" value="">
+    <div id="patientResults" class="list-group mt-1" style="max-height: 200px; overflow-y: auto; display: none;"></div>
+    <div id="patientSelected" class="mt-1" style="display: none;">
+        <span class="badge bg-success" id="patientSelectedInfo">Patient sélectionné</span>
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="deselectionnerPatient()">
+            <i class="fas fa-times"></i>
+        </button>
+    </div>
+</div>
+                    
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold small">Médecin</label>
+                        <select class="form-select" id="medecinSelect" required>
+                            <option value="">-- Sélectionner --</option>
+                            {% for medecin in medecins %}
+                            <option value="{{ medecin.id }}" 
+                                    data-specialite="{{ medecin.specialite }}">
+                                {{ medecin.titre }} {{ medecin.nom }} - {{ medecin.specialite }}
+                            </option>
+                            {% endfor %}
                         </select>
                     </div>
-                    <div class="col-md-4">
-                        <label class="form-label small">Filtrer par date</label>
-                        <input type="date" id="filtreDate" class="form-control form-control-sm" onchange="filtrerRendezVous()">
+                    
+                    <div class="col-md-2">
+                        <label class="form-label fw-bold small">Date</label>
+                        <input type="date" class="form-control" id="dateRendezVous" min="{{ today }}" required>
                     </div>
-                    <div class="col-md-4 d-flex align-items-end">
-                        <button class="btn btn-secondary btn-sm w-100" onclick="resetFilters()">
-                            <i class="fas fa-undo-alt me-1"></i> Réinitialiser
+                    
+                    <div class="col-md-2">
+                        <label class="form-label fw-bold small">Heure</label>
+                        <input type="time" class="form-control" id="heureRendezVous" required>
+                        <div class="text-muted small" id="disponibilitesInfo"></div>
+                    </div>
+                    
+                    <div class="col-md-1">
+                        <label class="form-label fw-bold small">Durée</label>
+                        <select class="form-select" id="dureeRendezVous">
+                            <option value="15">15</option>
+                            <option value="30" selected>30</option>
+                            <option value="45">45</option>
+                            <option value="60">60</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="row g-3 mt-1">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold small">Motif</label>
+                        <select class="form-select" id="motifSelect">
+                            <option value="">-- Sélectionner --</option>
+                            <option value="Consultation generale">Consultation générale</option>
+                            <option value="Consultation specialisee">Consultation spécialisée</option>
+                            <option value="Examen medical">Examen médical</option>
+                            <option value="Vaccination">Vaccination</option>
+                            <option value="Suivi medical">Suivi médical</option>
+                            <option value="Controle">Contrôle</option>
+                            <option value="Urgence">Urgence</option>
+                            <option value="Certificat medical">Certificat médical</option>
+                            <option value="Prise de sang">Prise de sang</option>
+                            <option value="Radiologie">Radiologie</option>
+                            <option value="Autre">Autre</option>
+                        </select>
+                        <div id="motifAutreContainer" style="display:none; margin-top:5px;">
+                            <input type="text" class="form-control" id="motifAutre" placeholder="Saisir le motif...">
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold small">Notes</label>
+                        <input type="text" class="form-control" id="notesRendezVous" placeholder="Informations complémentaires...">
+                    </div>
+                </div>
+                
+                <div class="row mt-3">
+                    <div class="col-md-12">
+                        <button type="button" class="btn btn-primary" onclick="ajouterRendezVous()">
+                            <i class="fas fa-calendar-plus me-1"></i> Prendre rendez-vous
+                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="resetForm()">
+                            <i class="fas fa-undo me-1"></i> Réinitialiser
                         </button>
                     </div>
                 </div>
+            </form>
+        </div>
+    </div>
 
-                <div class="table-responsive">
-                    <table class="table table-hover table-bordered" id="rendezVousTable">
-                        <thead class="table-light">
-                            <tr>
-                                <th>ID</th>
-                                <th>Patient</th>
-                                <th>Téléphone</th>
-                                <th>Date</th>
-                                <th>Heure</th>
-                                <th>Motif</th>
-                                <th>Statut</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="rendezVousList">
-                            {% for rdv in rendez_vous %}
-                            <tr data-id="{{ rdv.ID }}" data-statut="{{ rdv.statut }}" data-date="{{ rdv.date_rendez_vous }}">
-                                <td>{{ rdv.ID }}</td>
-                                <td>{{ rdv.patient_nom }}</td>
-                                <td>{{ rdv.patient_telephone }}</td>
-                                <td>{{ rdv.date_rendez_vous }}</td>
-                                <td>{{ rdv.heure_rendez_vous }}</td>
-                                <td>{{ rdv.motif }}</td>
-                                <td>
-                                    {% if rdv.statut == 'confirme' %}
-                                        <span class="badge bg-success">✅ Confirmé</span>
-                                    {% elif rdv.statut == 'programme' %}
-                                        <span class="badge bg-warning text-dark">📋 Programmé</span>
-                                    {% elif rdv.statut == 'annule' %}
-                                        <span class="badge bg-danger">❌ Annulé</span>
-                                    {% elif rdv.statut == 'reporte' %}
-                                        <span class="badge bg-info">🔄 Reporté</span>
-                                    {% elif rdv.statut == 'termine' %}
-                                        <span class="badge bg-secondary">✔️ Terminé</span>
-                                    {% else %}
-                                        <span class="badge bg-secondary">{{ rdv.statut }}</span>
+    <!-- Liste des rendez-vous -->
+    <div class="card shadow-sm">
+<div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+    <h6 class="mb-0"><i class="fas fa-list me-2"></i> Liste des rendez-vous</h6>
+    <div>
+        <span class="badge bg-light text-dark me-2">{{ total }} rendez-vous</span>
+        <button class="btn btn-light btn-sm me-2" onclick="imprimerCalendrier()">
+            Imprimer Calendrier semaine
+        </button>
+        <button class="btn btn-light btn-sm" onclick="exporterCSV()">
+            Exporter RDV
+        </button>
+    </div>
+</div>
+
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover table-bordered" id="rendezVousTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th>#</th>
+                            <th>Patient</th>
+                            <th>Téléphone</th>
+                            <th>Médecin</th>
+                            <th>Date</th>
+                            <th>Heure</th>
+                            <th>Motif</th>
+                            <th>Statut</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rendezVousList">
+                        {% for rdv in rendez_vous %}
+                        <tr data-id="{{ rdv.id }}" data-statut="{{ rdv.statut }}" data-date="{{ rdv.date_rendez_vous }}">
+                            <td>{{ loop.index }}</td>
+                            <td>{{ rdv.patient_nom }}</td>
+                            <td>{{ rdv.patient_telephone or '-' }}</td>
+                            <td>
+                                {% if rdv.medecin %}
+                                <span class="badge bg-info">{{ rdv.medecin.get_nom_complet() }}</span>
+                                {% else %}
+                                <span class="text-muted">Non attribué</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ rdv.date_rendez_vous.strftime('%d/%m/%Y') if rdv.date_rendez_vous else '-' }}</td>
+                            <td>{{ rdv.heure_rendez_vous }}</td>
+                            <td>{{ rdv.motif }}</td>
+                            <td>
+                                <span class="badge {{ rdv.get_statut_badge_class() }}">
+                                    {{ rdv.get_statut_label() }}
+                                </span>
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    {% if rdv.statut == 'programme' %}
+                                    <button class="btn btn-success" onclick="confirmerRendezVous({{ rdv.id }})" title="Confirmer">
+                                        <i class="fas fa-check"></i>
+                                    </button>
                                     {% endif %}
-                                </td>
-                                <td>
-                                    <div class="btn-group btn-group-sm">
-                                        <button class="btn btn-success" onclick="confirmerRendezVous({{ rdv.ID }})" title="Confirmer">
-                                            <i class="fas fa-check"></i>
-                                        </button>
-                                        <button class="btn btn-warning" onclick="reporterRendezVous({{ rdv.ID }})" title="Reporter">
-                                            <i class="fas fa-calendar-alt"></i>
-                                        </button>
-                                        <button class="btn btn-success" onclick="envoyerRappel({{ rdv.ID }})" title="WhatsApp">
-                                            <i class="fab fa-whatsapp"></i>
-                                        </button>
-                                        <button class="btn btn-danger" onclick="annulerRendezVous({{ rdv.ID }})" title="Annuler">
-                                            <i class="fas fa-times"></i>
-                                        </button>
-                                        <button class="btn btn-secondary" onclick="terminerRendezVous({{ rdv.ID }})" title="Terminer">
-                                            <i class="fas fa-check-double"></i>
-                                        </button>
-                                        <button class="btn btn-primary" onclick="imprimerRendezVousPatient({{ rdv.ID }})" title="Imprimer">
-                                            <i class="fas fa-print"></i>
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                            {% else %}
-                            <tr>
-                                <td colspan="8" class="text-center text-muted py-4">
-                                    <i class="fas fa-calendar-times fa-3x mb-2"></i><br>
-                                    Aucun rendez-vous
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
+                                    {% if rdv.statut in ['programme', 'confirme'] %}
+                                    <button class="btn btn-warning" onclick="reporterRendezVous({{ rdv.id }})" title="Reporter">
+                                        <i class="fas fa-calendar-alt"></i>
+                                    </button>
+                                    <button class="btn btn-success" onclick="envoyerRappel({{ rdv.id }})" title="WhatsApp">
+                                        <i class="fab fa-whatsapp"></i>
+                                    </button>
+                                    <button class="btn btn-danger" onclick="annulerRendezVous({{ rdv.id }})" title="Annuler">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                    <button class="btn btn-secondary" onclick="terminerRendezVous({{ rdv.id }})" title="Terminer">
+                                        <i class="fas fa-check-double"></i>
+                                    </button>
+                                    {% endif %}
+                                    <button class="btn btn-primary" onclick="imprimerReçu({{ rdv.id }})" title="Imprimer">
+                                        <i class="fas fa-print"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="9" class="text-center text-muted py-4">
+                                <i class="fas fa-calendar-times fa-3x mb-2"></i><br>
+                                Aucun rendez-vous trouvé
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Modal Reporter rendez-vous -->
+
+<!-- Modal Reporter -->
 <div class="modal fade" id="reporterModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header bg-warning text-white">
-                <h5 class="modal-title"><i class="fas fa-calendar-alt me-2"></i> Reporter le rendez-vous</h5>
+                <h6 class="modal-title"><i class="fas fa-calendar-alt me-2"></i> Reporter le rendez-vous</h6>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <input type="hidden" id="reporterRdvId">
                 <div class="mb-3">
                     <label class="form-label fw-bold">Nouvelle date</label>
                     <input type="date" class="form-control" id="nouvelleDate" min="{{ today }}">
@@ -321,53 +507,20 @@
                     <input type="time" class="form-control" id="nouvelleHeure">
                 </div>
                 <div class="mb-3">
-                    <label class="form-label fw-bold">Message au patient (optionnel)</label>
-                    <textarea class="form-control" id="messageReport" rows="3" 
-                              placeholder="Votre rendez-vous a été reporté au..."></textarea>
+                    <label class="form-label fw-bold">Message au patient</label>
+                    <textarea class="form-control" id="messageReport" rows="2" placeholder="Votre rendez-vous a été reporté..."></textarea>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="envoyerRappelReport" checked>
+                    <label class="form-check-label" for="envoyerRappelReport">
+                        Envoyer un rappel WhatsApp au patient
+                    </label>
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
                 <button type="button" class="btn btn-warning" onclick="validerReport()">
-                    <i class="fas fa-save me-1"></i> Reporter et notifier
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Modal Ajouter Patient Rapide -->
-<div class="modal fade" id="addPatientModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title"><i class="fas fa-user-plus me-2"></i> Nouveau patient</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <form id="patientForm">
-                    <div class="mb-3">
-                        <label class="form-label">Nom *</label>
-                        <input type="text" class="form-control" id="patientNom" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Prénoms</label>
-                        <input type="text" class="form-control" id="patientPrenoms">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Téléphone *</label>
-                        <input type="tel" class="form-control" id="patientTelephone" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Email</label>
-                        <input type="email" class="form-control" id="patientEmail">
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
-                <button type="button" class="btn btn-primary" onclick="ajouterPatientRapide()">
-                    <i class="fas fa-save me-1"></i> Enregistrer
+                    <i class="fas fa-save me-1"></i> Reporter
                 </button>
             </div>
         </div>
@@ -375,275 +528,454 @@
 </div>
 
 <script>
+// ============================================================
+// VARIABLES GLOBALES
+// ============================================================
+
 let currentRdvId = null;
 
-// Variables globales pour les stats
-let patientsList = [];
+// ============================================================
+// INITIALISATION
+// ============================================================
 
-// Mettre à jour les stats
-function updateStats() {
-    const rows = document.querySelectorAll('#rendezVousList tr:not([style*="display: none"])');
-    const today = new Date().toISOString().split('T')[0];
-    let todayCount = 0;
-    let weekCount = 0;
-    let enAttenteCount = 0;
+document.addEventListener('DOMContentLoaded', function() {
+    // Date par défaut
+    if (!document.getElementById('dateRendezVous').value) {
+        document.getElementById('dateRendezVous').value = new Date().toISOString().split('T')[0];
+    }
     
-    const todayDate = new Date();
-    todayDate.setHours(0, 0, 0, 0);
-    const weekLater = new Date();
-    weekLater.setDate(todayDate.getDate() + 7);
-    
-    rows.forEach(row => {
-        if (row.cells.length < 8 || row.cells[0].innerText === '') return;
-        
-        const dateStr = row.cells[3]?.innerText || '';
-        const statut = row.getAttribute('data-statut');
-        
-        if (dateStr) {
-            const dateParts = dateStr.split('-');
-            const rowDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
-            
-            if (dateStr === today && statut !== 'annule' && statut !== 'termine') {
-                todayCount++;
-            }
-            if (rowDate >= todayDate && rowDate <= weekLater && statut !== 'annule' && statut !== 'termine') {
-                weekCount++;
-            }
-        }
-        
-        if (statut === 'programme' || statut === 'confirme') {
-            enAttenteCount++;
-        }
-    });
-    
-    document.getElementById('statsAujourdhui').innerText = todayCount;
-    document.getElementById('statsSemaine').innerText = weekCount;
-    document.getElementById('statsEnAttente').innerText = enAttenteCount;
-}
-
-// Filtrer rendez-vous
-function filtrerRendezVous() {
-    const statut = document.getElementById('filtreStatut').value;
-    const date = document.getElementById('filtreDate').value;
-    const today = new Date().toISOString().split('T')[0];
-    
-    const rows = document.querySelectorAll('#rendezVousList tr');
-    let visibleCount = 0;
-    
-    rows.forEach(row => {
-        if (row.cells.length < 8) return;
-        
-        let show = true;
-        const rowStatut = row.getAttribute('data-statut');
-        const rowDate = row.cells[3]?.innerText || '';
-        
-        if (statut !== 'tous') {
-            if (statut === 'depasse') {
-                if (rowDate >= today || rowStatut === 'annule' || rowStatut === 'termine') {
-                    show = false;
-                }
-            } else if (rowStatut !== statut) {
-                show = false;
-            }
-        }
-        
-        if (date && rowDate !== date) {
-            show = false;
-        }
-        
-        row.style.display = show ? '' : 'none';
-        if (show) visibleCount++;
-    });
-    
+    // Mettre à jour les statistiques
     updateStats();
+    
+    // Gestion du motif "Autre"
+    document.getElementById('motifSelect').addEventListener('change', function() {
+        const container = document.getElementById('motifAutreContainer');
+        if (this.value === 'Autre') {
+            container.style.display = 'block';
+        } else {
+            container.style.display = 'none';
+        }
+    });
+    
+    // Vérifier les disponibilités automatiquement
+    document.getElementById('medecinSelect').addEventListener('change', verifierDisponibilites);
+    document.getElementById('dateRendezVous').addEventListener('change', verifierDisponibilites);
+    document.getElementById('heureRendezVous').addEventListener('change', verifierDisponibilites);
+});
+
+// ============================================================
+// STATISTIQUES
+// ============================================================
+
+function updateStats() {
+    fetch('/rendez_vous/api/stats')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const stats = data.data;
+                document.getElementById('statsAujourdhui').textContent = stats.par_statut?.confirme || 0;
+                document.getElementById('statsSemaine').textContent = stats.par_statut?.programme || 0;
+                document.getElementById('statsMois').textContent = stats.par_statut?.termine || 0;
+                document.getElementById('statsTotal').textContent = stats.total || 0;
+            }
+        })
+        .catch(error => console.error('Erreur stats:', error));
 }
 
-function resetFilters() {
-    document.getElementById('filtreStatut').value = 'tous';
-    document.getElementById('filtreDate').value = '';
-    filtrerRendezVous();
-}
+// ============================================================
+// VÉRIFICATION DISPONIBILITÉS
+// ============================================================
 
-// Ajouter rendez-vous
-function ajouterRendezVous() {
-    const select = document.getElementById('patientSelect');
-    const patientId = select.value;
-    const selectedOption = select.options[select.selectedIndex];
-    const patientNom = selectedOption?.getAttribute('data-nom');
-    const patientPrenom = selectedOption?.getAttribute('data-prenom');
-    const patientTel = selectedOption?.getAttribute('data-tel');
+function verifierDisponibilites() {
+    const medecinId = document.getElementById('medecinSelect').value;
     const date = document.getElementById('dateRendezVous').value;
     const heure = document.getElementById('heureRendezVous').value;
-    const motif = document.getElementById('motif').value;
+    
+    if (!medecinId || !date || !heure) return;
+    
+    const infoDiv = document.getElementById('disponibilitesInfo');
+    infoDiv.innerHTML = '<span class="text-muted">Vérification...</span>';
+    
+    fetch(`/rendez_vous/api/check-conflit?medecin_id=${medecinId}&date=${date}&heure=${heure}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.disponible) {
+                infoDiv.innerHTML = '<span class="text-success">Créneau disponible</span>';
+            } else {
+                infoDiv.innerHTML = '<span class="text-danger">Créneau occupé</span>';
+            }
+        })
+        .catch(() => {
+            infoDiv.innerHTML = '';
+        });
+}
+
+
+// ============================================================
+// RECHERCHE PATIENT AVEC AUTOCOMPLETION
+// ============================================================
+
+// Liste des patients depuis le serveur
+var patientsListe = [];
+
+// Charger les patients au démarrage
+document.addEventListener('DOMContentLoaded', function() {
+    chargerPatients();
+});
+
+function chargerPatients() {
+    // Récupérer les patients depuis le serveur
+    fetch('/api/patients/liste')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                patientsListe = data.data;
+            }
+        })
+        .catch(error => {
+            console.error('Erreur chargement patients:', error);
+        });
+}
+
+function rechercherPatient() {
+    var input = document.getElementById('patientSearch');
+    var results = document.getElementById('patientResults');
+    var query = input.value.toLowerCase().trim();
+    
+    if (query.length === 0) {
+        results.style.display = 'none';
+        return;
+    }
+    
+    // Filtrer les patients
+    var matches = patientsListe.filter(function(p) {
+        var nom = (p.nom || '').toLowerCase();
+        var prenom = (p.prenom || '').toLowerCase();
+        var telephone = (p.telephone || '').toLowerCase();
+        return nom.includes(query) || prenom.includes(query) || telephone.includes(query);
+    });
+    
+    if (matches.length === 0) {
+        results.innerHTML = '<div class="list-group-item text-muted">Aucun patient trouvé</div>';
+        results.style.display = 'block';
+        return;
+    }
+    
+    // Afficher les résultats
+    results.innerHTML = '';
+    matches.slice(0, 10).forEach(function(p) {
+        var div = document.createElement('div');
+        div.className = 'list-group-item list-group-item-action';
+        div.style.cursor = 'pointer';
+        div.innerHTML = '<strong>' + (p.nom || '') + ' ' + (p.prenom || '') + '</strong> - ' + (p.telephone || '');
+        div.onclick = function() {
+            selectionnerPatient(p);
+        };
+        results.appendChild(div);
+    });
+    
+    results.style.display = 'block';
+}
+
+function selectionnerPatient(patient) {
+    // Cacher les résultats
+    document.getElementById('patientResults').style.display = 'none';
+    
+    // Mettre à jour le champ caché
+    document.getElementById('patientSelect').value = patient.id;
+    
+    // Afficher le patient sélectionné
+    var info = document.getElementById('patientSelectedInfo');
+    info.textContent = patient.nom + ' ' + (patient.prenom || '') + ' - ' + (patient.telephone || '');
+    document.getElementById('patientSelected').style.display = 'block';
+    
+    // Remplacer la recherche par le nom du patient
+    document.getElementById('patientSearch').value = patient.nom + ' ' + (patient.prenom || '');
+    document.getElementById('patientSearch').disabled = true;
+}
+
+function deselectionnerPatient() {
+    document.getElementById('patientSelect').value = '';
+    document.getElementById('patientSelected').style.display = 'none';
+    document.getElementById('patientSearch').value = '';
+    document.getElementById('patientSearch').disabled = false;
+    document.getElementById('patientSearch').focus();
+}
+
+function viderRecherchePatient() {
+    document.getElementById('patientSearch').value = '';
+    document.getElementById('patientResults').style.display = 'none';
+    deselectionnerPatient();
+}
+
+// Fermer les résultats quand on clique ailleurs
+document.addEventListener('click', function(e) {
+    var container = document.getElementById('patientSearch').closest('.col-md-4');
+    if (!container.contains(e.target)) {
+        document.getElementById('patientResults').style.display = 'none';
+    }
+});
+
+
+// ============================================================
+// AJOUTER RENDEZ-VOUS
+// ============================================================
+
+function ajouterRendezVous() {
+    // Récupérer l'ID du patient depuis le champ caché
+    var patientId = document.getElementById('patientSelect').value;
+    var medecinId = document.getElementById('medecinSelect').value;
+    var date = document.getElementById('dateRendezVous').value;
+    var heure = document.getElementById('heureRendezVous').value;
+    var duree = document.getElementById('dureeRendezVous').value;
+    var motif = document.getElementById('motifSelect').value;
+    var notes = document.getElementById('notesRendezVous').value;
+    
+    // Gestion du motif "Autre"
+    if (motif === 'Autre') {
+        motif = document.getElementById('motifAutre').value.trim();
+        if (!motif) {
+            showToast('Veuillez saisir un motif personnalisé', 'warning');
+            return;
+        }
+    }
+    
+    if (!motif) {
+        showToast('Veuillez sélectionner un motif', 'warning');
+        return;
+    }
     
     // Vérifications
     if (!patientId) {
         showToast('Veuillez sélectionner un patient', 'warning');
+        document.getElementById('patientSearch').focus();
+        return;
+    }
+    if (!medecinId) {
+        showToast('Veuillez sélectionner un médecin', 'warning');
         return;
     }
     if (!date || !heure) {
         showToast('Veuillez remplir la date et l\'heure', 'warning');
         return;
     }
-    if (!motif || motif.trim() === '') {
-        showToast('Veuillez saisir le motif du rendez-vous', 'warning');
-        document.getElementById('motif').focus();
-        return;
-    }
     
-    // Vérifier si la date n'est pas passée
-    const today = new Date().toISOString().split('T')[0];
+    // Vérifier que la date n'est pas passée
+    var today = new Date().toISOString().split('T')[0];
     if (date < today) {
         showToast('La date ne peut pas être dans le passé', 'danger');
         return;
     }
     
+    // Récupérer les infos du patient depuis la liste patientsListe
+    var patient = patientsListe.find(function(p) {
+        return p.id == patientId;
+    });
+    
+    var patientNom = '';
+    var patientPrenom = '';
+    var patientTel = '';
+    
+    if (patient) {
+        patientNom = patient.nom || '';
+        patientPrenom = patient.prenom || '';
+        patientTel = patient.telephone || '';
+    }
+    
     showLoader('Enregistrement du rendez-vous...');
     
-    fetch('/api/rendez_vous', {
+    fetch('/rendez_vous/api/creer', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
-            patient_id: patientId,
-            patient_nom: (patientNom + ' ' + patientPrenom).trim(),
-            patient_telephone: patientTel,
+            patient_id: parseInt(patientId),
+            medecin_id: parseInt(medecinId),
             date: date,
             heure: heure,
-            motif: motif.trim()
+            duree: parseInt(duree),
+            motif: motif,
+            notes: notes,
+            patient_nom: (patientNom + ' ' + patientPrenom).trim(),
+            patient_telephone: patientTel
         })
+    })
+    .then(function(response) {
+        return response.json();
+    })
+    .then(function(data) {
+        hideLoader();
+        if (data.success) {
+            showToast('Rendez-vous créé avec succès !', 'success');
+            setTimeout(function() {
+                window.location.href = '/rendez_vous?periode=tous';
+            }, 1000);
+        } else {
+            showToast('Erreur: ' + data.error, 'danger');
+        }
+    })
+    .catch(function(error) {
+        hideLoader();
+        showToast('Erreur lors de l\'enregistrement', 'danger');
+        console.error(error);
+    });
+}
+
+
+// ============================================================
+// CHANGEMENT DE STATUT
+// ============================================================
+
+function confirmerRendezVous(id) {
+    if (!confirm('Confirmer ce rendez-vous ?')) return;
+    
+    showLoader('Confirmation...');
+    fetch(`/rendez_vous/api/${id}/confirmer`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
     })
     .then(response => response.json())
     .then(data => {
         hideLoader();
         if (data.success) {
-            showToast('Rendez-vous ajouté avec succès !', 'success');
-            setTimeout(() => location.reload(), 1500);
+            showToast('Rendez-vous confirmé !', 'success');
+            location.reload();
         } else {
             showToast('Erreur: ' + data.error, 'danger');
         }
-    })
-    .catch(() => {
-        hideLoader();
-        showToast('Erreur lors de l\'enregistrement', 'danger');
     });
 }
+
 function terminerRendezVous(id) {
-    if (confirm('✓ Marquer ce rendez-vous comme terminé ?')) {
-        showLoader('Mise à jour...');
-        fetch(`/api/rendez_vous/${id}/terminer`, { 
-            method: 'POST', 
-            headers: {'Content-Type': 'application/json'} 
-        })
-        .then(response => response.json())
-        .then(data => { 
-            hideLoader();
-            if (data.success) {
-                showToast('Rendez-vous terminé !', 'success');
-                location.reload();
-            } else {
-                showToast('Erreur: ' + data.error, 'danger');
-            }
-        });
-    }
-}
-
-function filtrerPatientsRdv() {
-    const searchTerm = document.getElementById('searchPatientRdv').value.toLowerCase().trim();
-    const select = document.getElementById('patientSelect');
-    const options = select.options;
-    let visibleCount = 0;
+    if (!confirm('Marquer ce rendez-vous comme terminé ?')) return;
     
-    for (let i = 1; i < options.length; i++) {
-        const option = options[i];
-        const text = option.text.toLowerCase();
-        if (searchTerm === '' || text.includes(searchTerm)) {
-            option.style.display = '';
-            visibleCount++;
+    showLoader('Mise à jour...');
+    fetch(`/rendez_vous/api/${id}/terminer`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoader();
+        if (data.success) {
+            showToast('Rendez-vous terminé !', 'success');
+            location.reload();
         } else {
-            option.style.display = 'none';
+            showToast('Erreur: ' + data.error, 'danger');
         }
-    }
-    document.getElementById('patientRdvCount').innerText = visibleCount;
+    });
 }
 
-function clearSearchPatientRdv() {
-    document.getElementById('searchPatientRdv').value = '';
-    filtrerPatientsRdv();
+function annulerRendezVous(id) {
+    const motif = prompt('Motif de l\'annulation (optionnel) :');
+    if (motif === null) return;
+    
+    if (!confirm('Annuler ce rendez-vous ?')) return;
+    
+    showLoader('Annulation...');
+    fetch(`/rendez_vous/api/${id}/annuler`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ motif: motif })
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoader();
+        if (data.success) {
+            showToast('Rendez-vous annulé !', 'success');
+            location.reload();
+        } else {
+            showToast('Erreur: ' + data.error, 'danger');
+        }
+    });
 }
 
-function confirmerRendezVous(id) {
-    if (confirm('✅ Confirmer ce rendez-vous ?')) {
-        showLoader('Confirmation...');
-        fetch(`/api/rendez_vous/${id}/confirmer`, { 
-            method: 'POST', 
-            headers: {'Content-Type': 'application/json'} 
-        })
-        .then(response => response.json())
-        .then(data => {
-            hideLoader();
-            if (data.success) {
-                showToast('Rendez-vous confirmé !', 'success');
-                location.reload();
-            } else {
-                showToast('Erreur: ' + data.error, 'danger');
-            }
-        });
-    }
-}
+// ============================================================
+// REPORTER RENDEZ-VOUS
+// ============================================================
 
 function reporterRendezVous(id) {
     currentRdvId = id;
-    const modal = new bootstrap.Modal(document.getElementById('reporterModal'));
+    document.getElementById('reporterRdvId').value = id;
+    
+    var today = new Date().toISOString().split('T')[0];
+    document.getElementById('nouvelleDate').value = today;
+    document.getElementById('nouvelleHeure').value = '';
+    document.getElementById('messageReport').value = '';
+    document.getElementById('envoyerRappelReport').checked = true;
+    
+    var modalElement = document.getElementById('reporterModal');
+    var modal = new bootstrap.Modal(modalElement, {
+        backdrop: false,  // ← PAS DE BACKDROP
+        keyboard: true
+    });
     modal.show();
 }
 
 function validerReport() {
-    const nouvelleDate = document.getElementById('nouvelleDate').value;
-    const nouvelleHeure = document.getElementById('nouvelleHeure').value;
-    const message = document.getElementById('messageReport').value;
+    var rdvId = document.getElementById('reporterRdvId').value;
+    var nouvelleDate = document.getElementById('nouvelleDate').value;
+    var nouvelleHeure = document.getElementById('nouvelleHeure').value;
+    var message = document.getElementById('messageReport').value;
+    var envoyerRappel = document.getElementById('envoyerRappelReport').checked;
     
     if (!nouvelleDate || !nouvelleHeure) {
         showToast('Veuillez entrer la nouvelle date et heure', 'warning');
         return;
     }
     
-    const btn = document.querySelector('#reporterModal .btn-warning');
-    const originalText = btn.innerHTML;
+    // Vérifier que la nouvelle date n'est pas passée
+    var today = new Date().toISOString().split('T')[0];
+    if (nouvelleDate < today) {
+        showToast('La date ne peut pas être dans le passé', 'danger');
+        return;
+    }
+    
+    var btn = document.querySelector('#reporterModal .btn-warning');
+    var originalText = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Envoi...';
     
-    fetch('/api/rendez_vous/reporter', {
+    // 🔥 ENVOYER UNIQUEMENT LES DONNEES, LE BACKEND GENERERA LE MESSAGE
+    fetch('/rendez_vous/api/reporter', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ 
-            rdv_id: currentRdvId, 
-            nouvelle_date: nouvelleDate, 
-            nouvelle_heure: nouvelleHeure, 
-            message: message 
+        body: JSON.stringify({
+            rdv_id: parseInt(rdvId),
+            nouvelle_date: nouvelleDate,
+            nouvelle_heure: nouvelleHeure,
+            message: message || '',  // On envoie pour les notes
+            envoyer_rappel: envoyerRappel
         })
     })
-    .then(response => response.json())
-    .then(data => {
+    .then(function(response) {
+        return response.json();
+    })
+    .then(function(data) {
         if (data.success) {
             if (data.whatsapp_url) {
                 window.open(data.whatsapp_url, '_blank');
             }
             showToast('Rendez-vous reporté avec succès !', 'success');
             bootstrap.Modal.getInstance(document.getElementById('reporterModal')).hide();
-            setTimeout(() => location.reload(), 1500);
+            setTimeout(function() {
+                location.reload();
+            }, 1000);
         } else {
             showToast('Erreur: ' + data.error, 'danger');
         }
     })
-    .catch(error => {
+    .catch(function(error) {
         console.error('Erreur:', error);
         showToast('Erreur lors du report', 'danger');
     })
-    .finally(() => {
+    .finally(function() {
         btn.disabled = false;
         btn.innerHTML = originalText;
     });
 }
+// ============================================================
+// ENVOYER RAPPEL WHATSAPP
+// ============================================================
 
 function envoyerRappel(id) {
     const row = document.querySelector(`tr[data-id="${id}"]`);
@@ -654,9 +986,9 @@ function envoyerRappel(id) {
     
     const patientNom = row.cells[1]?.innerText || 'Patient';
     const patientTel = row.cells[2]?.innerText || '';
-    const date = row.cells[3]?.innerText || '';
-    const heure = row.cells[4]?.innerText || '';
-    const motif = row.cells[5]?.innerText || '';
+    const date = row.cells[4]?.innerText || '';
+    const heure = row.cells[5]?.innerText || '';
+    const motif = row.cells[6]?.innerText || '';
     
     if (!patientTel) {
         showToast('Numéro de téléphone non disponible', 'warning');
@@ -665,64 +997,119 @@ function envoyerRappel(id) {
     
     showLoader('Préparation du message...');
     
-    let structureNom = localStorage.getItem('structureNom');
-    if (structureNom) {
-        envoyerMessageWhatsApp(patientTel, patientNom, date, heure, motif, structureNom);
-    } else {
-        fetch('/api/structure/nom')
-            .then(response => response.json())
-            .then(data => {
-                let nom = data.nom || 'Notre établissement';
-                localStorage.setItem('structureNom', nom);
-                envoyerMessageWhatsApp(patientTel, patientNom, date, heure, motif, nom);
-            })
-            .catch(() => {
-                envoyerMessageWhatsApp(patientTel, patientNom, date, heure, motif, 'Notre établissement');
-            });
-    }
-}
-
-function envoyerMessageWhatsApp(tel, patientNom, date, heure, motif, structureNom) {
-    hideLoader();
-    let telClean = tel.toString().replace(/\s/g, '').replace(/^\+/, '');
-    if (!telClean.startsWith('228') && !telClean.startsWith('229') && !telClean.startsWith('221')) {
-        telClean = '228' + telClean;
-    }
-    
-    let message = `🔔 *RAPPEL DE RENDEZ-VOUS* 🔔%0A%0A`;
-    message += `🏥 *${structureNom}*%0A%0A`;
-    message += `Cher(e) *${patientNom}*,%0A%0A`;
-    message += `Nous vous rappelons votre rendez-vous :%0A`;
-    message += `📅 Date : *${date}*%0A`;
-    message += `⏰ Heure : *${heure}*%0A`;
-    message += `📋 Motif : *${motif}*%0A%0A`;
-    message += `Merci de votre ponctualité ! 🙏%0A%0A`;
-    message += `Pour toute annulation, veuillez nous contacter.`;
-    
-    const whatsappUrl = `https://wa.me/${telClean}?text=${message}`;
-    window.open(whatsappUrl, '_blank');
-    showToast('Message WhatsApp préparé', 'success');
-}
-
-function annulerRendezVous(id) {
-    if (confirm('❌ Annuler ce rendez-vous ?')) {
-        showLoader('Annulation...');
-        fetch(`/api/rendez_vous/${id}/annuler`, { 
-            method: 'POST', 
-            headers: {'Content-Type': 'application/json'} 
-        })
+    // Récupérer les infos de la structure depuis l'API
+    fetch('/api/structure/infos')
         .then(response => response.json())
         .then(data => {
             hideLoader();
-            if (data.success) {
-                showToast('Rendez-vous annulé !', 'success');
-                location.reload();
-            } else {
-                showToast('Erreur: ' + data.error, 'danger');
+            
+            let structureNom = data.nom || 'Notre établissement';
+            let structureAdresse = data.adresse || '';
+            let structureTelephone = data.telephone || '';
+            let structureEmail = data.email || '';
+            
+            // Nettoyer le numéro de téléphone
+            let telClean = patientTel.toString().replace(/\s/g, '').replace(/^\+/, '');
+            if (!telClean.startsWith('228') && !telClean.startsWith('229') && !telClean.startsWith('221')) {
+                telClean = '228' + telClean;
             }
+            
+            // Générer le message
+            let message = `RAPPEL DE RENDEZ-VOUS%0A%0A`;
+            message += `${structureNom.toUpperCase()}%0A`;
+            if (structureAdresse) {
+                message += `Adresse: ${structureAdresse}%0A`;
+            }
+            if (structureTelephone) {
+                message += `Tel: ${structureTelephone}%0A`;
+            }
+            if (structureEmail) {
+                message += `Email: ${structureEmail}%0A`;
+            }
+            message += `%0A`;
+            message += `Cher(e) ${patientNom},%0A%0A`;
+            message += `Nous vous rappelons votre rendez-vous :%0A`;
+            message += `Date : ${date}%0A`;
+            message += `Heure : ${heure}%0A`;
+            message += `Motif : ${motif}%0A%0A`;
+            message += `Merci de votre ponctualité !%0A%0A`;
+            message += `Pour toute annulation, veuillez nous contacter.`;
+            
+            const whatsappUrl = `https://wa.me/${telClean}?text=${message}`;
+            window.open(whatsappUrl, '_blank');
+            showToast('Message WhatsApp préparé', 'success');
+        })
+        .catch(error => {
+            hideLoader();
+            showToast('Erreur lors de la récupération des infos', 'danger');
+            console.error('Erreur:', error);
         });
-    }
 }
+
+// ============================================================
+// IMPRESSION
+// ============================================================
+
+function imprimerReçu(id) {
+    window.open(`/rendez_vous/api/${id}/print`, '_blank', 'width=800,height=600');
+}
+
+function imprimerListe() {
+    window.print();
+}
+
+function imprimerCalendrier() {
+    // Récupérer les valeurs des filtres
+    var periode = document.getElementById('filtrePeriode').value;
+    var dateDebut = document.getElementById('dateDebut')?.value || '';
+    var dateFin = document.getElementById('dateFin')?.value || '';
+    
+    // Construire l'URL
+    var url = '/rendez_vous/print?periode=' + periode;
+    
+    if (periode === 'personnalise') {
+        url += '&date_debut=' + dateDebut + '&date_fin=' + dateFin;
+    }
+    
+    // Ouvrir dans une nouvelle fenêtre
+    window.open(url, '_blank', 'width=1200,height=800');
+}
+
+function exporterCSV() {
+    const rows = document.querySelectorAll('#rendezVousList tr:not([style*="display: none"])');
+    if (rows.length === 0) {
+        showToast('Aucun rendez-vous à exporter', 'warning');
+        return;
+    }
+    
+    let csvContent = "Date;Heure;Patient;Telephone;Medecin;Motif;Statut\n";
+    rows.forEach(row => {
+        const cells = row.cells;
+        if (cells.length > 1) {
+            csvContent += [
+                cells[4]?.innerText || '',
+                cells[5]?.innerText || '',
+                cells[1]?.innerText || '',
+                cells[2]?.innerText || '',
+                cells[3]?.innerText.replace(/<[^>]*>/g, '').trim() || '',
+                cells[6]?.innerText || '',
+                cells[7]?.innerText.replace(/<[^>]*>/g, '').trim() || ''
+            ].join(';') + '\n';
+        }
+    });
+    
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute('download', `rendez_vous_${new Date().toISOString().split('T')[0]}.csv`);
+    link.click();
+    URL.revokeObjectURL(link.href);
+    showToast('Export CSV réussi', 'success');
+}
+
+// ============================================================
+// AJOUTER PATIENT RAPIDE
+// ============================================================
 
 function showAddPatientModal() {
     document.getElementById('patientForm').reset();
@@ -731,7 +1118,7 @@ function showAddPatientModal() {
 
 function ajouterPatientRapide() {
     const nom = document.getElementById('patientNom').value.trim();
-    const prenoms = document.getElementById('patientPrenoms').value.trim();
+    const prenom = document.getElementById('patientPrenom').value.trim();
     const telephone = document.getElementById('patientTelephone').value.trim();
     const email = document.getElementById('patientEmail').value.trim();
     
@@ -751,7 +1138,7 @@ function ajouterPatientRapide() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
             nom: nom,
-            prenoms: prenoms,
+            prenom: prenom,
             telephone: telephone,
             email: email
         })
@@ -762,7 +1149,7 @@ function ajouterPatientRapide() {
         if (data.success) {
             showToast('Patient ajouté avec succès !', 'success');
             bootstrap.Modal.getInstance(document.getElementById('addPatientModal')).hide();
-            setTimeout(() => location.reload(), 1500);
+            setTimeout(() => location.reload(), 1000);
         } else {
             showToast('Erreur: ' + data.error, 'danger');
         }
@@ -773,355 +1160,49 @@ function ajouterPatientRapide() {
     });
 }
 
-// Fonctions utilitaires
+// ============================================================
+// FONCTIONS UTILITAIRES
+// ============================================================
+
+function resetForm() {
+    document.getElementById('formRendezVous').reset();
+    document.getElementById('dateRendezVous').value = new Date().toISOString().split('T')[0];
+    document.getElementById('motifAutreContainer').style.display = 'none';
+    document.getElementById('disponibilitesInfo').innerHTML = '';
+}
+
 function showLoader(message = 'Chargement...') {
     const loader = document.getElementById('globalLoader');
-    if (loader) {
-        document.getElementById('loaderMessage').innerText = message;
-        loader.style.display = 'flex';
-    }
+    document.getElementById('loaderMessage').textContent = message;
+    loader.classList.add('show');
 }
 
 function hideLoader() {
-    const loader = document.getElementById('globalLoader');
-    if (loader) {
-        loader.style.display = 'none';
-    }
+    document.getElementById('globalLoader').classList.remove('show');
 }
 
 function showToast(message, type = 'info') {
     const toast = document.getElementById('globalToast');
-    if (toast) {
-        const toastBody = toast.querySelector('.toast-body');
-        const toastHeader = toast.querySelector('.toast-header');
-        
-        toastBody.innerText = message;
-        
-        const iconMap = {
-            success: '✓',
-            danger: '⚠️',
-            warning: '⚠️',
-            info: 'ℹ️'
-        };
-        
-        toastHeader.innerHTML = `<strong class="me-auto">${iconMap[type] || 'ℹ️'} Notification</strong>`;
-        
-        const bsToast = new bootstrap.Toast(toast);
-        bsToast.show();
-    } else {
-        alert(message);
-    }
+    const toastBody = document.getElementById('toastMessage');
+    const toastTitle = document.getElementById('toastTitle');
+    
+    toastBody.textContent = message;
+    
+    const iconMap = {
+        success: '✓ Succès',
+        danger: '⚠️ Erreur',
+        warning: '⚠️ Attention',
+        info: 'ℹ️ Information'
+    };
+    toastTitle.textContent = iconMap[type] || 'ℹ️ Information';
+    
+    toast.className = 'toast';
+    if (type === 'success') toast.classList.add('border-success');
+    if (type === 'danger') toast.classList.add('border-danger');
+    if (type === 'warning') toast.classList.add('border-warning');
+    
+    const bsToast = new bootstrap.Toast(toast);
+    bsToast.show();
 }
-
-// ========== IMPRESSION LISTE ==========
-function imprimerRendezVous() {
-    const rows = document.querySelectorAll('#rendezVousList tr:not([style*="display: none"])');
-    if (rows.length === 0) {
-        showToast('Aucun rendez-vous à imprimer', 'warning');
-        return;
-    }
-    
-    const structureNom = localStorage.getItem('structureNom') || 'Medilogic-GHP';
-    const dateFiltre = document.getElementById('filtreDate').value;
-    const statutFiltre = document.getElementById('filtreStatut').options[document.getElementById('filtreStatut').selectedIndex]?.text || 'Tous';
-    
-    let html = `<!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <title>Liste des rendez-vous</title>
-        <style>
-            body { font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; font-size: 12px; }
-            .header { text-align: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #667eea; }
-            .header h1 { margin: 0; color: #333; }
-            .filters { text-align: center; margin-bottom: 15px; font-size: 11px; color: #666; }
-            table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #667eea; color: white; }
-            .footer { margin-top: 30px; text-align: center; font-size: 10px; color: #999; }
-            @media print { body { margin: 0; padding: 0; } }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>${structureNom}</h1>
-            <p>Liste des rendez-vous - ${new Date().toLocaleString('fr-FR')}</p>
-        </div>
-        <div class="filters">
-            Filtres: Statut: ${statutFiltre} ${dateFiltre ? '| Date: ' + dateFiltre : ''}
-        </div>
-        <table>
-            <thead>
-                <tr><th>Date</th><th>Heure</th><th>Patient</th><th>Téléphone</th><th>Motif</th><th>Statut</th></tr>
-            </thead>
-            <tbody>`;
-    
-    rows.forEach(row => {
-        const cells = row.cells;
-        if (cells.length > 1) {
-            const date = cells[3]?.innerText || '-';
-            const heure = cells[4]?.innerText || '-';
-            const patient = cells[1]?.innerText || '-';
-            const telephone = cells[2]?.innerText || '-';
-            const motif = cells[5]?.innerText || '-';
-            let statut = cells[6]?.innerText || '-';
-            statut = statut.replace(/[✅📋❌🔄✔️]/g, '').trim();
-            html += `<tr><td>${date}</td><td>${heure}</td><td>${patient}</td><td>${telephone}</td><td>${motif}</td><td>${statut}</td></tr>`;
-        }
-    });
-    
-    html += `</tbody></table>
-        <div class="footer">Document généré par Medilogic-GHP - Total: ${rows.length} rendez-vous</div>
-        <script>window.onload=function(){window.print();setTimeout(function(){window.close();},500);};<\/script>
-    </body>
-    </html>`;
-    
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(html);
-    printWindow.document.close();
-}
-
-function exporterRendezVousCSV() {
-    const rows = document.querySelectorAll('#rendezVousList tr:not([style*="display: none"])');
-    if (rows.length === 0) {
-        showToast('Aucun rendez-vous à exporter', 'warning');
-        return;
-    }
-    
-    let csvContent = "Date;Heure;Patient;Téléphone;Motif;Statut\n";
-    rows.forEach(row => {
-        const cells = row.cells;
-        if (cells.length > 1) {
-            const date = cells[3]?.innerText || '';
-            const heure = cells[4]?.innerText || '';
-            const patient = cells[1]?.innerText || '';
-            const telephone = cells[2]?.innerText || '';
-            const motif = cells[5]?.innerText || '';
-            let statut = cells[6]?.innerText || '';
-            statut = statut.replace(/[✅📋❌🔄✔️]/g, '').trim();
-            csvContent += `"${date}";"${heure}";"${patient}";"${telephone}";"${motif}";"${statut}"\n`;
-        }
-    });
-    
-    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.setAttribute('download', `rendez_vous_${new Date().toISOString().split('T')[0]}.csv`);
-    link.click();
-    URL.revokeObjectURL(link.href);
-    showToast('Export CSV réussi', 'success');
-}
-
-// ========== IMPRESSION REÇU PATIENT ==========
-function formaterDate(dateStr) {
-    const jours = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
-    const mois = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
-    
-    const date = new Date(dateStr);
-    const jourSemaine = jours[date.getDay()];
-    const jour = date.getDate();
-    const moisNom = mois[date.getMonth()];
-    const annee = date.getFullYear();
-    
-    const aujourdhui = new Date();
-    aujourdhui.setHours(0, 0, 0, 0);
-    const diffTime = date - aujourdhui;
-    const diffJours = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    let jourTexte = '';
-    if (diffJours === 0) jourTexte = " (AUJOURD'HUI)";
-    else if (diffJours === 1) jourTexte = " (DEMAIN)";
-    else if (diffJours > 1) jourTexte = ` (dans ${diffJours} jours)`;
-    else if (diffJours < 0) jourTexte = " (DATE PASSÉE)";
-    
-    return `${jourSemaine} ${jour} ${moisNom} ${annee}${jourTexte}`;
-}
-
-function imprimerRendezVousPatient(id) {
-    const row = document.querySelector(`tr[data-id="${id}"]`);
-    if (!row) {
-        showToast('Rendez-vous non trouvé', 'danger');
-        return;
-    }
-    
-    const patientNom = row.cells[1]?.innerText || 'Patient';
-    const patientTel = row.cells[2]?.innerText || '';
-    const date = row.cells[3]?.innerText || '';
-    const heure = row.cells[4]?.innerText || '';
-    const motif = row.cells[5]?.innerText || 'Consultation';
-    
-    const structureNom = localStorage.getItem('structureNom') || 'Medilogic-GHP';
-    const structureTel = localStorage.getItem('structureTelephone') || '';
-    const structureEmail = localStorage.getItem('structureEmail') || '';
-    const structureLogo = localStorage.getItem('structureLogo') || '';
-
-    const dateActuelle = new Date().toLocaleString('fr-FR');
-    const numeroRdv = 'RDV-' + id + '-' + new Date().getFullYear();
-    const dateFormatee = formaterDate(date);
-    
-    let html = `<!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <title>Confirmation de rendez-vous</title>
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                background: #e9ecef;
-                padding: 30px;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                min-height: 100vh;
-            }
-            .recu-card {
-                max-width: 500px;
-                width: 100%;
-                margin: 0 auto;
-                background: white;
-                border-radius: 16px;
-                box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-                overflow: hidden;
-            }
-            .recu-header {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                padding: 25px;
-                text-align: center;
-            }
-            .recu-header h1 { font-size: 22px; margin-bottom: 5px; font-weight: 600; }
-            .recu-header p { font-size: 11px; opacity: 0.85; margin-top: 5px; }
-            .recu-body { padding: 25px; }
-            .info-section {
-                margin-bottom: 20px;
-                padding-bottom: 15px;
-                border-bottom: 1px dashed #e0e0e0;
-            }
-            .info-title {
-                font-size: 11px;
-                text-transform: uppercase;
-                letter-spacing: 1px;
-                color: #667eea;
-                font-weight: 600;
-                margin-bottom: 10px;
-            }
-            .info-content {
-                display: flex;
-                justify-content: space-between;
-                margin-bottom: 8px;
-                font-size: 14px;
-            }
-            .info-label { font-weight: 600; color: #555; }
-            .info-value { color: #333; }
-            .rdv-details {
-                background: #f8f9fa;
-                padding: 15px;
-                border-radius: 12px;
-                margin: 20px 0;
-                text-align: center;
-            }
-            .rdv-date { font-size: 20px; font-weight: 700; color: #667eea; }
-            .rdv-time { font-size: 28px; font-weight: 800; color: #333; margin: 5px 0; }
-            .notice {
-                background: #fff3cd;
-                padding: 12px;
-                border-radius: 10px;
-                margin: 15px 0;
-                font-size: 11px;
-                color: #856404;
-                text-align: center;
-            }
-            .documents-list {
-                margin: 15px 0;
-                padding-left: 20px;
-                font-size: 12px;
-                color: #555;
-                line-height: 1.6;
-            }
-            .footer {
-                background: #f8f9fa;
-                padding: 15px;
-                text-align: center;
-                font-size: 10px;
-                color: #999;
-                border-top: 1px solid #eee;
-            }
-            @media print {
-                body { background: white; padding: 0; margin: 0; }
-                .recu-card { box-shadow: none; margin: 0; max-width: 100%; }
-                button { display: none; }
-            }
-        </style>
-    </head>
-    <body>
-        <div class="recu-card">
-            <div class="recu-header">
-                ${structureLogo ? `<img src="${structureLogo}" alt="Logo" style="max-height: 60px; margin-bottom: 10px;">` : ''}
-                <h1>${structureNom}</h1>
-                <p>${structureTel ? '📞 ' + structureTel : ''} ${structureEmail ? '| 📧 ' + structureEmail : ''}</p>
-                <p>CONFIRMATION DE RENDEZ-VOUS</p>
-            </div>
-            <div class="recu-body">
-                <div class="info-section">
-                    <div class="info-title">INFORMATIONS PATIENT</div>
-                    <div class="info-content"><span class="info-label">Patient :</span><span class="info-value">${patientNom}</span></div>
-                    <div class="info-content"><span class="info-label">Téléphone :</span><span class="info-value">${patientTel || 'Non renseigné'}</span></div>
-                    <div class="info-content"><span class="info-label">N° Rendez-vous :</span><span class="info-value">${numeroRdv}</span></div>
-                </div>
-                <div class="rdv-details">
-                    <div class="info-title">DÉTAILS DU RENDEZ-VOUS</div>
-                    <div class="rdv-date">📅 ${dateFormatee}</div>
-                    <div class="rdv-time">⏰ ${heure}</div>
-                    <div class="info-content" style="justify-content: center; margin-top: 8px;">
-                        <span class="info-label">Motif :</span>
-                        <span class="info-value" style="margin-left: 10px;">${motif}</span>
-                    </div>
-                </div>
-                <div class="notice">
-                    ⚠️ IMPORTANT : En cas d'empêchement, merci de nous prévenir au moins 24h à l'avance.
-                </div>
-                <div class="info-title">📋 DOCUMENTS À APPORTER</div>
-                <div class="documents-list">
-                    ✓ Votre carnet de santé ou dossier médical<br>
-                    ✓ Ordonnances en cours ou traitements récents<br>
-                    ✓ Résultats d'analyses ou examens complémentaires<br>
-                    ✓ pièce d'identité<br>
-                    ✓ Cartes d'assurance
-                </div>
-                <div class="notice" style="background: #d4edda; color: #155724;">
-                    ✅ Merci de votre confiance !
-                </div>
-            </div>
-            <div class="footer">
-                Document généré le ${dateActuelle}<br>
-                ${structureNom} - Prenez soin de vous
-            </div>
-        </div>
-        <script>window.onload=function(){window.print();setTimeout(function(){window.close();},800);};<\/script>
-    </body>
-    </html>`;
-    
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(html);
-    printWindow.document.close();
-}
-
-// Initialisation
-document.addEventListener('DOMContentLoaded', function() {
-    updateStats();
-    filtrerPatientsRdv();
-    
-    // Mettre à jour les stats quand les filtres changent
-    const observer = new MutationObserver(function() {
-        updateStats();
-    });
-    observer.observe(document.getElementById('rendezVousList'), { childList: true, subtree: true });
-    
-    // Ajouter la date du jour par défaut
-    if (!document.getElementById('dateRendezVous').value) {
-        document.getElementById('dateRendezVous').value = new Date().toISOString().split('T')[0];
-    }
-});
 </script>
 {% endblock %}
