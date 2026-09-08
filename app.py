@@ -37,7 +37,7 @@ from services.rappels_service import RappelsService
 IS_PRODUCTION = os.environ.get('RENDER') == 'true' or os.environ.get('PRODUCTION') == 'true'
 
 if IS_PRODUCTION:
-    BASE_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://medilogic-BIASA_ghp.onrender.com')
+    BASE_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://medilogic-biasa-ghp.onrender.com')
 else:
     BASE_URL = 'http://127.0.0.1:5000'
 
@@ -11105,7 +11105,7 @@ def get_webhook_url():
     
     if env == 'production':
         # 🚀 URL de production (Render)
-        return "https://medilogic-BIASA_ghp.onrender.com/api/webhook/patient-created"
+        return "https://medilogic-biasa-ghp.onrender.com/api/webhook/patient-created"
     else:
         # 💻 URL de développement (local)
         return "http://10.156.62.79:5000/api/webhook/patient-created"
