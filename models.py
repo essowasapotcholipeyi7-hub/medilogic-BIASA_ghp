@@ -573,6 +573,7 @@ class EcritureComptable(db.Model):
         'CAI': "Journal de caisse",
         'BQ': "Journal de banque",
         'ACH': "Journal des achats et charges",
+        'SAL': "Journal des salaires",
         'OD': "Journal des opérations diverses",
     }
 
@@ -1558,6 +1559,87 @@ class Depense(db.Model):
     date_depense = db.Column(db.DateTime, default=datetime.utcnow)
     created_by = db.Column(db.Integer)
     created_by_nom = db.Column(db.String(255))
+    # ⭐ Tag optionnel vers un fournisseur (compte de tiers 401/4011) — pour
+    # une dépense payée cash, sert juste au reporting ("qu'a-t-on acheté chez
+    # X ?") ; pour un achat À CRÉDIT, l'obligation elle-même est suivie dans
+    # AchatFournisseur (pas ici) pour ne jamais fausser le calcul de caisse
+    # (SUM(depenses.montant), utilisé tel quel à de nombreux endroits) avec
+    # un montant qui n'est pas encore réellement sorti de la caisse.
+    fournisseur_id = db.Column(db.Integer, db.ForeignKey('fournisseurs.id'), nullable=True)
+
+
+class Fournisseur(db.Model):
+    """Tiers fournisseur (compte 401/4011 SYSCOHADA) — jusqu'ici le plan
+    comptable définissait ces comptes mais rien ne les alimentait jamais
+    (toute dépense était traitée comme payée cash immédiatement). Ce modèle
+    + AchatFournisseur/ReglementFournisseur permettent enfin un vrai suivi
+    "on doit X à ce fournisseur", avec règlement partiel ou total ultérieur."""
+    __tablename__ = 'fournisseurs'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    nom = db.Column(db.String(255), nullable=False)
+    telephone = db.Column(db.String(50))
+    email = db.Column(db.String(255))
+    adresse = db.Column(db.Text)
+    actif = db.Column(db.Boolean, default=True)
+    created_by = db.Column(db.Integer)
+    created_by_nom = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def solde_du(self):
+        """Somme des achats à crédit non intégralement réglés."""
+        total = 0.0
+        for achat in self.achats:
+            total += float(achat.montant_total or 0) - float(achat.montant_paye or 0)
+        return round(total, 2)
+
+
+class AchatFournisseur(db.Model):
+    """Un achat À CRÉDIT chez un fournisseur (charge reconnue immédiatement
+    en comptabilité — Débit charge / Crédit 401 — mais qui ne touche PAS la
+    caisse tant qu'il n'est pas réglé). Un achat payé cash n'a pas besoin de
+    passer par ici : c'est une Depense classique (optionnellement taguée
+    `fournisseur_id` pour le reporting)."""
+    __tablename__ = 'achats_fournisseurs'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    fournisseur_id = db.Column(db.Integer, db.ForeignKey('fournisseurs.id'), nullable=False)
+    montant_total = db.Column(db.Numeric, nullable=False)
+    montant_paye = db.Column(db.Numeric, default=0)
+    motif = db.Column(db.String(255), nullable=False)
+    motif_personnalise = db.Column(db.String(255))
+    description = db.Column(db.Text)
+    date_achat = db.Column(db.DateTime, default=datetime.utcnow)
+    date_echeance = db.Column(db.Date)
+    statut = db.Column(db.String(20), default='a_regler')  # a_regler, reglee
+    ecriture_id = db.Column(db.Integer)
+    created_by = db.Column(db.Integer)
+    created_by_nom = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    fournisseur = db.relationship('Fournisseur', backref='achats')
+
+    def reste_a_payer(self):
+        return round(float(self.montant_total or 0) - float(self.montant_paye or 0), 2)
+
+
+class ReglementFournisseur(db.Model):
+    """Un règlement (partiel ou total) d'un AchatFournisseur — mirrors
+    PaiementFacture côté client. Débit 401 / Crédit trésorerie."""
+    __tablename__ = 'reglements_fournisseurs'
+    id = db.Column(db.Integer, primary_key=True)
+    achat_id = db.Column(db.Integer, db.ForeignKey('achats_fournisseurs.id'), nullable=False)
+    fournisseur_id = db.Column(db.Integer, db.ForeignKey('fournisseurs.id'), nullable=False)
+    montant = db.Column(db.Numeric, nullable=False)
+    date_reglement = db.Column(db.DateTime, default=datetime.utcnow)
+    mode_paiement = db.Column(db.String(50), default='especes')
+    reference = db.Column(db.String(255))
+    notes = db.Column(db.Text)
+    ecriture_id = db.Column(db.Integer)
+    created_by = db.Column(db.Integer)
+    created_by_nom = db.Column(db.String(255))
+
+    achat = db.relationship('AchatFournisseur', backref='reglements')
 
 
 class Facture(db.Model):

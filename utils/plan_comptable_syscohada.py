@@ -147,6 +147,13 @@ COMPTE_CLIENTS_PATIENTS = '4111'
 # Compte d'attente pour écarts non résolus automatiquement
 COMPTE_ATTENTE = '4713'
 
+# Compte fournisseurs par défaut (dettes courantes — achats à crédit).
+# Un seul compte partagé pour tous les fournisseurs, comme COMPTE_CLIENTS_PATIENTS
+# côté clients : le détail par fournisseur (qui doit quoi) est suivi au niveau
+# applicatif (modèle Fournisseur/AchatFournisseur), pas par un sous-compte
+# comptable dédié à chacun.
+COMPTE_FOURNISSEURS = '401'
+
 # Correspondance assurance (telle qu'utilisée dans les ventes) -> numéro de
 # compte de tiers-payant à recevoir.
 COMPTE_PAR_ASSURANCE = {

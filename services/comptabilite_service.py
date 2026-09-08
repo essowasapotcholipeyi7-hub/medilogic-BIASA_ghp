@@ -23,11 +23,12 @@ from datetime import datetime, date, timedelta
 from models import (
     db, CompteComptable, EcritureComptable, LigneEcriture,
     Vente, Facture, PaiementFacture, FactureAssurance,
-    AnnulationVente, Recette, Depense, AnomalieComptable
+    AnnulationVente, Recette, Depense, AnomalieComptable,
+    Fournisseur, AchatFournisseur, ReglementFournisseur
 )
 from utils.plan_comptable_syscohada import (
     PLAN_COMPTABLE_PAR_NUMERO, COMPTE_CLIENTS_PATIENTS, COMPTE_ATTENTE,
-    compte_assurance,
+    COMPTE_FOURNISSEURS, compte_assurance,
     COMPTES_RETRAITE_PAR_ORGANISME, COMPTES_AMU_PAR_ORGANISME,
     COMPTE_FORMATION_PRO_CHARGE, COMPTE_FORMATION_PRO_A_REVERSER,
     COMPTE_IRPP_A_REVERSER, COMPTE_PERSONNEL_AVANCES,
@@ -613,6 +614,88 @@ def generer_ecriture_depense(depense, user_nom='SYSTEME'):
         return None
 
 
+def generer_ecriture_achat_fournisseur(achat, user_nom='SYSTEME'):
+    """Achat À CRÉDIT chez un fournisseur : la charge est reconnue tout de
+    suite (comptabilité d'engagement), mais la caisse n'est PAS impactée —
+    on ne paie pas encore. Débit charge (déduite du motif) / Crédit 401
+    Fournisseurs. La sortie de caisse n'arrivera qu'au règlement (voir
+    generer_ecriture_reglement_fournisseur)."""
+    try:
+        montant = _to_float(achat.montant_total)
+        if montant <= 0:
+            return None
+
+        compte_charge = _compte_charge_pour_motif(achat.motif or achat.motif_personnalise)
+        nom_fournisseur = achat.fournisseur.nom if achat.fournisseur else 'Fournisseur'
+        lignes = [
+            {'numero_compte': compte_charge,
+             'libelle': f"{achat.motif or 'Achat'} — {nom_fournisseur}", 'debit': montant},
+            {'numero_compte': COMPTE_FOURNISSEURS,
+             'libelle': f"Dette fournisseur — {nom_fournisseur}", 'credit': montant},
+        ]
+
+        return creer_ecriture(
+            structure_id=achat.structure_id,
+            date_ecriture=(achat.date_achat.date() if achat.date_achat else datetime.utcnow().date()),
+            libelle=f"Achat à crédit — {nom_fournisseur} ({achat.motif or 'Divers'})",
+            lignes=lignes,
+            journal_code='ACH',
+            piece_justificative=f"ACH-FRS-{achat.id}",
+            auto=True,
+            source_type='achat_fournisseur',
+            source_id=achat.id,
+            user_nom=user_nom,
+        )
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ [comptabilite_service] Erreur generer_ecriture_achat_fournisseur: {e}")
+        _log_anomalie(getattr(achat, 'structure_id', None), 'achat_fournisseur',
+                      getattr(achat, 'id', None), f"Échec génération écriture d'achat fournisseur: {e}")
+        return None
+
+
+def generer_ecriture_reglement_fournisseur(reglement, achat, user_nom='SYSTEME'):
+    """Règlement (partiel ou total) d'une dette fournisseur déjà reconnue à
+    l'achat (compte 401). Débit 401 (extinction dette) / Crédit trésorerie —
+    c'est ICI, et seulement ici, que la caisse est réellement impactée."""
+    try:
+        montant = _to_float(reglement.montant)
+        if montant <= 0:
+            return None
+
+        nom_fournisseur = achat.fournisseur.nom if achat.fournisseur else 'Fournisseur'
+        lignes = [
+            {'numero_compte': COMPTE_FOURNISSEURS,
+             'libelle': f"Règlement — {nom_fournisseur}", 'debit': montant},
+            {'numero_compte': _compte_tresorerie(reglement.mode_paiement),
+             'libelle': f"Règlement — {nom_fournisseur}", 'credit': montant},
+        ]
+
+        return creer_ecriture(
+            structure_id=achat.structure_id,
+            date_ecriture=(reglement.date_reglement.date() if reglement.date_reglement else datetime.utcnow().date()),
+            libelle=f"Règlement fournisseur — {nom_fournisseur} (achat #{achat.id})",
+            lignes=lignes,
+            # ⭐ 'CAI' est réservé à ce qui RENTRE en caisse (règlements
+            # clients, recettes diverses — voir generer_ecriture_paiement_facture
+            # et generer_ecriture_recette_diverse) ; toute sortie liée aux
+            # achats/dépenses passe par 'ACH', quel que soit le mode de
+            # paiement — même convention que generer_ecriture_depense.
+            journal_code='ACH',
+            piece_justificative=f"REG-FRS-{reglement.id}",
+            auto=True,
+            source_type='reglement_fournisseur',
+            source_id=reglement.id,
+            user_nom=user_nom,
+        )
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ [comptabilite_service] Erreur generer_ecriture_reglement_fournisseur: {e}")
+        _log_anomalie(getattr(achat, 'structure_id', None), 'reglement_fournisseur',
+                      getattr(reglement, 'id', None), f"Échec génération écriture de règlement fournisseur: {e}")
+        return None
+
+
 def generer_ecriture_recette_diverse(recette, user_nom='SYSTEME'):
     """Pour une recette saisie manuellement (POST /api/finances/recettes),
     non issue d'une vente (qui est déjà comptabilisée par
@@ -719,7 +802,7 @@ def generer_ecriture_paie(paie, employe, user_nom='SYSTEME'):
             date_ecriture=(paie.date_paiement or datetime.utcnow().date()),
             libelle=libelle,
             lignes=lignes,
-            journal_code='ACH',
+            journal_code='SAL',
             piece_justificative=f"PAIE-{paie.id}",
             auto=True,
             source_type='paie',

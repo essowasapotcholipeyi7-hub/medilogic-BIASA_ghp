@@ -147,6 +147,11 @@
                                 </button>
                             </li>
                             <li>
+                                <button class="dropdown-item" id="fournisseurs-tab" data-bs-toggle="tab" data-bs-target="#fournisseurs" type="button" role="tab" onclick="chargerFournisseurs()">
+                                    <i class="fas fa-truck-field me-2"></i>Fournisseurs
+                                </button>
+                            </li>
+                            <li>
                                 <button class="dropdown-item" id="tafire-tab" data-bs-toggle="tab" data-bs-target="#tafire" type="button" role="tab" onclick="chargerTafire()">
                                     <i class="fas fa-water me-2"></i>TAFIRE
                                 </button>
@@ -858,6 +863,63 @@
                     </div>
 
                     <!-- ========================================== -->
+                    <!-- ONGLET FOURNISSEURS (comptes de tiers 401) -->
+                    <!-- ========================================== -->
+                    <div class="tab-pane fade" id="fournisseurs" role="tabpanel">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h6><i class="fas fa-truck-field"></i> Fournisseurs — comptes de tiers (401)</h6>
+                            <div>
+                                <button class="btn btn-outline-primary btn-sm me-2" onclick="ouvrirAjoutFournisseur()"><i class="fas fa-plus"></i> Nouveau fournisseur</button>
+                                <button class="btn btn-success btn-sm" onclick="ouvrirAjoutAchatFournisseur()"><i class="fas fa-cart-plus"></i> Nouvel achat à crédit</button>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-lg-5 mb-3">
+                                <div class="card h-100">
+                                    <div class="card-header bg-light"><strong>Fournisseurs &amp; solde dû</strong></div>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-hover mb-0">
+                                            <thead class="table-light">
+                                                <tr><th>Nom</th><th>Téléphone</th><th class="text-end">Solde dû</th></tr>
+                                            </thead>
+                                            <tbody id="fournisseursBody">
+                                                <tr><td colspan="3" class="text-center text-muted">Chargement...</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-7 mb-3">
+                                <div class="card h-100">
+                                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                        <strong>Achats à crédit — à régler</strong>
+                                        <select class="form-select form-select-sm w-auto" id="filtreStatutAchats" onchange="chargerAchatsFournisseurs()">
+                                            <option value="a_regler" selected>À régler</option>
+                                            <option value="reglee">Réglés</option>
+                                            <option value="">Tous</option>
+                                        </select>
+                                    </div>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-hover mb-0">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>Fournisseur</th><th>Motif</th>
+                                                    <th class="text-end">Total</th><th class="text-end">Payé</th>
+                                                    <th class="text-end">Reste</th><th>Échéance</th><th></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="achatsFournisseursBody">
+                                                <tr><td colspan="7" class="text-center text-muted">Chargement...</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ========================================== -->
                     <!-- ONGLET TAFIRE -->
                     <!-- ========================================== -->
                     <div class="tab-pane fade" id="tafire" role="tabpanel">
@@ -1114,6 +1176,125 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
                 <button class="btn btn-primary" onclick="creerImmobilisation()">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Fournisseur -->
+<div class="modal fade" id="fournisseurModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-truck-field"></i> Nouveau fournisseur</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-2">
+                    <label class="form-label small">Nom *</label>
+                    <input type="text" class="form-control form-control-sm" id="frsNom" placeholder="Ex: Pharma Distribution Togo">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Téléphone</label>
+                    <input type="text" class="form-control form-control-sm" id="frsTelephone">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Email</label>
+                    <input type="email" class="form-control form-control-sm" id="frsEmail">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Adresse</label>
+                    <textarea class="form-control form-control-sm" id="frsAdresse" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-primary" onclick="creerFournisseur()">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Achat fournisseur (à crédit) -->
+<div class="modal fade" id="achatFournisseurModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-cart-plus"></i> Nouvel achat à crédit</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info small py-2">
+                    La charge est comptabilisée tout de suite (débit charge / crédit fournisseur) ;
+                    la caisse ne bouge qu'au règlement.
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Fournisseur *</label>
+                    <select class="form-control form-control-sm" id="achatFournisseurId"></select>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Motif *</label>
+                    <input type="text" class="form-control form-control-sm" id="achatMotif" placeholder="Ex: Achat médicaments">
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label small">Montant (FCFA) *</label>
+                        <input type="number" class="form-control form-control-sm" id="achatMontant" step="100">
+                    </div>
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label small">Échéance (optionnel)</label>
+                        <input type="date" class="form-control form-control-sm" id="achatDateEcheance">
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Description</label>
+                    <textarea class="form-control form-control-sm" id="achatDescription" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-success" onclick="creerAchatFournisseur()">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Règlement fournisseur -->
+<div class="modal fade" id="reglementFournisseurModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-money-bill"></i> Régler un fournisseur</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="fw-bold" id="reglementFournisseurLabel"></p>
+                <div class="row">
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label small">Montant réglé (FCFA) *</label>
+                        <input type="number" class="form-control form-control-sm" id="reglementMontant" step="100">
+                        <small class="text-muted">Peut être partiel (le reste restera "à régler").</small>
+                    </div>
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label small">Mode de paiement</label>
+                        <select class="form-control form-control-sm" id="reglementModePaiement">
+                            <option value="especes">Espèces (Caisse)</option>
+                            <option value="banque">Banque</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Référence (chèque, virement...)</label>
+                    <input type="text" class="form-control form-control-sm" id="reglementReference">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Notes</label>
+                    <textarea class="form-control form-control-sm" id="reglementNotes" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-success" onclick="enregistrerReglementAchat()">Enregistrer le règlement</button>
             </div>
         </div>
     </div>
@@ -2685,6 +2866,174 @@ function genererDotationsAnnee() {
         if (result.success) {
             alert(`${result.nb_generees} dotation(s) générée(s)${result.erreurs.length ? ' (erreurs: ' + result.erreurs.join(', ') + ')' : ''}.`);
             chargerImmobilisations();
+        } else {
+            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('❌ Erreur: ' + error));
+}
+
+
+// ============================================================
+// FOURNISSEURS (comptes de tiers 401)
+// ============================================================
+
+let _fournisseursCache = [];
+
+function chargerFournisseurs() {
+    fetch('/comptabilite/api/fournisseurs')
+        .then(r => r.json())
+        .then(data => {
+            _fournisseursCache = data || [];
+            const tbody = document.getElementById('fournisseursBody');
+            if (!data || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">Aucun fournisseur enregistré</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.map(f => `
+                <tr>
+                    <td>${f.nom}${!f.actif ? ' <span class="badge bg-secondary">inactif</span>' : ''}</td>
+                    <td>${f.telephone || '-'}</td>
+                    <td class="text-end ${f.solde_du > 0 ? 'fw-bold text-danger' : ''}">${Math.round(f.solde_du).toLocaleString()} F</td>
+                </tr>
+            `).join('');
+        })
+        .catch(err => console.error('Erreur chargement fournisseurs:', err));
+    chargerAchatsFournisseurs();
+}
+
+function chargerAchatsFournisseurs() {
+    const statut = document.getElementById('filtreStatutAchats').value;
+    fetch('/comptabilite/api/fournisseurs/achats' + (statut ? `?statut=${statut}` : ''))
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.getElementById('achatsFournisseursBody');
+            if (!data || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Aucun achat</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.map(a => `
+                <tr>
+                    <td>${a.fournisseur_nom}</td>
+                    <td>${a.motif}${a.motif_personnalise ? ' — ' + a.motif_personnalise : ''}</td>
+                    <td class="text-end">${Math.round(a.montant_total).toLocaleString()} F</td>
+                    <td class="text-end">${Math.round(a.montant_paye).toLocaleString()} F</td>
+                    <td class="text-end fw-bold ${a.reste_a_payer > 0 ? 'text-danger' : 'text-success'}">${Math.round(a.reste_a_payer).toLocaleString()} F</td>
+                    <td>${a.date_echeance || '-'}</td>
+                    <td>
+                        ${a.statut === 'a_regler'
+                            ? `<button class="btn btn-sm btn-outline-success" onclick='ouvrirReglerAchat(${a.id}, ${JSON.stringify(a.fournisseur_nom)}, ${a.reste_a_payer})'><i class="fas fa-money-bill"></i> Régler</button>`
+                            : '<span class="badge bg-success">Réglé</span>'}
+                    </td>
+                </tr>
+            `).join('');
+        })
+        .catch(err => console.error('Erreur chargement achats fournisseurs:', err));
+}
+
+function ouvrirAjoutFournisseur() {
+    document.getElementById('frsNom').value = '';
+    document.getElementById('frsTelephone').value = '';
+    document.getElementById('frsEmail').value = '';
+    document.getElementById('frsAdresse').value = '';
+    new bootstrap.Modal(document.getElementById('fournisseurModal')).show();
+}
+
+function creerFournisseur() {
+    const nom = document.getElementById('frsNom').value.trim();
+    if (!nom) { alert('Le nom du fournisseur est obligatoire'); return; }
+
+    fetch('/comptabilite/api/fournisseurs', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            nom,
+            telephone: document.getElementById('frsTelephone').value,
+            email: document.getElementById('frsEmail').value,
+            adresse: document.getElementById('frsAdresse').value,
+        })
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            bootstrap.Modal.getInstance(document.getElementById('fournisseurModal')).hide();
+            chargerFournisseurs();
+        } else {
+            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('❌ Erreur: ' + error));
+}
+
+function ouvrirAjoutAchatFournisseur() {
+    const select = document.getElementById('achatFournisseurId');
+    if (_fournisseursCache.length === 0) {
+        alert('Créez d\'abord au moins un fournisseur.');
+        return;
+    }
+    select.innerHTML = _fournisseursCache.filter(f => f.actif).map(f => `<option value="${f.id}">${f.nom}</option>`).join('');
+    document.getElementById('achatMontant').value = '';
+    document.getElementById('achatMotif').value = '';
+    document.getElementById('achatDescription').value = '';
+    document.getElementById('achatDateEcheance').value = '';
+    new bootstrap.Modal(document.getElementById('achatFournisseurModal')).show();
+}
+
+function creerAchatFournisseur() {
+    const fournisseur_id = parseInt(document.getElementById('achatFournisseurId').value);
+    const montant = parseFloat(document.getElementById('achatMontant').value) || 0;
+    const motif = document.getElementById('achatMotif').value.trim();
+    if (!fournisseur_id || montant <= 0 || !motif) { alert('Fournisseur, motif et montant sont obligatoires'); return; }
+
+    fetch('/comptabilite/api/fournisseurs/achats', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            fournisseur_id, montant, motif,
+            description: document.getElementById('achatDescription').value,
+            date_echeance: document.getElementById('achatDateEcheance').value || null,
+        })
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            bootstrap.Modal.getInstance(document.getElementById('achatFournisseurModal')).hide();
+            chargerFournisseurs();
+        } else {
+            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('❌ Erreur: ' + error));
+}
+
+let _achatEnCoursReglement = null;
+
+function ouvrirReglerAchat(achatId, fournisseurNom, resteAPayer) {
+    _achatEnCoursReglement = achatId;
+    document.getElementById('reglementFournisseurLabel').textContent = `${fournisseurNom} — reste dû : ${Math.round(resteAPayer).toLocaleString()} F`;
+    document.getElementById('reglementMontant').value = resteAPayer;
+    document.getElementById('reglementMontant').max = resteAPayer;
+    document.getElementById('reglementReference').value = '';
+    document.getElementById('reglementNotes').value = '';
+    new bootstrap.Modal(document.getElementById('reglementFournisseurModal')).show();
+}
+
+function enregistrerReglementAchat() {
+    const montant = parseFloat(document.getElementById('reglementMontant').value) || 0;
+    if (montant <= 0) { alert('Montant invalide'); return; }
+
+    fetch(`/comptabilite/api/fournisseurs/achats/${_achatEnCoursReglement}/regler`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            montant,
+            mode_paiement: document.getElementById('reglementModePaiement').value,
+            reference: document.getElementById('reglementReference').value,
+            notes: document.getElementById('reglementNotes').value,
+        })
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            bootstrap.Modal.getInstance(document.getElementById('reglementFournisseurModal')).hide();
+            chargerFournisseurs();
         } else {
             alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
         }

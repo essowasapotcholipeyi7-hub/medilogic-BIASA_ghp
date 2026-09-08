@@ -10,7 +10,8 @@ from models import (
     db, CompteComptable, EcritureComptable, LigneEcriture,
     Budget, ValidationComptable, HistoriqueEcriture, ReleveBancaire,
     LigneReleve, Cloture, SequencePiece, AnomalieComptable,
-    Immobilisation, DotationAmortissement, ProvisionCreance, Facture
+    Immobilisation, DotationAmortissement, ProvisionCreance, Facture,
+    Fournisseur, AchatFournisseur, ReglementFournisseur, Depense
 )
 from services.comptabilite_service import get_soldes_caisses, creer_ecriture, COMPTE_CLIENTS_PATIENTS
 
@@ -2635,6 +2636,201 @@ def api_generer_dotations():
             erreurs.append(d['designation'])
 
     return jsonify({'success': True, 'nb_generees': nb_generees, 'erreurs': erreurs})
+
+
+# ============================================================
+# FOURNISSEURS (comptes de tiers 401/4011 — achats à crédit + règlements)
+# ============================================================
+
+@compta_bp.route('/api/fournisseurs')
+def api_liste_fournisseurs():
+    """Liste des fournisseurs avec leur solde dû (somme des achats à crédit
+    non intégralement réglés)."""
+    structure_id = session.get('structure_id')
+    fournisseurs = Fournisseur.query.filter_by(structure_id=structure_id).order_by(Fournisseur.nom).all()
+    return jsonify([{
+        'id': f.id, 'nom': f.nom, 'telephone': f.telephone or '', 'email': f.email or '',
+        'adresse': f.adresse or '', 'actif': f.actif, 'solde_du': f.solde_du(),
+    } for f in fournisseurs])
+
+
+@compta_bp.route('/api/fournisseurs', methods=['POST'])
+def api_creer_fournisseur():
+    structure_id = session.get('structure_id')
+    user_name = session.get('user_name', 'System')
+    data = request.json or {}
+
+    nom = (data.get('nom') or '').strip()
+    if not nom:
+        return jsonify({'error': 'Le nom du fournisseur est obligatoire'}), 400
+
+    fournisseur = Fournisseur(
+        structure_id=structure_id, nom=nom,
+        telephone=data.get('telephone', ''), email=data.get('email', ''),
+        adresse=data.get('adresse', ''), actif=True, created_by_nom=user_name,
+    )
+    db.session.add(fournisseur)
+    db.session.commit()
+    return jsonify({'success': True, 'id': fournisseur.id})
+
+
+@compta_bp.route('/api/fournisseurs/<int:fournisseur_id>', methods=['PUT'])
+def api_modifier_fournisseur(fournisseur_id):
+    structure_id = session.get('structure_id')
+    fournisseur = Fournisseur.query.filter_by(id=fournisseur_id, structure_id=structure_id).first()
+    if not fournisseur:
+        return jsonify({'error': 'Fournisseur non trouvé'}), 404
+
+    data = request.json or {}
+    if 'nom' in data and data['nom'].strip():
+        fournisseur.nom = data['nom'].strip()
+    if 'telephone' in data:
+        fournisseur.telephone = data['telephone']
+    if 'email' in data:
+        fournisseur.email = data['email']
+    if 'adresse' in data:
+        fournisseur.adresse = data['adresse']
+    if 'actif' in data:
+        fournisseur.actif = bool(data['actif'])
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+@compta_bp.route('/api/fournisseurs/achats')
+def api_liste_achats_fournisseurs():
+    """Liste des achats à crédit, filtrable par statut (a_regler/reglee) et
+    par fournisseur — c'est la vue "qui doit-on payer" (balance fournisseurs)."""
+    structure_id = session.get('structure_id')
+    statut = request.args.get('statut')
+    fournisseur_id = request.args.get('fournisseur_id', type=int)
+
+    query = AchatFournisseur.query.filter_by(structure_id=structure_id)
+    if statut:
+        query = query.filter_by(statut=statut)
+    if fournisseur_id:
+        query = query.filter_by(fournisseur_id=fournisseur_id)
+    achats = query.order_by(AchatFournisseur.date_achat.desc()).all()
+
+    return jsonify([{
+        'id': a.id, 'fournisseur_id': a.fournisseur_id,
+        'fournisseur_nom': a.fournisseur.nom if a.fournisseur else '',
+        'montant_total': float(a.montant_total or 0), 'montant_paye': float(a.montant_paye or 0),
+        'reste_a_payer': a.reste_a_payer(), 'motif': a.motif,
+        'motif_personnalise': a.motif_personnalise or '', 'description': a.description or '',
+        'date_achat': a.date_achat.strftime('%Y-%m-%d') if a.date_achat else '',
+        'date_echeance': a.date_echeance.strftime('%Y-%m-%d') if a.date_echeance else '',
+        'statut': a.statut,
+    } for a in achats])
+
+
+@compta_bp.route('/api/fournisseurs/achats', methods=['POST'])
+def api_creer_achat_fournisseur():
+    """Enregistre un achat À CRÉDIT (la charge est comptabilisée tout de
+    suite ; la caisse n'est impactée qu'au règlement, voir /regler)."""
+    structure_id = session.get('structure_id')
+    user_name = session.get('user_name', 'System')
+    data = request.json or {}
+
+    try:
+        fournisseur_id = int(data.get('fournisseur_id'))
+        montant = float(data.get('montant', 0))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'fournisseur_id/montant invalides'}), 400
+
+    if montant <= 0:
+        return jsonify({'error': 'Montant invalide'}), 400
+
+    fournisseur = Fournisseur.query.filter_by(id=fournisseur_id, structure_id=structure_id).first()
+    if not fournisseur:
+        return jsonify({'error': 'Fournisseur non trouvé'}), 404
+
+    date_echeance = parse_date(data.get('date_echeance')) if data.get('date_echeance') else None
+
+    achat = AchatFournisseur(
+        structure_id=structure_id, fournisseur_id=fournisseur_id,
+        montant_total=montant, montant_paye=0,
+        motif=data.get('motif') or 'Achat', motif_personnalise=data.get('motif_personnalise', ''),
+        description=data.get('description', ''), date_echeance=date_echeance,
+        statut='a_regler', created_by_nom=user_name,
+    )
+    db.session.add(achat)
+    db.session.flush()
+
+    from services.comptabilite_service import generer_ecriture_achat_fournisseur
+    ecriture = generer_ecriture_achat_fournisseur(achat, user_name)
+    achat_id = achat.id
+    if ecriture:
+        db.session.query(AchatFournisseur).filter(AchatFournisseur.id == achat_id).update(
+            {'ecriture_id': ecriture.id}, synchronize_session=False)
+
+    db.session.commit()
+    return jsonify({'success': True, 'id': achat_id})
+
+
+@compta_bp.route('/api/fournisseurs/achats/<int:achat_id>/regler', methods=['POST'])
+def api_regler_achat_fournisseur(achat_id):
+    """Enregistre un règlement (partiel ou total) — c'est le SEUL moment où
+    la dette fournisseur impacte réellement la caisse (Débit 401 / Crédit
+    trésorerie). Une ligne miroir est aussi insérée dans `depenses` (motif
+    "Règlement fournisseur") pour que le calcul de solde de caisse existant
+    (SUM(depenses.montant), utilisé tel quel à plusieurs endroits de l'appli)
+    reflète cette sortie de caisse sans qu'il faille toucher chacun de ces
+    endroits — la charge, elle, a déjà été comptabilisée à l'achat, donc
+    cette ligne `depenses` n'est PAS repassée par generer_ecriture_depense
+    (qui redébiterait une charge en double)."""
+    structure_id = session.get('structure_id')
+    user_name = session.get('user_name', 'System')
+    data = request.json or {}
+
+    achat = AchatFournisseur.query.filter_by(id=achat_id, structure_id=structure_id).first()
+    if not achat:
+        return jsonify({'error': 'Achat non trouvé'}), 404
+
+    try:
+        montant = float(data.get('montant', 0))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Montant invalide'}), 400
+
+    reste = achat.reste_a_payer()
+    if montant <= 0 or montant > reste + 0.5:
+        return jsonify({'error': f'Montant invalide (reste à payer : {reste} FCFA)'}), 400
+
+    reglement = ReglementFournisseur(
+        achat_id=achat.id, fournisseur_id=achat.fournisseur_id, montant=montant,
+        mode_paiement=data.get('mode_paiement', 'especes'),
+        reference=data.get('reference', ''), notes=data.get('notes', ''),
+        created_by_nom=user_name,
+    )
+    db.session.add(reglement)
+    db.session.flush()
+
+    nouveau_paye = float(achat.montant_paye or 0) + montant
+    nouveau_statut = 'reglee' if nouveau_paye >= float(achat.montant_total or 0) - 0.5 else 'a_regler'
+    db.session.query(AchatFournisseur).filter(AchatFournisseur.id == achat.id).update(
+        {'montant_paye': nouveau_paye, 'statut': nouveau_statut}, synchronize_session=False)
+
+    # ⭐ Ligne miroir dans `depenses` — reflète la sortie de caisse réelle
+    # pour le calcul de solde existant, SANS repasser par
+    # generer_ecriture_depense (la charge est déjà comptabilisée à l'achat).
+    depense_miroir = Depense(
+        structure_id=structure_id, montant=montant,
+        motif=f"Règlement fournisseur — {achat.fournisseur.nom if achat.fournisseur else ''}",
+        description=f"Règlement de l'achat #{achat.id}", fournisseur_id=achat.fournisseur_id,
+        created_by_nom=user_name,
+    )
+    db.session.add(depense_miroir)
+    db.session.flush()
+
+    from services.comptabilite_service import generer_ecriture_reglement_fournisseur
+    achat_ref = AchatFournisseur.query.get(achat.id)
+    ecriture = generer_ecriture_reglement_fournisseur(reglement, achat_ref, user_name)
+    reglement_id = reglement.id
+    if ecriture:
+        db.session.query(ReglementFournisseur).filter(ReglementFournisseur.id == reglement_id).update(
+            {'ecriture_id': ecriture.id}, synchronize_session=False)
+
+    db.session.commit()
+    return jsonify({'success': True, 'id': reglement_id, 'reste_a_payer': achat_ref.reste_a_payer()})
 
 
 # ============================================================

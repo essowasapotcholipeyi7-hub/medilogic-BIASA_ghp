@@ -448,3 +448,63 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_protocoles_medicaux_source
     ON protocoles_medicaux (structure_id, source_app, source_model, source_id)
     WHERE source_app IS NOT NULL;
 -- ----------------------------------------------------------
+
+
+-- ----------------------------------------------------------
+-- 15) Comptes de tiers fournisseurs (401/4011) — jusqu'ici définis dans le
+--     plan comptable mais jamais alimentés (toute dépense était traitée
+--     comme payée cash immédiatement). Achat à crédit = charge reconnue
+--     tout de suite (Débit charge / Crédit 401), caisse impactée seulement
+--     au règlement (Débit 401 / Crédit trésorerie).
+-- ----------------------------------------------------------
+CREATE TABLE IF NOT EXISTS fournisseurs (
+    id SERIAL PRIMARY KEY,
+    structure_id INTEGER NOT NULL,
+    nom VARCHAR(255) NOT NULL,
+    telephone VARCHAR(50),
+    email VARCHAR(255),
+    adresse TEXT,
+    actif BOOLEAN DEFAULT TRUE,
+    created_by INTEGER,
+    created_by_nom VARCHAR(255),
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_fournisseurs_structure ON fournisseurs(structure_id, actif);
+
+CREATE TABLE IF NOT EXISTS achats_fournisseurs (
+    id SERIAL PRIMARY KEY,
+    structure_id INTEGER NOT NULL,
+    fournisseur_id INTEGER NOT NULL REFERENCES fournisseurs(id),
+    montant_total NUMERIC NOT NULL,
+    montant_paye NUMERIC DEFAULT 0,
+    motif VARCHAR(255) NOT NULL,
+    motif_personnalise VARCHAR(255),
+    description TEXT,
+    date_achat TIMESTAMP DEFAULT NOW(),
+    date_echeance DATE,
+    statut VARCHAR(20) DEFAULT 'a_regler',
+    ecriture_id INTEGER,
+    created_by INTEGER,
+    created_by_nom VARCHAR(255),
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_achats_fournisseurs_structure ON achats_fournisseurs(structure_id, statut);
+CREATE INDEX IF NOT EXISTS idx_achats_fournisseurs_fournisseur ON achats_fournisseurs(fournisseur_id);
+
+CREATE TABLE IF NOT EXISTS reglements_fournisseurs (
+    id SERIAL PRIMARY KEY,
+    achat_id INTEGER NOT NULL REFERENCES achats_fournisseurs(id),
+    fournisseur_id INTEGER NOT NULL REFERENCES fournisseurs(id),
+    montant NUMERIC NOT NULL,
+    date_reglement TIMESTAMP DEFAULT NOW(),
+    mode_paiement VARCHAR(50) DEFAULT 'especes',
+    reference VARCHAR(255),
+    notes TEXT,
+    ecriture_id INTEGER,
+    created_by INTEGER,
+    created_by_nom VARCHAR(255)
+);
+CREATE INDEX IF NOT EXISTS idx_reglements_fournisseurs_achat ON reglements_fournisseurs(achat_id);
+
+ALTER TABLE depenses ADD COLUMN IF NOT EXISTS fournisseur_id INTEGER REFERENCES fournisseurs(id);
+-- ----------------------------------------------------------
