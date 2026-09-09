@@ -1637,7 +1637,10 @@ def bulletin_paie(structure_id, paie_id):
     if not paie:
         flash('Bulletin de paie non trouvé', 'danger')
         return redirect(url_for('rh.page_paie'))
+    from utils.structure_info import get_structure_info
+    structure = get_structure_info(structure_id)
     return render_template('rh/bulletin_paie.html', paie=paie, employe=paie.employe,
+                            structure=structure,
                             date_actuelle=datetime.now().strftime('%d/%m/%Y'))
 
 

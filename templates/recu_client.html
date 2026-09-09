@@ -230,13 +230,21 @@
 </div>
 
 <!-- TABLEAU DES ARTICLES -->
+<!-- ⭐ FIX : la colonne PBR (base de remboursement AMU) ne doit s'afficher
+     que pour un patient assuré AMU — c'est une référence tarifaire propre
+     à l'assurance AMU, sans aucun sens pour un patient non assuré (avant,
+     article.pbr retombait sur le prix normal et s'affichait quand même,
+     laissant croire à tort à une prise en charge AMU inexistante). -->
+{% set patient_amu = type_assurance in ['AMU-CNSS', 'AMU-INAM'] %}
 <table style="width:100%; border-collapse: collapse; font-size: 10px;">
     <thead>
         <tr style="background:#f8f9fa; border-bottom: 2px solid #dee2e6;">
             <th style="padding:4px; text-align:left; width:32%;">Article</th>
             <th style="padding:4px; text-align:center; width:10%;">Qté</th>
-            <th style="padding:4px; text-align:right; width:16%;">Prix</th>
+            <th style="padding:4px; text-align:right; width:{{ '16%' if patient_amu else '20%' }};">Prix</th>
+            {% if patient_amu %}
             <th style="padding:4px; text-align:right; width:16%;">PBR</th>
+            {% endif %}
             <th style="padding:4px; text-align:right; width:18%;">Total</th>
         </tr>
     </thead>
@@ -248,6 +256,7 @@
             </td>
             <td style="text-align:center; font-size:9px;">{{ article.quantite }}</td>
             <td style="text-align:right; font-size:9px;">{{ article.prix_unitaire|default(0)|round(0)|int }} F</td>
+            {% if patient_amu %}
             <td style="text-align:right; font-size:9px;">
                 {% if article.prise_en_charge_amu == false %}
                     <span style="color:#6c757d;">0</span>
@@ -257,6 +266,7 @@
                     <span style="color:#6c757d;">-</span>
                 {% endif %}
             </td>
+            {% endif %}
             <td style="text-align:right; font-weight:600; font-size:9px;">{{ article.total|default(0)|round(0)|int }} F</td>
         </tr>
         {% endfor %}

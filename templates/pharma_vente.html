@@ -802,9 +802,6 @@ function chargerProduits() {
                     let statutProduit = p.statut || 'direct';
                     option.setAttribute('data-statut', statutProduit);
 
-                    // 🔥 DEBUG (à supprimer après)
-                    console.log(`🔍 ${p.nom}: AMU="${rawAMU}" (${typeof rawAMU}) → ${amuValue}, CAC="${rawCAC}" (${typeof rawCAC}) → ${cacValue}`);
-
                     // 🔥 Affichage du label
                     const prixDisplay = prixVente.toLocaleString();
                     const pbrDisplay = pbrValue ? pbrValue.toLocaleString() : '0';
@@ -862,7 +859,7 @@ function chargerProduits() {
             const countEl = document.getElementById('produitResultCount');
             if (countEl) countEl.textContent = produitsList.length;
 
-            chargerStocks();
+            chargerStocks(produitsList);
             filterProduits();
         })
         .catch(error => {
@@ -873,9 +870,20 @@ function chargerProduits() {
         });
 }
 
-function chargerStocks() {
-    fetch('/api/produits')
-        .then(response => response.json())
+function chargerStocks(produitsDejaCharges) {
+    // ⭐ FIX PERF : chargerProduits() récupère déjà TOUT le catalogue
+    // (/api/produits, lent — lecture Google Sheets) puis appelait
+    // systématiquement chargerStocks() qui refaisait le MÊME appel réseau
+    // en double juste pour filtrer les stocks faibles — doublait le temps
+    // de chargement de la page à chaque vente pharmacie. On réutilise
+    // maintenant directement la liste déjà chargée ; un vrai re-fetch ne
+    // reste nécessaire que pour le bouton "Actualiser" (clic manuel, sans
+    // argument).
+    const promesse = produitsDejaCharges
+        ? Promise.resolve(produitsDejaCharges)
+        : fetch('/api/produits').then(response => response.json());
+
+    promesse
         .then(produits => {
             const container = document.getElementById('stockAlertList');
             container.innerHTML = '';

@@ -1688,50 +1688,52 @@ def pharma_vente():
         except (ValueError, TypeError):
             return 0
     
-    # 🔥 Lire les produits depuis Google Sheets
-    produits = sheets_helper.get_all_records('produits', use_prefix=True)
-    
-    # Filtrer par structure
-    produits_filtres = []
-    for p in produits:
-        if str(p.get('structure_id')) == str(structure_id):
-            
-            prix = convertir_prix(p.get('prix_vente'))
-            pbr = convertir_prix(p.get('pbr', p.get('prix_vente')))
-            stock = p.get('quantite_stock')
-            if stock is None or stock == '' or stock == '-':
-                stock = 0
-            try:
-                stock = int(stock)
-            except (ValueError, TypeError):
-                stock = 0
-            
-            produits_filtres.append({
-                'ID': p.get('ID'),
-                'nom': p.get('nom', ''),
-                'prix': prix,
-                'pbr': pbr if pbr > 0 else prix,
-                'stock': stock,
-                'description': p.get('description', ''),
-                'dosage': p.get('dosage', ''),
-                'forme': p.get('forme', ''),
-                'unite': p.get('unite', '')
-            })
-    
-    patients = sheets_helper.get_all_records('patients', use_prefix=True)
-    
-    print(f"🔍 Produits trouvés dans Sheets: {len(produits_filtres)}")
-    
     # ⭐ Récupérer les prescriptions depuis NEON (table prescriptions_recues)
     prescription_ids = request.args.get('prescription_ids', '')
     articles_auto = []
-    
+
     if prescription_ids:
         ids_list = [int(id) for id in prescription_ids.split(',') if id.isdigit()]
         if ids_list:
             print(f"📋 Recherche des prescriptions avec IDs: {ids_list}")
-            
+
             try:
+                # ⭐ FIX PERF : ce catalogue Sheets n'est utile QUE pour
+                # faire correspondre le nom d'une prescription à un ID
+                # produit, donc uniquement quand des prescription_ids sont
+                # réellement présents dans l'URL — avant, il était toujours
+                # récupéré (+ `patients`, jamais utilisé du tout dans le
+                # template) à chaque chargement de la page, même sans aucun
+                # rapport avec des prescriptions, ajoutant deux lectures
+                # Google Sheets inutiles avant même l'envoi de la page (le
+                # catalogue affiché au patient est chargé séparément côté
+                # JS, via /api/produits).
+                produits = sheets_helper.get_all_records('produits', use_prefix=True)
+                produits_filtres = []
+                for p in produits:
+                    if str(p.get('structure_id')) == str(structure_id):
+                        prix = convertir_prix(p.get('prix_vente'))
+                        pbr = convertir_prix(p.get('pbr', p.get('prix_vente')))
+                        stock = p.get('quantite_stock')
+                        if stock is None or stock == '' or stock == '-':
+                            stock = 0
+                        try:
+                            stock = int(stock)
+                        except (ValueError, TypeError):
+                            stock = 0
+                        produits_filtres.append({
+                            'ID': p.get('ID'),
+                            'nom': p.get('nom', ''),
+                            'prix': prix,
+                            'pbr': pbr if pbr > 0 else prix,
+                            'stock': stock,
+                            'description': p.get('description', ''),
+                            'dosage': p.get('dosage', ''),
+                            'forme': p.get('forme', ''),
+                            'unite': p.get('unite', '')
+                        })
+                print(f"🔍 Produits trouvés dans Sheets: {len(produits_filtres)}")
+
                 # 🔥 Récupérer les prescriptions
                 result = db.session.execute(
                     text("""
@@ -1792,12 +1794,13 @@ def pharma_vente():
                 db.session.rollback()
     
     print(f"📦 Articles pharmaceutiques à charger automatiquement: {len(articles_auto)}")
-    
+
     patient_taux = session.get('patient_taux', 0)
-    
-    return render_template('pharma_vente.html', 
-                          produits=produits_filtres, 
-                          patients=patients,
+
+    # ⭐ FIX PERF : `produits`/`patients` ne sont pas référencés dans
+    # pharma_vente.html (le catalogue affiché au patient est chargé côté
+    # JS via /api/produits) — on ne les envoie plus au template.
+    return render_template('pharma_vente.html',
                           articles_auto=articles_auto,
                           patientTaux=patient_taux)
 
@@ -8589,14 +8592,21 @@ def generer_factures_assurance():
                     'type': data_assurance['type']
                 })
 
+        # ⭐ FIX : db.execute_query() ne committe pas par défaut
+        # (commit=False) — sans ce commit explicite, les INSERT/UPDATE
+        # ci-dessus étaient perdus dès la fin de la requête (jamais
+        # persistés), alors que la réponse renvoyait déjà "success": True.
+        db.session.commit()
+
         return jsonify({
             'success': True,
             'factures': resultats,
             'total_ventes': len(ventes),
             'total_factures': len(factures_par_cle)
         })
-        
+
     except Exception as e:
+        db.session.rollback()
         print(f"Erreur: {e}")
         import traceback
         traceback.print_exc()
@@ -8658,8 +8668,16 @@ def api_get_factures_assurance():
                     'societe': f.get('societe'),
                     'type_assurance': type_assurance,
                     'type_label': type_label,
-                    'montant_total': float(f.get('montant_total', 0)),
-                    'montant_rembourse': float(f.get('montant_rembourse', 0)),
+                    # ⭐ FIX : f.get(cle, 0) ne renvoie 0 que si la CLÉ est
+                    # absente, pas si sa valeur est NULL en base (cas normal
+                    # d'une facture fraîchement générée, jamais remboursée)
+                    # — float(None) levait une TypeError -> 500 sur cette
+                    # route, d'où le bug "ça génère mais n'affiche pas" :
+                    # la génération réussissait et persistait bien en base,
+                    # mais l'affichage de la liste plantait silencieusement
+                    # dès qu'une facture avait montant_rembourse = NULL.
+                    'montant_total': float(f.get('montant_total') or 0),
+                    'montant_rembourse': float(f.get('montant_rembourse') or 0),
                     'statut': f.get('statut', 'en_attente'),
                     'details': f.get('details', []),
                     'created_at': str(f.get('created_at')) if f.get('created_at') else None,

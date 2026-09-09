@@ -643,16 +643,22 @@
 
             <!-- Articles -->
             <div class="section-title">Détail des prestations</div>
+            <!-- ⭐ FIX : colonne PBR masquée si le patient n'est pas assuré
+                 AMU (même correctif que templates/recu_client.html) — le
+                 PBR est une référence tarifaire propre à l'assurance AMU,
+                 sans aucun sens pour un patient non assuré. -->
             <div class="table-container">
                 <table>
                     <thead>
                         <tr>
                             <th style="width:5%;">N°</th>
-                            <th style="width:32%;">Désignation</th>
+                            <th style="width:{{ '32%' if est_assure else '38%' }};">Désignation</th>
                             <th style="width:10%;">Type</th>
                             <th style="width:8%; text-align:center;">Qté</th>
-                            <th style="width:13%; text-align:right;">Prix unit.</th>
+                            <th style="width:{{ '13%' if est_assure else '17%' }}; text-align:right;">Prix unit.</th>
+                            {% if est_assure %}
                             <th style="width:12%; text-align:right;">PBR</th>
+                            {% endif %}
                             <th style="width:20%; text-align:right;">Total</th>
                         </tr>
                     </thead>
@@ -677,6 +683,7 @@
                             </td>
                             <td class="text-center">{{ article.quantite }}</td>
                             <td class="text-end">{{ article.prix_unitaire|round(0)|int }} F</td>
+                            {% if est_assure %}
                             <td class="text-end">
                                 {% if article.pbr and article.pbr != article.prix_unitaire %}
                                     {{ article.pbr|round(0)|int }} F
@@ -684,6 +691,7 @@
                                     <span style="color:#b0b8c5;">-</span>
                                 {% endif %}
                             </td>
+                            {% endif %}
                             <td class="text-end fw-bold">{{ article.total|round(0)|int }} F</td>
                         </tr>
                         {% endfor %}

@@ -21,6 +21,53 @@
             padding: 30px 40px;
             margin: 0 auto;
         }
+        /* ⭐ En-tête bande bleue foncée — même charte que les autres
+           documents imprimables (ordonnances/protocoles, reçus...) : logo
+           + nom + adresse de la clinique. */
+        .recu-header {
+            background: #1a2a6c;
+            padding: 20px 30px;
+            color: white;
+            margin: -30px -40px 20px -40px;
+        }
+        .recu-header .top-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .recu-header .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .recu-header .logo-area img {
+            max-height: 50px;
+            max-width: 100px;
+            object-fit: contain;
+        }
+        .recu-header .logo-area h1 {
+            font-size: 20px;
+            font-weight: 600;
+            margin: 0;
+            color: white;
+        }
+        .recu-header .periode { text-align: right; font-size: 13px; color: white; }
+        .recu-header .periode .badge {
+            display: inline-block; margin-top: 6px; padding: 4px 10px; border-radius: 30px;
+            font-size: 12px; font-weight: 600;
+            background: {{ 'rgba(25,135,84,0.35)' if paie.statut == 'payee' else 'rgba(255,193,7,0.35)' }};
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+        }
+        .recu-header .sub-info {
+            margin-top: 10px;
+            font-size: 13px;
+            opacity: 0.9;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px 20px;
+        }
         .header {
             display: flex;
             justify-content: space-between;
@@ -29,14 +76,7 @@
             padding-bottom: 12px;
             margin-bottom: 20px;
         }
-        .header .logo { font-size: 20px; font-weight: 700; color: #1a2a6c; text-transform: uppercase; }
-        .header .periode { text-align: right; font-size: 14px; color: #333; }
-        .header .periode .badge {
-            display: inline-block; margin-top: 6px; padding: 4px 10px; border-radius: 4px;
-            font-size: 12px; font-weight: 600;
-            background: {{ '#d1e7dd' if paie.statut == 'payee' else '#fff3cd' }};
-            color: {{ '#0f5132' if paie.statut == 'payee' else '#664d03' }};
-        }
+        .header .logo { font-size: 18px; font-weight: 700; color: #1a2a6c; }
         .infos-employe {
             display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px;
             font-size: 13px; margin-bottom: 20px; padding: 12px; background: #f8f9fa; border-radius: 6px;
@@ -49,6 +89,32 @@
         table.bulletin tr.section td { background: #eef1f8; font-weight: 700; }
         table.bulletin tr.net td { background: #d1e7dd; font-weight: 700; font-size: 15px; }
         .footer-note { font-size: 11px; color: #888; margin-top: 20px; text-align: center; }
+        /* ⭐ Pied de page : signatures employé + responsable, côte à côte */
+        .doc-signatures {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 40px;
+            padding-top: 10px;
+        }
+        .doc-signatures .signature-bloc {
+            text-align: center;
+            min-width: 200px;
+        }
+        .doc-signatures .signature-bloc .titre {
+            font-weight: 600;
+            font-size: 13px;
+            color: #1a2a3a;
+            margin-bottom: 45px;
+        }
+        .doc-signatures .signature-bloc .ligne {
+            width: 200px;
+            border-top: 1px solid #333;
+            margin: 0 auto 5px auto;
+        }
+        .doc-signatures .signature-bloc .legende {
+            font-size: 11px;
+            color: #6c757d;
+        }
         .btn-row { text-align: center; margin-top: 20px; }
         .btn-print, .btn-fermer {
             display: inline-block; margin: 0 6px; padding: 10px 24px; border: none; border-radius: 6px;
@@ -59,18 +125,42 @@
         @media print {
             body { background: white; padding: 0; }
             .document-container { box-shadow: none; }
+            .recu-header { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; background: #1a2a6c !important; }
+            .doc-signatures .signature-bloc .ligne { border-top: 1px solid #333 !important; }
             .btn-row { display: none; }
+        }
+        @media (max-width: 600px) {
+            .recu-header { margin: -15px -15px 15px -15px; padding: 15px; }
+            .recu-header .top-row { flex-direction: column; gap: 10px; text-align: center; }
+            .recu-header .sub-info { justify-content: center; }
+            .doc-signatures { flex-direction: column; gap: 30px; align-items: center; }
         }
     </style>
 </head>
 <body>
     <div class="document-container">
+        <div class="recu-header">
+            <div class="top-row">
+                <div class="logo-area">
+                    {% if structure and structure.logo_url %}
+                    <img src="{{ structure.logo_url }}" alt="Logo">
+                    {% endif %}
+                    <h1>{{ structure.nom if structure and structure.nom else 'Hôpital' }}</h1>
+                </div>
+                <div class="periode">
+                    {{ paie.get_periode_label() }}
+                    <br><span class="badge">{{ paie.get_statut_label() }}</span>
+                </div>
+            </div>
+            <div class="sub-info">
+                {% if structure and structure.adresse %}<span>{{ structure.adresse }}</span>{% endif %}
+                {% if structure and structure.telephone %}<span>Tel: {{ structure.telephone }}</span>{% endif %}
+                {% if structure and structure.email %}<span>Email: {{ structure.email }}</span>{% endif %}
+            </div>
+        </div>
+
         <div class="header">
             <div class="logo">Bulletin de paie</div>
-            <div class="periode">
-                {{ paie.get_periode_label() }}
-                <br><span class="badge">{{ paie.get_statut_label() }}</span>
-            </div>
         </div>
 
         <div class="infos-employe">
@@ -129,6 +219,19 @@
         <p style="font-size:13px;">Payé le {{ paie.date_paiement.strftime('%d/%m/%Y') }}
             {% if paie.mode_paiement %}— {{ paie.mode_paiement }}{% endif %}</p>
         {% endif %}
+
+        <div class="doc-signatures">
+            <div class="signature-bloc">
+                <div class="titre">Signature du personnel</div>
+                <div class="ligne"></div>
+                <div class="legende">{{ employe.nom }} {{ employe.prenom }}</div>
+            </div>
+            <div class="signature-bloc">
+                <div class="titre">Signature du responsable</div>
+                <div class="ligne"></div>
+                <div class="legende">{{ structure.nom if structure and structure.nom else '' }}</div>
+            </div>
+        </div>
 
         <div class="footer-note">
             Document généré le {{ date_actuelle }} — Taux {{ paie.organisme_retraite }}/{{ paie.organisme_amu }}/IRPP
