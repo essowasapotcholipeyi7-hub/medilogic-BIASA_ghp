@@ -24,14 +24,14 @@ from models import (
     db, CompteComptable, EcritureComptable, LigneEcriture,
     Vente, Facture, PaiementFacture, FactureAssurance,
     AnnulationVente, Recette, Depense, AnomalieComptable,
-    Fournisseur, AchatFournisseur, ReglementFournisseur
+    Fournisseur, AchatFournisseur, ReglementFournisseur, Paie
 )
 from utils.plan_comptable_syscohada import (
     PLAN_COMPTABLE_PAR_NUMERO, COMPTE_CLIENTS_PATIENTS, COMPTE_ATTENTE,
     COMPTE_FOURNISSEURS, compte_assurance,
     COMPTES_RETRAITE_PAR_ORGANISME, COMPTES_AMU_PAR_ORGANISME,
     COMPTE_FORMATION_PRO_CHARGE, COMPTE_FORMATION_PRO_A_REVERSER,
-    COMPTE_IRPP_A_REVERSER, COMPTE_PERSONNEL_AVANCES,
+    COMPTE_IRPP_A_REVERSER, COMPTE_PERSONNEL_AVANCES, COMPTE_PERSONNEL_A_PAYER,
 )
 from utils.categorisation import categoriser_acte
 
@@ -255,13 +255,22 @@ def _contre_passer(ecriture_origine, libelle, source_type, source_id, user_nom='
 # ============================================================
 
 def generer_ecriture_vente(vente, user_nom='SYSTEME'):
-    """Génère l'écriture d'une vente (actes médicaux, pharmacie ou
+    """Génère la ou les écriture(s) d'une vente (actes médicaux, pharmacie ou
     lunetterie). Doit être appelée juste après l'insertion de la vente et
     de sa recette associée.
 
-    Débit : trésorerie (encaissé net) + assurance(s) à recevoir + client
-            (reste à payer).
-    Crédit : ventes, par catégorie (actes) ou globalement (pharmacie).
+    ⭐ Non-mélange des journaux (SYSCOHADA) : une vente génère TOUJOURS son
+    écriture de reconnaissance au journal VEN (Débit 4111 Clients pour la
+    part patient — encaissée ou non — + assurance(s) à recevoir ; Crédit
+    ventes par catégorie), puis, SEULEMENT si le patient a payé quelque
+    chose sur le moment, une seconde écriture séparée au journal CAI/BQ
+    (Débit trésorerie / Crédit 4111) qui éteint immédiatement cette part
+    de la créance. Les deux écritures restent liées par le même patient/
+    numéro de vente mais ne se mélangent jamais dans le même journal.
+
+    Retourne l'écriture VEN (celle historiquement attendue par les
+    appelants existants — `vente.ecriture_id`) ; l'écriture d'encaissement,
+    si générée, est stockée séparément sur `vente.ecriture_encaissement_id`.
     """
     try:
         structure_id = vente.structure_id
@@ -276,8 +285,9 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
         total_debit = 0.0
 
         if montant_effectif > 0:
-            lignes.append({'numero_compte': _compte_tresorerie(vente.mode_paiement),
-                            'libelle': 'Encaissement vente', 'debit': montant_effectif})
+            lignes.append({'numero_compte': COMPTE_CLIENTS_PATIENTS,
+                            'libelle': f"Créance client — {vente.patient_nom} (réglée immédiatement)",
+                            'debit': montant_effectif})
             total_debit += montant_effectif
 
         if prise_en_charge > 0:
@@ -305,7 +315,7 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
 
         if reste_a_payer > 0.5:
             lignes.append({'numero_compte': COMPTE_CLIENTS_PATIENTS,
-                            'libelle': f"Créance client — {vente.patient_nom}",
+                            'libelle': f"Créance client — {vente.patient_nom} (reste à payer)",
                             'debit': reste_a_payer})
             total_debit += reste_a_payer
 
@@ -361,28 +371,44 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
                             'credit': round(montant, 2)})
 
         libelle = f"Vente {vente.type} #{vente.id} — {vente.patient_nom}"
-        # ⭐ Le journal de caisse (CAI) doit montrer le montant RÉEL encaissé
-        # du patient, pas seulement les règlements de facture séparés — une
-        # vente où le patient donne de l'argent tout de suite (espèces ou
-        # banque) est un vrai mouvement de caisse/banque, pas juste "une
-        # vente". Seule une vente 100% prise en charge (assurance/crédit,
-        # rien d'encaissé sur le moment) reste classée en VTE.
-        if montant_effectif > 0:
-            journal_vente = 'CAI' if _compte_tresorerie(vente.mode_paiement) == '571' else 'BQ'
-        else:
-            journal_vente = 'VTE'
         ecriture = creer_ecriture(
             structure_id=structure_id,
             date_ecriture=(vente.date_vente.date() if vente.date_vente else datetime.utcnow().date()),
             libelle=libelle,
             lignes=lignes,
-            journal_code=journal_vente,
+            journal_code='VEN',
             piece_justificative=f"VTE-{vente.id}",
             auto=True,
             source_type='vente',
             source_id=vente.id,
             user_nom=user_nom,
         )
+
+        # ⭐ Seconde écriture (CAI/BQ), séparée : le SEUL mouvement de
+        # trésorerie réel, uniquement si le patient a effectivement payé
+        # quelque chose sur le moment. Éteint la part de créance 4111 tout
+        # juste reconnue ci-dessus dans l'écriture VEN.
+        ecriture_encaissement = None
+        if ecriture and montant_effectif > 0:
+            lignes_encaissement = [
+                {'numero_compte': _compte_tresorerie(vente.mode_paiement),
+                 'libelle': f"Encaissement vente — {vente.patient_nom}", 'debit': montant_effectif},
+                {'numero_compte': COMPTE_CLIENTS_PATIENTS,
+                 'libelle': f"Encaissement vente — {vente.patient_nom}", 'credit': montant_effectif},
+            ]
+            journal_encaissement = 'CAI' if _compte_tresorerie(vente.mode_paiement) == '571' else 'BQ'
+            ecriture_encaissement = creer_ecriture(
+                structure_id=structure_id,
+                date_ecriture=(vente.date_vente.date() if vente.date_vente else datetime.utcnow().date()),
+                libelle=f"Encaissement vente #{vente.id} — {vente.patient_nom}",
+                lignes=lignes_encaissement,
+                journal_code=journal_encaissement,
+                piece_justificative=f"VTE-{vente.id}",
+                auto=True,
+                source_type='encaissement_vente',
+                source_id=vente.id,
+                user_nom=user_nom,
+            )
 
         if ecriture:
             # ⭐ FIX : `creer_ecriture()` vient de committer (expire_on_commit
@@ -392,9 +418,11 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
             # l'état de la transaction (observé en production sur une vraie
             # vente). Un UPDATE direct par id évite complètement de recharger
             # l'instance — plus robuste.
+            maj = {'ecriture_generee': True, 'ecriture_id': ecriture.id}
+            if ecriture_encaissement:
+                maj['ecriture_encaissement_id'] = ecriture_encaissement.id
             db.session.query(Vente).filter(Vente.id == vente.id).update(
-                {'ecriture_generee': True, 'ecriture_id': ecriture.id},
-                synchronize_session=False,
+                maj, synchronize_session=False,
             )
             db.session.commit()
 
@@ -411,10 +439,26 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
 
 
 def generer_ecriture_annulation_vente(vente, annulation, user_nom='SYSTEME'):
-    """Contre-passe l'écriture d'origine d'une vente annulée."""
+    """Contre-passe la ou les écriture(s) d'origine d'une vente annulée —
+    la reconnaissance (VEN) ET, si elle existe, l'encaissement (CAI/BQ)
+    séparé (voir generer_ecriture_vente). Retourne la contre-passation VEN
+    (celle historiquement attendue par l'appelant) ; celle de l'encaissement,
+    si générée, n'est pas retournée mais reste tracée par sa pièce (VTE-<id>)."""
     try:
         if not vente.ecriture_id:
             return None
+
+        if vente.ecriture_encaissement_id:
+            ecriture_encaissement_origine = EcritureComptable.query.get(vente.ecriture_encaissement_id)
+            if ecriture_encaissement_origine:
+                _contre_passer(
+                    ecriture_encaissement_origine,
+                    libelle=f"Annulation vente #{vente.id} — {vente.patient_nom} (encaissement)",
+                    source_type='annulation_vente',
+                    source_id=annulation.id if annulation else vente.id,
+                    user_nom=user_nom,
+                )
+
         ecriture_origine = EcritureComptable.query.get(vente.ecriture_id)
         if not ecriture_origine:
             return None
@@ -590,9 +634,14 @@ def generer_ecriture_annulation_facture(facture, montant_annule, user_nom='SYSTE
 
 
 def generer_ecriture_depense(depense, user_nom='SYSTEME'):
-    """Débit charge (déduite du motif), crédit trésorerie (caisse par
-    défaut — les dépenses n'ont pas de mode de paiement dédié dans le
-    modèle actuel)."""
+    """Dépense diverse payée cash sur le champ, sans fournisseur identifié ni
+    dette formelle (pour un achat À CRÉDIT chez un fournisseur enregistré,
+    voir AchatFournisseur/generer_ecriture_achat_fournisseur — journal ACH —
+    puis son règlement séparé en CAI/BQ). Ici, il n'y a pas de créance à
+    reconnaître d'abord : c'est un simple décaissement en espèces, donc une
+    seule écriture, directement au journal de caisse (CAI) — Débit charge
+    (déduite du motif), Crédit trésorerie. Les dépenses n'ont pas de mode de
+    paiement dédié dans le modèle actuel (toujours caisse, compte 571)."""
     try:
         montant = _to_float(depense.montant)
         if montant <= 0:
@@ -609,7 +658,7 @@ def generer_ecriture_depense(depense, user_nom='SYSTEME'):
             date_ecriture=(depense.date_depense.date() if depense.date_depense else datetime.utcnow().date()),
             libelle=f"Dépense — {depense.motif or depense.motif_personnalise or 'Divers'}",
             lignes=lignes,
-            journal_code='ACH',
+            journal_code='CAI',
             piece_justificative=f"DEP-{depense.id}",
             auto=True,
             source_type='depense',
@@ -686,12 +735,12 @@ def generer_ecriture_reglement_fournisseur(reglement, achat, user_nom='SYSTEME')
             date_ecriture=(reglement.date_reglement.date() if reglement.date_reglement else datetime.utcnow().date()),
             libelle=f"Règlement fournisseur — {nom_fournisseur} (achat #{achat.id})",
             lignes=lignes,
-            # ⭐ 'CAI' est réservé à ce qui RENTRE en caisse (règlements
-            # clients, recettes diverses — voir generer_ecriture_paiement_facture
-            # et generer_ecriture_recette_diverse) ; toute sortie liée aux
-            # achats/dépenses passe par 'ACH', quel que soit le mode de
-            # paiement — même convention que generer_ecriture_depense.
-            journal_code='ACH',
+            # ⭐ Non-mélange SYSCOHADA : CAI/BQ portent TOUT mouvement de
+            # trésorerie réel (encaissement ET décaissement en espèces ou en
+            # banque) — l'achat lui-même (charge + dette) reste dans ACH,
+            # séparément (voir generer_ecriture_achat_fournisseur). Un
+            # règlement espèces va donc en CAI, un règlement banque en BQ.
+            journal_code='CAI' if _compte_tresorerie(reglement.mode_paiement) == '571' else 'BQ',
             piece_justificative=f"REG-FRS-{reglement.id}",
             auto=True,
             source_type='reglement_fournisseur',
@@ -741,9 +790,17 @@ def generer_ecriture_recette_diverse(recette, user_nom='SYSTEME'):
 
 
 def generer_ecriture_paie(paie, employe, user_nom='SYSTEME'):
-    """Écriture de paie (charges de personnel + reversements sociaux/fiscaux
-    dus + décaissement du net). Une seule écriture couvre la charge et le
-    paiement puisque marquer_paie_payee() traite les deux en même temps.
+    """Écriture(s) de paie. ⭐ Non-mélange SYSCOHADA : le journal SAL reçoit
+    TOUJOURS la reconnaissance complète (charges de personnel + toutes les
+    dettes qui en découlent, y compris le net à payer — compte 4231 — tant
+    qu'il n'est pas décaissé) ; le journal CAI/BQ reçoit SÉPARÉMENT, si le
+    net a effectivement été versé, le seul décaissement réel (Débit 4231 /
+    Crédit trésorerie). Les deux écritures restent liées par la même pièce
+    (PAIE-<id>) mais jamais mélangées dans un même journal.
+
+    Retourne l'écriture SAL (celle historiquement attendue par l'appelant,
+    `paie.ecriture_id`) ; l'écriture de décaissement, si générée, est
+    stockée séparément sur `paie.ecriture_paiement_id`.
 
     Profils : CNSS (privé) ou CRT (public) pour la retraite ; AMU-CNSS ou
     AMU-INAM pour l'assurance maladie — même schéma comptable, seuls les
@@ -790,8 +847,8 @@ def generer_ecriture_paie(paie, employe, user_nom='SYSTEME'):
             lignes.append({'numero_compte': COMPTE_FORMATION_PRO_CHARGE, 'libelle': 'Taxe formation professionnelle', 'debit': formation_pro})
 
         if net > 0:
-            lignes.append({'numero_compte': _compte_tresorerie(paie.mode_paiement),
-                            'libelle': 'Net payé au salarié', 'credit': net})
+            lignes.append({'numero_compte': COMPTE_PERSONNEL_A_PAYER,
+                            'libelle': 'Personnel — net à payer', 'credit': net})
         if retraite_sal > 0:
             lignes.append({'numero_compte': comptes_retraite['salarial'], 'libelle': f'{organisme_retraite} salarial à reverser', 'credit': retraite_sal})
         if retraite_pat > 0:
@@ -807,7 +864,7 @@ def generer_ecriture_paie(paie, employe, user_nom='SYSTEME'):
         if autres > 0:
             lignes.append({'numero_compte': COMPTE_PERSONNEL_AVANCES, 'libelle': 'Avances/acomptes/prêts récupérés sur salaire', 'credit': autres})
 
-        return creer_ecriture(
+        ecriture = creer_ecriture(
             structure_id=paie.structure_id,
             date_ecriture=(paie.date_paiement or datetime.utcnow().date()),
             libelle=libelle,
@@ -819,6 +876,37 @@ def generer_ecriture_paie(paie, employe, user_nom='SYSTEME'):
             source_id=paie.id,
             user_nom=user_nom,
         )
+
+        # ⭐ Décaissement réel du net, en CAI/BQ, séparément — uniquement si
+        # un net était dû (voir plus haut, crédité en 4231 dans l'écriture
+        # SAL ci-dessus).
+        if ecriture and net > 0:
+            lignes_paiement = [
+                {'numero_compte': COMPTE_PERSONNEL_A_PAYER,
+                 'libelle': f"Paiement salaire — {employe.nom} {employe.prenom}", 'debit': net},
+                {'numero_compte': _compte_tresorerie(paie.mode_paiement),
+                 'libelle': f"Paiement salaire — {employe.nom} {employe.prenom}", 'credit': net},
+            ]
+            journal_paiement = 'CAI' if _compte_tresorerie(paie.mode_paiement) == '571' else 'BQ'
+            ecriture_paiement = creer_ecriture(
+                structure_id=paie.structure_id,
+                date_ecriture=(paie.date_paiement or datetime.utcnow().date()),
+                libelle=f"Paiement salaire {paie.get_periode_label()} — {employe.nom} {employe.prenom}",
+                lignes=lignes_paiement,
+                journal_code=journal_paiement,
+                piece_justificative=f"PAIE-{paie.id}",
+                auto=True,
+                source_type='paiement_paie',
+                source_id=paie.id,
+                user_nom=user_nom,
+            )
+            if ecriture_paiement:
+                db.session.query(Paie).filter(Paie.id == paie.id).update(
+                    {'ecriture_paiement_id': ecriture_paiement.id}, synchronize_session=False,
+                )
+                db.session.commit()
+
+        return ecriture
     except Exception as e:
         db.session.rollback()
         print(f"❌ [comptabilite_service] Erreur generer_ecriture_paie: {e}")

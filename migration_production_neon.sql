@@ -508,3 +508,15 @@ CREATE INDEX IF NOT EXISTS idx_reglements_fournisseurs_achat ON reglements_fourn
 
 ALTER TABLE depenses ADD COLUMN IF NOT EXISTS fournisseur_id INTEGER REFERENCES fournisseurs(id);
 -- ----------------------------------------------------------
+
+
+-- ----------------------------------------------------------
+-- 16) Non-mélange des journaux SYSCOHADA (VTE -> VEN, ajout TR) : chaque
+--     opération payée immédiatement (vente, paie) génère désormais DEUX
+--     écritures distinctes — la reconnaissance (VEN/SAL) et le mouvement de
+--     trésorerie réel (CAI/BQ) — au lieu d'une seule écriture mélangeant
+--     les deux. Colonnes de traçabilité de la 2e écriture.
+-- ----------------------------------------------------------
+ALTER TABLE ventes ADD COLUMN IF NOT EXISTS ecriture_encaissement_id INTEGER;
+ALTER TABLE paies ADD COLUMN IF NOT EXISTS ecriture_paiement_id INTEGER;
+-- ----------------------------------------------------------

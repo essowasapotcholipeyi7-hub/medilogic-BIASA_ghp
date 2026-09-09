@@ -569,12 +569,17 @@ class EcritureComptable(db.Model):
 
     # Journaux auxiliaires (journaux divisionnaires SYSCOHADA)
     JOURNAUX = {
-        'VTE': "Journal des ventes",
+        'VEN': "Journal des ventes",
         'CAI': "Journal de caisse",
         'BQ': "Journal de banque",
-        'ACH': "Journal des achats et charges",
+        'ACH': "Journal des achats",
         'SAL': "Journal des salaires",
+        'TR': "Journal de trésorerie",
         'OD': "Journal des opérations diverses",
+        # ⭐ Ancien code, conservé uniquement pour que les écritures déjà
+        # générées avant le renommage (VTE -> VEN, nomenclature SYSCOHADA)
+        # restent filtrables dans les rapports — plus jamais émis par le code.
+        'VTE': "Journal des ventes (ancien code)",
     }
 
     id = db.Column(db.Integer, primary_key=True)
@@ -883,7 +888,16 @@ class Vente(db.Model):
     traite_comptable = db.Column(db.Boolean, default=False)
     ecriture_generee = db.Column(db.Boolean, default=False)
     ecriture_id = db.Column(db.Integer, nullable=True)
-    
+    # ⭐ Séparation des journaux (non-mélange SYSCOHADA) : `ecriture_id` porte
+    # la reconnaissance de la vente (journal VEN — créance client/assurance,
+    # produit), toujours générée. `ecriture_encaissement_id` porte le SEUL
+    # mouvement de trésorerie (journal CAI/BQ — extinction de la créance
+    # client par le montant réellement encaissé), générée uniquement si le
+    # patient a payé quelque chose sur le moment. Les deux entrées restent
+    # liées par la même pièce (VTE-<id> / ENC-<id>) mais dans des journaux
+    # distincts — voir generer_ecriture_vente().
+    ecriture_encaissement_id = db.Column(db.Integer, nullable=True)
+
     # ⭐ Prescription IDs
     prescription_ids = db.Column(db.JSON, default=[])
     
@@ -2271,7 +2285,12 @@ class Paie(db.Model):
     date_paiement = db.Column(db.Date)
 
     depense_id = db.Column(db.Integer)
+    # ⭐ Non-mélange SYSCOHADA : `ecriture_id` porte la reconnaissance de la
+    # paie (journal SAL — charges + dettes, dont la dette "net à payer"
+    # envers le personnel) ; `ecriture_paiement_id` porte le SEUL décaissement
+    # réel du net (journal CAI/BQ) — voir generer_ecriture_paie().
     ecriture_id = db.Column(db.Integer)
+    ecriture_paiement_id = db.Column(db.Integer)
 
     created_by = db.Column(db.String(100))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

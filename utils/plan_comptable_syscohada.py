@@ -49,6 +49,12 @@ PLAN_COMPTABLE = [
     # - Effets à payer" — les réutiliser aurait fait atterrir les avances sur
     # salaire dans un compte déjà nommé (et affiché) comme un compte fournisseur.
     {'numero': '4211', 'nom': "Personnel — avances et acomptes", 'type': 'actif', 'classe': '4'},
+    # ⭐ Même logique que 4211 (421/422 déjà occupés) : dette envers le
+    # personnel pour le NET À PAYER de la paie — reconnue au journal SAL,
+    # éteinte au journal CAI/BQ quand le salaire est réellement décaissé
+    # (non-mélange SYSCOHADA : la paie et son paiement restent deux
+    # écritures distinctes, liées par la même pièce).
+    {'numero': '4231', 'nom': "Personnel — rémunérations dues (net à payer)", 'type': 'passif', 'classe': '4'},
     # ⭐ Organismes sociaux, subdivisés par organisme réel (comme pour les
     # assurances 411211/411221...) — un salarié du privé et un salarié du
     # public ne doivent jamais créditer le même compte "CNSS" générique.
@@ -188,6 +194,7 @@ COMPTE_FORMATION_PRO_CHARGE = '6665'
 COMPTE_FORMATION_PRO_A_REVERSER = '4319'
 COMPTE_IRPP_A_REVERSER = '447'
 COMPTE_PERSONNEL_AVANCES = '4211'   # prêts / acomptes / autres retenues sur salaire
+COMPTE_PERSONNEL_A_PAYER = '4231'   # net à payer — dette avant décaissement (journal SAL -> CAI/BQ)
 
 
 def compte_assurance(nom_assurance):
