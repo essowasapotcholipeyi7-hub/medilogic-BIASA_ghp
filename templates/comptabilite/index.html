@@ -187,7 +187,7 @@
                             </div>
                             <div class="col-md-6">
                                 <div class="card border-0 shadow-sm" style="background:linear-gradient(135deg,#198754,#146c43); cursor:pointer;"
-                                     onclick="document.getElementById('rapports-tab').click(); setTimeout(()=>{document.getElementById('rapportType').value='journal'; document.getElementById('rapportJournalCode').value='VEN'; onChangeRapportType();}, 50);">
+                                     onclick="document.getElementById('rapports-tab').click(); setTimeout(()=>{document.getElementById('rapportType').value='journal'; document.getElementById('rapportJournalCode').value='VTE'; onChangeRapportType();}, 50);">
                                     <div class="card-body text-white">
                                         <div class="text-uppercase small opacity-75"><i class="fas fa-chart-line"></i> Caisse Chiffre d'affaires</div>
                                         <div class="fs-6 opacity-75">Total des ventes de la période (encaissé ou non)</div>
@@ -473,6 +473,9 @@
                             <div class="col-md-3 text-end">
                                 <button class="btn btn-primary btn-sm me-2" onclick="imprimerRapportPDF()">
                                     <i class="fas fa-file-pdf"></i> PDF
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm" onclick="exporterRapportTXT()" title="Exporter ce rapport (avec le filtre journal/compte actuel) en texte brut">
+                                    <i class="fas fa-file-lines"></i> TXT
                                 </button>
                             </div>
                         </div>
@@ -1134,13 +1137,13 @@
                     <div class="col-md-6 mb-2">
                         <label class="form-label small">Compte d'immobilisation</label>
                         <select class="form-control form-control-sm" id="immoCompteImmo">
-                            <option value="2183">2183 - Matériel médical et informatique</option>
-                            <option value="2184">2184 - Mobilier et matériel de bureau</option>
+                            <option value="21830000">21830000 - Matériel médical et informatique</option>
+                            <option value="21840000">21840000 - Mobilier et matériel de bureau</option>
                         </select>
                     </div>
                     <div class="col-md-6 mb-2">
                         <label class="form-label small">Compte d'amortissement</label>
-                        <input type="text" class="form-control form-control-sm" id="immoCompteAmort" value="2818">
+                        <input type="text" class="form-control form-control-sm" id="immoCompteAmort" value="28180000">
                     </div>
                 </div>
                 <div class="row">
@@ -3359,19 +3362,42 @@ function afficherRapport(data, type) {
 
 // Dans le fichier HTML - Ajouter cette fonction
 
-function imprimerRapportPDF() {
+function _paramsRapportCourant() {
+    // ⭐ FIX : reprend les MÊMES filtres que ceux affichés à l'écran (journal
+    // sélectionné, compte unique pour le grand livre) — avant, "Imprimer"
+    // ignorait ces filtres et ressortait systématiquement tous les
+    // journaux mélangés, même si un seul était sélectionné à l'écran.
     const type = document.getElementById('rapportType').value;
     const dateDebut = document.getElementById('rapportDateDebut').value;
     const dateFin = document.getElementById('rapportDateFin').value;
-    
-    let url = `/comptabilite/rapport/print/${type}`;
+    const journalCode = document.getElementById('rapportJournalCode') ? document.getElementById('rapportJournalCode').value : '';
+    const compteId = document.getElementById('rapportCompteId') ? document.getElementById('rapportCompteId').value : '';
+
     const params = [];
     if (dateDebut) params.push('date_debut=' + dateDebut);
     if (dateFin) params.push('date_fin=' + dateFin);
+    if (type === 'journal' && journalCode) params.push('journal_code=' + encodeURIComponent(journalCode));
+    if (type === 'grand_livre' && compteId) params.push('compte_id=' + compteId);
+    return { type, params };
+}
+
+function imprimerRapportPDF() {
+    const { type, params } = _paramsRapportCourant();
+    let url = `/comptabilite/rapport/print/${type}`;
     if (params.length) url += '?' + params.join('&');
-    
+
     // Ouvrir dans une nouvelle fenêtre pour l'impression
     window.open(url, '_blank', 'width=1100,height=800');
+}
+
+function exporterRapportTXT() {
+    // ⭐ Export texte brut d'UN SEUL rapport à la fois (le journal
+    // actuellement sélectionné, ou le grand livre d'un seul compte, etc.) —
+    // demandé explicitement, plutôt qu'un mélange de tous les journaux.
+    const { type, params } = _paramsRapportCourant();
+    let url = `/comptabilite/rapport/export-txt/${type}`;
+    if (params.length) url += '?' + params.join('&');
+    window.location.href = url;
 }
 
 // ============================================================

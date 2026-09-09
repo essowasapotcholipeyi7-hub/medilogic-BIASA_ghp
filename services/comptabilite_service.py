@@ -32,6 +32,12 @@ from utils.plan_comptable_syscohada import (
     COMPTES_RETRAITE_PAR_ORGANISME, COMPTES_AMU_PAR_ORGANISME,
     COMPTE_FORMATION_PRO_CHARGE, COMPTE_FORMATION_PRO_A_REVERSER,
     COMPTE_IRPP_A_REVERSER, COMPTE_PERSONNEL_AVANCES, COMPTE_PERSONNEL_A_PAYER,
+    COMPTE_CAISSE, COMPTE_BANQUE, COMPTES_TRESORERIE,
+    COMPTE_VENTES_PHARMACIE, COMPTE_VENTES_LUNETTERIE, COMPTE_AUTRES_PRESTATIONS,
+    COMPTE_PRODUITS_DIVERS, COMPTE_SALAIRES, COMPTE_DOTATION_PROVISION_CREANCE,
+    COMPTE_DEPRECIATION_CREANCE, COMPTE_REPRISE_PROVISION_CREANCE,
+    COMPTE_PERTE_CREANCE_IRRECOUVRABLE, COMPTE_CREANCE_ABANDONNEE,
+    COMPTE_DOTATION_AMORTISSEMENT, compte_charge_pour_motif,
 )
 from utils.categorisation import categoriser_acte
 
@@ -218,11 +224,11 @@ def _nom_assurance(vente, principale=True):
 
 
 def _compte_tresorerie(mode_paiement):
-    """'especes' -> Caisse (571). Tout le reste (carte, mobile money,
-    chèque, virement...) -> Banque (521)."""
+    """'especes' -> Caisse (57100000). Tout le reste (carte, mobile money,
+    chèque, virement...) -> Banque (52100000)."""
     if (mode_paiement or 'especes').strip().lower() == 'especes':
-        return '571'
-    return '521'
+        return COMPTE_CAISSE
+    return COMPTE_BANQUE
 
 
 def _contre_passer(ecriture_origine, libelle, source_type, source_id, user_nom='SYSTEME'):
@@ -338,7 +344,7 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
 
         produits_items = vente.produits or []
         if produits_items:
-            compte_produits = '7012' if vente.type in ('lunettes', 'lunetterie', 'optique') else '7011'
+            compte_produits = COMPTE_VENTES_LUNETTERIE if vente.type in ('lunettes', 'lunetterie', 'optique') else COMPTE_VENTES_PHARMACIE
             for item in produits_items:
                 if not isinstance(item, dict):
                     continue
@@ -349,20 +355,20 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
         if not totaux_par_compte:
             # Repli si la vente n'a aucun détail d'articles exploitable
             if vente.type in ('pharma', 'pharmacie'):
-                totaux_par_compte['7011'] = total_debit
+                totaux_par_compte[COMPTE_VENTES_PHARMACIE] = total_debit
             elif vente.type in ('lunettes', 'lunetterie', 'optique'):
-                totaux_par_compte['7012'] = total_debit
+                totaux_par_compte[COMPTE_VENTES_LUNETTERIE] = total_debit
             else:
-                totaux_par_compte['7068'] = total_debit
+                totaux_par_compte[COMPTE_AUTRES_PRESTATIONS] = total_debit
 
         somme_items = sum(totaux_par_compte.values())
         if somme_items <= 0.5:
-            totaux_par_compte = {'7068': total_debit}
+            totaux_par_compte = {COMPTE_AUTRES_PRESTATIONS: total_debit}
         elif abs(somme_items - total_debit) > 1:
             # Ajustement d'arrondi sur "Autres prestations" pour garantir
             # l'équilibre de l'écriture sans bloquer la vente.
             ecart = round(total_debit - somme_items, 2)
-            totaux_par_compte['7068'] = totaux_par_compte.get('7068', 0) + ecart
+            totaux_par_compte[COMPTE_AUTRES_PRESTATIONS] = totaux_par_compte.get(COMPTE_AUTRES_PRESTATIONS, 0) + ecart
 
         for compte_num, montant in totaux_par_compte.items():
             if montant <= 0:
@@ -376,7 +382,7 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
             date_ecriture=(vente.date_vente.date() if vente.date_vente else datetime.utcnow().date()),
             libelle=libelle,
             lignes=lignes,
-            journal_code='VEN',
+            journal_code='VTE',
             piece_justificative=f"VTE-{vente.id}",
             auto=True,
             source_type='vente',
@@ -396,7 +402,7 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
                 {'numero_compte': COMPTE_CLIENTS_PATIENTS,
                  'libelle': f"Encaissement vente — {vente.patient_nom}", 'credit': montant_effectif},
             ]
-            journal_encaissement = 'CAI' if _compte_tresorerie(vente.mode_paiement) == '571' else 'BQ'
+            journal_encaissement = 'CAI' if _compte_tresorerie(vente.mode_paiement) == COMPTE_CAISSE else 'BQ'
             ecriture_encaissement = creer_ecriture(
                 structure_id=structure_id,
                 date_ecriture=(vente.date_vente.date() if vente.date_vente else datetime.utcnow().date()),
@@ -498,7 +504,7 @@ def generer_ecriture_paiement_facture(paiement, facture, user_nom='SYSTEME'):
             date_ecriture=(paiement.date_paiement.date() if paiement.date_paiement else datetime.utcnow().date()),
             libelle=f"Règlement facture {facture.numero_facture} — {facture.patient_nom}",
             lignes=lignes,
-            journal_code='CAI' if _compte_tresorerie(paiement.mode_paiement) == '571' else 'BQ',
+            journal_code='CAI' if _compte_tresorerie(paiement.mode_paiement) == COMPTE_CAISSE else 'BQ',
             piece_justificative=f"PAI-{paiement.id}",
             auto=True,
             source_type='paiement_facture',
@@ -536,7 +542,7 @@ def generer_ecriture_remboursement_assurance(montant, assurance_nom, structure_i
         ref_txt = f" — réf. {numero_reference_versement}" if numero_reference_versement else ""
         date_txt = f" du {date_versement}" if date_versement else ""
         lignes = [
-            {'numero_compte': '521', 'libelle': f"Virement {assurance_nom}{ref_txt}{date_txt}", 'debit': montant},
+            {'numero_compte': COMPTE_BANQUE, 'libelle': f"Virement {assurance_nom}{ref_txt}{date_txt}", 'debit': montant},
             {'numero_compte': compte_num, 'libelle': f"Solde tiers-payant {assurance_nom}{ref_txt}", 'credit': montant},
         ]
 
@@ -567,32 +573,10 @@ def generer_ecriture_remboursement_assurance(montant, assurance_nom, structure_i
         return None
 
 
-# Mots-clés de "motif" de dépense (saisis librement dans l'UI) -> compte de charge
-_COMPTE_PAR_MOTIF_DEPENSE = {
-    'salaire': '661', 'salaires': '661',
-    'loyer': '613', 'location': '613',
-    'eau': '614', 'electricite': '614', 'électricité': '614',
-    'entretien': '615', 'reparation': '615', 'réparation': '615',
-    'assurance': '616',
-    'transport': '624',
-    'carburant': '624',
-    'communication': '626', 'telephone': '626', 'téléphone': '626', 'internet': '626',
-    'banque': '627', 'frais bancaire': '627',
-    'fourniture': '628', 'bureau': '628',
-    'impot': '631', 'impôt': '631', 'taxe': '631',
-    'medicament': '601', 'médicament': '601', 'pharmacie': '601',
-    'materiel': '604', 'matériel': '604', 'equipement': '604', 'équipement': '604',
-}
-
-
-def _compte_charge_pour_motif(motif):
-    if not motif:
-        return '628'
-    cle = str(motif).strip().lower()
-    for mot, compte in _COMPTE_PAR_MOTIF_DEPENSE.items():
-        if mot in cle:
-            return compte
-    return '628'  # charge diverse par défaut
+# ⭐ Mapping motif -> compte de charge centralisé dans
+# utils/plan_comptable_syscohada.py (COMPTE_PAR_MOTIF_DEPENSE /
+# compte_charge_pour_motif) — importé en tête de ce fichier, pour que le
+# numéro de compte ne soit jamais dupliqué/désynchronisé à deux endroits.
 
 
 def generer_ecriture_annulation_facture(facture, montant_annule, user_nom='SYSTEME'):
@@ -607,7 +591,7 @@ def generer_ecriture_annulation_facture(facture, montant_annule, user_nom='SYSTE
             return None
 
         lignes = [
-            {'numero_compte': '691', 'libelle': f"Créance abandonnée — facture {facture.numero_facture}",
+            {'numero_compte': COMPTE_CREANCE_ABANDONNEE, 'libelle': f"Créance abandonnée — facture {facture.numero_facture}",
              'debit': montant_annule},
             {'numero_compte': COMPTE_CLIENTS_PATIENTS,
              'libelle': f"Annulation créance — {facture.patient_nom}", 'credit': montant_annule},
@@ -647,10 +631,10 @@ def generer_ecriture_depense(depense, user_nom='SYSTEME'):
         if montant <= 0:
             return None
 
-        compte_charge = _compte_charge_pour_motif(depense.motif or depense.motif_personnalise)
+        compte_charge = compte_charge_pour_motif(depense.motif or depense.motif_personnalise)
         lignes = [
             {'numero_compte': compte_charge, 'libelle': depense.motif or 'Dépense', 'debit': montant},
-            {'numero_compte': '571', 'libelle': depense.motif or 'Dépense', 'credit': montant},
+            {'numero_compte': COMPTE_CAISSE, 'libelle': depense.motif or 'Dépense', 'credit': montant},
         ]
 
         return creer_ecriture(
@@ -684,7 +668,7 @@ def generer_ecriture_achat_fournisseur(achat, user_nom='SYSTEME'):
         if montant <= 0:
             return None
 
-        compte_charge = _compte_charge_pour_motif(achat.motif or achat.motif_personnalise)
+        compte_charge = compte_charge_pour_motif(achat.motif or achat.motif_personnalise)
         nom_fournisseur = achat.fournisseur.nom if achat.fournisseur else 'Fournisseur'
         lignes = [
             {'numero_compte': compte_charge,
@@ -740,7 +724,7 @@ def generer_ecriture_reglement_fournisseur(reglement, achat, user_nom='SYSTEME')
             # banque) — l'achat lui-même (charge + dette) reste dans ACH,
             # séparément (voir generer_ecriture_achat_fournisseur). Un
             # règlement espèces va donc en CAI, un règlement banque en BQ.
-            journal_code='CAI' if _compte_tresorerie(reglement.mode_paiement) == '571' else 'BQ',
+            journal_code='CAI' if _compte_tresorerie(reglement.mode_paiement) == COMPTE_CAISSE else 'BQ',
             piece_justificative=f"REG-FRS-{reglement.id}",
             auto=True,
             source_type='reglement_fournisseur',
@@ -765,8 +749,8 @@ def generer_ecriture_recette_diverse(recette, user_nom='SYSTEME'):
             return None
 
         lignes = [
-            {'numero_compte': '571', 'libelle': recette.source or 'Recette', 'debit': montant},
-            {'numero_compte': '758', 'libelle': recette.source or 'Recette', 'credit': montant},
+            {'numero_compte': COMPTE_CAISSE, 'libelle': recette.source or 'Recette', 'debit': montant},
+            {'numero_compte': COMPTE_PRODUITS_DIVERS, 'libelle': recette.source or 'Recette', 'credit': montant},
         ]
 
         return creer_ecriture(
@@ -837,7 +821,7 @@ def generer_ecriture_paie(paie, employe, user_nom='SYSTEME'):
 
         libelle = f"Paie {paie.get_periode_label()} — {employe.nom} {employe.prenom}"
         lignes = [
-            {'numero_compte': '661', 'libelle': 'Salaires et appointements', 'debit': salaire_brut},
+            {'numero_compte': COMPTE_SALAIRES, 'libelle': 'Salaires et appointements', 'debit': salaire_brut},
         ]
         if retraite_pat > 0:
             lignes.append({'numero_compte': comptes_retraite['charge'], 'libelle': f'Charges sociales {organisme_retraite} patronal', 'debit': retraite_pat})
@@ -887,7 +871,7 @@ def generer_ecriture_paie(paie, employe, user_nom='SYSTEME'):
                 {'numero_compte': _compte_tresorerie(paie.mode_paiement),
                  'libelle': f"Paiement salaire — {employe.nom} {employe.prenom}", 'credit': net},
             ]
-            journal_paiement = 'CAI' if _compte_tresorerie(paie.mode_paiement) == '571' else 'BQ'
+            journal_paiement = 'CAI' if _compte_tresorerie(paie.mode_paiement) == COMPTE_CAISSE else 'BQ'
             ecriture_paiement = creer_ecriture(
                 structure_id=paie.structure_id,
                 date_ecriture=(paie.date_paiement or datetime.utcnow().date()),
@@ -925,8 +909,8 @@ def generer_ecriture_provision(structure_id, montant_provisionne, patient_nom, p
     touche PAS le compte 4111 — la créance reste due en totalité, c'est
     juste une estimation comptable de la perte probable."""
     lignes = [
-        {'numero_compte': '6591', 'libelle': f"Provision créance douteuse — {patient_nom}", 'debit': montant_provisionne},
-        {'numero_compte': '491', 'libelle': f"Dépréciation créance — {patient_nom}", 'credit': montant_provisionne},
+        {'numero_compte': COMPTE_DOTATION_PROVISION_CREANCE, 'libelle': f"Provision créance douteuse — {patient_nom}", 'debit': montant_provisionne},
+        {'numero_compte': COMPTE_DEPRECIATION_CREANCE, 'libelle': f"Dépréciation créance — {patient_nom}", 'credit': montant_provisionne},
     ]
     return creer_ecriture(
         structure_id=structure_id, date_ecriture=datetime.utcnow().date(),
@@ -940,8 +924,8 @@ def generer_ecriture_reprise_provision(structure_id, montant_provisionne, patien
     """Annule une provision devenue sans objet (le patient a finalement
     payé, ou la créance est recouvrée autrement) : Débit 491 / Crédit 7591."""
     lignes = [
-        {'numero_compte': '491', 'libelle': f"Reprise provision — {patient_nom}", 'debit': montant_provisionne},
-        {'numero_compte': '7591', 'libelle': f"Reprise provision créance douteuse — {patient_nom}", 'credit': montant_provisionne},
+        {'numero_compte': COMPTE_DEPRECIATION_CREANCE, 'libelle': f"Reprise provision — {patient_nom}", 'debit': montant_provisionne},
+        {'numero_compte': COMPTE_REPRISE_PROVISION_CREANCE, 'libelle': f"Reprise provision créance douteuse — {patient_nom}", 'credit': montant_provisionne},
     ]
     return creer_ecriture(
         structure_id=structure_id, date_ecriture=datetime.utcnow().date(),
@@ -964,9 +948,9 @@ def generer_ecriture_perte_creance(structure_id, montant_creance, montant_provis
     lignes = [{'numero_compte': COMPTE_CLIENTS_PATIENTS, 'libelle': f"Créance passée en perte — {patient_nom}",
                'credit': montant_creance}]
     if montant_provisionne > 0:
-        lignes.append({'numero_compte': '491', 'libelle': f"Consommation provision — {patient_nom}", 'debit': montant_provisionne})
+        lignes.append({'numero_compte': COMPTE_DEPRECIATION_CREANCE, 'libelle': f"Consommation provision — {patient_nom}", 'debit': montant_provisionne})
     if reste_non_couvert > 0:
-        lignes.append({'numero_compte': '651', 'libelle': f"Perte sur créance irrécouvrable — {patient_nom}", 'debit': reste_non_couvert})
+        lignes.append({'numero_compte': COMPTE_PERTE_CREANCE_IRRECOUVRABLE, 'libelle': f"Perte sur créance irrécouvrable — {patient_nom}", 'debit': reste_non_couvert})
 
     return creer_ecriture(
         structure_id=structure_id, date_ecriture=datetime.utcnow().date(),
@@ -1007,7 +991,7 @@ def generer_ecriture_dotation_amortissement(immo, montant, annee, user_nom='SYST
     if montant <= 0:
         return None
     lignes = [
-        {'numero_compte': '681', 'libelle': f"Dotation {annee} — {immo.designation}", 'debit': montant},
+        {'numero_compte': COMPTE_DOTATION_AMORTISSEMENT, 'libelle': f"Dotation {annee} — {immo.designation}", 'debit': montant},
         {'numero_compte': immo.compte_amort_numero, 'libelle': f"Amortissement {annee} — {immo.designation}", 'credit': montant},
     ]
     return creer_ecriture(
@@ -1034,7 +1018,7 @@ def get_soldes_caisses(structure_id, date_debut=None, date_fin=None):
     """
     comptes_tresorerie = CompteComptable.query.filter(
         CompteComptable.structure_id == structure_id,
-        CompteComptable.numero.in_(['571', '521'])
+        CompteComptable.numero.in_(COMPTES_TRESORERIE)
     ).all()
 
     tresorerie = 0.0

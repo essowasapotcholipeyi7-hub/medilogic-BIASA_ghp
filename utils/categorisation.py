@@ -5,6 +5,12 @@
 
 import re
 
+from utils.plan_comptable_syscohada import (
+    COMPTE_LABORATOIRE, COMPTE_IMAGERIE, COMPTE_HOSPITALISATION,
+    COMPTE_CONSULTATIONS, COMPTE_VENTES_LUNETTERIE, COMPTE_AUTRES_PRESTATIONS,
+    COMPTE_VENTES_PHARMACIE,
+)
+
 # ⭐ Correspondance code → catégorie
 CATEGORIES = {
     # Hospitalisation
@@ -27,13 +33,13 @@ CATEGORIES = {
 # ⭐ Correspondance catégorie → compte comptable (plan SYSCOHADA, voir
 # utils/plan_comptable_syscohada.py, source unique de vérité pour les numéros)
 COMPTE_PAR_CATEGORIE = {
-    'laboratoire': '7062',       # Actes de laboratoire
-    'imagerie': '7063',          # Imagerie médicale
-    'hospitalisation': '7064',   # Hospitalisation
-    'consultation': '7061',      # Consultations
-    'lunettes': '7012',          # Ventes de lunetterie / optique
-    'autres': '7068',            # Autres prestations médicales
-    'pharmacie': '7011',         # Ventes de pharmacie
+    'laboratoire': COMPTE_LABORATOIRE,
+    'imagerie': COMPTE_IMAGERIE,
+    'hospitalisation': COMPTE_HOSPITALISATION,
+    'consultation': COMPTE_CONSULTATIONS,
+    'lunettes': COMPTE_VENTES_LUNETTERIE,
+    'autres': COMPTE_AUTRES_PRESTATIONS,
+    'pharmacie': COMPTE_VENTES_PHARMACIE,
 }
 
 
@@ -109,7 +115,7 @@ def get_compte_par_categorie(categorie):
     """
     Retourne le compte comptable pour une catégorie
     """
-    return COMPTE_PAR_CATEGORIE.get(categorie, '7068')
+    return COMPTE_PAR_CATEGORIE.get(categorie, COMPTE_AUTRES_PRESTATIONS)
 
 
 def categoriser_acte(nom_acte):
@@ -121,7 +127,7 @@ def categoriser_acte(nom_acte):
     if not code:
         return {
             'categorie': 'autres',
-            'compte': '7068',
+            'compte': COMPTE_AUTRES_PRESTATIONS,
             'code': None
         }
 
@@ -138,6 +144,6 @@ def categoriser_acte(nom_acte):
     # ⭐ Code inconnu → Autres produits
     return {
         'categorie': 'autres',
-        'compte': '7068',
+        'compte': COMPTE_AUTRES_PRESTATIONS,
         'code': code
     }

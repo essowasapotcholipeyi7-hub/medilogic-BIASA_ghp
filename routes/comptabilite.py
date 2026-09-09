@@ -14,6 +14,9 @@ from models import (
     Fournisseur, AchatFournisseur, ReglementFournisseur, Depense
 )
 from services.comptabilite_service import get_soldes_caisses, creer_ecriture, COMPTE_CLIENTS_PATIENTS
+from utils.plan_comptable_syscohada import (
+    COMPTE_BANQUE, COMPTE_CAISSE, COMPTE_IMMO_MATERIEL_MEDICAL, COMPTE_AMORT_MATERIEL_MEDICAL,
+)
 
 compta_bp = Blueprint('comptabilite', __name__, url_prefix='/comptabilite')
 
@@ -1546,7 +1549,7 @@ def get_tafire(structure_id, annee):
 def _compte_banque_par_defaut(structure_id):
     """Compte de trésorerie utilisé quand un relevé n'a pas de compte_id
     explicite (anciens relevés créés avant le support multi-comptes)."""
-    return CompteComptable.query.filter_by(structure_id=structure_id, numero='521').first()
+    return CompteComptable.query.filter_by(structure_id=structure_id, numero=COMPTE_BANQUE).first()
 
 
 @compta_bp.route('/api/rapprochement/comptes')
@@ -1586,7 +1589,7 @@ def api_get_releves():
             'id': r.id,
             'date_releve': r.date_releve.strftime('%Y-%m-%d') if r.date_releve else '',
             'compte_id': r.compte_id,
-            'compte_numero': compte.numero if compte else '521',
+            'compte_numero': compte.numero if compte else COMPTE_BANQUE,
             'compte_nom': compte.nom if compte else 'Banque (compte par défaut)',
             'solde_initial': float(r.solde_initial),
             'solde_final': float(r.solde_final),
@@ -2114,26 +2117,23 @@ def api_init_comptes():
 
 # routes/comptabilite.py - Route simplifiée
 
-@compta_bp.route('/rapport/print/<type_rapport>')
-def print_rapport(type_rapport):
-    """Génère une version imprimable d'un rapport (PDF via impression)"""
-    structure_id = session.get('structure_id')
-    
-    if not structure_id:
-        flash('Structure non trouvée', 'danger')
-        return redirect(url_for('comptabilite.index'))
-    
-    # Récupérer les paramètres
-    date_debut = request.args.get('date_debut')
-    date_fin = request.args.get('date_fin')
-    
-    # Récupérer les données du rapport
+def _donnees_rapport(type_rapport, structure_id, date_debut, date_fin, journal_code=None, compte_id=None):
+    """Point d'entrée commun (imprimable ET export TXT) — construit les
+    données d'un rapport en respectant les mêmes filtres que l'écran
+    (journal sélectionné, compte unique pour le grand livre). ⭐ FIX :
+    auparavant, print_rapport() ignorait journal_code/compte_id, donc
+    "Imprimer" ressortait TOUJOURS tous les journaux mélangés même si un
+    seul était filtré à l'écran."""
     if type_rapport == 'journal':
-        data = generer_journal(structure_id, date_debut, date_fin)
-        titre = "Journal comptable"
+        data = generer_journal(structure_id, date_debut, date_fin, journal_code)
+        titre = "Journal " + (EcritureComptable.JOURNAUX.get(journal_code, journal_code) if journal_code else "comptable (tous journaux)")
     elif type_rapport == 'grand_livre':
-        data = generer_grand_livre(structure_id, date_debut, date_fin)
-        titre = "Grand livre"
+        data = generer_grand_livre(structure_id, date_debut, date_fin, compte_id)
+        if compte_id:
+            compte = CompteComptable.query.get(compte_id)
+            titre = f"Grand livre — {compte.numero} {compte.nom}" if compte else "Grand livre"
+        else:
+            titre = "Grand livre (tous comptes)"
     elif type_rapport == 'balance':
         data = generer_balance(structure_id, date_debut, date_fin)
         titre = "Balance comptable"
@@ -2144,9 +2144,30 @@ def print_rapport(type_rapport):
         data = get_bilan(structure_id, date_fin)
         titre = "Bilan comptable"
     else:
+        return None, None
+    return data, titre
+
+
+@compta_bp.route('/rapport/print/<type_rapport>')
+def print_rapport(type_rapport):
+    """Génère une version imprimable d'un rapport (PDF via impression)"""
+    structure_id = session.get('structure_id')
+
+    if not structure_id:
+        flash('Structure non trouvée', 'danger')
+        return redirect(url_for('comptabilite.index'))
+
+    # Récupérer les paramètres
+    date_debut = request.args.get('date_debut')
+    date_fin = request.args.get('date_fin')
+    journal_code = request.args.get('journal_code') or None
+    compte_id = request.args.get('compte_id', type=int)
+
+    data, titre = _donnees_rapport(type_rapport, structure_id, date_debut, date_fin, journal_code, compte_id)
+    if data is None:
         flash('Type de rapport invalide', 'danger')
         return redirect(url_for('comptabilite.index'))
-    
+
     # ⭐ PAS DE RECHERCHE DE STRUCTURE - On passe juste les données
     return render_template('comptabilite/print_rapport.html',
                          type_rapport=type_rapport,
@@ -2155,6 +2176,156 @@ def print_rapport(type_rapport):
                          date_debut=date_debut,
                          date_fin=date_fin,
                          now=datetime.now())
+
+
+def _fmt_montant(m):
+    return f"{m:,.0f}".replace(',', ' ')
+
+
+def _ligne_txt(*colonnes, largeurs):
+    return "  ".join(str(c).ljust(l) for c, l in zip(colonnes, largeurs))
+
+
+@compta_bp.route('/rapport/export-txt/<type_rapport>')
+def export_rapport_txt(type_rapport):
+    """Export en texte brut (.txt) d'UN rapport à la fois, avec les mêmes
+    filtres que l'écran (journal sélectionné, compte unique, dates) —
+    demandé explicitement : pouvoir imprimer/exporter chaque journal
+    individuellement, le grand livre, la balance, le résultat, le bilan,
+    plutôt qu'un seul export mélangeant tout."""
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return "Structure non trouvée", 404
+
+    date_debut = request.args.get('date_debut')
+    date_fin = request.args.get('date_fin')
+    journal_code = request.args.get('journal_code') or None
+    compte_id = request.args.get('compte_id', type=int)
+
+    data, titre = _donnees_rapport(type_rapport, structure_id, date_debut, date_fin, journal_code, compte_id)
+    if data is None:
+        return "Type de rapport invalide", 400
+
+    structure_nom = ''
+    try:
+        from sheets_helper import sheets_helper
+        structures = sheets_helper.get_all_records('structures', use_prefix=False)
+        for s in structures:
+            if str(s.get('ID')) == str(structure_id):
+                structure_nom = s.get('nom') or ''
+                break
+    except Exception:
+        pass
+
+    lignes_txt = []
+    lignes_txt.append("=" * 78)
+    lignes_txt.append((structure_nom or "MEDILOGIC").upper())
+    lignes_txt.append(titre.upper())
+    periode = f"Période : {date_debut or '...'} au {date_fin or '...'}" if type_rapport != 'bilan' else f"Au {date_fin or datetime.now().strftime('%Y-%m-%d')}"
+    lignes_txt.append(periode)
+    lignes_txt.append(f"Édité le {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    lignes_txt.append("=" * 78)
+    lignes_txt.append("")
+
+    if type_rapport == 'journal':
+        largeurs = [10, 14, 34, 10, 26, 14, 14]
+        lignes_txt.append(_ligne_txt("Date", "Pièce", "Libellé", "Journal", "Compte", "Débit", "Crédit", largeurs=largeurs))
+        lignes_txt.append("-" * 78)
+        total_d = total_c = 0
+        for l in data:
+            lignes_txt.append(_ligne_txt(
+                l['date'], l['piece'][:14], l['libelle'][:34], l['journal_code'],
+                f"{l['compte_numero']} {l['compte_nom']}"[:26],
+                _fmt_montant(l['debit']) if l['debit'] else '', _fmt_montant(l['credit']) if l['credit'] else '',
+                largeurs=largeurs))
+            total_d += l['debit']; total_c += l['credit']
+        lignes_txt.append("-" * 78)
+        lignes_txt.append(_ligne_txt("", "", "", "", "TOTAL", _fmt_montant(total_d), _fmt_montant(total_c), largeurs=largeurs))
+
+    elif type_rapport == 'grand_livre':
+        largeurs = [10, 30, 14, 34, 14, 14]
+        lignes_txt.append(_ligne_txt("Date", "Compte", "Pièce", "Libellé", "Débit", "Crédit", largeurs=largeurs))
+        lignes_txt.append("-" * 78)
+        total_d = total_c = 0
+        for l in data:
+            lignes_txt.append(_ligne_txt(
+                l['date'], f"{l['compte_numero']} {l['compte_nom']}"[:30], l['piece'][:14], l['libelle'][:34],
+                _fmt_montant(l['debit']) if l['debit'] else '', _fmt_montant(l['credit']) if l['credit'] else '',
+                largeurs=largeurs))
+            total_d += l['debit']; total_c += l['credit']
+        lignes_txt.append("-" * 78)
+        lignes_txt.append(_ligne_txt("", "", "", "TOTAL", _fmt_montant(total_d), _fmt_montant(total_c), largeurs=largeurs))
+
+    elif type_rapport == 'balance':
+        largeurs = [40, 16, 16, 16]
+        lignes_txt.append(_ligne_txt("Compte", "Débit", "Crédit", "Solde", largeurs=largeurs))
+        lignes_txt.append("-" * 78)
+        total_d = total_c = total_s = 0
+        for l in data:
+            lignes_txt.append(_ligne_txt(
+                f"{l['compte_numero']} {l['compte_nom']}"[:40],
+                _fmt_montant(l['total_debit']), _fmt_montant(l['total_credit']), _fmt_montant(l['solde']),
+                largeurs=largeurs))
+            total_d += l['total_debit']; total_c += l['total_credit']; total_s += l['solde']
+        lignes_txt.append("-" * 78)
+        lignes_txt.append(_ligne_txt("TOTAL", _fmt_montant(total_d), _fmt_montant(total_c), _fmt_montant(total_s), largeurs=largeurs))
+
+    elif type_rapport == 'resultat':
+        largeurs = [50, 20]
+        lignes_txt.append("CHARGES")
+        lignes_txt.append("-" * 78)
+        for l in data['charges']:
+            lignes_txt.append(_ligne_txt(f"{l['numero']} {l['nom']}"[:50], _fmt_montant(l['montant']), largeurs=largeurs))
+        lignes_txt.append(_ligne_txt("TOTAL CHARGES", _fmt_montant(data['total_charges']), largeurs=largeurs))
+        lignes_txt.append("")
+        lignes_txt.append("PRODUITS")
+        lignes_txt.append("-" * 78)
+        for l in data['produits']:
+            lignes_txt.append(_ligne_txt(f"{l['numero']} {l['nom']}"[:50], _fmt_montant(l['montant']), largeurs=largeurs))
+        lignes_txt.append(_ligne_txt("TOTAL PRODUITS", _fmt_montant(data['total_produits']), largeurs=largeurs))
+        lignes_txt.append("")
+        lignes_txt.append("=" * 78)
+        lignes_txt.append(_ligne_txt(f"RÉSULTAT ({data['resultat_text']})", _fmt_montant(data['resultat']), largeurs=largeurs))
+
+    elif type_rapport == 'bilan':
+        largeurs = [50, 20]
+        lignes_txt.append("ACTIF")
+        lignes_txt.append("-" * 78)
+        for l in data['actifs']:
+            lignes_txt.append(_ligne_txt(f"{l['numero']} {l['nom']}"[:50], _fmt_montant(l['montant']), largeurs=largeurs))
+        lignes_txt.append(_ligne_txt("TOTAL ACTIF", _fmt_montant(data['total_actif']), largeurs=largeurs))
+        lignes_txt.append("")
+        lignes_txt.append("PASSIF")
+        lignes_txt.append("-" * 78)
+        for l in data['passifs']:
+            lignes_txt.append(_ligne_txt(f"{l['numero']} {l['nom']}"[:50], _fmt_montant(l['montant']), largeurs=largeurs))
+        lignes_txt.append(_ligne_txt("TOTAL PASSIF", _fmt_montant(data['total_passif']), largeurs=largeurs))
+        lignes_txt.append("")
+        lignes_txt.append("CAPITAUX PROPRES")
+        lignes_txt.append("-" * 78)
+        for l in data['capitaux_propres']:
+            lignes_txt.append(_ligne_txt(f"{l['numero']} {l['nom']}"[:50], _fmt_montant(l['montant']), largeurs=largeurs))
+        lignes_txt.append(_ligne_txt("TOTAL CAPITAUX PROPRES", _fmt_montant(data['total_capitaux']), largeurs=largeurs))
+        lignes_txt.append("")
+        lignes_txt.append("=" * 78)
+        lignes_txt.append(_ligne_txt("TOTAL PASSIF + CAPITAUX", _fmt_montant(data['total_passif_capitaux']), largeurs=largeurs))
+        lignes_txt.append("Équilibré" if data['est_equilibre'] else "⚠️ NON ÉQUILIBRÉ")
+
+    lignes_txt.append("")
+    contenu = "\n".join(lignes_txt)
+
+    nom_fichier = f"{type_rapport}"
+    if journal_code:
+        nom_fichier += f"_{journal_code}"
+    if date_fin:
+        nom_fichier += f"_{date_fin}"
+    nom_fichier += ".txt"
+
+    from flask import Response
+    return Response(
+        contenu, mimetype='text/plain; charset=utf-8',
+        headers={'Content-Disposition': f'attachment; filename="{nom_fichier}"'}
+    )
 
 # routes/comptabilite.py - Ajouter cette route
 
@@ -2541,8 +2712,8 @@ def api_creer_immobilisation():
         structure_id=structure_id,
         designation=data.get('designation'),
         categorie=data.get('categorie', ''),
-        compte_immo_numero=data.get('compte_immo_numero', '2183'),
-        compte_amort_numero=data.get('compte_amort_numero', '2818'),
+        compte_immo_numero=data.get('compte_immo_numero', COMPTE_IMMO_MATERIEL_MEDICAL),
+        compte_amort_numero=data.get('compte_amort_numero', COMPTE_AMORT_MATERIEL_MEDICAL),
         date_acquisition=date_acq,
         valeur_acquisition=data.get('valeur_acquisition', 0),
         valeur_residuelle=data.get('valeur_residuelle', 0),

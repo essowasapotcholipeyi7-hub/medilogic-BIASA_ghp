@@ -569,17 +569,13 @@ class EcritureComptable(db.Model):
 
     # Journaux auxiliaires (journaux divisionnaires SYSCOHADA)
     JOURNAUX = {
-        'VEN': "Journal des ventes",
+        'VTE': "Journal des ventes",
         'CAI': "Journal de caisse",
         'BQ': "Journal de banque",
         'ACH': "Journal des achats",
         'SAL': "Journal des salaires",
         'TR': "Journal de trésorerie",
         'OD': "Journal des opérations diverses",
-        # ⭐ Ancien code, conservé uniquement pour que les écritures déjà
-        # générées avant le renommage (VTE -> VEN, nomenclature SYSCOHADA)
-        # restent filtrables dans les rapports — plus jamais émis par le code.
-        'VTE': "Journal des ventes (ancien code)",
     }
 
     id = db.Column(db.Integer, primary_key=True)

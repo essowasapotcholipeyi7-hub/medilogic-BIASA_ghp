@@ -511,12 +511,34 @@ ALTER TABLE depenses ADD COLUMN IF NOT EXISTS fournisseur_id INTEGER REFERENCES 
 
 
 -- ----------------------------------------------------------
--- 16) Non-mélange des journaux SYSCOHADA (VTE -> VEN, ajout TR) : chaque
---     opération payée immédiatement (vente, paie) génère désormais DEUX
---     écritures distinctes — la reconnaissance (VEN/SAL) et le mouvement de
---     trésorerie réel (CAI/BQ) — au lieu d'une seule écriture mélangeant
---     les deux. Colonnes de traçabilité de la 2e écriture.
+-- 16) Non-mélange des journaux SYSCOHADA (VTE conservé, ajout du journal
+--     SAL et TR) : chaque opération payée immédiatement (vente, paie)
+--     génère désormais DEUX écritures distinctes — la reconnaissance
+--     (VTE/SAL) et le mouvement de trésorerie réel (CAI/BQ) — au lieu
+--     d'une seule écriture mélangeant les deux. Colonnes de traçabilité
+--     de la 2e écriture.
 -- ----------------------------------------------------------
 ALTER TABLE ventes ADD COLUMN IF NOT EXISTS ecriture_encaissement_id INTEGER;
 ALTER TABLE paies ADD COLUMN IF NOT EXISTS ecriture_paiement_id INTEGER;
+-- ----------------------------------------------------------
+
+
+-- ----------------------------------------------------------
+-- 17) Comptes à 8 chiffres (harmonisation SYSCOHADA) + correction des noms
+--     mal étiquetés. Chaque numéro court du plan (401, 4111, 411211...) est
+--     complété à droite par des zéros jusqu'à 8 chiffres (401 -> 40100000).
+--     ⚠️ À exécuter avec le script Python dédié (pas ce fichier seul) — la
+--     logique distingue les comptes SYSCOHADA légitimes (renumérotés +
+--     nom corrigé) des comptes ad-hoc hérités AMBIGUS qui partagent le même
+--     numéro court qu'un compte SYSCOHADA différent (ex: '611' = "Salaires"
+--     dans l'ancien plan ad-hoc vs "Transports sur achats/ventes" dans le
+--     plan SYSCOHADA actuel) : ces derniers sont uniquement DÉSACTIVÉS
+--     (actif=FALSE), jamais renommés/renumérotés, pour ne jamais mélanger
+--     ou effacer leur historique réel (vérifié : des écritures existantes
+--     leur sont réellement rattachées, contrairement à ce que supposait la
+--     note de la section "Numéros de comptes de l'ancien plan ad-hoc" plus
+--     haut dans ce fichier). Voir la table MAPPING et l'ensemble AMBIGUOUS
+--     dans le commit correspondant (services/comptabilite_service.py /
+--     utils/plan_comptable_syscohada.py) pour la correspondance complète
+--     ancien numéro -> (nouveau numéro, nom de référence).
 -- ----------------------------------------------------------
