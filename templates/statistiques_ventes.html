@@ -298,7 +298,13 @@
                                         <td colspan="4" class="text-end">Total :</td>
                                         <td id="totalFacturesFooter">0 FCFA</td>
                                         <td id="totalRembourseFooter">0 FCFA</td>
-                                        <td id="totalResteFooter">0 FCFA</td>
+                                        <!-- ⭐ FIX : id renommé, dupliquait "totalResteFooter" du tableau
+                                             de l'onglet Ventes (même page) — document.getElementById()
+                                             ne renvoyant que le PREMIER élément trouvé dans le DOM, cette
+                                             cellule (2e dans le DOM) n'était donc jamais mise à jour et
+                                             restait figée à "0 FCFA", quelle que soit la vraie valeur
+                                             calculée par chargerFactures() (bug "reste à payer à zéro"). -->
+                                        <td id="totalResteFacturesFooter">0 FCFA</td>
                                         <td colspan="2"></td>
                                     </tr>
                                 </tfoot>
@@ -763,8 +769,11 @@ function afficherVentes(ventes) {
         }
         
         let assurance1 = vente.assurance_nom || vente.type_assurance || 'Non assuré';
-        if (assurance1 === 'amu-cnss') assurance1 = 'AMU-CNSS';
-        else if (assurance1 === 'amu-inam') assurance1 = 'AMU-INAM';
+        // ⭐ FIX : la valeur réellement stockée est 'amu_cnss'/'amu_inam'
+        // (underscore), le tiret seul ne matchait donc jamais — même bug
+        // que celui déjà présent pour amu_tns avant ce correctif.
+        if (assurance1 === 'amu-cnss' || assurance1 === 'amu_cnss') assurance1 = 'AMU-CNSS';
+        else if (assurance1 === 'amu-inam' || assurance1 === 'amu_inam') assurance1 = 'AMU-INAM';
         else if (assurance1 === 'amu-tns' || assurance1 === 'amu_tns') assurance1 = 'AMU-TNS';
         else if (assurance1 === 'non_assure') assurance1 = 'Non assuré';
         
@@ -991,8 +1000,10 @@ function chargerFactures() {
                 totalRestant += reste;
                 
                 let assuranceText = f.assurance;
-                if (assuranceText === 'amu-cnss') assuranceText = 'AMU-CNSS';
-                if (assuranceText === 'amu-inam') assuranceText = 'AMU-INAM';
+                // ⭐ FIX : la valeur réellement stockée est 'amu_cnss'/'amu_inam'
+                // (underscore) — même bug que celui déjà corrigé pour amu_tns.
+                if (assuranceText === 'amu-cnss' || assuranceText === 'amu_cnss') assuranceText = 'AMU-CNSS';
+                if (assuranceText === 'amu-inam' || assuranceText === 'amu_inam') assuranceText = 'AMU-INAM';
                 if (assuranceText === 'amu-tns' || assuranceText === 'amu_tns') assuranceText = 'AMU-TNS';
                 
                 const typeAssurance = f.type_assurance || 'principale';
@@ -1038,12 +1049,19 @@ function chargerFactures() {
                 actionCell.innerHTML = actionsHtml;
             });
             
-            document.getElementById('totalAFacturer').innerHTML = Math.round(totalRestant).toLocaleString('fr-FR') + ' FCFA';
+            // ⭐ FIX : "À facturer" affichait à tort le même total que
+            // "Reste à percevoir" (totalRestant) au lieu du total brut
+            // facturé (totalMontantFactures) — les deux cartes montraient
+            // donc toujours le même chiffre.
+            document.getElementById('totalAFacturer').innerHTML = Math.round(totalMontantFactures).toLocaleString('fr-FR') + ' FCFA';
             document.getElementById('totalDejaPaye').innerHTML = Math.round(totalRembourseAll).toLocaleString('fr-FR') + ' FCFA';
             document.getElementById('totalRestantDu').innerHTML = Math.round(totalRestant).toLocaleString('fr-FR') + ' FCFA';
             document.getElementById('totalFacturesFooter').innerHTML = Math.round(totalMontantFactures).toLocaleString('fr-FR') + ' FCFA';
             document.getElementById('totalRembourseFooter').innerHTML = Math.round(totalRembourseAll).toLocaleString('fr-FR') + ' FCFA';
-            document.getElementById('totalResteFooter').innerHTML = Math.round(totalRestant).toLocaleString('fr-FR') + ' FCFA';
+            // ⭐ FIX : id renommé (voir la déclaration du <td> plus haut) —
+            // cette cellule dupliquait l'id de l'onglet Ventes et n'était
+            // donc jamais réellement mise à jour visuellement.
+            document.getElementById('totalResteFacturesFooter').innerHTML = Math.round(totalRestant).toLocaleString('fr-FR') + ' FCFA';
         })
         .catch(error => {
             console.error('Erreur:', error);

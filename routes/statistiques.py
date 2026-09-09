@@ -55,6 +55,7 @@ ASSURANCE_LABELS = {
     'olea': 'OLEA',
     'amu_cnss': 'AMU-CNSS',
     'amu_inam': 'AMU-INAM',
+    'amu_tns': 'AMU-TNS',
     'non_assure': 'Non assuré'
 }
 
@@ -164,6 +165,9 @@ def api_assurances_liste():
                     type_assurance = 'principale'
                 elif assurance in ['amu_inam', 'amu-inam']:
                     label = 'AMU-INAM'
+                    type_assurance = 'principale'
+                elif assurance in ['amu_tns', 'amu-tns']:
+                    label = 'AMU-TNS'
                     type_assurance = 'principale'
                 else:
                     label = ASSURANCE_LABELS.get(assurance, assurance.upper())

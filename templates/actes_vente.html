@@ -660,17 +660,11 @@ function appliquerTauxPrincipalTemp() {
 // RESET TAUX PRINCIPAL
 // ============================================
 function resetTauxPrincipalTemp() {
-    // Vérifier si un acte P160 est dans le panier
-    let p160Detecte = false;
-    for (const item of panier) {
-        if (item.nom && item.nom.includes('P160')) {
-            p160Detecte = true;
-            break;
-        }
-    }
-    
-    // Déterminer le taux par défaut
-    let valeurDefaut = p160Detecte ? 90 : 80;
+    // ⭐ FIX : le taux général par défaut reste toujours 80%, même si un
+    // P160 (remboursé à 90%) est présent dans le panier — voir le
+    // correctif de même nature dans ajouterActe(). P160 est géré à part,
+    // par article, dans calculerTotal()/finaliserVente() (tauxAMUPourArticle()).
+    let valeurDefaut = 80;
     tauxPrincipalOriginal = valeurDefaut;
     
     tauxPrincipalTempModifie = false;
@@ -751,32 +745,20 @@ function ajouterActe() {
     }
 
     
-    // 🔥 Détection P160 pour ajuster le taux
+    // ⭐ FIX : le taux AMU à 90% de P160 ne doit s'appliquer QU'À P160, pas
+    // à tout le panier. Ce bloc écrasait auparavant le champ général
+    // "Taux AMU (%)" (#tauxVente) — utilisé par calculerTotal()/
+    // finaliserVente() pour TOUS les articles du panier — dès qu'un P160
+    // était ajouté, faisant alors rembourser à tort les autres actes du
+    // même panier à 90% au lieu de 80%. Le champ général reste donc
+    // maintenant toujours au taux normal (80%, ou la valeur que le
+    // personnel a saisie manuellement pour un cas exceptionnel) ; le 90%
+    // de P160 est appliqué uniquement en interne, article par article,
+    // par tauxAMUPourArticle() (voir calculerTotal()/finaliserVente()).
     if (acteNom && acteNom.includes('P160')) {
-        // Taux à 90%
-        tauxPrincipalOriginal = 90;
-        document.getElementById('assurancePrincipaleTauxTemp').value = 90;
-        document.getElementById('assurancePrincipaleTauxDefaut').textContent = '90';
-        if (!tauxPrincipalTempModifie) {
-            document.getElementById('assurancePrincipaleTaux').textContent = '90%';
-            if (assurancePrincipaleActive) {
-                document.getElementById('tauxVente').value = 90;
-            }
-        }
-        console.log('🏥 Acte P160 détecté - Taux par défaut: 90%');
-    } else {
-        // Taux par défaut 80%
-        tauxPrincipalOriginal = 80;
-        document.getElementById('assurancePrincipaleTauxTemp').value = 80;
-        document.getElementById('assurancePrincipaleTauxDefaut').textContent = '80';
-        if (!tauxPrincipalTempModifie) {
-            document.getElementById('assurancePrincipaleTaux').textContent = '80%';
-            if (assurancePrincipaleActive) {
-                document.getElementById('tauxVente').value = 80;
-            }
-        }
+        console.log('🏥 Acte P160 détecté - remboursé à 90% (les autres articles du panier restent à leur taux habituel)');
     }
-    
+
     // 🔥 VÉRIFIER SI LE PATIENT EST ASSURÉ
     const patientAssurance = sessionStorage.getItem('selectedPatientAssurance');
     const assurance2Active = document.getElementById('toggleAssurance2')?.checked || false;
@@ -1028,6 +1010,18 @@ function afficherPanier() {
     calculerRendu();
 }
 
+// ⭐ FIX : taux AMU par article, pas un taux unique pour tout le panier —
+// l'acte P160 est remboursé à 90% par l'AMU alors que le taux général
+// (par défaut 80%, modifiable pour un cas exceptionnel via le champ
+// "Taux AMU (%)") s'applique à tous les autres articles du même panier.
+// Avant ce correctif, ajouter un P160 au panier faisait passer TOUT le
+// panier à 90% (le champ "Taux AMU (%)" étant un unique champ global
+// utilisé pour la totalité du calcul) — un acte normal à côté d'un P160
+// était donc remboursé à tort à 90% au lieu de 80%.
+function tauxAMUPourArticle(item, tauxDefaut) {
+    return (item.nom && item.nom.includes('P160')) ? 90 : tauxDefaut;
+}
+
 // ============================================
 // CALCULER LES TOTAUX (VERSION CORRIGÉE)
 // ============================================
@@ -1110,10 +1104,20 @@ function calculerTotal() {
         if (sousTotalAMU < pbrTotalAMU) {
             baseRemboursement = sousTotalAMU;
         }
-        if (baseRemboursement > 0 && tauxAMU > 0) {
-            priseEnChargeAMU = (baseRemboursement * tauxAMU) / 100;
+        // ⭐ FIX : taux par article (P160 = 90%, reste = tauxAMU) au lieu
+        // d'un taux unique appliqué à baseRemboursement en bloc — voir
+        // tauxAMUPourArticle() ci-dessus.
+        if (tauxAMU > 0) {
+            for (const item of panier) {
+                if (!item.prise_en_charge_amu) continue;
+                const prix = item.prix;
+                const pbr = item.pbr || item.prix;
+                const baseItem = (prix < pbr ? prix : pbr) * item.quantite;
+                const tauxItem = tauxAMUPourArticle(item, tauxAMU);
+                priseEnChargeAMU += (baseItem * tauxItem) / 100;
+            }
         }
-        console.log('📊 Patient assuré - Base PBR:', baseRemboursement);
+        console.log('📊 Patient assuré - Base PBR:', baseRemboursement, '- Prise en charge (par article):', priseEnChargeAMU);
     } else if (assurancePrincipaleActive && !estAssure) {
         // 🔥 PATIENT NON ASSURÉ MAIS ASSURANCE ACTIVÉE (Aide hospitalière via taux AMU)
         let baseNonAssure = 0;
@@ -1158,7 +1162,9 @@ function calculerTotal() {
                         // Patient assuré → CAC sur le reste après AMU
                         if (item.prise_en_charge_amu) {
                             let baseAMU = (prix < pbr) ? prix : pbr;
-                            let priseAMU = (baseAMU * tauxAMU * item.quantite) / 100;
+                            // ⭐ FIX : même taux par article que le calcul AMU
+                            // principal ci-dessus (P160 = 90%, reste = tauxAMU).
+                            let priseAMU = (baseAMU * tauxAMUPourArticle(item, tauxAMU) * item.quantite) / 100;
                             let reste = total - priseAMU;
                             if (reste > 0) {
                                 baseCAC += reste;
@@ -1687,11 +1693,24 @@ function finaliserVente() {
         baseRemboursement = sousTotalAMU;
     }
     
+    // ⭐ FIX : taux par article (P160 = 90%, reste = tauxPrincipal) au lieu
+    // d'un taux unique appliqué à baseRemboursement en bloc — voir
+    // tauxAMUPourArticle() (même fonction que calculerTotal()). Sans ce
+    // correctif, un P160 dans le panier faisait recalculer TOUT le panier
+    // (y compris les autres actes à 80%) au taux de 90% au moment même de
+    // la finalisation de la vente — pas seulement à l'affichage.
     let priseEnCharge = 0;
-    if (assurancePrincipaleActive && baseRemboursement > 0 && tauxPrincipal > 0) {
-        priseEnCharge = (baseRemboursement * tauxPrincipal) / 100;
+    if (assurancePrincipaleActive && tauxPrincipal > 0) {
+        for (const item of panier) {
+            if (item.prise_en_charge_amu === false) continue;
+            const prix = item.prix;
+            const pbr = item.pbr || item.prix;
+            const baseItem = (prix < pbr ? prix : pbr) * item.quantite;
+            const tauxItem = tauxAMUPourArticle(item, tauxPrincipal);
+            priseEnCharge += (baseItem * tauxItem) / 100;
+        }
     }
-    
+
     let resteApresAMU = sousTotalAMU - priseEnCharge;
     
     let priseEnCharge2 = 0;
@@ -1715,7 +1734,9 @@ function finaliserVente() {
                         basePBR = prix;
                     }
                     let baseAMU = (prix > basePBR) ? basePBR : prix;
-                    let priseAMU = (baseAMU * tauxPrincipal * item.quantite) / 100;
+                    // ⭐ FIX : même taux par article que le calcul AMU
+                    // principal ci-dessus (P160 = 90%, reste = tauxPrincipal).
+                    let priseAMU = (baseAMU * tauxAMUPourArticle(item, tauxPrincipal) * item.quantite) / 100;
                     let reste = total - priseAMU;
                     if (reste > 0) {
                         baseCAC += reste;
