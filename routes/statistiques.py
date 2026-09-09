@@ -203,6 +203,16 @@ def api_assurances_liste():
 # FONCTION DE CALCUL DES MONTANTS À PARTIR DES ACTES/PRODUITS
 # ============================================================
 
+def taux_amu_pour_article(nom_article, taux_defaut):
+    """⭐ FIX : taux AMU par article, pas un taux unique pour toute la vente
+    — l'acte P160 est remboursé à 90% par l'AMU, tous les autres au taux
+    général (par défaut 80%). Copie locale de app.py:taux_amu_pour_article()
+    (dupliquée ici plutôt qu'importée depuis app.py, pour éviter un import
+    circulaire : app.py enregistre ce blueprint, donc ce module ne doit pas
+    importer app.py)."""
+    return 90 if (nom_article and 'P160' in nom_article) else taux_defaut
+
+
 def calculer_montants_vente(vente):
     """
     Calcule les montants pour une vente à partir des actes et produits
@@ -226,37 +236,47 @@ def calculer_montants_vente(vente):
     
     total_prix = 0
     total_pbr_amu = 0
-    
+    # ⭐ FIX : taux AMU par article (P160 = 90%, le reste = taux_amu de la
+    # vente) au lieu d'un taux unique appliqué à tout le PBR en bloc — même
+    # correctif que celui appliqué côté reçu (app.py, taux_amu_pour_article())
+    # et côté vente d'actes (templates/actes_vente.html,
+    # tauxAMUPourArticle()). Sans lui, le bordereau assurance affichait un
+    # montant erroné pour toute vente contenant un P160 (remboursé à tort
+    # au taux général au lieu de 90%).
+    part_amu = 0
+
+    # ⭐ Taux d'assurance (calculé avant la boucle : nécessaire à
+    # taux_amu_pour_article ci-dessous)
+    taux_amu_defaut = float(vente.taux_assurance or 80)
+    taux_cac = float(vente.taux_assurance2 or 0) / 100 if vente.taux_assurance2 else 0
+
     # ⭐ Parcourir les actes
     for acte in actes:
         if isinstance(acte, dict):
             prix = float(acte.get('prix', 0))
             pbr = float(acte.get('pbr', 0))
             prise_amu = acte.get('prise_en_charge_amu', False)
-            
+
             total_prix += prix
-            
+
             if prise_amu:
                 total_pbr_amu += pbr
-    
+                taux_item = taux_amu_pour_article(acte.get('nom'), taux_amu_defaut)
+                part_amu += pbr * taux_item / 100
+
     # ⭐ Parcourir les produits
     for produit in produits:
         if isinstance(produit, dict):
             prix = float(produit.get('prix_reel', produit.get('prix', 0)))
             pbr = float(produit.get('pbr', 0))
             prise_amu = produit.get('prise_en_charge_amu', False)
-            
+
             total_prix += prix
-            
+
             if prise_amu:
                 total_pbr_amu += pbr
-    
-    # ⭐ Taux d'assurance
-    taux_amu = float(vente.taux_assurance or 80) / 100
-    taux_cac = float(vente.taux_assurance2 or 0) / 100 if vente.taux_assurance2 else 0
-    
-    # ⭐ Part AMU = PBR_AMU × Taux AMU
-    part_amu = total_pbr_amu * taux_amu
+                taux_item = taux_amu_pour_article(produit.get('nom'), taux_amu_defaut)
+                part_amu += pbr * taux_item / 100
     
     # ⭐ Reste après AMU = Prix total - Part AMU
     reste_apres_amu = total_prix - part_amu

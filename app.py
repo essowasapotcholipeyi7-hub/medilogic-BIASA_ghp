@@ -116,6 +116,20 @@ def convertir_prix(valeur):
         return 0
 
 
+def taux_amu_pour_article(nom_article, taux_defaut):
+    """⭐ FIX : taux AMU par article, pas un taux unique pour toute la vente
+    — l'acte P160 est remboursé à 90% par l'AMU alors que le taux général
+    (par défaut 80%) s'applique à tous les autres articles de la même
+    vente. Miroir exact de tauxAMUPourArticle() côté JS
+    (templates/actes_vente.html) : sans ce correctif, un reçu recalculant
+    la prise en charge à partir des articles stockés (au lieu de faire
+    confiance au montant déjà calculé et enregistré au moment de la vente)
+    remboursait à tort TOUS les articles au même taux — 80% pour un P160
+    (perte pour la clinique) ou 90% pour un acte normal à côté d'un P160
+    (trop remboursé)."""
+    return 90 if (nom_article and 'P160' in nom_article) else taux_defaut
+
+
 from sqlalchemy import text, inspect
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -2438,13 +2452,21 @@ def recu(vente_id, type):
         pbr_total_amu = 0
         baseCAC = 0
         articles = []
-        
+        # ⭐ FIX : prise en charge AMU accumulée par article (voir
+        # taux_amu_pour_article() ci-dessus) au lieu d'un taux unique
+        # appliqué en bloc à la fin — sans ce correctif, un reçu
+        # recalculait la prise en charge d'une vente contenant un P160 au
+        # taux général (80%) pour TOUT, donnant un montant différent de
+        # celui réellement calculé et déjà enregistré au moment de la
+        # vente (qui, lui, applique bien 90% au P160 uniquement).
+        prise_en_charge_par_article = 0
+
         for item in tous_articles:
             # Déterminer le prix
             prix_unitaire = float(item.get('prix', item.get('prix_reel', item.get('prix_vente', 0))))
             if prix_unitaire == 0:
                 prix_unitaire = float(item.get('prix_unitaire', 0))
-            
+
             quantite = int(item.get('quantite', 1))
             total_article = prix_unitaire * quantite
 
@@ -2454,28 +2476,33 @@ def recu(vente_id, type):
             else:
                 pbr_article = float(pbr_article)
 
-            
+
             prise_amu = item.get('prise_en_charge_amu', True)
             prise_cac = item.get('prise_en_charge_cac', True)
-            
+
             # Déterminer le type
             type_article = item.get('type', 'acte')
             if 'produit' in str(type_article).lower() or 'pharmacie' in str(type_article).lower():
                 type_article = 'produit'
             else:
                 type_article = 'acte'
-            
+
+            taux_item = taux_amu_pour_article(item.get('nom'), taux_assurance)
+
             # 🔥 SEULEMENT SI PBR > 0, on calcule l'AMU et la CAC
             if prise_amu and pbr_article > 0:
                 sous_total_amu += total_article
-                pbr_total_amu += min(prix_unitaire, pbr_article) * quantite
-            
+                base_item = min(prix_unitaire, pbr_article) * quantite
+                pbr_total_amu += base_item
+                if est_assure and assurance_principale_active and taux_item > 0:
+                    prise_en_charge_par_article += (base_item * taux_item) / 100
+
             # CALCUL DE LA CAC
             if prise_cac:
                 if est_assure and assurance_principale_active:
                     if prise_amu:
                         baseAMU = min(prix_unitaire, pbr_article)
-                        priseAMU = (baseAMU * taux_assurance * quantite) / 100
+                        priseAMU = (baseAMU * taux_item * quantite) / 100
                         reste = total_article - priseAMU
                         if reste > 0:
                             baseCAC += reste
@@ -2483,7 +2510,7 @@ def recu(vente_id, type):
                         baseCAC += total_article
                 else:
                     baseCAC += total_article
-            
+
             articles.append({
                 'nom': item.get('nom', 'Article'),
                 'quantite': quantite,
@@ -2494,22 +2521,17 @@ def recu(vente_id, type):
                 'prise_en_charge_cac': prise_cac,
                 'type': type_article
             })
-        
+
         # 🔥 Appliquer le taux CAC
         if baseCAC > 0 and taux_assurance2 > 0:
             prise_en_charge2 = (baseCAC * taux_assurance2) / 100
         else:
             prise_en_charge2 = 0
-        
-        # ⭐⭐⭐ RECALCUL DE LA PRISE EN CHARGE AMU ⭐⭐⭐
-        prise_en_charge = 0
+
+        # ⭐⭐⭐ PRISE EN CHARGE AMU (par article, voir la boucle ci-dessus) ⭐⭐⭐
         if est_assure and assurance_principale_active:
-            base = pbr_total_amu
-            if sous_total_amu < pbr_total_amu:
-                base = sous_total_amu
-            if base > 0 and taux_assurance > 0:
-                prise_en_charge = (base * taux_assurance) / 100
-            print(f"📊 Patient assuré - Base PBR: {base}, Prise en charge: {prise_en_charge}")
+            prise_en_charge = prise_en_charge_par_article
+            print(f"📊 Patient assuré - Base PBR: {pbr_total_amu}, Prise en charge (par article): {prise_en_charge}")
         else:
             prise_en_charge = 0
             print(f"📊 Patient non assuré ou assurance désactivée - Pas d'AMU")
@@ -9144,41 +9166,49 @@ def api_creer_proforma():
         pbr_total_amu = 0
         sous_total_amu = 0
         base_cac_articles = 0  # 🔥 Base CAC calculée article par article
-        
+        # ⭐ FIX : taux AMU par article (P160 = 90%, reste = taux_assurance)
+        # au lieu d'un taux unique appliqué en bloc — même correctif que
+        # côté reçu/vente d'actes/bordereau (voir taux_amu_pour_article()).
+        prise_en_charge_par_article = 0
+
         taux_assurance = float(data.get('taux_assurance', 0))
-        
+
         for article in articles:
             prix = float(article.get('prix', article.get('prix_unitaire', 0)))
             pbr = float(article.get('pbr', prix))
             quantite = float(article.get('quantite', 1))
             total = prix * quantite
-            
+
             article['total'] = total
             article['prix'] = prix
             article['pbr'] = pbr
             sous_total += total
-            
+
             prise_amu = article.get('prise_en_charge_amu', True)
             prise_cac = article.get('prise_en_charge_cac', True)
-            
+            taux_item = taux_amu_pour_article(article.get('nom'), taux_assurance)
+
             # 🔥 AMU
             if prise_amu and pbr > 0:
                 sous_total_amu += total
-                pbr_total_amu += min(prix, pbr) * quantite
-            
+                base_amu_article = min(prix, pbr) * quantite
+                pbr_total_amu += base_amu_article
+                if taux_item > 0:
+                    prise_en_charge_par_article += (base_amu_article * taux_item) / 100
+
             # 🔥🔥🔥 CAC article par article 🔥🔥🔥
             if prise_cac:
                 if prise_amu and pbr > 0 and taux_assurance > 0:
                     # 🔥 Article avec AMU → CAC sur le reste après AMU
                     base_amu_article = min(prix, pbr) * quantite
-                    prise_amu_article = (base_amu_article * taux_assurance) / 100
+                    prise_amu_article = (base_amu_article * taux_item) / 100
                     reste = total - prise_amu_article
                     if reste > 0:
                         base_cac_articles += reste
                 else:
                     # 🔥 Article sans AMU → CAC sur le prix total
                     base_cac_articles += total
-                
+
                 print(f"🔍 {article.get('nom')}: Base CAC={base_cac_articles}")
         
         # 🔥 Vérifier si tous les articles sont non pris en charge
@@ -9201,8 +9231,10 @@ def api_creer_proforma():
         if est_assure and taux_assurance > 0:
             base_remboursement = min(sous_total_amu, pbr_total_amu)
             if base_remboursement > 0:
-                prise_en_charge = (base_remboursement * taux_assurance) / 100
-        
+                # ⭐ FIX : prise en charge par article (voir la boucle
+                # ci-dessus), pas un taux unique appliqué à base_remboursement.
+                prise_en_charge = prise_en_charge_par_article
+
         # 🔥 Reste après AMU (pour le calcul global)
         reste_apres_principal = sous_total - prise_en_charge
         
@@ -9449,30 +9481,40 @@ def proforma_print(proforma_id):
     pbr_total = 0
     sous_total_amu = 0
     pbr_total_amu = 0
-    
+    # ⭐ FIX : taux AMU par article (P160 = 90%, reste = taux_assurance de
+    # la proforma) au lieu d'un taux unique appliqué en bloc à
+    # base_remboursement — même correctif que côté reçu (app.py,
+    # taux_amu_pour_article()) et vente d'actes (actes_vente.html).
+    prise_en_charge_par_article = 0
+
+    # 🔥 Taux d'assurance principale (calculé avant la boucle : nécessaire
+    # à taux_amu_pour_article ci-dessous)
+    taux_assurance = float(proforma.get('taux_assurance', 0))
+
     for a in articles:
         prix = float(a.get('prix_unitaire', a.get('prix', 0)))
         pbr = float(a.get('pbr', prix))
         quantite = int(a.get('quantite', 1))
         total = prix * quantite
-        
+
         sous_total += total
         pbr_total += min(prix, pbr) * quantite
-        
+
         # 🔥 Si l'article est pris en charge par AMU
         prise_amu = a.get('prise_en_charge_amu', True)
         if prise_amu:
             sous_total_amu += total
-            pbr_total_amu += min(prix, pbr) * quantite
-    
+            base_item = min(prix, pbr) * quantite
+            pbr_total_amu += base_item
+            taux_item = taux_amu_pour_article(a.get('nom'), taux_assurance)
+            if taux_item > 0:
+                prise_en_charge_par_article += (base_item * taux_item) / 100
+
     # 🔥 Base de remboursement = min(sous_total_amu, pbr_total_amu)
     base_remboursement = min(sous_total_amu, pbr_total_amu)
-    
-    # 🔥 Taux d'assurance principale
-    taux_assurance = float(proforma.get('taux_assurance', 0))
-    prise_en_charge = 0
-    if base_remboursement > 0 and taux_assurance > 0:
-        prise_en_charge = (base_remboursement * taux_assurance) / 100
+
+    # 🔥 Prise en charge AMU (par article, voir la boucle ci-dessus)
+    prise_en_charge = prise_en_charge_par_article if base_remboursement > 0 else 0
     
     # 🔥 Vérifier si l'assurance principale est active
     assurance_nom = proforma.get('assurance_nom', 'Non assuré')
@@ -9594,19 +9636,26 @@ def api_convertir_proforma():
         montant_non_amu = 0
         base_cac = 0
         
+        # ⭐ FIX : taux AMU par article (P160 = 90%, reste = taux_assurance)
+        # au lieu d'un taux unique appliqué en bloc — même correctif que
+        # côté reçu/vente d'actes/bordereau/création de proforma (voir
+        # taux_amu_pour_article()).
+        prise_en_charge_par_article = 0
+
         articles_transformes = []
         for a in articles:
             prix = float(a.get('prix', a.get('prix_unitaire', 0)))
             pbr = float(a.get('pbr', prix))
             quantite = int(a.get('quantite', 1))
             total = prix * quantite
-            
+
             sous_total += total
-            
+
             # 🔥 Utiliser les valeurs converties
             prise_amu = a.get('prise_en_charge_amu', True)
             prise_cac = a.get('prise_en_charge_cac', True)
-            
+            taux_item = taux_amu_pour_article(a.get('nom'), taux_assurance)
+
             # 🔥 Transformer l'article pour la vente
             article = {
                 'id': a.get('id', None),
@@ -9620,25 +9669,28 @@ def api_convertir_proforma():
                 'prise_en_charge_cac': prise_cac,
                 'type': a.get('type', 'acte')
             }
-            
+
             # 🔥 AMU
             if prise_amu and pbr > 0:
                 sous_total_amu += total
-                pbr_total_amu += min(prix, pbr) * quantite
+                base_amu = min(prix, pbr) * quantite
+                pbr_total_amu += base_amu
+                if taux_item > 0:
+                    prise_en_charge_par_article += (base_amu * taux_item) / 100
             else:
                 montant_non_amu += total
-            
+
             # 🔥 CAC article par article
             if prise_cac:
                 if prise_amu and pbr > 0:
                     base_amu = min(prix, pbr) * quantite
-                    prise_amu_article = (base_amu * taux_assurance) / 100
+                    prise_amu_article = (base_amu * taux_item) / 100
                     reste = total - prise_amu_article
                     if reste > 0:
                         base_cac += reste
                 else:
                     base_cac += total
-            
+
             articles_transformes.append(article)
         
 
@@ -9662,8 +9714,10 @@ def api_convertir_proforma():
         if est_assure and taux_assurance > 0:
             base_remboursement = min(sous_total_amu, pbr_total_amu)
             if base_remboursement > 0:
-                prise_en_charge = (base_remboursement * taux_assurance) / 100
-        
+                # ⭐ FIX : prise en charge par article (voir la boucle
+                # ci-dessus), pas un taux unique appliqué à base_remboursement.
+                prise_en_charge = prise_en_charge_par_article
+
         # 🔥🔥🔥 CAC 🔥🔥🔥
         prise_en_charge2 = 0
         if assurance2_active and taux_assurance2 > 0 and base_cac > 0:
