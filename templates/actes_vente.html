@@ -70,7 +70,8 @@
                 data-prise-en-charge-amu="{{ 'true' if acte.prise_en_charge_amu else 'false' }}"
                 data-commentaire-amu="{{ acte.commentaire_amu|default('') }}"
                 data-prise-en-charge-cac="{{ 'true' if acte.prise_en_charge_cac else 'false' }}"
-                data-commentaire-cac="{{ acte.commentaire_cac|default('') }}">
+                data-commentaire-cac="{{ acte.commentaire_cac|default('') }}"
+                data-prise-en-charge-amu-tns="{{ 'true' if acte.prise_en_charge_amu_tns else 'false' }}">
             {{ acte.nom }} - {{ acte.prix }} FCFA
             {% if acte.pbr %}(PBR: {{ acte.pbr }} FCFA){% endif %}
             {% if acte.prise_en_charge_amu == false and acte.prise_en_charge_cac == false %}
@@ -281,14 +282,14 @@
 <!-- 🔥 TAUX AMU (pour l'assurance) -->
 <div class="col-md-3">
     <label class="form-label" id="tauxLabel">
-        {% if patientAssurance in ['amu_cnss', 'amu_inam'] %}
+        {% if patientAssurance in ['amu_cnss', 'amu_inam', 'amu_tns'] %}
             Taux AMU (%)
         {% else %}
             Taux AMU (%)
         {% endif %}
     </label>
-    <input type="number" class="form-control" id="tauxVente" 
-           value="{% if patientAssurance in ['amu_cnss', 'amu_inam'] %}80{% else %}0{% endif %}" 
+    <input type="number" class="form-control" id="tauxVente"
+           value="{% if patientAssurance in ['amu_cnss', 'amu_inam', 'amu_tns'] %}80{% else %}0{% endif %}"
            step="5" min="0" max="100" 
            onchange="calculerTotal(); calculerRendu();">
     <small style="color: #6c757d; display: block; margin-top: 3px;">
@@ -448,6 +449,7 @@ function checkSelectedPatient() {
         let assuranceText = 'Non assuré';
         if (patientAssurance === 'amu_cnss') assuranceText = 'AMU-CNSS';
         else if (patientAssurance === 'amu_inam') assuranceText = 'AMU-INAM';
+        else if (patientAssurance === 'amu_tns') assuranceText = 'AMU-TNS';
         else if (patientAssurance && patientAssurance !== 'non_assure') assuranceText = patientAssurance;
         
         document.getElementById('selectedAssurance').innerHTML = assuranceText;
@@ -711,17 +713,32 @@ function ajouterActe() {
     let acteNom = selectedOption.getAttribute('data-nom');
     let actePrix = parseFloat(selectedOption.getAttribute('data-prix'));
     let actePBR = parseFloat(selectedOption.getAttribute('data-pbr')) || actePrix;
-    
+
+    // ⭐ Lu tôt pour la résolution AMU-TNS ci-dessous (déclaré à nouveau,
+    // sans réaffectation, plus bas où le reste de la logique CAC en a besoin)
+    const patientAssuranceActe = sessionStorage.getItem('selectedPatientAssurance');
+
     // 🔥 Récupérer les attributs
     let priseEnChargeAMU = selectedOption.getAttribute('data-prise-en-charge-amu');
     let commentaireAMU = selectedOption.getAttribute('data-commentaire-amu') || '';
     let priseEnChargeCAC = selectedOption.getAttribute('data-prise-en-charge-cac');
     let commentaireCAC = selectedOption.getAttribute('data-commentaire-cac') || '';
-    
+
     // 🔥 Convertir en booléen
     priseEnChargeAMU = priseEnChargeAMU ? priseEnChargeAMU.toLowerCase() === 'true' : true;
     priseEnChargeCAC = priseEnChargeCAC ? priseEnChargeCAC.toLowerCase() === 'true' : true;
-    
+
+    // ⭐ AMU-TNS : panier de soins distinct de l'AMU-CNSS/INAM générique
+    // ci-dessus — si le patient sélectionné est assuré AMU-TNS, on résout
+    // priseEnChargeAMU depuis le flag TNS dédié (colonne "AMU-TNS" du
+    // Sheet) au lieu du flag générique, une fois pour toutes ici : tout le
+    // reste du code (calcul du panier, messages, PBR...) continue de lire
+    // priseEnChargeAMU/item.prise_en_charge_amu sans aucun changement.
+    if (patientAssuranceActe === 'amu_tns') {
+        let priseEnChargeAMUTNS = selectedOption.getAttribute('data-prise-en-charge-amu-tns');
+        priseEnChargeAMU = priseEnChargeAMUTNS ? priseEnChargeAMUTNS.toLowerCase() === 'true' : true;
+    }
+
     let quantite = parseInt(document.getElementById('quantite').value);
     
     if (isNaN(quantite) || quantite < 1) {
@@ -1050,7 +1067,7 @@ function calculerTotal() {
     
     // 🔥 Récupérer le type d'assurance du patient
     const typeAssurance = sessionStorage.getItem('selectedPatientAssurance') || '';
-    const estAssure = typeAssurance === 'amu_cnss' || typeAssurance === 'amu_inam';
+    const estAssure = typeAssurance === 'amu_cnss' || typeAssurance === 'amu_inam' || typeAssurance === 'amu_tns';
     
     // 🔥🔥🔥 TAUX AMU (pour l'assurance) - Séparé de l'aide hospitalière 🔥🔥🔥
     let tauxAMU = 0;
@@ -1298,7 +1315,7 @@ function calculerRendu() {
         }
         
         const typeAssurance = sessionStorage.getItem('selectedPatientAssurance') || '';
-        const estAssure = typeAssurance === 'amu_cnss' || typeAssurance === 'amu_inam';
+        const estAssure = typeAssurance === 'amu_cnss' || typeAssurance === 'amu_inam' || typeAssurance === 'amu_tns';
         
         if (estAssure) {
             // Patient assuré → calcul avec PBR (à simplifier ici)
@@ -1722,7 +1739,7 @@ function finaliserVente() {
     // 🔥 Déterminer la base pour l'aide hospitalière (4 cas)
     let baseAide = 0;
 
-    if (assurancePrincipaleActive && (patientAssurance === 'amu_cnss' || patientAssurance === 'amu_inam')) {
+    if (assurancePrincipaleActive && (patientAssurance === 'amu_cnss' || patientAssurance === 'amu_inam' || patientAssurance === 'amu_tns')) {
         // ✅ Cas 1: Patient ASSURÉ avec assurance active → Aide sur le RESTE après AMU + CAC
         baseAide = resteApresAssurances;
         console.log('📊 Cas 1 - Patient assuré, base aide = reste après AMU+CAC:', baseAide);
@@ -1731,7 +1748,7 @@ function finaliserVente() {
         let resteApresCAC = sousTotal - priseEnCharge2;
         baseAide = resteApresCAC;
         console.log('📊 Cas 2 - Patient non assuré avec CAC, base aide = reste après CAC:', baseAide);
-    } else if (assurance2Active && !assurancePrincipaleActive && (patientAssurance === 'amu_cnss' || patientAssurance === 'amu_inam')) {
+    } else if (assurance2Active && !assurancePrincipaleActive && (patientAssurance === 'amu_cnss' || patientAssurance === 'amu_inam' || patientAssurance === 'amu_tns')) {
         // 🔥🔥🔥 NOUVEAU CAS 4: Patient ASSURÉ mais assurance principale DÉSACTIVÉE → CAC seule
         // Aide sur le RESTE après CAC (comme cas 2)
         let resteApresCAC = sousTotal - priseEnCharge2;

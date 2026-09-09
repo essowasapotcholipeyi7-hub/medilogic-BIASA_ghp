@@ -55,6 +55,7 @@
                 <div id="assuranceStats" class="d-flex flex-wrap gap-3">
                     <span class="badge bg-primary p-2">AMU-CNSS: <span id="statsAMU_CNSS">0</span></span>
                     <span class="badge bg-info p-2">AMU-INAM: <span id="statsAMU_INAM">0</span></span>
+                    <span class="badge bg-warning text-dark p-2">AMU-TNS: <span id="statsAMU_TNS">0</span></span>
                     <span class="badge bg-success p-2">CAC: <span id="statsCAC">0</span></span>
                     <span class="badge bg-secondary p-2">Non assuré: <span id="statsNonAssure">0</span></span>
                     <span class="badge bg-dark p-2">Total: <span id="statsTotalPatients">0</span></span>
@@ -134,6 +135,8 @@
                                 <span class="badge bg-success">AMU-CNSS</span>
                             {% elif patient.type_assurance == 'amu_inam' %}
                                 <span class="badge bg-primary">AMU-INAM</span>
+                            {% elif patient.type_assurance == 'amu_tns' %}
+                                <span class="badge bg-warning text-dark">AMU-TNS</span>
                             {% else %}
                                 <span class="badge bg-info">{{ patient.type_assurance }}</span>
                             {% endif %}
@@ -325,6 +328,8 @@
                                         <option value="non_assure">Non assuré (0%)</option>
                                         <option value="amu_cnss">AMU-CNSS (80%)</option>
                                         <option value="amu_inam">AMU-INAM (80%)</option>
+                                        <option value="amu_tns">AMU-TNS (80%)</option>
+                                        <option value="autre">Autre</option>
                                     </select>
                                 </div>
                                 <div class="col-md-4 mb-2" id="taux_div">
@@ -510,6 +515,7 @@
                                         <option value="non_assure">Non assuré</option>
                                         <option value="amu_cnss">AMU-CNSS</option>
                                         <option value="amu_inam">AMU-INAM</option>
+                                        <option value="amu_tns">AMU-TNS</option>
                                         <option value="autre">Autre assurance</option>
                                     </select>
                                 </div>
@@ -773,6 +779,7 @@ function chargerStatsPatients() {
                 
                 document.getElementById('statsAMU_CNSS').textContent = data.par_assurance?.amu_cnss || 0;
                 document.getElementById('statsAMU_INAM').textContent = data.par_assurance?.amu_inam || 0;
+                document.getElementById('statsAMU_TNS').textContent = data.par_assurance?.amu_tns || 0;
                 document.getElementById('statsCAC').textContent = data.par_assurance?.cac || 0;
                 document.getElementById('statsNonAssure').textContent = data.par_assurance?.non_assure || 0;
                 document.getElementById('statsTotalPatients').textContent = data.total || 0;
@@ -911,6 +918,7 @@ function exporterPDF() {
             <div class="stat-item">Total: <span class="number">${patients.length}</span></div>
             <div class="stat-item">Assurés AMU-CNSS: <span class="number">${document.getElementById('statsAMU_CNSS')?.innerText || '0'}</span></div>
             <div class="stat-item">Assurés AMU-INAM: <span class="number">${document.getElementById('statsAMU_INAM')?.innerText || '0'}</span></div>
+            <div class="stat-item">Assurés AMU-TNS: <span class="number">${document.getElementById('statsAMU_TNS')?.innerText || '0'}</span></div>
             <div class="stat-item">Avec CAC: <span class="number">${document.getElementById('statsCAC')?.innerText || '0'}</span></div>
             <div class="stat-item">Non assurés: <span class="number">${document.getElementById('statsNonAssure')?.innerText || '0'}</span></div>
         </div>
@@ -1219,6 +1227,8 @@ function afficherDetailsPatient(patient) {
         assuranceBadge = '<span class="badge bg-success">AMU-CNSS</span>';
     } else if (patient.type_assurance == 'amu_inam') {
         assuranceBadge = '<span class="badge bg-primary">AMU-INAM</span>';
+    } else if (patient.type_assurance == 'amu_tns') {
+        assuranceBadge = '<span class="badge bg-warning text-dark">AMU-TNS</span>';
     } else {
         assuranceBadge = `<span class="badge bg-info">${patient.type_assurance}</span>`;
     }
@@ -1287,6 +1297,7 @@ function selectionnerDepuisDetails() {
             let assuranceCode = 'non_assure';
             if (assurance.toLowerCase().includes('amu-cnss')) assuranceCode = 'amu_cnss';
             else if (assurance.toLowerCase().includes('amu-inam')) assuranceCode = 'amu_inam';
+            else if (assurance.toLowerCase().includes('amu-tns')) assuranceCode = 'amu_tns';
             else if (assurance.toLowerCase().includes('non assuré')) assuranceCode = 'non_assure';
             else assuranceCode = assurance;
 
@@ -1363,7 +1374,7 @@ function toggleTaux() {
         tauxInput.readOnly = true;
         numeroDiv.style.display = 'none';
         autreDiv.style.display = 'none';
-    } else if (type === 'amu_cnss' || type === 'amu_inam') {
+    } else if (type === 'amu_cnss' || type === 'amu_inam' || type === 'amu_tns') {
         tauxInput.value = 80;
         tauxInput.readOnly = false;
         numeroDiv.style.display = 'block';
@@ -1387,7 +1398,7 @@ function toggleEditTaux() {
         tauxInput.readOnly = true;
         numeroDiv.style.display = 'none';
         autreDiv.style.display = 'none';
-    } else if (type === 'amu_cnss' || type === 'amu_inam') {
+    } else if (type === 'amu_cnss' || type === 'amu_inam' || type === 'amu_tns') {
         tauxInput.value = 80;
         tauxInput.readOnly = false;
         numeroDiv.style.display = 'block';
@@ -1655,6 +1666,8 @@ function editPatient(id) {
         assuranceValue = 'amu_cnss';
     } else if (assuranceText.includes('amu-inam')) {
         assuranceValue = 'amu_inam';
+    } else if (assuranceText.includes('amu-tns')) {
+        assuranceValue = 'amu_tns';
     } else if (!assuranceText.includes('non assuré')) {
         assuranceValue = 'autre';
         autreAssuranceValue = cells[3].innerText.trim();

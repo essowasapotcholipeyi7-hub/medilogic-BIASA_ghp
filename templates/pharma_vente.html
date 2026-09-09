@@ -299,14 +299,14 @@
 <!-- 🔥 TAUX AMU (pour l'assurance) -->
 <div class="col-md-3">
     <label class="form-label" id="tauxLabel">
-        {% if patientAssurance in ['amu_cnss', 'amu_inam'] %}
+        {% if patientAssurance in ['amu_cnss', 'amu_inam', 'amu_tns'] %}
             Taux AMU (%)
         {% else %}
             Taux AMU (%)
         {% endif %}
     </label>
-    <input type="number" class="form-control" id="tauxVente" 
-           value="{% if patientAssurance in ['amu_cnss', 'amu_inam'] %}80{% else %}0{% endif %}" 
+    <input type="number" class="form-control" id="tauxVente"
+           value="{% if patientAssurance in ['amu_cnss', 'amu_inam', 'amu_tns'] %}80{% else %}0{% endif %}"
            step="5" min="0" max="100" 
            onchange="calculerTotal(); calculerRendu();">
     <small style="color: #6c757d; display: block; margin-top: 3px;">
@@ -477,6 +477,7 @@ function checkSelectedPatient() {
         let assuranceText = 'Non assuré';
         if (patientAssurance === 'amu_cnss') assuranceText = 'AMU-CNSS';
         else if (patientAssurance === 'amu_inam') assuranceText = 'AMU-INAM';
+        else if (patientAssurance === 'amu_tns') assuranceText = 'AMU-TNS';
         else if (patientAssurance && patientAssurance !== 'non_assure') assuranceText = patientAssurance;
         
         document.getElementById('selectedAssurance').innerHTML = assuranceText;
@@ -796,6 +797,21 @@ function chargerProduits() {
                     }
                     option.setAttribute('data-prise-en-charge-cac', cacValue);
 
+                    // ⭐ AMU-TNS — panier de soins distinct du flag générique
+                    // ci-dessus, même conversion robuste (string/bool/absent).
+                    let rawAMUTNS = p.prise_en_charge_amu_tns;
+                    let amuTNSValue;
+                    if (rawAMUTNS === null || rawAMUTNS === undefined || rawAMUTNS === '') {
+                        amuTNSValue = true;
+                    } else if (typeof rawAMUTNS === 'string') {
+                        amuTNSValue = rawAMUTNS.toLowerCase() === 'true';
+                    } else if (typeof rawAMUTNS === 'boolean') {
+                        amuTNSValue = rawAMUTNS;
+                    } else {
+                        amuTNSValue = true;
+                    }
+                    option.setAttribute('data-prise-en-charge-amu-tns', amuTNSValue);
+
                     option.setAttribute('data-commentaire-amu', p.commentaire_amu || '');
                     option.setAttribute('data-commentaire-cac', p.commentaire_cac || '');
 
@@ -1003,7 +1019,14 @@ function ajouterProduit() {
     const produitStock = parseInt(selectedOption.getAttribute('data-stock'));
 
     // 🔥 Récupération robuste des attributs
-    let rawAMU = selectedOption.getAttribute('data-prise-en-charge-amu');
+    // ⭐ AMU-TNS : panier de soins distinct de l'AMU-CNSS/INAM générique —
+    // si le patient sélectionné est assuré AMU-TNS, on lit le flag TNS
+    // dédié au lieu du flag générique, une fois pour toutes ici (tout le
+    // reste du code continue de lire priseEnChargeAMU / item.prise_en_charge_amu
+    // sans aucun changement).
+    let rawAMU = (patientAssurance === 'amu_tns')
+        ? selectedOption.getAttribute('data-prise-en-charge-amu-tns')
+        : selectedOption.getAttribute('data-prise-en-charge-amu');
     let priseEnChargeAMU;
     if (rawAMU === null || rawAMU === undefined || rawAMU === '') {
         priseEnChargeAMU = true;
@@ -1340,7 +1363,7 @@ function calculerTotal() {
     }
     
     const typeAssurance = sessionStorage.getItem('selectedPatientAssurance') || '';
-    const estAssure = typeAssurance === 'amu_cnss' || typeAssurance === 'amu_inam';
+    const estAssure = typeAssurance === 'amu_cnss' || typeAssurance === 'amu_inam' || typeAssurance === 'amu_tns';
     
     // 🔥🔥🔥 TAUX AMU 🔥🔥🔥
     let tauxAMU = 0;

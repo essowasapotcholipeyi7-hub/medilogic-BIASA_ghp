@@ -192,7 +192,7 @@
     <strong>Patient :</strong> {{ patient_nom }}<br>
     
     <!-- 🔥 ASSURANCE PRINCIPALE -->
-    {% if type_assurance in ['AMU-CNSS', 'AMU-INAM'] %}
+    {% if type_assurance in ['AMU-CNSS', 'AMU-INAM', 'AMU-TNS'] %}
         <strong>Assurance :</strong> {{ type_assurance }} ({{ taux_assurance }}%)
         {% if not assurance_principale_active %}
         <span style="color: #856404; background: #fff3cd; padding: 0px 4px; border-radius: 2px; font-size: 8px;">⚠️ Désactivée</span>
@@ -235,7 +235,7 @@
      à l'assurance AMU, sans aucun sens pour un patient non assuré (avant,
      article.pbr retombait sur le prix normal et s'affichait quand même,
      laissant croire à tort à une prise en charge AMU inexistante). -->
-{% set patient_amu = type_assurance in ['AMU-CNSS', 'AMU-INAM'] %}
+{% set patient_amu = type_assurance in ['AMU-CNSS', 'AMU-INAM', 'AMU-TNS'] %}
 <table style="width:100%; border-collapse: collapse; font-size: 10px;">
     <thead>
         <tr style="background:#f8f9fa; border-bottom: 2px solid #dee2e6;">
@@ -283,7 +283,7 @@
         <span><strong>{{ sous_total|default(0)|round(0)|int }} FCFA</strong></span>
     </div>
     
-    {% if type_assurance in ['AMU-CNSS', 'AMU-INAM'] and base_remboursement and base_remboursement > 0 %}
+    {% if type_assurance in ['AMU-CNSS', 'AMU-INAM', 'AMU-TNS'] and base_remboursement and base_remboursement > 0 %}
     <div style="display:flex; justify-content:space-between; color:#6c757d; font-size:0.9em; border-top:1px dashed #ddd; padding-top:2px; margin-top:2px;">
         <span>Base remboursement (PBR) :</span>
         <span><strong>{{ base_remboursement|default(0)|round(0)|int }} FCFA</strong></span>
@@ -291,7 +291,7 @@
     {% endif %}
     
     <!-- 🔥 PRISE EN CHARGE AMU -->
-    {% if type_assurance in ['AMU-CNSS', 'AMU-INAM'] and assurance_principale_active != false and prise_en_charge > 0 %}
+    {% if type_assurance in ['AMU-CNSS', 'AMU-INAM', 'AMU-TNS'] and assurance_principale_active != false and prise_en_charge > 0 %}
     <div style="display:flex; justify-content:space-between; color:#28a745;">
         <span>Prise en charge AMU ({{ taux_assurance }}%) :</span>
         <span>- {{ prise_en_charge|default(0)|round(0)|int }} FCFA</span>

@@ -44,6 +44,10 @@ PLAN_COMPTABLE = [
     {'numero': '49100000', 'nom': "Dépréciation des comptes clients", 'type': 'actif', 'classe': '4'},
     {'numero': '41121100', 'nom': "AMU-CNSS — tiers-payant à recevoir", 'type': 'actif', 'classe': '4'},
     {'numero': '41121200', 'nom': "AMU-INAM — tiers-payant à recevoir", 'type': 'actif', 'classe': '4'},
+    # ⭐ AMU-TNS (Travailleurs Non-Salariés) — administrée par la CNSS mais
+    # panier de soins distinct de l'AMU-CNSS classique (colonne dédiée
+    # "AMU-TNS" dans le Sheet actes/produits) : compte tiers-payant séparé.
+    {'numero': '41121300', 'nom': "AMU-TNS — tiers-payant à recevoir", 'type': 'actif', 'classe': '4'},
     {'numero': '41122100', 'nom': "Assurance GTA — tiers-payant à recevoir", 'type': 'actif', 'classe': '4'},
     {'numero': '41122200', 'nom': "Assurance SUNU — tiers-payant à recevoir", 'type': 'actif', 'classe': '4'},
     {'numero': '41122300', 'nom': "Assurance FIDELIA — tiers-payant à recevoir", 'type': 'actif', 'classe': '4'},
@@ -200,6 +204,7 @@ COMPTE_AMORT_MATERIEL_MEDICAL = '28180000'  # repli par défaut pour son amortis
 COMPTE_PAR_ASSURANCE = {
     'amu-cnss': '41121100', 'amu_cnss': '41121100', 'cnss': '41121100',
     'amu-inam': '41121200', 'amu_inam': '41121200', 'inam': '41121200', 'amu': '41121200',
+    'amu-tns': '41121300', 'amu_tns': '41121300', 'tns': '41121300',
     'gta': '41122100',
     'sunu': '41122200',
     'fidelia': '41122300',
@@ -273,6 +278,8 @@ def compte_assurance(nom_assurance):
         return '41122800'
     cle = str(nom_assurance).lower().strip()
     if 'amu' in cle:
+        if 'tns' in cle:
+            return '41121300'
         if 'cnss' in cle:
             return '41121100'
         if 'inam' in cle:

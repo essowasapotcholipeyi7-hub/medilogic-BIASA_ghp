@@ -1431,8 +1431,9 @@ def api_patients_stats():
                 COUNT(CASE WHEN type_assurance = 'amu_cnss' THEN 1 END) as amu_cnss,
                 COUNT(CASE WHEN type_assurance = 'amu_inam' THEN 1 END) as amu_inam,
                 COUNT(CASE WHEN assurance2_nom IS NOT NULL AND assurance2_nom != '' THEN 1 END) as cac,
-                COUNT(CASE WHEN type_assurance = 'non_assure' OR type_assurance IS NULL THEN 1 END) as non_assure
-            FROM patients 
+                COUNT(CASE WHEN type_assurance = 'non_assure' OR type_assurance IS NULL THEN 1 END) as non_assure,
+                COUNT(CASE WHEN type_assurance = 'amu_tns' THEN 1 END) as amu_tns
+            FROM patients
             WHERE structure_id = %s
         """, (structure_id,))
         
@@ -1450,6 +1451,7 @@ def api_patients_stats():
                 'par_assurance': {
                     'amu_cnss': 0,
                     'amu_inam': 0,
+                    'amu_tns': 0,
                     'cac': 0,
                     'non_assure': 0
                 }
@@ -1468,6 +1470,7 @@ def api_patients_stats():
                 'par_assurance': {
                     'amu_cnss': row.get('amu_cnss', 0),
                     'amu_inam': row.get('amu_inam', 0),
+                    'amu_tns': row.get('amu_tns', 0),
                     'cac': row.get('cac', 0),
                     'non_assure': row.get('non_assure', 0)
                 }
@@ -1484,7 +1487,8 @@ def api_patients_stats():
                     'amu_cnss': row[5] if len(row) > 5 else 0,
                     'amu_inam': row[6] if len(row) > 6 else 0,
                     'cac': row[7] if len(row) > 7 else 0,
-                    'non_assure': row[8] if len(row) > 8 else 0
+                    'non_assure': row[8] if len(row) > 8 else 0,
+                    'amu_tns': row[9] if len(row) > 9 else 0
                 }
             })
         
@@ -1570,7 +1574,17 @@ def actes_vente():
                 statut = str(statut_raw).strip().upper()
                 if statut not in ['EP', 'DIRECT']:
                     statut = 'direct'
-            
+
+            # ⭐ AMU-TNS (colonne L) — panier de soins distinct de l'AMU
+            # générique ci-dessus, même règle (vide -> pris en charge).
+            prise_amu_tns_raw = a.get('AMU-TNS') or a.get('amu-tns') or a.get('AMU_TNS') or a.get('amu_tns')
+            if prise_amu_tns_raw is None or prise_amu_tns_raw == '':
+                prise_amu_tns = True
+            elif isinstance(prise_amu_tns_raw, str):
+                prise_amu_tns = prise_amu_tns_raw.lower() in ['true', 'oui', 'yes', '1', 'vrai', 't']
+            else:
+                prise_amu_tns = bool(prise_amu_tns_raw)
+
             actes_filtres.append({
                 'ID': a.get('ID'),
                 'nom': a.get('nom', ''),
@@ -1581,6 +1595,7 @@ def actes_vente():
                 'commentaire_amu': a.get('commentaire_amu', ''),
                 'prise_en_charge_cac': prise_cac,
                 'commentaire_cac': a.get('commentaire_cac', ''),
+                'prise_en_charge_amu_tns': prise_amu_tns,
                 'statut': statut  # 🔥 AJOUTER ICI
             })
     
@@ -1734,6 +1749,7 @@ def pharma_vente():
                         })
                 print(f"🔍 Produits trouvés dans Sheets: {len(produits_filtres)}")
 
+                # 🔥 Récupérer les prescriptions
                 # 🔥 Récupérer les prescriptions
                 result = db.session.execute(
                     text("""
@@ -1929,6 +1945,8 @@ def facture(vente_id, type):
         assurance_text = 'AMU-CNSS'
     elif type_assurance == 'amu_inam':
         assurance_text = 'AMU-INAM'
+    elif type_assurance == 'amu_tns':
+        assurance_text = 'AMU-TNS'
     elif type_assurance == 'non_assure':
         assurance_text = 'Non assuré'
     
@@ -2093,6 +2111,8 @@ def facture_structure(vente_id, type):
         assurance_text = 'AMU-CNSS'
     elif type_assurance == 'amu_inam':
         assurance_text = 'AMU-INAM'
+    elif type_assurance == 'amu_tns':
+        assurance_text = 'AMU-TNS'
     elif type_assurance == 'non_assure':
         assurance_text = 'Non assuré'
     
@@ -2375,7 +2395,7 @@ def recu(vente_id, type):
                 taux_modifie = True
                 print(f"🔴 TAUX MODIFIÉ DÉTECTÉ: {taux_assurance2}% (original: {patient_taux_original}%)")
         
-        est_assure = type_assurance in ['amu_cnss', 'amu_inam']
+        est_assure = type_assurance in ['amu_cnss', 'amu_inam', 'amu_tns']
         
         # 🔥🔥🔥 CORRECTION : Récupérer les articles (actes + produits) 🔥🔥🔥
         # Récupérer les actes
@@ -2527,13 +2547,15 @@ def recu(vente_id, type):
         assurance_text = 'AMU-CNSS'
     elif type_assurance == 'amu_inam':
         assurance_text = 'AMU-INAM'
+    elif type_assurance == 'amu_tns':
+        assurance_text = 'AMU-TNS'
     elif type_assurance == 'non_assure':
         assurance_text = 'Non assuré'
     
     assurance2_appliquee = False
     if assurance2_nom and assurance2_nom != '' and assurance2_nom != 'Aucune' and prise_en_charge2 > 0:
         assurance2_appliquee = True
-        
+
     return render_template('recu_client.html',
                          vente_id=vente_id,
                          articles=articles,
@@ -2692,6 +2714,8 @@ def recu_structure(vente_id, type):
         assurance_text = 'AMU-CNSS'
     elif type_assurance == 'amu_inam':
         assurance_text = 'AMU-INAM'
+    elif type_assurance == 'amu_tns':
+        assurance_text = 'AMU-TNS'
     elif type_assurance == 'non_assure':
         assurance_text = 'Non assuré'
     
@@ -5719,13 +5743,16 @@ def api_get_produits():
                     continue
                 
                 try:
-                    # A=0: ID, B=1: nom, C=2: prix_vente, D=3: pbr, 
-                    # E=4: prix_achat, F=5: quantite_stock, G=6: seuil_alerte, 
+                    # A=0: ID, B=1: nom, C=2: prix_vente, D=3: pbr,
+                    # E=4: prix_achat, F=5: quantite_stock, G=6: seuil_alerte,
                     # H=7: unite, I=8: date_peremption, J=9: lot, K=10: structure_id
                     # L=11: prise_en_charge_amu, M=12: commentaire_amu,
                     # N=13: prise_en_charge_cac, O=14: commentaire_cac
                     # 🔥 P=15: statut (NOUVEAU)
-                    
+                    # ⭐ Q=16: AMU-TNS — panier de soins distinct de l'AMU
+                    # générique (colonne L), pour la branche Travailleurs
+                    # Non-Salariés.
+
                     produit_id = row[0] if len(row) > 0 else None
                     nom = row[1].strip() if len(row) > 1 and row[1] else ''
                     prix_vente = float(row[2]) if len(row) > 2 and row[2] else 0
@@ -5752,13 +5779,18 @@ def api_get_produits():
                     # 🔥🔥🔥 RÉCUPÉRER LE STATUT (COLONNE P, INDEX 15) 🔥🔥🔥
                     statut = row[15].strip() if len(row) > 15 and row[15] else 'direct'
                     statut = statut.upper() if statut else 'direct'
-                    
+
+                    # ⭐ RÉCUPÉRER AMU-TNS (COLONNE Q, INDEX 16)
+                    prise_en_charge_amu_tns = row[16] if len(row) > 16 and row[16] else True
+
                     # Convertir en booléens
                     if isinstance(prise_en_charge_amu, str):
                         prise_en_charge_amu = prise_en_charge_amu.upper() == 'TRUE'
                     if isinstance(prise_en_charge_cac, str):
                         prise_en_charge_cac = prise_en_charge_cac.upper() == 'TRUE'
-                    
+                    if isinstance(prise_en_charge_amu_tns, str):
+                        prise_en_charge_amu_tns = prise_en_charge_amu_tns.upper() == 'TRUE'
+
                     if struct_id is None or str(struct_id) == str(structure_id):
                         if nom:
                             produits_liste.append({
@@ -5776,6 +5808,7 @@ def api_get_produits():
                                 'commentaire_amu': commentaire_amu,
                                 'prise_en_charge_cac': prise_en_charge_cac,
                                 'commentaire_cac': commentaire_cac,
+                                'prise_en_charge_amu_tns': prise_en_charge_amu_tns,
                                 'statut': statut  # 🔥 NOUVEAU
                             })
                 except Exception as e:
@@ -5800,11 +5833,16 @@ def api_get_produits():
                         prise_cac = p.get('prise_en_charge_cac', True)
                         if isinstance(prise_cac, str):
                             prise_cac = prise_cac.upper() == 'TRUE'
-                        
+
+                        # ⭐ AMU-TNS dans le repli
+                        prise_amu_tns = p.get('AMU-TNS', p.get('amu_tns', True))
+                        if isinstance(prise_amu_tns, str):
+                            prise_amu_tns = prise_amu_tns.upper() == 'TRUE'
+
                         # 🔥 Récupérer le statut dans le fallback
                         statut = p.get('statut', 'direct')
                         statut = statut.upper() if statut else 'direct'
-                        
+
                         produits_liste.append({
                             'id': p.get('ID'),
                             'nom': p.get('nom', ''),
@@ -5820,6 +5858,7 @@ def api_get_produits():
                             'commentaire_amu': p.get('commentaire_amu', ''),
                             'prise_en_charge_cac': prise_cac,
                             'commentaire_cac': p.get('commentaire_cac', ''),
+                            'prise_en_charge_amu_tns': prise_amu_tns,
                             'statut': statut  # 🔥 NOUVEAU
                         })
                     except:
@@ -5888,13 +5927,18 @@ def api_produits_search():
                     prise_en_charge_cac = row[13] if len(row) > 13 and row[13] else True
                     # Colonne O (index 14) : commentaire_cac
                     commentaire_cac = row[14] if len(row) > 14 and row[14] else ''
-                    
+                    # ⭐ Colonne Q (index 16) : AMU-TNS — panier de soins
+                    # distinct de l'AMU générique (colonne L ci-dessus).
+                    prise_en_charge_amu_tns = row[16] if len(row) > 16 and row[16] else True
+
                     # 🔥 Convertir les valeurs "FALSE" / "TRUE" en booléens
                     if isinstance(prise_en_charge_amu, str):
                         prise_en_charge_amu = prise_en_charge_amu.upper() == 'TRUE'
                     if isinstance(prise_en_charge_cac, str):
                         prise_en_charge_cac = prise_en_charge_cac.upper() == 'TRUE'
-                    
+                    if isinstance(prise_en_charge_amu_tns, str):
+                        prise_en_charge_amu_tns = prise_en_charge_amu_tns.upper() == 'TRUE'
+
                     if struct_id is None or str(struct_id) == str(structure_id):
                         if nom:
                             produits_liste.append({
@@ -5913,7 +5957,8 @@ def api_produits_search():
                                 'prise_en_charge_amu': prise_en_charge_amu,
                                 'commentaire_amu': commentaire_amu,
                                 'prise_en_charge_cac': prise_en_charge_cac,
-                                'commentaire_cac': commentaire_cac
+                                'commentaire_cac': commentaire_cac,
+                                'prise_en_charge_amu_tns': prise_en_charge_amu_tns
                             })
                 except Exception as e:
                     continue
@@ -5953,7 +5998,11 @@ def api_produits_search():
                     prise_cac = p.get('prise_en_charge_cac', True)
                     if isinstance(prise_cac, str):
                         prise_cac = prise_cac.upper() == 'TRUE'
-                    
+
+                    prise_amu_tns = p.get('AMU-TNS', p.get('amu_tns', True))
+                    if isinstance(prise_amu_tns, str):
+                        prise_amu_tns = prise_amu_tns.upper() == 'TRUE'
+
                     produits_liste.append({
                         'id': p.get('ID'),
                         'nom': p.get('nom', ''),
@@ -5970,7 +6019,8 @@ def api_produits_search():
                         'prise_en_charge_amu': prise_amu,
                         'commentaire_amu': p.get('commentaire_amu', ''),
                         'prise_en_charge_cac': prise_cac,
-                        'commentaire_cac': p.get('commentaire_cac', '')
+                        'commentaire_cac': p.get('commentaire_cac', ''),
+                        'prise_en_charge_amu_tns': prise_amu_tns
                     })
             
             if search:
@@ -7380,7 +7430,20 @@ def api_get_actes():
                 statut = str(statut_raw).strip().upper()
                 if statut not in ['EP', 'DIRECT']:
                     statut = 'direct'
-            
+
+            # ⭐ PRISE EN CHARGE AMU-TNS (colonne L - index 11) — panier de
+            # soins distinct de l'AMU-CNSS/INAM générique (ci-dessus) :
+            # même règle (TRUE/vide -> pris en charge par défaut).
+            prise_en_charge_amu_tns_raw = a.get('AMU-TNS') or a.get('amu-tns') or a.get('AMU_TNS') or a.get('amu_tns')
+            prise_en_charge_amu_tns = True
+            if prise_en_charge_amu_tns_raw is not None and prise_en_charge_amu_tns_raw != '':
+                if isinstance(prise_en_charge_amu_tns_raw, str):
+                    prise_en_charge_amu_tns = prise_en_charge_amu_tns_raw.lower() in ['true', 'oui', 'yes', '1', 'vrai', 't']
+                elif isinstance(prise_en_charge_amu_tns_raw, bool):
+                    prise_en_charge_amu_tns = prise_en_charge_amu_tns_raw
+                else:
+                    prise_en_charge_amu_tns = True
+
             acte_nom = a.get('nom') or a.get('NOM') or a.get('Nom')
             if acte_nom and str(acte_nom).strip():
                 result.append({
@@ -7394,6 +7457,7 @@ def api_get_actes():
                     'commentaire_amu': str(commentaire_amu),
                     'prise_en_charge_cac': prise_en_charge_cac,
                     'commentaire_cac': str(commentaire_cac),
+                    'prise_en_charge_amu_tns': prise_en_charge_amu_tns,
                     'statut': statut  # 🔥 NOUVEAU
                 })
         
@@ -8596,6 +8660,8 @@ def generer_factures_assurance():
         # (commit=False) — sans ce commit explicite, les INSERT/UPDATE
         # ci-dessus étaient perdus dès la fin de la requête (jamais
         # persistés), alors que la réponse renvoyait déjà "success": True.
+        # C'était le bug "ça génère mais n'affiche pas" : la génération
+        # semblait réussir mais rien n'était réellement enregistré.
         db.session.commit()
 
         return jsonify({

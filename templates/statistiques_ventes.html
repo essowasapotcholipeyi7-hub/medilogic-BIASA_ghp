@@ -765,6 +765,7 @@ function afficherVentes(ventes) {
         let assurance1 = vente.assurance_nom || vente.type_assurance || 'Non assuré';
         if (assurance1 === 'amu-cnss') assurance1 = 'AMU-CNSS';
         else if (assurance1 === 'amu-inam') assurance1 = 'AMU-INAM';
+        else if (assurance1 === 'amu-tns' || assurance1 === 'amu_tns') assurance1 = 'AMU-TNS';
         else if (assurance1 === 'non_assure') assurance1 = 'Non assuré';
         
         let assurance2 = vente.assurance2_nom || '';
@@ -992,6 +993,7 @@ function chargerFactures() {
                 let assuranceText = f.assurance;
                 if (assuranceText === 'amu-cnss') assuranceText = 'AMU-CNSS';
                 if (assuranceText === 'amu-inam') assuranceText = 'AMU-INAM';
+                if (assuranceText === 'amu-tns' || assuranceText === 'amu_tns') assuranceText = 'AMU-TNS';
                 
                 const typeAssurance = f.type_assurance || 'principale';
                 const typeLabel = typeAssurance === 'principale' ? 'Principale' : 'Complémentaire';
@@ -1236,6 +1238,8 @@ function chargerAssurances() {
                             label = 'AMU-CNSS';
                         } else if (item.key === 'amu_inam' || item.key === 'amu-inam') {
                             label = 'AMU-INAM';
+                        } else if (item.key === 'amu_tns' || item.key === 'amu-tns') {
+                            label = 'AMU-TNS';
                         } else if (item.key === 'non_assure') {
                             label = 'Non assuré';
                         } else {
@@ -1501,6 +1505,8 @@ function afficherPatientsAssurances(patients) {
             badgeClass = 'bg-success';
         } else if (p.assurance === 'amu_inam' || p.assurance === 'amu-inam') {
             badgeClass = 'bg-primary';
+        } else if (p.assurance === 'amu_tns' || p.assurance === 'amu-tns') {
+            badgeClass = 'bg-warning';
         } else {
             badgeClass = 'bg-info';
         }
@@ -1748,6 +1754,9 @@ function afficherStatsPatientsList(ventes) {
         } else if (assuranceLabel === 'amu-inam' || assuranceLabel === 'amu_inam') {
             displayLabel = 'AMU-INAM';
             badgeClass = 'bg-primary';
+        } else if (assuranceLabel === 'amu-tns' || assuranceLabel === 'amu_tns') {
+            displayLabel = 'AMU-TNS';
+            badgeClass = 'bg-warning';
         } else if (assuranceLabel === 'non_assure' || assuranceLabel === '') {
             displayLabel = 'Non assuré';
             badgeClass = 'bg-secondary';
@@ -1762,6 +1771,7 @@ function afficherStatsPatientsList(ventes) {
             let label2 = p.assurance2;
             if (label2 === 'amu-cnss' || label2 === 'amu_cnss') label2 = 'AMU-CNSS';
             else if (label2 === 'amu-inam' || label2 === 'amu_inam') label2 = 'AMU-INAM';
+            else if (label2 === 'amu-tns' || label2 === 'amu_tns') label2 = 'AMU-TNS';
             else label2 = label2.toUpperCase();
             assurance2Label = ` + ${label2}`;
         }

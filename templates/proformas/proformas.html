@@ -626,11 +626,15 @@ function remplirListePatients() {
 
 function remplirListeActes(search = '', append = false, hasMore = false) {
     const select = document.getElementById('acteSelect');
-    
+
     if (!append) {
         select.innerHTML = '<option value="">-- Actes disponibles --</option>';
     }
-    
+
+    // ⭐ Patient AMU-TNS : le badge d'avertissement ci-dessous doit refléter
+    // le panier de soins TNS, pas le flag AMU générique.
+    const patientAssuranceListe = document.getElementById('assuranceNom').value;
+
     actesList.forEach(a => {
         const nom = a.nom || 'Sans nom';
         const prix = a.prix || 0;
@@ -638,16 +642,19 @@ function remplirListeActes(search = '', append = false, hasMore = false) {
         const id = a.id || a.ID;
         const priseEnChargeAMU = a.prise_en_charge_amu !== false;
         const priseEnChargeCAC = a.prise_en_charge_cac !== false;
-        
+        const priseEnChargeAMUTNS = a.prise_en_charge_amu_tns !== false;
+        const priseEnChargeAMUAffichee = (patientAssuranceListe === 'amu_tns') ? priseEnChargeAMUTNS : priseEnChargeAMU;
+
         select.innerHTML += `
-            <option value="${id}" 
-                    data-prix="${prix}" 
-                    data-pbr="${pbr}" 
+            <option value="${id}"
+                    data-prix="${prix}"
+                    data-pbr="${pbr}"
                     data-nom="${nom}"
                     data-prise-en-charge-amu="${priseEnChargeAMU}"
-                    data-prise-en-charge-cac="${priseEnChargeCAC}">
+                    data-prise-en-charge-cac="${priseEnChargeCAC}"
+                    data-prise-en-charge-amu-tns="${priseEnChargeAMUTNS}">
                 ${nom} - ${prix} FCFA ${pbr != prix ? '(PBR: ' + pbr + ' F)' : ''}
-                ${!priseEnChargeAMU ? ' ⚠️ Non AMU' : ''}
+                ${!priseEnChargeAMUAffichee ? ' ⚠️ Non AMU' : ''}
                 ${!priseEnChargeCAC ? ' ⚠️ Non CAC' : ''}
             </option>
         `;
@@ -674,11 +681,15 @@ function remplirListeActes(search = '', append = false, hasMore = false) {
 
 function remplirListeProduits(search = '', append = false, hasMore = false) {
     const select = document.getElementById('produitSelect');
-    
+
     if (!append) {
         select.innerHTML = '<option value="">-- Produits disponibles --</option>';
     }
-    
+
+    // ⭐ Patient AMU-TNS : le badge d'avertissement ci-dessous doit refléter
+    // le panier de soins TNS, pas le flag AMU générique.
+    const patientAssuranceListeProduits = document.getElementById('assuranceNom').value;
+
     produitsList.forEach(p => {
         const nom = p.nom || 'Sans nom';
         const prix = p.prix_vente || 0;
@@ -703,10 +714,18 @@ function remplirListeProduits(search = '', append = false, hasMore = false) {
         } else if (typeof cacValue === 'string') {
             cacValue = cacValue.toLowerCase() === 'true';
         }
-        
+
+        // ⭐ AMU-TNS — panier de soins distinct du flag générique ci-dessus
+        let amuTNSValue = p.prise_en_charge_amu_tns;
+        if (amuTNSValue === null || amuTNSValue === undefined || amuTNSValue === '') {
+            amuTNSValue = true;
+        } else if (typeof amuTNSValue === 'string') {
+            amuTNSValue = amuTNSValue.toLowerCase() === 'true';
+        }
+
         const commentaireAMU = p.commentaire_amu || '';
         const commentaireCAC = p.commentaire_cac || '';
-        
+
         // 🔥 Construction de l'option avec TOUS les attributs
         const option = document.createElement('option');
         option.value = id;
@@ -719,6 +738,7 @@ function remplirListeProduits(search = '', append = false, hasMore = false) {
         option.setAttribute('data-prix-achat', prixAchat);
         option.setAttribute('data-prise-en-charge-amu', amuValue);
         option.setAttribute('data-prise-en-charge-cac', cacValue);
+        option.setAttribute('data-prise-en-charge-amu-tns', amuTNSValue);
         option.setAttribute('data-commentaire-amu', commentaireAMU);
         option.setAttribute('data-commentaire-cac', commentaireCAC);
         
@@ -746,7 +766,9 @@ function remplirListeProduits(search = '', append = false, hasMore = false) {
         }
         
         // 🔥 Indicateur de prise en charge
-        const isAMU = amuValue === true || amuValue === 'true';
+        const isAMU = (patientAssuranceListeProduits === 'amu_tns')
+            ? (amuTNSValue === true || amuTNSValue === 'true')
+            : (amuValue === true || amuValue === 'true');
         const isCAC = cacValue === true || cacValue === 'true';
         
         if (!isAMU && !isCAC) {
@@ -985,7 +1007,13 @@ function ajouterArticleSelectionne() {
     const produitSelect = document.getElementById('produitSelect');
     const qte = parseInt(document.getElementById('quantiteArticle').value) || 1;
     let added = 0;
-    
+
+    // ⭐ AMU-TNS : panier de soins distinct de l'AMU-CNSS/INAM générique —
+    // si le patient choisi est assuré AMU-TNS, on résout priseEnChargeAMU
+    // depuis le flag TNS dédié (data-prise-en-charge-amu-tns) au lieu du
+    // flag générique, une fois pour toutes ici.
+    const patientAssuranceProforma = document.getElementById('assuranceNom').value;
+
     // 🔥 Parcourir les actes sélectionnés
     for (let opt of acteSelect.selectedOptions) {
         if (!opt.value || opt.disabled) continue;
@@ -993,7 +1021,9 @@ function ajouterArticleSelectionne() {
         const prix = parseFloat(opt.dataset.prix) || 0;
         const pbr = parseFloat(opt.dataset.pbr);
         const pbrValue = (pbr !== undefined && pbr !== null && !isNaN(pbr)) ? pbr : 0;
-        const priseEnChargeAMU = opt.dataset.priseEnChargeAmu !== 'false';
+        const priseEnChargeAMU = (patientAssuranceProforma === 'amu_tns')
+            ? opt.dataset.priseEnChargeAmuTns !== 'false'
+            : opt.dataset.priseEnChargeAmu !== 'false';
         const priseEnChargeCAC = opt.dataset.priseEnChargeCac !== 'false';
         
         if (prix > 0) {
@@ -1006,12 +1036,14 @@ function ajouterArticleSelectionne() {
     // 🔥🔥🔥 Parcourir les produits sélectionnés (avec vérifications) 🔥🔥🔥
     for (let opt of produitSelect.selectedOptions) {
         if (!opt.value || opt.disabled) continue;
-        
+
         const nom = opt.dataset.nom || opt.text.split(' - ')[0];
         const prix = parseFloat(opt.dataset.prix) || 0;
         const pbr = parseFloat(opt.dataset.pbr);
         const pbrValue = (pbr !== undefined && pbr !== null && !isNaN(pbr)) ? pbr : 0;
-        const priseEnChargeAMU = opt.dataset.priseEnChargeAmu !== 'false';
+        const priseEnChargeAMU = (patientAssuranceProforma === 'amu_tns')
+            ? opt.dataset.priseEnChargeAmuTns !== 'false'
+            : opt.dataset.priseEnChargeAmu !== 'false';
         const priseEnChargeCAC = opt.dataset.priseEnChargeCac !== 'false';
         
         // 🔥 VÉRIFICATION DU STOCK

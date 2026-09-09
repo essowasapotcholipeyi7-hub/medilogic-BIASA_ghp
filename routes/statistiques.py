@@ -68,7 +68,7 @@ CATEGORIES_ACTES = {
     'autres': {'label': 'Autres', 'color': '#6c757d'}
 }
 
-ASSURANCES_PRINCIPALES = ['amu_cnss', 'amu_inam']
+ASSURANCES_PRINCIPALES = ['amu_cnss', 'amu_inam', 'amu_tns']
 
 
 # ============================================================
