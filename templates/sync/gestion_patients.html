@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}Synchronisation gestion_patients{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3">
+            <i class="fas fa-sync me-2 text-primary"></i>
+            Synchronisation avec gestion_patients
+        </h1>
+        <a href="{{ url_for('admin_structure') }}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left me-2"></i>Retour
+        </a>
+    </div>
+
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle me-2"></i>
+        Cette page relie <strong>cette structure GHP</strong> (ID {{ structure_id }})
+        à la structure correspondante dans l'application <strong>gestion_patients</strong>
+        (rendez-vous, hospitalisations, protocoles, ordonnances...). Une fois activée,
+        les deux applications échangent leurs données automatiquement pour cette clinique —
+        exactement comme pour les structures déjà connectées.
+    </div>
+
+    {% if mapping and mapping.actif %}
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-success text-white">
+            <h5 class="mb-0"><i class="fas fa-check-circle me-2"></i>Synchronisation active</h5>
+        </div>
+        <div class="card-body">
+            <p class="mb-3">
+                Cette structure est reliée à gestion_patients depuis le
+                {{ mapping.created_at.strftime('%d/%m/%Y') if mapping.created_at else '-' }}.
+                {% if mapping.last_sync %}
+                Dernière synchronisation : {{ mapping.last_sync.strftime('%d/%m/%Y %H:%M') }}.
+                {% endif %}
+            </p>
+
+            <div class="alert alert-warning">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                Si ce n'est pas déjà fait, allez dans <strong>gestion_patients &gt; Synchronisation GHP</strong>
+                (page <code>/sync/ghp</code>) et renseignez :
+                <table class="table table-sm table-borderless mb-0 mt-2">
+                    <tr><td class="text-muted" style="width:220px;">URL de l'API GHP</td><td><code>{{ base_url }}</code></td></tr>
+                    <tr><td class="text-muted">ID de la structure dans GHP</td><td><code>{{ structure_id }}</code></td></tr>
+                    <tr><td class="text-muted">Clé API</td><td><code>{{ mapping.api_key }}</code></td></tr>
+                </table>
+            </div>
+
+            <form method="POST" action="{{ url_for('sync_gestion_patients_activer') }}" class="d-inline"
+                  onsubmit="return confirm('Régénérer la clé ? L\'ancienne clé cessera de fonctionner — il faudra la remettre à jour côté gestion_patients.');">
+                <input type="hidden" name="api_url" value="{{ mapping.api_url }}">
+                <button type="submit" class="btn btn-outline-primary btn-sm">
+                    <i class="fas fa-key me-1"></i>Régénérer la clé
+                </button>
+            </form>
+            <form method="POST" action="{{ url_for('sync_gestion_patients_desactiver') }}" class="d-inline"
+                  onsubmit="return confirm('Désactiver la synchronisation avec gestion_patients pour cette structure ?');">
+                <button type="submit" class="btn btn-outline-danger btn-sm">
+                    <i class="fas fa-power-off me-1"></i>Désactiver
+                </button>
+            </form>
+        </div>
+    </div>
+    {% elif mapping and not mapping.actif %}
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-secondary text-white">
+            <h5 class="mb-0"><i class="fas fa-pause-circle me-2"></i>Synchronisation désactivée</h5>
+        </div>
+        <div class="card-body">
+            <p>La synchronisation avec gestion_patients a déjà été configurée pour cette
+               structure, mais elle est actuellement désactivée.</p>
+            <form method="POST" action="{{ url_for('sync_gestion_patients_activer') }}">
+                <input type="hidden" name="api_url" value="{{ mapping.api_url }}">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-power-off me-2"></i>Réactiver la synchronisation
+                </button>
+            </form>
+        </div>
+    </div>
+    {% else %}
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0"><i class="fas fa-plug me-2"></i>Aucune synchronisation configurée</h5>
+        </div>
+        <div class="card-body">
+            <p>Cette structure n'est pas encore reliée à gestion_patients. En un clic,
+               GHP génère une clé de sécurité partagée ; il suffira ensuite de la copier
+               dans gestion_patients pour finaliser le lien.</p>
+
+            <form method="POST" action="{{ url_for('sync_gestion_patients_activer') }}">
+                <div class="mb-3">
+                    <label class="form-label">URL de gestion_patients</label>
+                    <input type="url" name="api_url" class="form-control"
+                           value="https://gestion-patients.onrender.com"
+                           placeholder="https://gestion-patients.onrender.com">
+                    <small class="text-muted">
+                        À titre indicatif seulement — laissez la valeur par défaut sauf si
+                        gestion_patients tourne ailleurs.
+                    </small>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-bolt me-2"></i>Activer la synchronisation
+                </button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

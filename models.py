@@ -117,8 +117,18 @@ class SocieteAssurance(db.Model):
 # STRUCTURE MAPPING (pour la synchronisation)
 # ============================================================
 class StructureMapping(db.Model):
+    """⭐ Lien de synchronisation entre une structure gestion_patients et sa
+    structure GHP correspondante (même mécanisme utilisé pour appairer une
+    nouvelle clinique comme BIASA). Une ligne identique (même api_key) doit
+    exister dans les deux bases pour que la synchro fonctionne — pas de
+    schéma partagé entre les deux apps, chacune a sa propre copie.
+    ⚠️ Les routes GHP existantes lisent tantôt local_structure_id, tantôt
+    source_structure_id, comme si l'un ou l'autre était "l'id structure côté
+    GHP" — pour rester compatible avec les deux, /sync/gestion-patients
+    (routes self-service) pose systématiquement les deux au même id (celui
+    de la structure GHP), voir sync_gestion_patients_activer() dans app.py."""
     __tablename__ = 'structure_mappings'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     local_structure_id = db.Column(db.Integer, nullable=False)
     source_structure_id = db.Column(db.Integer, nullable=False)

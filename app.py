@@ -3083,6 +3083,95 @@ def api_delete_user(user_id):
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/sync/gestion-patients')
+@login_required
+def sync_gestion_patients_config():
+    """⭐ Page self-service pour activer/consulter la synchronisation avec
+    gestion_patients — jusqu'ici, créer cette ligne StructureMapping exigeait
+    une intervention manuelle en base (aucune interface n'existait côté GHP,
+    contrairement à /sync/ghp côté gestion_patients). Le responsable peut
+    maintenant l'activer lui-même pour sa structure, sans dépendre d'une
+    intervention technique à chaque nouvelle clinique (ex. BIASA)."""
+    if not session.get('is_admin'):
+        flash('Accès non autorisé', 'danger')
+        return redirect(url_for('dashboard'))
+
+    structure_id = session.get('structure_id')
+    mapping = StructureMapping.query.filter_by(
+        local_structure_id=structure_id,
+        source_name='gestion_patients'
+    ).first()
+
+    return render_template('sync/gestion_patients.html',
+                         mapping=mapping,
+                         structure_id=structure_id,
+                         base_url=BASE_URL)
+
+
+@app.route('/sync/gestion-patients/activer', methods=['POST'])
+@login_required
+def sync_gestion_patients_activer():
+    """Active (ou régénère la clé de) la synchronisation avec gestion_patients
+    pour la structure courante. local_structure_id et source_structure_id
+    sont volontairement posés à la même valeur (l'id de structure côté GHP) —
+    ce sont deux vues différentes du même id selon la route GHP qui lit la
+    ligne, voir les commentaires sur le modèle StructureMapping."""
+    if not session.get('is_admin'):
+        flash('Accès non autorisé', 'danger')
+        return redirect(url_for('dashboard'))
+
+    import secrets
+    structure_id = session.get('structure_id')
+    api_url_gp = (request.form.get('api_url') or '').strip() or 'https://gestion-patients.onrender.com'
+
+    mapping = StructureMapping.query.filter_by(
+        local_structure_id=structure_id,
+        source_name='gestion_patients'
+    ).first()
+
+    nouvelle_cle = secrets.token_hex(16)
+
+    if mapping:
+        mapping.api_key = nouvelle_cle
+        mapping.api_url = api_url_gp
+        mapping.actif = True
+    else:
+        mapping = StructureMapping(
+            local_structure_id=structure_id,
+            source_structure_id=structure_id,
+            source_name='gestion_patients',
+            api_url=api_url_gp,
+            api_key=nouvelle_cle,
+            actif=True
+        )
+        db.session.add(mapping)
+
+    db.session.commit()
+    flash('✅ Synchronisation activée — copiez la clé ci-dessous dans gestion_patients (page Synchronisation GHP).', 'success')
+    return redirect(url_for('sync_gestion_patients_config'))
+
+
+@app.route('/sync/gestion-patients/desactiver', methods=['POST'])
+@login_required
+def sync_gestion_patients_desactiver():
+    """Désactive la synchronisation (sans supprimer la ligne, pour pouvoir
+    la réactiver plus tard avec la même clé si besoin)."""
+    if not session.get('is_admin'):
+        flash('Accès non autorisé', 'danger')
+        return redirect(url_for('dashboard'))
+
+    structure_id = session.get('structure_id')
+    mapping = StructureMapping.query.filter_by(
+        local_structure_id=structure_id,
+        source_name='gestion_patients'
+    ).first()
+    if mapping:
+        mapping.actif = False
+        db.session.commit()
+        flash('Synchronisation désactivée.', 'warning')
+    return redirect(url_for('sync_gestion_patients_config'))
+
+
 @app.route('/admin_structure')
 @login_required
 def admin_structure():
