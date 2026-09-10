@@ -506,121 +506,145 @@
             height: 200%;
         }
         
-        /* Bouton principal - Bleu comme l'onglet Patients */
+        /* ⭐ FIX (diminuer la vivacité des couleurs) : tous les boutons
+           passent au même style "soft & professionnel" que l'onglet
+           Patients — fond pastel + texte/bordure de la couleur, la couleur
+           pleine (et le blanc) n'apparaissant qu'au survol. Avant, chaque
+           bouton .btn-primary/success/danger/warning/info était un aplat
+           de couleur saturée en permanence, ce qui rendait les pages très
+           criardes dès qu'il y avait plusieurs boutons à l'écran. */
+
+        /* Bouton principal - Violet comme l'onglet Patients */
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            background: rgba(102, 126, 234, 0.10);
+            color: #5a5fd6;
+            border: 1px solid rgba(102, 126, 234, 0.25);
         }
-        
+
         .btn-primary:hover {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-color: transparent;
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(102, 126, 234, 0.35);
             color: white;
         }
-        
+
         .btn-primary:active {
             transform: translateY(0);
         }
-        
+
         /* Bouton secondaire - Bleu clair */
         .btn-secondary {
             background: rgba(102, 126, 234, 0.08);
             color: #667eea;
             border: 1px solid rgba(102, 126, 234, 0.15);
         }
-        
+
         .btn-secondary:hover {
             background: rgba(102, 126, 234, 0.15);
             color: #5a67d8;
             transform: translateY(-2px);
         }
-        
+
         /* Bouton succès - Vert doux */
         .btn-success {
-            background: #10b981;
-            color: white;
+            background: rgba(16, 185, 129, 0.10);
+            color: #0e9270;
+            border: 1px solid rgba(16, 185, 129, 0.25);
         }
-        
+
         .btn-success:hover {
-            background: #059669;
+            background: #10b981;
+            border-color: transparent;
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(16, 185, 129, 0.30);
             color: white;
         }
-        
+
         /* Bouton danger - Rouge doux */
         .btn-danger {
-            background: #ef4444;
-            color: white;
+            background: rgba(239, 68, 68, 0.10);
+            color: #dc2626;
+            border: 1px solid rgba(239, 68, 68, 0.25);
         }
-        
+
         .btn-danger:hover {
-            background: #dc2626;
+            background: #ef4444;
+            border-color: transparent;
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(239, 68, 68, 0.30);
             color: white;
         }
-        
+
         /* Bouton avertissement - Orange doux */
         .btn-warning {
-            background: #f59e0b;
-            color: white;
+            background: rgba(245, 158, 11, 0.12);
+            color: #b45309;
+            border: 1px solid rgba(245, 158, 11, 0.3);
         }
-        
+
         .btn-warning:hover {
-            background: #d97706;
+            background: #f59e0b;
+            border-color: transparent;
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(245, 158, 11, 0.30);
             color: white;
         }
-        
+
         /* Bouton info - Bleu clair */
         .btn-info {
-            background: #3b82f6;
-            color: white;
+            background: rgba(59, 130, 246, 0.10);
+            color: #2563eb;
+            border: 1px solid rgba(59, 130, 246, 0.25);
         }
-        
+
         .btn-info:hover {
-            background: #2563eb;
+            background: #3b82f6;
+            border-color: transparent;
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(59, 130, 246, 0.30);
             color: white;
         }
-        
-        /* Bouton outline - Comme l'onglet Patients */
+
+        /* Bouton outline - Comme l'onglet Patients (fond légèrement teinté,
+           pas transparent, pour rester cohérent avec les boutons pleins
+           ci-dessus qui partagent maintenant le même esprit "soft") */
         .btn-outline-primary {
-            border: 1.5px solid #667eea;
-            color: #667eea;
-            background: transparent;
+            border: 1.5px solid rgba(102, 126, 234, 0.35);
+            color: #5a5fd6;
+            background: rgba(102, 126, 234, 0.06);
         }
-        
+
         .btn-outline-primary:hover {
             background: #667eea;
+            border-color: #667eea;
             color: white;
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(102, 126, 234, 0.25);
         }
-        
+
         .btn-outline-danger {
-            border: 1.5px solid #ef4444;
-            color: #ef4444;
-            background: transparent;
+            border: 1.5px solid rgba(239, 68, 68, 0.35);
+            color: #dc2626;
+            background: rgba(239, 68, 68, 0.06);
         }
-        
+
         .btn-outline-danger:hover {
             background: #ef4444;
+            border-color: #ef4444;
             color: white;
             transform: translateY(-2px);
         }
-        
+
         .btn-outline-success {
-            border: 1.5px solid #10b981;
-            color: #10b981;
-            background: transparent;
+            border: 1.5px solid rgba(16, 185, 129, 0.35);
+            color: #0e9270;
+            background: rgba(16, 185, 129, 0.06);
         }
-        
+
         .btn-outline-success:hover {
             background: #10b981;
+            border-color: #10b981;
             color: white;
             transform: translateY(-2px);
         }
@@ -651,6 +675,17 @@
             color: #1a1a2e;
             border-color: rgba(102, 126, 234, 0.15);
         }
+
+        /* ⭐ FIX (diminuer la vivacité des couleurs) : Bootstrap pose des
+           bordures pleinement saturées sur .border-success/info/danger/
+           warning/primary — très visible sur les cartes du tableau de bord
+           dès l'arrivée dans l'appli. Assouplies pour rester dans le même
+           esprit "soft" que les boutons ci-dessus. */
+        .border-primary { border-color: rgba(102, 126, 234, 0.35) !important; }
+        .border-success { border-color: rgba(16, 185, 129, 0.35) !important; }
+        .border-danger { border-color: rgba(239, 68, 68, 0.35) !important; }
+        .border-warning { border-color: rgba(245, 158, 11, 0.4) !important; }
+        .border-info { border-color: rgba(59, 130, 246, 0.35) !important; }
 
         /* ============================================
            CARTES TABLEAU DE BORD
@@ -1615,7 +1650,7 @@
 <nav class="navbar navbar-expand-lg">
     <div class="container">
         <a class="navbar-brand" href="{{ url_for('dashboard' if session.user_id else 'index') }}">
-            <span style="color: #667eea;">SSoftOneV10</span>
+            <span style="color: #667eea;"> GED BIASA</span>
         </a>
         
         <!-- NOM DE LA STRUCTURE AVEC LOGO -->
