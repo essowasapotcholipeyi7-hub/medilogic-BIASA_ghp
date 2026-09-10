@@ -139,6 +139,14 @@
                     </div>
                     <div class="col-5 text-end">
                         <h4 style="margin: 0;">FACTURE - ARCHIVE</h4>
+                        <!-- ⭐ Précise le type de vente (pharmacie/actes/mixte). -->
+                        {% if type_vente == 'pharmacie' or type_vente == 'pharma' %}
+                        <p style="margin: 1px 0 0 0; font-weight: 600; font-size: 12px; letter-spacing: 0.5px;">PHARMACIE</p>
+                        {% elif type_vente == 'mixte' %}
+                        <p style="margin: 1px 0 0 0; font-weight: 600; font-size: 12px; letter-spacing: 0.5px;">ACTES & PHARMACIE</p>
+                        {% elif type_vente == 'actes' %}
+                        <p style="margin: 1px 0 0 0; font-weight: 600; font-size: 12px; letter-spacing: 0.5px;">ACTES MÉDICAUX</p>
+                        {% endif %}
                         <p>N° {{ "%06d" % vente_id }} | {{ date_actuelle or "" }}</p>
                     </div>
                 </div>

@@ -1974,6 +1974,7 @@ def facture(vente_id, type):
     
     return render_template('facture_client.html',
                          vente_id=vente_id,
+                         type_vente=type_bd,
                          articles=articles,
                          sous_total=sous_total,
                          taux_assurance=taux_assurance,
@@ -2140,6 +2141,7 @@ def facture_structure(vente_id, type):
     
     return render_template('facture_structure.html',
                          vente_id=vente_id,
+                         type_vente=type_bd,
                          articles=articles,
                          sous_total=sous_total,
                          taux_assurance=taux_assurance,
@@ -2580,6 +2582,7 @@ def recu(vente_id, type):
 
     return render_template('recu_client.html',
                          vente_id=vente_id,
+                         type_vente=type_bd,
                          articles=articles,
                          sous_total=sous_total,
                          base_remboursement=base_remboursement,
@@ -2751,6 +2754,7 @@ def recu_structure(vente_id, type):
     
     return render_template('recu_structure.html',
                          vente_id=vente_id,
+                         type_vente=type_bd,
                          articles=articles,
                          sous_total=sous_total,
                          taux_assurance=taux_assurance,

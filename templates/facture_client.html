@@ -140,6 +140,16 @@
                     </div>
                     <div class="col-5 text-end">
                         <h1 style="font-size: 18px; margin: 0;">FACTURE</h1>
+                        <!-- ⭐ Précise le type de vente (pharmacie/actes/mixte) dans
+                             l'en-tête, pour distinguer une facture pharmacie d'une
+                             facture d'actes d'un coup d'œil. -->
+                        {% if type_vente == 'pharmacie' or type_vente == 'pharma' %}
+                        <p style="margin: 1px 0 0 0; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;">PHARMACIE</p>
+                        {% elif type_vente == 'mixte' %}
+                        <p style="margin: 1px 0 0 0; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;">ACTES & PHARMACIE</p>
+                        {% elif type_vente == 'actes' %}
+                        <p style="margin: 1px 0 0 0; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;">ACTES MÉDICAUX</p>
+                        {% endif %}
                         <p style="margin: 5px 0 0 0;">N° {{ "%06d" % vente_id }}</p>
                         <p>Date: {{ date_actuelle or "" }}</p>
                     </div>
