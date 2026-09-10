@@ -11955,6 +11955,31 @@ def api_sync_protocole_externe():
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+def _parse_quantite_prescription(raw, defaut=1):
+    """Convertit la quantité (libre, saisie côté gestion_patients — ex.
+    "1 boite", "2 comprimés", "1/2") en entier exploitable pour un calcul
+    de prix. `quantite` est volontairement une colonne texte en base car ce
+    n'est pas toujours un nombre pur : un `int(...)` direct plantait toute
+    la page "Prescriptions reçues" (ValueError non rattrapée → 500, plus
+    aucune prescription visible pour la structure) dès qu'UNE seule
+    prescription portait une quantité non numérique — vécu en test."""
+    if raw is None:
+        return defaut
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        pass
+    try:
+        return int(float(raw))
+    except (TypeError, ValueError):
+        pass
+    import re
+    match = re.match(r'\s*(\d+)', str(raw))
+    if match:
+        return int(match.group(1))
+    return defaut
+
+
 @app.route('/prescriptions-recues')
 @login_required
 def prescriptions_recues():
@@ -12044,7 +12069,7 @@ def prescriptions_recues():
                     prix_unitaire = actes_dict[nom_clean]['prix']
                     pbr = actes_dict[nom_clean]['pbr']
 
-            quantite = int(p.get('quantite', 1))
+            quantite = _parse_quantite_prescription(p.get('quantite'))
             p['prix_unitaire'] = prix_unitaire
             p['pbr'] = pbr
             p['prix_total'] = prix_unitaire * quantite
@@ -12172,7 +12197,7 @@ def prescription_details(id):
                     print(f"❌ Acte non trouvé: '{nom_recherche}'")
                     match_info = "❌ Absent du catalogue de cette structure"
 
-        quantite = int(p.get('quantite', 1))
+        quantite = _parse_quantite_prescription(p.get('quantite'))
         prix_total = prix_unitaire * quantite
         
         return jsonify({
@@ -12251,7 +12276,7 @@ def prescription_ajouter_panier(id):
             if prix_info.get('trouve'):
                 prix_unitaire = prix_info.get('prix', 0)
         
-        quantite = int(p.get('quantite', 1))
+        quantite = _parse_quantite_prescription(p.get('quantite'))
         prix_total = prix_unitaire * quantite
         
         # ⭐ Mettre à jour le statut
@@ -12392,7 +12417,7 @@ def api_verifier_prix_prescriptions():
                     errors.append(f"Acte non trouvé: {nom}")
             
             if prix > 0:
-                quantite = int(p.get('quantite', 1))
+                quantite = _parse_quantite_prescription(p.get('quantite'))
                 results.append({
                     'id': p.get('id'),
                     'nom': nom,

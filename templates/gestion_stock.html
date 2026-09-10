@@ -68,7 +68,7 @@
                                         <td>{{ acte.pbr or acte.prix }} FCFA</td>
                                         <td>{{ acte.description or '-' }}</td>
                                         <td>
-                                            <button class="btn btn-sm btn-warning" onclick='editActe({{ acte.ID }}, "{{ acte.nom|replace("'", "\\'") }}", {{ acte.prix }}, {{ acte.pbr or acte.prix }}, "{{ acte.description|replace("'", "\\'")|default('') }}")'>
+                                            <button class="btn btn-sm btn-warning" onclick='editActe({{ acte.ID }}, "{{ acte.nom|replace("'", "\\'") }}", {{ acte.prix or 0 }}, {{ acte.pbr or acte.prix or 0 }}, "{{ acte.description|replace("'", "\\'")|default('') }}")'>
                                                 <i class="fas fa-edit"></i>
                                             </button>
                                             <button class="btn btn-sm btn-danger" onclick="deleteActe({{ acte.ID }})">
