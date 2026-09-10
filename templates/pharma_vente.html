@@ -121,40 +121,43 @@
                     <table class="table table-bordered" id="panierTable">
                         <thead class="table-dark">
                             <tr>
-                                <th style="width: 30%">Produit</th>
-                                <th style="width: 15%" class="text-center">Prix clinique (FCFA)</th>
-                                <th style="width: 15%" class="text-center">PBR (FCFA)</th>
-                                <th style="width: 15%" class="text-center">Quantité</th>
-                                <th style="width: 15%" class="text-end">Total (FCFA)</th>
+                                <th style="width: 25%">Produit</th>
+                                <th style="width: 13%" class="text-center">Prix clinique (FCFA)</th>
+                                <th style="width: 13%" class="text-center">PBR (FCFA)</th>
+                                <!-- ⭐ Part AMU par ligne : ce que l'assurance prend en
+                                     charge pour CE produit précis. -->
+                                <th style="width: 13%" class="text-center">Part AMU (FCFA)</th>
+                                <th style="width: 13%" class="text-center">Quantité</th>
+                                <th style="width: 13%" class="text-end">Total (FCFA)</th>
                                 <th style="width: 10%" class="text-center">Action</th>
                             </tr>
                         </thead>
                         <tbody id="panierBody">
-                            <tr><td colspan="6" class="text-center">Aucun produit dans le panier</td></tr>
+                            <tr><td colspan="7" class="text-center">Aucun produit dans le panier</td></tr>
                         </tbody>
                         <tfoot class="table-light">
                             <tr>
-                                <th colspan="4" class="text-end">Sous-total clinique :</th>
+                                <th colspan="5" class="text-end">Sous-total clinique :</th>
                                 <th id="sousTotal" class="text-end">0 FCFA</th>
                                 <th></th>
                             </tr>
                             <tr>
-                                <th colspan="4" class="text-end text-primary">Base remboursement (PBR) :</th>
+                                <th colspan="5" class="text-end text-primary">Base remboursement (PBR) :</th>
                                 <th id="baseRemboursement" class="text-end text-primary">0 FCFA</th>
                                 <th></th>
                             </tr>
                             <tr>
-                                <th colspan="4" class="text-end text-success">Prise en charge (assurance) :</th>
+                                <th colspan="5" class="text-end text-success">Prise en charge (assurance) :</th>
                                 <th id="priseEnCharge" class="text-end text-success">0 FCFA</th>
                                 <th></th>
                             </tr>
                             <tr id="priseEnCharge2Row" style="display:none;">
-                                <th colspan="4" class="text-end text-info">Prise en charge complémentaire :</th>
+                                <th colspan="5" class="text-end text-info">Prise en charge complémentaire :</th>
                                 <th id="priseEnCharge2" class="text-end text-info">0 FCFA</th>
                                 <th></th>
                             </tr>
                             <tr>
-                                <th colspan="4" class="text-end text-danger">À payer par le patient :</th>
+                                <th colspan="5" class="text-end text-danger">À payer par le patient :</th>
                                 <th id="netAPayer" class="text-end text-danger">0 FCFA</th>
                                 <th></th>
                             </tr>
@@ -1219,7 +1222,7 @@ function afficherPanier() {
     tbody.innerHTML = '';
 
     if (panier.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center">Aucun produit dans le panier</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center">Aucun produit dans le panier</td></tr>';
         document.getElementById('finaliserBtn').disabled = true;
         document.getElementById('proformaBtn').disabled = true;
         document.getElementById('sousTotal').innerHTML = '0 FCFA';
@@ -1234,6 +1237,15 @@ function afficherPanier() {
 
     let sousTotal = 0;
     let pbrTotal = 0;
+
+    // ⭐ Part AMU par ligne : même taux effectif que calculerTotal() (pas
+    // de cas P160 côté pharmacie — un seul taux pour tout le panier).
+    const typeAssurancePourPanier = sessionStorage.getItem('selectedPatientAssurance') || '';
+    const estAssurePourPanier = typeAssurancePourPanier === 'amu_cnss' || typeAssurancePourPanier === 'amu_inam' || typeAssurancePourPanier === 'amu_tns';
+    let tauxAMUPourPanier = 0;
+    if (estAssurePourPanier && assurancePrincipaleActive) {
+        tauxAMUPourPanier = parseFloat(document.getElementById('tauxVente').value) || 80;
+    }
 
     panier.forEach((item, index) => {
         const prix = item.prix;
@@ -1254,7 +1266,7 @@ function afficherPanier() {
         cellPrix.className = 'text-center';
         cellPrix.style.verticalAlign = 'middle';
         cellPrix.innerHTML = `
-            <input type="number" class="form-control form-control-sm text-center" 
+            <input type="number" class="form-control form-control-sm text-center"
                    value="${prix}" style="width: 100px; display: inline-block;"
                    onchange="modifierPrix(${index}, this.value)">
         `;
@@ -1269,7 +1281,20 @@ function afficherPanier() {
             cellPBR.innerHTML = `<span class="badge bg-primary">${pbr.toLocaleString()} F</span>`;
         }
 
-        const cellQte = row.insertCell(3);
+        // ⭐ Part AMU de cette ligne précise
+        const cellPartAMU = row.insertCell(3);
+        cellPartAMU.className = 'text-center';
+        cellPartAMU.style.verticalAlign = 'middle';
+        let partAMULigne = 0;
+        if (item.prise_en_charge_amu && pbr > 0 && tauxAMUPourPanier > 0) {
+            const baseLigne = Math.min(prix, pbr) * item.quantite;
+            partAMULigne = (baseLigne * tauxAMUPourPanier) / 100;
+        }
+        cellPartAMU.innerHTML = partAMULigne > 0
+            ? `<span class="badge bg-success">${Math.round(partAMULigne).toLocaleString()} F</span>`
+            : `<span class="text-muted">-</span>`;
+
+        const cellQte = row.insertCell(4);
         cellQte.className = 'text-center';
         cellQte.style.verticalAlign = 'middle';
         cellQte.innerHTML = `
@@ -1282,12 +1307,12 @@ function afficherPanier() {
             </div>
         `;
 
-        const cellTotal = row.insertCell(4);
+        const cellTotal = row.insertCell(5);
         cellTotal.className = 'text-end fw-bold';
         cellTotal.style.verticalAlign = 'middle';
         cellTotal.innerHTML = `${total.toLocaleString()} FCFA`;
 
-        const cellAction = row.insertCell(5);
+        const cellAction = row.insertCell(6);
         cellAction.className = 'text-center';
         cellAction.style.verticalAlign = 'middle';
         cellAction.innerHTML = `
