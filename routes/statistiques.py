@@ -111,7 +111,12 @@ def api_assurances_liste():
             db.func.count(Vente.id).label('count')
         ).filter(
             Vente.structure_id == structure_id,
-            Vente.statut == 'validee',
+            # ⭐ FIX : statut NULL = vente active, comme partout ailleurs
+            # dans le code (ex: "statut IS NULL OR statut != 'annulee'") —
+            # l'INSERT de /api/ventes/actes ne renseigne pas cette colonne,
+            # donc une vente d'actes valide a très souvent statut=NULL.
+            # Une égalité stricte à 'validee' excluait donc ces ventes.
+            or_(Vente.statut == 'validee', Vente.statut.is_(None)),
             Vente.assurance2_nom != None,
             Vente.assurance2_nom != '',
             Vente.assurance2_nom != 'Aucune'
@@ -331,7 +336,9 @@ def _ventes_filtrees(structure_id, periode, date_debut_str, date_fin_str,
         Vente.structure_id == structure_id,
         Vente.date_vente >= debut,
         Vente.date_vente <= fin,
-        Vente.statut == 'validee'
+        # ⭐ FIX : statut NULL = vente active (même convention que le reste
+        # du code) — voir le commentaire détaillé plus haut.
+        or_(Vente.statut == 'validee', Vente.statut.is_(None))
     )
 
     # Filtrer par catégorie d'actes
@@ -1115,7 +1122,14 @@ def bordereau_assurance():
         Vente.structure_id == structure_id,
         Vente.date_vente >= debut,
         Vente.date_vente <= fin,
-        Vente.statut == 'validee',
+        # ⭐ FIX : statut NULL = vente active (même convention que le reste
+        # du code, ex: "statut IS NULL OR statut != 'annulee'") — l'INSERT
+        # de /api/ventes/actes ne renseignait pas cette colonne, donc une
+        # vente d'actes valide se retrouvait souvent avec statut=NULL. Une
+        # égalité stricte à 'validee' excluait ces ventes, ce qui donnait
+        # "Aucune vente pour cette compagnie" sur le bordereau alors que de
+        # vraies ventes existaient bien pour la période.
+        or_(Vente.statut == 'validee', Vente.statut.is_(None)),
     )
     if est_principale:
         query = query.filter(Patient.type_assurance.ilike(f'%{assurance_code}%'))

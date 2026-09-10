@@ -6881,18 +6881,19 @@ def api_add_acte_vente():
         # 🔥 MODIFIER LA REQUÊTE SQL POUR AJOUTER LE CHAMP
         result = db.execute_query("""
             INSERT INTO ventes (
-                patient_id, 
-                patient_nom, 
-                structure_id, 
-                type, 
-                sous_total, 
-                prise_en_charge, 
-                net_a_payer, 
-                mode_paiement, 
-                taux_assurance, 
-                date_vente, 
+                patient_id,
+                patient_nom,
+                structure_id,
+                type,
+                sous_total,
+                prise_en_charge,
+                net_a_payer,
+                mode_paiement,
+                taux_assurance,
+                date_vente,
                 actes,
                 created_by_nom,
+                statut,
                 assurances,
                 assurance2_nom,
                 taux_assurance2,
@@ -6908,7 +6909,7 @@ def api_add_acte_vente():
                 taux_aide,
                 aide_hospitaliere
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             patient_id,
@@ -8911,8 +8912,14 @@ def payer_facture_assurance(facture_id):
             return jsonify({'success': False, 'error': 'Facture non trouvee'}), 404
 
         f = facture[0]
-        deja_rembourse = float(f.get('montant_rembourse', 0))
-        total_facture = float(f.get('montant_total', 0))
+        # ⭐ FIX : f.get(cle, 0) ne renvoie 0 que si la clé est absente, pas
+        # si sa valeur est NULL en base — cas normal d'une facture jamais
+        # remboursée (montant_rembourse NULL par défaut avant tout premier
+        # encaissement). float(None) levait une TypeError -> 500, donnant
+        # l'impression que "encaisser une assurance ne marche pas" dès le
+        # tout premier encaissement d'une facture fraîchement générée.
+        deja_rembourse = float(f.get('montant_rembourse') or 0)
+        total_facture = float(f.get('montant_total') or 0)
 
         if montant > (total_facture - deja_rembourse):
             return jsonify({'success': False, 'error': f'Montant depasse le solde restant'}), 400
