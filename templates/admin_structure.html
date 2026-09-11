@@ -144,6 +144,7 @@
                                 </tbody>
                             </table>
                         </div>
+                        <nav><ul class="pagination justify-content-center" id="actesPagination"></ul></nav>
                     </div>
                 </div>
             </div>
@@ -186,6 +187,7 @@
                     </tbody>
                 </table>
             </div>
+            <nav><ul class="pagination justify-content-center" id="produitsPagination"></ul></nav>
         </div>
     </div>
 </div>
@@ -432,15 +434,62 @@
 </div>
 
 <script>
+// ========== PAGINATION PARTAGÉE (actes + produits) ==========
+// 🔥 Les 2 tableaux (jusqu'à 750+ produits, 400+ actes) étaient rendus EN
+// ENTIER d'un coup. Pire : le rendu produits faisait tbody.innerHTML += ...
+// DANS une boucle — chaque += reparse la table ENTIÈRE construite jusque-là
+// avant d'ajouter la ligne suivante (coût O(n²), pas O(n)). Pour 750
+// produits, cela pouvait geler complètement l'onglet du navigateur pendant
+// plusieurs secondes (l'horloge de la barre de navigation s'arrêtait aussi
+// — un seul thread JS, un gros calcul synchrone bloque tout) — vécu et
+// confirmé par le patron : réduire le nombre d'articles rendait le
+// chargement plus rapide. Fix : construction en un seul .map().join('')
+// (O(n)) + pagination (50 lignes affichées à la fois) pour que le DOM
+// construit reste petit, quelle que soit la taille du catalogue.
+const ITEMS_PAR_PAGE = 50;
+
+function renderPagination(containerId, totalItems, pageCourante, onPageClick) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const totalPages = Math.ceil(totalItems / ITEMS_PAR_PAGE);
+    if (totalPages <= 1) { container.innerHTML = ''; return; }
+
+    let html = `<li class="page-item ${pageCourante === 1 ? 'disabled' : ''}">
+                    <a class="page-link" href="#" data-page="${pageCourante - 1}">«</a>
+                 </li>`;
+    const startPage = Math.max(1, pageCourante - 2);
+    const endPage = Math.min(totalPages, startPage + 4);
+    for (let i = startPage; i <= endPage; i++) {
+        html += `<li class="page-item ${i === pageCourante ? 'active' : ''}">
+                    <a class="page-link" href="#" data-page="${i}">${i}</a>
+                 </li>`;
+    }
+    html += `<li class="page-item ${pageCourante === totalPages ? 'disabled' : ''}">
+                <a class="page-link" href="#" data-page="${pageCourante + 1}">»</a>
+             </li>`;
+    container.innerHTML = html;
+    container.querySelectorAll('a.page-link').forEach(a => {
+        a.addEventListener('click', (e) => {
+            e.preventDefault();
+            const page = parseInt(a.dataset.page);
+            if (page >= 1 && page <= totalPages) onPageClick(page);
+        });
+    });
+}
+
 // ========== CHARGEMENT ACTES (JS, après coup — voir chargerActesAdmin) ==========
 let tousLesActes = [];
+let actesFiltres = [];
+let actesPageCourante = 1;
 
 function chargerActesAdmin() {
     return fetch('/api/actes/liste-admin')
         .then(r => r.json())
         .then(data => {
             tousLesActes = data || [];
-            afficherActesAdmin(tousLesActes);
+            actesFiltres = tousLesActes;
+            actesPageCourante = 1;
+            renderActesPage();
         })
         .catch(error => {
             console.error('Erreur chargement actes:', error);
@@ -448,13 +497,16 @@ function chargerActesAdmin() {
         });
 }
 
-function afficherActesAdmin(actes) {
+function renderActesPage() {
     const tbody = document.getElementById('actesList');
-    if (!actes || actes.length === 0) {
+    if (!actesFiltres || actesFiltres.length === 0) {
         tbody.innerHTML = '<tr><td colspan="7" class="text-center">Aucun acte</td></tr>';
+        renderPagination('actesPagination', 0, 1, () => {});
         return;
     }
-    tbody.innerHTML = actes.map(a => {
+    const start = (actesPageCourante - 1) * ITEMS_PAR_PAGE;
+    const page = actesFiltres.slice(start, start + ITEMS_PAR_PAGE);
+    tbody.innerHTML = page.map(a => {
         const nomEsc = (a.nom || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
         const descEsc = (a.description || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
         const prix = a.prix || 0;
@@ -478,12 +530,17 @@ function afficherActesAdmin(actes) {
             </tr>
         `;
     }).join('');
+    renderPagination('actesPagination', actesFiltres.length, actesPageCourante, (page) => {
+        actesPageCourante = page;
+        renderActesPage();
+    });
 }
 
 function filterActes() {
     const filter = document.getElementById('searchActe').value.toLowerCase();
-    const filtered = tousLesActes.filter(a => (a.nom || '').toLowerCase().includes(filter));
-    afficherActesAdmin(filtered);
+    actesFiltres = tousLesActes.filter(a => (a.nom || '').toLowerCase().includes(filter));
+    actesPageCourante = 1;
+    renderActesPage();
 }
 
 function clearSearchActe() {
@@ -493,13 +550,17 @@ function clearSearchActe() {
 
 // ========== GESTION PRODUITS & STOCKS ==========
 let tousLesProduits = [];
+let produitsFiltres = [];
+let produitsPageCourante = 1;
 
 function chargerProduitsAdmin() {
     fetch('/api/produits')
         .then(r => r.json())
-        .then(data => { 
-            tousLesProduits = data; 
-            afficherProduitsAdmin(data); 
+        .then(data => {
+            tousLesProduits = data;
+            produitsFiltres = data;
+            produitsPageCourante = 1;
+            renderProduitsPage();
         })
         .catch(error => {
             console.error('Erreur:', error);
@@ -508,19 +569,26 @@ function chargerProduitsAdmin() {
 }
 
 function afficherProduitsAdmin(produits) {
+    produitsFiltres = produits || [];
+    produitsPageCourante = 1;
+    renderProduitsPage();
+}
+
+function renderProduitsPage() {
     const tbody = document.getElementById('produitsAdminList');
-    tbody.innerHTML = '';
-    
-    if (!produits || produits.length === 0) { 
-        tbody.innerHTML = '<tr><td colspan="10" class="text-center">Aucun produit</td></tr>'; 
-        return; 
+    if (!produitsFiltres || produitsFiltres.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center">Aucun produit</td></tr>';
+        renderPagination('produitsPagination', 0, 1, () => {});
+        return;
     }
-    
-    produits.forEach(p => {
+
+    const start = (produitsPageCourante - 1) * ITEMS_PAR_PAGE;
+    const page = produitsFiltres.slice(start, start + ITEMS_PAR_PAGE);
+    tbody.innerHTML = page.map(p => {
         const stockClass = p.quantite_stock <= p.seuil_alerte ? 'text-danger fw-bold' : '';
         const marge = (p.prix_vente || 0) - (p.prix_achat || 0);
         const margeClass = marge > 0 ? 'text-success' : 'text-danger';
-        
+
         let peremptionClass = '';
         let peremptionText = p.date_peremption || '-';
         if (p.date_peremption) {
@@ -534,8 +602,8 @@ function afficherProduitsAdmin(produits) {
                 peremptionText += ' ⚠️ Bientôt';
             }
         }
-        
-        tbody.innerHTML += `
+
+        return `
             <tr>
                 <td><strong>${p.nom}</strong></td>
                 <td>${parseInt(p.prix_vente || 0).toLocaleString()} F</td>
@@ -559,18 +627,23 @@ function afficherProduitsAdmin(produits) {
                 </td>
             </tr>
         `;
+    }).join('');
+    renderPagination('produitsPagination', produitsFiltres.length, produitsPageCourante, (page) => {
+        produitsPageCourante = page;
+        renderProduitsPage();
     });
 }
 
 function filterProduitsAdmin() {
     const search = document.getElementById('searchProduitAdmin').value.toLowerCase();
-    const filtered = tousLesProduits.filter(p => p.nom.toLowerCase().includes(search));
-    afficherProduitsAdmin(filtered);
+    produitsFiltres = tousLesProduits.filter(p => p.nom.toLowerCase().includes(search));
+    produitsPageCourante = 1;
+    renderProduitsPage();
 }
 
-function clearSearchProduitAdmin() { 
-    document.getElementById('searchProduitAdmin').value = ''; 
-    afficherProduitsAdmin(tousLesProduits); 
+function clearSearchProduitAdmin() {
+    document.getElementById('searchProduitAdmin').value = '';
+    afficherProduitsAdmin(tousLesProduits);
 }
 
 function showAddProduitModal() {
