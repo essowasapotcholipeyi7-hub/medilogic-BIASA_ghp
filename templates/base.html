@@ -1628,6 +1628,10 @@
         width: 36px;
         height: 36px;
         font-size: 16px;
+        /* 🔥 .navbar a z-index:1000 et couvre tout le haut de l'écran sur
+           mobile (le logo de marque tombait exactement sur ce bouton) — le
+           bouton restait donc invisible/inaccessible en dessous. */
+        z-index: 1001;
     }
 
     .sidebar:not(.hidden) ~ .global-toggle-btn {
@@ -1636,6 +1640,12 @@
 
     .sidebar.hidden ~ .global-toggle-btn {
         left: 10px;
+    }
+
+    /* 🔥 Fait de la place au bouton toggle (coin haut-gauche, fixed) pour
+       qu'il ne soit plus visuellement sous le logo. */
+    .navbar .container {
+        padding-left: 50px;
     }
 }
 
@@ -1884,12 +1894,7 @@
 
 {% if session.user_id %}
 <div class="app-wrapper">
-    
-    <!-- ===== BOUTON TOGGLE GLOBAL (toujours visible) ===== -->
-    <button class="global-toggle-btn" onclick="toggleSidebar()" title="Afficher/Masquer le menu" id="globalToggleBtn">
-        <i class="fas fa-bars" id="globalToggleIcon"></i>
-    </button>
-    
+
     <!-- ===== SIDEBAR ===== -->
     <div class="sidebar" id="sidebar">
         
@@ -1914,7 +1919,18 @@
             <div style="font-size: 9px; margin-top: 2px;">V10</div>
         </div>
     </div>
-    
+
+    <!-- ===== BOUTON TOGGLE GLOBAL (toujours visible) ===== -->
+    <!-- 🔥 Placé APRÈS .sidebar (position:fixed, donc sans effet sur la mise
+         en page flex de .app-wrapper) pour que le sélecteur CSS
+         ".sidebar:not(.hidden) ~ .global-toggle-btn" fonctionne enfin — le
+         combinateur ~ ne matche que des frères qui suivent dans le DOM ;
+         placé avant .sidebar comme avant, cette règle ne s'appliquait
+         jamais (mort depuis le début). -->
+    <button class="global-toggle-btn" onclick="toggleSidebar()" title="Afficher/Masquer le menu" id="globalToggleBtn">
+        <i class="fas fa-bars" id="globalToggleIcon"></i>
+    </button>
+
     <!-- ===== OVERLAY (mobile) ===== -->
     <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
     
