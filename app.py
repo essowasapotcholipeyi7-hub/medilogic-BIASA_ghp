@@ -5803,29 +5803,6 @@ def api_add_produit():
         
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
-@app.route('/api/produits/<int:produit_id>/stock', methods=['PUT'])
-@login_required
-def api_update_stock(produit_id):
-    try:
-        data = request.json
-        structure_id = session.get('structure_id')
-        quantite = data.get('quantite')
-        operation = data.get('operation', 'vendre')  # vendre, ajouter, retirer
-        
-        if operation == 'vendre':
-            sql = "UPDATE produits SET quantite_stock = quantite_stock - %s WHERE id = %s AND structure_id = %s"
-        elif operation == 'ajouter':
-            sql = "UPDATE produits SET quantite_stock = quantite_stock + %s WHERE id = %s AND structure_id = %s"
-        else:
-            sql = "UPDATE produits SET quantite_stock = %s WHERE id = %s AND structure_id = %s"
-        
-        db.execute_query(sql, (quantite, produit_id, structure_id))
-
-        return jsonify({'success': True})
-
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
 def _log_mouvement_stock(structure_id, produit_id, produit_nom, type_mouvement,
                           delta, stock_apres, reference_type=None, reference_id=None,
                           user_nom=None):
@@ -6460,59 +6437,6 @@ def api_approvisionner_produit(id):
         
     except Exception as e:
         print(f"❌ Erreur: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/produits/<int:id>/stock', methods=['PUT'])
-@login_required
-def api_modifier_stock(id):
-    """Modifier le stock d'un produit (ajouter ou retirer) dans Google Sheets"""
-    try:
-        data = request.json
-        structure_id = session.get('structure_id')
-        quantite = data.get('quantite', 0)
-        operation = data.get('operation', 'ajouter')
-        
-        print(f"📦 Modification stock produit ID: {id}")
-        print(f"   Quantité: {quantite}, Opération: {operation}")
-        
-        if not quantite or quantite <= 0:
-            return jsonify({'success': False, 'error': 'Quantité invalide'}), 400
-        
-        # 🔥 Lire depuis Google Sheets
-        worksheet = sheets_helper.spreadsheet.worksheet("produits")
-        
-        # Trouver le produit par ID (colonne A)
-        cell = worksheet.find(str(id), in_column=1)
-        if not cell:
-            return jsonify({'success': False, 'error': 'Produit non trouvé'}), 404
-        
-        row_num = cell.row
-        current_row = worksheet.row_values(row_num)
-        
-        # Colonnes: A=ID, B=nom, C=prix_vente, D=quantite_stock, E=seuil_alerte, F=unite, G=structure_id
-        stock_actuel = int(current_row[3]) if len(current_row) > 3 else 0
-        nom_produit = current_row[1] if len(current_row) > 1 else 'Produit'
-        
-        print(f"   Stock actuel de {nom_produit}: {stock_actuel}")
-        
-        if operation == 'retirer':
-            if quantite > stock_actuel:
-                return jsonify({'success': False, 'error': f'Stock insuffisant. Stock: {stock_actuel}'}), 400
-            nouvelle_quantite = stock_actuel - quantite
-        else:
-            nouvelle_quantite = stock_actuel + quantite
-        
-        # Mettre à jour dans Sheets (colonne D = quantite_stock, index 4)
-        worksheet.update_cell(row_num, 4, nouvelle_quantite)
-        
-        print(f"   ✅ Nouveau stock: {nouvelle_quantite}")
-        
-        return jsonify({'success': True, 'stock': nouvelle_quantite})
-        
-    except Exception as e:
-        print(f"❌ Erreur modification stock: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -7768,8 +7692,11 @@ def annuler_vente(vente_id):
             net_a_payer = float(v[6]) if len(v) > 6 else 0
             sous_total = float(v[4]) if len(v) > 4 else 0
         
-        # ========== POUR LA PHARMACIE : RESTOCKER DANS SHEETS ==========
-        if vente_type in ['pharma', 'pharmacie'] and produits_data:
+        # ========== POUR LA PHARMACIE (ET MIXTE) : RESTOCKER DANS SHEETS ==========
+        # 🔥 'mixte' (actes + produits, créée via /api/proformas/convertir) doit
+        # aussi restocker ses produits — sinon une vente mixte annulée ne
+        # touchait jamais le stock des produits qu'elle contenait.
+        if vente_type in ['pharma', 'pharmacie', 'mixte'] and produits_data:
             if isinstance(produits_data, str):
                 produits_data = json.loads(produits_data)
             
