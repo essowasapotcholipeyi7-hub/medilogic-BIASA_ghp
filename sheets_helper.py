@@ -38,9 +38,16 @@ class SheetsHelper:
         self.structure_prefix = None
         self.structure_id = None
         self._prix_cache = {}  # ⭐ Cache pour les prix
-        self._cache_duration = 300  # 5 minute
-        
+        self._prix_cache_duration = 300  # 5 minutes
+
         # CACHE pour réduire les appels API
+        # ⚠️ Ce _cache_duration réutilisait le MÊME nom que celui de
+        # _prix_cache juste au-dessus, l'écrasant silencieusement : le
+        # cache des prix (get_prix_produit/get_prix_acte), censé durer 5
+        # minutes, ne durait en réalité que 10 secondes — un des
+        # contributeurs à la lenteur perçue sur les pages qui interrogent
+        # les prix en boucle (prescriptions, proformas...). Séparés en 2
+        # attributs distincts pour de bon.
         self._cache = {}
         self._cache_duration = 10  # secondes
         self._batch_operations = []
@@ -80,31 +87,36 @@ class SheetsHelper:
         """
         Récupère les médicaments depuis Google Sheets
         Feuille : struct_{structure_id}_produits
+
+        ⚠️ Utilisait auparavant self.client.open_by_key(...) — un aller-retour
+        supplémentaire qui rouvre TOUT le classeur (métadonnées de toutes
+        les feuilles) en plus de la lecture elle-même, alors que
+        self.spreadsheet est déjà ouvert une fois pour toutes à l'init et
+        réutilisé partout ailleurs dans cette classe. Mesuré : ~300ms de
+        plus par appel pour rien, et strictement AUCUNE mise en cache (donc
+        payé à CHAQUE appel) — contrairement à get_all_records(), déjà mis
+        en cache. get_medicamentos() étant appelée directement à chaque
+        ouverture de Prescriptions reçues, en plus d'être le chemin lent de
+        get_prix_produit() à chaque cache miss, c'était un des plus gros
+        contributeurs à la lenteur perçue de l'appli. Passe maintenant par
+        get_all_records() (même worksheet déjà ouvert, même cache 10s).
         """
         try:
             if not self.enabled:
                 print("⚠️ Google Sheets désactivé")
                 return []
-            
+
             if not structure_id:
                 print("⚠️ structure_id manquant")
                 return []
-            
-            # Récupérer la feuille
-            spreadsheet = self.client.open_by_key(self.spreadsheet_id)
+
             sheet_name = f"struct_{structure_id}_produits"
-            
             print(f"📄 Recherche de la feuille: {sheet_name}")
-            
-            try:
-                worksheet = spreadsheet.worksheet(sheet_name)
-            except Exception as e:
-                print(f"❌ Feuille '{sheet_name}' non trouvée: {e}")
-                return []
-            
-            # Récupérer toutes les lignes
-            records = worksheet.get_all_records()
-            
+
+            # get_all_records() loggue déjà l'absence de feuille / le repli
+            # miroir — rien à faire ici si elle renvoie [].
+            records = self.get_all_records(sheet_name, use_prefix=False)
+
             result = []
             for row in records:
                 # Vérifier que le médicament a un nom
@@ -185,7 +197,7 @@ class SheetsHelper:
         cache_key = f"produit_{structure_id}_{nom_produit.lower().strip()}"
         if cache_key in self._prix_cache:
             cached_data, timestamp = self._prix_cache[cache_key]
-            if time.time() - timestamp < self._cache_duration:
+            if time.time() - timestamp < self._prix_cache_duration:
                 print(f"💾 Cache hit: {nom_produit}")
                 return cached_data
         
@@ -220,7 +232,7 @@ class SheetsHelper:
         cache_key = f"acte_{structure_id}_{nom_acte.lower().strip()}"
         if cache_key in self._prix_cache:
             cached_data, timestamp = self._prix_cache[cache_key]
-            if time.time() - timestamp < self._cache_duration:
+            if time.time() - timestamp < self._prix_cache_duration:
                 print(f"💾 Cache hit: {nom_acte}")
                 return cached_data
         
