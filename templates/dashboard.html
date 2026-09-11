@@ -326,8 +326,14 @@ function chargerDashboard() {
         .then(data => {
             document.getElementById('actesToday').innerText = data.actes_today || 0;
             document.getElementById('pharmaToday').innerText = data.pharma_today || 0;
-            document.getElementById('caNet').innerHTML = (data.ca_net_today || 0).toLocaleString();
-            document.getElementById('caBrut').innerHTML = (data.ca_brut_today || 0).toLocaleString();
+            // 🔥 toLocaleString() SANS locale explicite dépend des données
+            // ICU du navigateur — absentes/incomplètes sur certains
+            // navigateurs mobiles, ça retombe alors sur un simple
+            // toString() : ni séparateur de milliers, ni arrondi (le
+            // "1414714.20" collé signalé par le patron). 'fr-FR' + arrondi
+            // en amont pour un FCFA propre partout : "1 414 714".
+            document.getElementById('caNet').innerHTML = Math.round(data.ca_net_today || 0).toLocaleString('fr-FR');
+            document.getElementById('caBrut').innerHTML = Math.round(data.ca_brut_today || 0).toLocaleString('fr-FR');
         })
         .catch(err => console.error('Erreur stats:', err));
     
@@ -335,8 +341,8 @@ function chargerDashboard() {
     fetch('/api/assurances/stats')
         .then(r => r.json())
         .then(data => {
-            document.getElementById('totalPriseEnCharge').innerHTML = (data.total_prise_en_charge || 0).toLocaleString();
-            document.getElementById('totalPriseEnCharge2').innerHTML = (data.total_prise_en_charge2 || 0).toLocaleString();
+            document.getElementById('totalPriseEnCharge').innerHTML = Math.round(data.total_prise_en_charge || 0).toLocaleString('fr-FR');
+            document.getElementById('totalPriseEnCharge2').innerHTML = Math.round(data.total_prise_en_charge2 || 0).toLocaleString('fr-FR');
         })
         .catch(err => console.error('Erreur assurances:', err));
     
@@ -378,7 +384,7 @@ function chargerDashboard() {
                                 </div>
                             </div>
                             <div class="text-end">
-                                <div class="fw-bold text-success">${Math.round(act.montant).toLocaleString()} FCFA</div>
+                                <div class="fw-bold text-success">${Math.round(act.montant).toLocaleString('fr-FR')} FCFA</div>
                                 <button class="btn btn-sm btn-outline-secondary rounded-pill mt-1" onclick="reimprimer(${act.id}, '${act.type}')">
                                     <i class="fas fa-print me-1"></i> Réimprimer
                                 </button>
