@@ -469,8 +469,72 @@
         }
 
         @media (max-width: 992px) {
+            /* 🔥 Restait complètement invisible en dessous de 992px
+               (display:none ici + classes Bootstrap d-none d-lg-block dans
+               le HTML) — demandé explicitement par le patron : affiché en
+               défilement horizontal (tactile) sur mobile/tablette plutôt
+               que masqué, puisque le clic sur chaque item ouvre déjà son
+               mega-menu en JS (pas seulement au survol souris — voir plus
+               bas "TOP NAV - GESTION DES MENUS").*/
             .top-nav {
+                display: block;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+                /* .navbar peut faire 1 ou 2 lignes de haut sur mobile
+                   (badge de structure ou non) — un top:72px fixe (pensé
+                   pour le desktop, toujours 1 ligne) ferait chevaucher
+                   .top-nav sous .navbar pendant le défilement dès que la
+                   structure a un nom/logo. --navbar-height posée en JS
+                   (mesure la vraie hauteur au chargement/redimensionnement
+                   — voir "AJUSTER LA POSITION COLLANTE DU TOP-NAV") plutôt
+                   qu'une valeur statique fixe.
+                   ⚠️ Reste position:sticky (pas static) : un static ici
+                   change le contexte d'empilement des .mega-menu enfants
+                   et les fait repasser DERRIÈRE le contenu de la page,
+                   invisibles bien qu'ouverts — vécu en test. */
+                top: var(--navbar-height, 72px);
+                /* 🔥 backdrop-filter (comme transform/filter/perspective)
+                   fait de CET élément le "containing block" de ses
+                   descendants position:fixed — un .mega-menu fixed reste
+                   alors contenu par .top-nav (et donc SOUMIS à son
+                   overflow-x:auto, qui clippe aussi l'axe Y, voir plus
+                   bas) au lieu d'échapper jusqu'au viewport comme prévu.
+                   Coordonnées JS recalculées en conséquence tant que
+                   backdrop-filter restait actif ne suffisaient pas — le
+                   clip lui-même persistait. Désactivé sur mobile
+                   uniquement (l'effet de flou en arrière-plan de la barre
+                   ne change rien à l'usage tactile). */
+                backdrop-filter: none;
+            }
+
+            .top-nav::-webkit-scrollbar {
                 display: none;
+            }
+
+            .top-nav .nav-group {
+                flex-wrap: nowrap;
+                width: max-content;
+                min-width: 100%;
+            }
+
+            /* ⚠️ .top-nav a overflow-x:auto (barre défilante) — sur CET
+               axe X seulement en apparence : la spec CSS force overflow-y
+               à se comporter comme l'axe X dès qu'un seul des deux n'est
+               pas "visible" (impossible d'avoir un axe qui défile et
+               l'autre qui déborde librement sur le MÊME élément). Un
+               .mega-menu resté position:absolute (donc contenu par ce
+               conteneur) se retrouvait donc invisible — rogné hors de la
+               zone visible malgré opacity:1/visibility:visible — vécu en
+               test. position:fixed l'en fait sortir complètement (plus
+               contenu par .top-nav du tout) ; top/left recalculés en JS à
+               l'ouverture (voir "TOP NAV - GESTION DES MENUS") d'après la
+               position réelle de l'item cliqué à l'écran. */
+            .top-nav .mega-menu {
+                position: fixed;
+                max-width: 92vw;
+                max-height: 70vh;
+                overflow-y: auto;
             }
         }
 
@@ -1742,7 +1806,7 @@
      TOP NAV - CONSERVÉE
      ============================================ -->
 {% if session.user_id %}
-<div class="top-nav d-none d-lg-block">
+<div class="top-nav">
     <ul class="nav-group">
         <li class="nav-item nav-item-accueil">
             <a class="nav-link-top" href="{{ url_for('dashboard') }}">
@@ -2265,6 +2329,29 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // ============================================
+// AJUSTER LA POSITION COLLANTE DU TOP-NAV
+// ============================================
+// 🔥 .navbar fait 1 ou 2 lignes de haut sur mobile selon que la structure a
+// un nom/logo affiché ou non (badge centré qui peut passer à la ligne) —
+// un top fixe en CSS (pensé pour le desktop, toujours 1 ligne) ferait
+// chevaucher .top-nav sous .navbar pendant le défilement dès que la
+// structure affiche son badge. Mesuré en JS et pilote la variable CSS
+// --navbar-height utilisée par .top-nav { top: var(--navbar-height) }.
+function ajusterHauteurNavbar() {
+    const navbar = document.querySelector('nav.navbar');
+    if (navbar) {
+        document.documentElement.style.setProperty('--navbar-height', navbar.offsetHeight + 'px');
+    }
+}
+document.addEventListener('DOMContentLoaded', ajusterHauteurNavbar);
+window.addEventListener('resize', ajusterHauteurNavbar);
+// Le badge de structure (logo + nom) se charge en JS après coup (fetch
+// asynchrone plus haut) et peut faire passer la navbar de 1 à 2 lignes
+// après ce premier calcul — se réajuste une fois le logo/texte en place.
+window.addEventListener('load', ajusterHauteurNavbar);
+setTimeout(ajusterHauteurNavbar, 1000);
+
+// ============================================
 // TOP NAV - GESTION DES MENUS
 // ============================================
 document.addEventListener('DOMContentLoaded', function() {
@@ -2289,6 +2376,19 @@ document.addEventListener('DOMContentLoaded', function() {
                     item.classList.remove('open');
                 } else {
                     item.classList.add('open');
+                    // 🔥 Sur mobile/tablette, .mega-menu est position:fixed
+                    // (voir CSS — échappe au clip vertical de la barre
+                    // défilante .top-nav) : plus positionné par rapport à
+                    // .nav-item, donc calculé ici d'après la position
+                    // réelle du lien à l'écran à l'instant du clic.
+                    if (window.innerWidth <= 992 && menu) {
+                        const rect = link.getBoundingClientRect();
+                        const menuWidth = Math.min(menu.offsetWidth || 220, window.innerWidth * 0.92);
+                        let left = rect.left + rect.width / 2 - menuWidth / 2;
+                        left = Math.max(8, Math.min(left, window.innerWidth - menuWidth - 8));
+                        menu.style.top = rect.bottom + 'px';
+                        menu.style.left = left + 'px';
+                    }
                 }
             });
         }
