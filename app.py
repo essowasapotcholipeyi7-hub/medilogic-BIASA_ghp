@@ -1656,7 +1656,14 @@ def actes_vente():
                             'id': acte_trouve['ID'],
                             'nom': p.medicament,
                             'prix': float(p.prix_total) if p.prix_total else 0,
-                            'quantite': int(p.quantite) if p.quantite else 1,
+                            # 🔥 Même bug que côté pharma (voir pharma_vente()) :
+                            # quantite est un texte libre ("1 boite") côté
+                            # gestion_patients — int() direct crashait toute
+                            # la boucle (try/except global, pas par
+                            # prescription), empêchant le panier de se
+                            # remplir pour TOUTES les prescriptions dès qu'une
+                            # seule avait une quantité non numérique.
+                            'quantite': _parse_quantite_prescription(p.quantite),
                             'pbr': float(p.pbr) if p.pbr else float(p.prix_total or 0),
                             'prescription_id': p.id,
                             'prise_en_charge_amu': True,
@@ -1795,7 +1802,17 @@ def pharma_vente():
                             'id': produit_trouve['ID'],  # ⭐ Utiliser l'ID du produit (pas celui de la prescription)
                             'nom': p.medicament,
                             'prix': float(p.prix_total) if p.prix_total else 0,
-                            'quantite': int(p.quantite) if p.quantite else 1,
+                            # 🔥 quantite est un texte libre côté gestion_patients
+                            # (ex. "1 boite") — un int() direct levait une
+                            # ValueError NON RATTRAPÉE PAR PRESCRIPTION ICI (le
+                            # try/except englobe toute la boucle, pas chaque
+                            # prescription individuellement) : UNE SEULE
+                            # prescription avec une quantité non numérique
+                            # faisait avorter le chargement automatique pour
+                            # TOUTES les prescriptions du panier, qui
+                            # n'arrivaient donc jamais dans le panier de vente
+                            # pharmacie — vécu en test (#187/#188, "1 boite").
+                            'quantite': _parse_quantite_prescription(p.quantite),
                             'pbr': float(p.pbr) if p.pbr else float(p.prix_total or 0),
                             'prescription_id': p.id,
                             'dosage': p.dosage or '',
