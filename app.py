@@ -3335,12 +3335,6 @@ def api_delete_acte(acte_id):
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/admin/produits/<int:produit_id>', methods=['DELETE'])
-@login_required
-def api_delete_produit(produit_id):
-    # À implémenter
-    return jsonify({'success': True})
-
 @app.route('/api/admin/structure', methods=['PUT'])
 @login_required
 @admin_required
@@ -5826,11 +5820,33 @@ def api_update_stock(produit_id):
             sql = "UPDATE produits SET quantite_stock = %s WHERE id = %s AND structure_id = %s"
         
         db.execute_query(sql, (quantite, produit_id, structure_id))
-        
+
         return jsonify({'success': True})
-        
+
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+def _log_mouvement_stock(structure_id, produit_id, produit_nom, type_mouvement,
+                          delta, stock_apres, reference_type=None, reference_id=None,
+                          user_nom=None):
+    """Journalise un événement de stock (vente, réapprovisionnement,
+    annulation, ajustement, point de départ initial) dans mouvements_stock —
+    permet ensuite de répondre à "quel stock avait-on à la date T ?" dans
+    Statistiques des produits. Volontairement non bloquant : un souci de
+    journalisation ne doit jamais faire échouer la vente/l'opération de
+    stock elle-même (le mouvement Sheets, la vraie source de vérité du
+    stock, est déjà fait avant cet appel)."""
+    try:
+        db.execute_query("""
+            INSERT INTO mouvements_stock
+                (structure_id, produit_id, produit_nom, type_mouvement,
+                 quantite_delta, stock_apres, reference_type, reference_id, created_by_nom)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (structure_id, str(produit_id), produit_nom, type_mouvement,
+              delta, stock_apres, reference_type, reference_id, user_nom))
+    except Exception as e:
+        print(f"⚠️ Erreur journalisation mouvement stock ({type_mouvement}, produit {produit_id}): {e}")
+
 
 @app.route('/api/produits')
 @login_required
@@ -5844,14 +5860,13 @@ def api_get_produits():
         print(f"   Feuille: {sheet_name}")
         
         try:
-            worksheet = sheets_helper.spreadsheet.worksheet(sheet_name)
-            all_values = worksheet.get_all_values()
+            all_values = sheets_helper.get_all_values_cached(sheet_name)
             print(f"📊 Lignes brutes: {len(all_values)}")
-            
+
             if len(all_values) <= 1:
                 print("⚠️ Aucune donnée trouvée")
                 return jsonify([])
-            
+
             produits_liste = []
             for i, row in enumerate(all_values[1:], start=1):
                 if not row or len(row) < 3:
@@ -5987,6 +6002,97 @@ def api_get_produits():
         import traceback
         traceback.print_exc()
         return jsonify([]), 500
+
+
+@app.route('/api/produits/stock-a-date')
+@login_required
+def api_produits_stock_a_date():
+    """Compare, pour chaque produit, le stock à une date T choisie (fin de
+    journée) et le stock actuel — alimente le tableau "Stock à une date"
+    de Statistiques des produits. Le stock à T = stock_apres du dernier
+    mouvement de mouvements_stock à date_mouvement <= T (une seule requête
+    groupée, pas une par produit). Si la structure n'a encore aucun
+    mouvement à/avant T (date antérieure à la mise en place de ce suivi,
+    ou produit créé après T), stock_a_date vaut null et le front l'affiche
+    comme "Non disponible" plutôt que 0 (0 serait trompeur)."""
+    try:
+        structure_id = session.get('structure_id')
+        date_str = request.args.get('date', '').strip()
+
+        if date_str:
+            try:
+                date_fin = datetime.strptime(date_str, '%Y-%m-%d') + timedelta(days=1) - timedelta(seconds=1)
+            except ValueError:
+                return jsonify({'success': False, 'error': 'Date invalide (format attendu AAAA-MM-JJ)'}), 400
+        else:
+            date_fin = datetime.now()
+            date_str = date_fin.strftime('%Y-%m-%d')
+
+        # Stock actuel, en direct depuis Google Sheets (source de vérité)
+        all_values = sheets_helper.get_all_values_cached(f"struct_{structure_id}_produits")
+        stock_actuel_par_produit = {}
+        nom_par_produit = {}
+        for row in all_values[1:]:
+            if not row or len(row) < 2 or not row[0]:
+                continue
+            pid = str(row[0]).strip()
+            nom_par_produit[pid] = row[1].strip() if len(row) > 1 and row[1] else pid
+            stock_raw = row[5].strip() if len(row) > 5 and row[5] else '0'
+            try:
+                stock_actuel_par_produit[pid] = int(float(stock_raw)) if stock_raw else 0
+            except ValueError:
+                stock_actuel_par_produit[pid] = 0
+
+        # Stock à la date T : dernier mouvement connu par produit, à/avant T
+        rows = db.execute_query("""
+            SELECT DISTINCT ON (produit_id) produit_id, produit_nom, stock_apres, date_mouvement
+            FROM mouvements_stock
+            WHERE structure_id = %s AND date_mouvement <= %s
+            ORDER BY produit_id, date_mouvement DESC, id DESC
+        """, (structure_id, date_fin))
+        stock_a_date_par_produit = {}
+        for r in (rows or []):
+            pid = str(r.get('produit_id'))
+            stock_a_date_par_produit[pid] = int(r.get('stock_apres') or 0)
+            if pid not in nom_par_produit and r.get('produit_nom'):
+                nom_par_produit[pid] = r.get('produit_nom')
+
+        premiere_date_row = db.execute_query(
+            "SELECT MIN(date_mouvement) as premiere FROM mouvements_stock WHERE structure_id = %s",
+            (structure_id,)
+        )
+        premiere_date = premiere_date_row[0].get('premiere') if premiere_date_row else None
+        historique_disponible_depuis = premiere_date.strftime('%Y-%m-%d') if premiere_date else None
+
+        # Union des produits connus par l'une ou l'autre source (un produit
+        # supprimé depuis T reste visible avec son stock_actuel manquant).
+        tous_ids = set(stock_actuel_par_produit) | set(stock_a_date_par_produit)
+        result = []
+        for pid in tous_ids:
+            stock_a_date = stock_a_date_par_produit.get(pid)
+            stock_actuel = stock_actuel_par_produit.get(pid)
+            result.append({
+                'id': pid,
+                'nom': nom_par_produit.get(pid, pid),
+                'stock_a_date': stock_a_date,
+                'stock_actuel': stock_actuel,
+                'consomme': (stock_a_date - stock_actuel) if (stock_a_date is not None and stock_actuel is not None) else None
+            })
+
+        result.sort(key=lambda p: (p['nom'] or '').lower())
+
+        return jsonify({
+            'success': True,
+            'date': date_str,
+            'historique_disponible_depuis': historique_disponible_depuis,
+            'produits': result
+        })
+
+    except Exception as e:
+        print(f"❌ Erreur stock-a-date: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/produits/search')
@@ -6198,7 +6304,11 @@ def api_admin_add_produit():
         ]
         
         sheets_helper.add_record('produits', new_produit)
-        
+        stock_initial = int(data.get('quantite_stock', 0))
+        _log_mouvement_stock(structure_id, new_id, data.get('nom', ''), 'initial',
+                              stock_initial, stock_initial, reference_type='creation_produit',
+                              user_nom=session.get('user_name'))
+
         return jsonify({'success': True, 'id': new_id})
         
     except Exception as e:
@@ -6234,10 +6344,17 @@ def api_admin_update_produit(produit_id):
         # On a besoin de 15 colonnes (A à O)
         while len(current_row) < 15:
             current_row.append('')
-        
+
+        # Stock avant modification — pour journaliser l'écart si l'admin
+        # a changé la quantité en stock directement depuis ce formulaire.
+        try:
+            stock_avant = int(current_row[5]) if current_row[5] else 0
+        except (ValueError, TypeError):
+            stock_avant = 0
+
         # 🔥 Mettre à jour toutes les colonnes
-        # A=0: ID (ne pas toucher), B=1: nom, C=2: prix_vente, D=3: pbr, 
-        # E=4: prix_achat, F=5: quantite_stock, G=6: seuil_alerte, 
+        # A=0: ID (ne pas toucher), B=1: nom, C=2: prix_vente, D=3: pbr,
+        # E=4: prix_achat, F=5: quantite_stock, G=6: seuil_alerte,
         # H=7: unite, I=8: date_peremption, J=9: lot, K=10: structure_id,
         # L=11: prise_en_charge_amu, M=12: commentaire_amu, 
         # N=13: prise_en_charge_cac, O=14: commentaire_cac
@@ -6260,9 +6377,17 @@ def api_admin_update_produit(produit_id):
         
         # 🔥 Mettre à jour la ligne
         worksheet.update(range_name=f'A{row_num}:O{row_num}', values=[current_row])
-        
+        sheets_helper.clear_cache(sheet_name)
+
+        stock_apres = int(data.get('quantite_stock', 0))
+        if stock_apres != stock_avant:
+            _log_mouvement_stock(structure_id, produit_id, data.get('nom', ''), 'ajustement',
+                                  stock_apres - stock_avant, stock_apres,
+                                  reference_type='modification_produit',
+                                  user_nom=session.get('user_name'))
+
         return jsonify({'success': True})
-        
+
     except Exception as e:
         print(f"❌ Erreur: {e}")
         import traceback
@@ -6289,7 +6414,8 @@ def api_admin_delete_produit(produit_id):
         
         # Supprimer la ligne
         worksheet.delete_rows(cell.row)
-        
+        sheets_helper.clear_cache(sheet_name)
+
         return jsonify({'success': True, 'message': 'Produit supprimé'})
         
     except Exception as e:
@@ -6324,7 +6450,12 @@ def api_approvisionner_produit(id):
         nouveau_stock = stock_actuel + quantite
         
         worksheet.update_cell(row_num, 6, nouveau_stock)  # Colonne F = index 6 (1-based)
-        
+        sheets_helper.clear_cache(sheet_name)
+        nom_produit = current_row[1] if len(current_row) > 1 else ''
+        _log_mouvement_stock(structure_id, id, nom_produit, 'approvisionnement',
+                              quantite, nouveau_stock, reference_type='approvisionnement',
+                              user_nom=session.get('user_name'))
+
         return jsonify({'success': True, 'message': f'{quantite} unités ajoutées', 'stock': nouveau_stock})
         
     except Exception as e:
@@ -6609,15 +6740,21 @@ def api_vente_pharma():
                     print(f"   📊 Stock: {stock_actuel} → {nouveau_stock}")
                     worksheet.update_cell(row_num, 6, nouveau_stock)  # 🔥 Colonne F = index 6 (1-based)
                     print(f"   ✅ Stock Sheets mis à jour pour {produit_nom}")
+                    _log_mouvement_stock(structure_id, produit_id, produit_nom, 'vente',
+                                          -quantite_vendue, nouveau_stock,
+                                          reference_type='vente', reference_id=vente_id,
+                                          user_nom=vendeur)
                 else:
                     print(f"   ❌ Produit ID {produit_id} non trouvé dans Sheets!")
                     print(f"   📋 IDs disponibles: {worksheet.col_values(1)}")
-                    
+
+            sheets_helper.clear_cache(sheet_name)
+
         except Exception as e:
             print(f"   ❌ ERREUR mise à jour stock Sheets: {e}")
             import traceback
             traceback.print_exc()
-        
+
         # ========== 5. METTRE À JOUR LE SOLDE DE CAISSE ==========
         try:
             recettes_total = db.execute_query("""
@@ -7643,16 +7780,25 @@ def annuler_vente(vente_id):
                 for produit in produits_data:
                     produit_id = str(produit.get('id'))
                     quantite = int(produit.get('quantite', 0))
-                    
+
                     if produit_id and quantite > 0:
                         cell = worksheet.find(produit_id, in_column=1)
                         if cell:
                             row_num = cell.row
                             current_row = worksheet.row_values(row_num)
-                            stock_actuel = int(current_row[3]) if len(current_row) > 3 else 0
+                            # 🔥 Stock est en colonne F (index 5) — PAS colonne D
+                            # (index 3, qui est le PBR) : une annulation
+                            # écrasait le PBR avec un nombre-de-stock et ne
+                            # touchait jamais le vrai stock — bug corrigé.
+                            stock_actuel = int(current_row[5]) if len(current_row) > 5 else 0
                             nouveau_stock = stock_actuel + quantite
-                            worksheet.update_cell(row_num, 4, nouveau_stock)
+                            worksheet.update_cell(row_num, 6, nouveau_stock)  # Colonne F = index 6 (1-based)
                             print(f"📦 Restocké dans Sheets: {produit.get('nom')} +{quantite}")
+                            _log_mouvement_stock(structure_id, produit_id, produit.get('nom', ''),
+                                                  'annulation', quantite, nouveau_stock,
+                                                  reference_type='vente', reference_id=vente_id,
+                                                  user_nom=user_name)
+                sheets_helper.clear_cache(sheet_name)
             except Exception as e:
                 print(f"⚠️ Erreur restock Sheets: {e}")
         
@@ -10006,11 +10152,17 @@ def api_convertir_proforma():
                         print(f"   📊 Stock: {stock_actuel} → {nouveau_stock}")
                         worksheet.update_cell(row_num, 6, nouveau_stock)  # Colonne F = index 6
                         print(f"   ✅ Stock Sheets mis à jour pour {produit_nom}")
+                        _log_mouvement_stock(structure_id, produit_id, produit_nom, 'vente',
+                                              -quantite_vendue, nouveau_stock,
+                                              reference_type='vente', reference_id=vente_id,
+                                              user_nom=user_name)
                     else:
                         print(f"   ❌ Produit ID {produit_id} non trouvé dans Sheets!")
+
+                sheets_helper.clear_cache(sheet_name)
             else:
                 print("ℹ️ Aucun produit à mettre à jour (seulement des actes)")
-                    
+
         except Exception as e:
             print(f"   ❌ ERREUR mise à jour stock Sheets: {e}")
             import traceback

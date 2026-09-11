@@ -281,6 +281,28 @@ class SheetsHelper:
     # ============================================
     # MÉTHODES AVEC CACHE
     # ============================================
+    def get_all_values_cached(self, sheet_name, force_refresh=False):
+        """Équivalent de get_all_records() mais pour un accès positionnel
+        (worksheet.get_all_values(), une liste de listes plutôt qu'une liste
+        de dicts) — utilisé par les routes qui parsent les colonnes par
+        index plutôt que par en-tête (ex. /api/produits). Sans ce cache,
+        ces routes refaisaient un aller-retour Google Sheets complet à
+        CHAQUE appel (aucune mise en cache), ce qui rendait "Gestion des
+        stocks"/"Administration générale" perceptiblement lent à chaque
+        ouverture — vécu en test. Clé de cache préfixée par sheet_name pour
+        rester compatible avec clear_cache(sheet_name) (qui vide par
+        préfixe) sans collisionner avec le cache dict-based de
+        get_all_records() sur ce même sheet_name."""
+        cache_key = f"{sheet_name}::rawvalues"
+        if not force_refresh and cache_key in self._cache:
+            cached_data, timestamp = self._cache[cache_key]
+            if time.time() - timestamp < self._cache_duration:
+                return cached_data
+        worksheet = self.spreadsheet.worksheet(sheet_name)
+        all_values = worksheet.get_all_values()
+        self._cache[cache_key] = (all_values, time.time())
+        return all_values
+
     def get_all_records(self, base_name, use_prefix=True, force_refresh=False):
         """Récupère tous les enregistrements avec cache"""
         sheet_name = self.get_sheet_name(base_name) if use_prefix else base_name

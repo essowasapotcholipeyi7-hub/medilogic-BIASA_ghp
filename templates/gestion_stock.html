@@ -239,6 +239,41 @@
                             </div>
                         </div>
 
+                        <!-- Stock à une date donnée -->
+                        <div class="card mt-3">
+                            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                <h6 class="mb-0"><i class="fas fa-history"></i> Stock à une date donnée</h6>
+                                <div class="d-flex align-items-center gap-2">
+                                    <label for="stockDateInput" class="text-white small mb-0">Voir le stock au :</label>
+                                    <input type="date" id="stockDateInput" class="form-control form-control-sm" style="width:auto;">
+                                    <button class="btn btn-light btn-sm" onclick="chargerStockADate()">
+                                        <i class="fas fa-search"></i> Voir
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div id="stockADateInfo" class="small text-muted mb-2"></div>
+                                <div class="mb-3">
+                                    <input type="text" id="searchStockADate" class="form-control form-control-sm" placeholder="Rechercher un produit..." onkeyup="filterStockADate()" style="max-width:300px;">
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>Produit</th>
+                                                <th class="text-end">Stock à la date choisie</th>
+                                                <th class="text-end">Stock actuel</th>
+                                                <th class="text-end">Vendu / Consommé</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="stockADateList">
+                                            <tr><td colspan="4" class="text-center">Choisissez une date puis cliquez sur "Voir"</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Produits périmés -->
                         <div class="card mt-3">
                             <div class="card-header bg-danger text-white">
@@ -621,6 +656,77 @@ function updateStats(produits) {
     }
 }
 
+// ========== STOCK À UNE DATE DONNÉE ==========
+let stockADateListe = [];
+
+function chargerStockADate() {
+    const dateInput = document.getElementById('stockDateInput');
+    const date = dateInput.value; // vide = aujourd'hui (géré côté serveur)
+    const tbody = document.getElementById('stockADateList');
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center">Chargement...</td></tr>';
+
+    const url = date ? `/api/produits/stock-a-date?date=${date}` : '/api/produits/stock-a-date';
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">Erreur : ${data.error || 'inconnue'}</td></tr>`;
+                return;
+            }
+            stockADateListe = data.produits || [];
+            afficherStockADate(stockADateListe);
+
+            const infoEl = document.getElementById('stockADateInfo');
+            if (data.historique_disponible_depuis && data.date < data.historique_disponible_depuis) {
+                infoEl.innerHTML = `⚠️ L'historique de stock n'est disponible que depuis le <strong>${data.historique_disponible_depuis}</strong> — avant cette date, "Non disponible" est affiché plutôt qu'un chiffre qui serait faux.`;
+            } else {
+                infoEl.innerHTML = `Comparaison au <strong>${data.date}</strong> (fin de journée) — vs. le stock actuel.`;
+            }
+        })
+        .catch(error => {
+            console.error('Erreur stock-a-date:', error);
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Erreur de chargement</td></tr>';
+        });
+}
+
+function afficherStockADate(produits) {
+    const tbody = document.getElementById('stockADateList');
+    if (!produits || produits.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center">Aucun produit</td></tr>';
+        return;
+    }
+    tbody.innerHTML = produits.map(p => {
+        const stockADate = p.stock_a_date === null || p.stock_a_date === undefined
+            ? '<span class="text-muted">Non disponible</span>' : p.stock_a_date;
+        const stockActuel = p.stock_actuel === null || p.stock_actuel === undefined
+            ? '<span class="text-muted">Produit supprimé</span>' : p.stock_actuel;
+        let consomme = '<span class="text-muted">-</span>';
+        if (p.consomme !== null && p.consomme !== undefined) {
+            if (p.consomme > 0) {
+                consomme = `<span class="text-danger">-${p.consomme}</span>`;
+            } else if (p.consomme < 0) {
+                consomme = `<span class="text-success">+${Math.abs(p.consomme)}</span>`;
+            } else {
+                consomme = '0';
+            }
+        }
+        return `
+            <tr>
+                <td>${p.nom}</td>
+                <td class="text-end">${stockADate}</td>
+                <td class="text-end">${stockActuel}</td>
+                <td class="text-end">${consomme}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function filterStockADate() {
+    const search = document.getElementById('searchStockADate').value.toLowerCase();
+    const filtered = stockADateListe.filter(p => (p.nom || '').toLowerCase().includes(search));
+    afficherStockADate(filtered);
+}
+
 function exporterProduitsCSV() {
     if (!tousLesProduits || tousLesProduits.length === 0) {
         alert('Aucun produit à exporter');
@@ -866,7 +972,9 @@ function hideLoader() {
 
 // ========== INITIALISATION ==========
 document.addEventListener('DOMContentLoaded', function() {
-    chargerProduitsAdmin();    
+    chargerProduitsAdmin();
+    const stockDateInput = document.getElementById('stockDateInput');
+    if (stockDateInput) stockDateInput.value = new Date().toISOString().split('T')[0];
     // Ajouter un bouton pour la remise en masse dans l'onglet lunetterie
     const lunetterieTab = document.getElementById('lunetterie');
     if (lunetterieTab) {
