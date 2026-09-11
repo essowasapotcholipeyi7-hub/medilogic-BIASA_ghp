@@ -1805,7 +1805,7 @@
 <!-- ============================================
      TOP NAV - CONSERVÉE
      ============================================ -->
-{% if session.user_id %}
+{% if session.user_id and not (cacher_navigation is defined and cacher_navigation) %}
 <div class="top-nav">
     <ul class="nav-group">
         <li class="nav-item nav-item-accueil">
