@@ -372,9 +372,9 @@ function afficherStats(stats) {
     if (!stats) return;
     
     document.getElementById('statTotal').textContent = stats.total || 0;
-    document.getElementById('statCredits').textContent = (stats.credits || 0).toLocaleString() + ' F';
-    document.getElementById('statDebits').textContent = (stats.debits || 0).toLocaleString() + ' F';
-    document.getElementById('statSolde').textContent = (stats.solde || 0).toLocaleString() + ' F';
+    document.getElementById('statCredits').textContent = Math.round(stats.credits || 0).toLocaleString('fr-FR') + ' F';
+    document.getElementById('statDebits').textContent = Math.round(stats.debits || 0).toLocaleString('fr-FR') + ' F';
+    document.getElementById('statSolde').textContent = Math.round(stats.solde || 0).toLocaleString('fr-FR') + ' F';
 }
 
 // ============================================================
@@ -506,9 +506,9 @@ function imprimerJournal() {
 
             var s = data.stats || {};
             document.getElementById('printStatTotal').textContent = s.total || 0;
-            document.getElementById('printStatCredits').textContent = (s.credits || 0).toLocaleString() + ' F';
-            document.getElementById('printStatDebits').textContent = (s.debits || 0).toLocaleString() + ' F';
-            document.getElementById('printStatSolde').textContent = (s.solde || 0).toLocaleString() + ' F';
+            document.getElementById('printStatCredits').textContent = Math.round(s.credits || 0).toLocaleString('fr-FR') + ' F';
+            document.getElementById('printStatDebits').textContent = Math.round(s.debits || 0).toLocaleString('fr-FR') + ' F';
+            document.getElementById('printStatSolde').textContent = Math.round(s.solde || 0).toLocaleString('fr-FR') + ' F';
 
             var tbody = document.getElementById('printMouvementsList');
             if (!data.data || data.data.length === 0) {

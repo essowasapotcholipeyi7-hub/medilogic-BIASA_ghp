@@ -1653,7 +1653,7 @@ function chargerDashboard() {
             document.getElementById('statTotalEcritures').textContent = data.total_ecritures || 0;
             document.getElementById('statEnAttente').textContent = data.en_attente || 0;
             document.getElementById('statValidees').textContent = data.validees || 0;
-            document.getElementById('statSoldeTotal').textContent = (data.solde || 0).toLocaleString() + ' FCFA';
+            document.getElementById('statSoldeTotal').textContent = Math.round(data.solde || 0).toLocaleString('fr-FR') + ' FCFA';
         })
         .catch(error => console.error('Erreur dashboard:', error));
 }
@@ -1676,8 +1676,8 @@ function chargerDernieresEcritures() {
                     <td>${e.date_ecriture || '-'}</td>
                     <td><strong>${e.piece_justificative || '-'}</strong></td>
                     <td>${e.libelle || '-'}</td>
-                    <td class="text-end">${(e.total_debit || 0).toLocaleString()} F</td>
-                    <td class="text-end">${(e.total_credit || 0).toLocaleString()} F</td>
+                    <td class="text-end">${Math.round(e.total_debit || 0).toLocaleString('fr-FR')} F</td>
+                    <td class="text-end">${Math.round(e.total_credit || 0).toLocaleString('fr-FR')} F</td>
                     <td><span class="badge ${badges[e.statut] || 'bg-secondary'}">${e.statut_label || e.statut}</span></td>
                 `;
             });
@@ -1696,13 +1696,13 @@ function chargerCaisses() {
         .then(data => {
             const elTreso = document.getElementById('caisseTresorerieMontant');
             const elCA = document.getElementById('caisseChiffreAffairesMontant');
-            if (elTreso) elTreso.textContent = (data.caisse_tresorerie || 0).toLocaleString() + ' FCFA';
-            if (elCA) elCA.textContent = (data.caisse_chiffre_affaires || 0).toLocaleString() + ' FCFA';
+            if (elTreso) elTreso.textContent = Math.round(data.caisse_tresorerie || 0).toLocaleString('fr-FR') + ' FCFA';
+            if (elCA) elCA.textContent = Math.round(data.caisse_chiffre_affaires || 0).toLocaleString('fr-FR') + ' FCFA';
 
             const detailTreso = document.getElementById('caisseTresorerieDetail');
             if (detailTreso) {
                 detailTreso.innerHTML = (data.detail_tresorerie || []).map(c =>
-                    `<div class="d-flex justify-content-between"><span>${c.numero} ${c.nom}</span><strong>${(c.solde || 0).toLocaleString()} F</strong></div>`
+                    `<div class="d-flex justify-content-between"><span>${c.numero} ${c.nom}</span><strong>${Math.round(c.solde || 0).toLocaleString('fr-FR')} F</strong></div>`
                 ).join('') || '<span class="text-muted">Aucun mouvement</span>';
             }
         })
@@ -1774,7 +1774,7 @@ function afficherComptes() {
             <td><strong>${c.numero}</strong></td>
             <td>${c.nom}</td>
             <td><span class="badge ${badges[c.type] || 'bg-secondary'}">${labels[c.type] || c.type}</span></td>
-            <td class="${solde >= 0 ? 'text-success' : 'text-danger'}">${solde.toLocaleString()} F</td>
+            <td class="${solde >= 0 ? 'text-success' : 'text-danger'}">${Math.round(solde).toLocaleString('fr-FR')} F</td>
             <td>
                 <button class="btn btn-sm btn-warning" onclick="modifierCompte(${c.id})"><i class="fas fa-edit"></i></button>
                 <button class="btn btn-sm btn-danger" onclick="supprimerCompte(${c.id})"><i class="fas fa-trash"></i></button>
@@ -1973,8 +1973,8 @@ function afficherEcritures() {
             <td>${e.date_ecriture || ''}</td>
             <td><strong>${e.piece_justificative || '-'}</strong></td>
             <td>${e.libelle || ''}</td>
-            <td class="text-end">${(e.total_debit || 0).toLocaleString()} F</td>
-            <td class="text-end">${(e.total_credit || 0).toLocaleString()} F</td>
+            <td class="text-end">${Math.round(e.total_debit || 0).toLocaleString('fr-FR')} F</td>
+            <td class="text-end">${Math.round(e.total_credit || 0).toLocaleString('fr-FR')} F</td>
             <td><span class="badge ${badges[e.statut] || 'bg-secondary'}">${e.statut_label || e.statut}</span></td>
             <td>${actions}</td>
         `;
@@ -2104,8 +2104,8 @@ function voirEcriture(id) {
                     html += `
                         <tr>
                             <td>${ligne.compte_numero || ''} - ${ligne.compte_nom || ''}</td>
-                            <td class="text-end">${(ligne.debit || 0) > 0 ? (ligne.debit || 0).toLocaleString() + ' F' : '-'}</td>
-                            <td class="text-end">${(ligne.credit || 0) > 0 ? (ligne.credit || 0).toLocaleString() + ' F' : '-'}</td>
+                            <td class="text-end">${(ligne.debit || 0) > 0 ? Math.round(ligne.debit || 0).toLocaleString('fr-FR') + ' F' : '-'}</td>
+                            <td class="text-end">${(ligne.credit || 0) > 0 ? Math.round(ligne.credit || 0).toLocaleString('fr-FR') + ' F' : '-'}</td>
                             <td>${ligne.libelle || '-'}</td>
                         </tr>
                     `;
@@ -2116,8 +2116,8 @@ function voirEcriture(id) {
                         <tfoot class="table-light">
                             <tr class="fw-bold">
                                 <td class="text-end">TOTAUX</td>
-                                <td class="text-end">${totalDebit.toLocaleString()} F</td>
-                                <td class="text-end">${totalCredit.toLocaleString()} F</td>
+                                <td class="text-end">${Math.round(totalDebit).toLocaleString('fr-FR')} F</td>
+                                <td class="text-end">${Math.round(totalCredit).toLocaleString('fr-FR')} F</td>
                                 <td></td>
                             </tr>
                             <tr>
@@ -2184,8 +2184,8 @@ function calculerTotaux() {
         totalDebit += debit;
         totalCredit += credit;
     });
-    document.getElementById('totalDebitDisplay').textContent = totalDebit.toLocaleString() + ' FCFA';
-    document.getElementById('totalCreditDisplay').textContent = totalCredit.toLocaleString() + ' FCFA';
+    document.getElementById('totalDebitDisplay').textContent = Math.round(totalDebit).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('totalCreditDisplay').textContent = Math.round(totalCredit).toLocaleString('fr-FR') + ' FCFA';
     const eq = totalDebit === totalCredit;
     const el = document.getElementById('equilibreDisplay');
     el.textContent = eq ? 'Équilibré' : 'Non équilibré';
@@ -2368,7 +2368,7 @@ function chargerBudget() {
                         const montantReel = moisData ? moisData.montant_reel || 0 : 0;
                         totalLigne += montant;
                         totalReelLigne += montantReel;
-                        row.innerHTML += `<td class="text-end">${montant > 0 ? montant.toLocaleString() : '-'}</td>`;
+                        row.innerHTML += `<td class="text-end">${montant > 0 ? Math.round(montant).toLocaleString('fr-FR') : '-'}</td>`;
                     }
                 } else {
                     for (let m = 1; m <= 12; m++) {
@@ -2380,7 +2380,7 @@ function chargerBudget() {
                 grandTotalReel += totalReelLigne;
                 
                 row.innerHTML += `
-                    <td class="text-end fw-bold">${totalLigne > 0 ? totalLigne.toLocaleString() : '0'} F</td>
+                    <td class="text-end fw-bold">${totalLigne > 0 ? Math.round(totalLigne).toLocaleString('fr-FR') : '0'} F</td>
                     <td>
                         <button class="btn btn-sm btn-warning" onclick="ouvrirBudget(${item.compte_id}, '${item.compte_nom}')" title="Modifier le budget">
                             <i class="fas fa-edit"></i>
@@ -2390,7 +2390,7 @@ function chargerBudget() {
             });
             
             // ⭐ Afficher le total général
-            document.getElementById('totalBudget').textContent = grandTotal.toLocaleString() + ' FCFA';
+            document.getElementById('totalBudget').textContent = Math.round(grandTotal).toLocaleString('fr-FR') + ' FCFA';
             
         })
         .catch(error => {
@@ -2697,8 +2697,8 @@ function chargerCreancesDouteuses() {
                     <td>${c.numero_facture}</td>
                     <td>${c.date_echeance}</td>
                     <td><span class="badge ${badgeTranche[c.tranche] || 'bg-secondary'}">${c.jours_retard}j (${c.tranche})</span></td>
-                    <td class="text-end">${Math.round(c.reste_a_payer).toLocaleString()} F</td>
-                    <td>${c.deja_provisionnee ? `<span class="badge bg-info">${Math.round(c.montant_provisionne).toLocaleString()} F provisionnés</span>` : '-'}</td>
+                    <td class="text-end">${Math.round(c.reste_a_payer).toLocaleString('fr-FR')} F</td>
+                    <td>${c.deja_provisionnee ? `<span class="badge bg-info">${Math.round(c.montant_provisionne).toLocaleString('fr-FR')} F provisionnés</span>` : '-'}</td>
                     <td>
                         ${c.deja_provisionnee ? '' : `
                             <button class="btn btn-sm btn-outline-warning" onclick="provisionnerCreance(${c.facture_id})">Provisionner</button>
@@ -2723,7 +2723,7 @@ function provisionnerCreance(factureId) {
     .then(r => r.json())
     .then(result => {
         if (result.success) {
-            alert(`Provision de ${Math.round(result.montant_provisionne).toLocaleString()} FCFA enregistrée.`);
+            alert(`Provision de ${Math.round(result.montant_provisionne).toLocaleString('fr-FR')} FCFA enregistrée.`);
             chargerCreancesDouteuses();
         } else {
             alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
@@ -2756,9 +2756,9 @@ function chargerProvisions() {
             tbody.innerHTML = data.map(p => `
                 <tr>
                     <td>${p.patient_nom}</td>
-                    <td class="text-end">${Math.round(p.montant_creance).toLocaleString()} F</td>
+                    <td class="text-end">${Math.round(p.montant_creance).toLocaleString('fr-FR')} F</td>
                     <td>${p.taux_provision}%</td>
-                    <td class="text-end">${Math.round(p.montant_provisionne).toLocaleString()} F</td>
+                    <td class="text-end">${Math.round(p.montant_provisionne).toLocaleString('fr-FR')} F</td>
                     <td><span class="badge ${badges[p.statut] || 'bg-secondary'}">${p.statut}</span></td>
                     <td>
                         ${p.statut === 'active' ? `
@@ -2808,9 +2808,9 @@ function chargerImmobilisations() {
                     <td>${i.designation}</td>
                     <td>${i.categorie || '-'}</td>
                     <td>${i.date_acquisition}</td>
-                    <td class="text-end">${Math.round(i.valeur_acquisition).toLocaleString()} F</td>
-                    <td class="text-end">${Math.round(i.cumul_amorti).toLocaleString()} F</td>
-                    <td class="text-end fw-bold">${Math.round(i.vnc).toLocaleString()} F</td>
+                    <td class="text-end">${Math.round(i.valeur_acquisition).toLocaleString('fr-FR')} F</td>
+                    <td class="text-end">${Math.round(i.cumul_amorti).toLocaleString('fr-FR')} F</td>
+                    <td class="text-end fw-bold">${Math.round(i.vnc).toLocaleString('fr-FR')} F</td>
                     <td><span class="badge ${badges[i.statut] || 'bg-secondary'}">${i.statut}</span></td>
                 </tr>
             `).join('');
@@ -2897,7 +2897,7 @@ function chargerFournisseurs() {
                 <tr>
                     <td>${f.nom}${!f.actif ? ' <span class="badge bg-secondary">inactif</span>' : ''}</td>
                     <td>${f.telephone || '-'}</td>
-                    <td class="text-end ${f.solde_du > 0 ? 'fw-bold text-danger' : ''}">${Math.round(f.solde_du).toLocaleString()} F</td>
+                    <td class="text-end ${f.solde_du > 0 ? 'fw-bold text-danger' : ''}">${Math.round(f.solde_du).toLocaleString('fr-FR')} F</td>
                 </tr>
             `).join('');
         })
@@ -2919,9 +2919,9 @@ function chargerAchatsFournisseurs() {
                 <tr>
                     <td>${a.fournisseur_nom}</td>
                     <td>${a.motif}${a.motif_personnalise ? ' — ' + a.motif_personnalise : ''}</td>
-                    <td class="text-end">${Math.round(a.montant_total).toLocaleString()} F</td>
-                    <td class="text-end">${Math.round(a.montant_paye).toLocaleString()} F</td>
-                    <td class="text-end fw-bold ${a.reste_a_payer > 0 ? 'text-danger' : 'text-success'}">${Math.round(a.reste_a_payer).toLocaleString()} F</td>
+                    <td class="text-end">${Math.round(a.montant_total).toLocaleString('fr-FR')} F</td>
+                    <td class="text-end">${Math.round(a.montant_paye).toLocaleString('fr-FR')} F</td>
+                    <td class="text-end fw-bold ${a.reste_a_payer > 0 ? 'text-danger' : 'text-success'}">${Math.round(a.reste_a_payer).toLocaleString('fr-FR')} F</td>
                     <td>${a.date_echeance || '-'}</td>
                     <td>
                         ${a.statut === 'a_regler'
@@ -3011,7 +3011,7 @@ let _achatEnCoursReglement = null;
 
 function ouvrirReglerAchat(achatId, fournisseurNom, resteAPayer) {
     _achatEnCoursReglement = achatId;
-    document.getElementById('reglementFournisseurLabel').textContent = `${fournisseurNom} — reste dû : ${Math.round(resteAPayer).toLocaleString()} F`;
+    document.getElementById('reglementFournisseurLabel').textContent = `${fournisseurNom} — reste dû : ${Math.round(resteAPayer).toLocaleString('fr-FR')} F`;
     document.getElementById('reglementMontant').value = resteAPayer;
     document.getElementById('reglementMontant').max = resteAPayer;
     document.getElementById('reglementReference').value = '';
@@ -3225,15 +3225,15 @@ function afficherRapport(data, type) {
                 <td><strong>${item.piece || '-'}</strong></td>
                 <td>${item.libelle || ''}${badgeAuto}</td>
                 <td>${item.compte_numero || ''} - ${item.compte_nom || ''}</td>
-                <td class="text-end">${debit > 0 ? debit.toLocaleString() + ' F' : '-'}</td>
-                <td class="text-end">${credit > 0 ? credit.toLocaleString() + ' F' : '-'}</td>
+                <td class="text-end">${debit > 0 ? Math.round(debit).toLocaleString('fr-FR') + ' F' : '-'}</td>
+                <td class="text-end">${credit > 0 ? Math.round(credit).toLocaleString('fr-FR') + ' F' : '-'}</td>
             </tr>`;
         });
         tfoot.innerHTML = `
             <tr class="fw-bold">
                 <td colspan="5" class="text-end">TOTAUX :</td>
-                <td class="text-end">${totalDebit.toLocaleString()} FCFA</td>
-                <td class="text-end">${totalCredit.toLocaleString()} FCFA</td>
+                <td class="text-end">${Math.round(totalDebit).toLocaleString('fr-FR')} FCFA</td>
+                <td class="text-end">${Math.round(totalCredit).toLocaleString('fr-FR')} FCFA</td>
             </tr>
         `;
     } else if (type === 'grand_livre') {
@@ -3257,9 +3257,9 @@ function afficherRapport(data, type) {
                 <td>${item.date || ''}</td>
                 <td>${item.compte_numero || ''} - ${item.compte_nom || ''}</td>
                 <td>${item.libelle || ''}</td>
-                <td class="text-end">${debit > 0 ? debit.toLocaleString() + ' F' : '-'}</td>
-                <td class="text-end">${credit > 0 ? credit.toLocaleString() + ' F' : '-'}</td>
-                <td class="text-end fw-bold">${solde_cumul.toLocaleString()} F</td>
+                <td class="text-end">${debit > 0 ? Math.round(debit).toLocaleString('fr-FR') + ' F' : '-'}</td>
+                <td class="text-end">${credit > 0 ? Math.round(credit).toLocaleString('fr-FR') + ' F' : '-'}</td>
+                <td class="text-end fw-bold">${Math.round(solde_cumul).toLocaleString('fr-FR')} F</td>
             </tr>`);
         });
         html = lignesHtml.reverse().join('');
@@ -3267,9 +3267,9 @@ function afficherRapport(data, type) {
         tfoot.innerHTML = `
             <tr class="fw-bold">
                 <td colspan="3" class="text-end">TOTAUX :</td>
-                <td class="text-end">${totalDebit.toLocaleString()} FCFA</td>
-                <td class="text-end">${totalCredit.toLocaleString()} FCFA</td>
-                <td class="text-end fw-bold">${soldeFinal.toLocaleString()} FCFA</td>
+                <td class="text-end">${Math.round(totalDebit).toLocaleString('fr-FR')} FCFA</td>
+                <td class="text-end">${Math.round(totalCredit).toLocaleString('fr-FR')} FCFA</td>
+                <td class="text-end fw-bold">${Math.round(soldeFinal).toLocaleString('fr-FR')} FCFA</td>
             </tr>
         `;
     } else if (type === 'balance') {
@@ -3282,18 +3282,18 @@ function afficherRapport(data, type) {
             totalCredit += totalCreditCompte;
             html += `<tr>
                 <td><strong>${item.compte_numero || ''} - ${item.compte_nom || ''}</strong></td>
-                <td class="text-end">${totalDebitCompte.toLocaleString()} F</td>
-                <td class="text-end">${totalCreditCompte.toLocaleString()} F</td>
-                <td class="text-end fw-bold ${solde >= 0 ? 'text-success' : 'text-danger'}">${solde.toLocaleString()} F</td>
+                <td class="text-end">${Math.round(totalDebitCompte).toLocaleString('fr-FR')} F</td>
+                <td class="text-end">${Math.round(totalCreditCompte).toLocaleString('fr-FR')} F</td>
+                <td class="text-end fw-bold ${solde >= 0 ? 'text-success' : 'text-danger'}">${Math.round(solde).toLocaleString('fr-FR')} F</td>
             </tr>`;
         });
         const soldeGeneral = totalDebit - totalCredit;
         tfoot.innerHTML = `
             <tr class="fw-bold">
                 <td class="text-end">TOTAUX :</td>
-                <td class="text-end">${totalDebit.toLocaleString()} FCFA</td>
-                <td class="text-end">${totalCredit.toLocaleString()} FCFA</td>
-                <td class="text-end fw-bold ${soldeGeneral >= 0 ? 'text-success' : 'text-danger'}">${soldeGeneral.toLocaleString()} FCFA</td>
+                <td class="text-end">${Math.round(totalDebit).toLocaleString('fr-FR')} FCFA</td>
+                <td class="text-end">${Math.round(totalCredit).toLocaleString('fr-FR')} FCFA</td>
+                <td class="text-end fw-bold ${soldeGeneral >= 0 ? 'text-success' : 'text-danger'}">${Math.round(soldeGeneral).toLocaleString('fr-FR')} FCFA</td>
             </tr>
         `;
     } else if (type === 'resultat') {
@@ -3302,20 +3302,20 @@ function afficherRapport(data, type) {
         if (data.produits && data.produits.length > 0) {
             html += `<tr class="table-success"><td colspan="4"><strong>PRODUITS (Revenus)</strong></td></tr>`;
             data.produits.forEach(p => {
-                html += `<tr><td>${p.numero} - ${p.nom}</td><td class="text-end">${(p.montant || 0).toLocaleString()} FCFA</td><td><span class="badge bg-success">Produit</span></td><td></td></tr>`;
+                html += `<tr><td>${p.numero} - ${p.nom}</td><td class="text-end">${Math.round(p.montant || 0).toLocaleString('fr-FR')} FCFA</td><td><span class="badge bg-success">Produit</span></td><td></td></tr>`;
             });
         }
         if (data.charges && data.charges.length > 0) {
             html += `<tr class="table-danger"><td colspan="4"><strong>CHARGES (Dépenses)</strong></td></tr>`;
             data.charges.forEach(c => {
-                html += `<tr><td>${c.numero} - ${c.nom}</td><td class="text-end">${(c.montant || 0).toLocaleString()} FCFA</td><td><span class="badge bg-danger">Charge</span></td><td></td></tr>`;
+                html += `<tr><td>${c.numero} - ${c.nom}</td><td class="text-end">${Math.round(c.montant || 0).toLocaleString('fr-FR')} FCFA</td><td><span class="badge bg-danger">Charge</span></td><td></td></tr>`;
             });
         }
         const resultat = (data.resultat || 0);
         html += `
             <tr class="fw-bold table-info">
                 <td>RÉSULTAT (Produits - Charges)</td>
-                <td class="text-end ${resultat >= 0 ? 'text-success' : 'text-danger'}">${resultat.toLocaleString()} FCFA</td>
+                <td class="text-end ${resultat >= 0 ? 'text-success' : 'text-danger'}">${Math.round(resultat).toLocaleString('fr-FR')} FCFA</td>
                 <td><span class="badge ${resultat >= 0 ? 'bg-success' : 'bg-danger'}">${resultat >= 0 ? 'Bénéfice' : 'Perte'}</span></td>
                 <td></td>
             </tr>
@@ -3326,19 +3326,19 @@ function afficherRapport(data, type) {
         if (data.actifs && data.actifs.length > 0) {
             html += `<tr class="table-primary"><td colspan="4"><strong>ACTIFS</strong></td></tr>`;
             data.actifs.forEach(a => {
-                html += `<tr><td>${a.numero} - ${a.nom}</td><td class="text-end">${(a.montant || 0).toLocaleString()} FCFA</td><td><span class="badge bg-primary">Actif</span></td><td></td></tr>`;
+                html += `<tr><td>${a.numero} - ${a.nom}</td><td class="text-end">${Math.round(a.montant || 0).toLocaleString('fr-FR')} FCFA</td><td><span class="badge bg-primary">Actif</span></td><td></td></tr>`;
             });
         }
         if (data.passifs && data.passifs.length > 0) {
             html += `<tr class="table-warning"><td colspan="4"><strong>PASSIFS (Dettes)</strong></td></tr>`;
             data.passifs.forEach(p => {
-                html += `<tr><td>${p.numero} - ${p.nom}</td><td class="text-end">${(p.montant || 0).toLocaleString()} FCFA</td><td><span class="badge bg-warning">Passif</span></td><td></td></tr>`;
+                html += `<tr><td>${p.numero} - ${p.nom}</td><td class="text-end">${Math.round(p.montant || 0).toLocaleString('fr-FR')} FCFA</td><td><span class="badge bg-warning">Passif</span></td><td></td></tr>`;
             });
         }
         if (data.capitaux_propres && data.capitaux_propres.length > 0) {
             html += `<tr class="table-info"><td colspan="4"><strong>CAPITAUX PROPRES</strong></td></tr>`;
             data.capitaux_propres.forEach(c => {
-                html += `<tr><td>${c.numero} - ${c.nom}</td><td class="text-end">${(c.montant || 0).toLocaleString()} FCFA</td><td><span class="badge bg-info">Capitaux propres</span></td><td></td></tr>`;
+                html += `<tr><td>${c.numero} - ${c.nom}</td><td class="text-end">${Math.round(c.montant || 0).toLocaleString('fr-FR')} FCFA</td><td><span class="badge bg-info">Capitaux propres</span></td><td></td></tr>`;
             });
         }
         const totalActif = data.total_actif || 0;
@@ -3348,7 +3348,7 @@ function afficherRapport(data, type) {
             <tr class="fw-bold table-secondary">
                 <td>${estEquilibre ? '.' : '❌'} ÉQUILIBRE (Actif = Passif + Capitaux propres)</td>
                 <td class="text-end ${estEquilibre ? 'text-success' : 'text-danger'}">
-                    ${totalActif.toLocaleString()} = ${totalPassifCapitaux.toLocaleString()} FCFA
+                    ${Math.round(totalActif).toLocaleString('fr-FR')} = ${Math.round(totalPassifCapitaux).toLocaleString('fr-FR')} FCFA
                 </td>
                 <td><span class="badge ${estEquilibre ? 'bg-success' : 'bg-danger'}">${estEquilibre ? 'Équilibré' : 'Déséquilibré'}</span></td>
                 <td></td>
@@ -3416,7 +3416,7 @@ function chargerComptesRapprochement() {
         .then(comptes => {
             comptesRapprochementCache = comptes || [];
             const options = comptesRapprochementCache.map(c =>
-                `<option value="${c.id}">${c.numero} - ${c.nom} (solde compta: ${Math.round(c.solde_comptable).toLocaleString()} F)</option>`
+                `<option value="${c.id}">${c.numero} - ${c.nom} (solde compta: ${Math.round(c.solde_comptable).toLocaleString('fr-FR')} F)</option>`
             ).join('');
             const selectPrincipal = document.getElementById('releveCompteId');
             const selectImport = document.getElementById('importCompteId');
@@ -3490,7 +3490,7 @@ function ouvrirAssocierModal(index) {
 
     const montant = (ligne.debit && ligne.debit > 0) ? ligne.debit : ligne.credit;
     document.getElementById('associerLigneInfo').innerHTML =
-        `<strong>${ligne.libelle || 'Opération'}</strong> — ${ligne.date} — ${Math.round(montant).toLocaleString()} FCFA`;
+        `<strong>${ligne.libelle || 'Opération'}</strong> — ${ligne.date} — ${Math.round(montant).toLocaleString('fr-FR')} FCFA`;
     document.getElementById('associerCandidatsBody').innerHTML = '<tr><td colspan="5" class="text-center text-muted">Chargement...</td></tr>';
 
     new bootstrap.Modal(document.getElementById('associerModal')).show();
@@ -3508,7 +3508,7 @@ function ouvrirAssocierModal(index) {
                     <td>${c.date}</td>
                     <td>${c.piece || '-'}</td>
                     <td>${c.libelle}</td>
-                    <td class="text-end">${Math.round(c.montant).toLocaleString()} F</td>
+                    <td class="text-end">${Math.round(c.montant).toLocaleString('fr-FR')} F</td>
                     <td><button class="btn btn-sm btn-primary" onclick="choisirCandidat(${c.ecriture_id})">Choisir</button></td>
                 </tr>
             `).join('');
@@ -3665,11 +3665,11 @@ function calculerSoldeReleve() {
         totalDebit += debit;
         totalCredit += credit;
         const soldeCell = document.getElementById(`soldeLigne_${i}`);
-        if (soldeCell) soldeCell.textContent = solde.toLocaleString() + ' FCFA';
+        if (soldeCell) soldeCell.textContent = Math.round(solde).toLocaleString('fr-FR') + ' FCFA';
     });
-    document.getElementById('releveTotalDebit').textContent = totalDebit.toLocaleString() + ' FCFA';
-    document.getElementById('releveTotalCredit').textContent = totalCredit.toLocaleString() + ' FCFA';
-    document.getElementById('releveSoldeFinal').value = solde.toLocaleString() + ' FCFA';
+    document.getElementById('releveTotalDebit').textContent = Math.round(totalDebit).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('releveTotalCredit').textContent = Math.round(totalCredit).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('releveSoldeFinal').value = Math.round(solde).toLocaleString('fr-FR') + ' FCFA';
 }
 
 function sauvegarderReleve() {
@@ -3701,7 +3701,7 @@ function sauvegarderReleve() {
         if (result.success) {
             alert('Relevé enregistré !');
             releveId = result.id;
-            document.getElementById('releveSoldeFinal').value = result.solde_final.toLocaleString() + ' FCFA';
+            document.getElementById('releveSoldeFinal').value = Math.round(result.solde_final).toLocaleString('fr-FR') + ' FCFA';
             chargerHistoriqueReleves();
         } else {
             alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
@@ -3781,8 +3781,8 @@ function chargerHistoriqueReleves() {
                 row.innerHTML = `
                     <td>${r.date_releve}</td>
                     <td><span class="badge bg-light text-dark border">${r.compte_numero} - ${r.compte_nom}</span></td>
-                    <td>${(r.solde_initial || 0).toLocaleString()} F</td>
-                    <td>${(r.solde_final || 0).toLocaleString()} F</td>
+                    <td>${Math.round(r.solde_initial || 0).toLocaleString('fr-FR')} F</td>
+                    <td>${Math.round(r.solde_final || 0).toLocaleString('fr-FR')} F</td>
                     <td>${r.nb_lignes || 0}</td>
                     <td>${r.nb_rapproche || 0}/${r.nb_lignes || 0}</td>
                     <td><span class="badge ${badges[r.statut] || 'bg-secondary'}">${r.statut}</span></td>
@@ -3855,9 +3855,9 @@ function mettreAJourStatutReleve() {
     const summaryCredit = document.getElementById('summaryTotalCredit');
     const summarySolde = document.getElementById('summarySolde');
     
-    if (summaryDebit) summaryDebit.textContent = totalDebit.toLocaleString() + ' FCFA';
-    if (summaryCredit) summaryCredit.textContent = totalCredit.toLocaleString() + ' FCFA';
-    if (summarySolde) summarySolde.textContent = (totalCredit - totalDebit).toLocaleString() + ' FCFA';
+    if (summaryDebit) summaryDebit.textContent = Math.round(totalDebit).toLocaleString('fr-FR') + ' FCFA';
+    if (summaryCredit) summaryCredit.textContent = Math.round(totalCredit).toLocaleString('fr-FR') + ' FCFA';
+    if (summarySolde) summarySolde.textContent = Math.round(totalCredit - totalDebit).toLocaleString('fr-FR') + ' FCFA';
 }
 
 function chargerLignesReleve(id) {

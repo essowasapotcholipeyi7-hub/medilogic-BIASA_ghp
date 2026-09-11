@@ -328,9 +328,9 @@ function afficherFactures(factures) {
         row.innerHTML = `
             <td><strong>${f.numero_facture}</strong></td>
             <td>${f.patient_nom}</td>
-            <td>${f.net_a_payer.toLocaleString()} FCFA</td>
-            <td style="color:#28a745;">${f.montant_paye.toLocaleString()} FCFA</td>
-            <td style="color:#dc3545; font-weight:bold;">${f.reste_a_payer.toLocaleString()} FCFA</td>
+            <td>${Math.round(f.net_a_payer).toLocaleString('fr-FR')} FCFA</td>
+            <td style="color:#28a745;">${Math.round(f.montant_paye).toLocaleString('fr-FR')} FCFA</td>
+            <td style="color:#dc3545; font-weight:bold;">${Math.round(f.reste_a_payer).toLocaleString('fr-FR')} FCFA</td>
             <td>${f.date_echeance}</td>
             <td>
                 <span class="badge ${statutColors[f.statut] || 'bg-secondary'}">
@@ -386,12 +386,12 @@ function voirFacture(id) {
                 <p><strong>Date d'échéance :</strong> ${facture.date_echeance || '-'}</p>
             </div>
             <div class="col-md-6">
-                <p><strong>Sous-total :</strong> ${facture.sous_total.toLocaleString()} FCFA</p>
-                <p><strong>Prise en charge :</strong> ${facture.prise_en_charge.toLocaleString()} FCFA</p>
-                ${facture.prise_en_charge2 > 0 ? `<p><strong>Prise en charge comp. :</strong> ${facture.prise_en_charge2.toLocaleString()} FCFA</p>` : ''}
-                <p><strong>Net à payer :</strong> ${facture.net_a_payer.toLocaleString()} FCFA</p>
-                <p><strong>Payé :</strong> ${facture.montant_paye.toLocaleString()} FCFA</p>
-                <p class="text-danger fw-bold"><strong>Reste :</strong> ${facture.reste_a_payer.toLocaleString()} FCFA</p>
+                <p><strong>Sous-total :</strong> ${Math.round(facture.sous_total).toLocaleString('fr-FR')} FCFA</p>
+                <p><strong>Prise en charge :</strong> ${Math.round(facture.prise_en_charge).toLocaleString('fr-FR')} FCFA</p>
+                ${facture.prise_en_charge2 > 0 ? `<p><strong>Prise en charge comp. :</strong> ${Math.round(facture.prise_en_charge2).toLocaleString('fr-FR')} FCFA</p>` : ''}
+                <p><strong>Net à payer :</strong> ${Math.round(facture.net_a_payer).toLocaleString('fr-FR')} FCFA</p>
+                <p><strong>Payé :</strong> ${Math.round(facture.montant_paye).toLocaleString('fr-FR')} FCFA</p>
+                <p class="text-danger fw-bold"><strong>Reste :</strong> ${Math.round(facture.reste_a_payer).toLocaleString('fr-FR')} FCFA</p>
             </div>
         </div>
         <hr>
@@ -411,8 +411,8 @@ function voirFacture(id) {
                         <tr>
                             <td>${a.nom || 'Article'}</td>
                             <td>${a.quantite || 1}</td>
-                            <td>${(a.prix_unitaire || a.prix || 0).toLocaleString()} F</td>
-                            <td>${(a.total || 0).toLocaleString()} F</td>
+                            <td>${Math.round(a.prix_unitaire || a.prix || 0).toLocaleString('fr-FR')} F</td>
+                            <td>${Math.round(a.total || 0).toLocaleString('fr-FR')} F</td>
                         </tr>
                     `).join('')}
                 </tbody>
@@ -455,8 +455,8 @@ function ouvrirPaiement(id) {
     document.getElementById('factureId').value = id;
     document.getElementById('factureNumero').value = facture.numero_facture;
     document.getElementById('facturePatient').value = facture.patient_nom;
-    document.getElementById('factureTotal').value = facture.net_a_payer.toLocaleString() + ' FCFA';
-    document.getElementById('factureReste').value = facture.reste_a_payer.toLocaleString() + ' FCFA';
+    document.getElementById('factureTotal').value = Math.round(facture.net_a_payer).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('factureReste').value = Math.round(facture.reste_a_payer).toLocaleString('fr-FR') + ' FCFA';
     document.getElementById('montantPaiement').value = facture.reste_a_payer;
     document.getElementById('montantPaiement').max = facture.reste_a_payer;
     
@@ -477,11 +477,11 @@ function confirmerPaiement() {
     
     const facture = facturesData.find(f => f.id === parseInt(factureId));
     if (montant > facture.reste_a_payer) {
-        alert(`Le montant (${montant.toLocaleString()} FCFA) dépasse le reste à payer (${facture.reste_a_payer.toLocaleString()} FCFA)`);
+        alert(`Le montant (${Math.round(montant).toLocaleString('fr-FR')} FCFA) dépasse le reste à payer (${Math.round(facture.reste_a_payer).toLocaleString('fr-FR')} FCFA)`);
         return;
     }
     
-    if (!confirm(`Confirmer le paiement de ${montant.toLocaleString()} FCFA pour la facture ${facture.numero_facture} ?`)) {
+    if (!confirm(`Confirmer le paiement de ${Math.round(montant).toLocaleString('fr-FR')} FCFA pour la facture ${facture.numero_facture} ?`)) {
         return;
     }
     
@@ -497,7 +497,7 @@ function confirmerPaiement() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            alert(`Paiement enregistré !\nMontant: ${montant.toLocaleString()} FCFA\nReste à payer: ${data.reste_a_payer.toLocaleString()} FCFA`);
+            alert(`Paiement enregistré !\nMontant: ${Math.round(montant).toLocaleString('fr-FR')} FCFA\nReste à payer: ${Math.round(data.reste_a_payer).toLocaleString('fr-FR')} FCFA`);
             
             bootstrap.Modal.getInstance(document.getElementById('paiementModal')).hide();
             chargerFactures('toutes');

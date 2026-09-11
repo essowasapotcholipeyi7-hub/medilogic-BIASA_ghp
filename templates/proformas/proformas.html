@@ -743,9 +743,9 @@ function remplirListeProduits(search = '', append = false, hasMore = false) {
         option.setAttribute('data-commentaire-cac', commentaireCAC);
         
         // 🔥 Label
-        let label = `${nom} - ${prix.toLocaleString()} FCFA`;
+        let label = `${nom} - ${Math.round(prix).toLocaleString('fr-FR')} FCFA`;
         if (pbr > 0 && pbr !== prix) {
-            label += ` (PBR: ${pbr.toLocaleString()} F)`;
+            label += ` (PBR: ${Math.round(pbr).toLocaleString('fr-FR')} F)`;
         } else if (pbr === 0) {
             label += ` (PBR: 0 - Non pris en charge)`;
         }
@@ -1233,7 +1233,7 @@ function afficherPanier() {
                 <input type="number" class="form-control form-control-sm" value="${item.prix}" 
                        style="width:100px;" onchange="modifierPrixPanier(${index}, this.value)">
             </td>
-            <td class="text-end fw-bold">${item.total.toLocaleString()} FCFA</td>
+            <td class="text-end fw-bold">${Math.round(item.total).toLocaleString('fr-FR')} FCFA</td>
             <td>
                 <button class="btn btn-sm btn-danger" onclick="supprimerArticlePanier(${index})">
                     <i class="fas fa-times"></i>
@@ -1329,9 +1329,9 @@ function calculerTotal() {
     if (netAPayer < 0) netAPayer = 0;
     
     // 🔥 6. Mise à jour de l'affichage
-    document.getElementById('sousTotalDisplay').textContent = sousTotal.toLocaleString() + ' FCFA';
-    document.getElementById('priseEnChargeDisplay').textContent = priseEnChargeAMU.toLocaleString() + ' FCFA';
-    document.getElementById('netAPayerDisplay').textContent = netAPayer.toLocaleString() + ' FCFA';
+    document.getElementById('sousTotalDisplay').textContent = Math.round(sousTotal).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('priseEnChargeDisplay').textContent = Math.round(priseEnChargeAMU).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('netAPayerDisplay').textContent = Math.round(netAPayer).toLocaleString('fr-FR') + ' FCFA';
     
     // 🔥 Affichage CAC
     const priseEnCharge2Row = document.getElementById('priseEnCharge2Row');
@@ -1339,7 +1339,7 @@ function calculerTotal() {
     
     if (assurance2Active && tauxComplementaire > 0 && priseEnChargeCAC > 0) {
         const modifText = tauxModifie ? ' 🔄' : '';
-        priseEnCharge2Display.textContent = `${assurance2Nom} (${tauxComplementaire}%) : - ${priseEnChargeCAC.toLocaleString()} FCFA${modifText}`;
+        priseEnCharge2Display.textContent = `${assurance2Nom} (${tauxComplementaire}%) : - ${Math.round(priseEnChargeCAC).toLocaleString('fr-FR')} FCFA${modifText}`;
         priseEnCharge2Row.style.display = '';
     } else {
         priseEnCharge2Row.style.display = 'none';
@@ -1463,7 +1463,7 @@ function sauvegarderProforma() {
         hideLoader();
         if (data.success) {
             let msg = `Proforma #${data.numero} créée !\n`;
-            msg += `Net à payer: ${data.net_a_payer.toLocaleString()} FCFA\n`;
+            msg += `Net à payer: ${Math.round(data.net_a_payer).toLocaleString('fr-FR')} FCFA\n`;
             if (data.assurance2_nom && data.taux_assurance2 > 0) {
                 msg += `Assurance complémentaire: ${data.assurance2_nom} (${data.taux_assurance2}%)`;
                 if (data.taux_modifie) {
@@ -1743,7 +1743,7 @@ function afficherModalConversion(data) {
                                                    style="width:100px; display:inline-block;" 
                                                    onchange="modifierArticleConversion(${index}, 'prix', this.value)">
                                         </td>
-                                        <td class="text-end fw-bold">${item.total.toLocaleString()} F</td>
+                                        <td class="text-end fw-bold">${Math.round(item.total).toLocaleString('fr-FR')} F</td>
                                         <td>
                                             <button class="btn btn-sm btn-danger" onclick="supprimerArticleConversion(${index})">
                                                 <i class="fas fa-times"></i>
@@ -1755,24 +1755,24 @@ function afficherModalConversion(data) {
                         <tfoot class="table-light">
                             <tr>
                                 <th colspan="4" class="text-end">Sous-total :</th>
-                                <th id="convertSousTotal" class="text-end">${calculeSousTotalConversion().toLocaleString()} F</th>
+                                <th id="convertSousTotal" class="text-end">${Math.round(calculeSousTotalConversion()).toLocaleString('fr-FR')} F</th>
                                 <th></th>
                             </tr>
                             <tr>
                                 <th colspan="4" class="text-end text-success">Prise en charge principale :</th>
-                                <th id="convertPriseEnCharge" class="text-end text-success">${calculePriseEnChargeConversion().toLocaleString()} F</th>
+                                <th id="convertPriseEnCharge" class="text-end text-success">${Math.round(calculePriseEnChargeConversion()).toLocaleString('fr-FR')} F</th>
                                 <th></th>
                             </tr>
                             ${data.assurance2_active && data.assurance2_nom ? `
                             <tr>
                                 <th colspan="4" class="text-end text-info">Prise en charge ${data.assurance2_nom} :</th>
-                                <th id="convertPriseEnCharge2" class="text-end text-info">${calculePriseEnCharge2Conversion().toLocaleString()} F</th>
+                                <th id="convertPriseEnCharge2" class="text-end text-info">${Math.round(calculePriseEnCharge2Conversion()).toLocaleString('fr-FR')} F</th>
                                 <th></th>
                             </tr>
                             ` : ''}
                             <tr class="table-warning">
                                 <th colspan="4" class="text-end text-danger">NET À PAYER :</th>
-                                <th id="convertNetAPayer" class="text-end text-danger fw-bold">${calculeNetAPayerConversion().toLocaleString()} F</th>
+                                <th id="convertNetAPayer" class="text-end text-danger fw-bold">${Math.round(calculeNetAPayerConversion()).toLocaleString('fr-FR')} F</th>
                                 <th></th>
                             </tr>
                         </tfoot>
@@ -1828,7 +1828,7 @@ function afficherModalConversion(data) {
     
     setTimeout(() => {
         document.querySelector('#convertirProformaModal .btn-success').innerHTML = 
-            `<i class="fas fa-receipt"></i> Finaliser la vente (${calculeNetAPayerConversion().toLocaleString()} F)`;
+            `<i class="fas fa-receipt"></i> Finaliser la vente (${Math.round(calculeNetAPayerConversion()).toLocaleString('fr-FR')} F)`;
     }, 100);
     
     new bootstrap.Modal(document.getElementById('convertirProformaModal')).show();
@@ -1932,16 +1932,16 @@ function mettreAJourTotauxConversion() {
     const netAPayer = calculeNetAPayerConversion();
     conversionNetAPayer = netAPayer;
     
-    document.getElementById('convertSousTotal').textContent = sousTotal.toLocaleString() + ' F';
-    document.getElementById('convertPriseEnCharge').textContent = priseEnCharge.toLocaleString() + ' F';
-    document.getElementById('convertNetAPayer').textContent = netAPayer.toLocaleString() + ' F';
+    document.getElementById('convertSousTotal').textContent = Math.round(sousTotal).toLocaleString('fr-FR') + ' F';
+    document.getElementById('convertPriseEnCharge').textContent = Math.round(priseEnCharge).toLocaleString('fr-FR') + ' F';
+    document.getElementById('convertNetAPayer').textContent = Math.round(netAPayer).toLocaleString('fr-FR') + ' F';
     
     const el2 = document.getElementById('convertPriseEnCharge2');
-    if (el2) el2.textContent = priseEnCharge2.toLocaleString() + ' F';
+    if (el2) el2.textContent = Math.round(priseEnCharge2).toLocaleString('fr-FR') + ' F';
     
     const btn = document.querySelector('#convertirProformaModal .btn-success');
     if (btn) {
-        btn.innerHTML = `<i class="fas fa-receipt"></i> Finaliser la vente (${netAPayer.toLocaleString()} F)`;
+        btn.innerHTML = `<i class="fas fa-receipt"></i> Finaliser la vente (${Math.round(netAPayer).toLocaleString('fr-FR')} F)`;
     }
     
     calculerRenduConversion();
@@ -1962,7 +1962,7 @@ function modifierArticleConversion(index, champ, valeur) {
     if (rows[index]) {
         const cells = rows[index].getElementsByTagName('td');
         if (cells.length >= 5) {
-            cells[4].textContent = panierConversion[index].total.toLocaleString() + ' F';
+            cells[4].textContent = Math.round(panierConversion[index].total).toLocaleString('fr-FR') + ' F';
         }
     }
     
@@ -2032,7 +2032,7 @@ function ajouterArticleConversion() {
                    style="width:100px; display:inline-block;" 
                    onchange="modifierArticleConversion(${index}, 'prix', this.value)">
         </td>
-        <td class="text-end fw-bold">${(prix * qte).toLocaleString()} F</td>
+        <td class="text-end fw-bold">${Math.round(prix * qte).toLocaleString('fr-FR')} F</td>
         <td>
             <button class="btn btn-sm btn-danger" onclick="supprimerArticleConversion(${index})">
                 <i class="fas fa-times"></i>
@@ -2063,7 +2063,7 @@ function calculerRenduConversion() {
     
     const renduElement = document.getElementById('convertMontantRendu');
     if (montantDonne < netAPayer) {
-        renduElement.value = `${resteAPayer.toLocaleString()} F manquant`;
+        renduElement.value = `${Math.round(resteAPayer).toLocaleString('fr-FR')} F manquant`;
         renduElement.style.color = '#dc3545';
         renduElement.style.background = '#fde8e8';
     } else if (rendu === 0 && montantDonne === netAPayer) {
@@ -2071,7 +2071,7 @@ function calculerRenduConversion() {
         renduElement.style.color = '#28a745';
         renduElement.style.background = '#f0f8f0';
     } else if (rendu > 0) {
-        renduElement.value = `${rendu.toLocaleString()} FCFA`;
+        renduElement.value = `${Math.round(rendu).toLocaleString('fr-FR')} FCFA`;
         renduElement.style.color = '#28a745';
         renduElement.style.background = '#f0f8f0';
     } else {
@@ -2101,14 +2101,14 @@ function finaliserConversionVente() {
     const typeDocument = document.getElementById('convertTypeDocument').value;
     
     if (netAPayer > 0 && montantDonne === 0) {
-        if (!confirm(`Le patient n'a rien donné (0 FCFA) alors que le net à payer est de ${netAPayer.toLocaleString()} FCFA.\n\nCréer une facture pour le reste à payer ?`)) {
+        if (!confirm(`Le patient n'a rien donné (0 FCFA) alors que le net à payer est de ${Math.round(netAPayer).toLocaleString('fr-FR')} FCFA.\n\nCréer une facture pour le reste à payer ?`)) {
             document.getElementById('convertMontantDonne').focus();
             return;
         }
     }
     
     if (montantDonne > 0 && montantDonne < netAPayer) {
-        if (!confirm(`Le patient a donné ${montantDonne.toLocaleString()} FCFA mais le net à payer est de ${netAPayer.toLocaleString()} FCFA.\n\nIl reste ${(netAPayer - montantDonne).toLocaleString()} FCFA à payer.\n\nContinuer ?`)) {
+        if (!confirm(`Le patient a donné ${Math.round(montantDonne).toLocaleString('fr-FR')} FCFA mais le net à payer est de ${Math.round(netAPayer).toLocaleString('fr-FR')} FCFA.\n\nIl reste ${Math.round(netAPayer - montantDonne).toLocaleString('fr-FR')} FCFA à payer.\n\nContinuer ?`)) {
             document.getElementById('convertMontantDonne').focus();
             return;
         }
@@ -2174,7 +2174,7 @@ function finaliserConversionVente() {
     .then(response => {
         hideLoader();
         if (response.success) {
-            alert(`Proforma convertie en vente #${response.vente_id} !\nNet à payer: ${response.net_a_payer.toLocaleString()} FCFA`);
+            alert(`Proforma convertie en vente #${response.vente_id} !\nNet à payer: ${Math.round(response.net_a_payer).toLocaleString('fr-FR')} FCFA`);
             
             bootstrap.Modal.getInstance(document.getElementById('convertirProformaModal')).hide();
             
@@ -2366,7 +2366,7 @@ function modifierProforma(id) {
                                                 <input type="number" class="form-control form-control-sm" value="${item.prix_unitaire}" 
                                                        style="width:100px;" onchange="modifierArticleModif(${index}, 'prix', this.value)">
                                             </td>
-                                            <td class="text-end fw-bold">${(item.prix_unitaire * item.quantite).toLocaleString()} FCFA</td>
+                                            <td class="text-end fw-bold">${Math.round(item.prix_unitaire * item.quantite).toLocaleString('fr-FR')} FCFA</td>
                                             <td>
                                                 <button class="btn btn-sm btn-danger" onclick="supprimerArticleModif(${index})">
                                                     <i class="fas fa-times"></i>
@@ -2378,22 +2378,22 @@ function modifierProforma(id) {
                                 <tfoot class="table-light">
                                     <tr>
                                         <th colspan="4" class="text-end">Sous-total :</th>
-                                        <th id="modifSousTotal" class="text-end">${data.sous_total ? data.sous_total.toLocaleString() : 0} FCFA</th>
+                                        <th id="modifSousTotal" class="text-end">${data.sous_total ? Math.round(data.sous_total).toLocaleString('fr-FR') : 0} FCFA</th>
                                         <th></th>
                                     </tr>
                                     <tr>
                                         <th colspan="4" class="text-end text-success">Prise en charge principale :</th>
-                                        <th id="modifPriseEnCharge" class="text-end text-success">${data.prise_en_charge ? data.prise_en_charge.toLocaleString() : 0} FCFA</th>
+                                        <th id="modifPriseEnCharge" class="text-end text-success">${data.prise_en_charge ? Math.round(data.prise_en_charge).toLocaleString('fr-FR') : 0} FCFA</th>
                                         <th></th>
                                     </tr>
                                     <tr id="modifPriseEnCharge2Row" style="${data.prise_en_charge2 && data.prise_en_charge2 > 0 ? '' : 'display:none;'}">
                                         <th colspan="4" class="text-end text-info">Prise en charge complémentaire :</th>
-                                        <th id="modifPriseEnCharge2" class="text-end text-info">${data.prise_en_charge2 ? data.prise_en_charge2.toLocaleString() : 0} FCFA</th>
+                                        <th id="modifPriseEnCharge2" class="text-end text-info">${data.prise_en_charge2 ? Math.round(data.prise_en_charge2).toLocaleString('fr-FR') : 0} FCFA</th>
                                         <th></th>
                                     </tr>
                                     <tr class="table-warning">
                                         <th colspan="4" class="text-end text-danger">NET À PAYER :</th>
-                                        <th id="modifNetAPayer" class="text-end text-danger fw-bold">${data.net_a_payer ? data.net_a_payer.toLocaleString() : 0} FCFA</th>
+                                        <th id="modifNetAPayer" class="text-end text-danger fw-bold">${data.net_a_payer ? Math.round(data.net_a_payer).toLocaleString('fr-FR') : 0} FCFA</th>
                                         <th></th>
                                     </tr>
                                 </tfoot>
@@ -2477,15 +2477,15 @@ function calculerTotalModif() {
     let netAPayer = sousTotal - priseEnCharge - priseEnCharge2;
     if (netAPayer < 0) netAPayer = 0;
     
-    document.getElementById('modifSousTotal').textContent = sousTotal.toLocaleString() + ' FCFA';
-    document.getElementById('modifPriseEnCharge').textContent = priseEnCharge.toLocaleString() + ' FCFA';
-    document.getElementById('modifNetAPayer').textContent = netAPayer.toLocaleString() + ' FCFA';
+    document.getElementById('modifSousTotal').textContent = Math.round(sousTotal).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('modifPriseEnCharge').textContent = Math.round(priseEnCharge).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('modifNetAPayer').textContent = Math.round(netAPayer).toLocaleString('fr-FR') + ' FCFA';
     
     const row2 = document.getElementById('modifPriseEnCharge2Row');
     const display2 = document.getElementById('modifPriseEnCharge2');
     if (assurance2Active && priseEnCharge2 > 0) {
         const nom = document.getElementById('modifAssurance2Nom').value || 'Assurance comp.';
-        display2.textContent = `${nom} (${tauxComplementaire}%) : - ${priseEnCharge2.toLocaleString()} FCFA`;
+        display2.textContent = `${nom} (${tauxComplementaire}%) : - ${Math.round(priseEnCharge2).toLocaleString('fr-FR')} FCFA`;
         row2.style.display = '';
     } else {
         row2.style.display = 'none';
@@ -2508,7 +2508,7 @@ function modifierArticleModif(index, champ, valeur) {
     if (rows[index]) {
         const cells = rows[index].getElementsByTagName('td');
         if (cells.length >= 5) {
-            cells[4].textContent = (articles[index].quantite * articles[index].prix_unitaire).toLocaleString() + ' FCFA';
+            cells[4].textContent = Math.round(articles[index].quantite * articles[index].prix_unitaire).toLocaleString('fr-FR') + ' FCFA';
         }
     }
 }
@@ -2563,7 +2563,7 @@ function ajouterArticleModif() {
             <input type="number" class="form-control form-control-sm" value="${prix}" 
                    style="width:100px;" onchange="modifierArticleModif(${index}, 'prix', this.value)">
         </td>
-        <td class="text-end fw-bold">${(prix * qte).toLocaleString()} FCFA</td>
+        <td class="text-end fw-bold">${Math.round(prix * qte).toLocaleString('fr-FR')} FCFA</td>
         <td>
             <button class="btn btn-sm btn-danger" onclick="supprimerArticleModif(${index})">
                 <i class="fas fa-times"></i>

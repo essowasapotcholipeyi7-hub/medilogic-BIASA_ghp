@@ -610,7 +610,7 @@ function filtrerDepenses() {
         }
     });
     
-    document.getElementById('totalDepensesFilter').innerHTML = totalVisible.toLocaleString() + ' FCFA';
+    document.getElementById('totalDepensesFilter').innerHTML = Math.round(totalVisible).toLocaleString('fr-FR') + ' FCFA';
     document.getElementById('depensesResultCount').innerHTML = visibleCount;
 }
 

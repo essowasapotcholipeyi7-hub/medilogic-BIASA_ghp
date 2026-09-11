@@ -547,7 +547,7 @@ function afficherPageVentes(page) {
         var aideTaux = v.taux_aide || 0;
         var aideDisplay = '';
         if (aideMontant > 0) {
-            aideDisplay = '<span class="badge bg-warning text-dark" title="Aide ' + aideTaux + '%">' + Math.round(aideMontant).toLocaleString() + ' F</span>';
+            aideDisplay = '<span class="badge bg-warning text-dark" title="Aide ' + aideTaux + '%">' + Math.round(aideMontant).toLocaleString('fr-FR') + ' F</span>';
         } else {
             aideDisplay = '<span class="text-muted">-</span>';
         }
@@ -573,9 +573,9 @@ function afficherPageVentes(page) {
         html += '<td>' + dateStr + '</td>';
         html += '<td><strong>' + (v.patient_nom || 'Patient') + '</strong></td>';
         html += '<td><span class="badge ' + badgeClass + '">' + typeLabel + '</span></td>';
-        html += '<td class="text-end fw-bold">' + Math.round(netAPayer).toLocaleString() + ' F</td>';
-        html += '<td class="text-end" style="color:#28a745;">' + Math.round(montantDonne).toLocaleString() + ' F</td>';
-        html += '<td class="text-end" style="color:#dc3545;">' + Math.round(resteAPayer).toLocaleString() + ' F</td>';
+        html += '<td class="text-end fw-bold">' + Math.round(netAPayer).toLocaleString('fr-FR') + ' F</td>';
+        html += '<td class="text-end" style="color:#28a745;">' + Math.round(montantDonne).toLocaleString('fr-FR') + ' F</td>';
+        html += '<td class="text-end" style="color:#dc3545;">' + Math.round(resteAPayer).toLocaleString('fr-FR') + ' F</td>';
         html += '<td>' + aideDisplay + '</td>';  // 🔥 NOUVELLE COLONNE
         html += '<td><span class="badge ' + statutBadge + '">' + statutPaiement + '</span></td>';
         html += '<td>';
@@ -678,26 +678,26 @@ function voirDetailVente(venteId, type) {
                 <h6><i class="fas fa-shield-alt"></i> Assurances</h6>
                 <p>${v.assurance_nom || v.type_assurance || 'Non assuré'}</p>
                 ${v.assurance2_nom ? `<p class="text-muted small">+ ${v.assurance2_nom} (${v.taux_assurance2 || 0}%)${v.societe_assurance2 ? ` — Société: ${v.societe_assurance2}` : ''}</p>` : ''}
-                ${tauxAide > 0 ? `<p class="text-muted small">Aide hospitalière: ${tauxAide}% (${Math.round(aideHospitaliere).toLocaleString()} F)</p>` : ''}
+                ${tauxAide > 0 ? `<p class="text-muted small">Aide hospitalière: ${tauxAide}% (${Math.round(aideHospitaliere).toLocaleString('fr-FR')} F)</p>` : ''}
             </div>
         </div>
         <hr>
         <div class="row">
             <div class="col-md-3">
                 <h6><i class="fas fa-coins"></i> PBR</h6>
-                <p class="text-primary">${(v.base_remboursement || 0).toLocaleString()} F</p>
+                <p class="text-primary">${Math.round(v.base_remboursement || 0).toLocaleString('fr-FR')} F</p>
             </div>
             <div class="col-md-3">
                 <h6><i class="fas fa-money-bill"></i> Net à payer</h6>
-                <p class="fw-bold">${(v.net_a_payer || 0).toLocaleString()} F</p>
+                <p class="fw-bold">${Math.round(v.net_a_payer || 0).toLocaleString('fr-FR')} F</p>
             </div>
             <div class="col-md-3">
                 <h6><i class="fas fa-hand-holding-usd"></i> Payé</h6>
-                <p style="color:#28a745; font-weight:bold;">${(v.montant_donne || 0).toLocaleString()} F</p>
+                <p style="color:#28a745; font-weight:bold;">${Math.round(v.montant_donne || 0).toLocaleString('fr-FR')} F</p>
             </div>
             <div class="col-md-3">
                 <h6><i class="fas fa-arrow-right"></i> Reste</h6>
-                <p style="color:#dc3545; font-weight:bold;">${(v.reste_a_payer || 0).toLocaleString()} F</p>
+                <p style="color:#dc3545; font-weight:bold;">${Math.round(v.reste_a_payer || 0).toLocaleString('fr-FR')} F</p>
             </div>
         </div>
         ${v.facture_numero ? `<div class="alert alert-info mt-2"><i class="fas fa-file-invoice"></i> Facture: ${v.facture_numero}</div>` : ''}
@@ -846,13 +846,13 @@ function calculerStats(debut, fin) {
     if (elTotalVentes) elTotalVentes.innerText = totalVentes;
     
     var elCA = document.getElementById('statCA');
-    if (elCA) elCA.innerHTML = Math.round(totalCA).toLocaleString() + ' F';
+    if (elCA) elCA.innerHTML = Math.round(totalCA).toLocaleString('fr-FR') + ' F';
     
     var elCreances = document.getElementById('statCreances');
-    if (elCreances) elCreances.innerHTML = Math.round(totalCreances).toLocaleString() + ' F';
+    if (elCreances) elCreances.innerHTML = Math.round(totalCreances).toLocaleString('fr-FR') + ' F';
     
     var elCATotal = document.getElementById('statCATotal');
-    if (elCATotal) elCATotal.innerHTML = Math.round(totalCATotal).toLocaleString() + ' F';
+    if (elCATotal) elCATotal.innerHTML = Math.round(totalCATotal).toLocaleString('fr-FR') + ' F';
     
     var elActes = document.getElementById('statActes');
     if (elActes) elActes.innerText = totalActes;
@@ -1053,7 +1053,7 @@ function imprimerHistorique() {
     
     html += '<div class="summary">';
     html += '<div class="summary-item"><strong>Total ventes</strong><br>' + ventesFiltrees.length + '</div>';
-    html += '<div class="summary-item"><strong>CA (espèces)</strong><br>' + Math.round(totalCA).toLocaleString() + ' F</div>';
+    html += '<div class="summary-item"><strong>CA (espèces)</strong><br>' + Math.round(totalCA).toLocaleString('fr-FR') + ' F</div>';
     html += '<div class="summary-item"><strong>Actes</strong><br>' + actesCount + '</div>';
     html += '<div class="summary-item"><strong>Pharmacie</strong><br>' + pharmaCount + '</div>';
     html += '<div class="summary-item"><strong style="color:#8b5cf6;">Mixte</strong><br>' + mixteCount + '</div>';  // 🔥 NOUVEAU
@@ -1131,16 +1131,16 @@ function imprimerHistorique() {
         html += '<td>' + (v.patient_nom || 'Patient') + '</td>';
         html += '<td><span class="' + badgeClass + '">' + typeLabel + '</span></td>';
         html += '<td class="detail-cell">' + details + '</td>';
-        html += '<td class="text-end">' + Math.round(netAPayer).toLocaleString() + ' F</td>';
-        html += '<td class="text-end text-success">' + Math.round(montantDonne).toLocaleString() + ' F</td>';
-        html += '<td class="text-end text-danger">' + Math.round(resteAPayer).toLocaleString() + ' F</td>';
+        html += '<td class="text-end">' + Math.round(netAPayer).toLocaleString('fr-FR') + ' F</td>';
+        html += '<td class="text-end text-success">' + Math.round(montantDonne).toLocaleString('fr-FR') + ' F</td>';
+        html += '<td class="text-end text-danger">' + Math.round(resteAPayer).toLocaleString('fr-FR') + ' F</td>';
         html += '<td>' + statutPaiement + '</td>';
         html += '</tr>';
     }
     
     html += '</tbody></table>';
     html += '<div class="footer">';
-    html += 'Total: ' + ventesFiltrees.length + ' ventes - CA (espèces): ' + Math.round(totalCA).toLocaleString() + ' FCFA<br>';
+    html += 'Total: ' + ventesFiltrees.length + ' ventes - CA (espèces): ' + Math.round(totalCA).toLocaleString('fr-FR') + ' FCFA<br>';
     html += 'SSoftOneV10';
     html += '</div>';
     
@@ -1225,8 +1225,8 @@ function imprimerAides() {
     
     html += '<div class="summary">';
     html += '<div class="summary-item"><strong>Patients aidés</strong><br>' + totalAides + '</div>';
-    html += '<div class="summary-item"><strong>Total aide</strong><br>' + Math.round(totalMontantAide).toLocaleString() + ' F</div>';
-    html += '<div class="summary-item"><strong>Total ventes</strong><br>' + Math.round(totalSousTotal).toLocaleString() + ' F</div>';
+    html += '<div class="summary-item"><strong>Total aide</strong><br>' + Math.round(totalMontantAide).toLocaleString('fr-FR') + ' F</div>';
+    html += '<div class="summary-item"><strong>Total ventes</strong><br>' + Math.round(totalSousTotal).toLocaleString('fr-FR') + ' F</div>';
     html += '</div>';
     
     html += '<table>';
@@ -1267,19 +1267,19 @@ function imprimerAides() {
         html += '<td>' + (v.patient_nom || 'Patient') + '</td>';
         html += '<td>' + typeLabel + '</td>';
         html += '<td><span class="badge-aide">' + tauxAide + '%</span></td>';
-        html += '<td class="text-end">' + Math.round(sousTotal).toLocaleString() + ' F</td>';
-        html += '<td class="text-end text-success">' + Math.round(montantAide).toLocaleString() + ' F</td>';
+        html += '<td class="text-end">' + Math.round(sousTotal).toLocaleString('fr-FR') + ' F</td>';
+        html += '<td class="text-end text-success">' + Math.round(montantAide).toLocaleString('fr-FR') + ' F</td>';
         html += '</tr>';
     }
     
     html += '<tr style="font-weight:bold;border-top:2px solid #333;">';
     html += '<td colspan="6" class="text-end">TOTAL :</td>';
-    html += '<td class="text-end text-success">' + Math.round(totalMontantAide).toLocaleString() + ' F</td>';
+    html += '<td class="text-end text-success">' + Math.round(totalMontantAide).toLocaleString('fr-FR') + ' F</td>';
     html += '</tr>';
     
     html += '</tbody></table>';
     html += '<div class="footer">';
-    html += 'Total: ' + totalAides + ' patients aidés - Montant total: ' + Math.round(totalMontantAide).toLocaleString() + ' FCFA<br>';
+    html += 'Total: ' + totalAides + ' patients aidés - Montant total: ' + Math.round(totalMontantAide).toLocaleString('fr-FR') + ' FCFA<br>';
     html += 'SSoftOneV10';
     html += '</div>';
     

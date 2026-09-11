@@ -606,14 +606,14 @@ function renderProduitsPage() {
         return `
             <tr>
                 <td><strong>${p.nom}</strong></td>
-                <td>${parseInt(p.prix_vente || 0).toLocaleString()} F</td>
-                <td>${parseInt(p.prix_achat || 0).toLocaleString()} F</td>
-                <td>${parseInt(p.pbr || p.prix_vente || 0).toLocaleString()} F</td>
+                <td>${Math.round(parseInt(p.prix_vente || 0)).toLocaleString('fr-FR')} F</td>
+                <td>${Math.round(parseInt(p.prix_achat || 0)).toLocaleString('fr-FR')} F</td>
+                <td>${Math.round(parseInt(p.pbr || p.prix_vente || 0)).toLocaleString('fr-FR')} F</td>
                 <td class="${stockClass}">${p.quantite_stock || 0}</td>
                 <td>${p.seuil_alerte || 10}</td>
                 <td class="${peremptionClass}">${peremptionText}</td>
                 <td>${p.lot || '-'}</td>
-                <td class="${margeClass}">${marge.toLocaleString()} F</td>
+                <td class="${margeClass}">${Math.round(marge).toLocaleString('fr-FR')} F</td>
                 <td>
                     <button class="btn btn-sm btn-info" onclick="approvisionner(${p.id}, '${p.nom.replace(/'/g, "\\'")}')" title="Approvisionner">
                         <i class="fas fa-truck"></i>

@@ -206,8 +206,8 @@ function filtrerAnnulations() {
     });
     
     document.getElementById('resultCount').innerText = visibleCount;
-    document.getElementById('totalAnnule').innerText = totalVisible.toLocaleString();
-    document.getElementById('footerTotal').innerHTML = totalVisible.toLocaleString() + ' FCFA';
+    document.getElementById('totalAnnule').innerText = Math.round(totalVisible).toLocaleString('fr-FR');
+    document.getElementById('footerTotal').innerHTML = Math.round(totalVisible).toLocaleString('fr-FR') + ' FCFA';
 }
 function clearSearch() {
     document.getElementById('searchAnnulation').value = '';
@@ -229,7 +229,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (footerTotal && footerTotal.innerText === '0 FCFA') {
         const total = {{ annulations|sum(attribute='ancien_net_a_payer')|default(0) }};
         if (total > 0) {
-            footerTotal.innerHTML = total.toLocaleString() + ' FCFA';
+            footerTotal.innerHTML = Math.round(total).toLocaleString('fr-FR') + ' FCFA';
         }
     }
 });

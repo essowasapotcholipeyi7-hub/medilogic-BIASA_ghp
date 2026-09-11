@@ -1094,11 +1094,11 @@ function showPaiementModal(id, assurance, mois, total, deja) {
     document.getElementById('paiementFactureId').value = id;
     document.getElementById('paiementAssurance').value = assurance;
     document.getElementById('paiementMois').value = mois;
-    document.getElementById('paiementTotal').value = Math.round(total).toLocaleString() + ' FCFA';
-    document.getElementById('paiementDeja').value = Math.round(deja).toLocaleString() + ' FCFA';
+    document.getElementById('paiementTotal').value = Math.round(total).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('paiementDeja').value = Math.round(deja).toLocaleString('fr-FR') + ' FCFA';
     const reste = total - deja;
     document.getElementById('paiementMontant').value = reste;
-    document.getElementById('paiementResteHint').innerHTML = `Reste: ${Math.round(reste).toLocaleString()} FCFA`;
+    document.getElementById('paiementResteHint').innerHTML = `Reste: ${Math.round(reste).toLocaleString('fr-FR')} FCFA`;
     document.getElementById('paiementReference').value = '';
     document.getElementById('paiementDateVersement').value = '';
     new bootstrap.Modal(modal).show();
@@ -1120,7 +1120,7 @@ function enregistrerPaiement() {
         return;
     }
 
-    if (confirm(`Confirmer le remboursement de ${montant.toLocaleString()} FCFA ?`)) {
+    if (confirm(`Confirmer le remboursement de ${Math.round(montant).toLocaleString('fr-FR')} FCFA ?`)) {
         fetch(`/api/assurances/factures/${id}/payer`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},

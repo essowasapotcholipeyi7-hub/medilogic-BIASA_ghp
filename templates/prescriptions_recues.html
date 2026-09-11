@@ -417,7 +417,7 @@ function mettreAJourPanier() {
     
     document.getElementById('panierBadge').textContent = count;
     document.getElementById('panierCount').textContent = count;
-    document.getElementById('panierTotal').textContent = total.toLocaleString() + ' FCFA';
+    document.getElementById('panierTotal').textContent = Math.round(total).toLocaleString('fr-FR') + ' FCFA';
     
     const floating = document.getElementById('panierFloating');
     if (count > 0) {
@@ -426,7 +426,7 @@ function mettreAJourPanier() {
         itemsContainer.innerHTML = panier.map(item => 
             `<div class="d-flex justify-content-between align-items-center border-bottom py-1">
                 <span>${item.nom}</span>
-                <span class="text-success">${(item.prix_total || 0).toLocaleString()} F</span>
+                <span class="text-success">${Math.round(item.prix_total || 0).toLocaleString('fr-FR')} F</span>
             </div>`
         ).join('');
     } else {
@@ -799,7 +799,7 @@ async function finaliserPanier() {
     let msg = `📋 Finaliser le panier ?\n\n`;
     msg += `👤 Patient: ${patientNom} ${patientPrenom}\n`;
     msg += `📦 ${panier.length} article(s)\n`;
-    msg += `💰 Total: ${total.toLocaleString()} FCFA\n\n`;
+    msg += `💰 Total: ${Math.round(total).toLocaleString('fr-FR')} FCFA\n\n`;
     msg += type === 'actes' ? '🔬 Vente d\'ACTES' : '💊 Vente PHARMACIE';
     msg += `\n\nLe patient et les articles seront automatiquement chargés ✅`;
 
@@ -893,11 +893,11 @@ function voirDetails(id) {
                         </div>
                         <div class="col-md-4">
                             <h6><i class="fas fa-money-bill me-2"></i>Prix unitaire</h6>
-                            <p><strong>${p.prix_unitaire.toLocaleString()} FCFA</strong></p>
+                            <p><strong>${Math.round(p.prix_unitaire).toLocaleString('fr-FR')} FCFA</strong></p>
                         </div>
                         <div class="col-md-4">
                             <h6><i class="fas fa-calculator me-2 text-success"></i>Total</h6>
-                            <p class="text-success fw-bold fs-5">${p.prix_total.toLocaleString()} FCFA</p>
+                            <p class="text-success fw-bold fs-5">${Math.round(p.prix_total).toLocaleString('fr-FR')} FCFA</p>
                         </div>
                     </div>
                     <hr>

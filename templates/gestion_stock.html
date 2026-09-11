@@ -611,14 +611,14 @@ function renderProduitsPage() {
         return `
             <tr>
                 <td><strong>${p.nom}</strong></td>
-                <td>${parseInt(p.prix_vente || 0).toLocaleString()} F</td>
-                <td>${parseInt(p.prix_achat || 0).toLocaleString()} F</td>
-                <td>${parseInt(p.pbr || p.prix_vente || 0).toLocaleString()} F</td>
+                <td>${Math.round(parseInt(p.prix_vente || 0)).toLocaleString('fr-FR')} F</td>
+                <td>${Math.round(parseInt(p.prix_achat || 0)).toLocaleString('fr-FR')} F</td>
+                <td>${Math.round(parseInt(p.pbr || p.prix_vente || 0)).toLocaleString('fr-FR')} F</td>
                 <td class="${stockClass}">${p.quantite_stock || 0}</td>
                 <td>${p.seuil_alerte || 10}</td>
                 <td class="${peremptionClass}">${peremptionText}</td>
                 <td>${p.lot || '-'}</td>
-                <td class="${margeClass}">${marge.toLocaleString()} F</td>
+                <td class="${margeClass}">${Math.round(marge).toLocaleString('fr-FR')} F</td>
                 <td>
                     <button class="btn btn-sm btn-info" onclick="approvisionner(${p.id}, '${p.nom.replace(/'/g, "\\'")}')" title="Approvisionner">
                         <i class="fas fa-truck"></i>
@@ -695,13 +695,13 @@ function updateStats(produits) {
     
     // Cartes
     document.getElementById('totalProduitsCard').textContent = total;
-    document.getElementById('valeurStockCard').textContent = Math.round(valeurStock).toLocaleString() + ' FCFA';
+    document.getElementById('valeurStockCard').textContent = Math.round(valeurStock).toLocaleString('fr-FR') + ' FCFA';
     document.getElementById('produitsPerimesCard').textContent = perimes;
     document.getElementById('stockAlerteCard').textContent = stockAlerte;
     
     // Statistiques
     document.getElementById('statTotalProduits').textContent = total;
-    document.getElementById('statValeurStock').textContent = Math.round(valeurStock).toLocaleString() + ' FCFA';
+    document.getElementById('statValeurStock').textContent = Math.round(valeurStock).toLocaleString('fr-FR') + ' FCFA';
     document.getElementById('statPerimes').textContent = perimes;
     document.getElementById('statBientotPerimes').textContent = bientotPerimes;
     
@@ -712,11 +712,11 @@ function updateStats(produits) {
             <tr>
                 <td>${i + 1}</td>
                 <td><strong>${p.nom}</strong></td>
-                <td>${p.prix_vente.toLocaleString()} F</td>
-                <td>${p.prix_achat.toLocaleString()} F</td>
-                <td class="text-success">${p.marge.toLocaleString()} F</td>
+                <td>${Math.round(p.prix_vente).toLocaleString('fr-FR')} F</td>
+                <td>${Math.round(p.prix_achat).toLocaleString('fr-FR')} F</td>
+                <td class="text-success">${Math.round(p.marge).toLocaleString('fr-FR')} F</td>
                 <td>${p.stock}</td>
-                <td class="text-success fw-bold">${p.marge_totale.toLocaleString()} F</td>
+                <td class="text-success fw-bold">${Math.round(p.marge_totale).toLocaleString('fr-FR')} F</td>
             </tr>
         `).join('');
     } else {

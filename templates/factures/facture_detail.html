@@ -348,7 +348,7 @@ function ouvrirPaiement(factureId) {
     const reste = {{ facture.reste_a_payer }};
     document.getElementById('montantPaiement').value = reste;
     document.getElementById('montantPaiement').max = reste;
-    document.getElementById('montantMaxDisplay').textContent = reste.toLocaleString();
+    document.getElementById('montantMaxDisplay').textContent = Math.round(reste).toLocaleString('fr-FR');
     new bootstrap.Modal(document.getElementById('paiementModal')).show();
 }
 
@@ -364,16 +364,16 @@ function confirmerPaiement(factureId) {
     
     const reste = {{ facture.reste_a_payer }};
     if (montant > reste) {
-        alert(`Le montant (${montant.toLocaleString()} FCFA) dépasse le reste à payer (${reste.toLocaleString()} FCFA)`);
+        alert(`Le montant (${Math.round(montant).toLocaleString('fr-FR')} FCFA) dépasse le reste à payer (${Math.round(reste).toLocaleString('fr-FR')} FCFA)`);
         return;
     }
     
     const confirmMsg = `📋 CONFIRMATION DE PAIEMENT\n\n`;
     confirmMsg += `Facture: {{ facture.numero_facture }}\n`;
     confirmMsg += `Patient: {{ facture.patient_nom }}\n`;
-    confirmMsg += `Montant: ${montant.toLocaleString()} FCFA\n`;
+    confirmMsg += `Montant: ${Math.round(montant).toLocaleString('fr-FR')} FCFA\n`;
     confirmMsg += `Mode: ${modePaiement}\n`;
-    confirmMsg += `Reste après paiement: ${(reste - montant).toLocaleString()} FCFA\n\n`;
+    confirmMsg += `Reste après paiement: ${Math.round(reste - montant).toLocaleString('fr-FR')} FCFA\n\n`;
     confirmMsg += `Confirmer ce paiement ?`;
     
     if (!confirm(confirmMsg)) {
@@ -396,7 +396,7 @@ function confirmerPaiement(factureId) {
         hideProgress();
         
         if (data.success) {
-            alert(`Paiement enregistré !\nMontant: ${montant.toLocaleString()} FCFA\nReste: ${data.reste_a_payer.toLocaleString()} FCFA`);
+            alert(`Paiement enregistré !\nMontant: ${Math.round(montant).toLocaleString('fr-FR')} FCFA\nReste: ${Math.round(data.reste_a_payer).toLocaleString('fr-FR')} FCFA`);
             
             bootstrap.Modal.getInstance(document.getElementById('paiementModal')).hide();
             

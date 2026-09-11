@@ -270,9 +270,9 @@ function chargerPaies() {
                     <td><strong>${e.nom} ${e.prenom}</strong></td>
                     <td>${e.poste || '-'}</td>
                     <td>${secteurBadge}</td>
-                    <td class="text-end">${(e.salaire_base || 0).toLocaleString()} F</td>
-                    <td class="text-end">${e.salaire_brut != null ? e.salaire_brut.toLocaleString() + ' F' : '-'}</td>
-                    <td class="text-end fw-bold">${e.net_a_payer != null ? e.net_a_payer.toLocaleString() + ' F' : '-'}</td>
+                    <td class="text-end">${Math.round(e.salaire_base || 0).toLocaleString('fr-FR')} F</td>
+                    <td class="text-end">${e.salaire_brut != null ? Math.round(e.salaire_brut).toLocaleString('fr-FR') + ' F' : '-'}</td>
+                    <td class="text-end fw-bold">${e.net_a_payer != null ? Math.round(e.net_a_payer).toLocaleString('fr-FR') + ' F' : '-'}</td>
                     <td>${badgeStatut(e.statut)}</td>
                     <td>${actions}</td>
                 `;

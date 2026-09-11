@@ -821,7 +821,7 @@ function ajouterActe() {
     if (!priseEnChargeAMU && !priseEnChargeCAC && (isAMU || isCAC)) {
         infoMessage = `⚠️ ACTE NON PRIS EN CHARGE PAR LES ASSURANCES\n\n`;
         infoMessage += `L'acte "${acteNom}" n'est pas pris en charge par les assurances du patient.\n\n`;
-        infoMessage += `Le patient devra payer la totalité du montant : ${(actePrix * quantite).toLocaleString()} FCFA\n\n`;
+        infoMessage += `Le patient devra payer la totalité du montant : ${Math.round(actePrix * quantite).toLocaleString('fr-FR')} FCFA\n\n`;
         infoMessage += `La clinique peut appliquer une réduction si elle le souhaite.\n\n`;
         infoMessage += `Voulez-vous ajouter cet acte au panier ?`;
     }
@@ -1003,7 +1003,7 @@ function afficherPanier() {
 
         let cellPBR = row.insertCell(3);
         cellPBR.className = 'text-center';
-        cellPBR.innerHTML = '<span class="badge bg-primary">' + (item.pbr || item.prix).toLocaleString() + ' F</span>';
+        cellPBR.innerHTML = '<span class="badge bg-primary">' + Math.round(item.pbr || item.prix).toLocaleString('fr-FR') + ' F</span>';
 
         // ⭐ Part AMU de cette ligne précise
         let cellPartAMU = row.insertCell(4);
@@ -1015,7 +1015,7 @@ function afficherPanier() {
             partAMULigne = (baseLigne * tauxLigne) / 100;
         }
         cellPartAMU.innerHTML = partAMULigne > 0
-            ? '<span class="badge bg-success">' + Math.round(partAMULigne).toLocaleString() + ' F</span>'
+            ? '<span class="badge bg-success">' + Math.round(partAMULigne).toLocaleString('fr-FR') + ' F</span>'
             : '<span class="text-muted">-</span>';
 
         let cellQuantite = row.insertCell(5);
@@ -1028,14 +1028,14 @@ function afficherPanier() {
 
         let cellTotal = row.insertCell(6);
         cellTotal.className = 'text-end';
-        cellTotal.innerHTML = item.total.toLocaleString() + ' FCFA';
+        cellTotal.innerHTML = Math.round(item.total).toLocaleString('fr-FR') + ' FCFA';
 
         let cellAction = row.insertCell(7);
         cellAction.className = 'text-center';
         cellAction.innerHTML = '<button class="btn btn-sm btn-danger" onclick="supprimerActe(' + index + ')"><i class="fas fa-trash"></i></button>';
     }
     
-    document.getElementById('baseRemboursement').innerHTML = pbrTotal.toLocaleString() + ' FCFA';
+    document.getElementById('baseRemboursement').innerHTML = Math.round(pbrTotal).toLocaleString('fr-FR') + ' FCFA';
     calculerTotal();
     calculerRendu();
 }
@@ -1268,9 +1268,9 @@ function calculerTotal() {
     if (netAPayer < 0) netAPayer = 0;
     
     // 🔥🔥🔥 MISE À JOUR DE L'AFFICHAGE 🔥🔥🔥
-    document.getElementById('sousTotal').innerHTML = sousTotal.toLocaleString() + ' FCFA';
-    document.getElementById('baseRemboursement').innerHTML = baseRemboursement.toLocaleString() + ' FCFA';
-    document.getElementById('priseEnCharge').innerHTML = priseEnChargeAMU.toLocaleString() + ' FCFA';
+    document.getElementById('sousTotal').innerHTML = Math.round(sousTotal).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('baseRemboursement').innerHTML = Math.round(baseRemboursement).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('priseEnCharge').innerHTML = Math.round(priseEnChargeAMU).toLocaleString('fr-FR') + ' FCFA';
     
     // Afficher la prise en charge complémentaire
     const priseEnCharge2El = document.getElementById('priseEnCharge2');
@@ -1279,7 +1279,7 @@ function calculerTotal() {
         const tauxAffiche = tauxTempModifie ? `${tauxComplementaire}%` : `${tauxComplementaire}%`;
         const modifText = tauxTempModifie ? ' 🔄' : '';
         const assuranceNom = patientAssurance2 || 'CAC';
-        priseEnCharge2El.innerHTML = `${assuranceNom} (${tauxAffiche}) : - ${priseEnChargeCAC.toLocaleString()} FCFA${modifText}`;
+        priseEnCharge2El.innerHTML = `${assuranceNom} (${tauxAffiche}) : - ${Math.round(priseEnChargeCAC).toLocaleString('fr-FR')} FCFA${modifText}`;
         if (priseEnCharge2Row) priseEnCharge2Row.style.display = 'table-row';
     } else if (priseEnCharge2Row) {
         priseEnCharge2Row.style.display = 'none';
@@ -1289,14 +1289,14 @@ function calculerTotal() {
     const aideEl = document.getElementById('aideHospitaliere');
     if (aideEl) {
         if (aideHospitaliere > 0) {
-            aideEl.innerHTML = `Aide hospitalière (${tauxAide}%) : - ${aideHospitaliere.toLocaleString()} FCFA`;
+            aideEl.innerHTML = `Aide hospitalière (${tauxAide}%) : - ${Math.round(aideHospitaliere).toLocaleString('fr-FR')} FCFA`;
             aideEl.style.display = 'block';
         } else {
             aideEl.style.display = 'none';
         }
     }
     
-    document.getElementById('netAPayer').innerHTML = netAPayer.toLocaleString() + ' FCFA';
+    document.getElementById('netAPayer').innerHTML = Math.round(netAPayer).toLocaleString('fr-FR') + ' FCFA';
     
     // Activer/désactiver les boutons
     document.getElementById('finaliserBtn').disabled = (panier.length === 0);
@@ -1377,7 +1377,7 @@ function calculerRendu() {
     
     if (montantDonne < netAPayer) {
         const manquant = netAPayer - montantDonne;
-        renduElement.value = '⚠️ ' + manquant.toLocaleString() + ' FCFA manquant';
+        renduElement.value = '⚠️ ' + Math.round(manquant).toLocaleString('fr-FR') + ' FCFA manquant';
         renduElement.style.color = '#dc3545';
         renduElement.style.background = '#fde8e8';
     } else if (rendu === 0) {
@@ -1385,7 +1385,7 @@ function calculerRendu() {
         renduElement.style.color = '#28a745';
         renduElement.style.background = '#f0f8f0';
     } else {
-        renduElement.value = rendu.toLocaleString() + ' FCFA';
+        renduElement.value = Math.round(rendu).toLocaleString('fr-FR') + ' FCFA';
         renduElement.style.color = '#28a745';
         renduElement.style.background = '#f0f8f0';
     }
@@ -1864,17 +1864,17 @@ function finaliserVente() {
         
         // 🔥 Construire le message détaillé
         let detailCalcul = `📊 DÉTAIL DU CALCUL :\n`;
-        detailCalcul += `💰 Sous-total : ${sousTotal.toLocaleString()} FCFA\n`;
+        detailCalcul += `💰 Sous-total : ${Math.round(sousTotal).toLocaleString('fr-FR')} FCFA\n`;
         if (priseEnCharge > 0) {
-            detailCalcul += `Prise en charge (${tauxPrincipal}%) : - ${priseEnCharge.toLocaleString()} FCFA\n`;
+            detailCalcul += `Prise en charge (${tauxPrincipal}%) : - ${Math.round(priseEnCharge).toLocaleString('fr-FR')} FCFA\n`;
         }
         if (priseEnCharge2 > 0) {
-            detailCalcul += `Prise en charge ${patientAssurance2} (${tauxComplementaire}%) : - ${priseEnCharge2.toLocaleString()} FCFA\n`;
+            detailCalcul += `Prise en charge ${patientAssurance2} (${tauxComplementaire}%) : - ${Math.round(priseEnCharge2).toLocaleString('fr-FR')} FCFA\n`;
         }
         if (tauxAide > 0) {
-            detailCalcul += `Aide hospitalière (${tauxAide}%) : - ${aideHospitaliere.toLocaleString()} FCFA\n`;
+            detailCalcul += `Aide hospitalière (${tauxAide}%) : - ${Math.round(aideHospitaliere).toLocaleString('fr-FR')} FCFA\n`;
         }
-        detailCalcul += `\n💰 NET À PAYER : ${netAPayer.toLocaleString()} FCFA\n`;
+        detailCalcul += `\n💰 NET À PAYER : ${Math.round(netAPayer).toLocaleString('fr-FR')} FCFA\n`;
         
         const confirmation = prompt(
             `⚠️ ATTENTION !\n\n` +
@@ -1910,22 +1910,22 @@ function finaliserVente() {
     
     if (montantDonne > 0 && montantDonne < netAPayer) {
         let detailCalcul = `DÉTAIL DU CALCUL :\n`;
-        detailCalcul += `Sous-total : ${sousTotal.toLocaleString()} FCFA\n`;
+        detailCalcul += `Sous-total : ${Math.round(sousTotal).toLocaleString('fr-FR')} FCFA\n`;
         if (priseEnCharge > 0) {
-            detailCalcul += `Prise en charge (${tauxPrincipal}%) : - ${priseEnCharge.toLocaleString()} FCFA\n`;
+            detailCalcul += `Prise en charge (${tauxPrincipal}%) : - ${Math.round(priseEnCharge).toLocaleString('fr-FR')} FCFA\n`;
         }
         if (priseEnCharge2 > 0) {
-            detailCalcul += `Prise en charge ${patientAssurance2} (${tauxComplementaire}%) : - ${priseEnCharge2.toLocaleString()} FCFA\n`;
+            detailCalcul += `Prise en charge ${patientAssurance2} (${tauxComplementaire}%) : - ${Math.round(priseEnCharge2).toLocaleString('fr-FR')} FCFA\n`;
         }
         if (tauxAide > 0) {
-            detailCalcul += `Aide hospitalière (${tauxAide}%) : - ${aideHospitaliere.toLocaleString()} FCFA\n`;
+            detailCalcul += `Aide hospitalière (${tauxAide}%) : - ${Math.round(aideHospitaliere).toLocaleString('fr-FR')} FCFA\n`;
         }
-        detailCalcul += `\n💰 NET À PAYER : ${netAPayer.toLocaleString()} FCFA\n`;
+        detailCalcul += `\n💰 NET À PAYER : ${Math.round(netAPayer).toLocaleString('fr-FR')} FCFA\n`;
         
         if (!confirm(
-            `⚠️ Le patient a donné ${montantDonne.toLocaleString()} FCFA\n\n` +
+            `⚠️ Le patient a donné ${Math.round(montantDonne).toLocaleString('fr-FR')} FCFA\n\n` +
             detailCalcul +
-            `Il reste ${resteAPayer.toLocaleString()} FCFA à payer.\n\n` +
+            `Il reste ${Math.round(resteAPayer).toLocaleString('fr-FR')} FCFA à payer.\n\n` +
             `Voulez-vous continuer ?`
         )) {
             document.getElementById('montantDonne').focus();
@@ -2223,7 +2223,7 @@ function creerProformaSuite(patientId, patientNom, patientAssurance, patientTaux
         }
     }
     msg += `\n📦 ${articles.length} acte(s)\n`;
-    msg += `💰 Total: ${sousTotal.toLocaleString()} FCFA\n\n`;
+    msg += `💰 Total: ${Math.round(sousTotal).toLocaleString('fr-FR')} FCFA\n\n`;
     msg += `Confirmer ?`;
     
     if (!confirm(msg)) return;
@@ -2239,7 +2239,7 @@ function creerProformaSuite(patientId, patientNom, patientAssurance, patientTaux
     .then(data => {
         hideProgress();
         if (data.success) {
-            alert(`✅ Proforma #${data.numero} créée !\nNet à payer: ${data.net_a_payer.toLocaleString()} FCFA`);
+            alert(`✅ Proforma #${data.numero} créée !\nNet à payer: ${Math.round(data.net_a_payer).toLocaleString('fr-FR')} FCFA`);
             if (confirm('Imprimer la proforma ?')) {
                 window.open(`/proforma/${data.id}/print`, '_blank');
             }
