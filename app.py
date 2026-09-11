@@ -3178,42 +3178,27 @@ def admin_structure():
     """Administration de la structure"""
     structure_id = session.get('structure_id')
 
-    # Récupérer les utilisateurs avec la dernière connexion
-    sheet_name = f"struct_{structure_id}_users"
-    users = sheets_helper.get_all_records(sheet_name)
-    
-    users_list = []
-    for u in users:
-        users_list.append({
-            'ID': u.get('ID'),
-            'nom': u.get('nom'),
-            'email': u.get('email'),
-            'role': u.get('role'),
-            'actif': u.get('actif', 'oui'),
-            'derniere_connexion': u.get('derniere_connexion', '-'),
-            'created_at': u.get('created_at', '')
-        })
-    
-    # Récupérer les utilisateurs
+    # 🔥 Récupérer les utilisateurs (seul fetch encore fait ici — le
+    # template en a besoin en Jinja côté serveur pour l'onglet
+    # Utilisateurs). Un 1er aller-retour Sheets identique existait juste
+    # au-dessus pour construire `users_list` : jamais passé à
+    # render_template, donc jamais utilisé par le template — supprimé.
     users = sheets_helper.get_all_records('users')
     users = [u for u in users if str(u.get('structure_id')) == str(structure_id)]
-    
-    # Récupérer les actes
-    actes = sheets_helper.get_all_records('actes')
-    actes = [a for a in actes if str(a.get('structure_id')) == str(structure_id)]
-    
-    # Récupérer les produits
-    produits = sheets_helper.get_all_records('produits')
-    produits = [p for p in produits if str(p.get('structure_id')) == str(structure_id)]
-    
+
+    # 🔥 actes et produits ne sont plus chargés ici : c'était 2
+    # allers-retours Sheets bloquants de plus à CHAQUE ouverture de cette
+    # page (produits n'était même jamais utilisé par le template — pur
+    # gaspillage), en plus des 2 ci-dessus/ci-dessous. Les actes sont
+    # maintenant chargés en JS après coup (comme les produits, déjà fait
+    # ainsi) via /api/actes/liste-admin — voir chargerActesAdmin().
+
     # Récupérer les infos de la structure
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
-    
-    return render_template('admin_structure.html', 
-                         users=users, 
-                         actes=actes, 
-                         produits=produits,
+
+    return render_template('admin_structure.html',
+                         users=users,
                          structure_info=structure_info)
 
 @app.route('/api/admin/actes', methods=['POST'])
@@ -5984,26 +5969,39 @@ def api_get_produits():
 @app.route('/api/produits/stock-a-date')
 @login_required
 def api_produits_stock_a_date():
-    """Compare, pour chaque produit, le stock à une date T choisie (fin de
-    journée) et le stock actuel — alimente le tableau "Stock à une date"
-    de Statistiques des produits. Le stock à T = stock_apres du dernier
-    mouvement de mouvements_stock à date_mouvement <= T (une seule requête
-    groupée, pas une par produit). Si la structure n'a encore aucun
-    mouvement à/avant T (date antérieure à la mise en place de ce suivi,
-    ou produit créé après T), stock_a_date vaut null et le front l'affiche
-    comme "Non disponible" plutôt que 0 (0 serait trompeur)."""
+    """Compare, pour chaque produit, le stock au DÉBUT de la journée T
+    choisie (avant tout mouvement de ce jour-là) et le stock actuel —
+    alimente le tableau "Stock à une date" de Statistiques des produits.
+    Le stock au début du jour T = stock_apres du dernier mouvement à
+    date_mouvement < minuit ce jour-là (une seule requête groupée, pas une
+    par produit).
+
+    ⚠️ Volontairement "avant le jour T", pas "à la fin du jour T" : si on
+    incluait les mouvements du jour T lui-même, choisir "aujourd'hui" (le
+    cas le plus courant : "qu'est-ce qu'on a vendu depuis ce matin ?")
+    renvoyait exactement le même nombre que le stock actuel dès qu'une
+    vente avait déjà eu lieu aujourd'hui — la comparaison s'annulait
+    toujours elle-même. Vécu en test : colonnes identiques après une
+    vente, signalé par le patron. Avec "avant le jour T", "aujourd'hui"
+    compare maintenant le stock de ce matin (avant la première vente du
+    jour) au stock actuel — l'écart == ce qui a été vendu aujourd'hui.
+
+    Si la structure n'a encore aucun mouvement avant T (date antérieure à
+    la mise en place de ce suivi, ou produit créé après T), stock_a_date
+    vaut null et le front l'affiche comme "Non disponible" plutôt que 0
+    (0 serait trompeur)."""
     try:
         structure_id = session.get('structure_id')
         date_str = request.args.get('date', '').strip()
 
         if date_str:
             try:
-                date_fin = datetime.strptime(date_str, '%Y-%m-%d') + timedelta(days=1) - timedelta(seconds=1)
+                date_debut = datetime.strptime(date_str, '%Y-%m-%d')
             except ValueError:
                 return jsonify({'success': False, 'error': 'Date invalide (format attendu AAAA-MM-JJ)'}), 400
         else:
-            date_fin = datetime.now()
-            date_str = date_fin.strftime('%Y-%m-%d')
+            date_debut = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            date_str = date_debut.strftime('%Y-%m-%d')
 
         # Stock actuel, en direct depuis Google Sheets (source de vérité)
         all_values = sheets_helper.get_all_values_cached(f"struct_{structure_id}_produits")
@@ -6020,13 +6018,14 @@ def api_produits_stock_a_date():
             except ValueError:
                 stock_actuel_par_produit[pid] = 0
 
-        # Stock à la date T : dernier mouvement connu par produit, à/avant T
+        # Stock au début du jour T : dernier mouvement connu par produit,
+        # strictement AVANT minuit ce jour-là (voir docstring).
         rows = db.execute_query("""
             SELECT DISTINCT ON (produit_id) produit_id, produit_nom, stock_apres, date_mouvement
             FROM mouvements_stock
-            WHERE structure_id = %s AND date_mouvement <= %s
+            WHERE structure_id = %s AND date_mouvement < %s
             ORDER BY produit_id, date_mouvement DESC, id DESC
-        """, (structure_id, date_fin))
+        """, (structure_id, date_debut))
         stock_a_date_par_produit = {}
         for r in (rows or []):
             pid = str(r.get('produit_id'))
@@ -7508,6 +7507,38 @@ def api_get_all_ventes():
         import traceback
         traceback.print_exc()
         return jsonify([]), 500
+
+@app.route('/api/actes/liste-admin')
+@login_required
+def api_actes_liste_admin():
+    """Catalogue complet des actes de la structure (ID, nom, prix, pbr,
+    description), pour le tableau JS de Gestion des stocks/Administration
+    générale. Existe séparément de /api/actes (utilisé par proformas.html,
+    avec pagination/format différents) pour ne rien risquer dessus.
+    Bénéficie du cache 10s de get_all_records() — contrairement à l'ancien
+    chargement, qui se faisait EN BLOQUANT dans la route Flask de la page
+    elle-même (gestion_stock()/admin_structure()) à chaque ouverture,
+    repoussant l'affichage de toute la page le temps de l'aller-retour
+    Sheets. Chargé en JS après coup, comme les produits, pour un premier
+    affichage quasi instantané."""
+    try:
+        structure_id = session.get('structure_id')
+        actes = sheets_helper.get_all_records('actes')
+        actes_filtres = [a for a in actes if str(a.get('structure_id')) == str(structure_id)]
+        result = [{
+            'id': a.get('ID'),
+            'nom': a.get('nom', ''),
+            'prix': a.get('prix') or 0,
+            'pbr': a.get('pbr') or a.get('prix') or 0,
+            'description': a.get('description', '')
+        } for a in actes_filtres]
+        return jsonify(result)
+    except Exception as e:
+        print(f"❌ Erreur GET actes (liste-admin): {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify([]), 500
+
 
 @app.route('/api/actes')
 @login_required
@@ -11350,19 +11381,16 @@ def api_creer_facture_automatique():
 @login_required
 def gestion_stock():
     """Page de gestion des actes et produits pour le comptable/gestionnaire"""
-    structure_id = session.get('structure_id')
-    
     # Vérifier les droits (admin, comptable, gestionnaire)
     role = session.get('role', 'caissier')
     if role not in ['admin', 'comptable', 'gestionnaire', 'pharmacien']:
         flash('Accès non autorisé', 'danger')
         return redirect(url_for('dashboard'))
-    
-    # Récupérer les actes
-    actes = sheets_helper.get_all_records('actes')
-    actes_filtres = [a for a in actes if str(a.get('structure_id')) == str(structure_id)]
-    
-    return render_template('gestion_stock.html', actes=actes_filtres)
+
+    # 🔥 Les actes ne sont plus chargés ici (aller-retour Sheets qui
+    # bloquait tout l'affichage de la page) — chargés en JS après coup via
+    # /api/actes/liste-admin, comme les produits. Voir chargerActesAdmin().
+    return render_template('gestion_stock.html')
 @app.route('/lunetterie_vente')
 @login_required
 def lunetterie_vente():

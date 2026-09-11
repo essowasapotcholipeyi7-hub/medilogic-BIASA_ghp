@@ -140,28 +140,7 @@
                                     </tr>
                                 </thead>
                                 <tbody id="actesList">
-                                    {% for acte in actes %}
-                                    <tr class="acte-row">
-                                        <td>{{ acte.ID }}</td>
-                                        <td><span class="badge bg-secondary">ACT-{{ acte.ID }}</span></td>
-                                        <td><strong>{{ acte.nom }}</strong></td>
-                                        <td>{{ acte.prix }} FCFA</td>
-                                        <td>{{ acte.pbr or acte.prix }} FCFA</td>
-                                        <td>{{ acte.description or '-' }}</td>
-                                        <td>
-                                            <button class="btn btn-sm btn-warning" onclick='editActe({{ acte.ID }}, "{{ acte.nom|replace("'", "\\'") }}", {{ acte.prix or 0 }}, {{ acte.pbr or acte.prix or 0 }}, "{{ acte.description|replace("'", "\\'")|default('') }}")'>
-                                                <i class="fas fa-edit"></i>
-                                            </button>
-                                            <button class="btn btn-sm btn-danger" onclick="deleteActe({{ acte.ID }})">
-                                                <i class="fas fa-trash"></i>
-                                            </button>
-                                        </td>
-                                    </tr>
-                                    {% else %}
-                                    <tr>
-                                        <td colspan="7" class="text-center">Aucun acte</td>
-                                    </tr>
-                                    {% endfor %}
+                                    <tr><td colspan="7" class="text-center">Chargement...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -453,19 +432,63 @@
 </div>
 
 <script>
-// ========== FILTRES ACTES ==========
-function filterActes() {
-    const filter = document.getElementById('searchActe').value.toLowerCase();
-    const rows = document.querySelectorAll('#actesTable tbody tr');
-    rows.forEach(row => {
-        const text = row.innerText.toLowerCase();
-        row.style.display = text.includes(filter) ? '' : 'none';
-    });
+// ========== CHARGEMENT ACTES (JS, après coup — voir chargerActesAdmin) ==========
+let tousLesActes = [];
+
+function chargerActesAdmin() {
+    return fetch('/api/actes/liste-admin')
+        .then(r => r.json())
+        .then(data => {
+            tousLesActes = data || [];
+            afficherActesAdmin(tousLesActes);
+        })
+        .catch(error => {
+            console.error('Erreur chargement actes:', error);
+            document.getElementById('actesList').innerHTML = '<tr><td colspan="7" class="text-center text-danger">Erreur de chargement</td></tr>';
+        });
 }
 
-function clearSearchActe() { 
-    document.getElementById('searchActe').value = ''; 
-    filterActes(); 
+function afficherActesAdmin(actes) {
+    const tbody = document.getElementById('actesList');
+    if (!actes || actes.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center">Aucun acte</td></tr>';
+        return;
+    }
+    tbody.innerHTML = actes.map(a => {
+        const nomEsc = (a.nom || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const descEsc = (a.description || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const prix = a.prix || 0;
+        const pbr = a.pbr || prix;
+        return `
+            <tr class="acte-row">
+                <td>${a.id}</td>
+                <td><span class="badge bg-secondary">ACT-${a.id}</span></td>
+                <td><strong>${a.nom}</strong></td>
+                <td>${prix} FCFA</td>
+                <td>${pbr} FCFA</td>
+                <td>${a.description || '-'}</td>
+                <td>
+                    <button class="btn btn-sm btn-warning" onclick='editActe(${a.id}, "${nomEsc}", ${prix}, ${pbr}, "${descEsc}")'>
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteActe(${a.id})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function filterActes() {
+    const filter = document.getElementById('searchActe').value.toLowerCase();
+    const filtered = tousLesActes.filter(a => (a.nom || '').toLowerCase().includes(filter));
+    afficherActesAdmin(filtered);
+}
+
+function clearSearchActe() {
+    document.getElementById('searchActe').value = '';
+    filterActes();
 }
 
 // ========== GESTION PRODUITS & STOCKS ==========
@@ -891,7 +914,10 @@ function hideLoader() {
 
 // Initialisation
 document.addEventListener('DOMContentLoaded', function() {
-    chargerProduitsAdmin();
+    // 🔥 Enchaînés (pas en parallèle) — pour ne pas cogner Google Sheets
+    // avec 2 gros chargements en même temps juste après l'affichage de la
+    // page, hypothèse du patron sur la lenteur perçue.
+    chargerActesAdmin().then(() => chargerProduitsAdmin());
 });
 </script>
 {% endblock %}

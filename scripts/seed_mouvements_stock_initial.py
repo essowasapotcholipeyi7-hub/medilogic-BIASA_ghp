@@ -25,6 +25,7 @@ import io
 import os
 import re
 import sys
+from datetime import datetime, timedelta
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -34,6 +35,14 @@ from db_helper import db as db_helper
 from sheets_helper import sheets_helper
 
 if __name__ == "__main__":
+    # Daté juste avant le début du jour où ce script tourne (23:59:59.999999
+    # la veille), pas "maintenant" — sinon /api/produits/stock-a-date (qui
+    # exclut volontairement les mouvements DU jour choisi, pour que
+    # "aujourd'hui" compare le début de journée au stock actuel plutôt que
+    # de se comparer à lui-même) ne trouverait aucun point de départ pour
+    # le jour même du seed.
+    date_seed = (datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                 - timedelta(microseconds=1))
     all_sheets = sheets_helper.spreadsheet.worksheets()
     produits_sheets = [
         ws for ws in all_sheets
@@ -76,9 +85,9 @@ if __name__ == "__main__":
             db_helper.execute_query("""
                 INSERT INTO mouvements_stock
                     (structure_id, produit_id, produit_nom, type_mouvement,
-                     quantite_delta, stock_apres, created_by_nom)
-                VALUES (%s, %s, %s, 'initial', %s, %s, 'Système (seed initial)')
-            """, (structure_id, produit_id, nom, stock_actuel, stock_actuel))
+                     quantite_delta, stock_apres, date_mouvement, created_by_nom)
+                VALUES (%s, %s, %s, 'initial', %s, %s, %s, 'Système (seed initial)')
+            """, (structure_id, produit_id, nom, stock_actuel, stock_actuel, date_seed))
             inserted_here += 1
             total_inserted += 1
 
