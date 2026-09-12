@@ -283,10 +283,19 @@ def employe_ajouter(structure_id):
                 return jsonify({'error': f'Le champ {field} est obligatoire'}), 400
         
         # Génération du matricule
+        # ⭐ La colonne matricule est UNIQUE au niveau de toute la table (pas
+        # seulement par structure), alors que le compteur ci-dessous ne compte
+        # que les employés de CETTE structure. Une structure encore vide (ex:
+        # structure 10) recalcule "EMP-{année}-001", déjà pris par une autre
+        # structure (ex: structure 1) → IntegrityError à l'ajout. On boucle
+        # jusqu'à trouver un matricule réellement libre.
         annee = datetime.now().year
         count = Employe.query.filter_by(structure_id=structure_id).count() + 1
         matricule = f"EMP-{annee}-{str(count).zfill(3)}"
-        
+        while Employe.query.filter_by(matricule=matricule).first():
+            count += 1
+            matricule = f"EMP-{annee}-{str(count).zfill(3)}"
+
         employe = Employe(
             structure_id=structure_id,
             matricule=matricule,
