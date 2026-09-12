@@ -165,10 +165,10 @@
                                         title="Voir les détails">
                                     <i class="fas fa-eye"></i>
                                 </button>
-                                <button class="btn btn-sm btn-outline-warning px-2"
+                                <button class="btn btn-sm btn-outline-secondary"
                                         onclick="editPatient({{ patient.ID }})"
-                                        title="Modifier ce patient">
-                                    <i class="fas fa-pen me-1"></i> Modifier
+                                        title="Modifier">
+                                    <i class="fas fa-pen"></i>
                                 </button>
                                 <button class="btn btn-sm btn-outline-danger"
                                         onclick="supprimerPatient({{ patient.ID }})"
@@ -233,7 +233,7 @@
      MODAL AJOUT PATIENT
      ============================================================ -->
 <div class="modal fade" id="patientModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header bg-info text-white">
                 <h5 class="modal-title"><i class="fas fa-user-plus"></i> Ajouter un patient</h5>
@@ -421,7 +421,7 @@
      MODAL MODIFICATION PATIENT
      ============================================================ -->
 <div class="modal fade" id="editPatientModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header bg-warning text-white">
                 <h5 class="modal-title"><i class="fas fa-edit"></i> Modifier le patient</h5>
@@ -1506,34 +1506,13 @@ function showAddModal() {
     document.getElementById('personne_prevenir_telephone').value = '';
     document.getElementById('personne_prevenir_relation').value = '';
     
-    // 🔥 OUVRIR LE MODAL AVEC BACKDROP: FALSE
-    const modalElement = document.getElementById('patientModal');
-    const modalInstance = new bootstrap.Modal(modalElement, {
-        backdrop: false,
-        keyboard: true
-    });
-    modalInstance.show();
-    
-    // 🔥 FORCER LE STYLE APRÈS OUVERTURE
-    setTimeout(function() {
-        modalElement.style.zIndex = '99999';
-        modalElement.style.position = 'fixed';
-        modalElement.style.top = '0';
-        modalElement.style.left = '0';
-        modalElement.style.width = '100%';
-        modalElement.style.height = '100%';
-        modalElement.style.background = 'rgba(0,0,0,0.5)';
-        modalElement.style.display = 'flex';
-        modalElement.style.alignItems = 'center';
-        modalElement.style.justifyContent = 'center';
-        
-        // 🔥 S'ASSURER QUE LE CONTENU EST SCROLLABLE
-        const modalBody = document.querySelector('#patientModal .modal-body');
-        if (modalBody) {
-            modalBody.style.overflowY = 'auto';
-            modalBody.style.maxHeight = 'calc(90vh - 130px)';
-        }
-    }, 100);
+    // ⭐ Modal Bootstrap standard : la classe modal-dialog-scrollable (posée
+    // sur le HTML du modal) gère nativement le défilement interne et le
+    // centrage, plus fiable que les anciens réglages de style forcés en JS
+    // qui entraient en conflit avec elle. Le vrai souci d'affichage
+    // (modal coincé derrière la navbar) est réglé une fois pour toutes
+    // par le fix global sur 'show.bs.modal' dans base.html.
+    new bootstrap.Modal(document.getElementById('patientModal')).show();
 }
 function savePatient() {
     let typeAssurance = document.getElementById('type_assurance').value;
@@ -1742,35 +1721,9 @@ function editPatient(id) {
             toggleEditTaux();
             toggleEditAssurance2();
             
-            // ============================================================
-            // 🔥 OUVRIR LE MODAL AVEC BACKDROP: FALSE ET FORCER LE STYLE
-            // ============================================================
-            const modalElement = document.getElementById('editPatientModal');
-            const modalInstance = new bootstrap.Modal(modalElement, {
-                backdrop: false,
-                keyboard: true
-            });
-            modalInstance.show();
-            
-            setTimeout(function() {
-                modalElement.style.zIndex = '99999';
-                modalElement.style.position = 'fixed';
-                modalElement.style.top = '0';
-                modalElement.style.left = '0';
-                modalElement.style.width = '100%';
-                modalElement.style.height = '100%';
-                modalElement.style.background = 'rgba(0,0,0,0.5)';
-                modalElement.style.display = 'flex';
-                modalElement.style.alignItems = 'center';
-                modalElement.style.justifyContent = 'center';
-                
-                // 🔥 S'ASSURER QUE LE CONTENU EST SCROLLABLE
-                const modalBody = document.querySelector('#editPatientModal .modal-body');
-                if (modalBody) {
-                    modalBody.style.overflowY = 'auto';
-                    modalBody.style.maxHeight = 'calc(90vh - 130px)';
-                }
-            }, 100);
+            // ⭐ Modal Bootstrap standard (voir le commentaire équivalent
+            // dans showAddModal() pour le détail du pourquoi).
+            new bootstrap.Modal(document.getElementById('editPatientModal')).show();
         })
         .catch(error => {
             // Fallback avec les données du tableau
@@ -1803,34 +1756,8 @@ function editPatient(id) {
             toggleEditTaux();
             toggleEditAssurance2();
             
-            // ============================================================
-            // 🔥 OUVRIR LE MODAL AVEC BACKDROP: FALSE (FALLBACK)
-            // ============================================================
-            const modalElement = document.getElementById('editPatientModal');
-            const modalInstance = new bootstrap.Modal(modalElement, {
-                backdrop: false,
-                keyboard: true
-            });
-            modalInstance.show();
-            
-            setTimeout(function() {
-                modalElement.style.zIndex = '99999';
-                modalElement.style.position = 'fixed';
-                modalElement.style.top = '0';
-                modalElement.style.left = '0';
-                modalElement.style.width = '100%';
-                modalElement.style.height = '100%';
-                modalElement.style.background = 'rgba(0,0,0,0.5)';
-                modalElement.style.display = 'flex';
-                modalElement.style.alignItems = 'center';
-                modalElement.style.justifyContent = 'center';
-                
-                const modalBody = document.querySelector('#editPatientModal .modal-body');
-                if (modalBody) {
-                    modalBody.style.overflowY = 'auto';
-                    modalBody.style.maxHeight = 'calc(90vh - 130px)';
-                }
-            }, 100);
+            // ⭐ Modal Bootstrap standard (fallback).
+            new bootstrap.Modal(document.getElementById('editPatientModal')).show();
         });
 }
 
@@ -2252,41 +2179,41 @@ document.addEventListener('DOMContentLoaded', function() {
     border-radius: 6px;
 }
 
-/* ============================================================
-   CORRECTION POUR TOUS LES MODALS PATIENTS
-   ============================================================ */
-
-/* Forcer tous les modals à être au-dessus de tout */
-#detailPatientModal,
-#editPatientModal,
+/* ⭐ base.html affiche un filigrane "SSoftOneV10" fixe en z-index:9999 sur
+   toute page — au-dessus du z-index Bootstrap par défaut d'un modal (1055).
+   Simple règle (pas de !important nécessaire : sélecteur #id après le CSS
+   de Bootstrap dans la cascade) pour que le modal d'ajout/modification
+   patient reste toujours au-dessus. */
 #patientModal,
+#editPatientModal {
+    z-index: 10000;
+}
+
+/* ============================================================
+   CORRECTION POUR LES MODALS DÉTAIL / DESTINATION
+   ============================================================
+   Ces deux modals ouvrent encore avec { backdrop: false } + un fond
+   personnalisé forcé en JS (voir voirDetails() / showPatientDestinationModal())
+   — ce bloc leur reste nécessaire. Le modal d'ajout et de modification
+   patient n'en font plus partie : ils utilisent maintenant un modal
+   Bootstrap standard (backdrop natif + .modal-dialog-scrollable pour le
+   défilement interne), voir showAddModal() / editPatient(). */
+#detailPatientModal,
 #patientDestinationModal {
     z-index: 99999 !important;
 }
 
 #detailPatientModal .modal-dialog,
-#editPatientModal .modal-dialog,
-#patientModal .modal-dialog,
 #patientDestinationModal .modal-dialog {
     z-index: 99999 !important;
 }
 
 #detailPatientModal .modal-content,
-#editPatientModal .modal-content,
-#patientModal .modal-content,
 #patientDestinationModal .modal-content {
     z-index: 99999 !important;
 }
 
-/* Désactiver le backdrop pour tous les modals */
-.modal-backdrop {
-    display: none !important;
-}
-
-/* Fond personnalisé pour tous les modals */
 #detailPatientModal.show,
-#editPatientModal.show,
-#patientModal.show,
 #patientDestinationModal.show {
     background: rgba(0, 0, 0, 0.5);
     position: fixed;
@@ -2316,105 +2243,6 @@ body.modal-open {
 #patientModal .modal-body select,
 #patientModal .modal-body textarea {
     pointer-events: auto !important;
-}
-
-/* ============================================================
-   CORRECTION SPÉCIFIQUE POUR LE MODAL D'AJOUT
-   ============================================================ */
-
-#patientModal {
-    z-index: 99999 !important;
-    background: rgba(0, 0, 0, 0.5) !important;
-}
-
-#patientModal .modal-dialog {
-    z-index: 99999 !important;
-    margin: 1.75rem auto !important;
-    max-height: 90vh !important;
-}
-
-#patientModal .modal-content {
-    z-index: 99999 !important;
-    max-height: 90vh !important;
-    overflow: hidden !important;
-    display: flex !important;
-    flex-direction: column !important;
-}
-
-#patientModal .modal-body {
-    overflow-y: auto !important;
-    max-height: calc(90vh - 130px) !important;
-    padding: 20px !important;
-}
-
-#patientModal .modal-header {
-    flex-shrink: 0 !important;
-}
-
-#patientModal .modal-footer {
-    flex-shrink: 0 !important;
-}
-
-/* Forcer le modal d'ajout à ne pas bloquer le scroll */
-#patientModal.show {
-    background: rgba(0, 0, 0, 0.5) !important;
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-}
-
-/* ============================================================
-   CORRECTION SPÉCIFIQUE POUR LE MODAL DE MODIFICATION
-   ============================================================ */
-
-#editPatientModal {
-    z-index: 99999 !important;
-    background: rgba(0, 0, 0, 0.5) !important;
-}
-
-#editPatientModal .modal-dialog {
-    z-index: 99999 !important;
-    margin: 1.75rem auto !important;
-    max-height: 90vh !important;
-}
-
-#editPatientModal .modal-content {
-    z-index: 99999 !important;
-    max-height: 90vh !important;
-    overflow: hidden !important;
-    display: flex !important;
-    flex-direction: column !important;
-}
-
-#editPatientModal .modal-body {
-    overflow-y: auto !important;
-    max-height: calc(90vh - 130px) !important;
-    padding: 20px !important;
-}
-
-#editPatientModal .modal-header {
-    flex-shrink: 0 !important;
-}
-
-#editPatientModal .modal-footer {
-    flex-shrink: 0 !important;
-}
-
-#editPatientModal.show {
-    background: rgba(0, 0, 0, 0.5) !important;
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
 }
 </style>
 
