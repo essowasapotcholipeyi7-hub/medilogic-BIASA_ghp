@@ -230,11 +230,17 @@
                                     <div class="row mb-2">
                                         <div class="col-md-12">
                                             <div class="form-check form-switch d-flex align-items-center gap-2">
-                                                <input class="form-check-input" type="checkbox" id="toggleAssurancePrincipaleProforma"
+                                                <!-- ⭐ id volontairement DIFFÉRENT du nom de la fonction
+                                                     toggleAssurancePrincipaleProforma() : un id de <form>
+                                                     identique au nom de la fonction appelée dans son propre
+                                                     onchange casse l'appel (le "with(form)" implicite du
+                                                     handler inline résout le nom vers l'élément du formulaire
+                                                     avant la fonction globale → "is not a function"). -->
+                                                <input class="form-check-input" type="checkbox" id="toggleAssurancePrincipaleActiveProforma"
                                                        style="width: 44px; height: 22px; cursor: pointer;"
                                                        checked
                                                        onchange="toggleAssurancePrincipaleProforma()">
-                                                <label class="form-check-label fw-semibold" for="toggleAssurancePrincipaleProforma">
+                                                <label class="form-check-label fw-semibold" for="toggleAssurancePrincipaleActiveProforma">
                                                     <i class="fas fa-shield-alt text-primary"></i> Assurance principale active
                                                 </label>
                                             </div>
@@ -1384,7 +1390,7 @@ function afficherPanier() {
 // n'a besoin d'aucune autre modification.
 let tauxAssuranceProformaSauvegarde = 0;
 function toggleAssurancePrincipaleProforma() {
-    const toggle = document.getElementById('toggleAssurancePrincipaleProforma');
+    const toggle = document.getElementById('toggleAssurancePrincipaleActiveProforma');
     const tauxInput = document.getElementById('tauxAssurance');
 
     if (toggle.checked) {
@@ -1647,7 +1653,7 @@ function sauvegarderProforma() {
         taux_aide: (window._proformaAide || {}).tauxAide || 0,
         aide_hospitaliere: (window._proformaAide || {}).aideHospitaliere || 0,
         type_aide: (window._proformaAide || {}).typeAide || 'pourcentage',
-        assurance_principale_active: document.getElementById('toggleAssurancePrincipaleProforma').checked
+        assurance_principale_active: document.getElementById('toggleAssurancePrincipaleActiveProforma').checked
     };
     
     console.log('📦 Données proforma:', data);
@@ -1745,8 +1751,8 @@ function nouvelleProforma() {
     onChangeTypeAideProforma();
     document.getElementById('aideProformaRow').style.display = 'none';
     window._proformaAide = { tauxAide: 0, aideHospitaliere: 0, typeAide: 'pourcentage' };
-    document.getElementById('toggleAssurancePrincipaleProforma').checked = true;
-    document.getElementById('toggleAssurancePrincipaleProforma').disabled = false;
+    document.getElementById('toggleAssurancePrincipaleActiveProforma').checked = true;
+    document.getElementById('toggleAssurancePrincipaleActiveProforma').disabled = false;
     document.getElementById('tauxAssurance').disabled = false;
     tauxAssuranceProformaSauvegarde = 0;
     document.getElementById('proformaNotes').value = '';
