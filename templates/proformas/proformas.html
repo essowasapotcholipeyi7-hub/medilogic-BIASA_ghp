@@ -223,123 +223,11 @@
                                             <input type="text" class="form-control" id="patientTelephone" readonly>
                                         </div>
                                     </div>
-                                    <!-- ⭐ Désactiver l'assurance principale pour cette proforma (le
-                                         patient assuré ne souhaite pas l'utiliser) — même mécanisme
-                                         que le toggle équivalent sur pharma_vente.html/actes_vente.html,
-                                         absent jusqu'ici du formulaire de création proforma. -->
-                                    <div class="row mb-2">
-                                        <div class="col-md-12">
-                                            <div class="form-check form-switch d-flex align-items-center gap-2">
-                                                <!-- ⭐ id volontairement DIFFÉRENT du nom de la fonction
-                                                     toggleAssurancePrincipaleProforma() : un id de <form>
-                                                     identique au nom de la fonction appelée dans son propre
-                                                     onchange casse l'appel (le "with(form)" implicite du
-                                                     handler inline résout le nom vers l'élément du formulaire
-                                                     avant la fonction globale → "is not a function"). -->
-                                                <input class="form-check-input" type="checkbox" id="toggleAssurancePrincipaleActiveProforma"
-                                                       style="width: 44px; height: 22px; cursor: pointer;"
-                                                       checked
-                                                       onchange="toggleAssurancePrincipaleProforma()">
-                                                <label class="form-check-label fw-semibold" for="toggleAssurancePrincipaleActiveProforma">
-                                                    <i class="fas fa-shield-alt text-primary"></i> Assurance principale active
-                                                </label>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="row">
-                                        <div class="col-md-6 mb-2">
-                                            <label class="form-label">Assurance principale</label>
-                                            <input type="text" class="form-control" id="assuranceNom" placeholder="AMU-CNSS, GTA, etc.">
-                                        </div>
-                                        <div class="col-md-3 mb-2">
-                                            <label class="form-label">Taux (%)</label>
-                                            <input type="number" class="form-control" id="tauxAssurance" value="0" min="0" max="100" onchange="calculerTotal()">
-                                        </div>
-                                        <div class="col-md-3 mb-2">
-                                            <label class="form-label">N° Carte</label>
-                                            <input type="text" class="form-control" id="numeroAssure" placeholder="N°">
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Assurance complémentaire -->
-                                    <div class="row mt-2">
-                                        <div class="col-md-12">
-                                            <div class="card border-info">
-                                                <div class="card-header bg-info text-white py-1">
-                                                    <div class="d-flex align-items-center gap-3">
-                                                        <div class="form-check form-switch">
-                                                            <input class="form-check-input" type="checkbox" id="toggleAssurance2Proforma" 
-                                                                   style="width: 40px; height: 20px; cursor: pointer;"
-                                                                   onchange="toggleAssuranceComplementaireProforma()">
-                                                            <label class="form-check-label text-white fw-bold" for="toggleAssurance2Proforma">
-                                                                Assurance complémentaire
-                                                            </label>
-                                                        </div>
-                                                        <span id="assurance2NomProforma" class="badge bg-light text-dark">Aucune</span>
-                                                        <span id="assurance2TauxProforma" class="badge bg-light text-dark">0%</span>
-                                                    </div>
-                                                </div>
-                                                <div class="card-body py-2">
-                                                    <div class="row align-items-center">
-                                                        <div class="col-md-4">
-                                                            <label class="form-label small">Nom de l'assurance</label>
-                                                            <input type="text" class="form-control form-control-sm" id="assurance2NomInput" 
-                                                                   placeholder="Ex: SUNU, GTA..." readonly>
-                                                        </div>
-                                                        <div class="col-md-3">
-                                                            <label class="form-label small">Taux par défaut</label>
-                                                            <input type="number" class="form-control form-control-sm" id="assurance2TauxDefaut" 
-                                                                   value="0" min="0" max="100" readonly>
-                                                        </div>
-                                                        <div class="col-md-3">
-                                                            <label class="form-label small">Taux appliqué</label>
-                                                            <div class="input-group input-group-sm">
-                                                                <input type="number" class="form-control" id="assurance2TauxApplique" 
-                                                                       value="0" min="0" max="100" onchange="calculerTotal()">
-                                                                <button class="btn btn-outline-secondary" onclick="resetTauxAssurance2()" title="Réinitialiser">
-                                                                    <i class="fas fa-undo"></i>
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                        <div class="col-md-2">
-                                                            <span id="tauxModifieBadge" class="badge bg-warning text-dark" style="display:none;">Modifié</span>
-                                                        </div>
-                                                    </div>
-                                                    <div class="row mt-1">
-                                                        <div class="col-md-12">
-                                                            <small class="text-muted" id="assurance2InfoProforma">
-                                                                <i class="fas fa-info-circle"></i> S'applique sur le reste à charge après l'assurance principale
-                                                            </small>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- ⭐ Aide hospitalière (remise) — % ou montant direct FCFA, même
-                                         mécanisme que sur la vente directe (pharma_vente.html /
-                                         actes_vente.html) ; absente jusqu'ici du formulaire de création,
-                                         donc jamais transmise à la conversion en vente. -->
-                                    <div class="row mt-2">
-                                        <div class="col-md-4">
-                                            <label class="form-label text-warning">
-                                                <i class="fas fa-hand-holding-heart"></i> Aide hospitalière
-                                            </label>
-                                            <div class="input-group">
-                                                <input type="number" class="form-control" id="tauxAideProforma"
-                                                       value="0" step="5" min="0" max="100"
-                                                       onchange="calculerTotal()"
-                                                       style="border-color: #ffc107;">
-                                                <select class="form-control" id="typeAideProforma" style="max-width: 85px; border-color: #ffc107;"
-                                                        onchange="onChangeTypeAideProforma(); calculerTotal();">
-                                                    <option value="pourcentage" selected>%</option>
-                                                    <option value="montant">FCFA</option>
-                                                </select>
-                                            </div>
-                                            <small class="text-muted" id="aideProformaHint">Taux d'aide (max 100%)</small>
-                                        </div>
-                                    </div>
+                                    <!-- ⭐ Assurance principale / complémentaire / aide
+                                         hospitalière déplacées à côté du calcul (section
+                                         Articles, juste sous le panier) — plus pratique pour
+                                         voir l'effet immédiat sur le net à payer, comme sur
+                                         pharma_vente.html/actes_vente.html. -->
                                 </div>
                             </div>
                         </div>
@@ -474,6 +362,124 @@
                         </div>
                     </div>
                     
+                    <!-- ⭐ Désactiver l'assurance principale pour cette proforma (le
+                         patient assuré ne souhaite pas l'utiliser) — même mécanisme
+                         que le toggle équivalent sur pharma_vente.html/actes_vente.html,
+                         absent jusqu'ici du formulaire de création proforma. -->
+                    <div class="row mb-2">
+                        <div class="col-md-12">
+                            <div class="form-check form-switch d-flex align-items-center gap-2">
+                                <!-- ⭐ id volontairement DIFFÉRENT du nom de la fonction
+                                     toggleAssurancePrincipaleProforma() : un id de <form>
+                                     identique au nom de la fonction appelée dans son propre
+                                     onchange casse l'appel (le "with(form)" implicite du
+                                     handler inline résout le nom vers l'élément du formulaire
+                                     avant la fonction globale → "is not a function"). -->
+                                <input class="form-check-input" type="checkbox" id="toggleAssurancePrincipaleActiveProforma"
+                                       style="width: 44px; height: 22px; cursor: pointer;"
+                                       checked
+                                       onchange="toggleAssurancePrincipaleProforma()">
+                                <label class="form-check-label fw-semibold" for="toggleAssurancePrincipaleActiveProforma">
+                                    <i class="fas fa-shield-alt text-primary"></i> Assurance principale active
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-2">
+                            <label class="form-label">Assurance principale</label>
+                            <input type="text" class="form-control" id="assuranceNom" placeholder="AMU-CNSS, GTA, etc.">
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <label class="form-label">Taux (%)</label>
+                            <input type="number" class="form-control" id="tauxAssurance" value="0" min="0" max="100" onchange="calculerTotal()">
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <label class="form-label">N° Carte</label>
+                            <input type="text" class="form-control" id="numeroAssure" placeholder="N°">
+                        </div>
+                    </div>
+                    
+                    <!-- Assurance complémentaire -->
+                    <div class="row mt-2">
+                        <div class="col-md-12">
+                            <div class="card border-info">
+                                <div class="card-header bg-info text-white py-1">
+                                    <div class="d-flex align-items-center gap-3">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" id="toggleAssurance2Proforma" 
+                                                   style="width: 40px; height: 20px; cursor: pointer;"
+                                                   onchange="toggleAssuranceComplementaireProforma()">
+                                            <label class="form-check-label text-white fw-bold" for="toggleAssurance2Proforma">
+                                                Assurance complémentaire
+                                            </label>
+                                        </div>
+                                        <span id="assurance2NomProforma" class="badge bg-light text-dark">Aucune</span>
+                                        <span id="assurance2TauxProforma" class="badge bg-light text-dark">0%</span>
+                                    </div>
+                                </div>
+                                <div class="card-body py-2">
+                                    <div class="row align-items-center">
+                                        <div class="col-md-4">
+                                            <label class="form-label small">Nom de l'assurance</label>
+                                            <input type="text" class="form-control form-control-sm" id="assurance2NomInput" 
+                                                   placeholder="Ex: SUNU, GTA..." readonly>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label small">Taux par défaut</label>
+                                            <input type="number" class="form-control form-control-sm" id="assurance2TauxDefaut" 
+                                                   value="0" min="0" max="100" readonly>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label small">Taux appliqué</label>
+                                            <div class="input-group input-group-sm">
+                                                <input type="number" class="form-control" id="assurance2TauxApplique" 
+                                                       value="0" min="0" max="100" onchange="calculerTotal()">
+                                                <button class="btn btn-outline-secondary" onclick="resetTauxAssurance2()" title="Réinitialiser">
+                                                    <i class="fas fa-undo"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-2">
+                                            <span id="tauxModifieBadge" class="badge bg-warning text-dark" style="display:none;">Modifié</span>
+                                        </div>
+                                    </div>
+                                    <div class="row mt-1">
+                                        <div class="col-md-12">
+                                            <small class="text-muted" id="assurance2InfoProforma">
+                                                <i class="fas fa-info-circle"></i> S'applique sur le reste à charge après l'assurance principale
+                                            </small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ⭐ Aide hospitalière (remise) — % ou montant direct FCFA, même
+                         mécanisme que sur la vente directe (pharma_vente.html /
+                         actes_vente.html) ; absente jusqu'ici du formulaire de création,
+                         donc jamais transmise à la conversion en vente. -->
+                    <div class="row mt-2">
+                        <div class="col-md-4">
+                            <label class="form-label text-warning">
+                                <i class="fas fa-hand-holding-heart"></i> Aide hospitalière
+                            </label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="tauxAideProforma"
+                                       value="0" step="5" min="0" max="100"
+                                       onchange="calculerTotal()"
+                                       style="border-color: #ffc107;">
+                                <select class="form-control" id="typeAideProforma" style="max-width: 85px; border-color: #ffc107;"
+                                        onchange="onChangeTypeAideProforma(); calculerTotal();">
+                                    <option value="pourcentage" selected>%</option>
+                                    <option value="montant">FCFA</option>
+                                </select>
+                            </div>
+                            <small class="text-muted" id="aideProformaHint">Taux d'aide (max 100%)</small>
+                        </div>
+                    </div>
+
                     <!-- Notes -->
                     <div class="mb-3">
                         <label class="form-label">Notes</label>
