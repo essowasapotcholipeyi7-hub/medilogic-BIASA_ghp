@@ -3,12 +3,6 @@
 {% block title %}Factures assurances{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-md-3 mb-4">
-        {% include 'sidebar_menu.html' %}
-    </div>
-
-    <div class="col-md-9">
         <div class="card">
             <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
                 <h5><i class="fas fa-hand-holding-usd"></i> Factures assurances</h5>
@@ -17,13 +11,11 @@
                 </button>
             </div>
             <div class="card-body">
-                {% if not session.is_admin %}
                 <div class="alert alert-warning">
                     <i class="fas fa-info-circle"></i>
                     L'encaissement que vous enregistrez ici reste <strong>en attente de validation</strong>
                     par l'administrateur avant d'être réellement pris en compte (caisse, comptabilité).
                 </div>
-                {% endif %}
 
                 <div class="mb-3">
                     <label class="form-label">Mois de référence</label>
@@ -59,8 +51,6 @@
                 <i class="fas fa-arrow-left"></i> Retour au tableau de bord
             </a>
         </div>
-    </div>
-</div>
 
 <!-- MODAL ENCAISSEMENT -->
 <div class="modal fade" id="paiementModal" tabindex="-1">
@@ -115,8 +105,6 @@
 </div>
 
 <script>
-const EST_ADMIN = {{ 'true' if session.is_admin else 'false' }};
-
 document.addEventListener('DOMContentLoaded', function() {
     const now = new Date();
     document.getElementById('filtreMois').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -168,9 +156,11 @@ function afficherFactures(factures) {
             refCell = `<small>${f.numero_reference_versement}${dateFmt ? '<br>' + dateFmt : ''}</small>`;
         }
 
-        let action = '<span class="badge bg-success">Réglée</span>';
+        let action = `<button class="btn btn-sm btn-outline-secondary me-1" title="Bordereau (détail patients + impression)" onclick='voirBordereauFacture(${JSON.stringify(f.assurance)}, ${JSON.stringify(f.societe || '')}, ${JSON.stringify(f.mois_reference)})'><i class="fas fa-file-invoice"></i></button>`;
         if (f.statut !== 'payee') {
-            action = `<button class="btn btn-sm btn-success" onclick='showPaiementModal(${f.id}, "${assuranceText}", "${f.mois_reference}", ${total}, ${rembourse})'>Encaisser</button>`;
+            action += `<button class="btn btn-sm btn-success" onclick='showPaiementModal(${f.id}, "${assuranceText}", "${f.mois_reference}", ${total}, ${rembourse})'>Encaisser</button>`;
+        } else {
+            action += '<span class="badge bg-success">Réglée</span>';
         }
 
         return `<tr>
@@ -186,6 +176,21 @@ function afficherFactures(factures) {
             <td class="text-end">${action}</td>
         </tr>`;
     }).join('');
+}
+
+// ⭐ Ouvre le bordereau (détail des patients concernés + impression) pour
+// cette ligne — le document à joindre/adresser à la compagnie d'assurance.
+function voirBordereauFacture(assurance, societe, moisReference) {
+    const [annee, mois] = moisReference.split('-').map(Number);
+    const dateDebut = `${moisReference}-01`;
+    const dernierJour = new Date(annee, mois, 0).getDate();
+    const dateFin = `${moisReference}-${String(dernierJour).padStart(2, '0')}`;
+
+    let url = `/api/statistiques/assurance/bordereau?assurance=${encodeURIComponent(assurance)}&periode=personnalise&date_debut=${dateDebut}&date_fin=${dateFin}`;
+    if (societe) {
+        url += `&societe=${encodeURIComponent(societe)}`;
+    }
+    window.open(url, '_blank');
 }
 
 function showPaiementModal(id, assurance, mois, total, deja) {
@@ -217,8 +222,8 @@ function enregistrerPaiement() {
         return;
     }
 
-    const libelleConfirm = EST_ADMIN ? 'Confirmer l\'encaissement' : 'Envoyer la demande d\'encaissement';
-    if (!confirm(`${libelleConfirm} de ${Math.round(montant).toLocaleString('fr-FR')} FCFA ?`)) return;
+    // ⭐ Tout encaissement (admin compris) part maintenant en demande.
+    if (!confirm(`Envoyer la demande d'encaissement de ${Math.round(montant).toLocaleString('fr-FR')} FCFA ?`)) return;
 
     const btn = document.getElementById('btnValiderPaiement');
     btn.disabled = true;

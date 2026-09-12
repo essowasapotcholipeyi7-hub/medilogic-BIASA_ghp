@@ -1133,7 +1133,9 @@ function enregistrerPaiement() {
         .then(r => r.json())
         .then(result => {
             if (result.success) {
-                alert('Remboursement enregistre !');
+                // ⭐ Tout encaissement (admin compris) part maintenant en
+                // demande — voir payer_facture_assurance() côté serveur.
+                alert(result.en_attente ? ('📨 ' + result.message) : 'Remboursement enregistre !');
                 bootstrap.Modal.getInstance(document.getElementById('paiementModal')).hide();
                 chargerFactures();
             } else {

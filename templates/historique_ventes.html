@@ -587,8 +587,7 @@ function afficherPageVentes(page) {
         html += ' <button class="btn btn-sm btn-outline-secondary" onclick="reimprimer(' + (v.ID || start + i + 1) + ', \'' + v.type + '\')" title="Imprimer">';
         html += '<i class="fas fa-print"></i></button>';
         if (peutDemanderAnnulation && v.statut !== 'annulee') {
-            var titreAnnuler = isAdmin ? 'Annuler' : "Demander l'annulation";
-            html += ' <button class="btn btn-sm btn-outline-danger" onclick="annulerVente(' + (v.ID || start + i + 1) + ', \'' + v.type + '\')" title="' + titreAnnuler + '">';
+            html += ' <button class="btn btn-sm btn-outline-danger" onclick="annulerVente(' + (v.ID || start + i + 1) + ', \'' + v.type + '\')" title="Demander l\'annulation">';
             html += '<i class="fas fa-ban"></i></button>';
         }
         html += '</td>';
@@ -978,9 +977,10 @@ function annulerVente(venteId, type) {
     var motif = prompt("Motif de l'annulation :", "Annulation manuelle");
     if (motif === null) return;
 
-    var messageConfirm = isAdmin ? 'Annuler cette vente ?' : "Envoyer une demande d'annulation à l'administrateur ?";
-    if (confirm(messageConfirm)) {
-        showLoader(isAdmin ? 'Annulation en cours...' : 'Envoi de la demande...');
+    // ⭐ Toute annulation (admin compris) part maintenant en demande — voir
+    // annuler_vente() côté serveur.
+    if (confirm("Envoyer une demande d'annulation ?")) {
+        showLoader('Envoi de la demande...');
 
         fetch('/api/ventes/' + venteId + '/annuler', {
             method: 'POST',
@@ -991,7 +991,7 @@ function annulerVente(venteId, type) {
         .then(function(data) {
             hideLoader();
             if (data.success) {
-                alert(data.en_attente ? ('📨 ' + data.message) : 'Vente annulée');
+                alert('📨 ' + data.message);
                 location.reload();
             } else {
                 alert('❌ Erreur: ' + data.error);

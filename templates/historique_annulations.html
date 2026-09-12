@@ -3,12 +3,6 @@
 {% block title %}Historique des annulations{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-md-3 mb-4">
-        {% include 'sidebar_menu.html' %}
-    </div>
-
-    <div class="col-md-9">
         <div class="card">
             <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
                 <h5><i class="fas fa-ban"></i> Historique des annulations</h5>
@@ -133,8 +127,6 @@
                 <i class="fas fa-arrow-left"></i> Retour au tableau de bord
             </a>
         </div>
-    </div>
-</div>
 
 <script>
 function filtrerAnnulations() {

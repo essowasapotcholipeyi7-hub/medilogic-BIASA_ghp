@@ -7743,9 +7743,11 @@ def api_get_actes():
 @app.route('/api/ventes/<int:vente_id>/annuler', methods=['POST'])
 @login_required
 def annuler_vente(vente_id):
-    """Annuler une vente. Un admin l'annule immédiatement ; un caissier ou
-    secrétaire ne fait que la DEMANDER — elle reste en attente jusqu'à
-    validation par un admin (voir _demander_validation / /api/validations)."""
+    """Demande l'annulation d'une vente — TOUJOURS en attente, même pour un
+    admin (voir _demander_validation / /api/validations). Le patron a été
+    explicite : plus personne, admin compris, n'exécute directement ;
+    l'exécution réelle n'a lieu qu'au moment de la validation
+    (api_valider_demande), qui appelle _executer_annulation_vente."""
     role = session.get('role', 'caissier')
     if role not in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable', 'pharmacien']:
         return jsonify({'success': False, 'error': 'Acces non autorise.'}), 403
@@ -7756,29 +7758,23 @@ def annuler_vente(vente_id):
     user_id = session.get('user_id')
     user_name = session.get('user_name', 'Utilisateur')
 
-    if not session.get('is_admin'):
-        # Récupérer un minimum d'infos pour un résumé lisible côté admin
-        vente_info = db.execute_query("""
-            SELECT net_a_payer, type FROM ventes WHERE id = %s AND structure_id = %s
-        """, (vente_id, structure_id))
-        montant = float(vente_info[0].get('net_a_payer', 0)) if vente_info else 0
-        try:
-            demande = _demander_validation(
-                structure_id=structure_id, type_demande='annulation_vente',
-                reference_id=vente_id,
-                payload={'vente_id': vente_id, 'motif': motif},
-                resume=f"Annulation vente #{vente_id} — {int(montant):,} FCFA".replace(',', ' '),
-                user_id=user_id, user_name=user_name,
-            )
-            return jsonify({
-                'success': True, 'en_attente': True, 'demande_id': demande.id,
-                'message': "Demande d'annulation envoyée. En attente de validation par l'administrateur."
-            })
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)}), 500
-
+    # Récupérer un minimum d'infos pour un résumé lisible côté admin
+    vente_info = db.execute_query("""
+        SELECT net_a_payer, type FROM ventes WHERE id = %s AND structure_id = %s
+    """, (vente_id, structure_id))
+    montant = float(vente_info[0].get('net_a_payer', 0)) if vente_info else 0
     try:
-        return jsonify(_executer_annulation_vente(vente_id, motif, structure_id, user_id, user_name))
+        demande = _demander_validation(
+            structure_id=structure_id, type_demande='annulation_vente',
+            reference_id=vente_id,
+            payload={'vente_id': vente_id, 'motif': motif},
+            resume=f"Annulation vente #{vente_id} — {int(montant):,} FCFA".replace(',', ' '),
+            user_id=user_id, user_name=user_name,
+        )
+        return jsonify({
+            'success': True, 'en_attente': True, 'demande_id': demande.id,
+            'message': "Demande d'annulation envoyée. En attente de validation par l'administrateur."
+        })
     except Exception as e:
         print(f"❌ Erreur annulation: {e}")
         import traceback
@@ -8397,10 +8393,9 @@ def api_finances_recettes_source():
 @app.route('/api/finances/depenses', methods=['POST'])
 @login_required
 def api_add_depense():
-    """Enregistrer une dépense. Un admin l'enregistre immédiatement ; un
-    caissier ou secrétaire ne fait que la DEMANDER — elle reste en attente
-    (ni écriture comptable ni impact sur la caisse) jusqu'à validation par
-    un admin (voir /api/validations)."""
+    """Demande l'enregistrement d'une dépense — TOUJOURS en attente, même
+    pour un admin (ni écriture comptable ni impact sur la caisse tant que
+    non validée, voir _demander_validation / /api/validations)."""
     role = session.get('role', 'caissier')
     if role not in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable']:
         return jsonify({'success': False, 'error': 'Non autorise'}), 403
@@ -8411,32 +8406,21 @@ def api_add_depense():
     user_name = session.get('user_name', 'Utilisateur')
     montant = float(data.get('montant', 0))
 
-    if not session.get('is_admin'):
-        try:
-            demande = _demander_validation(
-                structure_id=structure_id, type_demande='depense',
-                payload={
-                    'montant': montant, 'motif': data.get('motif'),
-                    'motif_personnalise': data.get('motif_personnalise', ''),
-                    'description': data.get('description', ''),
-                },
-                resume=f"Dépense — {data.get('motif')} — {int(montant):,} FCFA".replace(',', ' '),
-                user_id=user_id, user_name=user_name,
-            )
-            return jsonify({
-                'success': True, 'en_attente': True, 'demande_id': demande.id,
-                'message': "Demande de dépense envoyée. En attente de validation par l'administrateur."
-            })
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)}), 500
-
     try:
-        return jsonify(_executer_ajout_depense(
-            structure_id, montant, data.get('motif'),
-            data.get('motif_personnalise', ''), data.get('description', ''), user_name,
-        ))
-    except ValueError as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        demande = _demander_validation(
+            structure_id=structure_id, type_demande='depense',
+            payload={
+                'montant': montant, 'motif': data.get('motif'),
+                'motif_personnalise': data.get('motif_personnalise', ''),
+                'description': data.get('description', ''),
+            },
+            resume=f"Dépense — {data.get('motif')} — {int(montant):,} FCFA".replace(',', ' '),
+            user_id=user_id, user_name=user_name,
+        )
+        return jsonify({
+            'success': True, 'en_attente': True, 'demande_id': demande.id,
+            'message': "Demande de dépense envoyée. En attente de validation par l'administrateur."
+        })
     except Exception as e:
         print(f"Erreur api_add_depense: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -9216,10 +9200,9 @@ def api_get_facture_detail(facture_id):
 @app.route('/api/assurances/factures/<int:facture_id>/payer', methods=['POST'])
 @login_required
 def payer_facture_assurance(facture_id):
-    """Encaisser une facture d'assurance. Un admin l'encaisse immédiatement ;
-    un caissier ou secrétaire ne fait que la DEMANDER — elle reste en
-    attente (ni caisse ni écriture comptable) jusqu'à validation par un
-    admin (voir /api/validations)."""
+    """Demande l'encaissement d'une facture d'assurance — TOUJOURS en
+    attente, même pour un admin (ni caisse ni écriture comptable tant que
+    non validée, voir _demander_validation / /api/validations)."""
     role = session.get('role', 'caissier')
     if role not in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable']:
         return jsonify({'success': False, 'error': 'Non autorise'}), 403
@@ -9242,40 +9225,29 @@ def payer_facture_assurance(facture_id):
     if not numero_reference_versement or not date_versement:
         return jsonify({'success': False, 'error': "Le numéro de référence du versement et la date de versement sont obligatoires pour tracer l'encaissement."}), 400
 
-    if not session.get('is_admin'):
-        facture_apercu = db.execute_query("""
-            SELECT assurance, mois_reference FROM factures_assurance WHERE id = %s AND structure_id = %s
-        """, (facture_id, structure_id))
-        if not facture_apercu:
-            return jsonify({'success': False, 'error': 'Facture non trouvee'}), 404
-        fa = facture_apercu[0]
-        try:
-            demande = _demander_validation(
-                structure_id=structure_id, type_demande='encaissement_assurance',
-                reference_id=facture_id,
-                payload={
-                    'facture_id': facture_id, 'montant': montant,
-                    'numero_reference_versement': numero_reference_versement,
-                    'date_versement': date_versement,
-                },
-                resume=f"Encaissement assurance {fa.get('assurance')} ({fa.get('mois_reference')}) — {int(montant):,} FCFA".replace(',', ' '),
-                user_id=user_id, user_name=user_name,
-            )
-            return jsonify({
-                'success': True, 'en_attente': True, 'demande_id': demande.id,
-                'message': "Demande d'encaissement envoyée. En attente de validation par l'administrateur."
-            })
-        except Exception as e:
-            return jsonify({'success': False, 'error': str(e)}), 500
-
+    facture_apercu = db.execute_query("""
+        SELECT assurance, mois_reference FROM factures_assurance WHERE id = %s AND structure_id = %s
+    """, (facture_id, structure_id))
+    if not facture_apercu:
+        return jsonify({'success': False, 'error': 'Facture non trouvee'}), 404
+    fa = facture_apercu[0]
     try:
-        return jsonify(_executer_paiement_assurance(
-            facture_id, structure_id, montant, numero_reference_versement, date_versement, user_name,
-        ))
-    except ValueError as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        demande = _demander_validation(
+            structure_id=structure_id, type_demande='encaissement_assurance',
+            reference_id=facture_id,
+            payload={
+                'facture_id': facture_id, 'montant': montant,
+                'numero_reference_versement': numero_reference_versement,
+                'date_versement': date_versement,
+            },
+            resume=f"Encaissement assurance {fa.get('assurance')} ({fa.get('mois_reference')}) — {int(montant):,} FCFA".replace(',', ' '),
+            user_id=user_id, user_name=user_name,
+        )
+        return jsonify({
+            'success': True, 'en_attente': True, 'demande_id': demande.id,
+            'message': "Demande d'encaissement envoyée. En attente de validation par l'administrateur."
+        })
     except Exception as e:
-        print(f"Erreur: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 

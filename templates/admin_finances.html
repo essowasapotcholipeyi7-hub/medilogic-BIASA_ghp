@@ -558,7 +558,9 @@ function saveDepense() {
     .then(data => {
         hideLoader();
         if (data.success) {
-            alert('charge enregistrée avec succès');
+            // ⭐ Toute dépense (admin compris) part maintenant en demande —
+            // voir api_add_depense() côté serveur.
+            alert(data.en_attente ? ('📨 ' + data.message) : 'charge enregistrée avec succès');
             location.reload();
         } else {
             alert('❌ Erreur: ' + data.error);

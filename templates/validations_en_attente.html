@@ -3,12 +3,6 @@
 {% block title %}Demandes en attente de validation{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-md-3 mb-4">
-        {% include 'sidebar_menu.html' %}
-    </div>
-
-    <div class="col-md-9">
         <div class="card">
             <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center">
                 <h5><i class="fas fa-hourglass-half"></i> Demandes en attente de validation</h5>
@@ -18,9 +12,9 @@
             </div>
             <div class="card-body">
                 <p class="text-muted">
-                    Annulations de vente, dépenses et encaissements de factures d'assurance enregistrés
-                    par les caissiers/secrétaires attendent ici votre validation. Rien n'est appliqué
-                    (caisse, comptabilité) tant que vous n'avez pas validé.
+                    Toute demande d'annulation de vente, de dépense ou d'encaissement de facture
+                    d'assurance — la vôtre comprise — attend ici votre validation. Rien n'est
+                    appliqué (caisse, comptabilité) tant que vous n'avez pas validé.
                 </p>
 
                 <ul class="nav nav-tabs mb-3" id="statutTabs">
@@ -62,8 +56,6 @@
                 <i class="fas fa-arrow-left"></i> Retour au tableau de bord
             </a>
         </div>
-    </div>
-</div>
 
 <script>
 let statutCourant = 'en_attente';

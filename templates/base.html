@@ -1713,6 +1713,22 @@
     }
 }
 
+/* ⭐ Cloche de notification (demandes en attente) — petite secousse
+   quand une nouvelle demande arrive, voir actualiserBadgeValidations(). */
+@keyframes bell-shake {
+    0%, 100% { transform: rotate(0); }
+    15% { transform: rotate(15deg); }
+    30% { transform: rotate(-13deg); }
+    45% { transform: rotate(10deg); }
+    60% { transform: rotate(-8deg); }
+    75% { transform: rotate(4deg); }
+}
+.bell-shake {
+    display: inline-block;
+    animation: bell-shake 0.7s ease-in-out;
+    transform-origin: top center;
+}
+
     </style>
     {% block extra_css %}{% endblock %}
 </head>
@@ -1784,6 +1800,21 @@
                 </button>
             </div>
             
+            {% if session.is_admin %}
+            <!-- ⭐ Cloche de notification : demandes en attente de validation
+                 (annulation vente, dépense, encaissement assurance). Compteur
+                 rafraîchi par actualiserBadgeValidations() (voir plus bas) —
+                 même source que le badge du menu Finances, juste rendue plus
+                 visible ici (toujours à l'écran, pas cachée dans un sous-menu). -->
+            <a href="{{ url_for('page_validations') }}" class="btn btn-light rounded-pill position-relative"
+               style="padding: 8px 14px; border: none; background: rgba(255,255,255,0.8); box-shadow: 0 2px 8px rgba(0,0,0,0.05);"
+               title="Demandes en attente de validation">
+                <i class="fas fa-bell" style="color:#4a5568;"></i>
+                <span id="navBellBadge" class="position-absolute badge rounded-pill bg-danger"
+                      style="top:-4px; right:-4px; display:none; font-size:10px;">0</span>
+            </a>
+            {% endif %}
+
             <div class="dropdown">
                 <button class="btn btn-light rounded-pill dropdown-toggle" type="button" data-bs-toggle="dropdown">
                     <i class="fas fa-user-circle"></i> {{ session.user_name|default('Utilisateur') }}
@@ -2367,24 +2398,45 @@ setTimeout(ajusterHauteurNavbar, 1000);
 // BADGE "DEMANDES EN ATTENTE" (admin uniquement)
 // ============================================
 {% if session.is_admin %}
+let dernierCompteValidations = null;
 function actualiserBadgeValidations() {
     fetch('/api/validations/count')
         .then(r => r.json())
         .then(d => {
-            const badge = document.getElementById('navBadgeValidations');
-            if (!badge) return;
             const count = d.count || 0;
-            if (count > 0) {
-                badge.innerText = count;
-                badge.style.display = 'inline-block';
-            } else {
-                badge.style.display = 'none';
+            const menuBadge = document.getElementById('navBadgeValidations');
+            if (menuBadge) {
+                if (count > 0) {
+                    menuBadge.innerText = count;
+                    menuBadge.style.display = 'inline-block';
+                } else {
+                    menuBadge.style.display = 'none';
+                }
             }
+            const bellBadge = document.getElementById('navBellBadge');
+            if (bellBadge) {
+                if (count > 0) {
+                    bellBadge.innerText = count > 99 ? '99+' : count;
+                    bellBadge.style.display = 'inline-block';
+                } else {
+                    bellBadge.style.display = 'none';
+                }
+            }
+            // ⭐ Petite secousse de la cloche quand une NOUVELLE demande vient
+            // d'arriver (compteur qui augmente) — signal visuel discret, pas
+            // de son (contexte clinique).
+            const bellIcon = document.querySelector('#navBellBadge')?.previousElementSibling;
+            if (dernierCompteValidations !== null && count > dernierCompteValidations && bellIcon) {
+                bellIcon.classList.remove('bell-shake');
+                void bellIcon.offsetWidth;
+                bellIcon.classList.add('bell-shake');
+            }
+            dernierCompteValidations = count;
         })
         .catch(() => {});
 }
 document.addEventListener('DOMContentLoaded', actualiserBadgeValidations);
-setInterval(actualiserBadgeValidations, 60000);
+setInterval(actualiserBadgeValidations, 30000);
 {% endif %}
 
 // ============================================

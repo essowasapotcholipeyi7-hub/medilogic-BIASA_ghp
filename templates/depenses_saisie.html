@@ -3,24 +3,16 @@
 {% block title %}Enregistrer une charge{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-md-3 mb-4">
-        {% include 'sidebar_menu.html' %}
-    </div>
-
-    <div class="col-md-9">
         <div class="card mb-4">
             <div class="card-header bg-danger text-white">
                 <h5><i class="fas fa-money-bill-wave"></i> Enregistrer une charge</h5>
             </div>
             <div class="card-body">
-                {% if not session.is_admin %}
                 <div class="alert alert-warning">
                     <i class="fas fa-info-circle"></i>
                     La charge que vous enregistrez ici reste <strong>en attente de validation</strong>
                     par l'administrateur avant d'être réellement prise en compte (caisse, comptabilité).
                 </div>
-                {% endif %}
 
                 <form id="depenseForm">
                     <div class="mb-3">
@@ -81,8 +73,6 @@
                 <i class="fas fa-arrow-left"></i> Retour au tableau de bord
             </a>
         </div>
-    </div>
-</div>
 
 <script>
 function toggleMotifPersonnalise() {
