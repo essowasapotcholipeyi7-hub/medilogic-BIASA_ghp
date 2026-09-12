@@ -107,9 +107,30 @@ def invalider_cache_comptes():
 
 def _log_anomalie(structure_id, source_type, source_id, message):
     """Journalise un échec de génération automatique dans une transaction
-    SÉPARÉE — ne doit jamais elle-même faire échouer l'appelant."""
+    SÉPARÉE — ne doit jamais elle-même faire échouer l'appelant.
+
+    ⭐ FIX (bug de perte de données silencieuse) : le db.session.rollback()
+    précautionneux qui se trouvait ici ("au cas où une transaction
+    précédente serait en échec") a été RETIRÉ. Tous les appelants qui
+    invoquent _log_anomalie() après une VRAIE exception DB font déjà leur
+    propre db.session.rollback() dans leur bloc except juste avant cet
+    appel (9 sites dans ce fichier) — ce rollback ici était donc redondant
+    pour eux. Le SEUL appelant qui ne le fait pas est creer_ecriture() lors
+    du rejet d'une écriture déséquilibrée (aucune exception, un simple
+    contrôle Python) : dans ce cas la session est parfaitement saine, et ce
+    rollback précautionneux détruisait injustement TOUT le travail non
+    encore committé de la requête en cours (ex: la vente elle-même, créée
+    juste avant via db.execute_query(...), qui n'autocommit pas et partage
+    la même session SQLAlchemy) — la vente disparaissait alors
+    silencieusement alors même que l'API venait de répondre success:true
+    avec son id. Sans ce rollback, le db.session.commit() juste en dessous
+    committe l'anomalie ET tout le travail légitime déjà en attente,
+    exactement comme le prévoit le commentaire d'en-tête de ce module : la
+    vente doit toujours réussir même si la comptabilisation échoue. Si la
+    session est réellement dans un état corrompu par une erreur antérieure
+    non gérée, le except juste en dessous fait toujours un rollback de
+    secours."""
     try:
-        db.session.rollback()  # au cas où une transaction précédente serait en échec
         db.session.add(AnomalieComptable(
             structure_id=structure_id, source_type=source_type, source_id=source_id,
             message=str(message)[:2000],
