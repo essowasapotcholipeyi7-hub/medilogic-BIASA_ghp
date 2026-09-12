@@ -2586,8 +2586,20 @@ def recu(vente_id, type):
                 print(f"📊 Cas 3 - Patient non assuré sans CAC, base aide = sous-total: {base_aide}")
             
             if base_aide > 0 and taux_aide > 0:
-                aide_hospitaliere_calculee = (base_aide * taux_aide) / 100
-                print(f"📊 Aide hospitalière recalculée: {aide_hospitaliere_calculee} FCFA (taux {taux_aide}%)")
+                # ⭐ FIX CRITIQUE : ce recalcul traitait TOUJOURS taux_aide
+                # comme un pourcentage (÷100), même quand type_aide='montant'
+                # (remise en FCFA direct, ex. 5000) — un taux_aide=5000
+                # "montant" devenait alors 5000% ! Sur une vente réelle :
+                # aide affichée "- 799 000 FCFA" et "NET À PAYER : 0 FCFA"
+                # au lieu de 10 980 FCFA. Même correctif déjà en place dans
+                # api_creer_proforma()/api_convertir_proforma() (lignes
+                # ~9829/10350), qui n'avait jamais été reporté ici.
+                if type_aide == 'montant':
+                    aide_hospitaliere_calculee = min(taux_aide, base_aide)
+                    print(f"📊 Aide hospitalière recalculée: {aide_hospitaliere_calculee} FCFA (montant direct {taux_aide} FCFA)")
+                else:
+                    aide_hospitaliere_calculee = (base_aide * taux_aide) / 100
+                    print(f"📊 Aide hospitalière recalculée: {aide_hospitaliere_calculee} FCFA (taux {taux_aide}%)")
         
         # 🔥🔥🔥 CALCUL DU NET AVEC AIDE HOSPITALIÈRE RECALCULÉE 🔥🔥🔥
         net_a_payer = sous_total - prise_en_charge - prise_en_charge2 - aide_hospitaliere_calculee
