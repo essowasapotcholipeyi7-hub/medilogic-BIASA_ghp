@@ -2676,6 +2676,26 @@ function modifierProforma(id) {
                                     <label class="form-label">Téléphone</label>
                                     <input type="text" class="form-control" value="${data.patient_telephone || ''}" readonly>
                                 </div>
+                                <!-- ⭐ Désactiver l'assurance principale pour cette proforma,
+                                     absente jusqu'ici du formulaire de MODIFICATION (déjà
+                                     présente à la création et à la conversion) — signalé par
+                                     le patron. Id volontairement différent du nom de la
+                                     fonction appelée par son onchange (voir le fix du même
+                                     bug sur le toggle de création : une collision de nom
+                                     casse l'appel). -->
+                                <div class="row mb-2">
+                                    <div class="col-md-12">
+                                        <div class="form-check form-switch d-flex align-items-center gap-2">
+                                            <input class="form-check-input" type="checkbox" id="modifAssurancePrincipaleActive"
+                                                   style="width: 44px; height: 22px; cursor: pointer;"
+                                                   ${data.assurance_principale_active !== false ? 'checked' : ''}
+                                                   onchange="toggleAssurancePrincipaleModif()">
+                                            <label class="form-check-label fw-semibold" for="modifAssurancePrincipaleActive">
+                                                <i class="fas fa-shield-alt text-primary"></i> Assurance principale active
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
                                 <div class="row">
                                     <div class="col-md-6">
                                         <label class="form-label">Assurance principale</label>
@@ -2683,7 +2703,9 @@ function modifierProforma(id) {
                                     </div>
                                     <div class="col-md-3">
                                         <label class="form-label">Taux (%)</label>
-                                        <input type="number" class="form-control" id="modifTauxAssurance" value="${data.taux_assurance || 0}" min="0" max="100" onchange="calculerTotalModif()">
+                                        <input type="number" class="form-control" id="modifTauxAssurance" value="${data.taux_assurance || 0}" min="0" max="100"
+                                               ${data.assurance_principale_active === false ? 'disabled' : ''}
+                                               onchange="calculerTotalModif()">
                                     </div>
                                     <div class="col-md-3">
                                         <label class="form-label">N° Carte</label>
@@ -2752,10 +2774,10 @@ function modifierProforma(id) {
                                                        style="width:60px;" onchange="modifierArticleModif(${index}, 'quantite', this.value)">
                                             </td>
                                             <td>
-                                                <input type="number" class="form-control form-control-sm" value="${item.prix_unitaire}" 
+                                                <input type="number" class="form-control form-control-sm" value="${item.prix_unitaire || item.prix || 0}"
                                                        style="width:100px;" onchange="modifierArticleModif(${index}, 'prix', this.value)">
                                             </td>
-                                            <td class="text-end fw-bold">${Math.round(item.prix_unitaire * item.quantite).toLocaleString('fr-FR')} FCFA</td>
+                                            <td class="text-end fw-bold">${Math.round((item.prix_unitaire || item.prix || 0) * item.quantite).toLocaleString('fr-FR')} FCFA</td>
                                             <td>
                                                 <button class="btn btn-sm btn-danger" onclick="supprimerArticleModif(${index})">
                                                     <i class="fas fa-times"></i>
@@ -2780,6 +2802,11 @@ function modifierProforma(id) {
                                         <th id="modifPriseEnCharge2" class="text-end text-info">${data.prise_en_charge2 ? Math.round(data.prise_en_charge2).toLocaleString('fr-FR') : 0} FCFA</th>
                                         <th></th>
                                     </tr>
+                                    <tr id="modifAideRow" style="${data.aide_hospitaliere && data.aide_hospitaliere > 0 ? '' : 'display:none;'}">
+                                        <th colspan="4" class="text-end" style="color:#c9820a;">Aide hospitalière :</th>
+                                        <th id="modifAideDisplay" class="text-end" style="color:#c9820a;">- ${data.aide_hospitaliere ? Math.round(data.aide_hospitaliere).toLocaleString('fr-FR') : 0} FCFA</th>
+                                        <th></th>
+                                    </tr>
                                     <tr class="table-warning">
                                         <th colspan="4" class="text-end text-danger">NET À PAYER :</th>
                                         <th id="modifNetAPayer" class="text-end text-danger fw-bold">${data.net_a_payer ? Math.round(data.net_a_payer).toLocaleString('fr-FR') : 0} FCFA</th>
@@ -2788,6 +2815,29 @@ function modifierProforma(id) {
                                 </tfoot>
                             </table>
                         </div>
+
+                        <!-- ⭐ Aide hospitalière (remise) — % ou montant direct FCFA, même
+                             mécanisme que sur la création/conversion de proforma ; absente
+                             jusqu'ici du formulaire de MODIFICATION. -->
+                        <div class="row mt-2 mb-2">
+                            <div class="col-md-4">
+                                <label class="form-label" style="color:#c9820a;">
+                                    <i class="fas fa-hand-holding-heart"></i> Aide hospitalière
+                                </label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" id="modifTauxAide"
+                                           value="${data.taux_aide || 0}" step="5" min="0" max="100"
+                                           onchange="calculerTotalModif()" style="border-color:#ffc107;">
+                                    <select class="form-control" id="modifTypeAide" style="max-width:85px; border-color:#ffc107;"
+                                            onchange="onChangeTypeAideModif(); calculerTotalModif();">
+                                        <option value="pourcentage" ${(data.type_aide || 'pourcentage') === 'pourcentage' ? 'selected' : ''}>%</option>
+                                        <option value="montant" ${data.type_aide === 'montant' ? 'selected' : ''}>FCFA</option>
+                                    </select>
+                                </div>
+                                <small class="text-muted" id="modifAideHint">Taux d'aide (max 100%)</small>
+                            </div>
+                        </div>
+
                         <div class="row mt-2">
                             <div class="col-md-4">
                                 <label class="form-label">Ajouter un article</label>
@@ -2820,15 +2870,25 @@ function modifierProforma(id) {
             
             content.innerHTML = html;
             
-            window.modifArticles = data.articles ? data.articles.map(item => ({
-                nom: item.nom,
-                type: item.type || 'acte',
-                quantite: item.quantite,
-                prix_unitaire: item.prix_unitaire,
-                total: item.prix_unitaire * item.quantite
-            })) : [];
-            
-            document.querySelector('#modifierProformaModal .modal-title').textContent = 
+            // ⭐ FIX : item.prix_unitaire peut être absent (api_creer_proforma()
+            // garantit article['prix'] mais jamais article['prix_unitaire']) —
+            // repli sur item.prix, sinon Sous-total/Net à payer valent NaN.
+            window.modifArticles = data.articles ? data.articles.map(item => {
+                const prixUnitaire = item.prix_unitaire || item.prix || 0;
+                return {
+                    nom: item.nom,
+                    type: item.type || 'acte',
+                    quantite: item.quantite,
+                    prix_unitaire: prixUnitaire,
+                    total: prixUnitaire * item.quantite
+                };
+            }) : [];
+
+            // ⭐ Rafraîchit les totaux (dont l'aide hospitalière, absente du
+            // rendu statique initial) une fois le HTML inséré.
+            calculerTotalModif();
+
+            document.querySelector('#modifierProformaModal .modal-title').textContent =
                 `Modifier la proforma #${data.numero_proforma || data.id} - ${data.patient_nom}`;
         })
         .catch(error => {
@@ -2847,29 +2907,50 @@ function calculerTotalModif() {
     for (const item of articles) {
         sousTotal += item.prix_unitaire * item.quantite;
     }
-    
+
     const tauxPrincipal = parseFloat(document.getElementById('modifTauxAssurance').value) || 0;
     const priseEnCharge = (sousTotal * tauxPrincipal) / 100;
     let resteApresPrincipal = sousTotal - priseEnCharge;
-    
+
     const assurance2Active = document.getElementById('modifToggleAssurance2').checked;
     let priseEnCharge2 = 0;
     let tauxComplementaire = 0;
-    
+
     if (assurance2Active) {
         tauxComplementaire = parseFloat(document.getElementById('modifAssurance2Taux').value) || 0;
         if (tauxComplementaire > 0 && resteApresPrincipal > 0) {
             priseEnCharge2 = (resteApresPrincipal * tauxComplementaire) / 100;
         }
     }
-    
-    let netAPayer = sousTotal - priseEnCharge - priseEnCharge2;
+
+    // ⭐ Aide hospitalière (remise) — % (plafonné à 100) ou montant direct
+    // FCFA, même mécanisme que sur la création/conversion de proforma ;
+    // absente jusqu'ici du calcul de modification.
+    let netAvantAide = sousTotal - priseEnCharge - priseEnCharge2;
+    if (netAvantAide < 0) netAvantAide = 0;
+
+    const typeAide = document.getElementById('modifTypeAide').value;
+    let tauxAide = parseFloat(document.getElementById('modifTauxAide').value) || 0;
+    if (tauxAide < 0) {
+        tauxAide = 0;
+        document.getElementById('modifTauxAide').value = 0;
+    }
+    if (typeAide === 'pourcentage' && tauxAide > 100) {
+        tauxAide = 100;
+        document.getElementById('modifTauxAide').value = 100;
+    }
+    let aideHospitaliere = 0;
+    if (tauxAide > 0 && netAvantAide > 0) {
+        aideHospitaliere = (typeAide === 'montant') ? Math.min(tauxAide, netAvantAide) : (netAvantAide * tauxAide) / 100;
+    }
+
+    let netAPayer = netAvantAide - aideHospitaliere;
     if (netAPayer < 0) netAPayer = 0;
-    
+
     document.getElementById('modifSousTotal').textContent = Math.round(sousTotal).toLocaleString('fr-FR') + ' FCFA';
     document.getElementById('modifPriseEnCharge').textContent = Math.round(priseEnCharge).toLocaleString('fr-FR') + ' FCFA';
     document.getElementById('modifNetAPayer').textContent = Math.round(netAPayer).toLocaleString('fr-FR') + ' FCFA';
-    
+
     const row2 = document.getElementById('modifPriseEnCharge2Row');
     const display2 = document.getElementById('modifPriseEnCharge2');
     if (assurance2Active && priseEnCharge2 > 0) {
@@ -2878,6 +2959,52 @@ function calculerTotalModif() {
         row2.style.display = '';
     } else {
         row2.style.display = 'none';
+    }
+
+    const aideRow = document.getElementById('modifAideRow');
+    const aideDisplay = document.getElementById('modifAideDisplay');
+    if (aideHospitaliere > 0) {
+        const suffixe = typeAide === 'montant' ? '' : ` (${tauxAide}%)`;
+        aideDisplay.textContent = `${suffixe ? suffixe + ' ' : ''}- ${Math.round(aideHospitaliere).toLocaleString('fr-FR')} FCFA`;
+        aideRow.style.display = '';
+    } else {
+        aideRow.style.display = 'none';
+    }
+}
+
+// ⭐ Désactive/réactive l'assurance principale pour cette proforma (le
+// patient assuré ne souhaite pas l'utiliser) — même principe que le
+// toggle équivalent sur les formulaires de création/conversion.
+let modifTauxAssuranceSauvegarde = 0;
+function toggleAssurancePrincipaleModif() {
+    const toggle = document.getElementById('modifAssurancePrincipaleActive');
+    const tauxInput = document.getElementById('modifTauxAssurance');
+
+    if (toggle.checked) {
+        tauxInput.disabled = false;
+        tauxInput.value = modifTauxAssuranceSauvegarde || (proformaAModifier ? proformaAModifier.taux_assurance : 0) || 80;
+    } else {
+        modifTauxAssuranceSauvegarde = parseFloat(tauxInput.value) || 0;
+        tauxInput.value = 0;
+        tauxInput.disabled = true;
+    }
+    calculerTotalModif();
+}
+
+// ⭐ Bascule %/montant pour l'aide hospitalière (voir même fonction dans
+// pharma_vente.html/actes_vente.html/proformas.html création/conversion).
+function onChangeTypeAideModif() {
+    const type = document.getElementById('modifTypeAide').value;
+    const input = document.getElementById('modifTauxAide');
+    const hint = document.getElementById('modifAideHint');
+    if (type === 'pourcentage') {
+        input.setAttribute('max', '100');
+        input.setAttribute('step', '5');
+        if (hint) hint.textContent = "Taux d'aide (max 100%)";
+    } else {
+        input.removeAttribute('max');
+        input.setAttribute('step', '100');
+        if (hint) hint.textContent = 'Montant direct (FCFA)';
     }
 }
 
@@ -2963,7 +3090,10 @@ function ajouterArticleModif() {
     document.getElementById('modifNewArticleNom').value = '';
     document.getElementById('modifNewArticlePrix').value = '';
     document.getElementById('modifNewArticleQte').value = '1';
-    calcularTotalModif();
+    // ⭐ FIX : faute de frappe ("calcularTotalModif" n'existe pas — vraie
+    // fonction : calculerTotalModif) qui levait une ReferenceError et
+    // empêchait le total de se rafraîchir après l'ajout d'un article.
+    calculerTotalModif();
 }
 
 function toggleAssurance2Modif() {
@@ -2989,10 +3119,16 @@ function sauvegarderModificationProforma() {
         id: proformaAModifier.id,
         assurance_nom: document.getElementById('modifAssuranceNom').value,
         taux_assurance: parseFloat(document.getElementById('modifTauxAssurance').value) || 0,
+        // ⭐ Désactivation de l'assurance principale + aide hospitalière,
+        // absentes jusqu'ici du payload de modification (les champs
+        // n'existaient même pas dans ce formulaire).
+        assurance_principale_active: document.getElementById('modifAssurancePrincipaleActive').checked,
         numero_assure: document.getElementById('modifNumeroAssure').value || '',
         assurance2_active: document.getElementById('modifToggleAssurance2').checked,
         assurance2_nom: document.getElementById('modifAssurance2Nom').value || '',
         taux_assurance2: parseFloat(document.getElementById('modifAssurance2Taux').value) || 0,
+        taux_aide: parseFloat(document.getElementById('modifTauxAide').value) || 0,
+        type_aide: document.getElementById('modifTypeAide').value,
         articles: articles.map(item => ({
             nom: item.nom,
             type: item.type || 'acte',

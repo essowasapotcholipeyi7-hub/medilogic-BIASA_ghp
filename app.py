@@ -10750,31 +10750,56 @@ def api_update_proforma(proforma_id):
             sous_total += item.get('prix_unitaire', 0) * item.get('quantite', 0)
         
         assurance_nom = data.get('assurance_nom', 'Non assuré')
-        taux_assurance = float(data.get('taux_assurance', 0))
+        # ⭐ Désactivation de l'assurance principale — absente jusqu'ici du
+        # formulaire ET de la route de modification (déjà gérée à la
+        # création et à la conversion) ; même mécanisme : taux forcé à 0
+        # si désactivée, quoi que le front envoie.
+        assurance_principale_active = data.get('assurance_principale_active', True)
+        taux_assurance = float(data.get('taux_assurance', 0)) if assurance_principale_active else 0
         numero_assure = data.get('numero_assure', '')
-        
+
         assurance2_active = data.get('assurance2_active', False)
         assurance2_nom = data.get('assurance2_nom', '')
         taux_assurance2 = float(data.get('taux_assurance2', 0))
-        
+
         # Recalculer les prises en charge
         prise_en_charge = (sous_total * taux_assurance) / 100 if taux_assurance > 0 else 0
         reste_apres_principal = sous_total - prise_en_charge
-        
+
         prise_en_charge2 = 0
         if assurance2_active and taux_assurance2 > 0 and reste_apres_principal > 0:
             prise_en_charge2 = (reste_apres_principal * taux_assurance2) / 100
-        
+
         net_a_payer = sous_total - prise_en_charge - prise_en_charge2
         if net_a_payer < 0:
             net_a_payer = 0
-        
+
+        # ⭐ Aide hospitalière (remise) — % (plafonné à 100) ou montant
+        # direct FCFA, même mécanisme que création/conversion ; absente
+        # jusqu'ici de la modification.
+        type_aide = data.get('type_aide', 'pourcentage')
+        if type_aide not in ('pourcentage', 'montant'):
+            type_aide = 'pourcentage'
+        taux_aide = float(data.get('taux_aide', 0) or 0)
+        if taux_aide < 0:
+            taux_aide = 0
+        if type_aide == 'pourcentage' and taux_aide > 100:
+            taux_aide = 100
+
+        aide_hospitaliere = 0
+        if taux_aide > 0 and net_a_payer > 0:
+            aide_hospitaliere = min(taux_aide, net_a_payer) if type_aide == 'montant' else (net_a_payer * taux_aide) / 100
+            net_a_payer -= aide_hospitaliere
+            if net_a_payer < 0:
+                net_a_payer = 0
+
         # 🔥 Mise à jour
         db.execute_query("""
-            UPDATE proformas 
-            SET 
+            UPDATE proformas
+            SET
                 assurance_nom = %s,
                 taux_assurance = %s,
+                assurance_principale_active = %s,
                 numero_assure = %s,
                 assurance2_nom = %s,
                 taux_assurance2 = %s,
@@ -10783,6 +10808,9 @@ def api_update_proforma(proforma_id):
                 sous_total = %s,
                 prise_en_charge = %s,
                 prise_en_charge2 = %s,
+                taux_aide = %s,
+                aide_hospitaliere = %s,
+                type_aide = %s,
                 net_a_payer = %s,
                 notes = %s,
                 updated_at = NOW()
@@ -10790,6 +10818,7 @@ def api_update_proforma(proforma_id):
         """, (
             assurance_nom,
             taux_assurance,
+            assurance_principale_active,
             numero_assure,
             assurance2_nom,
             taux_assurance2,
@@ -10798,6 +10827,9 @@ def api_update_proforma(proforma_id):
             sous_total,
             prise_en_charge,
             prise_en_charge2,
+            taux_aide,
+            aide_hospitaliere,
+            type_aide,
             net_a_payer,
             data.get('notes', ''),
             proforma_id,
