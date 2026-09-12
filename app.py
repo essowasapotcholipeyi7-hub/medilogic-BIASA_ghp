@@ -10441,12 +10441,12 @@ def factures():
     """Page de gestion des factures"""
     # 🔥 Vérifier les droits
     role = session.get('role', 'caissier')
-    if role not in ['admin', 'comptable', 'gestionnaire', 'caissier', 'pharmacien']:
+    if role not in ['admin', 'comptable', 'gestionnaire', 'caissier', 'pharmacien', 'secretaire']:
         flash('Accès non autorisé', 'danger')
         return redirect(url_for('dashboard'))
-    
+
     structure_id = session.get('structure_id')
-    
+
     # Récupérer les statistiques
     stats = db.execute_query("""
         SELECT 
@@ -10472,7 +10472,8 @@ def factures():
 @login_required
 def facture_detail(facture_id):
     """Page de détail d'une facture"""
-    if not session.get('is_admin'):
+    role = session.get('role', 'caissier')
+    if role not in ['admin', 'comptable', 'gestionnaire', 'caissier', 'pharmacien', 'secretaire']:
         flash('Accès non autorisé', 'danger')
         return redirect(url_for('dashboard'))
     
