@@ -1995,6 +1995,11 @@ function afficherModalConversion(data) {
                                 <th></th>
                             </tr>
                             ` : ''}
+                            <tr id="convertAideRow" style="display:none;">
+                                <th colspan="4" class="text-end" style="color:#ffc107;">Aide hospitalière :</th>
+                                <th id="convertAideDisplay" class="text-end" style="color:#ffc107;">0 F</th>
+                                <th></th>
+                            </tr>
                             <tr class="table-warning">
                                 <th colspan="4" class="text-end text-danger">NET À PAYER :</th>
                                 <th id="convertNetAPayer" class="text-end text-danger fw-bold">${Math.round(calculeNetAPayerConversion()).toLocaleString('fr-FR')} F</th>
@@ -2005,7 +2010,63 @@ function afficherModalConversion(data) {
                 </div>
             </div>
         </div>
-        
+
+        <!-- ⭐ Assurance principale désactivable + aide hospitalière,
+             modifiables directement au moment de la conversion (le patient
+             peut changer d'avis, ou une remise être décidée à la caisse) —
+             juste sous le tableau de calcul, même emplacement que sur
+             pharma_vente.html/actes_vente.html/proformas.html (création).
+             Id de la case volontairement différent du nom de la fonction
+             appelée par son onchange (voir le fix appliqué au même toggle
+             sur le formulaire de création : une collision de nom cassait
+             l'appel). -->
+        <div class="card mb-3">
+            <div class="card-header bg-light">
+                <i class="fas fa-shield-alt"></i> Assurance &amp; aide hospitalière (modifiables avant de finaliser)
+            </div>
+            <div class="card-body">
+                <div class="row mb-2">
+                    <div class="col-md-12">
+                        <div class="form-check form-switch d-flex align-items-center gap-2">
+                            <input class="form-check-input" type="checkbox" id="convertAssurancePrincipaleActive"
+                                   style="width: 44px; height: 22px; cursor: pointer;"
+                                   ${data.assurance_principale_active !== false ? 'checked' : ''}
+                                   onchange="toggleAssurancePrincipaleConversion()">
+                            <label class="form-check-label fw-semibold" for="convertAssurancePrincipaleActive">
+                                <i class="fas fa-shield-alt text-primary"></i> Assurance principale active
+                                ${data.assurance_nom && data.assurance_nom !== 'Non assuré' ? `(${data.assurance_nom})` : ''}
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-4">
+                        <label class="form-label">Taux assurance principale (%)</label>
+                        <input type="number" class="form-control" id="convertTauxAssurance"
+                               value="${data.taux_assurance || 0}" min="0" max="100"
+                               ${data.assurance_principale_active === false ? 'disabled' : ''}
+                               onchange="mettreAJourTotauxConversion()">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label text-warning">
+                            <i class="fas fa-hand-holding-heart"></i> Aide hospitalière
+                        </label>
+                        <div class="input-group">
+                            <input type="number" class="form-control" id="convertTauxAide"
+                                   value="${data.taux_aide || 0}" step="5" min="0" max="100"
+                                   onchange="mettreAJourTotauxConversion()" style="border-color:#ffc107;">
+                            <select class="form-control" id="convertTypeAide" style="max-width:85px; border-color:#ffc107;"
+                                    onchange="onChangeTypeAideConversion(); mettreAJourTotauxConversion();">
+                                <option value="pourcentage" ${(data.type_aide || 'pourcentage') === 'pourcentage' ? 'selected' : ''}>%</option>
+                                <option value="montant" ${data.type_aide === 'montant' ? 'selected' : ''}>FCFA</option>
+                            </select>
+                        </div>
+                        <small class="text-muted" id="convertAideHint">Taux d'aide (max 100%)</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="row mt-3">
             <div class="col-md-4">
                 <label class="form-label fw-bold">Mode de paiement</label>
@@ -2050,12 +2111,13 @@ function afficherModalConversion(data) {
     `;
     
     document.getElementById('convertProformaBody').innerHTML = html;
-    
-    setTimeout(() => {
-        document.querySelector('#convertirProformaModal .btn-success').innerHTML = 
-            `<i class="fas fa-receipt"></i> Finaliser la vente (${Math.round(calculeNetAPayerConversion()).toLocaleString('fr-FR')} F)`;
-    }, 100);
-    
+
+    // ⭐ Les fonctions de calcul lisent désormais les champs DOM qui
+    // viennent d'être insérés (taux assurance / aide hospitalière
+    // modifiables) — on rafraîchit tout de suite les totaux et le
+    // libellé du bouton plutôt que d'attendre un setTimeout arbitraire.
+    mettreAJourTotauxConversion();
+
     new bootstrap.Modal(document.getElementById('convertirProformaModal')).show();
 }
 
@@ -2067,10 +2129,21 @@ function calculeSousTotalConversion() {
     return panierConversion.reduce((sum, item) => sum + (item.prix * item.quantite), 0);
 }
 
+// ⭐ Taux d'assurance principale actuellement affiché dans le modal de
+// conversion — lit le champ #convertTauxAssurance (modifiable/désactivable
+// par le caissier) une fois le HTML du modal inséré ; avant cet instant
+// (le tout premier calcul, encore pendant la construction du template),
+// se replie sur la valeur de la proforma d'origine.
+function tauxAssurancePrincipaleConversionActuel() {
+    const el = document.getElementById('convertTauxAssurance');
+    if (el) return parseFloat(el.value) || 0;
+    return proformaConversionData ? (proformaConversionData.taux_assurance || 0) : 0;
+}
+
 function calculePriseEnChargeConversion() {
     const sousTotal = calculeSousTotalConversion();
-    const taux = proformaConversionData ? proformaConversionData.taux_assurance || 0 : 0;
-    
+    const taux = tauxAssurancePrincipaleConversionActuel();
+
     let pbrTotal = 0;
     let sousTotalAMU = 0;
     
@@ -2099,8 +2172,8 @@ function calculePriseEnChargeConversion() {
 function calculePriseEnCharge2Conversion() {
     const sousTotal = calculeSousTotalConversion();
     const priseEnCharge = calculePriseEnChargeConversion();
-    const tauxAMU = proformaConversionData ? proformaConversionData.taux_assurance || 0 : 0;
-    const taux2 = proformaConversionData && proformaConversionData.assurance2_active ? 
+    const tauxAMU = tauxAssurancePrincipaleConversionActuel();
+    const taux2 = proformaConversionData && proformaConversionData.assurance2_active ?
                   proformaConversionData.taux_assurance2 || 0 : 0;
     
     if (!proformaConversionData || !proformaConversionData.assurance2_active || taux2 <= 0) {
@@ -2142,33 +2215,112 @@ function calculePriseEnCharge2Conversion() {
     return 0;
 }
 
+// ⭐ Aide hospitalière (remise) au moment de la conversion — % (plafonné à
+// 100) ou montant direct FCFA, même mécanisme que sur pharma_vente.html/
+// actes_vente.html/proformas.html (création) ; jusqu'ici totalement absente
+// du modal de conversion, donc toujours à 0 quelle que soit la proforma
+// d'origine.
+function calculeAideHospitaliereConversion() {
+    const sousTotal = calculeSousTotalConversion();
+    const priseEnCharge = calculePriseEnChargeConversion();
+    const priseEnCharge2 = calculePriseEnCharge2Conversion();
+    let base = sousTotal - priseEnCharge - priseEnCharge2;
+    if (base < 0) base = 0;
+
+    const typeEl = document.getElementById('convertTypeAide');
+    const tauxEl = document.getElementById('convertTauxAide');
+    const typeAide = typeEl ? typeEl.value : (proformaConversionData ? (proformaConversionData.type_aide || 'pourcentage') : 'pourcentage');
+    let tauxAide = tauxEl ? (parseFloat(tauxEl.value) || 0) : (proformaConversionData ? (proformaConversionData.taux_aide || 0) : 0);
+    if (tauxAide < 0) tauxAide = 0;
+    if (typeAide === 'pourcentage' && tauxAide > 100) tauxAide = 100;
+
+    if (tauxAide <= 0 || base <= 0) return 0;
+    return typeAide === 'montant' ? Math.min(tauxAide, base) : (base * tauxAide) / 100;
+}
+
 function calculeNetAPayerConversion() {
     const sousTotal = calculeSousTotalConversion();
     const priseEnCharge = calculePriseEnChargeConversion();
     const priseEnCharge2 = calculePriseEnCharge2Conversion();
     let net = sousTotal - priseEnCharge - priseEnCharge2;
+    if (net < 0) net = 0;
+    net -= calculeAideHospitaliereConversion();
     return net < 0 ? 0 : net;
+}
+
+// ⭐ Désactive/réactive l'assurance principale au moment de la conversion
+// (le patient peut changer d'avis, ou le caissier corriger un taux) — même
+// principe que le toggle équivalent sur le formulaire de création de
+// proforma : on force le taux à 0 et on grise le champ. Id de la case
+// volontairement différent du nom de cette fonction (voir le fix du même
+// bug sur le toggle de création : une collision de nom cassait l'appel).
+let convertTauxAssuranceSauvegarde = 0;
+function toggleAssurancePrincipaleConversion() {
+    const toggle = document.getElementById('convertAssurancePrincipaleActive');
+    const tauxInput = document.getElementById('convertTauxAssurance');
+
+    if (toggle.checked) {
+        tauxInput.disabled = false;
+        tauxInput.value = convertTauxAssuranceSauvegarde || (proformaConversionData ? proformaConversionData.taux_assurance : 0) || 80;
+    } else {
+        convertTauxAssuranceSauvegarde = parseFloat(tauxInput.value) || 0;
+        tauxInput.value = 0;
+        tauxInput.disabled = true;
+    }
+    mettreAJourTotauxConversion();
+}
+
+// ⭐ Bascule %/montant pour l'aide hospitalière (voir même fonction dans
+// pharma_vente.html/actes_vente.html/proformas.html création).
+function onChangeTypeAideConversion() {
+    const type = document.getElementById('convertTypeAide').value;
+    const input = document.getElementById('convertTauxAide');
+    const hint = document.getElementById('convertAideHint');
+    if (type === 'pourcentage') {
+        input.setAttribute('max', '100');
+        input.setAttribute('step', '5');
+        if (hint) hint.textContent = "Taux d'aide (max 100%)";
+    } else {
+        input.removeAttribute('max');
+        input.setAttribute('step', '100');
+        if (hint) hint.textContent = 'Montant direct (FCFA)';
+    }
 }
 
 function mettreAJourTotauxConversion() {
     const sousTotal = calculeSousTotalConversion();
     const priseEnCharge = calculePriseEnChargeConversion();
     const priseEnCharge2 = calculePriseEnCharge2Conversion();
+    const aide = calculeAideHospitaliereConversion();
     const netAPayer = calculeNetAPayerConversion();
     conversionNetAPayer = netAPayer;
-    
+
     document.getElementById('convertSousTotal').textContent = Math.round(sousTotal).toLocaleString('fr-FR') + ' F';
     document.getElementById('convertPriseEnCharge').textContent = Math.round(priseEnCharge).toLocaleString('fr-FR') + ' F';
     document.getElementById('convertNetAPayer').textContent = Math.round(netAPayer).toLocaleString('fr-FR') + ' F';
-    
+
     const el2 = document.getElementById('convertPriseEnCharge2');
     if (el2) el2.textContent = Math.round(priseEnCharge2).toLocaleString('fr-FR') + ' F';
-    
+
+    const aideRow = document.getElementById('convertAideRow');
+    const aideDisplay = document.getElementById('convertAideDisplay');
+    if (aideRow && aideDisplay) {
+        if (aide > 0) {
+            const typeAide = document.getElementById('convertTypeAide') ? document.getElementById('convertTypeAide').value : 'pourcentage';
+            const tauxAideAffiche = parseFloat(document.getElementById('convertTauxAide') ? document.getElementById('convertTauxAide').value : 0) || 0;
+            const suffixe = typeAide === 'montant' ? '' : ` (${tauxAideAffiche}%)`;
+            aideDisplay.textContent = `${suffixe ? suffixe + ' ' : ''}- ${Math.round(aide).toLocaleString('fr-FR')} F`;
+            aideRow.style.display = '';
+        } else {
+            aideRow.style.display = 'none';
+        }
+    }
+
     const btn = document.querySelector('#convertirProformaModal .btn-success');
     if (btn) {
         btn.innerHTML = `<i class="fas fa-receipt"></i> Finaliser la vente (${Math.round(netAPayer).toLocaleString('fr-FR')} F)`;
     }
-    
+
     calculerRenduConversion();
 }
 
@@ -2361,7 +2513,18 @@ function finaliserConversionVente() {
     const sousTotal = calculeSousTotalConversion();
     const priseEnCharge = calculePriseEnChargeConversion();
     const priseEnCharge2 = calculePriseEnCharge2Conversion();
-    
+
+    // ⭐ Assurance principale et aide hospitalière : valeurs LIVE saisies
+    // dans le modal de conversion (le caissier a pu désactiver l'assurance
+    // ou ajuster le taux/l'aide juste avant de finaliser), pas les valeurs
+    // figées de la proforma d'origine — sinon le toggle/les champs ajoutés
+    // ci-dessus seraient purement décoratifs.
+    const assurancePrincipaleActive = document.getElementById('convertAssurancePrincipaleActive').checked;
+    const tauxAssuranceActuel = assurancePrincipaleActive ? tauxAssurancePrincipaleConversionActuel() : 0;
+    const typeAideActuel = document.getElementById('convertTypeAide').value;
+    const tauxAideActuel = parseFloat(document.getElementById('convertTauxAide').value) || 0;
+    const aideHospitaliereActuelle = calculeAideHospitaliereConversion();
+
     const data = {
         proforma_id: proformaConversionData.id,
         patient_id: proformaConversionData.patient_id,
@@ -2373,18 +2536,18 @@ function finaliserConversionVente() {
         prise_en_charge2: priseEnCharge2,
         net_a_payer: netAPayer,
         mode_paiement: modePaiement,
-        taux_assurance: proformaConversionData.taux_assurance || 0,
+        taux_assurance: tauxAssuranceActuel,
         assurance2_nom: proformaConversionData.assurance2_active ? proformaConversionData.assurance2_nom : '',
         taux_assurance2: proformaConversionData.assurance2_active ? proformaConversionData.taux_assurance2 || 0 : 0,
         assurance2_active: proformaConversionData.assurance2_active || false,
-        assurance_principale_active: proformaConversionData.assurance_principale_active !== false,
+        assurance_principale_active: assurancePrincipaleActive,
         montant_donne: montantDonne,
         type_document: typeDocument,
         notes: proformaConversionData.notes || '',
         base_remboursement: proformaConversionData.base_remboursement || 0,
-        taux_aide: proformaConversionData.taux_aide || 0,
-        aide_hospitaliere: proformaConversionData.aide_hospitaliere || 0,
-        type_aide: proformaConversionData.type_aide || 'pourcentage'
+        taux_aide: tauxAideActuel,
+        aide_hospitaliere: aideHospitaliereActuelle,
+        type_aide: typeAideActuel
     };
     
     console.log('📦 Données conversion:', data);

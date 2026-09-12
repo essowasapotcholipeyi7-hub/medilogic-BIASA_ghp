@@ -10188,13 +10188,28 @@ def api_convertir_proforma():
             print(f"🔍 {a.get('nom')}: AMU={amu_val}, CAC={cac_val}")
 
         # 🔥 Récupérer les données d'assurance de la proforma
+        # ⭐ L'assurance principale (et son taux) peut désormais être
+        # désactivée/modifiée directement dans le modal de conversion (le
+        # patient peut changer d'avis, ou le caissier corriger un taux au
+        # moment de la vente) — jusqu'ici ces champs, bien qu'envoyés par
+        # le front, n'étaient JAMAIS lus ici : taux_assurance/
+        # assurance2_active/taux_assurance2 venaient toujours de la
+        # proforma stockée, quoi que le modal envoie. On respecte donc la
+        # valeur du payload quand elle est présente, avec repli sur la
+        # proforma stockée (compat ascendante / appel API direct sans ces
+        # champs).
         assurance_nom = proforma.get('assurance_nom', 'Non assuré')
-        est_assure = assurance_nom and assurance_nom != 'Non assuré'
-        taux_assurance = float(proforma.get('taux_assurance', 0))
-        
-        assurance2_active = proforma.get('assurance2_active', False)
-        assurance2_nom = proforma.get('assurance2_nom', '')
-        taux_assurance2 = float(proforma.get('taux_assurance2', 0))
+        assurance_principale_active = data.get('assurance_principale_active')
+        if assurance_principale_active is None:
+            assurance_principale_active = proforma.get('assurance_principale_active', True)
+        est_assure = bool(assurance_nom) and assurance_nom != 'Non assuré' and assurance_principale_active
+        taux_assurance = float(data.get('taux_assurance', proforma.get('taux_assurance', 0)) or 0) if assurance_principale_active else 0
+
+        assurance2_active = data.get('assurance2_active')
+        if assurance2_active is None:
+            assurance2_active = proforma.get('assurance2_active', False)
+        assurance2_nom = proforma.get('assurance2_nom', '') if assurance2_active else ''
+        taux_assurance2 = float(data.get('taux_assurance2', proforma.get('taux_assurance2', 0)) or 0) if assurance2_active else 0
 
         # 🔥 Société souscriptrice de l'assurance complémentaire : la proforma
         # ne porte pas ce champ (créée avant son existence éventuelle), on la
@@ -10387,7 +10402,7 @@ def api_convertir_proforma():
             montant_donne,
             rendu,
             reste_a_payer,
-            data.get('assurance_principale_active', True),
+            assurance_principale_active,
             proforma_id,
             base_remboursement,
             taux_aide,
@@ -10567,6 +10582,23 @@ def api_convertir_proforma():
                     print(f"🧾 Écriture comptable #{ecriture.id} générée pour la vente (proforma #{proforma_id}) #{vente_id}")
         except Exception as e:
             print(f"⚠️ Erreur génération écriture comptable (vente proforma #{vente_id} conservée): {e}")
+
+        # ⭐ GARDE-FOU — repéré en testant cette fonctionnalité (désactivation de
+        # l'assurance au moment de la conversion) : quand l'écriture comptable
+        # ci-dessus est rejetée pour déséquilibre débit/crédit, la vente
+        # pourtant déjà committée via db_helper (connexion Postgres distincte
+        # de l'ORM SQLAlchemy) peut ensuite devenir introuvable — cause
+        # exacte non identifiée (suspicion d'un souci de pooler Neon entre
+        # les deux connexions), à investiguer séparément. En attendant, on
+        # vérifie explicitement ici et on alerte bruyamment plutôt que de
+        # laisser un succès silencieux masquer une perte de données.
+        try:
+            _verif_vente = db.execute_query("SELECT id FROM ventes WHERE id = %s", (vente_id,))
+            if not _verif_vente:
+                print(f"🚨🚨🚨 ALERTE : vente #{vente_id} (proforma #{proforma_id}) introuvable "
+                      f"juste après sa création — perte de données probable, à investiguer d'urgence.")
+        except Exception as _e_verif:
+            print(f"⚠️ Impossible de vérifier la persistance de la vente #{vente_id}: {_e_verif}")
 
         # ⭐ JOURNAL D'ACTIVITÉ
         try:
