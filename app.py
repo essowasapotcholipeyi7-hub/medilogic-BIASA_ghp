@@ -9862,11 +9862,18 @@ def api_creer_proforma():
         }
         
         # Insérer la proforma
+        # ⭐ created_at fixé explicitement à NOW() et statut à 'en_attente' —
+        # ne pas compter sur un DEFAULT au niveau de la table (absent ici,
+        # comme c'était déjà le cas pour patients.created_at avant son fix,
+        # voir plus haut) : sans ça, created_at ET statut restaient NULL en
+        # base pour CHAQUE proforma créée (colonnes absentes de l'INSERT),
+        # d'où l'absence de date et le badge de statut affichant "None"
+        # dans la liste (signalé par le patron sur BIASA structure 1).
         result = db.execute_query("""
             INSERT INTO proformas (
-                structure_id, 
-                patient_id, 
-                patient_nom, 
+                structure_id,
+                patient_id,
+                patient_nom,
                 patient_telephone,
                 assurance_nom,
                 taux_assurance,
@@ -9877,10 +9884,10 @@ def api_creer_proforma():
                 assurance2_active,
                 taux_modifie,
                 taux_original,
-                type, 
-                articles, 
-                sous_total, 
-                prise_en_charge, 
+                type,
+                articles,
+                sous_total,
+                prise_en_charge,
                 prise_en_charge2,
                 net_a_payer,
                 base_remboursement,
@@ -9891,9 +9898,11 @@ def api_creer_proforma():
                 assurances_data,
                 base_cac,
                 taux_aide, aide_hospitaliere, type_aide,
-                assurance_principale_active
+                assurance_principale_active,
+                statut,
+                created_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, NOW())
             RETURNING id
         """, (
             structure_id,
@@ -9923,7 +9932,8 @@ def api_creer_proforma():
             json.dumps(assurances_data, ensure_ascii=False),
             base_cac_articles,  # 🔥 NOUVEAU
             taux_aide, aide_hospitaliere, type_aide,
-            assurance_principale_active
+            assurance_principale_active,
+            'en_attente'
         ))
         
         proforma_id = result[0]['id']
