@@ -754,8 +754,27 @@
                     </div>
                     {% endif %}
                     {% endif %}
-                    
-                    {% set net_a_payer = (sous_total|default(proforma.sous_total)) - prise_en_charge - (prise_en_charge2|default(0)) %}
+
+                    {# ⭐ FIX : l'aide hospitalière (remise % ou montant direct
+                       saisie à la création) n'était ni affichée ici ni
+                       déduite du "Net à payer" — l'impression montrait donc
+                       le sous-total complet (avant remise) comme net à
+                       payer, un montant bien plus élevé que ce qui sera
+                       réellement facturé à la conversion en vente : "gros
+                       chiffre" incompréhensible signalé par le patron. #}
+                    {% set aide_hospitaliere = proforma.aide_hospitaliere|default(0)|float %}
+                    {% if aide_hospitaliere and aide_hospitaliere > 0 %}
+                    <div class="ligne" style="color:#c9820a;">
+                        <span>
+                            Aide hospitalière
+                            {% if proforma.type_aide != 'montant' and proforma.taux_aide %} ({{ proforma.taux_aide }}%){% endif %}
+                        </span>
+                        <span>- {{ aide_hospitaliere|round(0)|int }} FCFA</span>
+                    </div>
+                    {% endif %}
+
+                    {% set net_a_payer = (sous_total|default(proforma.sous_total)) - prise_en_charge - (prise_en_charge2|default(0)) - aide_hospitaliere %}
+                    {% if net_a_payer < 0 %}{% set net_a_payer = 0 %}{% endif %}
                     <div class="ligne total">
                         <span>Net à payer</span>
                         <span>{{ net_a_payer|round(0)|int }} FCFA</span>
