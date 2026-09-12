@@ -517,6 +517,9 @@ function afficherPageVentes(page) {
     
     var html = '';
     var isAdmin = {% if session.is_admin %}true{% else %}false{% endif %};
+    // ⭐ Un caissier/secrétaire peut désormais DEMANDER l'annulation — elle
+    // reste en attente jusqu'à validation par un admin (voir annulerVente()).
+    var peutDemanderAnnulation = {% if session.role in ['admin', 'caissier', 'secretaire'] %}true{% else %}false{% endif %};
     
     for (var i = 0; i < pageData.length; i++) {
         var v = pageData[i];
@@ -583,8 +586,9 @@ function afficherPageVentes(page) {
         html += '<i class="fas fa-eye"></i></button>';
         html += ' <button class="btn btn-sm btn-outline-secondary" onclick="reimprimer(' + (v.ID || start + i + 1) + ', \'' + v.type + '\')" title="Imprimer">';
         html += '<i class="fas fa-print"></i></button>';
-        if (isAdmin && v.statut !== 'annulee') {
-            html += ' <button class="btn btn-sm btn-outline-danger" onclick="annulerVente(' + (v.ID || start + i + 1) + ', \'' + v.type + '\')" title="Annuler">';
+        if (peutDemanderAnnulation && v.statut !== 'annulee') {
+            var titreAnnuler = isAdmin ? 'Annuler' : "Demander l'annulation";
+            html += ' <button class="btn btn-sm btn-outline-danger" onclick="annulerVente(' + (v.ID || start + i + 1) + ', \'' + v.type + '\')" title="' + titreAnnuler + '">';
             html += '<i class="fas fa-ban"></i></button>';
         }
         html += '</td>';
@@ -973,10 +977,11 @@ function printDocument(docType) {
 function annulerVente(venteId, type) {
     var motif = prompt("Motif de l'annulation :", "Annulation manuelle");
     if (motif === null) return;
-    
-    if (confirm('Annuler cette vente ?')) {
-        showLoader('Annulation en cours...');
-        
+
+    var messageConfirm = isAdmin ? 'Annuler cette vente ?' : "Envoyer une demande d'annulation à l'administrateur ?";
+    if (confirm(messageConfirm)) {
+        showLoader(isAdmin ? 'Annulation en cours...' : 'Envoi de la demande...');
+
         fetch('/api/ventes/' + venteId + '/annuler', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -986,7 +991,7 @@ function annulerVente(venteId, type) {
         .then(function(data) {
             hideLoader();
             if (data.success) {
-                alert('Vente annulée');
+                alert(data.en_attente ? ('📨 ' + data.message) : 'Vente annulée');
                 location.reload();
             } else {
                 alert('❌ Erreur: ' + data.error);

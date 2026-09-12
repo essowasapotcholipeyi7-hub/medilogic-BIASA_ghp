@@ -13,7 +13,7 @@ from io import BytesIO
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande
 from models import RendezVous
 from models import Medecin, Patient, Structure
 from datetime import datetime, date, timedelta
@@ -5827,6 +5827,33 @@ def _log_mouvement_stock(structure_id, produit_id, produit_nom, type_mouvement,
         print(f"⚠️ Erreur journalisation mouvement stock ({type_mouvement}, produit {produit_id}): {e}")
 
 
+def _demander_validation(structure_id, type_demande, payload, resume, user_id, user_name, reference_id=None):
+    """Crée une demande en attente de validation admin (annulation de vente,
+    dépense, encaissement facture assurance) — voir ValidationDemande dans
+    models.py. N'exécute RIEN : la vraie action n'a lieu qu'au moment où un
+    admin valide via /api/validations/<id>/valider."""
+    demande = ValidationDemande(
+        structure_id=structure_id, type_demande=type_demande,
+        reference_id=reference_id, payload=payload, resume=resume,
+        demandeur_id=user_id, demandeur_nom=user_name,
+    )
+    db.session.add(demande)
+    db.session.commit()
+
+    try:
+        from services.journal_service import JournalService
+        JournalService.creer_mouvement(
+            structure_id=structure_id, categorie='demande_validation',
+            description=f"Demande envoyée pour validation — {resume}",
+            reference_type=type_demande, reference_id=demande.id,
+            utilisateur_nom=user_name,
+        )
+    except Exception as e:
+        print(f"⚠️ Erreur journal d'activité (demande de validation #{demande.id}): {e}")
+
+    return demande
+
+
 @app.route('/api/produits')
 @login_required
 def api_get_produits():
@@ -5845,7 +5872,7 @@ def api_get_produits():
             if len(all_values) <= 1:
                 print("⚠️ Aucune donnée trouvée")
                 return jsonify([])
-
+            
             produits_liste = []
             for i, row in enumerate(all_values[1:], start=1):
                 if not row or len(row) < 3:
@@ -6346,8 +6373,8 @@ def api_admin_update_produit(produit_id):
             stock_avant = 0
 
         # 🔥 Mettre à jour toutes les colonnes
-        # A=0: ID (ne pas toucher), B=1: nom, C=2: prix_vente, D=3: pbr,
-        # E=4: prix_achat, F=5: quantite_stock, G=6: seuil_alerte,
+        # A=0: ID (ne pas toucher), B=1: nom, C=2: prix_vente, D=3: pbr, 
+        # E=4: prix_achat, F=5: quantite_stock, G=6: seuil_alerte, 
         # H=7: unite, I=8: date_peremption, J=9: lot, K=10: structure_id,
         # L=11: prise_en_charge_amu, M=12: commentaire_amu, 
         # N=13: prise_en_charge_cac, O=14: commentaire_cac
@@ -6380,7 +6407,7 @@ def api_admin_update_produit(produit_id):
                                   user_nom=session.get('user_name'))
 
         return jsonify({'success': True})
-
+        
     except Exception as e:
         print(f"❌ Erreur: {e}")
         import traceback
@@ -7703,30 +7730,66 @@ def api_get_actes():
 @app.route('/api/ventes/<int:vente_id>/annuler', methods=['POST'])
 @login_required
 def annuler_vente(vente_id):
-    """Annuler une vente (admin uniquement)"""
+    """Annuler une vente. Un admin l'annule immédiatement ; un caissier ou
+    secrétaire ne fait que la DEMANDER — elle reste en attente jusqu'à
+    validation par un admin (voir _demander_validation / /api/validations)."""
+    role = session.get('role', 'caissier')
+    if role not in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable', 'pharmacien']:
+        return jsonify({'success': False, 'error': 'Acces non autorise.'}), 403
+
+    data = request.json or {}
+    motif = data.get('motif', 'Annulation manuelle')
+    structure_id = session.get('structure_id')
+    user_id = session.get('user_id')
+    user_name = session.get('user_name', 'Utilisateur')
+
+    if not session.get('is_admin'):
+        # Récupérer un minimum d'infos pour un résumé lisible côté admin
+        vente_info = db.execute_query("""
+            SELECT net_a_payer, type FROM ventes WHERE id = %s AND structure_id = %s
+        """, (vente_id, structure_id))
+        montant = float(vente_info[0].get('net_a_payer', 0)) if vente_info else 0
+        try:
+            demande = _demander_validation(
+                structure_id=structure_id, type_demande='annulation_vente',
+                reference_id=vente_id,
+                payload={'vente_id': vente_id, 'motif': motif},
+                resume=f"Annulation vente #{vente_id} — {int(montant):,} FCFA".replace(',', ' '),
+                user_id=user_id, user_name=user_name,
+            )
+            return jsonify({
+                'success': True, 'en_attente': True, 'demande_id': demande.id,
+                'message': "Demande d'annulation envoyée. En attente de validation par l'administrateur."
+            })
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    try:
+        return jsonify(_executer_annulation_vente(vente_id, motif, structure_id, user_id, user_name))
+    except Exception as e:
+        print(f"❌ Erreur annulation: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def _executer_annulation_vente(vente_id, motif, structure_id, user_id, user_name):
+    """Exécute réellement l'annulation (restock, écritures, caisse...).
+    Appelée directement par un admin, ou depuis la validation d'une demande
+    en attente. Lève une exception en cas d'échec (à catcher par l'appelant)."""
     import json
     from datetime import datetime
-    
-    try:
-        # Verifier que l'utilisateur est admin
-        if not session.get('is_admin'):
-            return jsonify({'success': False, 'error': 'Acces non autorise. Reserve a l administrateur.'}), 403
-        
-        data = request.json
-        motif = data.get('motif', 'Annulation manuelle')
-        structure_id = session.get('structure_id')
-        user_id = session.get('user_id')
-        user_name = session.get('user_name', 'Administrateur')
-        
+
+    if True:
         # Recuperer la vente
         vente = db.execute_query("""
-            SELECT * FROM ventes 
+            SELECT * FROM ventes
             WHERE id = %s AND structure_id = %s AND (statut = 'validee' OR statut IS NULL)
         """, (vente_id, structure_id))
-        
+
         if not vente or len(vente) == 0:
-            return jsonify({'success': False, 'error': 'Vente non trouvee ou deja annulee'}), 404
-        
+            raise ValueError('Vente non trouvee ou deja annulee')
+
         v = vente[0] if isinstance(vente[0], dict) else vente[0]
         
         if isinstance(v, dict):
@@ -7864,18 +7927,13 @@ def annuler_vente(vente_id):
         except Exception as e:
             print(f"⚠️ Erreur journal d'activité (annulation vente #{vente_id}): {e}")
 
-        return jsonify({
+        return {
             'success': True,
             'message': f'Vente #{vente_id} annulee avec succes',
             'type': vente_type,
             'nouveau_solde': nouveau_solde
-        })
-        
-    except Exception as e:
-        print(f"❌ Erreur annulation: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        }
+
 
 @app.route('/historique_annulations')
 @login_required
@@ -8028,12 +8086,26 @@ def admin_finances():
     """, (structure_id,))
     total_depenses = total_depenses[0]['total'] if total_depenses else 0
     
-    return render_template('admin_finances.html', 
+    return render_template('admin_finances.html',
                          recettes=recettes,
                          depenses=depenses,
                          solde=solde,
                          total_recettes=total_recettes,
                          total_depenses=total_depenses)
+
+
+@app.route('/finances/depenses/saisie')
+@login_required
+def page_depenses_saisie():
+    """Page dédiée à la saisie d'une charge — séparée de Finances&Caisse
+    (admin uniquement) pour que caissiers/secrétaires puissent enregistrer
+    une charge (en attente de validation) sans avoir accès au reste des
+    finances de la structure."""
+    role = session.get('role', 'caissier')
+    if role not in ['admin', 'comptable', 'gestionnaire', 'caissier', 'secretaire']:
+        flash('Accès non autorisé', 'danger')
+        return redirect(url_for('dashboard'))
+    return render_template('depenses_saisie.html')
 
 
 # ========== API FINANCES ==========
@@ -8312,34 +8384,73 @@ def api_finances_recettes_source():
 @app.route('/api/finances/depenses', methods=['POST'])
 @login_required
 def api_add_depense():
-    """Ajouter une depense"""
-    if not session.get('is_admin'):
+    """Enregistrer une dépense. Un admin l'enregistre immédiatement ; un
+    caissier ou secrétaire ne fait que la DEMANDER — elle reste en attente
+    (ni écriture comptable ni impact sur la caisse) jusqu'à validation par
+    un admin (voir /api/validations)."""
+    role = session.get('role', 'caissier')
+    if role not in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable']:
         return jsonify({'success': False, 'error': 'Non autorise'}), 403
-    
+
+    data = request.json or {}
+    structure_id = session.get('structure_id')
+    user_id = session.get('user_id')
+    user_name = session.get('user_name', 'Utilisateur')
+    montant = float(data.get('montant', 0))
+
+    if not session.get('is_admin'):
+        try:
+            demande = _demander_validation(
+                structure_id=structure_id, type_demande='depense',
+                payload={
+                    'montant': montant, 'motif': data.get('motif'),
+                    'motif_personnalise': data.get('motif_personnalise', ''),
+                    'description': data.get('description', ''),
+                },
+                resume=f"Dépense — {data.get('motif')} — {int(montant):,} FCFA".replace(',', ' '),
+                user_id=user_id, user_name=user_name,
+            )
+            return jsonify({
+                'success': True, 'en_attente': True, 'demande_id': demande.id,
+                'message': "Demande de dépense envoyée. En attente de validation par l'administrateur."
+            })
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
     try:
-        data = request.json
-        structure_id = session.get('structure_id')
-        user_name = session.get('user_name', 'Admin')
-        
+        return jsonify(_executer_ajout_depense(
+            structure_id, montant, data.get('motif'),
+            data.get('motif_personnalise', ''), data.get('description', ''), user_name,
+        ))
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        print(f"Erreur api_add_depense: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def _executer_ajout_depense(structure_id, montant, motif, motif_personnalise, description, user_name):
+    """Exécute réellement l'enregistrement de la dépense (caisse, écriture
+    comptable...). Lève une exception en cas d'échec."""
+    if True:
         # 🔥 Verifier le solde suffisant (exclure annulations)
         recettes_total = db.execute_query("""
             SELECT COALESCE(SUM(montant), 0) as total
-            FROM recettes 
+            FROM recettes
             WHERE structure_id = %s AND (est_annulation IS NULL OR est_annulation = FALSE)
         """, (structure_id,))
-        
+
         depenses_total = db.execute_query("""
             SELECT COALESCE(SUM(montant), 0) as total
-            FROM depenses 
+            FROM depenses
             WHERE structure_id = %s
         """, (structure_id,))
-        
+
         solde = (recettes_total[0]['total'] if recettes_total else 0) - (depenses_total[0]['total'] if depenses_total else 0)
-        montant = float(data.get('montant', 0))
-        
+
         if montant > solde:
-            return jsonify({'success': False, 'error': f'Solde insuffisant. Solde actuel: {int(solde)} FCFA'}), 400
-        
+            raise ValueError(f'Solde insuffisant. Solde actuel: {int(solde)} FCFA')
+
         result = db.execute_query("""
             INSERT INTO depenses (structure_id, montant, motif, motif_personnalise, description, created_by_nom)
             VALUES (%s, %s, %s, %s, %s, %s)
@@ -8347,9 +8458,9 @@ def api_add_depense():
         """, (
             structure_id,
             montant,
-            data.get('motif'),
-            data.get('motif_personnalise', ''),
-            data.get('description', ''),
+            motif,
+            motif_personnalise,
+            description,
             user_name
         ))
         
@@ -8383,7 +8494,7 @@ def api_add_depense():
             from services.journal_service import JournalService
             JournalService.creer_mouvement(
                 structure_id=structure_id, categorie='depense_enregistree',
-                description=f"Dépense — {data.get('motif')}",
+                description=f"Dépense — {motif}",
                 montant=montant, type_montant='debit',
                 reference_type='depense', reference_id=depense_id,
                 utilisateur_nom=user_name,
@@ -8391,11 +8502,7 @@ def api_add_depense():
         except Exception as e:
             print(f"⚠️ Erreur journal d'activité (dépense #{depense_id}): {e}")
 
-        return jsonify({'success': True, 'id': depense_id})
-
-    except Exception as e:
-        print(f"Erreur api_add_depense: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return {'success': True, 'id': depense_id}
 
 
 @app.route('/api/finances/recettes', methods=['POST'])
@@ -9096,26 +9203,73 @@ def api_get_facture_detail(facture_id):
 @app.route('/api/assurances/factures/<int:facture_id>/payer', methods=['POST'])
 @login_required
 def payer_facture_assurance(facture_id):
-    if not session.get('is_admin'):
+    """Encaisser une facture d'assurance. Un admin l'encaisse immédiatement ;
+    un caissier ou secrétaire ne fait que la DEMANDER — elle reste en
+    attente (ni caisse ni écriture comptable) jusqu'à validation par un
+    admin (voir /api/validations)."""
+    role = session.get('role', 'caissier')
+    if role not in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable']:
         return jsonify({'success': False, 'error': 'Non autorise'}), 403
-    
+
+    data = request.json or {}
+    structure_id = session.get('structure_id')
+    user_id = session.get('user_id')
+    user_name = session.get('user_name', 'Utilisateur')
+    montant = float(data.get('montant', 0))
+
+    if montant <= 0:
+        return jsonify({'success': False, 'error': 'Montant invalide'}), 400
+
+    # ⭐ Pièces justificatives obligatoires (traçabilité de l'encaissement) :
+    # numéro de référence du virement/versement + sa date. Légitime pour
+    # pouvoir rapprocher chaque encaissement d'assurance avec le relevé
+    # bancaire — demandé explicitement pour la comptabilité.
+    numero_reference_versement = (data.get('numero_reference_versement') or '').strip()
+    date_versement = data.get('date_versement')
+    if not numero_reference_versement or not date_versement:
+        return jsonify({'success': False, 'error': "Le numéro de référence du versement et la date de versement sont obligatoires pour tracer l'encaissement."}), 400
+
+    if not session.get('is_admin'):
+        facture_apercu = db.execute_query("""
+            SELECT assurance, mois_reference FROM factures_assurance WHERE id = %s AND structure_id = %s
+        """, (facture_id, structure_id))
+        if not facture_apercu:
+            return jsonify({'success': False, 'error': 'Facture non trouvee'}), 404
+        fa = facture_apercu[0]
+        try:
+            demande = _demander_validation(
+                structure_id=structure_id, type_demande='encaissement_assurance',
+                reference_id=facture_id,
+                payload={
+                    'facture_id': facture_id, 'montant': montant,
+                    'numero_reference_versement': numero_reference_versement,
+                    'date_versement': date_versement,
+                },
+                resume=f"Encaissement assurance {fa.get('assurance')} ({fa.get('mois_reference')}) — {int(montant):,} FCFA".replace(',', ' '),
+                user_id=user_id, user_name=user_name,
+            )
+            return jsonify({
+                'success': True, 'en_attente': True, 'demande_id': demande.id,
+                'message': "Demande d'encaissement envoyée. En attente de validation par l'administrateur."
+            })
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
     try:
-        data = request.json
-        structure_id = session.get('structure_id')
-        montant = float(data.get('montant', 0))
+        return jsonify(_executer_paiement_assurance(
+            facture_id, structure_id, montant, numero_reference_versement, date_versement, user_name,
+        ))
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        print(f"Erreur: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
-        if montant <= 0:
-            return jsonify({'success': False, 'error': 'Montant invalide'}), 400
 
-        # ⭐ Pièces justificatives obligatoires (traçabilité de l'encaissement) :
-        # numéro de référence du virement/versement + sa date. Légitime pour
-        # pouvoir rapprocher chaque encaissement d'assurance avec le relevé
-        # bancaire — demandé explicitement pour la comptabilité.
-        numero_reference_versement = (data.get('numero_reference_versement') or '').strip()
-        date_versement = data.get('date_versement')
-        if not numero_reference_versement or not date_versement:
-            return jsonify({'success': False, 'error': "Le numéro de référence du versement et la date de versement sont obligatoires pour tracer l'encaissement."}), 400
-
+def _executer_paiement_assurance(facture_id, structure_id, montant, numero_reference_versement, date_versement, user_name):
+    """Exécute réellement l'encaissement (caisse, écriture comptable...).
+    Lève une exception en cas d'échec."""
+    if True:
         # Recuperer la facture
         facture = db.execute_query("""
             SELECT * FROM factures_assurance
@@ -9123,7 +9277,7 @@ def payer_facture_assurance(facture_id):
         """, (facture_id, structure_id))
 
         if not facture or len(facture) == 0:
-            return jsonify({'success': False, 'error': 'Facture non trouvee'}), 404
+            raise ValueError('Facture non trouvee')
 
         f = facture[0]
         # ⭐ FIX : f.get(cle, 0) ne renvoie 0 que si la clé est absente, pas
@@ -9136,7 +9290,7 @@ def payer_facture_assurance(facture_id):
         total_facture = float(f.get('montant_total') or 0)
 
         if montant > (total_facture - deja_rembourse):
-            return jsonify({'success': False, 'error': f'Montant depasse le solde restant'}), 400
+            raise ValueError('Montant depasse le solde restant')
 
         nouveau_rembourse = deja_rembourse + montant
 
@@ -9169,10 +9323,10 @@ def payer_facture_assurance(facture_id):
             INSERT INTO recettes (structure_id, montant, source, description, created_by_nom)
             VALUES (%s, %s, 'assurance', %s, %s)
         """, (
-            structure_id, 
-            montant, 
-            f'Remboursement assurance {assurance_display} - {f.get("mois_reference")}', 
-            session.get('user_name', 'Admin')
+            structure_id,
+            montant,
+            f'Remboursement assurance {assurance_display} - {f.get("mois_reference")}',
+            user_name
         ))
         
         # 3. Mettre a jour le solde de la caisse
@@ -9197,7 +9351,7 @@ def payer_facture_assurance(facture_id):
                 structure_id=structure_id,
                 reference=f"Facture assurance #{facture_id} - {f.get('mois_reference')}",
                 source_id=facture_id,
-                user_nom=session.get('user_name', 'Admin'),
+                user_nom=user_name,
                 numero_reference_versement=numero_reference_versement,
                 date_versement=date_versement,
             )
@@ -9214,20 +9368,163 @@ def payer_facture_assurance(facture_id):
                 description=f"Remboursement assurance {assurance_display} — {f.get('mois_reference')}",
                 montant=montant, type_montant='credit',
                 reference_type='facture_assurance', reference_id=facture_id,
-                utilisateur_nom=session.get('user_name', 'Admin'),
+                utilisateur_nom=user_name,
             )
         except Exception as e:
             print(f"⚠️ Erreur journal d'activité (remboursement assurance #{facture_id}): {e}")
 
-        return jsonify({
+        return {
             'success': True,
             'message': f'Remboursement de {montant} FCFA enregistre',
             'reste': total_facture - nouveau_rembourse
-        })
+        }
 
+
+@app.route('/validations')
+@login_required
+def page_validations():
+    """Page listant les demandes (annulation vente, dépense, encaissement
+    assurance) en attente de validation — admin uniquement."""
+    if not session.get('is_admin'):
+        flash('Accès non autorisé', 'danger')
+        return redirect(url_for('dashboard'))
+    return render_template('validations_en_attente.html')
+
+
+@app.route('/api/validations')
+@login_required
+def api_liste_validations():
+    """Un admin voit toutes les demandes de sa structure. Un non-admin ne
+    voit que les SIENNES (pour suivre où en sont ses propres demandes)."""
+    structure_id = session.get('structure_id')
+    statut = request.args.get('statut', 'en_attente')
+    query = ValidationDemande.query.filter_by(structure_id=structure_id)
+    if not session.get('is_admin'):
+        query = query.filter_by(demandeur_id=session.get('user_id'))
+    if statut != 'toutes':
+        query = query.filter_by(statut=statut)
+    demandes = query.order_by(ValidationDemande.date_demande.desc()).all()
+    result = [{
+        'id': d.id,
+        'type_demande': d.type_demande,
+        'resume': d.resume,
+        'demandeur_nom': d.demandeur_nom,
+        'statut': d.statut,
+        'motif_refus': d.motif_refus,
+        'date_demande': d.date_demande.strftime('%d/%m/%Y %H:%M') if d.date_demande else '',
+        'date_traitement': d.date_traitement.strftime('%d/%m/%Y %H:%M') if d.date_traitement else '',
+        'traite_par_nom': d.traite_par_nom,
+    } for d in demandes]
+    return jsonify(result)
+
+
+@app.route('/api/validations/count')
+@login_required
+def api_validations_count():
+    """Nombre de demandes en attente — alimente le badge du menu (admin)."""
+    if not session.get('is_admin'):
+        return jsonify({'count': 0})
+    structure_id = session.get('structure_id')
+    count = ValidationDemande.query.filter_by(structure_id=structure_id, statut='en_attente').count()
+    return jsonify({'count': count})
+
+
+@app.route('/api/validations/<int:demande_id>/valider', methods=['POST'])
+@login_required
+def api_valider_demande(demande_id):
+    """Valide une demande en attente et EXÉCUTE RÉELLEMENT l'action associée
+    (annulation de vente, dépense, encaissement assurance) — c'est ici, et
+    seulement ici, que la caisse et les écritures comptables sont touchées
+    pour une demande créée par un non-admin."""
+    if not session.get('is_admin'):
+        return jsonify({'success': False, 'error': 'Non autorise'}), 403
+    structure_id = session.get('structure_id')
+    user_name = session.get('user_name', 'Admin')
+
+    demande = ValidationDemande.query.filter_by(id=demande_id, structure_id=structure_id).first()
+    if not demande:
+        return jsonify({'success': False, 'error': 'Demande introuvable'}), 404
+    if demande.statut != 'en_attente':
+        return jsonify({'success': False, 'error': 'Cette demande a déjà été traitée'}), 400
+
+    payload = demande.payload or {}
+    try:
+        if demande.type_demande == 'annulation_vente':
+            resultat = _executer_annulation_vente(
+                payload['vente_id'], payload['motif'], structure_id,
+                demande.demandeur_id, demande.demandeur_nom,
+            )
+        elif demande.type_demande == 'depense':
+            resultat = _executer_ajout_depense(
+                structure_id, payload['montant'], payload.get('motif'),
+                payload.get('motif_personnalise', ''), payload.get('description', ''),
+                demande.demandeur_nom,
+            )
+        elif demande.type_demande == 'encaissement_assurance':
+            resultat = _executer_paiement_assurance(
+                payload['facture_id'], structure_id, payload['montant'],
+                payload['numero_reference_versement'], payload['date_versement'],
+                demande.demandeur_nom,
+            )
+        else:
+            return jsonify({'success': False, 'error': f"Type de demande inconnu: {demande.type_demande}"}), 400
     except Exception as e:
-        print(f"Erreur: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+    demande.statut = 'validee'
+    demande.date_traitement = datetime.utcnow()
+    demande.traite_par_nom = user_name
+    db.session.commit()
+
+    try:
+        from services.journal_service import JournalService
+        JournalService.creer_mouvement(
+            structure_id=structure_id, categorie='validation_approuvee',
+            description=f"Demande validée — {demande.resume}",
+            reference_type=demande.type_demande, reference_id=demande.id,
+            utilisateur_nom=user_name,
+        )
+    except Exception as e:
+        print(f"⚠️ Erreur journal d'activité (validation demande #{demande_id}): {e}")
+
+    return jsonify({'success': True, 'message': 'Demande validée et exécutée avec succès', 'resultat': resultat})
+
+
+@app.route('/api/validations/<int:demande_id>/refuser', methods=['POST'])
+@login_required
+def api_refuser_demande(demande_id):
+    """Refuse une demande en attente — aucune action n'est exécutée."""
+    if not session.get('is_admin'):
+        return jsonify({'success': False, 'error': 'Non autorise'}), 403
+    structure_id = session.get('structure_id')
+    user_name = session.get('user_name', 'Admin')
+    data = request.json or {}
+    motif_refus = (data.get('motif') or '').strip()
+
+    demande = ValidationDemande.query.filter_by(id=demande_id, structure_id=structure_id).first()
+    if not demande:
+        return jsonify({'success': False, 'error': 'Demande introuvable'}), 404
+    if demande.statut != 'en_attente':
+        return jsonify({'success': False, 'error': 'Cette demande a déjà été traitée'}), 400
+
+    demande.statut = 'refusee'
+    demande.motif_refus = motif_refus or None
+    demande.date_traitement = datetime.utcnow()
+    demande.traite_par_nom = user_name
+    db.session.commit()
+
+    try:
+        from services.journal_service import JournalService
+        JournalService.creer_mouvement(
+            structure_id=structure_id, categorie='validation_refusee',
+            description=f"Demande refusée — {demande.resume}" + (f" ({motif_refus})" if motif_refus else ""),
+            reference_type=demande.type_demande, reference_id=demande.id,
+            utilisateur_nom=user_name,
+        )
+    except Exception as e:
+        print(f"⚠️ Erreur journal d'activité (refus demande #{demande_id}): {e}")
+
+    return jsonify({'success': True, 'message': 'Demande refusée'})
 
 
 def calculer_age(date_naissance):
@@ -10466,6 +10763,20 @@ def factures():
     }
     
     return render_template('factures/factures.html', stats=stats_result)
+
+
+@app.route('/factures/assurances')
+@login_required
+def page_factures_assurances():
+    """Page dédiée à la liste + l'encaissement des factures d'assurance —
+    séparée de Statistiques des ventes (admin uniquement) pour que
+    caissiers/secrétaires puissent encaisser sans avoir accès au reste des
+    statistiques de vente."""
+    role = session.get('role', 'caissier')
+    if role not in ['admin', 'comptable', 'gestionnaire', 'caissier', 'pharmacien', 'secretaire']:
+        flash('Accès non autorisé', 'danger')
+        return redirect(url_for('dashboard'))
+    return render_template('assurances_factures.html')
 
 
 @app.route('/facture/detail/<int:facture_id>')

@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+
+{% block title %}Factures assurances{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        {% include 'sidebar_menu.html' %}
+    </div>
+
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-hand-holding-usd"></i> Factures assurances</h5>
+                <button class="btn btn-light btn-sm" onclick="chargerFactures()">
+                    <i class="fas fa-sync-alt"></i> Actualiser
+                </button>
+            </div>
+            <div class="card-body">
+                {% if not session.is_admin %}
+                <div class="alert alert-warning">
+                    <i class="fas fa-info-circle"></i>
+                    L'encaissement que vous enregistrez ici reste <strong>en attente de validation</strong>
+                    par l'administrateur avant d'être réellement pris en compte (caisse, comptabilité).
+                </div>
+                {% endif %}
+
+                <div class="mb-3">
+                    <label class="form-label">Mois de référence</label>
+                    <input type="month" id="filtreMois" class="form-control" style="max-width:220px;" onchange="chargerFactures()">
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Mois</th>
+                                <th>Assurance</th>
+                                <th>Société</th>
+                                <th>Type</th>
+                                <th class="text-end">Total facturé</th>
+                                <th class="text-end">Déjà remboursé</th>
+                                <th class="text-end">Reste dû</th>
+                                <th>Statut</th>
+                                <th>Réf. versement</th>
+                                <th class="text-end">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="facturesList">
+                            <tr><td colspan="10" class="text-center text-muted py-4">Chargement…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-3">
+            <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Retour au tableau de bord
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL ENCAISSEMENT -->
+<div class="modal fade" id="paiementModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">Enregistrer un encaissement assurance</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="paiementForm">
+                    <input type="hidden" id="paiementFactureId">
+                    <div class="mb-3">
+                        <label class="form-label">Assurance</label>
+                        <input type="text" class="form-control" id="paiementAssurance" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Mois de référence</label>
+                        <input type="text" class="form-control" id="paiementMois" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Montant total de la facture</label>
+                        <input type="text" class="form-control" id="paiementTotal" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Déjà remboursé</label>
+                        <input type="text" class="form-control" id="paiementDeja" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Montant de l'encaissement (FCFA)</label>
+                        <input type="number" class="form-control" id="paiementMontant" required min="1">
+                        <small class="text-muted" id="paiementResteHint"></small>
+                    </div>
+                    <hr>
+                    <p class="text-muted small mb-2"><i class="fas fa-file-invoice me-1"></i>Pièces justificatives du versement (obligatoire, pour la traçabilité)</p>
+                    <div class="mb-3">
+                        <label class="form-label">N° de référence du versement</label>
+                        <input type="text" class="form-control" id="paiementReference" required placeholder="Ex: référence du virement bancaire">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date de versement</label>
+                        <input type="date" class="form-control" id="paiementDateVersement" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-success" id="btnValiderPaiement" onclick="enregistrerPaiement()">Valider l'encaissement</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const EST_ADMIN = {{ 'true' if session.is_admin else 'false' }};
+
+document.addEventListener('DOMContentLoaded', function() {
+    const now = new Date();
+    document.getElementById('filtreMois').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    chargerFactures();
+});
+
+function chargerFactures() {
+    const mois = document.getElementById('filtreMois').value;
+    let url = '/api/assurances/factures';
+    if (mois) url += '?mois=' + mois;
+
+    fetch(url)
+        .then(r => r.json())
+        .then(factures => afficherFactures(factures))
+        .catch(() => {
+            document.getElementById('facturesList').innerHTML =
+                '<tr><td colspan="10" class="text-center text-danger py-4">Erreur de chargement</td></tr>';
+        });
+}
+
+function afficherFactures(factures) {
+    const tbody = document.getElementById('facturesList');
+    if (!factures || factures.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">Aucune facture pour ce mois</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = factures.map(f => {
+        const total = f.montant_total || 0;
+        const rembourse = f.montant_rembourse || 0;
+        const reste = total - rembourse;
+
+        let assuranceText = f.assurance;
+        if (assuranceText === 'amu-cnss' || assuranceText === 'amu_cnss') assuranceText = 'AMU-CNSS';
+        if (assuranceText === 'amu-inam' || assuranceText === 'amu_inam') assuranceText = 'AMU-INAM';
+        if (assuranceText === 'amu-tns' || assuranceText === 'amu_tns') assuranceText = 'AMU-TNS';
+
+        const typeLabel = (f.type_assurance || 'principale') === 'principale' ? 'Principale' : 'Complémentaire';
+        const typeBadge = (f.type_assurance || 'principale') === 'principale' ? 'bg-primary' : 'bg-info';
+
+        let statutText = '', statutClass = '';
+        if (f.statut === 'en_attente') { statutText = 'En attente'; statutClass = 'bg-warning'; }
+        else if (f.statut === 'payee') { statutText = 'Payée'; statutClass = 'bg-success'; }
+        else if (f.statut === 'partielle') { statutText = 'Partielle'; statutClass = 'bg-info'; }
+
+        let refCell = '<span class="text-muted">-</span>';
+        if (f.numero_reference_versement) {
+            const dateFmt = f.date_versement ? new Date(f.date_versement + 'T00:00:00').toLocaleDateString('fr-FR') : '';
+            refCell = `<small>${f.numero_reference_versement}${dateFmt ? '<br>' + dateFmt : ''}</small>`;
+        }
+
+        let action = '<span class="badge bg-success">Réglée</span>';
+        if (f.statut !== 'payee') {
+            action = `<button class="btn btn-sm btn-success" onclick='showPaiementModal(${f.id}, "${assuranceText}", "${f.mois_reference}", ${total}, ${rembourse})'>Encaisser</button>`;
+        }
+
+        return `<tr>
+            <td>${f.mois_reference || ''}</td>
+            <td>${assuranceText}</td>
+            <td>${f.societe ? '<small>' + f.societe + '</small>' : '-'}</td>
+            <td><span class="badge ${typeBadge}">${typeLabel}</span></td>
+            <td class="text-end">${Math.round(total).toLocaleString('fr-FR')} FCFA</td>
+            <td class="text-end">${Math.round(rembourse).toLocaleString('fr-FR')} FCFA</td>
+            <td class="text-end text-danger">${Math.round(reste).toLocaleString('fr-FR')} FCFA</td>
+            <td><span class="badge ${statutClass}">${statutText}</span></td>
+            <td>${refCell}</td>
+            <td class="text-end">${action}</td>
+        </tr>`;
+    }).join('');
+}
+
+function showPaiementModal(id, assurance, mois, total, deja) {
+    document.getElementById('paiementFactureId').value = id;
+    document.getElementById('paiementAssurance').value = assurance;
+    document.getElementById('paiementMois').value = mois;
+    document.getElementById('paiementTotal').value = Math.round(total).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('paiementDeja').value = Math.round(deja).toLocaleString('fr-FR') + ' FCFA';
+    const reste = total - deja;
+    document.getElementById('paiementMontant').value = reste;
+    document.getElementById('paiementResteHint').innerHTML = `Reste: ${Math.round(reste).toLocaleString('fr-FR')} FCFA`;
+    document.getElementById('paiementReference').value = '';
+    document.getElementById('paiementDateVersement').value = '';
+    new bootstrap.Modal(document.getElementById('paiementModal')).show();
+}
+
+function enregistrerPaiement() {
+    const id = document.getElementById('paiementFactureId').value;
+    const montant = parseFloat(document.getElementById('paiementMontant').value);
+    const reference = document.getElementById('paiementReference').value.trim();
+    const dateVersement = document.getElementById('paiementDateVersement').value;
+
+    if (!montant || montant <= 0) {
+        alert('Montant valide requis');
+        return;
+    }
+    if (!reference || !dateVersement) {
+        alert('Le numéro de référence du versement et la date de versement sont obligatoires (pièces justificatives).');
+        return;
+    }
+
+    const libelleConfirm = EST_ADMIN ? 'Confirmer l\'encaissement' : 'Envoyer la demande d\'encaissement';
+    if (!confirm(`${libelleConfirm} de ${Math.round(montant).toLocaleString('fr-FR')} FCFA ?`)) return;
+
+    const btn = document.getElementById('btnValiderPaiement');
+    btn.disabled = true;
+
+    fetch(`/api/assurances/factures/${id}/payer`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            montant: montant,
+            numero_reference_versement: reference,
+            date_versement: dateVersement
+        })
+    })
+    .then(r => r.json())
+    .then(result => {
+        btn.disabled = false;
+        if (result.success) {
+            alert(result.en_attente ? ('📨 ' + result.message) : '✅ Encaissement enregistré !');
+            bootstrap.Modal.getInstance(document.getElementById('paiementModal')).hide();
+            chargerFactures();
+        } else {
+            alert('❌ Erreur : ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => {
+        btn.disabled = false;
+        alert('❌ Erreur réseau : ' + error);
+    });
+}
+</script>
+{% endblock %}

@@ -1558,6 +1558,32 @@ class AnnulationVente(db.Model):
     date_annulation = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class ValidationDemande(db.Model):
+    """File d'attente générique pour les actions qu'un caissier/secrétaire
+    peut désormais DEMANDER mais que seul un admin peut VALIDER avant
+    qu'elles ne prennent effet réellement (annulation de vente,
+    enregistrement d'une charge, encaissement d'une facture d'assurance).
+
+    `payload` contient tout ce qu'il faut pour exécuter l'action une fois
+    validée — les fonctions `_executer_*` dans app.py savent le relire.
+    Rien n'est appliqué (ni écriture comptable, ni mise à jour de caisse)
+    tant que `statut` n'est pas passé à 'validee' par un admin."""
+    __tablename__ = 'validations_demandes'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    type_demande = db.Column(db.String(50), nullable=False)  # annulation_vente | depense | encaissement_assurance
+    reference_id = db.Column(db.Integer)  # vente_id / facture_assurance_id (selon le type) — informatif
+    payload = db.Column(db.JSON, nullable=False)
+    resume = db.Column(db.String(500))  # texte lisible pour la liste de validation admin
+    demandeur_id = db.Column(db.Integer)
+    demandeur_nom = db.Column(db.String(255))
+    statut = db.Column(db.String(20), default='en_attente')  # en_attente | validee | refusee
+    motif_refus = db.Column(db.String(500))
+    date_demande = db.Column(db.DateTime, default=datetime.utcnow)
+    date_traitement = db.Column(db.DateTime)
+    traite_par_nom = db.Column(db.String(255))
+
+
 class Caisse(db.Model):
     __tablename__ = 'caisse'
     id = db.Column(db.Integer, primary_key=True)

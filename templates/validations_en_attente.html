@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% block title %}Demandes en attente de validation{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        {% include 'sidebar_menu.html' %}
+    </div>
+
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-hourglass-half"></i> Demandes en attente de validation</h5>
+                <button class="btn btn-light btn-sm" onclick="chargerDemandes()">
+                    <i class="fas fa-sync-alt"></i> Actualiser
+                </button>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">
+                    Annulations de vente, dépenses et encaissements de factures d'assurance enregistrés
+                    par les caissiers/secrétaires attendent ici votre validation. Rien n'est appliqué
+                    (caisse, comptabilité) tant que vous n'avez pas validé.
+                </p>
+
+                <ul class="nav nav-tabs mb-3" id="statutTabs">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#" data-statut="en_attente" onclick="changerStatut(event, 'en_attente')">
+                            En attente <span class="badge bg-warning text-dark ms-1" id="badgeEnAttente">0</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-statut="validee" onclick="changerStatut(event, 'validee')">Validées</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-statut="refusee" onclick="changerStatut(event, 'refusee')">Refusées</a>
+                    </li>
+                </ul>
+
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Type</th>
+                                <th>Résumé</th>
+                                <th>Demandé par</th>
+                                <th>Date demande</th>
+                                <th id="colTraitement" style="display:none;">Traité par</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="demandesBody">
+                            <tr><td colspan="6" class="text-center text-muted py-4">Chargement…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-3">
+            <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Retour au tableau de bord
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+let statutCourant = 'en_attente';
+
+const TYPE_LABELS = {
+    'annulation_vente': '<span class="badge bg-danger"><i class="fas fa-ban"></i> Annulation vente</span>',
+    'depense': '<span class="badge bg-secondary"><i class="fas fa-money-bill-wave"></i> Dépense</span>',
+    'encaissement_assurance': '<span class="badge bg-info text-dark"><i class="fas fa-hand-holding-usd"></i> Encaissement assurance</span>',
+};
+
+function changerStatut(evt, statut) {
+    evt.preventDefault();
+    statutCourant = statut;
+    document.querySelectorAll('#statutTabs .nav-link').forEach(a => a.classList.remove('active'));
+    evt.target.closest('.nav-link').classList.add('active');
+    document.getElementById('colTraitement').style.display = (statut === 'en_attente') ? 'none' : '';
+    chargerDemandes();
+}
+
+function chargerDemandes() {
+    fetch('/api/validations?statut=' + statutCourant)
+        .then(r => r.json())
+        .then(demandes => afficherDemandes(demandes))
+        .catch(() => {
+            document.getElementById('demandesBody').innerHTML =
+                '<tr><td colspan="6" class="text-center text-danger py-4">Erreur de chargement</td></tr>';
+        });
+
+    fetch('/api/validations/count')
+        .then(r => r.json())
+        .then(d => { document.getElementById('badgeEnAttente').innerText = d.count || 0; });
+}
+
+function afficherDemandes(demandes) {
+    const tbody = document.getElementById('demandesBody');
+    if (!demandes || demandes.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Aucune demande</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = demandes.map(d => {
+        let actions = '';
+        if (d.statut === 'en_attente') {
+            actions = `
+                <button class="btn btn-sm btn-success" onclick="validerDemande(${d.id})" title="Valider">
+                    <i class="fas fa-check"></i> Valider
+                </button>
+                <button class="btn btn-sm btn-outline-danger ms-1" onclick="refuserDemande(${d.id})" title="Refuser">
+                    <i class="fas fa-times"></i> Refuser
+                </button>`;
+        } else if (d.statut === 'refusee' && d.motif_refus) {
+            actions = `<small class="text-muted">Motif : ${d.motif_refus}</small>`;
+        } else {
+            actions = '<span class="text-muted">—</span>';
+        }
+
+        const colTraitement = (statutCourant === 'en_attente') ? '' :
+            `<td><small>${d.traite_par_nom || '-'}<br>${d.date_traitement || ''}</small></td>`;
+
+        return `<tr>
+            <td>${TYPE_LABELS[d.type_demande] || d.type_demande}</td>
+            <td>${d.resume || ''}</td>
+            <td>${d.demandeur_nom || '-'}</td>
+            <td><small>${d.date_demande || ''}</small></td>
+            ${colTraitement}
+            <td class="text-end">${actions}</td>
+        </tr>`;
+    }).join('');
+}
+
+function validerDemande(id) {
+    if (!confirm('Valider et exécuter cette demande ?')) return;
+    fetch('/api/validations/' + id + '/valider', {method: 'POST'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                alert('✅ ' + data.message);
+                chargerDemandes();
+            } else {
+                alert('❌ Erreur : ' + data.error);
+            }
+        })
+        .catch(() => alert('❌ Erreur réseau'));
+}
+
+function refuserDemande(id) {
+    const motif = prompt('Motif du refus (optionnel) :', '');
+    if (motif === null) return;
+    fetch('/api/validations/' + id + '/refuser', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({motif: motif})
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                alert('Demande refusée');
+                chargerDemandes();
+            } else {
+                alert('❌ Erreur : ' + data.error);
+            }
+        })
+        .catch(() => alert('❌ Erreur réseau'));
+}
+
+document.addEventListener('DOMContentLoaded', chargerDemandes);
+</script>
+{% endblock %}

@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block title %}Enregistrer une charge{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        {% include 'sidebar_menu.html' %}
+    </div>
+
+    <div class="col-md-9">
+        <div class="card mb-4">
+            <div class="card-header bg-danger text-white">
+                <h5><i class="fas fa-money-bill-wave"></i> Enregistrer une charge</h5>
+            </div>
+            <div class="card-body">
+                {% if not session.is_admin %}
+                <div class="alert alert-warning">
+                    <i class="fas fa-info-circle"></i>
+                    La charge que vous enregistrez ici reste <strong>en attente de validation</strong>
+                    par l'administrateur avant d'être réellement prise en compte (caisse, comptabilité).
+                </div>
+                {% endif %}
+
+                <form id="depenseForm">
+                    <div class="mb-3">
+                        <label class="form-label">Montant (FCFA) *</label>
+                        <input type="number" class="form-control" id="depenseMontant" required min="1">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Motif *</label>
+                        <select class="form-control" id="depenseMotif" onchange="toggleMotifPersonnalise()">
+                            <option value="salaire">Salaire personnel</option>
+                            <option value="assurance">Versement part assurance</option>
+                            <option value="reparation">Réparation de la clinique</option>
+                            <option value="fourniture">Fourniture médicale</option>
+                            <option value="eau">Eau</option>
+                            <option value="electricite">Electricite</option>
+                            <option value="internet">Internet</option>
+                            <option value="loyer">Loyer</option>
+                            <option value="materiel">Matériel informatique</option>
+                            <option value="transport">Transport</option>
+                            <option value="communication">Communication</option>
+                            <option value="autres">Autres (à préciser)</option>
+                        </select>
+                    </div>
+                    <div class="mb-3" id="motifPersonnaliseDiv" style="display:none;">
+                        <label class="form-label">Précisez le motif</label>
+                        <input type="text" class="form-control" id="depenseMotifPersonnalise" placeholder="Ex: Achat de matériel, Formation, etc...">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description (optionnel)</label>
+                        <textarea class="form-control" id="depenseDescription" rows="2"></textarea>
+                    </div>
+                    <button type="button" class="btn btn-danger" id="btnEnregistrerDepense" onclick="saveDepense()">
+                        <i class="fas fa-save"></i> Enregistrer
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <h6 class="mb-0"><i class="fas fa-history"></i> {{ 'Toutes les demandes' if session.is_admin else 'Mes demandes récentes' }}</h6>
+                <button class="btn btn-sm btn-outline-secondary" onclick="chargerMesDemandes()"><i class="fas fa-sync-alt"></i></button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light">
+                        <tr><th>Résumé</th><th>Statut</th><th>Date</th></tr>
+                    </thead>
+                    <tbody id="mesDemandesBody">
+                        <tr><td colspan="3" class="text-center text-muted py-3">Chargement…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="mt-3">
+            <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Retour au tableau de bord
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleMotifPersonnalise() {
+    const motif = document.getElementById('depenseMotif').value;
+    document.getElementById('motifPersonnaliseDiv').style.display = motif === 'autres' ? 'block' : 'none';
+}
+
+function saveDepense() {
+    const montant = document.getElementById('depenseMontant').value;
+    if (!montant || montant <= 0) {
+        alert('Veuillez entrer un montant valide');
+        return;
+    }
+
+    const motif = document.getElementById('depenseMotif').value;
+    const motifPersonnalise = document.getElementById('depenseMotifPersonnalise').value;
+
+    const data = {
+        montant: parseFloat(montant),
+        motif: motif,
+        motif_personnalise: motif === 'autres' ? motifPersonnalise : '',
+        description: document.getElementById('depenseDescription').value
+    };
+
+    const btn = document.getElementById('btnEnregistrerDepense');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Enregistrement...';
+
+    fetch('/api/finances/depenses', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            alert(result.en_attente ? ('📨 ' + result.message) : '✅ Charge enregistrée avec succès');
+            document.getElementById('depenseForm').reset();
+            document.getElementById('motifPersonnaliseDiv').style.display = 'none';
+            chargerMesDemandes();
+        } else {
+            alert('❌ Erreur : ' + result.error);
+        }
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-save"></i> Enregistrer';
+    })
+    .catch(() => {
+        alert('❌ Erreur réseau');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-save"></i> Enregistrer';
+    });
+}
+
+function chargerMesDemandes() {
+    fetch('/api/validations?statut=toutes')
+        .then(r => r.json())
+        .then(demandes => {
+            const depenses = (demandes || []).filter(d => d.type_demande === 'depense');
+            const tbody = document.getElementById('mesDemandesBody');
+            if (depenses.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">Aucune demande</td></tr>';
+                return;
+            }
+            const badges = {'en_attente': 'bg-warning text-dark', 'validee': 'bg-success', 'refusee': 'bg-danger'};
+            const labels = {'en_attente': 'En attente', 'validee': 'Validée', 'refusee': 'Refusée'};
+            tbody.innerHTML = depenses.map(d => `<tr>
+                <td>${d.resume || ''}</td>
+                <td><span class="badge ${badges[d.statut] || 'bg-secondary'}">${labels[d.statut] || d.statut}</span></td>
+                <td><small>${d.date_demande || ''}</small></td>
+            </tr>`).join('');
+        })
+        .catch(() => {});
+}
+
+document.addEventListener('DOMContentLoaded', chargerMesDemandes);
+</script>
+{% endblock %}
