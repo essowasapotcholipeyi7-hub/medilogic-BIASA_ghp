@@ -376,7 +376,22 @@
                         <div id="medicamentsList">
                             <!-- Les médicaments seront ajoutés ici dynamiquement -->
                         </div>
-                        
+
+                        <!-- ⭐ Recherche dans le catalogue produits (pharmacie de la
+                             structure) — pré-remplit juste le champ "Nom du médicament"
+                             ci-dessous ; l'ajout manuel reste possible en tapant
+                             directement. Même principe que gestion_patients. -->
+                        <div class="row g-2 position-relative">
+                            <div class="col-12">
+                                <input type="text" class="form-control" id="medicamentSearch"
+                                       placeholder="🔍 Rechercher un médicament dans le catalogue..."
+                                       autocomplete="off" oninput="rechercherMedicaments(this.value)">
+                                <div id="medicamentSearchResults" class="list-group position-absolute w-100"
+                                     style="z-index:1000; max-height:220px; overflow-y:auto; display:none;"></div>
+                            </div>
+                        </div>
+                        <div class="text-muted small my-2">— ou ajout manuel —</div>
+
                         <div class="row g-2 mt-2">
                             <div class="col-md-4">
                                 <input type="text" class="form-control" id="medicamentNom" placeholder="Nom du médicament">
@@ -416,7 +431,39 @@
                         
                         <div class="bulletin-field">
                             <label>3. Nature d'examen(s) demandé(s) *</label>
-                            <textarea class="form-control" id="bulletinExamens" rows="3" placeholder="Listez les examens demandés..."></textarea>
+                            <div id="bulletinExamensListe">
+                                <!-- Les examens seront ajoutés ici dynamiquement -->
+                            </div>
+
+                            <!-- ⭐ Recherche dans le catalogue d'actes (labo/radio/hospi)
+                                 de la structure — sélectionner un résultat ajoute
+                                 directement la ligne. L'ajout manuel reste possible. -->
+                            <div class="row g-2 position-relative mt-2">
+                                <div class="col-12">
+                                    <input type="text" class="form-control" id="examenSearch"
+                                           placeholder="🔍 Rechercher un acte/examen dans le catalogue..."
+                                           autocomplete="off" oninput="rechercherExamens(this.value)">
+                                    <div id="examenSearchResults" class="list-group position-absolute w-100"
+                                         style="z-index:1000; max-height:220px; overflow-y:auto; display:none;"></div>
+                                </div>
+                            </div>
+                            <div class="text-muted small my-2">— ou ajout manuel —</div>
+
+                            <div class="row g-2">
+                                <div class="col-md-10">
+                                    <input type="text" class="form-control" id="examenManuel" placeholder="Nom de l'examen">
+                                </div>
+                                <div class="col-md-2">
+                                    <button class="btn btn-primary btn-sm" type="button" onclick="ajouterExamenManuel()">
+                                        <i class="fas fa-plus"></i> Ajouter
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Conservé caché : c'est lui que genererContenuBulletin()
+                                 lit toujours (join('\n') des lignes ci-dessus) — le
+                                 format d'enregistrement/impression ne change pas. -->
+                            <textarea class="form-control d-none" id="bulletinExamens" rows="3"></textarea>
                         </div>
                     </div>
                     
@@ -531,6 +578,19 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// ⭐ escapeHtml() n'échappe pas forcément les guillemets (elle sert à du
+// texte, pas à une valeur d'attribut) — nécessaire pour les data-attributes
+// des résultats de recherche catalogue, dont les noms peuvent contenir
+// guillemets/espaces/slashes (ex: "0003909 Acupan Sol Inj 20mg/2ml").
+function escapeAttr(text) {
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
 // ============================================================
 // CHANGEMENT DE CATÉGORIE
 // ============================================================
@@ -552,11 +612,13 @@ function onCategorieChange() {
         titre.value = 'ORDONNANCE MEDICALE';
         sectionOrdonnance.classList.add('active');
         sectionContenuStandard.style.display = 'none';
+        chargerCatalogueProduits();
         genererContenuOrdonnance();
     } else if (categorie === 'bulletin_examen') {
         titre.value = 'BULLETIN D\'EXAMEN';
         sectionBulletin.classList.add('active');
         sectionContenuStandard.style.display = 'none';
+        chargerCatalogueActes();
         genererContenuBulletin();  // ← GÉNÉRER AU CHANGEMENT
     } else {
         if (titre.value === 'ORDONNANCE MEDICALE' || titre.value === 'BULLETIN D\'EXAMEN') {
@@ -761,6 +823,157 @@ function supprimerMedicament(index) {
 }
 
 // ============================================================
+// RECHERCHE CATALOGUE — MÉDICAMENTS (pharmacie de la structure)
+// ============================================================
+// ⭐ Ne fait que pré-remplir "Nom du médicament" : les deux modes (recherche
+// catalogue / saisie manuelle) convergent vers ajouterMedicament(), qui
+// n'est pas modifiée — même principe que gestion_patients.
+
+var catalogueProduits = [];
+var catalogueProduitsCharges = false;
+
+function chargerCatalogueProduits() {
+    if (catalogueProduitsCharges) return;
+    fetch('/api/produits')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            catalogueProduits = (Array.isArray(data) ? data : []).map(function(p) { return p.nom; }).filter(Boolean);
+            catalogueProduitsCharges = true;
+        })
+        .catch(function() {});
+}
+
+function rechercherMedicaments(terme) {
+    var resultsDiv = document.getElementById('medicamentSearchResults');
+    terme = (terme || '').trim().toLowerCase();
+    if (!terme) { resultsDiv.style.display = 'none'; return; }
+
+    var matches = catalogueProduits.filter(function(nom) {
+        return nom.toLowerCase().indexOf(terme) !== -1;
+    }).slice(0, 8);
+
+    if (matches.length === 0) {
+        resultsDiv.innerHTML = '<div class="list-group-item text-muted small">Aucun résultat</div>';
+        resultsDiv.style.display = 'block';
+        return;
+    }
+
+    resultsDiv.innerHTML = matches.map(function(nom) {
+        return '<a href="#" class="list-group-item list-group-item-action" data-nom="' + escapeAttr(nom) +
+            '" onclick="choisirMedicamentCatalogue(this.dataset.nom); return false;">' + escapeHtml(nom) + '</a>';
+    }).join('');
+    resultsDiv.style.display = 'block';
+}
+
+function choisirMedicamentCatalogue(nom) {
+    document.getElementById('medicamentNom').value = nom;
+    document.getElementById('medicamentSearch').value = '';
+    document.getElementById('medicamentSearchResults').style.display = 'none';
+    document.getElementById('medicamentDosage').focus();
+}
+
+// ============================================================
+// BULLETIN D'EXAMEN — LISTE DYNAMIQUE (recherche catalogue + ajout manuel)
+// ============================================================
+// ⭐ bulletinExamensList alimente en JS le textarea caché #bulletinExamens
+// (join('\n')) — genererContenuBulletin() (la mise en forme imprimable,
+// la "technicité") continue de le lire tel quel, sans aucun changement.
+
+var bulletinExamensList = [];
+var catalogueActes = [];
+var catalogueActesCharges = false;
+
+function chargerCatalogueActes() {
+    if (catalogueActesCharges) return;
+    fetch('/api/actes/liste-admin')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            catalogueActes = (Array.isArray(data) ? data : []).map(function(a) { return a.nom; }).filter(Boolean);
+            catalogueActesCharges = true;
+        })
+        .catch(function() {});
+}
+
+function rechercherExamens(terme) {
+    var resultsDiv = document.getElementById('examenSearchResults');
+    terme = (terme || '').trim().toLowerCase();
+    if (!terme) { resultsDiv.style.display = 'none'; return; }
+
+    var matches = catalogueActes.filter(function(nom) {
+        return nom.toLowerCase().indexOf(terme) !== -1;
+    }).slice(0, 8);
+
+    if (matches.length === 0) {
+        resultsDiv.innerHTML = '<div class="list-group-item text-muted small">Aucun résultat</div>';
+        resultsDiv.style.display = 'block';
+        return;
+    }
+
+    resultsDiv.innerHTML = matches.map(function(nom) {
+        return '<a href="#" class="list-group-item list-group-item-action" data-nom="' + escapeAttr(nom) +
+            '" onclick="choisirExamenCatalogue(this.dataset.nom); return false;">' + escapeHtml(nom) + '</a>';
+    }).join('');
+    resultsDiv.style.display = 'block';
+}
+
+function choisirExamenCatalogue(nom) {
+    ajouterExamenLigne(nom);
+    document.getElementById('examenSearch').value = '';
+    document.getElementById('examenSearchResults').style.display = 'none';
+}
+
+function ajouterExamenManuel() {
+    var input = document.getElementById('examenManuel');
+    var nom = input.value.trim();
+    if (!nom) {
+        alert("Veuillez entrer le nom de l'examen");
+        input.focus();
+        return;
+    }
+    ajouterExamenLigne(nom);
+    input.value = '';
+    input.focus();
+}
+
+function ajouterExamenLigne(nom) {
+    nom = (nom || '').trim();
+    if (!nom) return;
+    bulletinExamensList.push(nom);
+    afficherExamensListe();
+    syncBulletinExamensTextarea();
+}
+
+function supprimerExamenLigne(index) {
+    bulletinExamensList.splice(index, 1);
+    afficherExamensListe();
+    syncBulletinExamensTextarea();
+}
+
+function afficherExamensListe() {
+    var container = document.getElementById('bulletinExamensListe');
+    if (bulletinExamensList.length === 0) {
+        container.innerHTML = '<div class="text-muted small">Aucun examen ajouté</div>';
+        return;
+    }
+    var html = '';
+    bulletinExamensList.forEach(function(nom, index) {
+        html += '<div class="medicament-row">';
+        html += '<span class="fw-bold" style="min-width:30px;">' + (index + 1) + '.</span>';
+        html += '<span style="flex:1;">' + escapeHtml(nom) + '</span>';
+        html += '<button class="btn-remove" onclick="supprimerExamenLigne(' + index + ')" title="Supprimer">×</button>';
+        html += '</div>';
+    });
+    container.innerHTML = html;
+}
+
+function syncBulletinExamensTextarea() {
+    document.getElementById('bulletinExamens').value = bulletinExamensList.join('\n');
+    if (document.getElementById('categorie').value === 'bulletin_examen') {
+        genererContenuBulletin();
+    }
+}
+
+// ============================================================
 // CHARGER LES DONNÉES D'UN PROTOCOLE EXISTANT
 // ============================================================
 
@@ -788,7 +1001,14 @@ function chargerDonneesProtocole(data) {
         var examensData = p.examens || {};
         document.getElementById('bulletinMotif').value = examensData.motif || '';
         document.getElementById('bulletinComplement').value = examensData.complement || '';
-        document.getElementById('bulletinExamens').value = examensData.examens || '';
+        // ⭐ examensData.examens reste une string multi-lignes (format
+        // inchangé) — on la redécoupe juste pour peupler la liste éditable.
+        var examensStr = examensData.examens || '';
+        bulletinExamensList = examensStr
+            ? examensStr.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l; })
+            : [];
+        afficherExamensListe();
+        document.getElementById('bulletinExamens').value = examensStr;
     }
     
     // Déclencher l'affichage des sections
@@ -885,6 +1105,9 @@ function showCreateModal() {
     // Réinitialiser les listes
     medicamentsList = [];
     afficherMedicaments();
+    bulletinExamensList = [];
+    afficherExamensListe();
+    document.getElementById('bulletinExamens').value = '';
     document.getElementById('medicamentsData').value = '';
     document.getElementById('bulletinData').value = '';
     
