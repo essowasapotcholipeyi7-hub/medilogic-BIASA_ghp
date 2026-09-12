@@ -1805,13 +1805,17 @@
                  (annulation vente, dépense, encaissement assurance). Compteur
                  rafraîchi par actualiserBadgeValidations() (voir plus bas) —
                  même source que le badge du menu Finances, juste rendue plus
-                 visible ici (toujours à l'écran, pas cachée dans un sous-menu). -->
-            <a href="{{ url_for('page_validations') }}" class="btn btn-light rounded-pill position-relative"
-               style="padding: 8px 14px; border: none; background: rgba(255,255,255,0.8); box-shadow: 0 2px 8px rgba(0,0,0,0.05);"
+                 visible ici (toujours à l'écran, pas cachée dans un sous-menu).
+                 Badge volontairement grand et détaché du coin de l'icône
+                 (signalé trop discret / illisible dans sa première version). -->
+            <a id="navBellBtn" href="{{ url_for('page_validations') }}" class="btn btn-light rounded-pill position-relative"
+               style="padding: 8px 16px; border: none; background: rgba(255,255,255,0.8); box-shadow: 0 2px 8px rgba(0,0,0,0.05); overflow: visible;"
                title="Demandes en attente de validation">
-                <i class="fas fa-bell" style="color:#4a5568;"></i>
-                <span id="navBellBadge" class="position-absolute badge rounded-pill bg-danger"
-                      style="top:-4px; right:-4px; display:none; font-size:10px;">0</span>
+                <i class="fas fa-bell" id="navBellIcon" style="color:#4a5568; font-size:16px;"></i>
+                <span id="navBellBadge" class="position-absolute bg-danger text-white fw-bold d-none"
+                      style="top:-8px; right:-8px; font-size:12px; line-height:1; min-width:20px; height:20px;
+                             border-radius:10px; border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,0.3);
+                             display:flex; align-items:center; justify-content:center; padding:0 5px;">0</span>
             </a>
             {% endif %}
 
@@ -1900,10 +1904,10 @@
                 <a class="menu-item" href="{{ url_for('proformas') }}">
                     Factures Proforma
                 </a>
+                {% if not session.is_admin %}
                 <a class="menu-item" href="{{ url_for('page_factures_assurances') }}">
                     Factures assurances
                 </a>
-                {% if not session.is_admin %}
                 <a class="menu-item" href="{{ url_for('page_depenses_saisie') }}">
                     Enregistrer une charge
                 </a>
@@ -2414,12 +2418,15 @@ function actualiserBadgeValidations() {
                 }
             }
             const bellBadge = document.getElementById('navBellBadge');
+            const bellIcon2 = document.getElementById('navBellIcon');
             if (bellBadge) {
                 if (count > 0) {
                     bellBadge.innerText = count > 99 ? '99+' : count;
-                    bellBadge.style.display = 'inline-block';
+                    bellBadge.classList.remove('d-none');
+                    if (bellIcon2) bellIcon2.style.color = '#dc3545';
                 } else {
-                    bellBadge.style.display = 'none';
+                    bellBadge.classList.add('d-none');
+                    if (bellIcon2) bellIcon2.style.color = '#4a5568';
                 }
             }
             // ⭐ Petite secousse de la cloche quand une NOUVELLE demande vient

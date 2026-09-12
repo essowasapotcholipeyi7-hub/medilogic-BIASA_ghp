@@ -10754,11 +10754,10 @@ def factures():
 @login_required
 def page_factures_assurances():
     """Page dédiée à la liste + l'encaissement des factures d'assurance —
-    séparée de Statistiques des ventes (admin uniquement) pour que
-    caissiers/secrétaires puissent encaisser sans avoir accès au reste des
-    statistiques de vente."""
+    réservée aux caissiers/secrétaires (l'admin gère ça depuis Statistiques
+    des ventes, qui couvre le même encaissement en plus du reste)."""
     role = session.get('role', 'caissier')
-    if role not in ['admin', 'comptable', 'gestionnaire', 'caissier', 'pharmacien', 'secretaire']:
+    if role not in ['caissier', 'secretaire']:
         flash('Accès non autorisé', 'danger')
         return redirect(url_for('dashboard'))
     return render_template('assurances_factures.html')
