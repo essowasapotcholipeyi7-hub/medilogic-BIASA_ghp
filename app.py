@@ -1943,7 +1943,7 @@ def facture(vente_id, type):
         societe_assurance2 = v.get('societe_assurance2', '')
         
         # Récupérer le taux original du patient
-        patient_taux_original = float(v.get('patient_taux_assurance2', 0))
+        patient_taux_original = float(v.get('patient_taux_assurance2') or 0)
         
         # Déterminer si le taux a été modifié
         taux_modifie = False
@@ -2110,7 +2110,7 @@ def facture_structure(vente_id, type):
         societe_assurance2 = v.get('societe_assurance2', '')
         
         # Récupérer le taux original du patient
-        patient_taux_original = float(v.get('patient_taux_assurance2', 0))
+        patient_taux_original = float(v.get('patient_taux_assurance2') or 0)
         
         # Déterminer si le taux a été modifié
         taux_modifie = False
@@ -2427,7 +2427,7 @@ def recu(vente_id, type):
         aide_hospitaliere = float(v.get('aide_hospitaliere', 0)) if v.get('aide_hospitaliere') is not None else 0
         type_aide = v.get('type_aide') or 'pourcentage'
 
-        patient_taux_original = float(v.get('patient_taux_assurance2', 0))
+        patient_taux_original = float(v.get('patient_taux_assurance2') or 0)
         
         taux_modifie = False
         taux_original = patient_taux_original
@@ -2733,7 +2733,7 @@ def recu_structure(vente_id, type):
         societe_assurance2 = v.get('societe_assurance2', '')
         
         # Récupérer le taux original du patient
-        patient_taux_original = float(v.get('patient_taux_assurance2', 0))
+        patient_taux_original = float(v.get('patient_taux_assurance2') or 0)
         
         # Déterminer si le taux a été modifié
         taux_modifie = False

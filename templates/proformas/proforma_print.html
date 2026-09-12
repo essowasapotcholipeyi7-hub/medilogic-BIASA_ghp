@@ -681,11 +681,19 @@
                                     {{ 'Acte' if article.type == 'acte' else 'Produit' }}
                                 </span>
                             </td>
+                            {# ⭐ FIX : article.prix_unitaire plante l'impression
+                               (500 : "Undefined doesn't define __round__") dès
+                               qu'un article n'a que `prix` (api_creer_proforma()
+                               garantit article['prix'] mais jamais
+                               article['prix_unitaire']) — repli sur article.prix
+                               puis 0 en dernier recours. Repéré en testant
+                               l'impression avec plusieurs types d'assurance. #}
+                            {% set prix_unitaire_affiche = article.prix_unitaire|default(article.prix, true)|default(0, true) %}
                             <td class="text-center">{{ article.quantite }}</td>
-                            <td class="text-end">{{ article.prix_unitaire|round(0)|int }} F</td>
+                            <td class="text-end">{{ prix_unitaire_affiche|round(0)|int }} F</td>
                             {% if est_assure %}
                             <td class="text-end">
-                                {% if article.pbr and article.pbr != article.prix_unitaire %}
+                                {% if article.pbr and article.pbr != prix_unitaire_affiche %}
                                     {{ article.pbr|round(0)|int }} F
                                 {% else %}
                                     <span style="color:#b0b8c5;">-</span>
