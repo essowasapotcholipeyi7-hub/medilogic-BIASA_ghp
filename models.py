@@ -1808,6 +1808,11 @@ class Proforma(db.Model):
     taux_aide = db.Column(db.Numeric, default=0)
     aide_hospitaliere = db.Column(db.Numeric, default=0)
     type_aide = db.Column(db.String(20), default='pourcentage')  # 'pourcentage' | 'montant'
+    # ⭐ Permet de créer une proforma pour un patient assuré SANS appliquer
+    # son assurance principale (il ne souhaite pas l'utiliser) — même
+    # mécanisme que Vente.assurance_principale_active, absent jusqu'ici du
+    # formulaire de création proforma.
+    assurance_principale_active = db.Column(db.Boolean, default=True)
 
 
 class ProformaLunette(db.Model):

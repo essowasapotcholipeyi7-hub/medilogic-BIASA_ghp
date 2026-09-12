@@ -9708,7 +9708,11 @@ def api_creer_proforma():
         # côté reçu/vente d'actes/bordereau (voir taux_amu_pour_article()).
         prise_en_charge_par_article = 0
 
-        taux_assurance = float(data.get('taux_assurance', 0))
+        # ⭐ Assurance principale désactivée pour cette proforma (le patient
+        # assuré ne souhaite pas l'utiliser) — absent jusqu'ici du
+        # formulaire de création, même mécanisme que côté vente directe.
+        assurance_principale_active = data.get('assurance_principale_active', True)
+        taux_assurance = float(data.get('taux_assurance', 0)) if assurance_principale_active else 0
 
         for article in articles:
             prix = float(article.get('prix', article.get('prix_unitaire', 0)))
@@ -9886,9 +9890,10 @@ def api_creer_proforma():
                 numero_proforma,
                 assurances_data,
                 base_cac,
-                taux_aide, aide_hospitaliere, type_aide
+                taux_aide, aide_hospitaliere, type_aide,
+                assurance_principale_active
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             structure_id,
@@ -9917,7 +9922,8 @@ def api_creer_proforma():
             prochain_numero,
             json.dumps(assurances_data, ensure_ascii=False),
             base_cac_articles,  # 🔥 NOUVEAU
-            taux_aide, aide_hospitaliere, type_aide
+            taux_aide, aide_hospitaliere, type_aide,
+            assurance_principale_active
         ))
         
         proforma_id = result[0]['id']
@@ -9940,7 +9946,8 @@ def api_creer_proforma():
             'taux_original': taux_original,
             'taux_aide': taux_aide,
             'aide_hospitaliere': aide_hospitaliere,
-            'type_aide': type_aide
+            'type_aide': type_aide,
+            'assurance_principale_active': assurance_principale_active
         })
         
     except Exception as e:
