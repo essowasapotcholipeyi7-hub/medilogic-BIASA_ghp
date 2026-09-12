@@ -293,11 +293,35 @@
                                             </div>
                                         </div>
                                     </div>
+
+                                    <!-- ⭐ Aide hospitalière (remise) — % ou montant direct FCFA, même
+                                         mécanisme que sur la vente directe (pharma_vente.html /
+                                         actes_vente.html) ; absente jusqu'ici du formulaire de création,
+                                         donc jamais transmise à la conversion en vente. -->
+                                    <div class="row mt-2">
+                                        <div class="col-md-4">
+                                            <label class="form-label text-warning">
+                                                <i class="fas fa-hand-holding-heart"></i> Aide hospitalière
+                                            </label>
+                                            <div class="input-group">
+                                                <input type="number" class="form-control" id="tauxAideProforma"
+                                                       value="0" step="5" min="0" max="100"
+                                                       onchange="calculerTotal()"
+                                                       style="border-color: #ffc107;">
+                                                <select class="form-control" id="typeAideProforma" style="max-width: 85px; border-color: #ffc107;"
+                                                        onchange="onChangeTypeAideProforma(); calculerTotal();">
+                                                    <option value="pourcentage" selected>%</option>
+                                                    <option value="montant">FCFA</option>
+                                                </select>
+                                            </div>
+                                            <small class="text-muted" id="aideProformaHint">Taux d'aide (max 100%)</small>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- SECTION ARTICLES -->
                     <div class="card bg-light mb-3">
                         <div class="card-header bg-success text-white">
@@ -409,6 +433,11 @@
                                         <tr id="priseEnCharge2Row" style="display:none;">
                                             <th colspan="4" class="text-end text-info">Prise en charge complémentaire :</th>
                                             <th id="priseEnCharge2Display" class="text-end text-info">0 FCFA</th>
+                                            <th></th>
+                                        </tr>
+                                        <tr id="aideProformaRow" style="display:none;">
+                                            <th colspan="4" class="text-end" style="color:#ffc107;">Aide hospitalière :</th>
+                                            <th id="aideProformaDisplay" class="text-end" style="color:#ffc107;">0 FCFA</th>
                                             <th></th>
                                         </tr>
                                         <tr class="table-warning">
@@ -644,6 +673,12 @@ function remplirListeActes(search = '', append = false, hasMore = false) {
         const priseEnChargeCAC = a.prise_en_charge_cac !== false;
         const priseEnChargeAMUTNS = a.prise_en_charge_amu_tns !== false;
         const priseEnChargeAMUAffichee = (patientAssuranceListe === 'amu_tns') ? priseEnChargeAMUTNS : priseEnChargeAMU;
+        // ⭐ Absents jusqu'ici de cette liste (contrairement à actes_vente.html)
+        // — nécessaires pour la vérification EP + le message de non prise en
+        // charge à l'ajout au panier proforma.
+        const statutActe = (a.statut || 'DIRECT').toString().toUpperCase();
+        const commentaireAMUActe = a.commentaire_amu || '';
+        const commentaireCACActe = a.commentaire_cac || '';
 
         select.innerHTML += `
             <option value="${id}"
@@ -652,7 +687,10 @@ function remplirListeActes(search = '', append = false, hasMore = false) {
                     data-nom="${nom}"
                     data-prise-en-charge-amu="${priseEnChargeAMU}"
                     data-prise-en-charge-cac="${priseEnChargeCAC}"
-                    data-prise-en-charge-amu-tns="${priseEnChargeAMUTNS}">
+                    data-prise-en-charge-amu-tns="${priseEnChargeAMUTNS}"
+                    data-statut="${statutActe}"
+                    data-commentaire-amu="${commentaireAMUActe}"
+                    data-commentaire-cac="${commentaireCACActe}">
                 ${nom} - ${prix} FCFA ${pbr != prix ? '(PBR: ' + pbr + ' F)' : ''}
                 ${!priseEnChargeAMUAffichee ? ' ⚠️ Non AMU' : ''}
                 ${!priseEnChargeCAC ? ' ⚠️ Non CAC' : ''}
@@ -741,6 +779,9 @@ function remplirListeProduits(search = '', append = false, hasMore = false) {
         option.setAttribute('data-prise-en-charge-amu-tns', amuTNSValue);
         option.setAttribute('data-commentaire-amu', commentaireAMU);
         option.setAttribute('data-commentaire-cac', commentaireCAC);
+        // ⭐ Absent jusqu'ici — nécessaire pour les vérifications EP/TPC à
+        // l'ajout au panier proforma (voir pharma_vente.html).
+        option.setAttribute('data-statut', (p.statut || 'DIRECT').toString().toUpperCase());
         
         // 🔥 Label
         let label = `${nom} - ${Math.round(prix).toLocaleString('fr-FR')} FCFA`;
@@ -1014,6 +1055,15 @@ function ajouterArticleSelectionne() {
     // flag générique, une fois pour toutes ici.
     const patientAssuranceProforma = document.getElementById('assuranceNom').value;
 
+    // ⭐ Même détection "patient assuré" que calculerTotal() dans ce fichier
+    // (une valeur vide ou 'Non assuré', pas 'non_assure' comme sur les
+    // pages de vente directe — le champ ici est un texte libre, pas un
+    // code) — nécessaire pour les mêmes vérifications EP/TPC/prise en
+    // charge qu'à l'ajout d'un acte ou d'un médicament en vente directe,
+    // jusqu'ici totalement absentes du panier proforma.
+    const isAMU = patientAssuranceProforma && patientAssuranceProforma !== '' && patientAssuranceProforma !== 'Non assuré';
+    const isCAC = assurance2Active && assurance2Nom && assurance2Nom !== 'Aucune';
+
     // 🔥 Parcourir les actes sélectionnés
     for (let opt of acteSelect.selectedOptions) {
         if (!opt.value || opt.disabled) continue;
@@ -1025,14 +1075,45 @@ function ajouterArticleSelectionne() {
             ? opt.dataset.priseEnChargeAmuTns !== 'false'
             : opt.dataset.priseEnChargeAmu !== 'false';
         const priseEnChargeCAC = opt.dataset.priseEnChargeCac !== 'false';
-        
+        const commentaireAMU = opt.dataset.commentaireAmu || '';
+        const commentaireCAC = opt.dataset.commentaireCac || '';
+        const statutActe = (opt.dataset.statut || 'DIRECT').toUpperCase();
+
+        // ⭐ ENTENTE PRÉALABLE — même vérification bloquante que ajouterActe()
+        // dans actes_vente.html (les actes n'ont pas de statut TPC là-bas
+        // non plus, donc aucun TPC à vérifier ici pour être fidèle).
+        if (isAMU && statutActe === 'EP') {
+            if (!confirm('⚠️ ENTENTE PRÉALABLE (EP)\n\nL\'acte "' + nom + '" est sous Entente Préalable.\n\nAvez-vous reçu un accord écrit de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.')) {
+                opt.selected = false;
+                continue;
+            }
+        }
+
+        // ⭐ Non prise en charge AMU/CAC — même message que ajouterActe().
+        let infoMessageActe = '';
+        if (!priseEnChargeAMU && !priseEnChargeCAC && (isAMU || isCAC)) {
+            infoMessageActe = `⚠️ ACTE NON PRIS EN CHARGE PAR LES ASSURANCES\n\nL'acte "${nom}" n'est pas pris en charge par les assurances du patient.\n\nLe patient devra payer la totalité du montant : ${Math.round(prix * qte).toLocaleString('fr-FR')} FCFA\n\nVoulez-vous ajouter cet acte au panier ?`;
+        } else if (!priseEnChargeAMU && priseEnChargeCAC && isAMU && isCAC) {
+            infoMessageActe = `Pris en charge par ${assurance2Nom} (CAC) mais pas par ${patientAssuranceProforma} (AMU).\n\nL'assurance complémentaire prendra le relais sur le reste à charge.`;
+        } else if (priseEnChargeAMU && !priseEnChargeCAC && isAMU && isCAC) {
+            infoMessageActe = `Pris en charge par ${patientAssuranceProforma} (AMU) mais pas par ${assurance2Nom} (CAC).\n\nLe patient devra payer la différence après l'AMU.`;
+        } else if (!priseEnChargeAMU && isAMU && !isCAC) {
+            infoMessageActe = `L'acte "${nom}" n'est pas pris en charge par ${patientAssuranceProforma} (AMU).\n\nLe patient n'a pas d'assurance complémentaire, il devra payer la totalité.`;
+        } else if (!priseEnChargeCAC && isCAC && !isAMU) {
+            infoMessageActe = `L'acte "${nom}" n'est pas pris en charge par ${assurance2Nom} (CAC).\n\nLe patient n'a pas d'assurance principale.`;
+        }
+        if (infoMessageActe && !confirm(infoMessageActe)) {
+            opt.selected = false;
+            continue;
+        }
+
         if (prix > 0) {
             ajouterAuPanierComplet(nom, 'acte', prix, pbrValue, qte, priseEnChargeAMU, priseEnChargeCAC);
             added++;
         }
         opt.selected = false;
     }
-    
+
     // 🔥🔥🔥 Parcourir les produits sélectionnés (avec vérifications) 🔥🔥🔥
     for (let opt of produitSelect.selectedOptions) {
         if (!opt.value || opt.disabled) continue;
@@ -1045,7 +1126,7 @@ function ajouterArticleSelectionne() {
             ? opt.dataset.priseEnChargeAmuTns !== 'false'
             : opt.dataset.priseEnChargeAmu !== 'false';
         const priseEnChargeCAC = opt.dataset.priseEnChargeCac !== 'false';
-        
+
         // 🔥 VÉRIFICATION DU STOCK
         const stock = parseInt(opt.dataset.stock) || 0;
         if (stock <= 0) {
@@ -1053,7 +1134,7 @@ function ajouterArticleSelectionne() {
             opt.selected = false;
             continue;
         }
-        
+
         // 🔥 VÉRIFICATION DE LA PÉREMPTION
         const datePeremption = opt.dataset.datePeremption || '';
         if (datePeremption) {
@@ -1061,7 +1142,7 @@ function ajouterArticleSelectionne() {
             today.setHours(0, 0, 0, 0);
             const perempDate = new Date(datePeremption);
             perempDate.setHours(0, 0, 0, 0);
-            
+
             // Vérifier si la date est valide
             if (!isNaN(perempDate.getTime())) {
                 if (perempDate < today) {
@@ -1069,7 +1150,7 @@ function ajouterArticleSelectionne() {
                     opt.selected = false;
                     continue;
                 }
-                
+
                 const joursRestants = Math.ceil((perempDate - today) / (1000 * 60 * 60 * 24));
                 if (joursRestants <= 7 && joursRestants > 0) {
                     if (!confirm(`⚠️ Attention ! Le produit "${nom}" expire dans ${joursRestants} jour(s) (${datePeremption}).\n\nVoulez-vous quand même l'ajouter ?`)) {
@@ -1079,7 +1160,41 @@ function ajouterArticleSelectionne() {
                 }
             }
         }
-        
+
+        // ⭐ ENTENTE PRÉALABLE / TPC — mêmes vérifications bloquantes que
+        // ajouterProduit() dans pharma_vente.html, absentes jusqu'ici ici.
+        const statutProduit = (opt.dataset.statut || 'DIRECT').toUpperCase();
+        if (isAMU && statutProduit === 'EP') {
+            if (!confirm('⚠️ ENTENTE PRÉALABLE (EP)\n\nLe produit "' + nom + '" est sous Entente Préalable.\n\nAvez-vous reçu un accord écrit de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.')) {
+                opt.selected = false;
+                continue;
+            }
+        }
+        if (isAMU && statutProduit === 'TPC') {
+            if (!confirm('⚠️ TRAITEMENT DES PATHOLOGIES CHRONIQUES (TPC)\n\nLe produit "' + nom + '" concerne un Traitement des Pathologies Chroniques.\n\nAvez-vous reçu l\'accord TPC de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.')) {
+                opt.selected = false;
+                continue;
+            }
+        }
+
+        // ⭐ Non prise en charge AMU/CAC — même message que ajouterProduit().
+        let messageAlerteProduit = '';
+        if (isAMU && !priseEnChargeAMU && isCAC && !priseEnChargeCAC) {
+            messageAlerteProduit = `❌ Le produit "${nom}" n'est pris en charge ni par ${patientAssuranceProforma} (AMU) ni par ${assurance2Nom} (CAC).\n\nLe patient devra payer la totalité (${Math.round(prix * qte).toLocaleString('fr-FR')} FCFA).\n\nVoulez-vous quand même l'ajouter ?`;
+        } else if (isAMU && !priseEnChargeAMU && isCAC && priseEnChargeCAC) {
+            messageAlerteProduit = `ℹ️ Le produit "${nom}" n'est pas pris en charge par ${patientAssuranceProforma} (AMU).\n\nEn revanche, il est pris en charge par ${assurance2Nom} (CAC).\n\nVoulez-vous continuer ?`;
+        } else if (isAMU && priseEnChargeAMU && isCAC && !priseEnChargeCAC) {
+            messageAlerteProduit = `ℹ️ Le produit "${nom}" est pris en charge par ${patientAssuranceProforma} (AMU).\n\nIl n'est pas pris en charge par ${assurance2Nom} (CAC).\n\nVoulez-vous continuer ?`;
+        } else if (isAMU && !priseEnChargeAMU && !isCAC) {
+            messageAlerteProduit = `ℹ️ Le produit "${nom}" n'est pas pris en charge par ${patientAssuranceProforma} (AMU).\n\nLe patient devra payer la totalité (${Math.round(prix * qte).toLocaleString('fr-FR')} FCFA).\n\nVoulez-vous continuer ?`;
+        } else if (!isAMU && isCAC && !priseEnChargeCAC) {
+            messageAlerteProduit = `ℹ️ Le produit "${nom}" n'est pas pris en charge par ${assurance2Nom} (CAC).\n\nLe patient devra payer la totalité (${Math.round(prix * qte).toLocaleString('fr-FR')} FCFA).\n\nVoulez-vous continuer ?`;
+        }
+        if (messageAlerteProduit && !confirm(messageAlerteProduit)) {
+            opt.selected = false;
+            continue;
+        }
+
         if (prix > 0) {
             ajouterAuPanierComplet(nom, 'produit', prix, pbrValue, qte, priseEnChargeAMU, priseEnChargeCAC);
             added++;
@@ -1245,6 +1360,24 @@ function afficherPanier() {
     calculerTotal();
 }
 
+// ⭐ Bascule %/montant pour l'aide hospitalière (voir même fonction dans
+// pharma_vente.html/actes_vente.html).
+function onChangeTypeAideProforma() {
+    const type = document.getElementById('typeAideProforma').value;
+    const input = document.getElementById('tauxAideProforma');
+    const hint = document.getElementById('aideProformaHint');
+    if (type === 'pourcentage') {
+        input.setAttribute('max', '100');
+        input.setAttribute('step', '5');
+        if (parseFloat(input.value) > 100) input.value = 100;
+        if (hint) hint.textContent = "Taux d'aide (max 100%)";
+    } else {
+        input.removeAttribute('max');
+        input.setAttribute('step', '100');
+        if (hint) hint.textContent = 'Montant direct en FCFA';
+    }
+}
+
 function calculerTotal() {
     let sousTotal = 0;
     let pbrTotalAMU = 0;
@@ -1327,16 +1460,45 @@ function calculerTotal() {
     // 🔥 5. Net à payer
     let netAPayer = sousTotal - priseEnChargeAMU - priseEnChargeCAC;
     if (netAPayer < 0) netAPayer = 0;
-    
+
+    // ⭐ 5bis. Aide hospitalière (% plafonné à 100, ou montant direct FCFA) —
+    // absente jusqu'ici du formulaire de création proforma.
+    let typeAideProforma = document.getElementById('typeAideProforma').value;
+    let tauxAideProforma = parseFloat(document.getElementById('tauxAideProforma').value) || 0;
+    if (tauxAideProforma < 0) {
+        tauxAideProforma = 0;
+        document.getElementById('tauxAideProforma').value = 0;
+    }
+    if (typeAideProforma === 'pourcentage' && tauxAideProforma > 100) {
+        tauxAideProforma = 100;
+        document.getElementById('tauxAideProforma').value = 100;
+    }
+    let aideHospitaliereProforma = 0;
+    if (tauxAideProforma > 0 && netAPayer > 0) {
+        aideHospitaliereProforma = (typeAideProforma === 'montant') ? Math.min(tauxAideProforma, netAPayer) : (netAPayer * tauxAideProforma) / 100;
+        netAPayer -= aideHospitaliereProforma;
+        if (netAPayer < 0) netAPayer = 0;
+    }
+    window._proformaAide = { tauxAide: tauxAideProforma, aideHospitaliere: aideHospitaliereProforma, typeAide: typeAideProforma };
+
     // 🔥 6. Mise à jour de l'affichage
     document.getElementById('sousTotalDisplay').textContent = Math.round(sousTotal).toLocaleString('fr-FR') + ' FCFA';
     document.getElementById('priseEnChargeDisplay').textContent = Math.round(priseEnChargeAMU).toLocaleString('fr-FR') + ' FCFA';
     document.getElementById('netAPayerDisplay').textContent = Math.round(netAPayer).toLocaleString('fr-FR') + ' FCFA';
-    
+
+    const aideProformaRow = document.getElementById('aideProformaRow');
+    if (aideHospitaliereProforma > 0) {
+        const suffixeAideProforma = (typeAideProforma === 'montant') ? '' : ` (${tauxAideProforma}%)`;
+        document.getElementById('aideProformaDisplay').textContent = `${suffixeAideProforma ? suffixeAideProforma + ' ' : ''}- ${Math.round(aideHospitaliereProforma).toLocaleString('fr-FR')} FCFA`;
+        aideProformaRow.style.display = '';
+    } else {
+        aideProformaRow.style.display = 'none';
+    }
+
     // 🔥 Affichage CAC
     const priseEnCharge2Row = document.getElementById('priseEnCharge2Row');
     const priseEnCharge2Display = document.getElementById('priseEnCharge2Display');
-    
+
     if (assurance2Active && tauxComplementaire > 0 && priseEnChargeCAC > 0) {
         const modifText = tauxModifie ? ' 🔄' : '';
         priseEnCharge2Display.textContent = `${assurance2Nom} (${tauxComplementaire}%) : - ${Math.round(priseEnChargeCAC).toLocaleString('fr-FR')} FCFA${modifText}`;
@@ -1443,7 +1605,10 @@ function sauvegarderProforma() {
         tout_non_pris_en_charge: toutNonPrisEnCharge,
         // 🔥🔥🔥 AJOUTER LA BASE CAC POUR LE BACKEND 🔥🔥🔥
         base_cac: baseCAC,
-        prise_en_charge_cac_calculee: priseEnChargeCAC
+        prise_en_charge_cac_calculee: priseEnChargeCAC,
+        taux_aide: (window._proformaAide || {}).tauxAide || 0,
+        aide_hospitaliere: (window._proformaAide || {}).aideHospitaliere || 0,
+        type_aide: (window._proformaAide || {}).typeAide || 'pourcentage'
     };
     
     console.log('📦 Données proforma:', data);
@@ -1536,6 +1701,11 @@ function nouvelleProforma() {
     document.getElementById('assuranceNom').value = '';
     document.getElementById('tauxAssurance').value = 0;
     document.getElementById('numeroAssure').value = '';
+    document.getElementById('tauxAideProforma').value = 0;
+    document.getElementById('typeAideProforma').value = 'pourcentage';
+    onChangeTypeAideProforma();
+    document.getElementById('aideProformaRow').style.display = 'none';
+    window._proformaAide = { tauxAide: 0, aideHospitaliere: 0, typeAide: 'pourcentage' };
     document.getElementById('proformaNotes').value = '';
     document.getElementById('patientSearch').value = '';
     document.getElementById('articleSearch').value = '';
@@ -2158,7 +2328,8 @@ function finaliserConversionVente() {
         notes: proformaConversionData.notes || '',
         base_remboursement: proformaConversionData.base_remboursement || 0,
         taux_aide: proformaConversionData.taux_aide || 0,
-        aide_hospitaliere: proformaConversionData.aide_hospitaliere || 0
+        aide_hospitaliere: proformaConversionData.aide_hospitaliere || 0,
+        type_aide: proformaConversionData.type_aide || 'pourcentage'
     };
     
     console.log('📦 Données conversion:', data);

@@ -233,7 +233,7 @@
 
     <!-- 🔥 AIDE HOSPITALIÈRE - S'affiche si > 0 -->
     {% if taux_aide and taux_aide > 0 and aide_hospitaliere and aide_hospitaliere > 0 %}
-    <strong>Aide hospitalière :</strong> {{ taux_aide }}%
+    <strong>Aide hospitalière :</strong> {% if type_aide == 'montant' %}montant direct{% else %}{{ taux_aide }}%{% endif %}
     <span style="color: #17a2b8; font-size: 8px;">(appliquée)</span><br>
     {% endif %}
     
@@ -331,7 +331,7 @@
     <!-- 🔥🔥🔥 AIDE HOSPITALIÈRE (après la CAC) 🔥🔥🔥 -->
     {% if taux_aide and taux_aide > 0 and aide_hospitaliere and aide_hospitaliere > 0 %}
     <div style="display:flex; justify-content:space-between; color:#17a2b8; border-top:1px dashed #17a2b8; padding-top:2px; margin-top:2px;">
-        <span>Aide de l'hôpital ({{ taux_aide }}%) :</span>
+        <span>Aide de l'hôpital{% if type_aide != 'montant' %} ({{ taux_aide }}%){% endif %} :</span>
         <span>- {{ aide_hospitaliere|default(0)|round(0)|int }} FCFA</span>
     </div>
     {% endif %}

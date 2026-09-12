@@ -301,26 +301,41 @@
     </small>
 </div>
 
-<!-- 🔥 TAUX AIDE HOSPITALIÈRE (toujours modifiable) -->
+<!-- 🔥 AIDE HOSPITALIÈRE (toujours modifiable) — % ou montant direct FCFA.
+     ⭐ Le mode % plafonnait à 100 seulement via l'attribut HTML max (jamais
+     vérifié en JS) : un taux mal saisi (ex: 500) donnait un net à payer
+     négatif. On ajoute le mode montant direct + un vrai plafond JS. -->
 <div class="col-md-3">
     <label class="form-label text-warning">
-        <i class="fas fa-hand-holding-heart"></i> Aide hospitalière (%)
+        <i class="fas fa-hand-holding-heart"></i> Aide hospitalière
     </label>
-    <input type="number" class="form-control" id="tauxAideHospitaliere" 
-           value="0" 
-           step="5" min="0" max="100" 
-           onchange="calculerTotal(); calculerRendu();"
-           style="border-color: #ffc107;">
-    <small style="color: #6c757d; display: block; margin-top: 3px;">
-        Taux d'aide!
+    <div class="input-group">
+        <input type="number" class="form-control" id="tauxAideHospitaliere"
+               value="0"
+               step="5" min="0" max="100"
+               onchange="calculerTotal(); calculerRendu();"
+               style="border-color: #ffc107;">
+        <select class="form-control" id="typeAideHospitaliere" style="max-width: 85px; border-color: #ffc107;"
+                onchange="onChangeTypeAideHospitaliere(); calculerTotal(); calculerRendu();">
+            <option value="pourcentage" selected>%</option>
+            <option value="montant">FCFA</option>
+        </select>
+    </div>
+    <small style="color: #6c757d; display: block; margin-top: 3px;" id="aideHospitaliereHint">
+        Taux d'aide (max 100%)
     </small>
 </div>
 
-                    <div class="col-md-12 mt-2">
-                        <button class="btn btn-primary w-100" onclick="finaliserVente()" id="finaliserBtn" disabled>
-                            <i class="fas fa-receipt"></i> Finaliser la vente
+                    <div class="col-md-12 mt-2 d-grid gap-2">
+                        <!-- ⭐ Rendu clairement distinct du bouton Proforma (plus
+                             grand, vert = action principale qui conclut la vente)
+                             — signalé trop semblable au bouton Proforma juste
+                             à côté (même style, même poids visuel). -->
+                        <button class="btn btn-success btn-lg fw-bold" onclick="finaliserVente()" id="finaliserBtn" disabled
+                                style="box-shadow: 0 3px 8px rgba(25,135,84,0.35); letter-spacing: 0.3px;">
+                            <i class="fas fa-check-circle"></i> Finaliser la vente
                         </button>
-                        <button class="btn btn-warning w-100" onclick="creerProforma()" id="proformaBtn" disabled>
+                        <button class="btn btn-outline-warning" onclick="creerProforma()" id="proformaBtn" disabled>
                             <i class="fas fa-file-invoice"></i> Proforma
                         </button>
                     </div>
@@ -1053,6 +1068,29 @@ function tauxAMUPourArticle(item, tauxDefaut) {
 }
 
 // ============================================
+// AIDE HOSPITALIÈRE — BASCULE %/MONTANT
+// ============================================
+// ⭐ Change le libellé/l'indice et adapte les bornes de l'input selon le
+// mode choisi ; re-clampe la valeur déjà saisie si on repasse en % avec
+// un nombre > 100 resté dedans (ex: on avait tapé 5000 FCFA, on rebascule
+// sur % sans avoir retapé la valeur).
+function onChangeTypeAideHospitaliere() {
+    const type = document.getElementById('typeAideHospitaliere').value;
+    const input = document.getElementById('tauxAideHospitaliere');
+    const hint = document.getElementById('aideHospitaliereHint');
+    if (type === 'pourcentage') {
+        input.setAttribute('max', '100');
+        input.setAttribute('step', '5');
+        if (parseFloat(input.value) > 100) input.value = 100;
+        if (hint) hint.textContent = "Taux d'aide (max 100%)";
+    } else {
+        input.removeAttribute('max');
+        input.setAttribute('step', '100');
+        if (hint) hint.textContent = 'Montant direct en FCFA';
+    }
+}
+
+// ============================================
 // CALCULER LES TOTAUX (VERSION CORRIGÉE)
 // ============================================
 function calculerTotal() {
@@ -1111,13 +1149,18 @@ function calculerTotal() {
         document.getElementById('tauxVente').value = tauxAMU;
     }
     
-    // 🔥🔥🔥 TAUX AIDE HOSPITALIÈRE (toujours modifiable) 🔥🔥🔥
+    // 🔥🔥🔥 AIDE HOSPITALIÈRE : % (plafonné à 100) ou montant direct FCFA 🔥🔥🔥
+    let typeAide = document.getElementById('typeAideHospitaliere').value;
     let tauxAide = parseFloat(document.getElementById('tauxAideHospitaliere').value) || 0;
     if (isNaN(tauxAide) || tauxAide < 0) {
         tauxAide = 0;
         document.getElementById('tauxAideHospitaliere').value = 0;
     }
-    
+    if (typeAide === 'pourcentage' && tauxAide > 100) {
+        tauxAide = 100;
+        document.getElementById('tauxAideHospitaliere').value = 100;
+    }
+
     console.log('Type assurance:', typeAssurance);
     console.log('Est assuré:', estAssure);
     console.log('Taux AMU utilisé:', tauxAMU);
@@ -1253,9 +1296,10 @@ function calculerTotal() {
 
     // 🔥 Appliquer l'aide hospitalière sur la base déterminée
     if (tauxAide > 0 && baseAide > 0) {
-        aideHospitaliere = (baseAide * tauxAide) / 100;
+        aideHospitaliere = (typeAide === 'montant') ? Math.min(tauxAide, baseAide) : (baseAide * tauxAide) / 100;
         netAPayer = baseAide - aideHospitaliere;
         console.log('📊 Aide hospitalière appliquée:', {
+            type: typeAide,
             taux: tauxAide,
             base: baseAide,
             montant: aideHospitaliere,
@@ -1289,7 +1333,8 @@ function calculerTotal() {
     const aideEl = document.getElementById('aideHospitaliere');
     if (aideEl) {
         if (aideHospitaliere > 0) {
-            aideEl.innerHTML = `Aide hospitalière (${tauxAide}%) : - ${Math.round(aideHospitaliere).toLocaleString('fr-FR')} FCFA`;
+            const suffixeAide = (typeAide === 'montant') ? '' : ` (${tauxAide}%)`;
+            aideEl.innerHTML = `Aide hospitalière${suffixeAide} : - ${Math.round(aideHospitaliere).toLocaleString('fr-FR')} FCFA`;
             aideEl.style.display = 'block';
         } else {
             aideEl.style.display = 'none';
@@ -1314,6 +1359,7 @@ function calculerTotal() {
         typeAssurance: typeAssurance,
         tauxAMU: tauxAMU,
         tauxAide: tauxAide,
+        typeAide: typeAide,
         assurancePrincipaleActive: assurancePrincipaleActive,
         resteApresAssurances: resteApresAssurances
     };
@@ -1683,12 +1729,16 @@ function finaliserVente() {
         tauxPrincipal = 0;
     }
     
-    // 🔥🔥🔥 RÉCUPÉRER LE TAUX D'AIDE HOSPITALIÈRE 🔥🔥🔥
+    // 🔥🔥🔥 RÉCUPÉRER LE TAUX/MONTANT D'AIDE HOSPITALIÈRE 🔥🔥🔥
+    let typeAide = document.getElementById('typeAideHospitaliere').value;
     let tauxAide = parseFloat(document.getElementById('tauxAideHospitaliere').value) || 0;
     if (isNaN(tauxAide) || tauxAide < 0) {
         tauxAide = 0;
     }
-    
+    if (typeAide === 'pourcentage' && tauxAide > 100) {
+        tauxAide = 100;
+    }
+
     // 🔥 Recalcul avec PBR et prise en charge
     let sousTotal = 0;
     let pbrTotalAMU = 0;
@@ -1813,9 +1863,10 @@ function finaliserVente() {
 
     // 🔥 Appliquer l'aide hospitalière sur la base déterminée
     if (tauxAide > 0 && baseAide > 0) {
-        aideHospitaliere = (baseAide * tauxAide) / 100;
+        aideHospitaliere = (typeAide === 'montant') ? Math.min(tauxAide, baseAide) : (baseAide * tauxAide) / 100;
         netAPayer = baseAide - aideHospitaliere;
         console.log('Aide hospitalière appliquée:', {
+            type: typeAide,
             taux: tauxAide,
             base: baseAide,
             montant: aideHospitaliere,
@@ -1872,7 +1923,8 @@ function finaliserVente() {
             detailCalcul += `Prise en charge ${patientAssurance2} (${tauxComplementaire}%) : - ${Math.round(priseEnCharge2).toLocaleString('fr-FR')} FCFA\n`;
         }
         if (tauxAide > 0) {
-            detailCalcul += `Aide hospitalière (${tauxAide}%) : - ${Math.round(aideHospitaliere).toLocaleString('fr-FR')} FCFA\n`;
+            const suffixeAideRecap = (typeAide === 'montant') ? '' : ` (${tauxAide}%)`;
+            detailCalcul += `Aide hospitalière${suffixeAideRecap} : - ${Math.round(aideHospitaliere).toLocaleString('fr-FR')} FCFA\n`;
         }
         detailCalcul += `\n💰 NET À PAYER : ${Math.round(netAPayer).toLocaleString('fr-FR')} FCFA\n`;
         
@@ -1918,7 +1970,8 @@ function finaliserVente() {
             detailCalcul += `Prise en charge ${patientAssurance2} (${tauxComplementaire}%) : - ${Math.round(priseEnCharge2).toLocaleString('fr-FR')} FCFA\n`;
         }
         if (tauxAide > 0) {
-            detailCalcul += `Aide hospitalière (${tauxAide}%) : - ${Math.round(aideHospitaliere).toLocaleString('fr-FR')} FCFA\n`;
+            const suffixeAideRecap = (typeAide === 'montant') ? '' : ` (${tauxAide}%)`;
+            detailCalcul += `Aide hospitalière${suffixeAideRecap} : - ${Math.round(aideHospitaliere).toLocaleString('fr-FR')} FCFA\n`;
         }
         detailCalcul += `\n💰 NET À PAYER : ${Math.round(netAPayer).toLocaleString('fr-FR')} FCFA\n`;
         
@@ -1965,7 +2018,8 @@ function finaliserVente() {
         reste_a_payer: resteAPayer,
         assurance_principale_active: assurancePrincipaleActive,
         taux_aide: tauxAide,  // 🔥 NOUVEAU
-        aide_hospitaliere: aideHospitaliere  // 🔥 NOUVEAU
+        aide_hospitaliere: aideHospitaliere,  // 🔥 NOUVEAU
+        type_aide: typeAide
     };
     
     console.log('Objet vente envoyé:', vente);
@@ -2174,7 +2228,13 @@ function creerProformaSuite(patientId, patientNom, patientAssurance, patientTaux
     if (!assurancePrincipaleActive) {
         tauxPrincipal = 0;
     }
-    
+
+    // ⭐ Reporter l'aide hospitalière saisie sur la vente vers la proforma
+    // (jusqu'ici jamais transmise : la conversion en vente ignorait donc
+    // systématiquement l'aide hospitalière).
+    const { aideHospitaliere: aideHospProforma, tauxAide: tauxAideProforma, typeAide: typeAideProforma } =
+        window._calculs || { aideHospitaliere: 0, tauxAide: 0, typeAide: 'pourcentage' };
+
     let sousTotal = 0;
     const articles = [];
     
@@ -2206,7 +2266,10 @@ function creerProformaSuite(patientId, patientNom, patientAssurance, patientTaux
         articles: articles,
         type: 'actes',
         notes: '',
-        assurance_principale_active: assurancePrincipaleActive  // 🔥 NOUVEAU
+        assurance_principale_active: assurancePrincipaleActive,  // 🔥 NOUVEAU
+        taux_aide: tauxAideProforma,
+        aide_hospitaliere: aideHospProforma,
+        type_aide: typeAideProforma
     };
     
     console.log('Données proforma:', proformaData);

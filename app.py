@@ -2350,6 +2350,7 @@ def recu(vente_id, type):
     # CHAMPS POUR L'AIDE HOSPITALIÈRE
     taux_aide = 0
     aide_hospitaliere = 0
+    type_aide = 'pourcentage'
     assurance_principale_active = True
     
     # ⭐ FIX : la route exigeait avant AND v.type = %s en plus de l'id — si le
@@ -2424,7 +2425,8 @@ def recu(vente_id, type):
         assurance_principale_active = v.get('assurance_principale_active', True)
         taux_aide = float(v.get('taux_aide', 0)) if v.get('taux_aide') is not None else 0
         aide_hospitaliere = float(v.get('aide_hospitaliere', 0)) if v.get('aide_hospitaliere') is not None else 0
-        
+        type_aide = v.get('type_aide') or 'pourcentage'
+
         patient_taux_original = float(v.get('patient_taux_assurance2', 0))
         
         taux_modifie = False
@@ -2638,7 +2640,8 @@ def recu(vente_id, type):
                          numero_facture=numero_facture,
                          assurance_principale_active=assurance_principale_active,
                          taux_aide=taux_aide,
-                         aide_hospitaliere=aide_hospitaliere)
+                         aide_hospitaliere=aide_hospitaliere,
+                         type_aide=type_aide)
 
 @app.route('/recu_structure/<int:vente_id>/<string:type>')
 @login_required
@@ -6184,6 +6187,11 @@ def api_produits_search():
                     # ⭐ Colonne Q (index 16) : AMU-TNS — panier de soins
                     # distinct de l'AMU générique (colonne L ci-dessus).
                     prise_en_charge_amu_tns = row[16] if len(row) > 16 and row[16] else True
+                    # 🔥 Colonne P (index 15) : statut (EP/TPC/DIRECT) — absent
+                    # jusqu'ici de cette route, donc jamais vérifié à l'ajout
+                    # au panier proforma (contrairement à pharma_vente.html).
+                    statut_raw = row[15].strip() if len(row) > 15 and row[15] else 'direct'
+                    statut = statut_raw.upper() if statut_raw else 'DIRECT'
 
                     # 🔥 Convertir les valeurs "FALSE" / "TRUE" en booléens
                     if isinstance(prise_en_charge_amu, str):
@@ -6212,7 +6220,8 @@ def api_produits_search():
                                 'commentaire_amu': commentaire_amu,
                                 'prise_en_charge_cac': prise_en_charge_cac,
                                 'commentaire_cac': commentaire_cac,
-                                'prise_en_charge_amu_tns': prise_en_charge_amu_tns
+                                'prise_en_charge_amu_tns': prise_en_charge_amu_tns,
+                                'statut': statut
                             })
                 except Exception as e:
                     continue
@@ -6257,6 +6266,8 @@ def api_produits_search():
                     if isinstance(prise_amu_tns, str):
                         prise_amu_tns = prise_amu_tns.upper() == 'TRUE'
 
+                    statut = str(p.get('statut', 'direct') or 'direct').strip().upper()
+
                     produits_liste.append({
                         'id': p.get('ID'),
                         'nom': p.get('nom', ''),
@@ -6274,7 +6285,8 @@ def api_produits_search():
                         'commentaire_amu': p.get('commentaire_amu', ''),
                         'prise_en_charge_cac': prise_cac,
                         'commentaire_cac': p.get('commentaire_cac', ''),
-                        'prise_en_charge_amu_tns': prise_amu_tns
+                        'prise_en_charge_amu_tns': prise_amu_tns,
+                        'statut': statut
                     })
             
             if search:
@@ -6552,8 +6564,17 @@ def api_vente_pharma():
         assurance_principale_active = data.get('assurance_principale_active', True)
         taux_aide = float(data.get('taux_aide', 0))
         aide_hospitaliere = float(data.get('aide_hospitaliere', 0))
+        # ⭐ Le mode % n'était plafonné à 100 que côté JS (jamais revérifié
+        # ici) — un taux_aide=500 envoyé directement à l'API (bug front,
+        # requête rejouée...) passait tel quel. Défense en profondeur, même
+        # principe que le reste de cette route (fait confiance au calcul
+        # client pour les montants, mais un taux en % a une borne connue).
+        type_aide = data.get('type_aide', 'pourcentage')
+        if type_aide not in ('pourcentage', 'montant'):
+            type_aide = 'pourcentage'
+        if type_aide == 'pourcentage' and taux_aide > 100:
+            taux_aide = 100
 
-        
         # 🔥 Récupérer les produits avec leurs infos de prise en charge
         produits_data = data.get('produits', [])
         for produit in produits_data:
@@ -6616,9 +6637,10 @@ def api_vente_pharma():
                 taux_original,
                 assurance_principale_active,
                 taux_aide,
-                aide_hospitaliere
+                aide_hospitaliere,
+                type_aide
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             patient_id,
@@ -6645,7 +6667,8 @@ def api_vente_pharma():
             taux_original,
             assurance_principale_active,  # 🔥 NOUVEAU
             taux_aide,                    # 🔥 NOUVEAU
-            aide_hospitaliere             # 🔥 NOUVEAU
+            aide_hospitaliere,            # 🔥 NOUVEAU
+            type_aide                     # 🔥 NOUVEAU
         ))
 
         if not result or len(result) == 0:
@@ -7053,8 +7076,14 @@ def api_add_acte_vente():
         assurance_principale_active = data.get('assurance_principale_active', True)
         taux_aide = float(data.get('taux_aide', 0))
         aide_hospitaliere = float(data.get('aide_hospitaliere', 0))
+        # ⭐ Voir le même garde-fou dans api_vente_pharma() — défense en
+        # profondeur, le plafond à 100% n'était vérifié que côté JS.
+        type_aide = data.get('type_aide', 'pourcentage')
+        if type_aide not in ('pourcentage', 'montant'):
+            type_aide = 'pourcentage'
+        if type_aide == 'pourcentage' and taux_aide > 100:
+            taux_aide = 100
 
-        
         # 🔥 Récupérer les actes avec leurs infos de prise en charge
         actes_data = data.get('actes', [])
         for acte in actes_data:
@@ -7117,9 +7146,10 @@ def api_add_acte_vente():
                 taux_original,
                 assurance_principale_active,
                 taux_aide,
-                aide_hospitaliere
+                aide_hospitaliere,
+                type_aide
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             patient_id,
@@ -7146,7 +7176,8 @@ def api_add_acte_vente():
             taux_original,
             assurance_principale_active,  # 🔥 NOUVEAU
             taux_aide,                    # 🔥 NOUVEAU
-            aide_hospitaliere             # 🔥 NOUVEAU
+            aide_hospitaliere,            # 🔥 NOUVEAU
+            type_aide                     # 🔥 NOUVEAU
         ))
 
         if not result or len(result) == 0:
@@ -7306,10 +7337,11 @@ def api_get_all_ventes():
                 p.societe_assurance2 as patient_societe_assurance2,
                 v.taux_aide,
                 v.aide_hospitaliere,
-                v.prise_en_charge
+                v.prise_en_charge,
+                v.type_aide
             FROM ventes v
             LEFT JOIN patients p ON v.patient_id = p.id
-            WHERE v.structure_id = %s 
+            WHERE v.structure_id = %s
             AND (v.statut IS NULL OR v.statut != 'annulee')
             ORDER BY v.date_vente DESC
         """, (structure_id,))
@@ -7428,6 +7460,7 @@ def api_get_all_ventes():
 
                 taux_aide = float(v.get('taux_aide', 0)) if v.get('taux_aide') is not None else 0
                 aide_hospitaliere = float(v.get('aide_hospitaliere', 0)) if v.get('aide_hospitaliere') is not None else 0
+                type_aide = v.get('type_aide') or 'pourcentage'
                 prise_en_charge = float(v.get('prise_en_charge', 0)) if v.get('prise_en_charge') is not None else 0
                 
                 result.append({
@@ -7456,6 +7489,7 @@ def api_get_all_ventes():
                     'taux_aide': taux_aide,
                     'prise_en_charge': prise_en_charge,
                     'aide_hospitaliere': aide_hospitaliere,
+                    'type_aide': type_aide,
                     # 🔥 Ajouter le nombre d'articles pour l'affichage
                     'nb_actes': len(actes_data),
                     'nb_produits': len(produits_data),
@@ -9765,7 +9799,27 @@ def api_creer_proforma():
             net_a_payer = sous_total - prise_en_charge - prise_en_charge2
             if net_a_payer < 0:
                 net_a_payer = 0
-        
+
+        # 🔥🔥🔥 AIDE HOSPITALIÈRE 🔥🔥🔥
+        # ⭐ Absente jusqu'ici du formulaire de création proforma — ajoutée
+        # pour que le même mécanisme % (plafonné à 100) ou montant direct
+        # qu'en vente directe fonctionne aussi ici (voir api_vente_pharma).
+        type_aide = data.get('type_aide', 'pourcentage')
+        if type_aide not in ('pourcentage', 'montant'):
+            type_aide = 'pourcentage'
+        taux_aide = float(data.get('taux_aide', 0) or 0)
+        if taux_aide < 0:
+            taux_aide = 0
+        if type_aide == 'pourcentage' and taux_aide > 100:
+            taux_aide = 100
+
+        aide_hospitaliere = 0
+        if taux_aide > 0 and net_a_payer > 0:
+            aide_hospitaliere = min(taux_aide, net_a_payer) if type_aide == 'montant' else (net_a_payer * taux_aide) / 100
+            net_a_payer -= aide_hospitaliere
+            if net_a_payer < 0:
+                net_a_payer = 0
+
         print(f"📊 Sous-total clinique: {sous_total} FCFA")
         print(f"📊 Base remboursement (PBR): {base_remboursement} FCFA")
         print(f"📊 Prise en charge AMU: {prise_en_charge} FCFA")
@@ -9831,9 +9885,10 @@ def api_creer_proforma():
                 expires_at,
                 numero_proforma,
                 assurances_data,
-                base_cac
+                base_cac,
+                taux_aide, aide_hospitaliere, type_aide
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
             RETURNING id
         """, (
             structure_id,
@@ -9861,7 +9916,8 @@ def api_creer_proforma():
             expires_at,
             prochain_numero,
             json.dumps(assurances_data, ensure_ascii=False),
-            base_cac_articles  # 🔥 NOUVEAU
+            base_cac_articles,  # 🔥 NOUVEAU
+            taux_aide, aide_hospitaliere, type_aide
         ))
         
         proforma_id = result[0]['id']
@@ -9881,7 +9937,10 @@ def api_creer_proforma():
             'assurance2_nom': assurance2_nom if assurance2_active else '',
             'taux_assurance2': taux_assurance2 if assurance2_active else 0,
             'taux_modifie': taux_modifie,
-            'taux_original': taux_original
+            'taux_original': taux_original,
+            'taux_aide': taux_aide,
+            'aide_hospitaliere': aide_hospitaliere,
+            'type_aide': type_aide
         })
         
     except Exception as e:
@@ -10228,9 +10287,33 @@ def api_convertir_proforma():
         
         # 🔥 Net à payer
         net_a_payer = sous_total - prise_en_charge - prise_en_charge2
+
+        # 🔥🔥🔥 AIDE HOSPITALIÈRE 🔥🔥🔥
+        # ⭐ Jusqu'ici totalement ignorée à la conversion : taux_aide et
+        # aide_hospitaliere étaient insérés en dur à 0, quelle que soit la
+        # valeur réellement présente sur la proforma d'origine — le net à
+        # payer d'une vente issue d'une proforma ne reflétait donc jamais
+        # l'aide hospitalière. Même garde-fou qu'en vente directe (voir
+        # api_vente_pharma/api_add_acte_vente) : le % n'était plafonné à
+        # 100 que côté JS.
+        type_aide = data.get('type_aide', 'pourcentage')
+        if type_aide not in ('pourcentage', 'montant'):
+            type_aide = 'pourcentage'
+        taux_aide = float(data.get('taux_aide', 0) or 0)
+        if taux_aide < 0:
+            taux_aide = 0
+        if type_aide == 'pourcentage' and taux_aide > 100:
+            taux_aide = 100
+
+        aide_hospitaliere = 0
+        base_aide = net_a_payer
+        if taux_aide > 0 and base_aide > 0:
+            aide_hospitaliere = min(taux_aide, base_aide) if type_aide == 'montant' else (base_aide * taux_aide) / 100
+            net_a_payer = base_aide - aide_hospitaliere
+
         if net_a_payer < 0:
             net_a_payer = 0
-        
+
         print(f"📊 Conversion proforma #{proforma_id}")
         print(f"   Sous-total: {sous_total} FCFA")
         print(f"   Base remboursement (PBR): {base_remboursement} FCFA")
@@ -10263,9 +10346,9 @@ def api_convertir_proforma():
                 montant_donne, rendu, reste_a_payer,
                 assurance_principale_active, proforma_id,
                 base_remboursement,
-                taux_aide, aide_hospitaliere
+                taux_aide, aide_hospitaliere, type_aide
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s::jsonb, %s, 'validee', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s::jsonb, %s, 'validee', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             data.get('patient_id'),
@@ -10290,8 +10373,9 @@ def api_convertir_proforma():
             data.get('assurance_principale_active', True),
             proforma_id,
             base_remboursement,
-            0,  # taux_aide
-            0   # aide_hospitaliere
+            taux_aide,
+            aide_hospitaliere,
+            type_aide
         ))
 
         if not result or len(result) == 0:

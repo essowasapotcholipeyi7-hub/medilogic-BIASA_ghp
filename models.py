@@ -912,6 +912,14 @@ class Vente(db.Model):
     # ⭐ NOUVELLES COLONNES À AJOUTER
     taux_aide = db.Column(db.Float, default=0)
     aide_hospitaliere = db.Column(db.Float, default=0)
+    # ⭐ L'aide hospitalière pouvait seulement être saisie en % — un taux mal
+    # tapé (ex: 500 au lieu de 50) donnait un net à payer négatif. Ajout
+    # d'un mode "montant direct" ; ce champ trace lequel des deux a été
+    # utilisé (taux_aide reste le % dans un cas, le montant brut saisi dans
+    # l'autre — voir calculerTotal() dans pharma_vente.html/actes_vente.html).
+    # Défaut 'pourcentage' : les lignes existantes (toutes en %) restent
+    # correctement interprétées sans migration de données.
+    type_aide = db.Column(db.String(20), default='pourcentage')  # 'pourcentage' | 'montant'
     proforma_id = db.Column(db.Integer, nullable=True)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -1793,6 +1801,13 @@ class Proforma(db.Model):
     assurances_data = db.Column(db.JSON)
     base_remboursement = db.Column(db.Numeric, default=0)
     base_cac = db.Column(db.Numeric, default=0)
+    # ⭐ Aide hospitalière (remise) — absente jusqu'ici du formulaire de
+    # création proforma ; ajoutée pour que le même mécanisme (% ou montant
+    # direct, voir Vente.type_aide) fonctionne aussi ici, pas seulement en
+    # vente directe. Portée telle quelle à la vente à la conversion.
+    taux_aide = db.Column(db.Numeric, default=0)
+    aide_hospitaliere = db.Column(db.Numeric, default=0)
+    type_aide = db.Column(db.String(20), default='pourcentage')  # 'pourcentage' | 'montant'
 
 
 class ProformaLunette(db.Model):
