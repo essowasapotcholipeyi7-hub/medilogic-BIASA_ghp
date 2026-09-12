@@ -707,7 +707,15 @@
                         <span>{{ sous_total|default(proforma.sous_total)|round(0)|int }} FCFA</span>
                     </div>
                     
-                    {% if base_remboursement and base_remboursement > 0 %}
+                    {# ⭐ FIX : cette ligne s'affichait même quand l'assurance
+                       principale est désactivée (base_remboursement est
+                       calculée par article, indépendamment du statut de
+                       l'assurance du patient) — on voyait "Non assuré" en
+                       tête puis une "Base remboursement (PBR)" non nulle
+                       juste en dessous, sans aucune prise en charge
+                       correspondante : données contradictoires signalées
+                       par le patron sur une proforma AMU-TNS désactivée. #}
+                    {% if base_remboursement and base_remboursement > 0 and est_assure %}
                     <div class="ligne" style="font-size:11px; border-top:1px dashed #ddd; padding-top:4px; margin-top:4px;">
                         <span>Base remboursement (PBR)</span>
                         <span>{{ base_remboursement|round(0)|int }} FCFA</span>

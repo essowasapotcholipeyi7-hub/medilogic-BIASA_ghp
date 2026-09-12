@@ -2437,8 +2437,15 @@ def recu(vente_id, type):
                 taux_modifie = True
                 print(f"🔴 TAUX MODIFIÉ DÉTECTÉ: {taux_assurance2}% (original: {patient_taux_original}%)")
         
-        est_assure = type_assurance in ['amu_cnss', 'amu_inam', 'amu_tns']
-        
+        # ⭐ FIX : `est_assure` ne tenait compte que du type d'assurance du
+        # PATIENT, pas de assurance_principale_active (peut être désactivée
+        # pour CETTE vente précise) — le reçu affichait alors une "Base
+        # remboursement (PBR)" non nulle malgré une assurance désactivée,
+        # données contradictoires (même bug que templates/proformas/
+        # proforma_print.html, signalé par le patron sur une vente AMU-TNS
+        # désactivée).
+        est_assure = type_assurance in ['amu_cnss', 'amu_inam', 'amu_tns'] and assurance_principale_active
+
         # 🔥🔥🔥 CORRECTION : Récupérer les articles (actes + produits) 🔥🔥🔥
         # Récupérer les actes
         actes_data = v.get('actes', [])
