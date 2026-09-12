@@ -165,10 +165,10 @@
                                         title="Voir les détails">
                                     <i class="fas fa-eye"></i>
                                 </button>
-                                <button class="btn btn-sm btn-outline-secondary"
+                                <button class="btn btn-sm btn-outline-warning px-2"
                                         onclick="editPatient({{ patient.ID }})"
-                                        title="Modifier">
-                                    <i class="fas fa-pen"></i>
+                                        title="Modifier ce patient">
+                                    <i class="fas fa-pen me-1"></i> Modifier
                                 </button>
                                 <button class="btn btn-sm btn-outline-danger"
                                         onclick="supprimerPatient({{ patient.ID }})"
@@ -337,7 +337,7 @@
                                     <input type="number" class="form-control" id="taux_prise_charge" value="0" min="0" max="100" step="5">
                                 </div>
                                 <div class="col-md-3 mb-2" id="numero_assure_div" style="display:none;">
-                                    <label class="form-label">N° Assuré</label>
+                                    <label class="form-label">N° Assuré *</label>
                                     <input type="text" class="form-control" id="numero_assure" placeholder="Numéro de carte">
                                 </div>
                             </div>
@@ -524,7 +524,7 @@
                                     <input type="number" class="form-control" id="editTaux" min="0" max="100" step="5">
                                 </div>
                                 <div class="col-md-3 mb-2" id="editNumeroAssureDiv" style="display:none;">
-                                    <label class="form-label">N° Assuré</label>
+                                    <label class="form-label">N° Assuré *</label>
                                     <input type="text" class="form-control" id="editNumeroAssure">
                                 </div>
                             </div>
@@ -1604,7 +1604,16 @@ function savePatient() {
         alert('Veuillez remplir les champs obligatoires (Nom et Téléphone)');
         return;
     }
-    
+
+    // ⭐ Numéro d'assuré obligatoire dès qu'une assurance principale est
+    // sélectionnée (non_assure exclu) — évite des dossiers d'assurance
+    // incomplets, signalé explicitement par le patron.
+    if (typeAssurance !== 'non_assure' && !patient.numero_assure) {
+        alert("Le numéro d'assuré est obligatoire pour l'assurance sélectionnée.");
+        document.getElementById('numero_assure').focus();
+        return;
+    }
+
     let tauxPrincipal = patient.taux_prise_charge;
     if (patient.type_assurance !== 'non_assure' && tauxPrincipal === 0) {
         if (!confirm(`Le taux de l'assurance "${patient.type_assurance}" est à 0%. Voulez-vous continuer ?`)) {
@@ -1612,9 +1621,17 @@ function savePatient() {
             return;
         }
     }
-    
+
+    // ⭐ Anti double-clic : désactiver le bouton pendant l'enregistrement
+    // (les secrétaires cliquaient parfois deux fois, créant des doublons).
+    const btnSave = document.querySelector('#patientModal .btn-info[onclick="savePatient()"]');
+    if (btnSave) {
+        btnSave.disabled = true;
+        btnSave.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Enregistrement...';
+    }
+
     showLoader('Enregistrement du patient...');
-    
+
     fetch('/api/patients', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -1628,11 +1645,19 @@ function savePatient() {
             location.reload();
         } else {
             alert('❌ Erreur: ' + (data.error || 'Erreur inconnue'));
+            if (btnSave) {
+                btnSave.disabled = false;
+                btnSave.innerHTML = 'Enregistrer';
+            }
         }
     })
     .catch(error => {
         hideLoader();
         alert('❌ Erreur lors de l\'enregistrement: ' + error);
+        if (btnSave) {
+            btnSave.disabled = false;
+            btnSave.innerHTML = 'Enregistrer';
+        }
     });
 }
 
@@ -1644,7 +1669,15 @@ function editPatient(id) {
         alert('Erreur: ID patient invalide');
         return;
     }
-    
+
+    // ⭐ Le modal est réutilisé d'un patient à l'autre sans rechargement de
+    // page — s'assurer que le bouton Enregistrer repart toujours actif.
+    const btnSaveReset = document.querySelector('#editPatientModal .btn-warning[onclick="saveEditPatient()"]');
+    if (btnSaveReset) {
+        btnSaveReset.disabled = false;
+        btnSaveReset.innerHTML = 'Enregistrer';
+    }
+
     const row = document.querySelector(`tr.patient-row[data-id="${id}"]`);
     if (!row) {
         alert('Patient non trouvé');
@@ -1854,9 +1887,24 @@ function saveEditPatient() {
         alert('Veuillez remplir les champs obligatoires');
         return;
     }
-    
+
+    // ⭐ Numéro d'assuré obligatoire dès qu'une assurance principale est
+    // sélectionnée (non_assure exclu) — même règle qu'à l'ajout.
+    if (typeAssurance !== 'non_assure' && !patient.numero_assure) {
+        alert("Le numéro d'assuré est obligatoire pour l'assurance sélectionnée.");
+        document.getElementById('editNumeroAssure').focus();
+        return;
+    }
+
+    // ⭐ Anti double-clic : désactiver le bouton pendant la modification.
+    const btnSave = document.querySelector('#editPatientModal .btn-warning[onclick="saveEditPatient()"]');
+    if (btnSave) {
+        btnSave.disabled = true;
+        btnSave.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Enregistrement...';
+    }
+
     showLoader('Modification du patient...');
-    
+
     fetch(`/api/patients/${id}`, {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
@@ -1870,11 +1918,19 @@ function saveEditPatient() {
             location.reload();
         } else {
             alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+            if (btnSave) {
+                btnSave.disabled = false;
+                btnSave.innerHTML = 'Enregistrer';
+            }
         }
     })
     .catch(error => {
         hideLoader();
         alert('Erreur lors de la modification: ' + error);
+        if (btnSave) {
+            btnSave.disabled = false;
+            btnSave.innerHTML = 'Enregistrer';
+        }
     });
 }
 

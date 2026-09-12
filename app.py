@@ -1248,6 +1248,13 @@ def api_add_patient():
         data = request.json
         structure_id = session.get('structure_id')
 
+        # ⭐ Numéro d'assuré obligatoire dès qu'une assurance principale est
+        # sélectionnée — déjà vérifié côté JS, revérifié ici en défense en
+        # profondeur (appel direct à l'API, sync gestion_patients, etc.).
+        type_assurance = data.get('type_assurance', 'non_assure')
+        if type_assurance and type_assurance != 'non_assure' and not (data.get('numero_assure') or '').strip():
+            return jsonify({'success': False, 'error': "Le numéro d'assuré est obligatoire pour l'assurance sélectionnée."}), 400
+
         # 🔥 Ajouter les colonnes de la personne à prévenir
         # ⭐ created_at fixé explicitement à NOW() — ne pas compter sur un
         # DEFAULT au niveau de la table (absent sur certaines bases, ce qui
@@ -5739,7 +5746,13 @@ def api_update_patient(patient_id):
     try:
         data = request.json
         structure_id = session.get('structure_id')
-        
+
+        # ⭐ Numéro d'assuré obligatoire dès qu'une assurance principale est
+        # sélectionnée — même règle qu'à la création (voir api_add_patient).
+        type_assurance = data.get('type_assurance', 'non_assure')
+        if type_assurance and type_assurance != 'non_assure' and not (data.get('numero_assure') or '').strip():
+            return jsonify({'success': False, 'error': "Le numéro d'assuré est obligatoire pour l'assurance sélectionnée."}), 400
+
         # 🔥 Ajouter les colonnes de la personne à prévenir
         db.execute_query("""
             UPDATE patients
