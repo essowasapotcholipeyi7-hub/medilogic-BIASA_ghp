@@ -72,6 +72,48 @@ CATEGORIES_ACTES = {
 ASSURANCES_PRINCIPALES = ['amu_cnss', 'amu_inam', 'amu_tns']
 
 
+def _label_assurance(nom):
+    """Libellé propre pour un nom d'assurance (principale AMU ou société
+    libre en principale/complémentaire) : AMU-CNSS/AMU-INAM/AMU-TNS pour les
+    3 codes AMU, sinon le nom tel que saisi (en majuscules)."""
+    nom_lower = (nom or '').lower()
+    if nom_lower == 'amu_cnss':
+        return 'AMU-CNSS'
+    elif nom_lower == 'amu_inam':
+        return 'AMU-INAM'
+    elif nom_lower == 'amu_tns':
+        return 'AMU-TNS'
+    return ASSURANCE_LABELS.get(nom_lower, (nom or '').upper())
+
+
+def _parse_assurance_filter(assurance_filter):
+    """Découpe la valeur du filtre "Assurance" en (type, nom).
+
+    ⭐ FIX : le même nom (ex: "GTA") peut désigner DEUX choses différentes
+    et sans rapport — une compagnie choisie comme assurance PRINCIPALE
+    "Autre" (Patient.type_assurance = "GTA" littéralement, saisi via le
+    champ libre du formulaire patient) et une compagnie utilisée comme
+    assurance COMPLÉMENTAIRE (Vente.assurance2_nom = "GTA"). Fusionner les
+    deux dans une seule option de filtre "gta" (comme avant) donnait un
+    nombre de patients affiché dans le menu qui ne correspondait à AUCUN
+    des deux groupes réels, et pouvait mélanger les deux dans la liste
+    résultante. Le filtre encode donc maintenant explicitement le type
+    ("principale:gta" / "complementaire:gta"), pour ne jamais deviner sur
+    quelle colonne filtrer.
+
+    Conserve la compatibilité avec d'anciens liens/favoris sans préfixe
+    (ex: "amu_cnss", "gta") en retombant sur l'ancienne heuristique."""
+    if assurance_filter in ('toutes', 'non_assure', None, ''):
+        return assurance_filter or 'toutes', None
+    if ':' in assurance_filter:
+        type_hint, nom = assurance_filter.split(':', 1)
+        return type_hint, nom
+    # Compatibilité ascendante : ancienne valeur sans préfixe
+    if assurance_filter.lower() in ASSURANCES_PRINCIPALES:
+        return 'principale', assurance_filter
+    return 'complementaire', assurance_filter
+
+
 # ============================================================
 # PAGE PRINCIPALE
 # ============================================================
@@ -87,116 +129,109 @@ def index():
 
 @statistiques_bp.route('/assurances/liste')
 def api_assurances_liste():
-    """Récupère la liste de TOUTES les assurances utilisées"""
+    """Récupère la liste de TOUTES les assurances utilisées, PRINCIPALES et
+    COMPLÉMENTAIRES gardées explicitement séparées.
+
+    ⭐ FIX : un même nom (ex: "GTA") peut désigner une compagnie choisie en
+    assurance PRINCIPALE "Autre" (Patient.type_assurance = "GTA", saisi tel
+    quel via le champ libre du formulaire patient) ET une compagnie utilisée
+    comme assurance COMPLÉMENTAIRE (Vente.assurance2_nom = "GTA") — deux
+    groupes de patients sans rapport. L'ancienne version fusionnait les deux
+    en une seule option de filtre, avec un nombre de patients qui ne
+    correspondait à AUCUN des deux groupes réels (toujours compté sur
+    Patient.type_assurance, même pour les compagnies complémentaires) — et
+    la sélection résultante pouvait mélanger les deux. Chaque option porte
+    maintenant une clé explicite "principale:xxx" / "complementaire:xxx"
+    (voir _parse_assurance_filter), pour qu'on n'ait plus jamais à deviner
+    sur quelle colonne filtrer."""
     try:
         structure_id = session.get('structure_id')
-        
+
         if not structure_id:
             return jsonify({'error': 'Structure non trouvée'}), 400
-        
-        # Récupérer les assurances principales depuis Patient.type_assurance
-        assurances_patient = db.session.query(
-            Patient.type_assurance,
-            db.func.count(Patient.id).label('count')
-        ).filter(
-            Patient.structure_id == structure_id,
-            Patient.type_assurance != None,
-            Patient.type_assurance != '',
-            Patient.type_assurance != 'non_assure'
-        ).group_by(Patient.type_assurance).all()
-        
-        # Récupérer les assurances complémentaires depuis Vente.assurance2_nom
-        assurances_complementaires = db.session.query(
-            Vente.assurance2_nom,
-            db.func.count(Vente.id).label('count')
-        ).filter(
-            Vente.structure_id == structure_id,
-            # ⭐ FIX : statut NULL = vente active, comme partout ailleurs
-            # dans le code (ex: "statut IS NULL OR statut != 'annulee'") —
-            # l'INSERT de /api/ventes/actes ne renseigne pas cette colonne,
-            # donc une vente d'actes valide a très souvent statut=NULL.
-            # Une égalité stricte à 'validee' excluait donc ces ventes.
-            or_(Vente.statut == 'validee', Vente.statut.is_(None)),
-            Vente.assurance2_nom != None,
-            Vente.assurance2_nom != '',
-            Vente.assurance2_nom != 'Aucune'
-        ).group_by(Vente.assurance2_nom).all()
-        
-        toutes_assurances = set()
-        
-        for row in assurances_patient:
-            if row[0]:
-                toutes_assurances.add(row[0].lower().strip())
-        
-        for row in assurances_complementaires:
-            if row[0]:
-                toutes_assurances.add(row[0].lower().strip())
-        
-        # Ajouter 'non_assure' si des patients non assurés existent
-        non_assures = db.session.query(Patient).filter(
+
+        result_list = []
+
+        # --- Non assuré ---
+        nb_non_assure = db.session.query(Patient.id).filter(
             Patient.structure_id == structure_id,
             or_(
                 Patient.type_assurance == None,
                 Patient.type_assurance == '',
                 Patient.type_assurance == 'non_assure'
             )
-        ).first()
-        
-        if non_assures:
-            toutes_assurances.add('non_assure')
-        
-        result_list = []
-        
-        for assurance in sorted(toutes_assurances):
-            if assurance == 'non_assure':
-                nb = db.session.query(Patient.id).filter(
-                    Patient.structure_id == structure_id,
-                    or_(
-                        Patient.type_assurance == None,
-                        Patient.type_assurance == '',
-                        Patient.type_assurance == 'non_assure'
-                    )
-                ).count()
-                label = 'Non assuré'
-                type_assurance = 'non_assure'
-            else:
-                nb = db.session.query(Patient.id).filter(
-                    Patient.structure_id == structure_id,
-                    Patient.type_assurance.ilike(f'%{assurance}%')
-                ).count()
-                
-                if assurance in ['amu_cnss', 'amu-cnss']:
-                    label = 'AMU-CNSS'
-                    type_assurance = 'principale'
-                elif assurance in ['amu_inam', 'amu-inam']:
-                    label = 'AMU-INAM'
-                    type_assurance = 'principale'
-                elif assurance in ['amu_tns', 'amu-tns']:
-                    label = 'AMU-TNS'
-                    type_assurance = 'principale'
-                else:
-                    label = ASSURANCE_LABELS.get(assurance, assurance.upper())
-                    type_assurance = 'complementaire'
-            
+        ).count()
+        if nb_non_assure:
             result_list.append({
-                'key': assurance,
-                'label': label,
-                'nb_patients': nb or 0,
-                'type': type_assurance
+                'key': 'non_assure', 'label': 'Non assuré',
+                'nb_patients': nb_non_assure, 'type': 'non_assure'
             })
-        
+
+        # --- Assurances PRINCIPALES : valeurs distinctes de Patient.type_assurance
+        # (AMU-CNSS/INAM/TNS, ou une compagnie libre saisie via "Autre") ---
+        principales = db.session.query(Patient.type_assurance).filter(
+            Patient.structure_id == structure_id,
+            Patient.type_assurance != None,
+            Patient.type_assurance != '',
+            Patient.type_assurance != 'non_assure'
+        ).distinct().all()
+
+        for row in principales:
+            nom = (row[0] or '').strip()
+            if not nom:
+                continue
+            nb = db.session.query(Patient.id).filter(
+                Patient.structure_id == structure_id,
+                db.func.lower(Patient.type_assurance) == nom.lower()
+            ).count()
+            result_list.append({
+                'key': f'principale:{nom.lower()}',
+                'label': _label_assurance(nom),
+                'nb_patients': nb,
+                'type': 'principale'
+            })
+
+        # --- Assurances COMPLÉMENTAIRES : valeurs distinctes de Vente.assurance2_nom ---
+        complementaires = db.session.query(Vente.assurance2_nom).filter(
+            Vente.structure_id == structure_id,
+            # ⭐ statut NULL = vente active, comme partout ailleurs dans le
+            # code (ex: "statut IS NULL OR statut != 'annulee'") —
+            # l'INSERT de /api/ventes/actes ne renseigne pas cette colonne,
+            # donc une vente d'actes valide a très souvent statut=NULL.
+            or_(Vente.statut == 'validee', Vente.statut.is_(None)),
+            Vente.assurance2_nom != None,
+            Vente.assurance2_nom != '',
+            Vente.assurance2_nom != 'Aucune'
+        ).distinct().all()
+
+        for row in complementaires:
+            nom = (row[0] or '').strip()
+            if not nom:
+                continue
+            nb = db.session.query(Vente.patient_id).filter(
+                Vente.structure_id == structure_id,
+                or_(Vente.statut == 'validee', Vente.statut.is_(None)),
+                db.func.lower(Vente.assurance2_nom) == nom.lower()
+            ).distinct().count()
+            result_list.append({
+                'key': f'complementaire:{nom.lower()}',
+                'label': _label_assurance(nom),
+                'nb_patients': nb,
+                'type': 'complementaire'
+            })
+
         def sort_key(x):
-            if x['type'] == 'non_assure':
-                return (2, x['label'])
-            elif x['type'] == 'principale':
+            if x['type'] == 'principale':
                 return (0, x['label'])
-            else:
+            elif x['type'] == 'complementaire':
                 return (1, x['label'])
-        
+            else:
+                return (2, x['label'])
+
         result_list.sort(key=sort_key)
-        
+
         return jsonify(result_list)
-        
+
     except Exception as e:
         print(f"❌ Erreur api_assurances_liste: {e}")
         import traceback
@@ -355,34 +390,30 @@ def _ventes_filtrees(structure_id, periode, date_debut_str, date_fin_str,
             query = query.filter(Vente.id == -1)
 
     # Filtrer par type d'assurance
-    if type_assurance != 'toutes':
-        if type_assurance == 'principale':
-            query = query.filter(
-                or_(
-                    Patient.type_assurance.ilike('%amu_cnss%'),
-                    Patient.type_assurance.ilike('%amu_inam%')
-                )
-            )
-        elif type_assurance == 'complementaire':
-            query = query.filter(
-                and_(
-                    Vente.assurance2_nom != None,
-                    Vente.assurance2_nom != '',
-                    Vente.assurance2_nom != 'Aucune'
-                )
-            )
-        elif type_assurance == 'double':
-            query = query.filter(
-                and_(
-                    or_(
-                        Patient.type_assurance.ilike('%amu_cnss%'),
-                        Patient.type_assurance.ilike('%amu_inam%')
-                    ),
-                    Vente.assurance2_nom != None,
-                    Vente.assurance2_nom != '',
-                    Vente.assurance2_nom != 'Aucune'
-                )
-            )
+    # ⭐ FIX : ne vérifiait que amu_cnss/amu_inam (AMU-TNS oublié — absent au
+    # moment de l'introduction de cette 3ᵉ branche AMU) et, plus important,
+    # ignorait toute assurance principale "Autre" (compagnie libre saisie
+    # via le formulaire patient, ex: Patient.type_assurance = "GTA") — un
+    # patient avec une telle principale n'a jamais aucun de ces deux
+    # filtres ("principale"/"double") : "a une assurance principale" veut
+    # dire concrètement "type_assurance renseigné et différent de
+    # non_assure", quelle que soit la compagnie.
+    a_une_principale = and_(
+        Patient.type_assurance != None,
+        Patient.type_assurance != '',
+        Patient.type_assurance != 'non_assure'
+    )
+    a_une_complementaire = and_(
+        Vente.assurance2_nom != None,
+        Vente.assurance2_nom != '',
+        Vente.assurance2_nom != 'Aucune'
+    )
+    if type_assurance == 'principale':
+        query = query.filter(a_une_principale)
+    elif type_assurance == 'complementaire':
+        query = query.filter(a_une_complementaire)
+    elif type_assurance == 'double':
+        query = query.filter(a_une_principale, a_une_complementaire)
 
     # Filtrer par assurance spécifique
     if assurance_filter != 'toutes':
@@ -406,13 +437,24 @@ def _ventes_filtrees(structure_id, periode, date_debut_str, date_fin_str,
                 )
             )
         else:
-            if assurance_filter.lower() in ASSURANCES_PRINCIPALES:
+            # ⭐ FIX : la colonne à filtrer (Patient.type_assurance ou
+            # Vente.assurance2_nom) était devinée après coup via
+            # ASSURANCES_PRINCIPALES — ça marche pour les 3 codes AMU, mais
+            # pas pour une compagnie choisie en principale "Autre" (ex:
+            # Patient.type_assurance = "GTA" littéralement) qui porte le
+            # MÊME nom qu'une compagnie complémentaire ("GTA" en
+            # Vente.assurance2_nom) : les deux tombaient dans la même case
+            # "gta" et se mélangeaient. Le type est maintenant explicite
+            # dans la clé du filtre (voir _parse_assurance_filter),
+            # sélectionnée à partir de la vraie colonne d'origine.
+            type_hint, nom = _parse_assurance_filter(assurance_filter)
+            if type_hint == 'principale':
                 query = query.filter(
-                    Patient.type_assurance.ilike(f'%{assurance_filter}%')
+                    db.func.lower(Patient.type_assurance) == nom.lower()
                 )
             else:
                 query = query.filter(
-                    Vente.assurance2_nom.ilike(f'%{assurance_filter}%')
+                    db.func.lower(Vente.assurance2_nom) == nom.lower()
                 )
 
     ventes = query.all()
@@ -684,9 +726,11 @@ def calculer_stats_assurances(ventes, patients, patients_dict):
     })
 
     for vente in ventes:
-        assurance_principale = patients_dict.get(vente.patient_id, 'non_assure') or 'non_assure'
-        if assurance_principale == '':
-            assurance_principale = 'non_assure'
+        # ⭐ Normalisé en minuscules — Patient.type_assurance peut porter une
+        # compagnie "Autre" saisie librement (ex: "GTA"), sinon la même
+        # assurance principale finissait dans deux clés différentes selon
+        # la casse d'origine ("GTA" / "gta").
+        assurance_principale = (patients_dict.get(vente.patient_id) or 'non_assure').strip().lower() or 'non_assure'
 
         if assurance_principale != 'non_assure':
             data = assurance_data[assurance_principale]
@@ -730,14 +774,7 @@ def calculer_stats_assurances(ventes, patients, patients_dict):
 
     result = []
     for assurance, data in assurance_data.items():
-        if assurance == 'non_assure':
-            assurance_label = 'Non assuré'
-        elif assurance == 'amu_cnss':
-            assurance_label = 'AMU-CNSS'
-        elif assurance == 'amu_inam':
-            assurance_label = 'AMU-INAM'
-        else:
-            assurance_label = ASSURANCE_LABELS.get(assurance, assurance.upper())
+        assurance_label = 'Non assuré' if assurance == 'non_assure' else _label_assurance(assurance)
 
         patients_details = []
         for patient_id in data['patients']:
@@ -812,8 +849,14 @@ def get_patients_par_assurance(ventes, patients, patients_dict, type_assurance='
     # "Non assuré" par patient, jamais de ligne principale/complémentaire.
     est_filtre_non_assure = assurance_filter == 'non_assure'
     est_filtre_actif = assurance_filter != 'toutes' and not est_filtre_non_assure
-    est_filtre_principale = est_filtre_actif and assurance_filter.lower() in ASSURANCES_PRINCIPALES
-    est_filtre_complementaire = est_filtre_actif and not est_filtre_principale
+    # ⭐ FIX : le type (principale/complémentaire) vient maintenant de la clé
+    # explicite du filtre (voir _parse_assurance_filter), plus d'une
+    # déduction via ASSURANCES_PRINCIPALES qui ratait toute assurance
+    # principale "Autre" (compagnie libre, même nom possible qu'une
+    # complémentaire — voir le commentaire détaillé sur _parse_assurance_filter).
+    filtre_type_hint, filtre_nom = _parse_assurance_filter(assurance_filter) if est_filtre_actif else (None, None)
+    est_filtre_principale = est_filtre_actif and filtre_type_hint == 'principale'
+    est_filtre_complementaire = est_filtre_actif and filtre_type_hint == 'complementaire'
     
     for patient in patients:
         ventes_patient = [v for v in ventes if v.patient_id == patient.id]
@@ -858,10 +901,12 @@ def get_patients_par_assurance(ventes, patients, patients_dict, type_assurance='
             details_affichage = ", ".join(details_liste)
 
         
-        assurance_principale = patients_dict.get(patient.id, 'non_assure') or 'non_assure'
-        if assurance_principale == '':
-            assurance_principale = 'non_assure'
-        
+        # ⭐ Normalisé en minuscules dès ici — Patient.type_assurance peut
+        # porter une compagnie "Autre" saisie librement (ex: "GTA"), et
+        # toutes les comparaisons ci-dessous (avec 'non_assure', avec le nom
+        # du filtre actif...) doivent être insensibles à la casse.
+        assurance_principale = (patients_dict.get(patient.id) or 'non_assure').strip().lower() or 'non_assure'
+
         assurance_complementaire = ''
         societe_assurance2 = ''
         for v in ventes_patient:
@@ -914,11 +959,11 @@ def get_patients_par_assurance(ventes, patients, patients_dict, type_assurance='
         # CAS 1 : Filtre sur une assurance COMPLÉMENTAIRE
         # ============================================================
         if est_filtre_complementaire:
-            if assurance_complementaire == assurance_filter.lower():
+            if assurance_complementaire == filtre_nom.lower():
                 # Ligne de l'assurance COMPLÉMENTAIRE
                 result.append({
                     'assurance': assurance_complementaire,
-                    'assurance_label': assurance_complementaire.upper(),
+                    'assurance_label': _label_assurance(assurance_complementaire),
                     'type_assurance': 'complementaire',
                     'patient_id': patient.id,
                     'patient_nom': f"{patient.prenom} {patient.nom}".strip() or patient.nom,
@@ -938,16 +983,9 @@ def get_patients_par_assurance(ventes, patients, patients_dict, type_assurance='
 
                 # Ligne de l'assurance PRINCIPALE
                 if assurance_principale != 'non_assure':
-                    if assurance_principale == 'amu_cnss':
-                        label = 'AMU-CNSS'
-                    elif assurance_principale == 'amu_inam':
-                        label = 'AMU-INAM'
-                    else:
-                        label = assurance_principale.upper()
-                    
                     result.append({
                         'assurance': assurance_principale,
-                        'assurance_label': label,
+                        'assurance_label': _label_assurance(assurance_principale),
                         'type_assurance': 'principale',
                         'patient_id': patient.id,
                         'patient_nom': f"{patient.prenom} {patient.nom}".strip() or patient.nom,
@@ -960,22 +998,15 @@ def get_patients_par_assurance(ventes, patients, patients_dict, type_assurance='
                         'derniere_visite': derniere_visite.strftime('%d/%m/%Y') if derniere_visite else '',
                         'est_double_assurance': True
                     })
-        
+
         # ============================================================
         # CAS 2 : Filtre sur une assurance PRINCIPALE
         # ============================================================
         elif est_filtre_principale:
-            if assurance_principale == assurance_filter.lower():
-                if assurance_principale == 'amu_cnss':
-                    label = 'AMU-CNSS'
-                elif assurance_principale == 'amu_inam':
-                    label = 'AMU-INAM'
-                else:
-                    label = assurance_principale.upper()
-                
+            if assurance_principale == filtre_nom.lower():
                 result.append({
                     'assurance': assurance_principale,
-                    'assurance_label': label,
+                    'assurance_label': _label_assurance(assurance_principale),
                     'type_assurance': 'principale',
                     'patient_id': patient.id,
                     'patient_nom': f"{patient.prenom} {patient.nom}".strip() or patient.nom,
@@ -995,16 +1026,9 @@ def get_patients_par_assurance(ventes, patients, patients_dict, type_assurance='
         else:
             # Assurance principale
             if assurance_principale != 'non_assure':
-                if assurance_principale == 'amu_cnss':
-                    label = 'AMU-CNSS'
-                elif assurance_principale == 'amu_inam':
-                    label = 'AMU-INAM'
-                else:
-                    label = assurance_principale.upper()
-                
                 result.append({
                     'assurance': assurance_principale,
-                    'assurance_label': label,
+                    'assurance_label': _label_assurance(assurance_principale),
                     'type_assurance': 'principale',
                     'patient_id': patient.id,
                     'patient_nom': f"{patient.prenom} {patient.nom}".strip() or patient.nom,
@@ -1022,7 +1046,7 @@ def get_patients_par_assurance(ventes, patients, patients_dict, type_assurance='
             if assurance_complementaire and assurance_complementaire != '':
                 result.append({
                     'assurance': assurance_complementaire,
-                    'assurance_label': assurance_complementaire.upper(),
+                    'assurance_label': _label_assurance(assurance_complementaire),
                     'type_assurance': 'complementaire',
                     'patient_id': patient.id,
                     'patient_nom': f"{patient.prenom} {patient.nom}".strip() or patient.nom,
@@ -1106,11 +1130,22 @@ def liste_patients_print():
 
     structure = _get_structure_info(structure_id)
 
+    # ⭐ Libellé propre pour l'en-tête imprimé — l'ancienne version affichait
+    # la valeur brute du filtre en majuscules (ex: "PRINCIPALE:AMU_CNSS"
+    # depuis l'introduction de la clé composée type:nom).
+    if assurance_filter == 'toutes':
+        assurance_filtre_label = None
+    elif assurance_filter == 'non_assure':
+        assurance_filtre_label = 'Non assuré'
+    else:
+        _, nom_filtre = _parse_assurance_filter(assurance_filter)
+        assurance_filtre_label = _label_assurance(nom_filtre)
+
     return render_template(
         'statistiques_liste_patients_print.html',
         structure=structure,
         periode_libelle=dates['libelle'],
-        assurance_filtre=assurance_filter,
+        assurance_filtre=assurance_filtre_label,
         societe_filtre=societe_filtre,
         lignes=lignes,
         total_beneficiaire=total_beneficiaire,
@@ -1144,6 +1179,14 @@ def bordereau_assurance():
     if not assurance_code or assurance_code == 'toutes':
         return "Veuillez préciser une compagnie d'assurance (paramètre 'assurance')", 400
 
+    # ⭐ FIX : même correctif que _ventes_filtrees/get_patients_par_assurance
+    # — la colonne à filtrer (principale ou complémentaire) vient de la clé
+    # explicite du filtre, plus d'une déduction par nom qui mélangeait une
+    # compagnie "Autre" en principale avec la même compagnie en
+    # complémentaire (voir _parse_assurance_filter pour le détail).
+    type_hint, nom_assurance = _parse_assurance_filter(assurance_code)
+    est_principale = type_hint == 'principale'
+
     societe_filtre = (request.args.get('societe') or '').strip()
 
     periode = request.args.get('periode', 'mois')
@@ -1155,8 +1198,6 @@ def bordereau_assurance():
     if isinstance(debut, date) and not isinstance(debut, datetime):
         debut = datetime.combine(debut, datetime.min.time())
         fin = datetime.combine(fin, datetime.max.time())
-
-    est_principale = assurance_code.lower() in ASSURANCES_PRINCIPALES
 
     query = db.session.query(Vente).join(
         Patient, Vente.patient_id == Patient.id
@@ -1174,9 +1215,9 @@ def bordereau_assurance():
         or_(Vente.statut == 'validee', Vente.statut.is_(None)),
     )
     if est_principale:
-        query = query.filter(Patient.type_assurance.ilike(f'%{assurance_code}%'))
+        query = query.filter(db.func.lower(Patient.type_assurance) == nom_assurance.lower())
     else:
-        query = query.filter(Vente.assurance2_nom.ilike(f'%{assurance_code}%'))
+        query = query.filter(db.func.lower(Vente.assurance2_nom) == nom_assurance.lower())
 
     ventes = query.order_by(Vente.date_vente).all()
 
@@ -1224,18 +1265,13 @@ def bordereau_assurance():
         total_part_assurance += part_assurance
         total_reste += montants['reste_patient']
 
-    if assurance_code.lower() in ('amu_cnss', 'amu-cnss'):
-        nom_compagnie = 'AMU-CNSS'
-    elif assurance_code.lower() in ('amu_inam', 'amu-inam'):
-        nom_compagnie = 'AMU-INAM'
-    else:
-        nom_compagnie = ASSURANCE_LABELS.get(assurance_code.lower(), assurance_code.upper())
+    nom_compagnie = _label_assurance(nom_assurance)
 
     structure = _get_structure_info(structure_id)
 
     # Numéro de bordereau (traçabilité du document) et montant arrêté en
     # toutes lettres, adressé à la compagnie/société.
-    numero_bordereau = f"BDX-{structure_id}-{assurance_code.upper()}-{datetime.now().strftime('%Y%m%d%H%M')}"
+    numero_bordereau = f"BDX-{structure_id}-{nom_assurance.upper()}-{datetime.now().strftime('%Y%m%d%H%M')}"
     montant_lettres = montant_en_lettres_fcfa(total_part_assurance)
 
     return render_template(

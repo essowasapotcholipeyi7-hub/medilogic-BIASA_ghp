@@ -1248,26 +1248,30 @@ function chargerAssurances() {
                 select.innerHTML = '<option value="toutes">Toutes les assurances</option>';
                 
                 if (data && data.length > 0) {
+                    // ⭐ Le backend renvoie déjà un libellé propre et une clé
+                    // explicite "principale:xxx" / "complementaire:xxx" (voir
+                    // _parse_assurance_filter côté serveur) — fini de
+                    // redeviner le type ici. Un même nom de compagnie peut
+                    // légitimement apparaître deux fois (ex: "GTA" choisie en
+                    // assurance principale "Autre" par un patient, ET "GTA"
+                    // utilisée comme complémentaire par d'autres) : on
+                    // distingue alors les deux options à l'écran.
+                    const AMU = ['amu_cnss', 'amu_inam', 'amu_tns'];
                     data.forEach(item => {
                         const option = document.createElement('option');
                         option.value = item.key;
-                        
-                        // ⭐ Labels personnalisés
-                        let label = item.label;
-                        if (item.key === 'amu_cnss' || item.key === 'amu-cnss') {
-                            label = 'AMU-CNSS';
-                        } else if (item.key === 'amu_inam' || item.key === 'amu-inam') {
-                            label = 'AMU-INAM';
-                        } else if (item.key === 'amu_tns' || item.key === 'amu-tns') {
-                            label = 'AMU-TNS';
-                        } else if (item.key === 'non_assure') {
-                            label = 'Non assuré';
-                        } else {
-                            label = item.label || item.key.toUpperCase();
+
+                        const nomCle = (item.key.split(':')[1] || item.key);
+                        let label = item.label || item.key.toUpperCase();
+                        if (item.type === 'principale' && !AMU.includes(nomCle)) {
+                            label += ' (assurance principale)';
+                        } else if (item.type === 'complementaire') {
+                            label += ' (complémentaire)';
                         }
-                        
+
                         option.textContent = `${label} (${item.nb_patients} patients)`;
                         option.dataset.type = item.type || '';
+                        option.dataset.nom = nomCle;
 
                         if (option.value === currentValue) {
                             option.selected = true;
@@ -1291,10 +1295,14 @@ function onChangeFiltreAssurance() {
     const societeGroup = document.getElementById('statsFiltreSocieteGroup');
     const societeSelect = document.getElementById('statsFiltreSociete');
     const type = select.selectedOptions[0]?.dataset.type || '';
+    // ⭐ FIX : select.value porte maintenant la clé composée
+    // "complementaire:gta" — il faut le nom seul (dataset.nom) pour
+    // interroger /api/societes-assurance (qui attend juste "GTA").
+    const nomAssurance = select.selectedOptions[0]?.dataset.nom || select.value;
 
     if (type === 'complementaire') {
         societeGroup.style.display = 'block';
-        fetch(`/api/societes-assurance?assurance=${encodeURIComponent(select.value.toUpperCase())}`)
+        fetch(`/api/societes-assurance?assurance=${encodeURIComponent(nomAssurance.toUpperCase())}`)
             .then(r => r.json())
             .then(societes => {
                 societeSelect.innerHTML = '<option value="toutes">Toutes les sociétés</option>';

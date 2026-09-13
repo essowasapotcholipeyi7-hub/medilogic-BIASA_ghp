@@ -91,8 +91,8 @@
             </div>
             <div class="droite">
                 <h2>Liste des patients par assurance</h2>
-                {% if assurance_filtre and assurance_filtre != 'toutes' %}
-                <div class="periode">Assurance : {{ assurance_filtre.upper() }}{% if societe_filtre and societe_filtre != 'toutes' %} — Société : {{ societe_filtre }}{% endif %}</div>
+                {% if assurance_filtre %}
+                <div class="periode">Assurance : {{ assurance_filtre }}{% if societe_filtre and societe_filtre != 'toutes' %} — Société : {{ societe_filtre }}{% endif %}</div>
                 {% endif %}
                 <div class="periode">{{ periode_libelle }}</div>
                 <div class="periode">Édité le {{ now.strftime('%d/%m/%Y à %H:%M') }}</div>
