@@ -387,11 +387,22 @@ def _ventes_filtrees(structure_id, periode, date_debut_str, date_fin_str,
     # Filtrer par assurance spécifique
     if assurance_filter != 'toutes':
         if assurance_filter == 'non_assure':
+            # ⭐ FIX : "Non assuré" doit exclure les ventes avec une assurance
+            # COMPLÉMENTAIRE (assurance2_nom) en plus de l'assurance
+            # principale — un patient sans assurance principale mais ayant
+            # utilisé une assurance complémentaire sur la vente n'est pas
+            # "non assuré", il apparaissait à tort dans cette liste (mélangé
+            # avec les vrais non-assurés) faute de cette exclusion.
             query = query.filter(
                 or_(
                     Patient.type_assurance == None,
                     Patient.type_assurance == '',
                     Patient.type_assurance == 'non_assure'
+                ),
+                or_(
+                    Vente.assurance2_nom == None,
+                    Vente.assurance2_nom == '',
+                    Vente.assurance2_nom == 'Aucune'
                 )
             )
         else:
@@ -792,8 +803,15 @@ def calculer_stats_globales(ventes, patients):
 def get_patients_par_assurance(ventes, patients, patients_dict, type_assurance='toutes', assurance_filter='toutes'):
     """Récupère la liste des patients avec leurs assurances (une ligne par assurance)"""
     result = []
-    
-    est_filtre_actif = assurance_filter != 'toutes' and assurance_filter != 'non_assure'
+
+    # ⭐ FIX : "Non assuré" était traité comme "pas de filtre" (ni principale
+    # ni complémentaire actif) et retombait donc dans le CAS 3 ci-dessous,
+    # qui ajoute une ligne "assurance complémentaire" pour tout patient en
+    # ayant une — d'où des lignes d'assurance complémentaire mélangées dans
+    # la liste "Non assuré". Cas désormais explicite : une seule ligne
+    # "Non assuré" par patient, jamais de ligne principale/complémentaire.
+    est_filtre_non_assure = assurance_filter == 'non_assure'
+    est_filtre_actif = assurance_filter != 'toutes' and not est_filtre_non_assure
     est_filtre_principale = est_filtre_actif and assurance_filter.lower() in ASSURANCES_PRINCIPALES
     est_filtre_complementaire = est_filtre_actif and not est_filtre_principale
     
@@ -867,7 +885,31 @@ def get_patients_par_assurance(ventes, patients, patients_dict, type_assurance='
         
         nb_actes = sum(1 for v in ventes_patient for _ in extraire_actes(v).keys())
         derniere_visite = max(v.date_vente for v in ventes_patient) if ventes_patient else None
-        
+
+        # ============================================================
+        # CAS 0 : Filtre "Non assuré"
+        # ============================================================
+        if est_filtre_non_assure:
+            if assurance_principale == 'non_assure' and not assurance_complementaire:
+                result.append({
+                    'assurance': 'non_assure',
+                    'assurance_label': 'Non assuré',
+                    'type_assurance': 'non_assure',
+                    'patient_id': patient.id,
+                    'patient_nom': f"{patient.prenom} {patient.nom}".strip() or patient.nom,
+                    'numero_assure': patient.numero_assure or '',
+                    'numero_assure2': '',
+                    'montant_beneficiaire': total_prix,
+                    'part_assurance': 0,
+                    'nb_actes': nb_actes if nb_actes > 0 else len(ventes_patient),
+                    'nb_ventes': len(ventes_patient),
+                    'derniere_visite': derniere_visite.strftime('%d/%m/%Y') if derniere_visite else '',
+                    'est_double_assurance': False,
+                    'details': details_affichage,
+                    'details_complet': details_liste
+                })
+            continue
+
         # ============================================================
         # CAS 1 : Filtre sur une assurance COMPLÉMENTAIRE
         # ============================================================
