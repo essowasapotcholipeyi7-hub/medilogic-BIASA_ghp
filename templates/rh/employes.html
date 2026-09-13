@@ -68,6 +68,7 @@
                     <table class="table table-hover table-bordered" id="employesTable">
                         <thead class="table-light">
                             <tr>
+                                <th>N°</th>
                                 <th>Matricule</th>
                                 <th>Nom</th>
                                 <th>Prenom</th>
@@ -81,7 +82,7 @@
                             </tr>
                         </thead>
                         <tbody id="employesBody">
-                            <tr><td colspan="10" class="text-center">Chargement...</td></tr>
+                            <tr><td colspan="11" class="text-center">Chargement...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -292,7 +293,7 @@ let employeIdEnCours = null;
 // ============================================
 function chargerEmployes() {
     const tbody = document.getElementById('employesBody');
-    tbody.innerHTML = '<tr><td colspan="10" class="text-center">Chargement...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="text-center">Chargement...</td></tr>';
     
     fetch('/rh/api/employes')
         .then(response => response.json())
@@ -307,7 +308,7 @@ function chargerEmployes() {
         })
         .catch(error => {
             console.error('Erreur:', error);
-            tbody.innerHTML = '<tr><td colspan="10" class="text-center text-danger">Erreur de chargement</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="11" class="text-center text-danger">Erreur de chargement</td></tr>';
         });
 }
 
@@ -342,7 +343,7 @@ function afficherEmployes() {
     document.getElementById('employeResultCount').textContent = employesFiltres.length;
     
     if (pageEmployes.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="text-center">Aucun employe trouve</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center">Aucun employe trouve</td></tr>';
         return;
     }
     
@@ -355,6 +356,7 @@ function afficherEmployes() {
         else statutBadge = 'bg-danger';
         
         row.innerHTML = `
+            <td>${e.numero_local || ''}</td>
             <td><strong>${e.matricule}</strong></td>
             <td>${e.nom}</td>
             <td>${e.prenom}</td>

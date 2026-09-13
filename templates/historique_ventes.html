@@ -572,7 +572,7 @@ function afficherPageVentes(page) {
         if (detail.length > 30) detail = detail.substring(0, 27) + '...';
         
         html += '<tr>';
-        html += '<td><strong>#' + (v.ID || (start + i + 1)) + '</strong></td>';
+        html += '<td><strong>#' + (v.numero_local || v.ID || (start + i + 1)) + '</strong></td>';
         html += '<td>' + dateStr + '</td>';
         html += '<td><strong>' + (v.patient_nom || 'Patient') + '</strong></td>';
         html += '<td><span class="badge ' + badgeClass + '">' + typeLabel + '</span></td>';
@@ -649,7 +649,7 @@ function voirDetailVente(venteId, type) {
         return;
     }
     
-    document.getElementById('detailVenteId').textContent = venteId;
+    document.getElementById('detailVenteId').textContent = v.numero_local || venteId;
     
     // 🔥 Récupérer les infos d'aide hospitalière
     var tauxAide = v.taux_aide || 0;
@@ -1132,7 +1132,7 @@ function imprimerHistorique() {
         }
         
         html += '<tr>';
-        html += '<td>#' + (v.ID || (i + 1)) + '</td>';
+        html += '<td>#' + (v.numero_local || v.ID || (i + 1)) + '</td>';
         html += '<td>' + dateStr + '</td>';
         html += '<td>' + (v.patient_nom || 'Patient') + '</td>';
         html += '<td><span class="' + badgeClass + '">' + typeLabel + '</span></td>';
@@ -1268,7 +1268,7 @@ function imprimerAides() {
         var sousTotal = v.sous_total || 0;
         
         html += '<tr>';
-        html += '<td>#' + (v.ID || (i + 1)) + '</td>';
+        html += '<td>#' + (v.numero_local || v.ID || (i + 1)) + '</td>';
         html += '<td>' + dateStr + '</td>';
         html += '<td>' + (v.patient_nom || 'Patient') + '</td>';
         html += '<td>' + typeLabel + '</td>';

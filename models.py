@@ -185,7 +185,11 @@ class Employe(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     structure_id = db.Column(db.Integer, db.ForeignKey('structures.id'), nullable=False)
     matricule = db.Column(db.String(20), unique=True, nullable=False)
-    
+    # ⭐ Numérotation propre à CETTE structure (1, 2, 3...) — distincte du
+    # matricule (unique dans toute la table, ne suit donc pas forcément
+    # 1/2/3 par structure) et de l'id technique (séquence globale).
+    numero_local = db.Column(db.Integer)
+
     # Identite
     nom = db.Column(db.String(100), nullable=False)
     prenom = db.Column(db.String(100), nullable=False)

@@ -85,7 +85,7 @@
                                 data-date="{{ a.date_annulation[:10] if a.date_annulation else '' }}"
                                 data-montant="{{ a.ancien_net_a_payer }}">
                                 <td>{{ a.id }}</td>
-                                <td><span class="badge bg-secondary">#{{ a.vente_id }}</span></td>
+                                <td><span class="badge bg-secondary">#{{ a.numero_local or a.vente_id }}</span></td>
                                 <td>
                                     {% if a.vente_type == 'actes' %}
                                         <span class="badge bg-primary">🏥 Acte</span>

@@ -200,6 +200,7 @@ def api_employes(structure_id):
         
         result.append({
             'id': e.id,
+            'numero_local': e.numero_local or e.id,
             'matricule': e.matricule,
             'nom': e.nom,
             'prenom': e.prenom,
@@ -232,6 +233,7 @@ def api_employe_detail(structure_id, id):
     
     return jsonify({
         'id': employe.id,
+        'numero_local': employe.numero_local or employe.id,
         'matricule': employe.matricule,
         'nom': employe.nom,
         'prenom': employe.prenom,
@@ -296,9 +298,17 @@ def employe_ajouter(structure_id):
             count += 1
             matricule = f"EMP-{annee}-{str(count).zfill(3)}"
 
+        # ⭐ numero_local : numérotation propre à CETTE structure (1, 2, 3...),
+        # distincte du matricule (qui doit rester unique dans toute la table,
+        # cf. boucle ci-dessus, et ne suit donc pas toujours 1/2/3 par
+        # structure) et de l'id technique (séquence globale).
+        numero_local = (db.session.query(func.coalesce(func.max(Employe.numero_local), 0))
+                         .filter(Employe.structure_id == structure_id).scalar()) + 1
+
         employe = Employe(
             structure_id=structure_id,
             matricule=matricule,
+            numero_local=numero_local,
             nom=data.get('nom').strip(),
             prenom=data.get('prenom').strip(),
             sexe=data.get('sexe'),
@@ -341,6 +351,7 @@ def employe_ajouter(structure_id):
             'success': True,
             'id': employe.id,
             'matricule': matricule,
+            'numero_local': numero_local,
             'message': 'Employé ajouté avec succès'
         })
         

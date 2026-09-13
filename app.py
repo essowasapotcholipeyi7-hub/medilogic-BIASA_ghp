@@ -378,6 +378,19 @@ def admin_required(f):
     return decorated_function
 
 
+def prochain_numero_local(table, structure_id):
+    """Numérotation propre à CHAQUE structure (1, 2, 3...), distincte de
+    l'id technique (séquence globale partagée par toutes les structures —
+    d'où l'impression que la numérotation "saute" entre structures). Même
+    principe déjà utilisé pour numero_proforma. `table` doit être un nom de
+    table en dur (jamais une valeur venant de l'utilisateur)."""
+    result = db.execute_query(f"""
+        SELECT COALESCE(MAX(numero_local), 0) + 1 as next_num
+        FROM {table} WHERE structure_id = %s
+    """, (structure_id,))
+    return result[0]['next_num'] if result else 1
+
+
 @app.route('/api/sync/status')
 def api_sync_status():
     """État de la bascule Neon/local — interrogé par la bannière de base.html."""
@@ -1158,7 +1171,8 @@ def patients():
             SELECT id, nom, prenom, telephone, adresse, date_naissance,
                    type_assurance, taux_prise_charge, numero_assure,
                    assurance2_nom, taux_assurance2, numero_assure2, societe_assurance2,
-                   personne_a_prevenir_nom, personne_a_prevenir_telephone, personne_a_prevenir_relation
+                   personne_a_prevenir_nom, personne_a_prevenir_telephone, personne_a_prevenir_relation,
+                   numero_local
             FROM patients
             WHERE structure_id = %s
             ORDER BY id DESC
@@ -1171,6 +1185,7 @@ def patients():
                     date_naissance = p.get('date_naissance')
                     patients_list.append({
                         'ID': p.get('id'),
+                        'numero_local': p.get('numero_local') or p.get('id'),
                         'nom': p.get('nom', ''),
                         'prenom': p.get('prenom', ''),
                         'telephone': p.get('telephone', ''),
@@ -1193,6 +1208,7 @@ def patients():
                     date_naissance = p[5] if len(p) > 5 else None
                     patients_list.append({
                         'ID': p[0],
+                        'numero_local': p[16] if len(p) > 16 and p[16] else p[0],
                         'nom': p[1] or '',
                         'prenom': p[2] or '',
                         'telephone': p[3] or '',
@@ -1261,15 +1277,20 @@ def api_add_patient():
         # laissait created_at NULL et cassait les statistiques
         # aujourd'hui/semaine/mois/année de la page Patients, qui restaient
         # bloquées à zéro malgré des patients bien enregistrés).
+        # ⭐ numero_local : numérotation propre à CETTE structure (1, 2, 3...)
+        # indépendante de l'id technique (séquence globale partagée par
+        # toutes les structures).
+        numero_local = prochain_numero_local('patients', structure_id)
+
         result = db.execute_query("""
             INSERT INTO patients (
                 structure_id, nom, prenom, telephone, adresse,
                 date_naissance, type_assurance, taux_prise_charge, numero_assure,
                 assurance2_nom, taux_assurance2, numero_assure2, societe_assurance2,
                 personne_a_prevenir_nom, personne_a_prevenir_telephone, personne_a_prevenir_relation,
-                created_at
+                numero_local, created_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             RETURNING id
         """, (
             structure_id,
@@ -1287,12 +1308,13 @@ def api_add_patient():
             data.get('societe_assurance2'),
             data.get('personne_a_prevenir_nom'),
             data.get('personne_a_prevenir_telephone'),
-            data.get('personne_a_prevenir_relation')
+            data.get('personne_a_prevenir_relation'),
+            numero_local
         ))
 
         if result and len(result) > 0:
             upsert_societe_assurance(structure_id, data.get('assurance2_nom'), data.get('societe_assurance2'))
-            return jsonify({'success': True, 'id': result[0]['id']})
+            return jsonify({'success': True, 'id': result[0]['id'], 'numero_local': numero_local})
         return jsonify({'success': False, 'error': 'Erreur insertion'}), 500
 
     except Exception as e:
@@ -1331,6 +1353,7 @@ def api_get_patient(id):
             
             return jsonify({
                 'id': row.get('id'),
+                'numero_local': row.get('numero_local') or row.get('id'),
                 'nom': row.get('nom', ''),
                 'prenom': row.get('prenom', ''),
                 'telephone': row.get('telephone', ''),
@@ -1371,7 +1394,8 @@ def api_get_patients():
             SELECT id, nom, prenom, telephone, adresse, date_naissance,
                    type_assurance, taux_prise_charge, numero_assure,
                    assurance2_nom, taux_assurance2, numero_assure2, societe_assurance2,
-                   personne_a_prevenir_nom, personne_a_prevenir_telephone, personne_a_prevenir_relation
+                   personne_a_prevenir_nom, personne_a_prevenir_telephone, personne_a_prevenir_relation,
+                   numero_local
             FROM patients
             WHERE structure_id = %s
             ORDER BY nom, prenom
@@ -1383,6 +1407,7 @@ def api_get_patients():
                 date_naissance = p.get('date_naissance')
                 result.append({
                     'id': p.get('id'),
+                    'numero_local': p.get('numero_local') or p.get('id'),
                     'nom': p.get('nom', ''),
                     'prenom': p.get('prenom', ''),
                     'telephone': p.get('telephone', ''),
@@ -1404,6 +1429,7 @@ def api_get_patients():
                 date_naissance = p[5] if len(p) > 5 else None
                 result.append({
                     'id': p[0],
+                    'numero_local': p[16] if len(p) > 16 and p[16] else p[0],
                     'nom': p[1] if len(p) > 1 else '',
                     'prenom': p[2] if len(p) > 2 else '',
                     'telephone': p[3] if len(p) > 3 else '',
@@ -1864,6 +1890,7 @@ def pharma_vente():
 def facture(vente_id, type):
     from datetime import datetime
     import json
+    numero_local_vente = vente_id  # défaut, écrasé plus bas si la ligne est trouvée
     
     structure_id = session.get('structure_id')
     
@@ -1934,6 +1961,10 @@ def facture(vente_id, type):
         sous_total = float(v.get('sous_total', 0))
         type_assurance = v.get('type_assurance', 'non_assure')
         numero_assure = v.get('numero_assure', '')
+        # ⭐ N° affiché au client : propre à CETTE structure, distinct
+        # de l'id technique (vente_id, séquence globale partagée entre
+        # structures).
+        numero_local_vente = v.get('numero_local') or vente_id
         
         # Récupérer les données de l'assurance complémentaire
         assurance2_nom = v.get('assurance2_nom', '')
@@ -1998,6 +2029,7 @@ def facture(vente_id, type):
     
     return render_template('facture_client.html',
                          vente_id=vente_id,
+                         numero_local_vente=numero_local_vente,
                          type_vente=type_bd,
                          articles=articles,
                          sous_total=sous_total,
@@ -2031,6 +2063,7 @@ def facture(vente_id, type):
 def facture_structure(vente_id, type):
     from datetime import datetime
     import json
+    numero_local_vente = vente_id  # défaut, écrasé plus bas si la ligne est trouvée
     
     structure_id = session.get('structure_id')
     
@@ -2101,6 +2134,10 @@ def facture_structure(vente_id, type):
         sous_total = float(v.get('sous_total', 0))
         type_assurance = v.get('type_assurance', 'non_assure')
         numero_assure = v.get('numero_assure', '')
+        # ⭐ N° affiché au client : propre à CETTE structure, distinct
+        # de l'id technique (vente_id, séquence globale partagée entre
+        # structures).
+        numero_local_vente = v.get('numero_local') or vente_id
         
         # Récupérer les données de l'assurance complémentaire
         assurance2_nom = v.get('assurance2_nom', '')
@@ -2165,6 +2202,7 @@ def facture_structure(vente_id, type):
     
     return render_template('facture_structure.html',
                          vente_id=vente_id,
+                         numero_local_vente=numero_local_vente,
                          type_vente=type_bd,
                          articles=articles,
                          sous_total=sous_total,
@@ -2303,6 +2341,7 @@ def get_structures_disponibles():
 def recu(vente_id, type):
     from datetime import datetime
     import json
+    numero_local_vente = vente_id  # défaut, écrasé plus bas si la ligne est trouvée
     
     structure_id = session.get('structure_id')
     
@@ -2407,6 +2446,10 @@ def recu(vente_id, type):
         sous_total = float(v.get('sous_total', 0))
         type_assurance = v.get('type_assurance', 'non_assure')
         numero_assure = v.get('numero_assure', '')
+        # ⭐ N° affiché au client : propre à CETTE structure, distinct
+        # de l'id technique (vente_id, séquence globale partagée entre
+        # structures).
+        numero_local_vente = v.get('numero_local') or vente_id
         
         base_remboursement = float(v.get('base_remboursement', 0)) if v.get('base_remboursement') is not None else 0
         
@@ -2627,6 +2670,7 @@ def recu(vente_id, type):
 
     return render_template('recu_client.html',
                          vente_id=vente_id,
+                         numero_local_vente=numero_local_vente,
                          type_vente=type_bd,
                          articles=articles,
                          sous_total=sous_total,
@@ -2668,6 +2712,7 @@ def recu_structure(vente_id, type):
     """Reçu pour la structure (copie comptable)"""
     from datetime import datetime
     import json
+    numero_local_vente = vente_id  # défaut, écrasé plus bas si la ligne est trouvée
     
     structure_id = session.get('structure_id')
     
@@ -2736,6 +2781,10 @@ def recu_structure(vente_id, type):
         sous_total = float(v.get('sous_total', 0))
         type_assurance = v.get('type_assurance', 'non_assure')
         numero_assure = v.get('numero_assure', '')
+        # ⭐ N° affiché au client : propre à CETTE structure, distinct
+        # de l'id technique (vente_id, séquence globale partagée entre
+        # structures).
+        numero_local_vente = v.get('numero_local') or vente_id
         
         # Récupérer les données de l'assurance complémentaire
         assurance2_nom = v.get('assurance2_nom', '')
@@ -2800,6 +2849,7 @@ def recu_structure(vente_id, type):
     
     return render_template('recu_structure.html',
                          vente_id=vente_id,
+                         numero_local_vente=numero_local_vente,
                          type_vente=type_bd,
                          articles=articles,
                          sous_total=sous_total,
@@ -6626,21 +6676,25 @@ def api_vente_pharma():
         print(f"📊 Base remboursement (PBR): {base_remboursement} FCFA")
         print(f"💰 Reste à payer: {reste_a_payer} FCFA")
         
+        # ⭐ numero_local : numérotation propre à CETTE structure, distincte
+        # de l'id technique (séquence globale partagée par les structures).
+        numero_local = prochain_numero_local('ventes', structure_id)
+
         # ========== 1. ENREGISTRER LA VENTE DANS NEON ==========
         # 🔥 MODIFIER LA REQUÊTE SQL POUR AJOUTER LE CHAMP
         result = db.execute_query("""
             INSERT INTO ventes (
-                patient_id, 
-                patient_nom, 
-                structure_id, 
-                type, 
-                sous_total, 
-                prise_en_charge, 
-                net_a_payer, 
-                mode_paiement, 
-                taux_assurance, 
-                date_vente, 
-                produits, 
+                patient_id,
+                patient_nom,
+                structure_id,
+                type,
+                sous_total,
+                prise_en_charge,
+                net_a_payer,
+                mode_paiement,
+                taux_assurance,
+                date_vente,
+                produits,
                 created_by_nom,
                 statut,
                 assurances,
@@ -6657,9 +6711,10 @@ def api_vente_pharma():
                 assurance_principale_active,
                 taux_aide,
                 aide_hospitaliere,
-                type_aide
+                type_aide,
+                numero_local
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             patient_id,
@@ -6687,7 +6742,8 @@ def api_vente_pharma():
             assurance_principale_active,  # 🔥 NOUVEAU
             taux_aide,                    # 🔥 NOUVEAU
             aide_hospitaliere,            # 🔥 NOUVEAU
-            type_aide                     # 🔥 NOUVEAU
+            type_aide,                    # 🔥 NOUVEAU
+            numero_local
         ))
 
         if not result or len(result) == 0:
@@ -7135,6 +7191,10 @@ def api_add_acte_vente():
         print(f"📊 Base remboursement (PBR): {base_remboursement} FCFA")
         print(f"💰 Reste à payer: {reste_a_payer} FCFA")
         
+        # ⭐ numero_local : numérotation propre à CETTE structure, distincte
+        # de l'id technique (séquence globale partagée par les structures).
+        numero_local = prochain_numero_local('ventes', structure_id)
+
         # ========== 1. ENREGISTRER LA VENTE DANS NEON ==========
         # 🔥 MODIFIER LA REQUÊTE SQL POUR AJOUTER LE CHAMP
         result = db.execute_query("""
@@ -7166,9 +7226,10 @@ def api_add_acte_vente():
                 assurance_principale_active,
                 taux_aide,
                 aide_hospitaliere,
-                type_aide
+                type_aide,
+                numero_local
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             patient_id,
@@ -7196,7 +7257,8 @@ def api_add_acte_vente():
             assurance_principale_active,  # 🔥 NOUVEAU
             taux_aide,                    # 🔥 NOUVEAU
             aide_hospitaliere,            # 🔥 NOUVEAU
-            type_aide                     # 🔥 NOUVEAU
+            type_aide,                    # 🔥 NOUVEAU
+            numero_local
         ))
 
         if not result or len(result) == 0:
@@ -7357,7 +7419,8 @@ def api_get_all_ventes():
                 v.taux_aide,
                 v.aide_hospitaliere,
                 v.prise_en_charge,
-                v.type_aide
+                v.type_aide,
+                v.numero_local
             FROM ventes v
             LEFT JOIN patients p ON v.patient_id = p.id
             WHERE v.structure_id = %s
@@ -7484,6 +7547,7 @@ def api_get_all_ventes():
                 
                 result.append({
                     'ID': v.get('id'),
+                    'numero_local': v.get('numero_local') or v.get('id'),
                     'patient_nom': v.get('patient_nom', 'Patient'),
                     'type': type_vente,
                     'net_a_payer': float(v.get('net_a_payer', 0)),
@@ -7585,6 +7649,7 @@ def api_get_all_ventes():
                 
                 result.append({
                     'ID': v[0],
+                    'numero_local': v[29] if len(v) > 29 and v[29] else v[0],
                     'patient_nom': v[1] if len(v) > 1 else 'Patient',
                     'type': vente_type,
                     'net_a_payer': float(v[3]) if len(v) > 3 else 0,
@@ -8018,7 +8083,8 @@ def historique_annulations():
             a.ancien_sous_total,
             a.date_annulation,
             v.patient_nom,
-            v.date_vente as vente_date
+            v.date_vente as vente_date,
+            v.numero_local
         FROM annulations_ventes a
         LEFT JOIN ventes v ON a.vente_id = v.id
         WHERE v.structure_id = %s OR v.structure_id IS NULL
@@ -8045,7 +8111,8 @@ def historique_annulations():
                 'ancien_sous_total': a.get('ancien_sous_total'),
                 'date_annulation': date_annulation_str,
                 'patient_nom': a.get('patient_nom'),
-                'vente_date': a.get('vente_date')
+                'vente_date': a.get('vente_date'),
+                'numero_local': a.get('numero_local') or a.get('vente_id')
             })
         else:
             # Format tuple
@@ -8065,7 +8132,8 @@ def historique_annulations():
                 'ancien_sous_total': a[6],
                 'date_annulation': date_annulation_str,
                 'patient_nom': a[8] if len(a) > 8 else None,
-                'vente_date': a[9] if len(a) > 9 else None
+                'vente_date': a[9] if len(a) > 9 else None,
+                'numero_local': a[10] if len(a) > 10 and a[10] else a[1]
             })
     
     return render_template('historique_annulations.html', annulations=annulations_list)
@@ -8090,7 +8158,8 @@ def api_get_annulations():
             a.ancien_sous_total,
             a.date_annulation,
             v.patient_nom,
-            v.date_vente as vente_date
+            v.date_vente as vente_date,
+            v.numero_local
         FROM annulations_ventes a
         LEFT JOIN ventes v ON a.vente_id = v.id
         WHERE v.structure_id = %s OR v.structure_id IS NULL
@@ -10386,20 +10455,25 @@ def api_convertir_proforma():
             reste_a_payer = net_a_payer - montant_donne
         
         import json
-        
+
+        # ⭐ numero_local : numérotation propre à CETTE structure, distincte
+        # de l'id technique (séquence globale partagée par les structures).
+        numero_local = prochain_numero_local('ventes', structure_id)
+
         # 🔥 Insérer la vente
         result = db.execute_query("""
             INSERT INTO ventes (
-                patient_id, patient_nom, structure_id, type, sous_total, 
+                patient_id, patient_nom, structure_id, type, sous_total,
                 prise_en_charge, net_a_payer, mode_paiement, taux_assurance,
                 date_vente, actes, produits, created_by_nom, statut,
                 assurance2_nom, taux_assurance2, societe_assurance2, prise_en_charge2,
                 montant_donne, rendu, reste_a_payer,
                 assurance_principale_active, proforma_id,
                 base_remboursement,
-                taux_aide, aide_hospitaliere, type_aide
+                taux_aide, aide_hospitaliere, type_aide,
+                numero_local
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s::jsonb, %s, 'validee', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s::jsonb, %s, 'validee', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             data.get('patient_id'),
@@ -10426,7 +10500,8 @@ def api_convertir_proforma():
             base_remboursement,
             taux_aide,
             aide_hospitaliere,
-            type_aide
+            type_aide,
+            numero_local
         ))
 
         if not result or len(result) == 0:
@@ -10456,9 +10531,16 @@ def api_convertir_proforma():
         # 🔥 Si reste à payer > 0, créer une facture
         if reste_a_payer > 0:
             date_echeance = datetime.now() + timedelta(days=7)
-            
-            numero_facture = f"FAC-{datetime.now().strftime('%Y%m%d')}-{vente_id}"
-            
+
+            # ⭐ Numérotation propre à CETTE structure (même format que les
+            # autres points de création de facture, F{structure}-{compteur})
+            # — l'ancien format intégrait le vente_id (id technique, séquence
+            # globale partagée entre structures).
+            numero_facture_count = db.execute_query("""
+                SELECT COUNT(*) as total FROM factures WHERE structure_id = %s
+            """, (structure_id,))
+            numero_facture = f"F{structure_id}-{(numero_facture_count[0]['total'] if numero_facture_count else 0) + 1:04d}"
+
             db.execute_query("""
                 INSERT INTO factures (
                     structure_id, 
