@@ -1955,10 +1955,10 @@ def facture(vente_id, type):
         
         patient_id = v.get('patient_id')
         mode_paiement = v.get('mode_paiement', 'Espèces')
-        taux_assurance = float(v.get('taux_assurance', 0))
-        prise_en_charge = float(v.get('prise_en_charge', 0))
-        net_a_payer = float(v.get('net_a_payer', 0))
-        sous_total = float(v.get('sous_total', 0))
+        taux_assurance = float(v.get('taux_assurance') or 0)
+        prise_en_charge = float(v.get('prise_en_charge') or 0)
+        net_a_payer = float(v.get('net_a_payer') or 0)
+        sous_total = float(v.get('sous_total') or 0)
         type_assurance = v.get('type_assurance', 'non_assure')
         numero_assure = v.get('numero_assure', '')
         # ⭐ N° affiché au client : propre à CETTE structure, distinct
@@ -1968,8 +1968,8 @@ def facture(vente_id, type):
         
         # Récupérer les données de l'assurance complémentaire
         assurance2_nom = v.get('assurance2_nom', '')
-        taux_assurance2 = float(v.get('taux_assurance2', 0))
-        prise_en_charge2 = float(v.get('prise_en_charge2', 0))
+        taux_assurance2 = float(v.get('taux_assurance2') or 0)
+        prise_en_charge2 = float(v.get('prise_en_charge2') or 0)
         numero_assure2 = v.get('numero_assure2', '')
         societe_assurance2 = v.get('societe_assurance2', '')
         
@@ -2128,10 +2128,10 @@ def facture_structure(vente_id, type):
         
         patient_id = v.get('patient_id')
         mode_paiement = v.get('mode_paiement', 'Espèces')
-        taux_assurance = float(v.get('taux_assurance', 0))
-        prise_en_charge = float(v.get('prise_en_charge', 0))
-        net_a_payer = float(v.get('net_a_payer', 0))
-        sous_total = float(v.get('sous_total', 0))
+        taux_assurance = float(v.get('taux_assurance') or 0)
+        prise_en_charge = float(v.get('prise_en_charge') or 0)
+        net_a_payer = float(v.get('net_a_payer') or 0)
+        sous_total = float(v.get('sous_total') or 0)
         type_assurance = v.get('type_assurance', 'non_assure')
         numero_assure = v.get('numero_assure', '')
         # ⭐ N° affiché au client : propre à CETTE structure, distinct
@@ -2141,8 +2141,8 @@ def facture_structure(vente_id, type):
         
         # Récupérer les données de l'assurance complémentaire
         assurance2_nom = v.get('assurance2_nom', '')
-        taux_assurance2 = float(v.get('taux_assurance2', 0))
-        prise_en_charge2 = float(v.get('prise_en_charge2', 0))
+        taux_assurance2 = float(v.get('taux_assurance2') or 0)
+        prise_en_charge2 = float(v.get('prise_en_charge2') or 0)
         numero_assure2 = v.get('numero_assure2', '')
         societe_assurance2 = v.get('societe_assurance2', '')
         
@@ -2441,9 +2441,9 @@ def recu(vente_id, type):
             patient_nom = 'Patient'
         
         mode_paiement = v.get('mode_paiement', 'Espèces')
-        taux_assurance = float(v.get('taux_assurance', 0))
+        taux_assurance = float(v.get('taux_assurance') or 0)
         
-        sous_total = float(v.get('sous_total', 0))
+        sous_total = float(v.get('sous_total') or 0)
         type_assurance = v.get('type_assurance', 'non_assure')
         numero_assure = v.get('numero_assure', '')
         # ⭐ N° affiché au client : propre à CETTE structure, distinct
@@ -2454,8 +2454,8 @@ def recu(vente_id, type):
         base_remboursement = float(v.get('base_remboursement', 0)) if v.get('base_remboursement') is not None else 0
         
         assurance2_nom = v.get('assurance2_nom', '')
-        taux_assurance2 = float(v.get('taux_assurance2', 0))
-        prise_en_charge2 = float(v.get('prise_en_charge2', 0))
+        taux_assurance2 = float(v.get('taux_assurance2') or 0)
+        prise_en_charge2 = float(v.get('prise_en_charge2') or 0)
         numero_assure2 = v.get('numero_assure2', '')
         societe_assurance2 = v.get('societe_assurance2', '')
         
@@ -2775,10 +2775,10 @@ def recu_structure(vente_id, type):
             patient_nom = 'Patient'
         
         mode_paiement = v.get('mode_paiement', 'Espèces')
-        taux_assurance = float(v.get('taux_assurance', 0))
-        prise_en_charge = float(v.get('prise_en_charge', 0))
-        net_a_payer = float(v.get('net_a_payer', 0))
-        sous_total = float(v.get('sous_total', 0))
+        taux_assurance = float(v.get('taux_assurance') or 0)
+        prise_en_charge = float(v.get('prise_en_charge') or 0)
+        net_a_payer = float(v.get('net_a_payer') or 0)
+        sous_total = float(v.get('sous_total') or 0)
         type_assurance = v.get('type_assurance', 'non_assure')
         numero_assure = v.get('numero_assure', '')
         # ⭐ N° affiché au client : propre à CETTE structure, distinct
@@ -2788,8 +2788,8 @@ def recu_structure(vente_id, type):
         
         # Récupérer les données de l'assurance complémentaire
         assurance2_nom = v.get('assurance2_nom', '')
-        taux_assurance2 = float(v.get('taux_assurance2', 0))
-        prise_en_charge2 = float(v.get('prise_en_charge2', 0))
+        taux_assurance2 = float(v.get('taux_assurance2') or 0)
+        prise_en_charge2 = float(v.get('prise_en_charge2') or 0)
         numero_assure2 = v.get('numero_assure2', '')
         societe_assurance2 = v.get('societe_assurance2', '')
         
@@ -7519,19 +7519,27 @@ def api_get_all_ventes():
                 if not assurance2_nom and v.get('patient_assurance2_nom'):
                     assurance2_nom = v.get('patient_assurance2_nom')
                 
-                taux_assurance2 = float(v.get('taux_assurance2', 0))
+                # ⭐ FIX : `.get(key, 0)` ne protège QUE si la clé est absente
+                # du dict — ici la clé existe toujours (colonne de la
+                # requête SQL), mais sa valeur peut être NULL en base, donc
+                # `.get()` renvoie None malgré le défaut, et float(None)
+                # plantait la route entière (500) dès qu'UNE vente avait un
+                # de ces champs NULL (repéré sur BIASA : "Statistiques des
+                # ventes" totalement vide car /api/ventes/all plantait).
+                # `or 0` protège aussi ce cas.
+                taux_assurance2 = float(v.get('taux_assurance2') or 0)
                 if taux_assurance2 == 0 and v.get('patient_taux_assurance2'):
-                    taux_assurance2 = float(v.get('patient_taux_assurance2', 0))
+                    taux_assurance2 = float(v.get('patient_taux_assurance2') or 0)
 
                 societe_assurance2 = v.get('societe_assurance2') or v.get('patient_societe_assurance2') or ''
 
-                prise_en_charge2 = float(v.get('prise_en_charge2', 0))
-                montant_donne = float(v.get('montant_donne', 0))
-                rendu = float(v.get('rendu', 0))
-                reste_a_payer = float(v.get('reste_a_payer', 0))
-                base_remboursement = float(v.get('base_remboursement', 0))
+                prise_en_charge2 = float(v.get('prise_en_charge2') or 0)
+                montant_donne = float(v.get('montant_donne') or 0)
+                rendu = float(v.get('rendu') or 0)
+                reste_a_payer = float(v.get('reste_a_payer') or 0)
+                base_remboursement = float(v.get('base_remboursement') or 0)
                 taux_temp_modifie = v.get('taux_temp_modifie', False)
-                taux_original = float(v.get('taux_original', 0))
+                taux_original = float(v.get('taux_original') or 0)
                 
                 assurances = v.get('assurances')
                 if isinstance(assurances, str):
@@ -7550,8 +7558,8 @@ def api_get_all_ventes():
                     'numero_local': v.get('numero_local') or v.get('id'),
                     'patient_nom': v.get('patient_nom', 'Patient'),
                     'type': type_vente,
-                    'net_a_payer': float(v.get('net_a_payer', 0)),
-                    'taux_assurance': v.get('taux_assurance', 0),
+                    'net_a_payer': float(v.get('net_a_payer') or 0),
+                    'taux_assurance': v.get('taux_assurance') or 0,
                     'date_vente': str(v.get('date_vente', '')),
                     'detail': detail,
                     'created_by_nom': v.get('created_by_nom', None),
@@ -9052,15 +9060,26 @@ def generer_factures_assurance():
 
             assurance = data_assurance['assurance']
             societe = data_assurance['societe']
+            type_assurance_cle = data_assurance['type']
 
-            # 🔥 VERIFIER SI UNE FACTURE EXISTE DEJA (assurance + société,
-            # NULL-safe : deux NULL sont considérés égaux ici)
+            # 🔥 VERIFIER SI UNE FACTURE EXISTE DEJA (assurance + société +
+            # type, NULL-safe : deux NULL sont considérés égaux ici)
+            # ⭐ FIX : le même nom d'assurance peut désigner une compagnie
+            # choisie en PRINCIPALE "Autre" (ex: patient avec
+            # type_assurance="GTA" littéralement) ET la même compagnie
+            # utilisée comme COMPLÉMENTAIRE ailleurs (assurance2_nom="GTA")
+            # — deux factures bien distinctes à générer. Sans `type_assurance`
+            # dans cette recherche, la 2e génération "retrouvait" par erreur
+            # la facture de la 1ère (même assurance + même société vide) et
+            # ÉCRASAIT son montant/type/détails au lieu d'en créer une
+            # nouvelle — les deux se mélangeaient en une seule facture.
             existing = db.execute_query("""
                 SELECT id, montant_rembourse
                 FROM factures_assurance
                 WHERE structure_id = %s AND mois_reference = %s AND assurance = %s
                 AND (societe = %s OR (societe IS NULL AND %s IS NULL))
-            """, (structure_id, mois_reference, assurance, societe, societe))
+                AND type_assurance = %s
+            """, (structure_id, mois_reference, assurance, societe, societe, type_assurance_cle))
 
             if existing and len(existing) > 0:
                 facture_id = existing[0]['id']
@@ -11327,7 +11346,7 @@ def api_creer_facture_from_vente(vente_id):
             elif v.get('type') in ['pharma', 'pharmacie'] and v.get('produits'):
                 articles = json.loads(v.get('produits')) if isinstance(v.get('produits'), str) else v.get('produits')
         
-        net_a_payer = float(v.get('net_a_payer', 0))
+        net_a_payer = float(v.get('net_a_payer') or 0)
 
         # ⭐ FIX : ne pas ignorer ce que le patient a déjà réglé au moment de
         # la vente (montant_donne - rendu), sinon la dette est comptée deux

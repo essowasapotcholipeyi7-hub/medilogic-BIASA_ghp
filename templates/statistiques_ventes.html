@@ -365,7 +365,7 @@
                                     </select>
                                 </div>
                                 <div class="col-md-2">
-                                    <button class="btn btn-primary btn-sm w-100" onclick="chargerStatsAssurances()">
+                                    <button class="btn btn-primary btn-sm w-100" onclick="chargerAssurances().then(chargerStatsAssurances)">
                                         <i class="fas fa-sync-alt"></i> Actualiser
                                     </button>
                                 </div>
@@ -1226,9 +1226,13 @@ function changerPeriodeStats() {
         };
         labelEl.textContent = libelles[periode] || 'Toutes les périodes';
     }
-    
-    // ⭐ Recharger les stats
-    chargerStatsAssurances();
+
+    // ⭐ Recharger d'abord la liste des assurances (décomptes propres à
+    // cette nouvelle période), puis les stats — sinon les nombres entre
+    // parenthèses du menu restent ceux de l'ancienne période.
+    chargerAssurances().then(() => {
+        chargerStatsAssurances();
+    });
 }
 
 // ⭐ Charger les assurances dynamiquement
@@ -1239,14 +1243,28 @@ function chargerAssurances() {
             resolve();
             return;
         }
-        
+
         const currentValue = select.value;
-        
-        fetch('/api/statistiques/assurances/liste')
+
+        // ⭐ FIX : le nombre entre parenthèses doit porter sur la MÊME
+        // période que celle affichée juste après (sinon "Non assuré (24
+        // patients)" dans le menu et 15 lignes réellement affichées ne
+        // correspondent jamais) — on transmet donc la période courante,
+        // comme pour /api/statistiques/stats.
+        const periode = document.getElementById('statsPeriode')?.value || 'mois';
+        let url = `/api/statistiques/assurances/liste?periode=${periode}`;
+        if (periode === 'personnalise' || periode === 'aujourdhui' || periode === 'semaine' || periode === 'mois' || periode === 'annee') {
+            const dateDebut = document.getElementById('statsDateDebut')?.value;
+            const dateFin = document.getElementById('statsDateFin')?.value;
+            if (dateDebut) url += `&date_debut=${dateDebut}`;
+            if (dateFin) url += `&date_fin=${dateFin}`;
+        }
+
+        fetch(url)
             .then(response => response.json())
             .then(data => {
                 select.innerHTML = '<option value="toutes">Toutes les assurances</option>';
-                
+
                 if (data && data.length > 0) {
                     // ⭐ Le backend renvoie déjà un libellé propre et une clé
                     // explicite "principale:xxx" / "complementaire:xxx" (voir

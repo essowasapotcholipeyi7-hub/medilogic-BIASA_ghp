@@ -129,92 +129,130 @@ def index():
 
 @statistiques_bp.route('/assurances/liste')
 def api_assurances_liste():
-    """Récupère la liste de TOUTES les assurances utilisées, PRINCIPALES et
-    COMPLÉMENTAIRES gardées explicitement séparées.
+    """Récupère la liste de TOUTES les assurances utilisées SUR LA PÉRIODE
+    demandée, PRINCIPALES et COMPLÉMENTAIRES gardées explicitement séparées.
 
-    ⭐ FIX : un même nom (ex: "GTA") peut désigner une compagnie choisie en
-    assurance PRINCIPALE "Autre" (Patient.type_assurance = "GTA", saisi tel
-    quel via le champ libre du formulaire patient) ET une compagnie utilisée
-    comme assurance COMPLÉMENTAIRE (Vente.assurance2_nom = "GTA") — deux
-    groupes de patients sans rapport. L'ancienne version fusionnait les deux
-    en une seule option de filtre, avec un nombre de patients qui ne
-    correspondait à AUCUN des deux groupes réels (toujours compté sur
-    Patient.type_assurance, même pour les compagnies complémentaires) — et
-    la sélection résultante pouvait mélanger les deux. Chaque option porte
-    maintenant une clé explicite "principale:xxx" / "complementaire:xxx"
-    (voir _parse_assurance_filter), pour qu'on n'ait plus jamais à deviner
-    sur quelle colonne filtrer."""
+    ⭐ FIX (mélange) : un même nom (ex: "GTA") peut désigner une compagnie
+    choisie en assurance PRINCIPALE "Autre" (Patient.type_assurance = "GTA",
+    saisi tel quel via le champ libre du formulaire patient) ET une
+    compagnie utilisée comme assurance COMPLÉMENTAIRE (Vente.assurance2_nom
+    = "GTA") — deux groupes de patients sans rapport. L'ancienne version
+    fusionnait les deux en une seule option de filtre, avec un nombre de
+    patients qui ne correspondait à AUCUN des deux groupes réels (toujours
+    compté sur Patient.type_assurance, même pour les compagnies
+    complémentaires) — et la sélection résultante pouvait mélanger les
+    deux. Chaque option porte maintenant une clé explicite
+    "principale:xxx" / "complementaire:xxx" (voir _parse_assurance_filter),
+    pour qu'on n'ait plus jamais à deviner sur quelle colonne filtrer.
+
+    ⭐ FIX (nombre entre parenthèses ≠ liste affichée) : le décompte
+    portait avant sur TOUS les patients de la structure (recensement à
+    vie), alors que la liste affichée après sélection ne montre que ceux
+    ayant une VENTE dans la période choisie (Ventes tab) — les deux
+    chiffres ne pouvaient donc coïncider que par coïncidence (ex: "Non
+    assuré (24 patients)" dans le menu, 15 lignes affichées sur "Cette
+    année"). Le décompte est maintenant calculé exactement de la même
+    façon que la liste : patients distincts ayant au moins une vente dans
+    LA MÊME période (paramètres periode/date_debut/date_fin, identiques à
+    /stats) — les deux nombres correspondent désormais toujours."""
     try:
         structure_id = session.get('structure_id')
 
         if not structure_id:
             return jsonify({'error': 'Structure non trouvée'}), 400
 
+        periode = request.args.get('periode', 'mois')
+        date_debut_str = request.args.get('date_debut')
+        date_fin_str = request.args.get('date_fin')
+        dates = get_dates_periode(periode, date_debut_str, date_fin_str)
+
+        from datetime import datetime as dt
+        if isinstance(dates['debut'], date) and not isinstance(dates['debut'], datetime):
+            debut = dt.combine(dates['debut'], dt.min.time())
+            fin = dt.combine(dates['fin'], dt.max.time())
+        else:
+            debut = dates['debut']
+            fin = dates['fin']
+
+        base_filtres = [
+            Vente.structure_id == structure_id,
+            Vente.date_vente >= debut,
+            Vente.date_vente <= fin,
+            # ⭐ statut NULL = vente active, comme partout ailleurs dans le
+            # code (ex: "statut IS NULL OR statut != 'annulee'") —
+            # l'INSERT de /api/ventes/actes ne renseigne pas cette colonne,
+            # donc une vente d'actes valide a très souvent statut=NULL.
+            or_(Vente.statut == 'validee', Vente.statut.is_(None)),
+        ]
+
         result_list = []
 
-        # --- Non assuré ---
-        nb_non_assure = db.session.query(Patient.id).filter(
-            Patient.structure_id == structure_id,
+        # --- Non assuré : patients distincts, avec vente dans la période,
+        # sans AUCUNE assurance (ni principale ni complémentaire) — même
+        # définition que le CAS 0 de get_patients_par_assurance.
+        nb_non_assure = db.session.query(func.count(func.distinct(Vente.patient_id))).join(
+            Patient, Vente.patient_id == Patient.id
+        ).filter(
+            *base_filtres,
             or_(
                 Patient.type_assurance == None,
                 Patient.type_assurance == '',
                 Patient.type_assurance == 'non_assure'
+            ),
+            or_(
+                Vente.assurance2_nom == None,
+                Vente.assurance2_nom == '',
+                Vente.assurance2_nom == 'Aucune'
             )
-        ).count()
+        ).scalar() or 0
         if nb_non_assure:
             result_list.append({
                 'key': 'non_assure', 'label': 'Non assuré',
                 'nb_patients': nb_non_assure, 'type': 'non_assure'
             })
 
-        # --- Assurances PRINCIPALES : valeurs distinctes de Patient.type_assurance
-        # (AMU-CNSS/INAM/TNS, ou une compagnie libre saisie via "Autre") ---
-        principales = db.session.query(Patient.type_assurance).filter(
-            Patient.structure_id == structure_id,
+        # --- Assurances PRINCIPALES : valeurs distinctes de
+        # Patient.type_assurance (AMU-CNSS/INAM/TNS, ou une compagnie libre
+        # saisie via "Autre"), comptées sur les patients ayant une vente
+        # dans la période.
+        principales = db.session.query(
+            func.lower(Patient.type_assurance),
+            func.count(func.distinct(Vente.patient_id))
+        ).join(Vente, Vente.patient_id == Patient.id).filter(
+            *base_filtres,
             Patient.type_assurance != None,
             Patient.type_assurance != '',
             Patient.type_assurance != 'non_assure'
-        ).distinct().all()
+        ).group_by(func.lower(Patient.type_assurance)).all()
 
-        for row in principales:
-            nom = (row[0] or '').strip()
-            if not nom:
+        for nom, nb in principales:
+            if not nom or not nb:
                 continue
-            nb = db.session.query(Patient.id).filter(
-                Patient.structure_id == structure_id,
-                db.func.lower(Patient.type_assurance) == nom.lower()
-            ).count()
             result_list.append({
-                'key': f'principale:{nom.lower()}',
+                'key': f'principale:{nom}',
                 'label': _label_assurance(nom),
                 'nb_patients': nb,
                 'type': 'principale'
             })
 
-        # --- Assurances COMPLÉMENTAIRES : valeurs distinctes de Vente.assurance2_nom ---
-        complementaires = db.session.query(Vente.assurance2_nom).filter(
-            Vente.structure_id == structure_id,
-            # ⭐ statut NULL = vente active, comme partout ailleurs dans le
-            # code (ex: "statut IS NULL OR statut != 'annulee'") —
-            # l'INSERT de /api/ventes/actes ne renseigne pas cette colonne,
-            # donc une vente d'actes valide a très souvent statut=NULL.
-            or_(Vente.statut == 'validee', Vente.statut.is_(None)),
+        # --- Assurances COMPLÉMENTAIRES : valeurs distinctes de
+        # Vente.assurance2_nom, comptées sur les patients ayant une vente
+        # avec cette assurance dans la période.
+        complementaires = db.session.query(
+            func.lower(Vente.assurance2_nom),
+            func.count(func.distinct(Vente.patient_id))
+        ).join(Patient, Vente.patient_id == Patient.id).filter(
+            *base_filtres,
             Vente.assurance2_nom != None,
             Vente.assurance2_nom != '',
             Vente.assurance2_nom != 'Aucune'
-        ).distinct().all()
+        ).group_by(func.lower(Vente.assurance2_nom)).all()
 
-        for row in complementaires:
-            nom = (row[0] or '').strip()
-            if not nom:
+        for nom, nb in complementaires:
+            if not nom or not nb:
                 continue
-            nb = db.session.query(Vente.patient_id).filter(
-                Vente.structure_id == structure_id,
-                or_(Vente.statut == 'validee', Vente.statut.is_(None)),
-                db.func.lower(Vente.assurance2_nom) == nom.lower()
-            ).distinct().count()
             result_list.append({
-                'key': f'complementaire:{nom.lower()}',
+                'key': f'complementaire:{nom}',
                 'label': _label_assurance(nom),
                 'nb_patients': nb,
                 'type': 'complementaire'
