@@ -5013,6 +5013,7 @@ def api_envoyer_rappel(rdv_id):
 
 @app.route('/rendez_vous/api/rappels/stats', methods=['GET'])
 @login_required
+@permission_requise('rappels')
 def api_stats_rappels():
     """API: Statistiques des rappels"""
     structure_id = session.get('structure_id')
@@ -5725,6 +5726,7 @@ def test_rappels():
 
 @app.route('/rappels')
 @login_required
+@permission_requise('rappels')
 def rappels():
     """Page des rappels de rendez-vous"""
     structure_id = session.get('structure_id')
@@ -5811,6 +5813,7 @@ def rappels():
     )
 @app.route('/api/rappels/stats')
 @login_required
+@permission_requise('rappels')
 def api_rappels_stats():
     """API pour les statistiques des rappels depuis Neon"""
     from datetime import datetime, timedelta
@@ -12502,6 +12505,7 @@ def api_medicamentos():
 
 @app.route('/api/prescriptions/<int:id>/delivrer', methods=['POST'])
 @login_required
+@permission_requise('prescriptions_recues')
 def delivrer_prescription(id):
     """
     Marquer une prescription comme délivrée (Pharmacie)
@@ -12540,6 +12544,7 @@ def delivrer_prescription(id):
 
 @app.route('/api/prescriptions/<int:id>/facturer', methods=['POST'])
 @login_required
+@permission_requise('prescriptions_recues')
 def facturer_prescription(id):
     """
     Marquer une prescription comme facturée (Actes)
@@ -12853,6 +12858,7 @@ def _parse_quantite_prescription(raw, defaut=1):
 
 @app.route('/prescriptions-recues')
 @login_required
+@permission_requise('prescriptions_recues')
 def prescriptions_recues():
     """
     Affiche les prescriptions reçues avec les prix
@@ -12970,6 +12976,7 @@ def prescriptions_recues():
 
 @app.route('/api/prescriptions/<int:id>/details', methods=['GET'])
 @login_required
+@permission_requise('prescriptions_recues')
 def prescription_details(id):
     """
     Récupère les détails d'une prescription avec son prix
@@ -13100,6 +13107,7 @@ def prescription_details(id):
 
 @app.route('/api/prescriptions/<int:id>/ajouter-panier', methods=['POST'])
 @login_required
+@permission_requise('prescriptions_recues')
 def prescription_ajouter_panier(id):
     """
     Ajoute une prescription au panier
@@ -13189,6 +13197,7 @@ def prescription_ajouter_panier(id):
 
 @app.route('/api/prescriptions/suggestions', methods=['POST'])
 @login_required
+@permission_requise('prescriptions_recues')
 def api_prescriptions_suggestions():
     """
     Retourne des suggestions pour un nom de médicament/acte non trouvé
@@ -13243,6 +13252,7 @@ def api_prescriptions_suggestions():
 
 @app.route('/api/prescriptions/verifier-prix', methods=['POST'])
 @login_required
+@permission_requise('prescriptions_recues')
 def api_verifier_prix_prescriptions():
     """
     Vérifie les prix de toutes les prescriptions en attente
@@ -13316,6 +13326,7 @@ def api_verifier_prix_prescriptions():
 
 @app.route('/api/prescriptions/<int:id>/retirer-panier', methods=['POST'])
 @login_required
+@permission_requise('prescriptions_recues')
 def prescription_retirer_panier(id):
     """
     Retire une prescription du panier

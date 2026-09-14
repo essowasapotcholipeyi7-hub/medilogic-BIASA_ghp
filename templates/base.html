@@ -1863,9 +1863,11 @@
                     Programmer Rendez-vous
                 </a>
                 {% endif %}
+                {% if a_acces('rappels') %}
                 <a class="menu-item" href="{{ url_for('rappels') }}">
                     Rappels des rendez-vous
                 </a>
+                {% endif %}
             </div>
         </li>
         <li class="nav-item nav-item-soins">
@@ -1879,9 +1881,11 @@
                 <a class="menu-item" href="{{ url_for('actes_vente') }}">
                     Labo/Radio/Hospi/Actes
                 </a>
+                {% if a_acces('prescriptions_recues') %}
                 <a class="menu-item" href="{{ url_for('prescriptions_recues') }}">
                     Prescriptions reçues
                 </a>
+                {% endif %}
             </div>
         </li>
         <li class="nav-item nav-item-pharmacie">

@@ -24,11 +24,13 @@
                     <span class="menu-text">Liste Patients</span>
                 </a>
                 
+                {% if a_acces('prescriptions_recues') %}
                 <a class="nav-link {% if request.endpoint == 'prescriptions_recues' %}active{% endif %}" href="{{ url_for('prescriptions_recues') }}">
                     <span class="menu-text">Prescriptions reçues</span>
                     <span class="badge bg-danger ms-1" id="prescriptionBadge">0</span>
                 </a>
-                
+                {% endif %}
+
                 <a class="nav-link {% if request.endpoint == 'actes_vente' %}active{% endif %}" href="{{ url_for('actes_vente') }}">
                     <span class="menu-text">Labo/Radio/Hospi/Actes&Vente</span>
                 </a>
@@ -90,9 +92,11 @@
                 </a>
                 {% endif %}
 
+                {% if a_acces('rappels') %}
                 <a class="nav-link {% if request.endpoint == 'rappels' %}active{% endif %}" href="{{ url_for('rappels') }}">
                     <span class="menu-text">Rappels des rendez-vous</span>
                 </a>
+                {% endif %}
 
 
                 <!-- ===== CONSULTATION ===== -->

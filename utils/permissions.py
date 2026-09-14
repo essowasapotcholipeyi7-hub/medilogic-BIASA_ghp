@@ -21,6 +21,8 @@ PERMISSIONS = {
     'medecins_activites': 'Médecins & Activités',
     'protocoles': 'Protocoles et Modèles',
     'rendez_vous': 'Programmer Rendez-vous',
+    'prescriptions_recues': 'Prescriptions reçues',
+    'rappels': 'Rappels des rendez-vous',
     'comptabilite': 'Comptabilité',
     'finances': 'Finances / Caisse & Charges',
     'statistiques': 'Statistiques ventes/assurances',
@@ -36,9 +38,11 @@ PERMISSIONS = {
 # l'ouvrir à un octroi temporaire recréerait la faille de privilège
 # corrigée plus tôt cette session).
 ROLES_PAR_DEFAUT = {
-    'medecins_activites': {'admin', 'caissier', 'secretaire', 'medecin', 'paramedical', 'pharmacien'},
-    'protocoles':         {'admin', 'caissier', 'secretaire', 'medecin', 'paramedical', 'pharmacien'},
-    'rendez_vous':        {'admin', 'caissier', 'secretaire', 'medecin', 'paramedical', 'pharmacien'},
+    'medecins_activites':   {'admin', 'caissier', 'secretaire', 'medecin', 'paramedical', 'pharmacien'},
+    'protocoles':           {'admin', 'caissier', 'secretaire', 'medecin', 'paramedical', 'pharmacien'},
+    'rendez_vous':          {'admin', 'caissier', 'secretaire', 'medecin', 'paramedical', 'pharmacien'},
+    'prescriptions_recues': {'admin', 'caissier', 'secretaire', 'medecin', 'paramedical', 'pharmacien'},
+    'rappels':              {'admin', 'caissier', 'secretaire', 'medecin', 'paramedical', 'pharmacien'},
     'comptabilite':       {'admin', 'comptable', 'sous_comptable', 'gestionnaire'},
     'finances':           {'admin', 'comptable', 'sous_comptable', 'gestionnaire'},
     'statistiques':       {'admin', 'comptable', 'sous_comptable', 'gestionnaire'},
