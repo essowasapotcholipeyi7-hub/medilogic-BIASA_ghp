@@ -3397,7 +3397,25 @@ function exporterRapportTXT() {
     const { type, params } = _paramsRapportCourant();
     let url = `/comptabilite/rapport/export-txt/${type}`;
     if (params.length) url += '?' + params.join('&');
-    window.location.href = url;
+
+    // ⭐ FIX : `window.location.href = url` ne navigue jamais réellement
+    // (la réponse porte "Content-Disposition: attachment", le navigateur
+    // déclenche un téléchargement et reste sur cette même page) — mais
+    // deux mécanismes de base.html affichent quand même un loader plein
+    // écran qui ne se referme alors jamais, faute de navigation pour le
+    // masquer : l'écouteur global sur beforeunload, ET l'écouteur global
+    // sur tout clic de lien ("Navigation en cours..."). Un <a download>
+    // invisible cliqué par JS déclenche le téléchargement sans provoquer
+    // de navigation ni de beforeunload, et l'attribut `download` fait
+    // explicitement ignorer ce lien par l'écouteur de clic global (voir
+    // base.html).
+    const a = document.createElement('a');
+    a.href = url;
+    a.setAttribute('download', '');
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
 }
 
 // ============================================================

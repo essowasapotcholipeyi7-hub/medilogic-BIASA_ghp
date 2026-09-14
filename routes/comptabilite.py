@@ -2126,7 +2126,11 @@ def _donnees_rapport(type_rapport, structure_id, date_debut, date_fin, journal_c
     seul était filtré à l'écran."""
     if type_rapport == 'journal':
         data = generer_journal(structure_id, date_debut, date_fin, journal_code)
-        titre = "Journal " + (EcritureComptable.JOURNAUX.get(journal_code, journal_code) if journal_code else "comptable (tous journaux)")
+        # ⭐ FIX : les valeurs de EcritureComptable.JOURNAUX commencent déjà
+        # par "Journal " (ex: "Journal des ventes") — le préfixer une 2e
+        # fois ici donnait "Journal Journal des ventes" dans l'en-tête
+        # imprimé/exporté.
+        titre = EcritureComptable.JOURNAUX.get(journal_code, journal_code) if journal_code else "Journal comptable (tous journaux)"
     elif type_rapport == 'grand_livre':
         data = generer_grand_livre(structure_id, date_debut, date_fin, compte_id)
         if compte_id:

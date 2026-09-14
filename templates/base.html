@@ -2334,7 +2334,14 @@ window.addEventListener('beforeunload', function() {
     
 document.addEventListener('click', function(e) {
     const link = e.target.closest('a');
-    if (link && link.href && !link.target && link.hostname === window.location.hostname) {
+    // ⭐ FIX : un lien avec l'attribut `download` (ou pointant vers un
+    // téléchargement de fichier — Content-Disposition: attachment côté
+    // serveur) ne navigue jamais réellement : la page reste affichée telle
+    // quelle, son DOM n'est jamais remplacé. Le loader affiché ici restait
+    // donc bloqué pour toujours, aucune navigation ne survenant jamais
+    // pour le masquer (ex: export TXT en comptabilité — "la page continue
+    // de tourner sans arrêt" même après le téléchargement du fichier).
+    if (link && link.href && !link.target && !link.hasAttribute('download') && link.hostname === window.location.hostname) {
         if (!link.href.includes('javascript:') && !link.href.includes('#')) {
             showLoader('Navigation en cours...');
         }
