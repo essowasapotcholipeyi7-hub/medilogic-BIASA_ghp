@@ -295,6 +295,7 @@
                 <!-- Graphique -->
                 <div class="chart-container">
                     <canvas id="historiqueChart"></canvas>
+                    <div id="historiqueChartVide" class="text-center text-muted py-3" style="display:none;">Aucune donnee mensuelle</div>
                 </div>
 
                 <!-- Liste des consultations -->
@@ -556,18 +557,31 @@ function voirHistorique(id) {
 }
 
 function creerGraphiqueHistorique(data) {
-    const ctx = document.getElementById('historiqueChart').getContext('2d');
-    
+    // 🔥 BUG CORRIGÉ : remplacer .chart-container.innerHTML par le message
+    // "Aucune donnee" détruisait le <canvas> lui-même — au réouverture
+    // suivante (fermer puis recliquer sur Historique), getElementById le
+    // trouvait absent, .getContext('2d') plantait, et l'erreur remontait
+    // jusqu'au catch() de voirHistorique() qui affiche "Erreur lors du
+    // chargement de l'historique". Le canvas reste maintenant toujours
+    // dans le DOM — seule sa visibilité (canvas vs message "vide") change.
+    const canvas = document.getElementById('historiqueChart');
+    const messageVide = document.getElementById('historiqueChartVide');
+
     if (historiqueChart) {
         historiqueChart.destroy();
+        historiqueChart = null;
     }
-    
+
     if (!data || data.length === 0) {
-        document.querySelector('.chart-container').innerHTML = 
-            '<div class="text-center text-muted py-3">Aucune donnee mensuelle</div>';
+        canvas.style.display = 'none';
+        messageVide.style.display = 'block';
         return;
     }
-    
+
+    canvas.style.display = 'block';
+    messageVide.style.display = 'none';
+    const ctx = canvas.getContext('2d');
+
     const labels = data.map(d => {
         const mois = ['Jan', 'Fev', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aout', 'Sep', 'Oct', 'Nov', 'Dec'];
         return mois[d.mois - 1] + ' ' + d.annee;
