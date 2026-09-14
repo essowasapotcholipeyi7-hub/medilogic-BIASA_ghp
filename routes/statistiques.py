@@ -998,7 +998,15 @@ def get_patients_par_assurance(ventes, patients, patients_dict, type_assurance='
         # ============================================================
         if est_filtre_complementaire:
             if assurance_complementaire == filtre_nom.lower():
-                # Ligne de l'assurance COMPLÉMENTAIRE
+                # ⭐ FIX : une SEULE ligne — celle de l'assurance COMPLÉMENTAIRE
+                # sélectionnée. Une ligne "principale" séparée était ajoutée
+                # en plus pour tout patient à double assurance — hors sujet
+                # quand on filtre sur UNE compagnie précise (la liste sert au
+                # dépôt de dossier auprès de CETTE compagnie, ex: GCA — une
+                # ligne AMU-CNSS n'a rien à y faire) et perçu à tort comme un
+                # mélange. Le badge "Double assurance" (déjà présent,
+                # est_double_assurance) suffit à signaler le fait sans
+                # dupliquer une ligne entière hors du filtre demandé.
                 result.append({
                     'assurance': assurance_complementaire,
                     'assurance_label': _label_assurance(assurance_complementaire),
@@ -1013,29 +1021,11 @@ def get_patients_par_assurance(ventes, patients, patients_dict, type_assurance='
                     'nb_actes': nb_actes if nb_actes > 0 else len(ventes_patient),
                     'nb_ventes': len(ventes_patient),
                     'derniere_visite': derniere_visite.strftime('%d/%m/%Y') if derniere_visite else '',
-                    'est_double_assurance': True,
+                    'est_double_assurance': assurance_principale != 'non_assure',
                     'details': details_affichage,
                     'details_complet': details_liste,
                     'dates_ventes': [v.date_vente.strftime('%d/%m/%Y') for v in ventes_patient if v.date_vente]
                 })
-
-                # Ligne de l'assurance PRINCIPALE
-                if assurance_principale != 'non_assure':
-                    result.append({
-                        'assurance': assurance_principale,
-                        'assurance_label': _label_assurance(assurance_principale),
-                        'type_assurance': 'principale',
-                        'patient_id': patient.id,
-                        'patient_nom': f"{patient.prenom} {patient.nom}".strip() or patient.nom,
-                        'numero_assure': patient.numero_assure or '',
-                        'numero_assure2': '',
-                        'montant_beneficiaire': total_reste_patient,
-                        'part_assurance': total_part_amu,
-                        'nb_actes': nb_actes if nb_actes > 0 else len(ventes_patient),
-                        'nb_ventes': len(ventes_patient),
-                        'derniere_visite': derniere_visite.strftime('%d/%m/%Y') if derniere_visite else '',
-                        'est_double_assurance': True
-                    })
 
         # ============================================================
         # CAS 2 : Filtre sur une assurance PRINCIPALE
