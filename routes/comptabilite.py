@@ -22,6 +22,32 @@ compta_bp = Blueprint('comptabilite', __name__, url_prefix='/comptabilite')
 
 
 # ============================================================
+# ACCÈS PAR RÔLE
+# ============================================================
+# Aucune protection n'existait auparavant sur ce blueprint (ni connexion,
+# ni rôle) — seul le lien du menu était masqué aux non-admins, ce qui
+# laissait la comptabilité accessible à quiconque connaissait/devinait
+# l'URL. Un seul hook pour tout le blueprint plutôt que décorer ~50 routes
+# une par une (risque d'en oublier une).
+ROLES_AUTORISES = {'admin', 'comptable', 'sous_comptable', 'gestionnaire'}
+
+
+@compta_bp.before_request
+def _verifier_role_comptabilite():
+    chemin_api = request.path.startswith('/comptabilite/api/')
+    if 'user_id' not in session:
+        if chemin_api:
+            return jsonify({'error': 'Non autorisé'}), 401
+        flash('Veuillez vous connecter', 'warning')
+        return redirect(url_for('index'))
+    if session.get('role') not in ROLES_AUTORISES:
+        if chemin_api:
+            return jsonify({'error': 'Accès non autorisé pour votre rôle'}), 403
+        flash("Accès non autorisé pour votre rôle.", 'danger')
+        return redirect(url_for('dashboard'))
+
+
+# ============================================================
 # CACHE
 # ============================================================
 _compte_cache = {}

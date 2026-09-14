@@ -5,6 +5,7 @@
 {% block content %}
         <!-- Onglets -->
         <ul class="nav nav-tabs mb-3" id="adminTab" role="tablist">
+            {% if session.role == 'admin' %}
             <li class="nav-item" role="presentation">
                 <button class="nav-link active" id="users-tab" data-bs-toggle="tab" data-bs-target="#users" type="button" role="tab">
                     <i class="fas fa-users"></i> Utilisateurs
@@ -15,20 +16,24 @@
                     <i class="fas fa-stethoscope"></i> Actes médicaux
                 </button>
             </li>
+            {% endif %}
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="gestion-produits-tab" data-bs-toggle="tab" data-bs-target="#gestionProduits" type="button" role="tab">
+                <button class="nav-link {% if session.role != 'admin' %}active{% endif %}" id="gestion-produits-tab" data-bs-toggle="tab" data-bs-target="#gestionProduits" type="button" role="tab">
                     <i class="fas fa-boxes"></i> Produits & stocks
                 </button>
             </li>
+            {% if session.role == 'admin' %}
             <li class="nav-item" role="presentation">
                 <button class="nav-link" id="structure-tab" data-bs-toggle="tab" data-bs-target="#structure" type="button" role="tab">
                     <i class="fas fa-building"></i> Ma structure
                 </button>
             </li>
+            {% endif %}
         </ul>
 
         <div class="tab-content">
 
+            {% if session.role == 'admin' %}
             <!-- ========== ONGLET UTILISATEURS ========== -->
             <div class="tab-pane fade show active" id="users" role="tabpanel">
                 <div class="card">
@@ -72,6 +77,12 @@
                                                 <span class="badge bg-info">Caissier</span>
                                             {% elif user.role == 'secretaire' %}
                                                 <span class="badge bg-secondary">Secrétaire</span>
+                                            {% elif user.role == 'comptable' %}
+                                                <span class="badge bg-dark">Comptable</span>
+                                            {% elif user.role == 'sous_comptable' %}
+                                                <span class="badge" style="background-color:#6f42c1;">Sous-comptable</span>
+                                            {% elif user.role == 'gestionnaire' %}
+                                                <span class="badge bg-light text-dark border">Gestionnaire</span>
                                             {% else %}
                                                 <span class="badge bg-secondary">{{ user.role }}</span>
                                             {% endif %}
@@ -148,9 +159,10 @@
                     </div>
                 </div>
             </div>
+            {% endif %}
 
 <!-- ========== ONGLET PRODUITS & STOCKS ========== -->
-<div class="tab-pane fade" id="gestionProduits" role="tabpanel">
+<div class="tab-pane fade {% if session.role != 'admin' %}show active{% endif %}" id="gestionProduits" role="tabpanel">
     <div class="card">
         <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
             <h5><i class="fas fa-boxes"></i> Gestion des produits & stocks</h5>
@@ -192,6 +204,7 @@
     </div>
 </div>
 
+            {% if session.role == 'admin' %}
             <!-- ========== ONGLET MA STRUCTURE ========== -->
             <div class="tab-pane fade" id="structure" role="tabpanel">
                 <div class="card">
@@ -227,6 +240,7 @@
                     </div>
                 </div>
             </div>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -262,6 +276,9 @@
                             <option value="medecin">Médecin</option>
                             <option value="paramedical">Paramédical</option>
                             <option value="pharmacien">Pharmacien</option>
+                            <option value="gestionnaire">Gestionnaire</option>
+                            <option value="sous_comptable">Sous-comptable</option>
+                            <option value="comptable">Comptable</option>
                             <option value="admin">Administrateur</option>
                         </select>
                     </div>
@@ -987,10 +1004,17 @@ function hideLoader() {
 
 // Initialisation
 document.addEventListener('DOMContentLoaded', function() {
+    // Un gestionnaire n'a que l'onglet Produits & stocks (les autres
+    // n'existent pas dans le DOM pour ce rôle) — inutile d'appeler
+    // chargerActesAdmin(), qui cible des éléments absents.
+    {% if session.role == 'admin' %}
     // 🔥 Enchaînés (pas en parallèle) — pour ne pas cogner Google Sheets
     // avec 2 gros chargements en même temps juste après l'affichage de la
     // page, hypothèse du patron sur la lenteur perçue.
     chargerActesAdmin().then(() => chargerProduitsAdmin());
+    {% else %}
+    chargerProduitsAdmin();
+    {% endif %}
 });
 </script>
 {% endblock %}

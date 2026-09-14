@@ -11,6 +11,45 @@ from models import (db, Employe, Service, Conge, Permission, DocumentRH, Signatu
 rh_bp = Blueprint('rh', __name__, url_prefix='/rh')
 
 # ============================================================
+# ACCÈS PAR RÔLE
+# ============================================================
+# Aucune protection ne couvrait ce blueprint (ni connexion, ni rôle) — seul
+# le lien du menu était masqué aux non-admins. Un seul hook pour tout le
+# blueprint plutôt que décorer ~65 routes une par une.
+#
+# Exception volontaire : la borne de pointage plein écran (/rh/borne) et
+# les endpoints de scan en direct (webauthn/facial) restent ouverts à tout
+# compte connecté, sans filtre de rôle — c'est un poste partagé à
+# l'accueil où n'importe quel employé pose le doigt/visage pour pointer ;
+# les restreindre par rôle casserait le pointage du personnel.
+ROLES_AUTORISES = {'admin', 'comptable', 'gestionnaire'}
+CHEMINS_SANS_FILTRE_ROLE = (
+    '/rh/borne',
+    '/rh/api/pointage/webauthn/',
+    '/rh/api/pointage/facial/',
+)
+
+
+@rh_bp.before_request
+def _verifier_role_rh():
+    if request.path.startswith(CHEMINS_SANS_FILTRE_ROLE):
+        if 'user_id' not in session:
+            return jsonify({'error': 'Non autorisé'}), 401
+        return None
+    chemin_api = request.path.startswith('/rh/api/')
+    if 'user_id' not in session:
+        if chemin_api:
+            return jsonify({'error': 'Non autorisé'}), 401
+        flash('Veuillez vous connecter', 'warning')
+        return redirect(url_for('index'))
+    if session.get('role') not in ROLES_AUTORISES:
+        if chemin_api:
+            return jsonify({'error': 'Accès non autorisé pour votre rôle'}), 403
+        flash("Accès non autorisé pour votre rôle.", 'danger')
+        return redirect(url_for('dashboard'))
+
+
+# ============================================================
 # CONSTANTES
 # ============================================================
 CONGES_ANNUELS = 30  # ⭐ Nombre de jours de congés par année

@@ -104,29 +104,33 @@
                 {% endif %}
 
                 <!-- ===== ADMINISTRATION ===== -->
-                {% if session.is_admin %}                
+                {% if session.role in ['admin', 'comptable', 'sous_comptable', 'gestionnaire'] %}
                 <a class="nav-link {% if request.endpoint == 'statistiques_ventes' %}active{% endif %}" href="{{ url_for('statistiques_ventes') }}">
                     <span class="menu-text">Statistiques ventes/assurances</span>
                 </a>
-                
+
                 <a class="nav-link {% if request.endpoint == 'historique_annulations' %}active{% endif %}" href="{{ url_for('historique_annulations') }}">
                     <span class="menu-text">Historiques Annulations</span>
                 </a>
                 <a class="nav-link {% if request.path.startswith('/journal') %}active{% endif %}" href="{{ url_for('journal.page_journal') }}">
                     <span class="menu-text">Journal des mouvements</span>
                 </a>
-                
-                <a class="nav-link {% if request.path.startswith('/rh') %}active{% endif %}" href="{{ url_for('rh.gestion_rh') }}">
-                    <span class="menu-text">Ressources humaines</span>
-                </a>
                 <a class="nav-link {% if request.endpoint == 'admin_finances' %}active{% endif %}" href="{{ url_for('admin_finances') }}">
                     <span class="menu-text">Finances/Caisse&Charge</span>
                 </a>
-                
+
                 <a class="nav-link {% if request.path.startswith('/comptabilite') %}active{% endif %}" href="{{ url_for('comptabilite.index') }}">
                     <span class="menu-text">Comptabilité</span>
                 </a>
-                
+                {% endif %}
+
+                {% if session.role in ['admin', 'comptable', 'gestionnaire'] %}
+                <a class="nav-link {% if request.path.startswith('/rh') %}active{% endif %}" href="{{ url_for('rh.gestion_rh') }}">
+                    <span class="menu-text">Ressources humaines</span>
+                </a>
+                {% endif %}
+
+                {% if session.role in ['admin', 'gestionnaire'] %}
                 <a class="nav-link {% if request.endpoint == 'admin_structure' %}active{% endif %}" href="{{ url_for('admin_structure') }}">
                     <span class="menu-text">Administration générale</span>
                 </a>

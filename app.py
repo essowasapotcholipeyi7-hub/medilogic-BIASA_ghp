@@ -378,6 +378,26 @@ def admin_required(f):
     return decorated_function
 
 
+# ========== ROLES REQUIRED DECORATOR ==========
+# Comme admin_required, mais pour une liste de rôles autorisés (utilisé
+# pour les rôles à responsabilités intermédiaires : comptable,
+# sous_comptable, gestionnaire).
+def roles_required(*roles):
+    from functools import wraps
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'user_id' not in session:
+                flash('Veuillez vous connecter', 'warning')
+                return redirect(url_for('index'))
+            if session.get('role') not in roles:
+                flash('Accès non autorisé pour votre rôle.', 'danger')
+                return redirect(url_for('dashboard'))
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+
 def prochain_numero_local(table, structure_id):
     """Numérotation propre à CHAQUE structure (1, 2, 3...), distincte de
     l'id technique (séquence globale partagée par toutes les structures —
@@ -3038,6 +3058,7 @@ def historique_ventes():
 # ========== ADMIN STRUCTURE API ==========
 @app.route('/api/admin/users', methods=['POST'])
 @login_required
+@admin_required
 def api_add_user():
     try:
         data = request.json
@@ -3107,6 +3128,7 @@ def api_add_user():
 
 @app.route('/api/admin/users/<int:user_id>/toggle', methods=['POST'])
 @login_required
+@admin_required
 def api_toggle_user(user_id):
     """Activer/Désactiver un utilisateur"""
     try:
@@ -3150,6 +3172,7 @@ def api_toggle_user(user_id):
 
 @app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
 @login_required
+@admin_required
 def api_delete_user(user_id):
     """Supprimer un utilisateur"""
     try:
@@ -3270,17 +3293,24 @@ def sync_gestion_patients_desactiver():
 
 @app.route('/admin_structure')
 @login_required
+@roles_required('admin', 'gestionnaire')
 def admin_structure():
-    """Administration de la structure"""
+    """Administration de la structure. Le gestionnaire n'a droit qu'au
+    sous-onglet Produits & stocks (géré côté template) ; on ne charge donc
+    la liste des utilisateurs que pour un admin — inutile de faire l'aller-
+    retour Sheets sinon, et ça évite toute fuite si le template est un jour
+    mal gardé."""
     structure_id = session.get('structure_id')
 
-    # 🔥 Récupérer les utilisateurs (seul fetch encore fait ici — le
-    # template en a besoin en Jinja côté serveur pour l'onglet
-    # Utilisateurs). Un 1er aller-retour Sheets identique existait juste
-    # au-dessus pour construire `users_list` : jamais passé à
-    # render_template, donc jamais utilisé par le template — supprimé.
-    users = sheets_helper.get_all_records('users')
-    users = [u for u in users if str(u.get('structure_id')) == str(structure_id)]
+    users = []
+    if session.get('role') == 'admin':
+        # 🔥 Récupérer les utilisateurs (seul fetch encore fait ici — le
+        # template en a besoin en Jinja côté serveur pour l'onglet
+        # Utilisateurs). Un 1er aller-retour Sheets identique existait juste
+        # au-dessus pour construire `users_list` : jamais passé à
+        # render_template, donc jamais utilisé par le template — supprimé.
+        users = sheets_helper.get_all_records('users')
+        users = [u for u in users if str(u.get('structure_id')) == str(structure_id)]
 
     # 🔥 actes et produits ne sont plus chargés ici : c'était 2
     # allers-retours Sheets bloquants de plus à CHAQUE ouverture de cette
@@ -3299,6 +3329,7 @@ def admin_structure():
 
 @app.route('/api/admin/actes', methods=['POST'])
 @login_required
+@admin_required
 def api_add_acte():
     """Ajouter ou modifier un acte dans Google Sheets"""
     try:
@@ -3389,6 +3420,7 @@ def api_add_acte():
 
 @app.route('/api/admin/actes/<int:acte_id>', methods=['DELETE'])
 @login_required
+@admin_required
 def api_delete_acte(acte_id):
     """Supprimer un acte dans Google Sheets"""
     try:
@@ -6385,6 +6417,7 @@ def api_produits_search():
 
 @app.route('/api/admin/produits', methods=['POST'])
 @login_required
+@roles_required('admin', 'gestionnaire')
 def api_admin_add_produit():
     """Ajouter un produit dans Google Sheets"""
     try:
@@ -6431,6 +6464,7 @@ def api_admin_add_produit():
 
 @app.route('/api/admin/produits/<int:produit_id>', methods=['PUT'])
 @login_required
+@roles_required('admin', 'gestionnaire')
 def api_admin_update_produit(produit_id):
     """Modifier un produit dans Google Sheets"""
     try:
@@ -6510,6 +6544,7 @@ def api_admin_update_produit(produit_id):
 
 @app.route('/api/admin/produits/<int:produit_id>', methods=['DELETE'])
 @login_required
+@roles_required('admin', 'gestionnaire')
 def api_admin_delete_produit(produit_id):
     """Supprimer un produit de Google Sheets"""
     try:
@@ -8072,12 +8107,9 @@ def _executer_annulation_vente(vente_id, motif, structure_id, user_id, user_name
 
 @app.route('/historique_annulations')
 @login_required
+@roles_required('admin', 'comptable', 'sous_comptable', 'gestionnaire')
 def historique_annulations():
-    """Page d'historique des annulations (admin uniquement)"""
-    if not session.get('is_admin'):
-        flash('Accès non autorisé', 'danger')
-        return redirect(url_for('dashboard'))
-    
+    """Page d'historique des annulations"""
     structure_id = session.get('structure_id')
     
     annulations = db.execute_query("""
@@ -8149,8 +8181,8 @@ def historique_annulations():
 @app.route('/api/annulations')
 @login_required
 def api_get_annulations():
-    """API pour récupérer les annulations (admin uniquement)"""
-    if not session.get('is_admin'):
+    """API pour récupérer les annulations"""
+    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
         return jsonify({'error': 'Non autorisé'}), 403
     
     structure_id = session.get('structure_id')
@@ -8179,12 +8211,9 @@ def api_get_annulations():
 
 @app.route('/admin/finances')
 @login_required
+@roles_required('admin', 'comptable', 'sous_comptable', 'gestionnaire')
 def admin_finances():
     """Page d'administration financière"""
-    if not session.get('is_admin'):
-        flash('Accès non autorisé', 'danger')
-        return redirect(url_for('dashboard'))
-    
     structure_id = session.get('structure_id')
     
     # 🔥 Récupérer les recettes (exclure les annulations)
@@ -8252,7 +8281,7 @@ def page_depenses_saisie():
 @app.route('/api/finances/stats')
 @login_required
 def api_finances_stats():
-    if not session.get('is_admin'):
+    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
         return jsonify({'error': 'Non autorise'}), 403
     
     try:
@@ -8358,7 +8387,7 @@ def api_finances_stats():
 @app.route('/api/finances/recettes/detail')
 @login_required
 def api_recettes_detail():
-    if not session.get('is_admin'):
+    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
         return jsonify({'error': 'Non autorise'}), 403
     
     try:
@@ -8400,7 +8429,7 @@ def api_recettes_detail():
 @login_required
 def api_finances_depenses_motif():
     """Depenses par motif"""
-    if not session.get('is_admin'):
+    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
         return jsonify({'error': 'Non autorise'}), 403
     
     try:
@@ -8465,7 +8494,7 @@ def api_finances_depenses_motif():
 @login_required
 def api_finances_recettes_source():
     """Recettes par source (patients, assurances, autres)"""
-    if not session.get('is_admin'):
+    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
         return jsonify({'error': 'Non autorise'}), 403
     
     try:
@@ -8636,7 +8665,7 @@ def _executer_ajout_depense(structure_id, montant, motif, motif_personnalise, de
 @login_required
 def api_add_recette():
     """Ajouter une recette (manuelle ou automatique)"""
-    if not session.get('is_admin'):
+    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
         return jsonify({'success': False, 'error': 'Non autorisé'}), 403
     
     try:
@@ -8732,7 +8761,7 @@ def api_add_recette():
 @login_required
 def api_finances_sources():
     """Récupérer les sources de recettes disponibles"""
-    if not session.get('is_admin'):
+    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
         return jsonify({'error': 'Non autorisé'}), 403
     
     sources = [
@@ -8744,12 +8773,9 @@ def api_finances_sources():
 
 @app.route('/statistiques_ventes')
 @login_required
+@roles_required('admin', 'comptable', 'sous_comptable', 'gestionnaire')
 def statistiques_ventes():
-    """Page des statistiques de ventes pour les employes"""
-    if not session.get('is_admin'):
-        flash('Accès non autorisé. Réservé à l\'administrateur.', 'danger')
-        return redirect(url_for('dashboard'))
-    
+    """Page des statistiques de ventes"""
     structure_id = session.get('structure_id')
     
     # Recuperer toutes les ventes (y compris annulees pour les stats)
@@ -8784,7 +8810,7 @@ def statistiques_ventes():
 @app.route('/api/assurances/factures', methods=['POST'])
 @login_required
 def api_add_facture_assurance():
-    if not session.get('is_admin'):
+    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
         return jsonify({'success': False, 'error': 'Non autorise'}), 403
     
     try:
@@ -8820,7 +8846,7 @@ def api_add_facture_assurance():
 @app.route('/api/assurances/factures/<int:facture_id>/paiement', methods=['POST'])
 @login_required
 def api_paiement_assurance(facture_id):
-    if not session.get('is_admin'):
+    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
         return jsonify({'success': False, 'error': 'Non autorise'}), 403
     
     try:
@@ -8927,7 +8953,7 @@ def api_paiement_assurance(facture_id):
 @app.route('/api/assurances/generer_factures', methods=['POST'])
 @login_required
 def generer_factures_assurance():
-    if not session.get('is_admin'):
+    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
         return jsonify({'success': False, 'error': 'Non autorise'}), 403
     
     try:
@@ -9666,7 +9692,7 @@ def calculer_age(date_naissance):
 @app.route('/api/finances/recettes/source')
 @login_required
 def api_recettes_source():
-    if not session.get('is_admin'):
+    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
         return jsonify({'error': 'Non autorise'}), 403
     
     try:

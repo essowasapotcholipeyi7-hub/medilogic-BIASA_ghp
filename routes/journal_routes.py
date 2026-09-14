@@ -9,11 +9,19 @@ from services.journal_service import JournalService
 
 journal_bp = Blueprint('journal', __name__, url_prefix='/journal')
 
+# Seul le lien du menu était masqué aux non-admins — la route elle-même
+# n'exigeait qu'une connexion, pas un rôle. Même liste de rôles que la
+# Comptabilité (le journal des mouvements est un outil d'audit comptable).
+ROLES_AUTORISES = {'admin', 'comptable', 'sous_comptable', 'gestionnaire'}
+
+
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
             return jsonify({'error': 'Non autorisé'}), 401
+        if session.get('role') not in ROLES_AUTORISES:
+            return jsonify({'error': 'Accès non autorisé pour votre rôle'}), 403
         return f(*args, **kwargs)
     return decorated_function
 
