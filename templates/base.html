@@ -1830,6 +1830,7 @@
                     {% if a_acces('rendez_vous') %}
                     <li><a class="dropdown-item" href="{{ url_for('rendez_vous') }}"><i class="fas fa-calendar-alt"></i> Rendez-vous</a></li>
                     {% endif %}
+                    <li><a class="dropdown-item" href="#" onclick="ouvrirModalSecurite(); return false;"><i class="fas fa-shield-alt"></i> Sécurité de connexion</a></li>
                     <li><a class="dropdown-item text-danger" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Déconnexion</a></li>
                     <li><a class="dropdown-item" href="#" onclick="toggleFullscreenMode(); return false;"><i class="fas fa-expand" id="fullscreenModeIcon"></i> <span id="fullscreenModeText">Mode plein écran</span></a></li>
                 </ul>
@@ -3068,6 +3069,132 @@ document.addEventListener('DOMContentLoaded', function() {
 })();
 {% endif %}
 </script>
+
+<!-- ============================================================
+     SÉCURITÉ DE CONNEXION (Face ID / Windows Hello / empreinte) —
+     auto-enregistrement de SON PROPRE appareil, accessible à tout
+     compte connecté (menu utilisateur en haut à droite). Construit en
+     JS comme le chat ci-dessus, même principe d'un seul point
+     d'insertion. Contrairement au QR (généré par l'admin pour
+     quelqu'un), ceci ne peut se faire que par la personne elle-même,
+     sur l'appareil qu'elle compte utiliser pour se connecter ensuite.
+     ============================================================ -->
+{% if session.user_id and not (cacher_navigation is defined and cacher_navigation) %}
+<script src="https://cdn.jsdelivr.net/npm/@simplewebauthn/browser@10.0.0/dist/bundle/index.umd.min.js"></script>
+<script>
+(function() {
+    const modal = document.createElement('div');
+    modal.className = 'modal fade';
+    modal.id = 'securiteModal';
+    modal.tabIndex = -1;
+    modal.innerHTML = `
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-shield-alt me-2"></i>Sécurité de connexion</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">
+                        Connectez-vous sans mot de passe sur cet appareil, avec Face ID,
+                        Windows Hello ou votre empreinte. Contrairement à un mot de passe
+                        ou un badge imprimé, rien n'est copiable : la clé reste enfermée
+                        dans cet appareil.
+                    </p>
+                    <div id="securiteAvertissement" class="alert alert-warning small" hidden></div>
+                    <div id="securiteListeAppareils" class="mb-3"></div>
+                    <button class="btn btn-primary btn-sm" id="btnAjouterAppareil" onclick="inscrireAppareilSecurite()">
+                        <i class="fas fa-plus me-1"></i> Ajouter cet appareil
+                    </button>
+                    <div id="securiteMessage" class="small mt-2"></div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                </div>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+    const bsModal = new bootstrap.Modal(modal);
+
+    if (!window.SimpleWebAuthnBrowser || !SimpleWebAuthnBrowser.browserSupportsWebAuthn()) {
+        document.getElementById('securiteAvertissement').hidden = false;
+        document.getElementById('securiteAvertissement').textContent =
+            "Non disponible sur cet appareil/navigateur (nécessite http://localhost ou HTTPS, et un capteur biométrique).";
+        document.getElementById('btnAjouterAppareil').disabled = true;
+    }
+
+    window.ouvrirModalSecurite = function() {
+        chargerAppareilsSecurite();
+        bsModal.show();
+    };
+
+    function chargerAppareilsSecurite() {
+        fetch('/api/webauthn/mes-appareils').then(r => r.json()).then(d => {
+            const zone = document.getElementById('securiteListeAppareils');
+            if (!d.success || !d.data.length) {
+                zone.innerHTML = "<p class=\"text-muted small\">Aucun appareil enregistré pour l'instant.</p>";
+                return;
+            }
+            zone.innerHTML = d.data.map(a => `
+                <div class="d-flex justify-content-between align-items-center border rounded p-2 mb-2">
+                    <div>
+                        <div class="fw-bold small"><i class="fas fa-mobile-alt me-1"></i>${a.libelle_appareil || 'Appareil'}</div>
+                        <div class="text-muted" style="font-size:11px;">
+                            Ajouté le ${a.date_creation || '-'}<br>
+                            ${a.derniere_utilisation ? 'Dernière utilisation : ' + a.derniere_utilisation : 'Jamais utilisé'}
+                        </div>
+                    </div>
+                    <button class="btn btn-sm btn-outline-danger" onclick="revoquerAppareilSecurite(${a.id})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>`).join('');
+        });
+    }
+
+    window.revoquerAppareilSecurite = function(id) {
+        if (!confirm('Retirer cet appareil ? Il ne pourra plus servir à se connecter.')) return;
+        fetch('/api/webauthn/appareils/' + id, { method: 'DELETE' }).then(r => r.json()).then(d => {
+            if (d.success) chargerAppareilsSecurite();
+            else alert('Erreur : ' + (d.error || 'inconnue'));
+        });
+    };
+
+    window.inscrireAppareilSecurite = async function() {
+        const msg = document.getElementById('securiteMessage');
+        msg.className = 'small mt-2 text-muted';
+        msg.textContent = 'Suivez les instructions de votre appareil (Face ID, Windows Hello, empreinte...)...';
+        try {
+            const rOpt = await fetch('/api/webauthn/inscription/options', { method: 'POST' });
+            const dOpt = await rOpt.json();
+            if (!dOpt.success) { msg.className = 'small mt-2 text-danger'; msg.textContent = dOpt.error; return; }
+
+            const credential = await SimpleWebAuthnBrowser.startRegistration(dOpt.options);
+
+            const libelle = prompt('Nom de cet appareil (ex: "Mon téléphone", "PC accueil") :', navigator.platform || 'Mon appareil');
+
+            const rVer = await fetch('/api/webauthn/inscription/verifier', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ credential, libelle_appareil: libelle }),
+            });
+            const dVer = await rVer.json();
+            if (dVer.success) {
+                msg.className = 'small mt-2 text-success';
+                msg.textContent = 'Appareil ajouté !';
+                chargerAppareilsSecurite();
+            } else {
+                msg.className = 'small mt-2 text-danger';
+                msg.textContent = dVer.error;
+            }
+        } catch (err) {
+            msg.className = 'small mt-2 text-danger';
+            msg.textContent = (err.name === 'InvalidStateError')
+                ? 'Cet appareil est déjà enregistré pour ce compte.'
+                : ('Échec : ' + (err.message || err));
+        }
+    };
+})();
+</script>
+{% endif %}
 {% block scripts %}{% endblock %}
 </body>
 </html>

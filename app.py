@@ -13,7 +13,7 @@ from io import BytesIO
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn
 from utils.permissions import a_acces, PERMISSIONS
 from models import RendezVous
 from models import Medecin, Patient, Structure
@@ -629,6 +629,7 @@ def index():
                 session['structure_telephone'] = infos['structure_telephone']
                 session['role'] = infos['role']
                 session['is_admin'] = infos['is_admin']
+                session['type_compte'] = 'structure' if infos['is_admin'] else 'user'
                 flash(f"Bienvenue {infos['user_name']} (mode hors-ligne — Google Sheets injoignable)", 'warning')
                 return redirect(url_for('dashboard'))
             flash('Connexion à Google Sheets impossible, et aucun compte hors-ligne correspondant trouvé.', 'danger')
@@ -712,7 +713,8 @@ def index():
                                 session['structure_telephone'] = structure.get('telephone', '')
                                 session['role'] = role  # 🔥 AJOUT DU RÔLE
                                 session['is_admin'] = (role == 'admin')  # 🔥 ADMIN SI ROLE = 'admin'
-                                
+                                session['type_compte'] = 'user'  # ligne struct_N_users (vs compte structure)
+
                                 print(f"✅ Connexion réussie pour {row.get('nom')} (rôle: {role})")
                                 flash(f'Bienvenue {row.get("nom")}', 'success')
                                 return redirect(url_for('dashboard'))
@@ -759,7 +761,8 @@ def index():
                             session['structure_telephone'] = structure.get('telephone', '')
                             session['role'] = 'admin'
                             session['is_admin'] = True
-                            
+                            session['type_compte'] = 'structure'  # compte propriétaire (feuille structures)
+
                             flash(f'Bienvenue {structure.get("nom")}', 'success')
                             return redirect(url_for('dashboard'))
                         else:
@@ -783,6 +786,89 @@ def index():
 
 # ========== CONNEXION PAR CODE QR (badge personnel, en plus du mot de passe) ==========
 QR_PREFIXE = 'MLQR:'
+
+
+def _poser_session_compte(structure_id, utilisateur_id, type_compte, se_souvenir):
+    """Résout un compte (Google Sheets) à partir de son identifiant et pose
+    la session — logique commune à toute connexion qui n'utilise pas le
+    formulaire email/mot de passe (QR, WebAuthn ci-dessous) : on sait déjà
+    QUEL compte se connecte, reste à charger ses infos et ouvrir la
+    session exactement comme index() le ferait pour ce même compte.
+    Retourne (nom_bienvenue, None) au succès, ou (None, (reponse, code))
+    à l'échec — l'appelant n'a plus qu'à `return erreur` tel quel."""
+    if type_compte == 'structure':
+        structures = sheets_helper.get_all_records('structures', use_prefix=False)
+        structure = next((s for s in structures if str(s.get('ID')) == str(structure_id)), None)
+        if not structure:
+            return None, (jsonify({'success': False, 'error': 'Compte introuvable'}), 404)
+        if structure.get('statut') != 'active':
+            return None, (jsonify({'success': False, 'error': 'Structure non activée'}), 403)
+
+        try:
+            sheet_structures = sheets_helper.spreadsheet.worksheet("structures")
+            cell = sheet_structures.find(str(structure.get('ID')), in_column=1)
+            if cell:
+                row_num = cell.row
+                current_row = sheet_structures.row_values(row_num)
+                while len(current_row) < 13:
+                    current_row.append('')
+                current_row[12] = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+                sheet_structures.update(range_name=f'A{row_num}:M{row_num}', values=[current_row])
+        except Exception:
+            pass
+
+        session.permanent = se_souvenir
+        session['user_id'] = structure.get('ID')
+        session['user_name'] = structure.get('nom')
+        session['structure_id'] = structure.get('ID')
+        session['structure_nom'] = structure.get('nom')
+        session['structure_email'] = structure.get('email', '')
+        session['structure_telephone'] = structure.get('telephone', '')
+        session['role'] = 'admin'
+        session['is_admin'] = True
+        session['type_compte'] = 'structure'
+        return structure.get('nom'), None
+
+    # 'user'
+    sheets_helper.set_structure(structure_id)
+    users = sheets_helper.get_all_records('users')
+    row = next((u for u in users if str(u.get('ID')) == str(utilisateur_id)), None)
+    if not row:
+        return None, (jsonify({'success': False, 'error': 'Compte introuvable'}), 404)
+    if row.get('actif', 'oui') != 'oui':
+        return None, (jsonify({'success': False, 'error': "Compte désactivé. Veuillez contacter l'administrateur."}), 403)
+
+    structures = sheets_helper.get_all_records('structures', use_prefix=False)
+    structure = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
+    if structure.get('statut') != 'active':
+        return None, (jsonify({'success': False, 'error': 'Structure non activée'}), 403)
+
+    try:
+        worksheet = sheets_helper.spreadsheet.worksheet(f"struct_{structure_id}_users")
+        cell = worksheet.find(str(row.get('ID')), in_column=1)
+        if cell:
+            row_num = cell.row
+            current_row = worksheet.row_values(row_num)
+            while len(current_row) < 9:
+                current_row.append('')
+            current_row[8] = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+            worksheet.update(range_name=f'A{row_num}:I{row_num}', values=[current_row])
+    except Exception:
+        pass
+
+    role = row.get('role', 'caissier')
+    session.permanent = se_souvenir
+    session['user_id'] = row.get('ID')
+    session['user_name'] = row.get('nom')
+    session['structure_id'] = structure_id
+    session['structure_nom'] = structure.get('nom')
+    session['structure_email'] = structure.get('email', '')
+    session['structure_logo'] = structure.get('logo_url', '')
+    session['structure_telephone'] = structure.get('telephone', '')
+    session['role'] = role
+    session['is_admin'] = (role == 'admin')
+    session['type_compte'] = 'user'
+    return row.get('nom'), None
 
 
 @app.route('/login/qr', methods=['POST'])
@@ -809,79 +895,9 @@ def login_qr():
     if not qr:
         return jsonify({'success': False, 'error': 'Code QR invalide ou révoqué'}), 401
 
-    structure_id = qr.structure_id
-
-    if qr.type_compte == 'structure':
-        structures = sheets_helper.get_all_records('structures', use_prefix=False)
-        structure = next((s for s in structures if str(s.get('ID')) == str(structure_id)), None)
-        if not structure:
-            return jsonify({'success': False, 'error': 'Compte introuvable'}), 404
-        if structure.get('statut') != 'active':
-            return jsonify({'success': False, 'error': 'Structure non activée'}), 403
-
-        try:
-            sheet_structures = sheets_helper.spreadsheet.worksheet("structures")
-            cell = sheet_structures.find(str(structure.get('ID')), in_column=1)
-            if cell:
-                row_num = cell.row
-                current_row = sheet_structures.row_values(row_num)
-                while len(current_row) < 13:
-                    current_row.append('')
-                current_row[12] = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
-                sheet_structures.update(range_name=f'A{row_num}:M{row_num}', values=[current_row])
-        except Exception:
-            pass
-
-        session.permanent = se_souvenir
-        session['user_id'] = structure.get('ID')
-        session['user_name'] = structure.get('nom')
-        session['structure_id'] = structure.get('ID')
-        session['structure_nom'] = structure.get('nom')
-        session['structure_email'] = structure.get('email', '')
-        session['structure_telephone'] = structure.get('telephone', '')
-        session['role'] = 'admin'
-        session['is_admin'] = True
-        nom_bienvenue = structure.get('nom')
-
-    else:  # 'user'
-        sheets_helper.set_structure(structure_id)
-        users = sheets_helper.get_all_records('users')
-        row = next((u for u in users if str(u.get('ID')) == str(qr.utilisateur_id)), None)
-        if not row:
-            return jsonify({'success': False, 'error': 'Compte introuvable'}), 404
-        if row.get('actif', 'oui') != 'oui':
-            return jsonify({'success': False, 'error': "Compte désactivé. Veuillez contacter l'administrateur."}), 403
-
-        structures = sheets_helper.get_all_records('structures', use_prefix=False)
-        structure = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
-        if structure.get('statut') != 'active':
-            return jsonify({'success': False, 'error': 'Structure non activée'}), 403
-
-        try:
-            worksheet = sheets_helper.spreadsheet.worksheet(f"struct_{structure_id}_users")
-            cell = worksheet.find(str(row.get('ID')), in_column=1)
-            if cell:
-                row_num = cell.row
-                current_row = worksheet.row_values(row_num)
-                while len(current_row) < 9:
-                    current_row.append('')
-                current_row[8] = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
-                worksheet.update(range_name=f'A{row_num}:I{row_num}', values=[current_row])
-        except Exception:
-            pass
-
-        role = row.get('role', 'caissier')
-        session.permanent = se_souvenir
-        session['user_id'] = row.get('ID')
-        session['user_name'] = row.get('nom')
-        session['structure_id'] = structure_id
-        session['structure_nom'] = structure.get('nom')
-        session['structure_email'] = structure.get('email', '')
-        session['structure_logo'] = structure.get('logo_url', '')
-        session['structure_telephone'] = structure.get('telephone', '')
-        session['role'] = role
-        session['is_admin'] = (role == 'admin')
-        nom_bienvenue = row.get('nom')
+    nom_bienvenue, erreur = _poser_session_compte(qr.structure_id, qr.utilisateur_id, qr.type_compte, se_souvenir)
+    if erreur:
+        return erreur
 
     qr.date_derniere_utilisation = datetime.utcnow()
     db.session.commit()
@@ -955,6 +971,147 @@ def api_qr_revoquer(qr_id):
     qr.date_revocation = datetime.utcnow()
     db.session.commit()
     return jsonify({'success': True})
+
+
+# ========== CONNEXION PAR BIOMÉTRIE DE L'APPAREIL (Face ID / Windows Hello / empreinte) ==========
+# Auto-enregistrement uniquement (contrairement au QR) : un compte ne peut
+# enregistrer que SON PROPRE appareil, une fois déjà connecté par mot de
+# passe/QR — voir models.IdentifiantWebauthn pour la comparaison détaillée
+# avec le QR et avec EmpreinteEmploye (borne de pointage RH, différente).
+
+@app.route('/api/webauthn/inscription/options', methods=['POST'])
+@login_required
+def api_webauthn_inscription_options():
+    from services.webauthn_login_service import options_inscription
+
+    options_json, challenge = options_inscription(
+        request, session.get('structure_id'), session.get('user_id'),
+        session.get('type_compte'), session.get('user_name'),
+    )
+    session['webauthn_challenge'] = challenge
+    return jsonify({'success': True, 'options': json.loads(options_json)})
+
+
+@app.route('/api/webauthn/inscription/verifier', methods=['POST'])
+@login_required
+def api_webauthn_inscription_verifier():
+    from services.webauthn_login_service import verifier_inscription
+
+    data = request.json or {}
+    challenge = session.pop('webauthn_challenge', None)
+    if not challenge:
+        return jsonify({'success': False, 'error': 'Session expirée, recommencez.'}), 400
+
+    try:
+        verifier_inscription(
+            request, session.get('structure_id'), session.get('user_id'),
+            session.get('type_compte'), session.get('user_name'),
+            data.get('credential'), challenge,
+            libelle_appareil=data.get('libelle_appareil'),
+        )
+        return jsonify({'success': True})
+    except Exception as e:
+        import traceback
+        db.session.rollback()
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f"Échec de l'enregistrement : {e}"}), 400
+
+
+@app.route('/api/webauthn/mes-appareils', methods=['GET'])
+@login_required
+def api_webauthn_mes_appareils():
+    appareils = IdentifiantWebauthn.query.filter_by(
+        structure_id=session.get('structure_id'), utilisateur_id=session.get('user_id'),
+        type_compte=session.get('type_compte'), actif=True,
+    ).order_by(IdentifiantWebauthn.date_creation.desc()).all()
+    return jsonify({'success': True, 'data': [{
+        'id': a.id,
+        'libelle_appareil': a.libelle_appareil,
+        'date_creation': a.date_creation.strftime('%d/%m/%Y %H:%M') if a.date_creation else None,
+        'derniere_utilisation': a.derniere_utilisation.strftime('%d/%m/%Y %H:%M') if a.derniere_utilisation else None,
+    } for a in appareils]})
+
+
+@app.route('/api/webauthn/appareils/<int:appareil_id>', methods=['DELETE'])
+@login_required
+def api_webauthn_revoquer(appareil_id):
+    """Un compte révoque son propre appareil ; l'admin peut en plus révoquer
+    n'importe quel appareil de sa structure (poste perdu/volé d'un employé,
+    même logique que la révocation QR)."""
+    structure_id = session.get('structure_id')
+    appareil = IdentifiantWebauthn.query.filter_by(id=appareil_id, structure_id=structure_id).first()
+    if not appareil:
+        return jsonify({'success': False, 'error': 'Introuvable'}), 404
+
+    est_le_sien = (appareil.utilisateur_id == session.get('user_id')
+                   and appareil.type_compte == session.get('type_compte'))
+    if not est_le_sien and not session.get('is_admin'):
+        return jsonify({'success': False, 'error': 'Non autorisé'}), 403
+
+    appareil.actif = False
+    appareil.date_revocation = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+@app.route('/api/webauthn/statut/<type_compte>/<int:utilisateur_id>', methods=['GET'])
+@login_required
+@admin_required
+def api_webauthn_statut(type_compte, utilisateur_id):
+    """Pour l'affichage dans Administration : nombre d'appareils Face
+    ID/Windows Hello/empreinte actifs pour un compte donné."""
+    nb = IdentifiantWebauthn.query.filter_by(
+        structure_id=session.get('structure_id'), utilisateur_id=utilisateur_id,
+        type_compte=type_compte, actif=True,
+    ).count()
+    return jsonify({'success': True, 'nb_appareils': nb})
+
+
+@app.route('/login/webauthn/options', methods=['POST'])
+def login_webauthn_options():
+    """Public — page de connexion, personne n'est encore authentifié. Pas
+    de allow_credentials (clé résidente) : le navigateur propose lui-même,
+    via Face ID/Windows Hello, les comptes déjà enregistrés sur cet
+    appareil pour ce site."""
+    from services.webauthn_login_service import options_connexion
+
+    options_json, challenge = options_connexion(request)
+    session['webauthn_login_challenge'] = challenge
+    return jsonify({'success': True, 'options': json.loads(options_json)})
+
+
+@app.route('/login/webauthn/verifier', methods=['POST'])
+def login_webauthn_verifier():
+    """Public. Identifie le compte à partir de la clé biométrique elle-même
+    (voir verifier_connexion), puis pose la session exactement comme pour
+    le QR — même helper _poser_session_compte."""
+    from services.webauthn_login_service import verifier_connexion
+
+    data = request.json or {}
+    se_souvenir = bool(data.get('remember'))
+    challenge = session.pop('webauthn_login_challenge', None)
+    if not challenge:
+        return jsonify({'success': False, 'error': 'Session expirée, recommencez.'}), 400
+
+    try:
+        identifiant = verifier_connexion(request, data.get('credential'), challenge)
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 401
+    except Exception as e:
+        import traceback
+        db.session.rollback()
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'Échec de la vérification : {e}'}), 400
+
+    nom_bienvenue, erreur = _poser_session_compte(
+        identifiant.structure_id, identifiant.utilisateur_id, identifiant.type_compte, se_souvenir,
+    )
+    if erreur:
+        return erreur
+
+    flash(f'Bienvenue {nom_bienvenue}', 'success')
+    return jsonify({'success': True, 'redirect': url_for('dashboard')})
 
 
 # MODIFIER la route d'inscription

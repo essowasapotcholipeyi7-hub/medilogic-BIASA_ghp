@@ -1649,6 +1649,39 @@ class CodeQrConnexion(db.Model):
     # en direct : 500 sur /api/admin/qr/generer après une révocation).
 
 
+class IdentifiantWebauthn(db.Model):
+    """Connexion par biométrie de l'appareil (Face ID / Windows Hello /
+    empreinte), via WebAuthn — à ne PAS confondre avec EmpreinteEmploye
+    (services/pointage_service.py), qui sert à la borne de pointage RH et
+    concerne les employés (table employes) : ceci sert à SE CONNECTER à
+    l'appli et concerne les comptes de connexion (Google Sheets, comme
+    CodeQrConnexion). Contrairement au QR (bearer secret imprimable, donc
+    volable/copiable), la clé privée ne quitte jamais la puce sécurisée de
+    l'appareil ; ce qu'on stocke ici (clé PUBLIQUE) ne permet à personne de
+    se connecter sans l'appareil physique + le capteur biométrique.
+
+    Auto-enregistrement uniquement : contrairement au QR, l'admin ne peut
+    pas générer ça pour quelqu'un d'autre (il faudrait le visage/doigt de
+    la personne) — chaque compte enregistre lui-même son propre appareil,
+    une fois connecté par mot de passe/QR (voir app.py: /api/webauthn/*).
+    Un compte peut avoir plusieurs appareils enregistrés (poste accueil,
+    téléphone personnel...)."""
+    __tablename__ = 'identifiants_webauthn'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    utilisateur_id = db.Column(db.Integer, nullable=False)  # ID Sheets
+    type_compte = db.Column(db.String(20), nullable=False)  # 'user' | 'structure'
+    utilisateur_nom = db.Column(db.String(255))
+    credential_id = db.Column(db.Text, unique=True, nullable=False, index=True)  # base64, identifiant WebAuthn
+    public_key = db.Column(db.Text, nullable=False)                              # base64, clé publique COSE
+    sign_count = db.Column(db.Integer, default=0)                                # anti-clonage (doit toujours augmenter)
+    libelle_appareil = db.Column(db.String(100))   # ex: "PC accueil", saisi par l'utilisateur
+    actif = db.Column(db.Boolean, default=True)
+    date_creation = db.Column(db.DateTime, default=datetime.utcnow)
+    date_revocation = db.Column(db.DateTime)
+    derniere_utilisation = db.Column(db.DateTime)
+
+
 class VerrouillageConnexion(db.Model):
     """Anti-brute-force sur la connexion : 4 mots de passe erronés
     consécutifs verrouillent le compte 10 minutes (voir app.py:
