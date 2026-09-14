@@ -1619,6 +1619,36 @@ class HabilitationTemporaire(db.Model):
     revoque_par_nom = db.Column(db.String(255))
 
 
+class CodeQrConnexion(db.Model):
+    """Connexion par code QR (badge personnel), en plus d'email/mot de
+    passe — jamais obligatoire. Seul l'admin génère/révoque, depuis
+    Administration (voir app.py: /api/admin/qr/*, /login/qr). Comme les
+    autres tables de cette session, les comptes vivent dans Google
+    Sheets, pas en base : `type_compte` distingue une ligne de
+    struct_N_users ('user') du compte admin/propriétaire lui-même
+    ('structure', ligne de la feuille structures) — deux univers
+    d'ID Sheets différents partagant ce même mécanisme."""
+    __tablename__ = 'codes_qr_connexion'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    utilisateur_id = db.Column(db.Integer, nullable=False)  # ID Sheets
+    type_compte = db.Column(db.String(20), nullable=False)  # 'user' | 'structure'
+    utilisateur_nom = db.Column(db.String(255))
+    token = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    actif = db.Column(db.Boolean, default=True)
+    genere_par_nom = db.Column(db.String(255))
+    date_generation = db.Column(db.DateTime, default=datetime.utcnow)
+    date_revocation = db.Column(db.DateTime)
+    date_derniere_utilisation = db.Column(db.DateTime)
+    # 🔥 PAS de contrainte unique sur (structure_id, utilisateur_id,
+    # type_compte) : régénérer un code après une révocation crée une
+    # NOUVELLE ligne (l'ancienne reste, actif=False, pour l'historique —
+    # même principe que HabilitationTemporaire) ; une contrainte unique
+    # sur ce triplet interdirait justement cette 2e ligne et ferait
+    # planter toute régénération après révocation (détecté en testant
+    # en direct : 500 sur /api/admin/qr/generer après une révocation).
+
+
 class VerrouillageConnexion(db.Model):
     """Anti-brute-force sur la connexion : 4 mots de passe erronés
     consécutifs verrouillent le compte 10 minutes (voir app.py:

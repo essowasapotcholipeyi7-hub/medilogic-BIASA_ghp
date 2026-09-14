@@ -23,7 +23,7 @@
                     <p class="text-muted small">Accédez à votre espace sécurisé</p>
                 </div>
                 
-                <form method="POST">
+                <form method="POST" id="loginForm">
                     <div class="mb-3">
                         <label class="form-label fw-semibold text-gray-700 small">
                             <i class="fas fa-envelope text-primary me-1"></i> Adresse email
@@ -70,13 +70,65 @@
                         <i class="fas fa-sign-in-alt me-2"></i>Se connecter
                         <span class="spinner-border spinner-border-sm d-none ms-2" id="loading"></span>
                     </button>
-                    
+
+                    <div class="text-center">
+                        <a href="#" class="text-decoration-none small" id="lienBasculerQr" onclick="basculerPanneauQr(true); return false;">
+                            <i class="fas fa-qrcode me-1"></i> Se connecter par code QR
+                        </a>
+                    </div>
+
                     <div class="text-center mt-4 pt-3 border-top">
                         <a href="{{ url_for('register') }}" class="text-decoration-none small">
                             Nouvelle structure ? <strong>Inscrivez-vous</strong>
                         </a>
                     </div>
                 </form>
+
+                <!-- ============================================================
+                     CONNEXION PAR CODE QR — option en plus du formulaire, jamais
+                     obligatoire (voir /login/qr, app.py). Deux façons d'apporter
+                     le code décodé, qui convergent vers la même fonction :
+                     - Scanner QR USB : se comporte comme un clavier, "tape" le
+                       texte décodé dans #qrChampScanner puis envoie Entrée.
+                     - Webcam : lecture des frames vidéo via jsQR.
+                     ============================================================ -->
+                <div id="panneauQr" style="display:none;">
+                    <div class="text-center mb-3">
+                        <i class="fas fa-qrcode fa-2x text-primary mb-2"></i>
+                        <h5 class="fw-bold text-gray-800 mb-0">Connexion par code QR</h5>
+                        <p class="text-muted small">Scannez votre badge personnel</p>
+                    </div>
+
+                    <div class="mb-3">
+                        <input type="text" class="form-control" id="qrChampScanner"
+                               placeholder="Cliquez ici puis scannez avec le lecteur USB" autocomplete="off">
+                    </div>
+
+                    <div class="text-center mb-3">
+                        <button type="button" class="btn btn-outline-primary btn-sm" id="btnActiverCamera" onclick="activerCameraQr()">
+                            <i class="fas fa-video me-1"></i> Activer la caméra
+                        </button>
+                    </div>
+                    <div id="qrVideoZone" class="text-center mb-3" style="display:none;">
+                        <video id="qrVideo" style="width:100%; max-width:320px; border-radius:12px;" muted playsinline></video>
+                        <canvas id="qrCanvas" style="display:none;"></canvas>
+                    </div>
+
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="rememberQr">
+                        <label class="form-check-label text-muted small" for="rememberQr">
+                            Se souvenir de moi
+                        </label>
+                    </div>
+
+                    <div id="qrMessage" class="small text-center mb-3"></div>
+
+                    <div class="text-center">
+                        <a href="#" class="text-decoration-none small" onclick="basculerPanneauQr(false); return false;">
+                            <i class="fas fa-arrow-left me-1"></i> Revenir au mot de passe
+                        </a>
+                    </div>
+                </div>
             </div>
             
             <!-- Pied de page avec stats -->
@@ -381,6 +433,9 @@
 }
 </style>
 
+<!-- Décodage QR côté navigateur (lecture caméra) — pur JS, sans dépendance -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js"></script>
+
 <script>
 function togglePassword() {
     var passwordInput = document.getElementById('password');
@@ -627,7 +682,7 @@ document.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') {
         var stepEmail = document.getElementById('stepEmail');
         var stepCode = document.getElementById('stepCode');
-        
+
         if (stepEmail.style.display !== 'none') {
             envoyerCodeVerification();
         } else if (stepCode.style.display !== 'none') {
@@ -635,5 +690,124 @@ document.addEventListener('keydown', function(e) {
         }
     }
 });
+
+// ============================================================
+// CONNEXION PAR CODE QR
+// ============================================================
+const QR_PREFIXE = 'MLQR:';
+let qrFluxCamera = null;
+let qrBoucleCameraActive = false;
+
+function basculerPanneauQr(afficherQr) {
+    document.getElementById('loginForm').style.display = afficherQr ? 'none' : 'block';
+    document.getElementById('panneauQr').style.display = afficherQr ? 'block' : 'none';
+    document.getElementById('qrMessage').textContent = '';
+    if (afficherQr) {
+        document.getElementById('qrChampScanner').value = '';
+        document.getElementById('qrChampScanner').focus();
+    } else {
+        arreterCameraQr();
+    }
+}
+
+document.getElementById('qrChampScanner').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const valeur = this.value.trim();
+        if (valeur) tenterConnexionQr(valeur);
+    }
+});
+
+// Le panneau QR n'est pas toujours affiché au chargement — le champ n'existe
+// que si l'utilisateur a basculé dessus, mais on garde le focus dessus tant
+// que le panneau est actif (un clic ailleurs, ex. dans la carte, ne doit pas
+// faire perdre la frappe du scanner USB).
+document.addEventListener('click', function(e) {
+    const panneau = document.getElementById('panneauQr');
+    if (panneau.style.display !== 'none' && !e.target.closest('#btnActiverCamera') && !e.target.closest('a')) {
+        document.getElementById('qrChampScanner').focus();
+    }
+});
+
+function activerCameraQr() {
+    const zone = document.getElementById('qrVideoZone');
+    const video = document.getElementById('qrVideo');
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        .then(function(flux) {
+            qrFluxCamera = flux;
+            video.srcObject = flux;
+            video.play();
+            zone.style.display = 'block';
+            document.getElementById('btnActiverCamera').style.display = 'none';
+            qrBoucleCameraActive = true;
+            requestAnimationFrame(boucleLectureQr);
+        })
+        .catch(function(err) {
+            document.getElementById('qrMessage').innerHTML =
+                '<span class="text-danger">Impossible d\'accéder à la caméra : ' + err.message + '</span>';
+        });
+}
+
+function arreterCameraQr() {
+    qrBoucleCameraActive = false;
+    if (qrFluxCamera) {
+        qrFluxCamera.getTracks().forEach(t => t.stop());
+        qrFluxCamera = null;
+    }
+    document.getElementById('qrVideoZone').style.display = 'none';
+    document.getElementById('btnActiverCamera').style.display = 'inline-block';
+}
+
+function boucleLectureQr() {
+    if (!qrBoucleCameraActive) return;
+    const video = document.getElementById('qrVideo');
+    const canvas = document.getElementById('qrCanvas');
+
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(image.data, image.width, image.height);
+        if (code && code.data) {
+            arreterCameraQr();
+            tenterConnexionQr(code.data);
+            return;
+        }
+    }
+    requestAnimationFrame(boucleLectureQr);
+}
+
+function tenterConnexionQr(texteDecoded) {
+    const messageZone = document.getElementById('qrMessage');
+    if (!texteDecoded.startsWith(QR_PREFIXE)) {
+        messageZone.innerHTML = '<span class="text-danger">Code QR non reconnu</span>';
+        document.getElementById('qrChampScanner').value = '';
+        return;
+    }
+    messageZone.innerHTML = '<span class="text-muted">Connexion en cours...</span>';
+    fetch('/login/qr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            token: texteDecoded,
+            remember: document.getElementById('rememberQr').checked,
+        }),
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                window.location.href = data.redirect || '/dashboard';
+            } else {
+                messageZone.innerHTML = '<span class="text-danger">' + (data.error || 'Erreur de connexion') + '</span>';
+                document.getElementById('qrChampScanner').value = '';
+                document.getElementById('qrChampScanner').focus();
+            }
+        })
+        .catch(() => {
+            messageZone.innerHTML = '<span class="text-danger">Erreur réseau</span>';
+        });
+}
 </script>
 {% endblock %}

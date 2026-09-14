@@ -13,7 +13,7 @@ from io import BytesIO
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion
 from utils.permissions import a_acces, PERMISSIONS
 from models import RendezVous
 from models import Medecin, Patient, Structure
@@ -777,8 +777,185 @@ def index():
             flash('Mot de passe incorrect', 'danger')
         
         return redirect(url_for('index'))
-    
+
     return render_template('index.html')
+
+
+# ========== CONNEXION PAR CODE QR (badge personnel, en plus du mot de passe) ==========
+QR_PREFIXE = 'MLQR:'
+
+
+@app.route('/login/qr', methods=['POST'])
+def login_qr():
+    """Connexion par code QR — public (page de connexion, personne n'est
+    encore authentifié à ce stade). Même résultat de session que
+    index() ci-dessus, pour les deux mêmes univers de compte (ligne
+    struct_N_users OU compte structure/admin), simplement trouvés par
+    token au lieu d'email+mot de passe. Pas de lien avec le
+    verrouillage anti-brute-force : un token de 32 octets n'est pas
+    devinable, ce n'est pas la même surface d'attaque qu'un mot de
+    passe."""
+    data = request.json or {}
+    texte = (data.get('token') or '').strip()
+    se_souvenir = bool(data.get('remember'))
+
+    if not texte.startswith(QR_PREFIXE):
+        return jsonify({'success': False, 'error': 'Code QR non reconnu'}), 400
+    token = texte[len(QR_PREFIXE):]
+    if not token:
+        return jsonify({'success': False, 'error': 'Code QR non reconnu'}), 400
+
+    qr = CodeQrConnexion.query.filter_by(token=token, actif=True).first()
+    if not qr:
+        return jsonify({'success': False, 'error': 'Code QR invalide ou révoqué'}), 401
+
+    structure_id = qr.structure_id
+
+    if qr.type_compte == 'structure':
+        structures = sheets_helper.get_all_records('structures', use_prefix=False)
+        structure = next((s for s in structures if str(s.get('ID')) == str(structure_id)), None)
+        if not structure:
+            return jsonify({'success': False, 'error': 'Compte introuvable'}), 404
+        if structure.get('statut') != 'active':
+            return jsonify({'success': False, 'error': 'Structure non activée'}), 403
+
+        try:
+            sheet_structures = sheets_helper.spreadsheet.worksheet("structures")
+            cell = sheet_structures.find(str(structure.get('ID')), in_column=1)
+            if cell:
+                row_num = cell.row
+                current_row = sheet_structures.row_values(row_num)
+                while len(current_row) < 13:
+                    current_row.append('')
+                current_row[12] = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+                sheet_structures.update(range_name=f'A{row_num}:M{row_num}', values=[current_row])
+        except Exception:
+            pass
+
+        session.permanent = se_souvenir
+        session['user_id'] = structure.get('ID')
+        session['user_name'] = structure.get('nom')
+        session['structure_id'] = structure.get('ID')
+        session['structure_nom'] = structure.get('nom')
+        session['structure_email'] = structure.get('email', '')
+        session['structure_telephone'] = structure.get('telephone', '')
+        session['role'] = 'admin'
+        session['is_admin'] = True
+        nom_bienvenue = structure.get('nom')
+
+    else:  # 'user'
+        sheets_helper.set_structure(structure_id)
+        users = sheets_helper.get_all_records('users')
+        row = next((u for u in users if str(u.get('ID')) == str(qr.utilisateur_id)), None)
+        if not row:
+            return jsonify({'success': False, 'error': 'Compte introuvable'}), 404
+        if row.get('actif', 'oui') != 'oui':
+            return jsonify({'success': False, 'error': "Compte désactivé. Veuillez contacter l'administrateur."}), 403
+
+        structures = sheets_helper.get_all_records('structures', use_prefix=False)
+        structure = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
+        if structure.get('statut') != 'active':
+            return jsonify({'success': False, 'error': 'Structure non activée'}), 403
+
+        try:
+            worksheet = sheets_helper.spreadsheet.worksheet(f"struct_{structure_id}_users")
+            cell = worksheet.find(str(row.get('ID')), in_column=1)
+            if cell:
+                row_num = cell.row
+                current_row = worksheet.row_values(row_num)
+                while len(current_row) < 9:
+                    current_row.append('')
+                current_row[8] = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+                worksheet.update(range_name=f'A{row_num}:I{row_num}', values=[current_row])
+        except Exception:
+            pass
+
+        role = row.get('role', 'caissier')
+        session.permanent = se_souvenir
+        session['user_id'] = row.get('ID')
+        session['user_name'] = row.get('nom')
+        session['structure_id'] = structure_id
+        session['structure_nom'] = structure.get('nom')
+        session['structure_email'] = structure.get('email', '')
+        session['structure_logo'] = structure.get('logo_url', '')
+        session['structure_telephone'] = structure.get('telephone', '')
+        session['role'] = role
+        session['is_admin'] = (role == 'admin')
+        nom_bienvenue = row.get('nom')
+
+    qr.date_derniere_utilisation = datetime.utcnow()
+    db.session.commit()
+
+    flash(f'Bienvenue {nom_bienvenue}', 'success')
+    return jsonify({'success': True, 'redirect': url_for('dashboard')})
+
+
+@app.route('/api/admin/qr/statut/<type_compte>/<int:utilisateur_id>', methods=['GET'])
+@login_required
+@admin_required
+def api_qr_statut(type_compte, utilisateur_id):
+    structure_id = session.get('structure_id')
+    qr = CodeQrConnexion.query.filter_by(
+        structure_id=structure_id, utilisateur_id=utilisateur_id,
+        type_compte=type_compte, actif=True,
+    ).first()
+    if not qr:
+        return jsonify({'success': True, 'actif': False})
+    return jsonify({
+        'success': True, 'actif': True, 'id': qr.id,
+        'token_avec_prefixe': QR_PREFIXE + qr.token,
+        'date_generation': qr.date_generation.strftime('%d/%m/%Y %H:%M') if qr.date_generation else None,
+        'date_derniere_utilisation': qr.date_derniere_utilisation.strftime('%d/%m/%Y %H:%M') if qr.date_derniere_utilisation else None,
+    })
+
+
+@app.route('/api/admin/qr/generer', methods=['POST'])
+@login_required
+@admin_required
+def api_qr_generer():
+    data = request.json or {}
+    structure_id = session.get('structure_id')
+    utilisateur_id = data.get('utilisateur_id')
+    type_compte = data.get('type_compte')
+    utilisateur_nom = data.get('utilisateur_nom', '')
+
+    if type_compte not in ('user', 'structure') or not utilisateur_id:
+        return jsonify({'success': False, 'error': 'Paramètres invalides'}), 400
+
+    # Un seul QR actif par compte : révoque l'éventuel précédent (garde
+    # la ligne pour l'historique, comme HabilitationTemporaire).
+    ancien = CodeQrConnexion.query.filter_by(
+        structure_id=structure_id, utilisateur_id=utilisateur_id,
+        type_compte=type_compte, actif=True,
+    ).first()
+    if ancien:
+        ancien.actif = False
+        ancien.date_revocation = datetime.utcnow()
+
+    token = secrets.token_urlsafe(32)
+    qr = CodeQrConnexion(
+        structure_id=structure_id, utilisateur_id=utilisateur_id,
+        type_compte=type_compte, utilisateur_nom=utilisateur_nom,
+        token=token, genere_par_nom=session.get('user_name', 'Admin'),
+    )
+    db.session.add(qr)
+    db.session.commit()
+    return jsonify({'success': True, 'token_avec_prefixe': QR_PREFIXE + token})
+
+
+@app.route('/api/admin/qr/<int:qr_id>/revoquer', methods=['POST'])
+@login_required
+@admin_required
+def api_qr_revoquer(qr_id):
+    structure_id = session.get('structure_id')
+    qr = CodeQrConnexion.query.filter_by(id=qr_id, structure_id=structure_id).first()
+    if not qr:
+        return jsonify({'success': False, 'error': 'Introuvable'}), 404
+    qr.actif = False
+    qr.date_revocation = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'success': True})
+
 
 # MODIFIER la route d'inscription
 

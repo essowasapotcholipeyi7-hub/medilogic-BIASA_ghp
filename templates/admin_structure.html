@@ -3,6 +3,15 @@
 {% block title %}Administration Structure{% endblock %}
 
 {% block content %}
+<style>
+/* Impression du badge QR (imprimerQr()) : n'imprime que le contenu du
+   modal QR, pas le reste de la page derrière. */
+@media print {
+    body * { visibility: hidden; }
+    #qrModalBody, #qrModalBody * { visibility: visible; }
+    #qrModalBody { position: fixed; top: 0; left: 0; width: 100%; }
+}
+</style>
         <!-- Onglets -->
         <ul class="nav nav-tabs mb-3" id="adminTab" role="tablist">
             {% if session.role == 'admin' %}
@@ -109,6 +118,9 @@
                                             </button>
                                             <button class="btn btn-sm btn-info" onclick='editUser({{ user.ID }}, "{{ user.nom }}", "{{ user.email }}", "{{ user.role }}", "{{ user.actif }}")' title="Modifier">
                                                 <i class="fas fa-edit"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-dark" onclick="ouvrirModalQr('user', {{ user.ID }}, '{{ user.nom }}')" title="Code QR de connexion">
+                                                <i class="fas fa-qrcode"></i>
                                             </button>
                                         </td>
                                         <td>{{ user.derniere_connexion or '-' }}</td>
@@ -242,6 +254,22 @@
                             </div>
                             <button type="submit" class="btn btn-primary">Mettre à jour</button>
                         </form>
+                    </div>
+                </div>
+
+                <div class="card mt-3">
+                    <div class="card-header bg-dark text-white">
+                        <h5><i class="fas fa-qrcode"></i> Mon code QR de connexion</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small">
+                            Se connecter en scannant ce code au lieu de taper email/mot
+                            de passe — le mot de passe continue de fonctionner
+                            normalement, c'est juste une option en plus.
+                        </p>
+                        <button class="btn btn-outline-dark" onclick="ouvrirModalQr('structure', {{ session.structure_id }}, '{{ session.structure_nom }}')">
+                            <i class="fas fa-qrcode"></i> Gérer mon code QR
+                        </button>
                     </div>
                 </div>
             </div>
@@ -415,6 +443,24 @@
     </div>
 </div>
 
+<!-- Modal Code QR de connexion — partagée entre le bouton QR de chaque
+     ligne de l'onglet Utilisateurs et la section "Mon code QR" de
+     l'onglet Ma structure (voir ouvrirModalQr(), plus bas). -->
+<div class="modal fade" id="qrModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title"><i class="fas fa-qrcode me-2"></i> Code QR — <span id="qrModalNom"></span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center" id="qrModalBody">
+                <div class="text-muted">Chargement...</div>
+            </div>
+            <div class="modal-footer" id="qrModalFooter"></div>
+        </div>
+    </div>
+</div>
+
 <!-- Modal Produit -->
 <div class="modal fade" id="produitModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
@@ -524,6 +570,9 @@
         </div>
     </div>
 </div>
+
+<!-- Génération de QR côté navigateur (badge des utilisateurs) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
 <script>
 // ========== PAGINATION PARTAGÉE (actes + produits) ==========
@@ -925,6 +974,107 @@ function deleteActe(id) {
                 }
             });
     }
+}
+
+// ========== CODE QR DE CONNEXION ==========
+// Partagée entre chaque ligne de l'onglet Utilisateurs (type 'user') et
+// la section "Mon code QR" de l'onglet Ma structure (type 'structure',
+// le compte admin/propriétaire lui-même — il n'est pas une ligne
+// struct_N_users, il lui faut son propre point d'entrée).
+let qrModalTypeCompte = null;
+let qrModalUtilisateurId = null;
+let qrModalNom = null;
+let qrModalInstanceCode = null;
+
+function ouvrirModalQr(typeCompte, utilisateurId, nom) {
+    qrModalTypeCompte = typeCompte;
+    qrModalUtilisateurId = utilisateurId;
+    qrModalNom = nom;
+    document.getElementById('qrModalNom').textContent = nom;
+    document.getElementById('qrModalBody').innerHTML = '<div class="text-muted">Chargement...</div>';
+    document.getElementById('qrModalFooter').innerHTML = '';
+    new bootstrap.Modal(document.getElementById('qrModal')).show();
+
+    fetch(`/api/admin/qr/statut/${typeCompte}/${utilisateurId}`)
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success) {
+                document.getElementById('qrModalBody').innerHTML = '<div class="text-danger">Erreur de chargement</div>';
+                return;
+            }
+            if (d.actif) {
+                afficherQrModal(d.token_avec_prefixe, d.id, d.date_generation, d.date_derniere_utilisation);
+            } else {
+                afficherAucunQr();
+            }
+        });
+}
+
+function afficherAucunQr() {
+    document.getElementById('qrModalBody').innerHTML = `
+        <p class="text-muted">Aucun code QR généré pour ce compte.</p>
+        <i class="fas fa-qrcode fa-4x text-muted mb-2"></i>
+    `;
+    document.getElementById('qrModalFooter').innerHTML = `
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+        <button class="btn btn-primary" onclick="genererQr()"><i class="fas fa-qrcode me-1"></i> Générer</button>
+    `;
+}
+
+function afficherQrModal(tokenAvecPrefixe, qrId, dateGeneration, dateDerniereUtilisation) {
+    document.getElementById('qrModalBody').innerHTML = `
+        <div id="qrModalCode" class="d-inline-block p-3 bg-white"></div>
+        <p class="text-muted small mt-2 mb-0">Généré le ${dateGeneration || '-'}</p>
+        <p class="text-muted small">${dateDerniereUtilisation ? 'Dernière utilisation : ' + dateDerniereUtilisation : 'Jamais utilisé'}</p>
+    `;
+    document.getElementById('qrModalFooter').innerHTML = `
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+        <button class="btn btn-outline-danger" onclick="revoquerQr(${qrId})"><i class="fas fa-ban me-1"></i> Révoquer</button>
+        <button class="btn btn-outline-primary" onclick="genererQr()"><i class="fas fa-sync me-1"></i> Régénérer</button>
+        <button class="btn btn-primary" onclick="imprimerQr()"><i class="fas fa-print me-1"></i> Imprimer</button>
+    `;
+    qrModalInstanceCode = new QRCode(document.getElementById('qrModalCode'), {
+        text: tokenAvecPrefixe,
+        width: 200,
+        height: 200,
+    });
+}
+
+function genererQr() {
+    fetch('/api/admin/qr/generer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            type_compte: qrModalTypeCompte,
+            utilisateur_id: qrModalUtilisateurId,
+            utilisateur_nom: qrModalNom,
+        }),
+    })
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) {
+                ouvrirModalQr(qrModalTypeCompte, qrModalUtilisateurId, qrModalNom);
+            } else {
+                alert('Erreur: ' + (d.error || 'Erreur inconnue'));
+            }
+        });
+}
+
+function revoquerQr(qrId) {
+    if (!confirm('Révoquer ce code QR ? Il ne pourra plus être utilisé pour se connecter.')) return;
+    fetch(`/api/admin/qr/${qrId}/revoquer`, { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) {
+                afficherAucunQr();
+            } else {
+                alert('Erreur: ' + (d.error || 'Erreur inconnue'));
+            }
+        });
+}
+
+function imprimerQr() {
+    window.print();
 }
 
 // ========== GESTION UTILISATEURS ==========
