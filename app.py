@@ -1994,7 +1994,7 @@ def facture(vente_id, type):
                     'nom': p.get('nom', 'Produit'),
                     'quantite': int(p.get('quantite', 1)),
                     'prix_unitaire': float(p.get('prix_reel', p.get('prix', 0))),
-                    'total': float(p.get('total', 0))
+                    'total': float(p.get('total') or 0)
                 })
         else:
             actes_data = v.get('actes', [])
@@ -2004,8 +2004,8 @@ def facture(vente_id, type):
                 articles.append({
                     'nom': a.get('nom', 'Acte'),
                     'quantite': int(a.get('quantite', 1)),
-                    'prix_unitaire': float(a.get('prix', 0)),
-                    'total': float(a.get('total', 0))
+                    'prix_unitaire': float(a.get('prix') or 0),
+                    'total': float(a.get('total') or 0)
                 })
     
     # Gestion des assurances
@@ -2167,7 +2167,7 @@ def facture_structure(vente_id, type):
                     'nom': p.get('nom', 'Produit'),
                     'quantite': int(p.get('quantite', 1)),
                     'prix_unitaire': float(p.get('prix_reel', p.get('prix', 0))),
-                    'total': float(p.get('total', 0))
+                    'total': float(p.get('total') or 0)
                 })
         else:
             actes_data = v.get('actes', [])
@@ -2177,8 +2177,8 @@ def facture_structure(vente_id, type):
                 articles.append({
                     'nom': a.get('nom', 'Acte'),
                     'quantite': int(a.get('quantite', 1)),
-                    'prix_unitaire': float(a.get('prix', 0)),
-                    'total': float(a.get('total', 0))
+                    'prix_unitaire': float(a.get('prix') or 0),
+                    'total': float(a.get('total') or 0)
                 })
     
     # Gestion des assurances
@@ -2451,7 +2451,7 @@ def recu(vente_id, type):
         # structures).
         numero_local_vente = v.get('numero_local') or vente_id
         
-        base_remboursement = float(v.get('base_remboursement', 0)) if v.get('base_remboursement') is not None else 0
+        base_remboursement = float(v.get('base_remboursement') or 0) if v.get('base_remboursement') is not None else 0
         
         assurance2_nom = v.get('assurance2_nom', '')
         taux_assurance2 = float(v.get('taux_assurance2') or 0)
@@ -2461,13 +2461,13 @@ def recu(vente_id, type):
         
         assurance2_appliquee = assurance2_nom and assurance2_nom != '' and assurance2_nom != 'Aucune' and prise_en_charge2 > 0
         
-        montant_donne = float(v.get('montant_donne', 0)) if v.get('montant_donne') is not None else 0
-        rendu = float(v.get('rendu', 0)) if v.get('rendu') is not None else 0
-        reste_a_payer = float(v.get('reste_a_payer', 0)) if v.get('reste_a_payer') is not None else 0
+        montant_donne = float(v.get('montant_donne') or 0) if v.get('montant_donne') is not None else 0
+        rendu = float(v.get('rendu') or 0) if v.get('rendu') is not None else 0
+        reste_a_payer = float(v.get('reste_a_payer') or 0) if v.get('reste_a_payer') is not None else 0
         
         assurance_principale_active = v.get('assurance_principale_active', True)
-        taux_aide = float(v.get('taux_aide', 0)) if v.get('taux_aide') is not None else 0
-        aide_hospitaliere = float(v.get('aide_hospitaliere', 0)) if v.get('aide_hospitaliere') is not None else 0
+        taux_aide = float(v.get('taux_aide') or 0) if v.get('taux_aide') is not None else 0
+        aide_hospitaliere = float(v.get('aide_hospitaliere') or 0) if v.get('aide_hospitaliere') is not None else 0
         type_aide = v.get('type_aide') or 'pourcentage'
 
         patient_taux_original = float(v.get('patient_taux_assurance2') or 0)
@@ -2543,7 +2543,7 @@ def recu(vente_id, type):
             # Déterminer le prix
             prix_unitaire = float(item.get('prix', item.get('prix_reel', item.get('prix_vente', 0))))
             if prix_unitaire == 0:
-                prix_unitaire = float(item.get('prix_unitaire', 0))
+                prix_unitaire = float(item.get('prix_unitaire') or 0)
 
             quantite = int(item.get('quantite', 1))
             total_article = prix_unitaire * quantite
@@ -2814,7 +2814,7 @@ def recu_structure(vente_id, type):
                     'nom': p.get('nom', 'Produit'),
                     'quantite': int(p.get('quantite', 1)),
                     'prix_unitaire': float(p.get('prix_reel', p.get('prix', 0))),
-                    'total': float(p.get('total', 0))
+                    'total': float(p.get('total') or 0)
                 })
         else:
             actes_data = v.get('actes', [])
@@ -2824,8 +2824,8 @@ def recu_structure(vente_id, type):
                 articles.append({
                     'nom': a.get('nom', 'Acte'),
                     'quantite': int(a.get('quantite', 1)),
-                    'prix_unitaire': float(a.get('prix', 0)),
-                    'total': float(a.get('total', 0))
+                    'prix_unitaire': float(a.get('prix') or 0),
+                    'total': float(a.get('total') or 0)
                 })
     
     # Gestion des assurances
@@ -2914,8 +2914,8 @@ def historique_ventes():
             if actes_data and len(actes_data) > 0:
                 nom_acte = actes_data[0].get('nom', 'Acte')
             
-            montant_donne = float(v.get('montant_donne', 0))
-            rendu = float(v.get('rendu', 0))
+            montant_donne = float(v.get('montant_donne') or 0)
+            rendu = float(v.get('rendu') or 0)
             ca_effectif = montant_donne - rendu
             ca_actes += ca_effectif
             
@@ -2924,7 +2924,7 @@ def historique_ventes():
                 'patient_nom': v.get('patient_nom', 'Patient'),
                 'type': 'actes',
                 'acte_nom': nom_acte,
-                'net_a_payer': float(v.get('net_a_payer', 0)),
+                'net_a_payer': float(v.get('net_a_payer') or 0),
                 'taux_assurance': v.get('taux_assurance', 0),
                 'date': str(v.get('date_vente', '')),
                 'created_by_nom': v.get('created_by_nom', 'System'),
@@ -2963,8 +2963,8 @@ def historique_ventes():
             if produits_data and len(produits_data) > 0:
                 nom_produit = produits_data[0].get('nom', 'Produit')
             
-            montant_donne = float(v.get('montant_donne', 0))
-            rendu = float(v.get('rendu', 0))
+            montant_donne = float(v.get('montant_donne') or 0)
+            rendu = float(v.get('rendu') or 0)
             ca_effectif = montant_donne - rendu
             ca_pharma += ca_effectif
             
@@ -2974,7 +2974,7 @@ def historique_ventes():
                 'type': 'pharma',
                 'acte_nom': nom_produit,
                 'produit_nom': nom_produit,
-                'net_a_payer': float(v.get('net_a_payer', 0)),
+                'net_a_payer': float(v.get('net_a_payer') or 0),
                 'taux_assurance': v.get('taux_assurance', 0),
                 'date': str(v.get('date_vente', '')),
                 'created_by_nom': v.get('created_by_nom', 'System'),
@@ -3082,7 +3082,7 @@ def api_add_user():
             # Ajout
             print(f"➕ Ajout nouvel utilisateur")
             all_records = worksheet.get_all_records()
-            existing_ids = [int(r.get('ID', 0)) for r in all_records if r.get('ID')]
+            existing_ids = [int(r.get('ID') or 0) for r in all_records if r.get('ID')]
             new_id = max(existing_ids) + 1 if existing_ids else 1
             
             new_user = [
@@ -4064,11 +4064,11 @@ def get_medecin_details(id):
             'qualification': r.get('qualification') or r.get('specialite'),
             'telephone': r.get('telephone'),
             'email': r.get('email'),
-            'honoraire_consultation': float(r.get('honoraire_consultation', 0)),
+            'honoraire_consultation': float(r.get('honoraire_consultation') or 0),
             'actif': r.get('actif', True),
-            'total_consultations': int(r.get('total_consultations', 0)),
-            'consultations_mois': int(r.get('consultations_mois', 0)),
-            'consultations_semaine': int(r.get('consultations_semaine', 0)),
+            'total_consultations': int(r.get('total_consultations') or 0),
+            'consultations_mois': int(r.get('consultations_mois') or 0),
+            'consultations_semaine': int(r.get('consultations_semaine') or 0),
             'derniere_consultation': r.get('derniere_consultation').isoformat() 
                 if r.get('derniere_consultation') and hasattr(r.get('derniere_consultation'), 'isoformat') 
                 else None
@@ -6067,10 +6067,10 @@ def api_get_produits():
                         produits_liste.append({
                             'id': p.get('ID'),
                             'nom': p.get('nom', ''),
-                            'prix_vente': float(p.get('prix_vente', 0)),
+                            'prix_vente': float(p.get('prix_vente') or 0),
                             'pbr': float(p.get('pbr', p.get('prix_vente', 0))),
-                            'prix_achat': float(p.get('prix_achat', 0)),
-                            'quantite_stock': int(float(p.get('quantite_stock', 0))),
+                            'prix_achat': float(p.get('prix_achat') or 0),
+                            'quantite_stock': int(float(p.get('quantite_stock') or 0)),
                             'seuil_alerte': int(float(p.get('seuil_alerte', 10))),
                             'unite': p.get('unite', 'unité'),
                             'date_peremption': p.get('date_peremption', ''),
@@ -6208,7 +6208,7 @@ def api_produits_search():
         structure_id = session.get('structure_id')
         search = request.args.get('search', '').strip()
         limit = int(request.args.get('limit', 50))
-        offset = int(request.args.get('offset', 0))
+        offset = int(request.args.get('offset') or 0)
         
         # 🔥 Utiliser la bonne feuille avec préfixe
         sheet_name = f"struct_{structure_id}_produits"
@@ -6319,7 +6319,7 @@ def api_produits_search():
             produits_liste = []
             for p in produits:
                 if str(p.get('structure_id')) == str(structure_id):
-                    prix_vente = float(p.get('prix_vente', 0))
+                    prix_vente = float(p.get('prix_vente') or 0)
                     pbr = float(p.get('pbr', prix_vente))
                     
                     # 🔥 Récupérer les champs avec fallback
@@ -6342,8 +6342,8 @@ def api_produits_search():
                         'nom': p.get('nom', ''),
                         'prix_vente': prix_vente,
                         'pbr': pbr,
-                        'prix_achat': float(p.get('prix_achat', 0)),
-                        'quantite_stock': int(p.get('quantite_stock', 0)),
+                        'prix_achat': float(p.get('prix_achat') or 0),
+                        'quantite_stock': int(p.get('quantite_stock') or 0),
                         'seuil_alerte': int(p.get('seuil_alerte', 10)),
                         'unite': p.get('unite', 'unité'),
                         'date_peremption': p.get('date_peremption', ''),
@@ -6402,10 +6402,10 @@ def api_admin_add_produit():
         new_produit = [
             new_id,
             data.get('nom'),
-            float(data.get('prix_vente', 0)),
+            float(data.get('prix_vente') or 0),
             float(data.get('pbr', data.get('prix_vente', 0))),
-            float(data.get('prix_achat', 0)),
-            int(data.get('quantite_stock', 0)),
+            float(data.get('prix_achat') or 0),
+            int(data.get('quantite_stock') or 0),
             int(data.get('seuil_alerte', 10)),
             data.get('unite', 'unité'),
             data.get('date_peremption', ''),
@@ -6418,7 +6418,7 @@ def api_admin_add_produit():
         ]
         
         sheets_helper.add_record('produits', new_produit)
-        stock_initial = int(data.get('quantite_stock', 0))
+        stock_initial = int(data.get('quantite_stock') or 0)
         _log_mouvement_stock(structure_id, new_id, data.get('nom', ''), 'initial',
                               stock_initial, stock_initial, reference_type='creation_produit',
                               user_nom=session.get('user_name'))
@@ -6473,10 +6473,10 @@ def api_admin_update_produit(produit_id):
         # L=11: prise_en_charge_amu, M=12: commentaire_amu, 
         # N=13: prise_en_charge_cac, O=14: commentaire_cac
         current_row[1] = data.get('nom', '')
-        current_row[2] = str(float(data.get('prix_vente', 0)))
+        current_row[2] = str(float(data.get('prix_vente') or 0))
         current_row[3] = str(float(data.get('pbr', data.get('prix_vente', 0))))
-        current_row[4] = str(float(data.get('prix_achat', 0)))
-        current_row[5] = str(int(data.get('quantite_stock', 0)))
+        current_row[4] = str(float(data.get('prix_achat') or 0))
+        current_row[5] = str(int(data.get('quantite_stock') or 0))
         current_row[6] = str(int(data.get('seuil_alerte', 10)))
         current_row[7] = data.get('unite', 'unité')
         current_row[8] = data.get('date_peremption', '')
@@ -6493,7 +6493,7 @@ def api_admin_update_produit(produit_id):
         worksheet.update(range_name=f'A{row_num}:O{row_num}', values=[current_row])
         sheets_helper.clear_cache(sheet_name)
 
-        stock_apres = int(data.get('quantite_stock', 0))
+        stock_apres = int(data.get('quantite_stock') or 0)
         if stock_apres != stock_avant:
             _log_mouvement_stock(structure_id, produit_id, data.get('nom', ''), 'ajustement',
                                   stock_apres - stock_avant, stock_apres,
@@ -6608,22 +6608,22 @@ def api_vente_pharma():
             return jsonify({'success': False, 'error': 'ID patient manquant'}), 400
         
         # 🔥 Récupérer les données des assurances
-        taux_assurance = float(data.get('taux_assurance', 0))
+        taux_assurance = float(data.get('taux_assurance') or 0)
         assurance2_nom = data.get('assurance2_nom', '')
-        taux_assurance2 = float(data.get('taux_assurance2', 0))
+        taux_assurance2 = float(data.get('taux_assurance2') or 0)
         societe_assurance2 = data.get('societe_assurance2', '') or None
-        prise_en_charge = float(data.get('prise_en_charge', 0))
-        prise_en_charge2 = float(data.get('prise_en_charge2', 0))
+        prise_en_charge = float(data.get('prise_en_charge') or 0)
+        prise_en_charge2 = float(data.get('prise_en_charge2') or 0)
 
         # 🔥 Récupérer le montant donné et le rendu
-        montant_donne = float(data.get('montant_donne', 0))
-        rendu = float(data.get('rendu', 0))
+        montant_donne = float(data.get('montant_donne') or 0)
+        rendu = float(data.get('rendu') or 0)
 
         # 🔥 Récupérer le base_remboursement (PBR total)
-        base_remboursement = float(data.get('base_remboursement', 0))
+        base_remboursement = float(data.get('base_remboursement') or 0)
 
         # 🔥 Récupérer le reste à payer
-        reste_a_payer = float(data.get('reste_a_payer', 0))
+        reste_a_payer = float(data.get('reste_a_payer') or 0)
         
         # 🔥 Récupérer les infos de modification de taux
         taux_temp_modifie = data.get('taux_temp_modifie', False)
@@ -6631,8 +6631,8 @@ def api_vente_pharma():
 
         # 🔥🔥🔥 RÉCUPÉRER L'AIDE HOSPITALIÈRE 🔥🔥🔥
         assurance_principale_active = data.get('assurance_principale_active', True)
-        taux_aide = float(data.get('taux_aide', 0))
-        aide_hospitaliere = float(data.get('aide_hospitaliere', 0))
+        taux_aide = float(data.get('taux_aide') or 0)
+        aide_hospitaliere = float(data.get('aide_hospitaliere') or 0)
         # ⭐ Le mode % n'était plafonné à 100 que côté JS (jamais revérifié
         # ici) — un taux_aide=500 envoyé directement à l'API (bug front,
         # requête rejouée...) passait tel quel. Défense en profondeur, même
@@ -6721,9 +6721,9 @@ def api_vente_pharma():
             data.get('patient_nom', 'Patient'),
             structure_id,
             'pharmacie',
-            float(data.get('sous_total', 0)),
+            float(data.get('sous_total') or 0),
             prise_en_charge,
-            float(data.get('net_a_payer', 0)),
+            float(data.get('net_a_payer') or 0),
             data.get('mode_paiement', 'especes'),
             taux_assurance,
             json.dumps(produits_data, ensure_ascii=False),
@@ -6798,7 +6798,7 @@ def api_vente_pharma():
             
             for produit in produits_data:
                 produit_id = str(produit.get('id'))
-                quantite_vendue = int(produit.get('quantite', 0))
+                quantite_vendue = int(produit.get('quantite') or 0)
                 produit_nom = produit.get('nom', 'Inconnu')
                 
                 print(f"   🔍 Recherche du produit ID: {produit_id} - {produit_nom}")
@@ -6898,7 +6898,7 @@ def api_vente_pharma():
             'vente_id': vente_id,
             'montant_donne': montant_donne,
             'reste_a_payer': reste_a_payer,
-            'net_a_payer': float(data.get('net_a_payer', 0)),
+            'net_a_payer': float(data.get('net_a_payer') or 0),
             'rendu': rendu
         })
         
@@ -6995,8 +6995,8 @@ def api_ventes_stats():
                         else:
                             pharma_today += 1
                         
-                        ca_net_today += float(v.get('net_a_payer', 0))
-                        ca_brut_today += float(v.get('sous_total', 0))
+                        ca_net_today += float(v.get('net_a_payer') or 0)
+                        ca_brut_today += float(v.get('sous_total') or 0)
         
         return jsonify({
             'actes_today': actes_today,
@@ -7066,7 +7066,7 @@ def api_activites_recentes():
                     'id': v.get('id'),
                     'patient_nom': patient_name,
                     'type': v.get('type', 'unknown'),
-                    'montant': float(v.get('net_a_payer', 0)),
+                    'montant': float(v.get('net_a_payer') or 0),
                     'date': date_str
                 })
             else:
@@ -7126,22 +7126,22 @@ def api_add_acte_vente():
             return jsonify({'success': False, 'error': 'ID patient manquant'}), 400
         
         # 🔥 Récupérer les données des assurances
-        taux_assurance = float(data.get('taux_assurance', 0))
+        taux_assurance = float(data.get('taux_assurance') or 0)
         assurance2_nom = data.get('assurance2_nom', '')
-        taux_assurance2 = float(data.get('taux_assurance2', 0))
+        taux_assurance2 = float(data.get('taux_assurance2') or 0)
         societe_assurance2 = data.get('societe_assurance2', '') or None
-        prise_en_charge = float(data.get('prise_en_charge', 0))
-        prise_en_charge2 = float(data.get('prise_en_charge2', 0))
+        prise_en_charge = float(data.get('prise_en_charge') or 0)
+        prise_en_charge2 = float(data.get('prise_en_charge2') or 0)
 
         # 🔥 Récupérer le montant donné et le rendu
-        montant_donne = float(data.get('montant_donne', 0))
-        rendu = float(data.get('rendu', 0))
+        montant_donne = float(data.get('montant_donne') or 0)
+        rendu = float(data.get('rendu') or 0)
 
         # 🔥 Récupérer le base_remboursement (PBR total)
-        base_remboursement = float(data.get('base_remboursement', 0))
+        base_remboursement = float(data.get('base_remboursement') or 0)
 
         # 🔥 Récupérer le reste à payer
-        reste_a_payer = float(data.get('reste_a_payer', 0))
+        reste_a_payer = float(data.get('reste_a_payer') or 0)
         
         # 🔥 Récupérer les infos de modification de taux
         taux_temp_modifie = data.get('taux_temp_modifie', False)
@@ -7149,8 +7149,8 @@ def api_add_acte_vente():
 
         # 🔥🔥🔥 RÉCUPÉRER L'AIDE HOSPITALIÈRE 🔥🔥🔥
         assurance_principale_active = data.get('assurance_principale_active', True)
-        taux_aide = float(data.get('taux_aide', 0))
-        aide_hospitaliere = float(data.get('aide_hospitaliere', 0))
+        taux_aide = float(data.get('taux_aide') or 0)
+        aide_hospitaliere = float(data.get('aide_hospitaliere') or 0)
         # ⭐ Voir le même garde-fou dans api_vente_pharma() — défense en
         # profondeur, le plafond à 100% n'était vérifié que côté JS.
         type_aide = data.get('type_aide', 'pourcentage')
@@ -7236,9 +7236,9 @@ def api_add_acte_vente():
             data.get('patient_nom', 'Patient'),
             structure_id,
             'actes',
-            float(data.get('sous_total', 0)),
+            float(data.get('sous_total') or 0),
             prise_en_charge,
-            float(data.get('net_a_payer', 0)),
+            float(data.get('net_a_payer') or 0),
             data.get('mode_paiement', 'especes'),
             taux_assurance,
             json.dumps(actes_data, ensure_ascii=False),
@@ -7364,7 +7364,7 @@ def api_add_acte_vente():
             'vente_id': vente_id,
             'montant_donne': montant_donne,
             'reste_a_payer': reste_a_payer,
-            'net_a_payer': float(data.get('net_a_payer', 0))
+            'net_a_payer': float(data.get('net_a_payer') or 0)
         })
         
     except Exception as e:
@@ -7548,10 +7548,10 @@ def api_get_all_ventes():
                     except:
                         assurances = None
 
-                taux_aide = float(v.get('taux_aide', 0)) if v.get('taux_aide') is not None else 0
-                aide_hospitaliere = float(v.get('aide_hospitaliere', 0)) if v.get('aide_hospitaliere') is not None else 0
+                taux_aide = float(v.get('taux_aide') or 0) if v.get('taux_aide') is not None else 0
+                aide_hospitaliere = float(v.get('aide_hospitaliere') or 0) if v.get('aide_hospitaliere') is not None else 0
                 type_aide = v.get('type_aide') or 'pourcentage'
-                prise_en_charge = float(v.get('prise_en_charge', 0)) if v.get('prise_en_charge') is not None else 0
+                prise_en_charge = float(v.get('prise_en_charge') or 0) if v.get('prise_en_charge') is not None else 0
                 
                 result.append({
                     'ID': v.get('id'),
@@ -7731,7 +7731,7 @@ def api_get_actes():
         structure_id = session.get('structure_id')
         search = request.args.get('search', '').strip()
         limit = int(request.args.get('limit', 50))
-        offset = int(request.args.get('offset', 0))
+        offset = int(request.args.get('offset') or 0)
         
         print(f"📂 Recherche actes: '{search}' (limit={limit}, offset={offset})")
         
@@ -7888,7 +7888,7 @@ def annuler_vente(vente_id):
     vente_info = db.execute_query("""
         SELECT net_a_payer, type FROM ventes WHERE id = %s AND structure_id = %s
     """, (vente_id, structure_id))
-    montant = float(vente_info[0].get('net_a_payer', 0)) if vente_info else 0
+    montant = float(vente_info[0].get('net_a_payer') or 0) if vente_info else 0
     try:
         demande = _demander_validation(
             structure_id=structure_id, type_demande='annulation_vente',
@@ -7930,8 +7930,8 @@ def _executer_annulation_vente(vente_id, motif, structure_id, user_id, user_name
         if isinstance(v, dict):
             vente_type = v.get('type')
             produits_data = v.get('produits')
-            net_a_payer = float(v.get('net_a_payer', 0))
-            sous_total = float(v.get('sous_total', 0))
+            net_a_payer = float(v.get('net_a_payer') or 0)
+            sous_total = float(v.get('sous_total') or 0)
         else:
             vente_type = v[3] if len(v) > 3 else None
             produits_data = v[12] if len(v) > 12 else None
@@ -7952,7 +7952,7 @@ def _executer_annulation_vente(vente_id, motif, structure_id, user_id, user_name
                 
                 for produit in produits_data:
                     produit_id = str(produit.get('id'))
-                    quantite = int(produit.get('quantite', 0))
+                    quantite = int(produit.get('quantite') or 0)
 
                     if produit_id and quantite > 0:
                         cell = worksheet.find(produit_id, in_column=1)
@@ -8534,7 +8534,7 @@ def api_add_depense():
     structure_id = session.get('structure_id')
     user_id = session.get('user_id')
     user_name = session.get('user_name', 'Utilisateur')
-    montant = float(data.get('montant', 0))
+    montant = float(data.get('montant') or 0)
 
     try:
         demande = _demander_validation(
@@ -8644,7 +8644,7 @@ def api_add_recette():
         structure_id = session.get('structure_id')
         user_name = session.get('user_name', 'Admin')
         
-        montant = float(data.get('montant', 0))
+        montant = float(data.get('montant') or 0)
         source = data.get('source', 'autres')
         description = data.get('description', '')
         
@@ -8826,7 +8826,7 @@ def api_paiement_assurance(facture_id):
     try:
         data = request.json
         structure_id = session.get('structure_id')
-        montant = float(data.get('montant', 0))
+        montant = float(data.get('montant') or 0)
         date_remboursement = data.get('date_remboursement')
 
         # ⭐ Pièces justificatives obligatoires (traçabilité de l'encaissement)
@@ -8845,9 +8845,9 @@ def api_paiement_assurance(facture_id):
             return jsonify({'success': False, 'error': 'Facture non trouvee'}), 404
 
         f = facture[0]
-        deja_rembourse = float(f.get('montant_rembourse', 0))
+        deja_rembourse = float(f.get('montant_rembourse') or 0)
         nouveau_rembourse = deja_rembourse + montant
-        total_facture = float(f.get('montant_facture', 0))
+        total_facture = float(f.get('montant_facture') or 0)
 
         if nouveau_rembourse > total_facture:
             return jsonify({'success': False, 'error': 'Montant depasse le solde restant'}), 400
@@ -9022,7 +9022,7 @@ def generer_factures_assurance():
                             'id': v.get('id'),
                             'patient_nom': v.get('patient_nom'),
                             'montant_assurance': prise_en_charge,
-                            'taux_assurance': float(v.get('taux_assurance', 0)),  # 🔥 Conversion
+                            'taux_assurance': float(v.get('taux_assurance') or 0),  # 🔥 Conversion
                             'date_vente': str(v.get('date_vente')),
                             'type': 'principale'
                         })
@@ -9045,7 +9045,7 @@ def generer_factures_assurance():
                             'id': v.get('id'),
                             'patient_nom': v.get('patient_nom'),
                             'montant_assurance': prise_en_charge2,
-                            'taux_assurance': float(v.get('taux_assurance2', 0)),  # 🔥 Conversion
+                            'taux_assurance': float(v.get('taux_assurance2') or 0),  # 🔥 Conversion
                             'date_vente': str(v.get('date_vente')),
                             'type': 'complementaire'
                         })
@@ -9291,7 +9291,7 @@ def api_get_facture_detail(facture_id):
             if isinstance(p, dict):
                 paiements_list.append({
                     'id': p.get('id'),
-                    'montant': float(p.get('montant', 0)),
+                    'montant': float(p.get('montant') or 0),
                     'date_paiement': str(p.get('date_paiement')),
                     'mode_paiement': p.get('mode_paiement'),
                     'notes': p.get('notes'),
@@ -9315,14 +9315,14 @@ def api_get_facture_detail(facture_id):
                 'patient_telephone': f.get('patient_telephone'),
                 'date_emission': str(f.get('date_emission')),
                 'date_echeance': str(f.get('date_echeance')),
-                'sous_total': float(f.get('sous_total', 0)),
-                'taux_assurance': float(f.get('taux_assurance', 0)),
-                'prise_en_charge': float(f.get('prise_en_charge', 0)),
-                'taux_assurance2': float(f.get('taux_assurance2', 0)),
-                'prise_en_charge2': float(f.get('prise_en_charge2', 0)),
-                'net_a_payer': float(f.get('net_a_payer', 0)),
-                'montant_paye': float(f.get('montant_paye', 0)),
-                'reste_a_payer': float(f.get('reste_a_payer', 0)),
+                'sous_total': float(f.get('sous_total') or 0),
+                'taux_assurance': float(f.get('taux_assurance') or 0),
+                'prise_en_charge': float(f.get('prise_en_charge') or 0),
+                'taux_assurance2': float(f.get('taux_assurance2') or 0),
+                'prise_en_charge2': float(f.get('prise_en_charge2') or 0),
+                'net_a_payer': float(f.get('net_a_payer') or 0),
+                'montant_paye': float(f.get('montant_paye') or 0),
+                'reste_a_payer': float(f.get('reste_a_payer') or 0),
                 'statut': f.get('statut'),
                 'statut_label': get_statut_label(f.get('statut')),
                 'articles': f.get('articles', []),
@@ -9352,7 +9352,7 @@ def payer_facture_assurance(facture_id):
     structure_id = session.get('structure_id')
     user_id = session.get('user_id')
     user_name = session.get('user_name', 'Utilisateur')
-    montant = float(data.get('montant', 0))
+    montant = float(data.get('montant') or 0)
 
     if montant <= 0:
         return jsonify({'success': False, 'error': 'Montant invalide'}), 400
@@ -9819,7 +9819,7 @@ def api_creer_proforma():
         # assuré ne souhaite pas l'utiliser) — absent jusqu'ici du
         # formulaire de création, même mécanisme que côté vente directe.
         assurance_principale_active = data.get('assurance_principale_active', True)
-        taux_assurance = float(data.get('taux_assurance', 0)) if assurance_principale_active else 0
+        taux_assurance = float(data.get('taux_assurance') or 0) if assurance_principale_active else 0
 
         for article in articles:
             prix = float(article.get('prix', article.get('prix_unitaire', 0)))
@@ -9889,7 +9889,7 @@ def api_creer_proforma():
         # 🔥🔥🔥 ASSURANCE COMPLÉMENTAIRE (CAC) - Utilise base_cac_articles 🔥🔥🔥
         assurance2_active = data.get('assurance2_active', False)
         assurance2_nom = data.get('assurance2_nom', '')
-        taux_assurance2 = float(data.get('taux_assurance2', 0)) if assurance2_active else 0
+        taux_assurance2 = float(data.get('taux_assurance2') or 0) if assurance2_active else 0
         prise_en_charge2 = 0
         
         if assurance2_active and taux_assurance2 > 0 and base_cac_articles > 0:
@@ -9898,7 +9898,7 @@ def api_creer_proforma():
         
         # 🔥 TAUX MODIFIÉ
         taux_modifie = data.get('taux_modifie', False)
-        taux_original = float(data.get('taux_original', 0))
+        taux_original = float(data.get('taux_original') or 0)
         
         # 🔥 Net à payer
         if tout_non_pris:
@@ -10149,11 +10149,11 @@ def proforma_print(proforma_id):
             assurances_data = {}
     
     assurance2_nom = proforma.get('assurance2_nom', '')
-    taux_assurance2 = float(proforma.get('taux_assurance2', 0))
+    taux_assurance2 = float(proforma.get('taux_assurance2') or 0)
     assurance2_active = proforma.get('assurance2_active', False)
     taux_modifie = proforma.get('taux_modifie', False)
-    taux_original = float(proforma.get('taux_original', 0))
-    prise_en_charge2 = float(proforma.get('prise_en_charge2', 0))
+    taux_original = float(proforma.get('taux_original') or 0)
+    prise_en_charge2 = float(proforma.get('prise_en_charge2') or 0)
     
     # 🔥🔥🔥 CALCUL DU PBR TOTAL ET DE LA BASE REMBOURSEMENT 🔥🔥🔥
     articles = proforma.get('articles', [])
@@ -10175,7 +10175,7 @@ def proforma_print(proforma_id):
 
     # 🔥 Taux d'assurance principale (calculé avant la boucle : nécessaire
     # à taux_amu_pour_article ci-dessous)
-    taux_assurance = float(proforma.get('taux_assurance', 0))
+    taux_assurance = float(proforma.get('taux_assurance') or 0)
 
     for a in articles:
         prix = float(a.get('prix_unitaire', a.get('prix', 0)))
@@ -10463,7 +10463,7 @@ def api_convertir_proforma():
         print(f"   Net à payer: {net_a_payer} FCFA")
         
         # 🔥 Récupérer les données de paiement
-        montant_donne = float(data.get('montant_donne', 0))
+        montant_donne = float(data.get('montant_donne') or 0)
         
         # 🔥 Calcul du rendu
         rendu = 0
@@ -10624,7 +10624,7 @@ def api_convertir_proforma():
                 
                 for article in produits_vendus:
                     produit_id = str(article.get('id'))
-                    quantite_vendue = int(article.get('quantite', 0))
+                    quantite_vendue = int(article.get('quantite') or 0)
                     produit_nom = article.get('nom', 'Inconnu')
                     
                     print(f"   🔍 Recherche du produit ID: {produit_id} - {produit_nom}")
@@ -10856,12 +10856,12 @@ def api_update_proforma(proforma_id):
         # création et à la conversion) ; même mécanisme : taux forcé à 0
         # si désactivée, quoi que le front envoie.
         assurance_principale_active = data.get('assurance_principale_active', True)
-        taux_assurance = float(data.get('taux_assurance', 0)) if assurance_principale_active else 0
+        taux_assurance = float(data.get('taux_assurance') or 0) if assurance_principale_active else 0
         numero_assure = data.get('numero_assure', '')
 
         assurance2_active = data.get('assurance2_active', False)
         assurance2_nom = data.get('assurance2_nom', '')
-        taux_assurance2 = float(data.get('taux_assurance2', 0))
+        taux_assurance2 = float(data.get('taux_assurance2') or 0)
 
         # Recalculer les prises en charge
         prise_en_charge = (sous_total * taux_assurance) / 100 if taux_assurance > 0 else 0
@@ -11172,7 +11172,7 @@ def facture_print(facture_id):
         if isinstance(p, dict):
             paiements_list.append({
                 'date': str(p.get('date_paiement')),
-                'montant': float(p.get('montant', 0)),
+                'montant': float(p.get('montant') or 0),
                 'mode': p.get('mode_paiement'),
                 'notes': p.get('notes', '')
             })
@@ -11243,21 +11243,21 @@ def recu_paiement(paiement_id):
     if isinstance(p, dict):
         paiement_data = {
             'id': p.get('id'),
-            'montant': float(p.get('montant', 0)),
+            'montant': float(p.get('montant') or 0),
             'date_paiement': str(p.get('date_paiement')),
             'mode_paiement': p.get('mode_paiement'),
             'notes': p.get('notes'),
             'numero_facture': p.get('numero_facture'),
             'patient_nom': p.get('patient_nom'),
             'patient_telephone': p.get('patient_telephone'),
-            'net_a_payer': float(p.get('net_a_payer', 0)),
-            'reste_a_payer': float(p.get('reste_a_payer', 0)),
-            'montant_total_paye': float(p.get('montant_paye', 0)),
-            'sous_total': float(p.get('sous_total', 0)),
-            'taux_assurance': float(p.get('taux_assurance', 0)),
-            'prise_en_charge': float(p.get('prise_en_charge', 0)),
-            'taux_assurance2': float(p.get('taux_assurance2', 0)),
-            'prise_en_charge2': float(p.get('prise_en_charge2', 0)),
+            'net_a_payer': float(p.get('net_a_payer') or 0),
+            'reste_a_payer': float(p.get('reste_a_payer') or 0),
+            'montant_total_paye': float(p.get('montant_paye') or 0),
+            'sous_total': float(p.get('sous_total') or 0),
+            'taux_assurance': float(p.get('taux_assurance') or 0),
+            'prise_en_charge': float(p.get('prise_en_charge') or 0),
+            'taux_assurance2': float(p.get('taux_assurance2') or 0),
+            'prise_en_charge2': float(p.get('prise_en_charge2') or 0),
             'articles': json.loads(p.get('articles')) if isinstance(p.get('articles'), str) else p.get('articles', [])
         }
     else:
@@ -11376,11 +11376,11 @@ def api_creer_facture_from_vente(vente_id):
             numero_facture,
             datetime.now().date(),
             date_echeance,
-            float(v.get('sous_total', 0)),
-            float(v.get('taux_assurance', 0)),
-            float(v.get('prise_en_charge', 0)),
-            float(v.get('taux_assurance2', 0)),
-            float(v.get('prise_en_charge2', 0)),
+            float(v.get('sous_total') or 0),
+            float(v.get('taux_assurance') or 0),
+            float(v.get('prise_en_charge') or 0),
+            float(v.get('taux_assurance2') or 0),
+            float(v.get('prise_en_charge2') or 0),
             net_a_payer,
             montant_deja_encaisse,
             reste_a_payer_initial,
@@ -11493,14 +11493,14 @@ def api_get_factures():
                     'patient_telephone': f.get('patient_telephone', ''),
                     'date_emission': str(f.get('date_emission')) if f.get('date_emission') else '',
                     'date_echeance': str(f.get('date_echeance')) if f.get('date_echeance') else '',
-                    'sous_total': float(f.get('sous_total', 0)),
-                    'taux_assurance': float(f.get('taux_assurance', 0)),
-                    'prise_en_charge': float(f.get('prise_en_charge', 0)),
-                    'taux_assurance2': float(f.get('taux_assurance2', 0)),
-                    'prise_en_charge2': float(f.get('prise_en_charge2', 0)),
-                    'net_a_payer': float(f.get('net_a_payer', 0)),
-                    'montant_paye': float(f.get('montant_paye', 0)),
-                    'reste_a_payer': float(f.get('reste_a_payer', 0)),
+                    'sous_total': float(f.get('sous_total') or 0),
+                    'taux_assurance': float(f.get('taux_assurance') or 0),
+                    'prise_en_charge': float(f.get('prise_en_charge') or 0),
+                    'taux_assurance2': float(f.get('taux_assurance2') or 0),
+                    'prise_en_charge2': float(f.get('prise_en_charge2') or 0),
+                    'net_a_payer': float(f.get('net_a_payer') or 0),
+                    'montant_paye': float(f.get('montant_paye') or 0),
+                    'reste_a_payer': float(f.get('reste_a_payer') or 0),
                     'statut': f.get('statut', 'en_attente'),
                     'statut_label': get_statut_label(f.get('statut')),
                     'nb_paiements': int(f.get('nb_paiements', 0) or 0),
@@ -11510,7 +11510,7 @@ def api_get_factures():
                     'created_by': f.get('created_by', ''),
                     'created_at': str(f.get('created_at')) if f.get('created_at') else '',
                     'updated_at': str(f.get('updated_at')) if f.get('updated_at') else '',
-                    'base_remboursement': float(f.get('base_remboursement', 0)),
+                    'base_remboursement': float(f.get('base_remboursement') or 0),
                     'assurances_data': f.get('assurances_data', {}),
                     'vente_id': f.get('vente_id')
                 })
@@ -11563,7 +11563,7 @@ def api_enregistrer_paiement(facture_id):
         structure_id = session.get('structure_id')
         user_name = session.get('user_name', 'System')
         
-        montant = float(data.get('montant', 0))
+        montant = float(data.get('montant') or 0)
         mode_paiement = data.get('mode_paiement', 'especes')
         notes = data.get('notes', '')
         
@@ -11580,7 +11580,7 @@ def api_enregistrer_paiement(facture_id):
             return jsonify({'success': False, 'error': 'Facture non trouvée'}), 404
         
         f = facture[0]
-        reste_actuel = float(f.get('reste_a_payer', 0))
+        reste_actuel = float(f.get('reste_a_payer') or 0)
         
         if montant > reste_actuel:
             return jsonify({
@@ -11589,7 +11589,7 @@ def api_enregistrer_paiement(facture_id):
             }), 400
         
         # Calculer les nouveaux montants
-        nouveau_montant_paye = float(f.get('montant_paye', 0)) + montant
+        nouveau_montant_paye = float(f.get('montant_paye') or 0) + montant
         nouveau_reste = reste_actuel - montant
         
         # Déterminer le statut
@@ -11772,8 +11772,8 @@ def api_creer_facture_automatique():
         vente_id = data.get('vente_id')
         date_echeance = data.get('date_echeance')
         mode_paiement = data.get('mode_paiement', 'especes')
-        montant_paye = float(data.get('montant_paye', 0))
-        reste_a_payer = float(data.get('reste_a_payer', 0))
+        montant_paye = float(data.get('montant_paye') or 0)
+        reste_a_payer = float(data.get('reste_a_payer') or 0)
         notes = data.get('notes', '')
         
         if not vente_id:
@@ -11859,10 +11859,10 @@ def api_creer_facture_automatique():
         if not patient_telephone and isinstance(v, dict):
             patient_telephone = v.get('telephone', '')
         
-        net_a_payer = float(v.get('net_a_payer', 0)) if isinstance(v, dict) else float(v[6]) if len(v) > 6 else 0
+        net_a_payer = float(v.get('net_a_payer') or 0) if isinstance(v, dict) else float(v[6]) if len(v) > 6 else 0
         
         # Récupérer base_remboursement
-        base_remboursement = float(v.get('base_remboursement', 0)) if isinstance(v, dict) else float(v[20]) if len(v) > 20 else 0
+        base_remboursement = float(v.get('base_remboursement') or 0) if isinstance(v, dict) else float(v[20]) if len(v) > 20 else 0
         
         if reste_a_payer <= 0:
             reste_a_payer = net_a_payer - montant_paye
@@ -11912,11 +11912,11 @@ def api_creer_facture_automatique():
             numero_facture,
             datetime.now().date(),
             date_echeance,
-            float(v.get('sous_total', 0)) if isinstance(v, dict) else float(v[4]) if len(v) > 4 else 0,
-            float(v.get('taux_assurance', 0)) if isinstance(v, dict) else float(v[9]) if len(v) > 9 else 0,
-            float(v.get('prise_en_charge', 0)) if isinstance(v, dict) else float(v[5]) if len(v) > 5 else 0,
-            float(v.get('taux_assurance2', 0)) if isinstance(v, dict) else 0,
-            float(v.get('prise_en_charge2', 0)) if isinstance(v, dict) else 0,
+            float(v.get('sous_total') or 0) if isinstance(v, dict) else float(v[4]) if len(v) > 4 else 0,
+            float(v.get('taux_assurance') or 0) if isinstance(v, dict) else float(v[9]) if len(v) > 9 else 0,
+            float(v.get('prise_en_charge') or 0) if isinstance(v, dict) else float(v[5]) if len(v) > 5 else 0,
+            float(v.get('taux_assurance2') or 0) if isinstance(v, dict) else 0,
+            float(v.get('prise_en_charge2') or 0) if isinstance(v, dict) else 0,
             net_a_payer,
             montant_paye,
             reste_a_payer,
@@ -12011,9 +12011,9 @@ def lunetterie_vente():
                 'modele': l.get('modele', ''),
                 'type_verres': l.get('type_verres', ''),
                 'couleur': l.get('couleur', ''),
-                'prix_vente': float(l.get('prix_vente', 0)),
-                'prix_achat': float(l.get('prix_achat', 0)),
-                'quantite_stock': int(l.get('quantite_stock', 0)),
+                'prix_vente': float(l.get('prix_vente') or 0),
+                'prix_achat': float(l.get('prix_achat') or 0),
+                'quantite_stock': int(l.get('quantite_stock') or 0),
                 'seuil_alerte': int(l.get('seuil_alerte', 10)),
                 'fournisseur': l.get('fournisseur', ''),
                 'description': l.get('description', '')
@@ -12725,11 +12725,11 @@ def prescriptions_recues():
             nom = a.get('nom', '').lower().strip()
             if nom:
                 try:
-                    prix = float(a.get('prix', 0)) if a.get('prix') else 0
+                    prix = float(a.get('prix') or 0) if a.get('prix') else 0
                 except:
                     prix = 0
                 try:
-                    pbr = float(a.get('pbr', 0)) if a.get('pbr') else 0
+                    pbr = float(a.get('pbr') or 0) if a.get('pbr') else 0
                 except:
                     pbr = 0
                 actes_dict[nom] = {'prix': prix, 'pbr': pbr}
@@ -12891,7 +12891,7 @@ def prescription_details(id):
                 for act in actes:
                     nom_act = act.get('nom', '')
                     if nom_act and nom_recherche.lower() in nom_act.lower():
-                        prix_unitaire = float(act.get('prix', 0))
+                        prix_unitaire = float(act.get('prix') or 0)
                         nom_trouve = nom_act
                         found = True
                         match_info = f'✅ Match partiel: {nom_trouve}'
@@ -13108,7 +13108,7 @@ def api_verifier_prix_prescriptions():
                     WHERE nom ILIKE %s AND structure_id = %s
                 """, (nom, structure_id))
                 if produit and len(produit) > 0:
-                    prix = float(produit[0].get('prix_vente', 0))
+                    prix = float(produit[0].get('prix_vente') or 0)
                 else:
                     errors.append(f"Médicament non trouvé: {nom}")
             else:  # acte
@@ -13117,7 +13117,7 @@ def api_verifier_prix_prescriptions():
                     WHERE nom ILIKE %s AND structure_id = %s
                 """, (nom, structure_id))
                 if acte and len(acte) > 0:
-                    prix = float(acte[0].get('prix', 0))
+                    prix = float(acte[0].get('prix') or 0)
                 else:
                     errors.append(f"Acte non trouvé: {nom}")
             
