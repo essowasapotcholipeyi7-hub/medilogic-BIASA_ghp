@@ -13,7 +13,7 @@ from io import BytesIO
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion
 from utils.permissions import a_acces, PERMISSIONS
 from models import RendezVous
 from models import Medecin, Patient, Structure
@@ -48,6 +48,9 @@ print(f"🔗 BASE_URL: {BASE_URL}")
 app = Flask(__name__)
 app.config.from_object(Config)
 app.secret_key = Config.SECRET_KEY
+# "Se souvenir de moi" (index.html) : durée de la session quand
+# session.permanent = True est posé à la connexion — voir index().
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
 
 # ⭐ Initialiser le db SQLAlchemy
 db.init_app(app)
@@ -294,6 +297,98 @@ def get_next_id(records, id_field='ID'):
 
 import threading
 
+# ========== ANTI-BRUTE-FORCE CONNEXION ==========
+# 4 mots de passe erronés consécutifs sur un même email → compte bloqué
+# 10 minutes + email au titulaire. Compteur en base (VerrouillageConnexion,
+# models.py) plutôt qu'en Google Sheets : plus rapide à lire/écrire à
+# chaque tentative, et l'email est le seul identifiant commun aux comptes
+# "utilisateur" (struct_N_users) et "structure/admin" — les deux branches
+# de connexion ci-dessous partagent donc la même table.
+MAX_TENTATIVES_CONNEXION = 4
+DUREE_VERROUILLAGE_CONNEXION = timedelta(minutes=10)
+
+
+def _verrouillage_actif(email):
+    """Minutes restantes si le compte est verrouillé, sinon None."""
+    if not email:
+        return None
+    v = VerrouillageConnexion.query.filter_by(email=email).first()
+    if not v or not v.verrouille_jusqu_a:
+        return None
+    reste = (v.verrouille_jusqu_a - datetime.utcnow()).total_seconds()
+    if reste <= 0:
+        return None
+    return max(1, int(reste // 60) + 1)
+
+
+def _reinitialiser_echecs(email):
+    """Connexion réussie : efface le compteur d'échecs de cet email."""
+    if not email:
+        return
+    v = VerrouillageConnexion.query.filter_by(email=email).first()
+    if v and (v.tentatives_echouees or v.verrouille_jusqu_a):
+        v.tentatives_echouees = 0
+        v.verrouille_jusqu_a = None
+        db.session.commit()
+
+
+def _enregistrer_echec(email, nom=None):
+    """Mot de passe erroné pour un compte existant : incrémente le
+    compteur, verrouille 10 min et prévient par email au 4e échec
+    consécutif. N'est PAS appelée pour un email introuvable (on ne
+    verrouille pas un compte qui n'existe pas)."""
+    if not email:
+        return
+    v = VerrouillageConnexion.query.filter_by(email=email).first()
+    if not v:
+        v = VerrouillageConnexion(email=email, tentatives_echouees=0)
+        db.session.add(v)
+    v.tentatives_echouees = (v.tentatives_echouees or 0) + 1
+    v.derniere_tentative = datetime.utcnow()
+    vient_de_se_verrouiller = False
+    if v.tentatives_echouees >= MAX_TENTATIVES_CONNEXION:
+        v.verrouille_jusqu_a = datetime.utcnow() + DUREE_VERROUILLAGE_CONNEXION
+        v.tentatives_echouees = 0
+        vient_de_se_verrouiller = True
+    db.session.commit()
+    if vient_de_se_verrouiller:
+        _envoyer_email_verrouillage(email, nom)
+
+
+def _envoyer_email_verrouillage(email, nom):
+    """Notifie le titulaire du compte par email — envoi en arrière-plan,
+    même principe que envoyer_email_async() ci-dessous."""
+    def _send():
+        try:
+            msg = Message(
+                "🔒 Compte temporairement bloqué - Medilogic",
+                recipients=[email],
+                html=f"""
+                <html><body style="font-family:Arial,sans-serif; color:#333;">
+                    <h2>🔒 Compte temporairement bloqué</h2>
+                    <p>Bonjour {nom or ''},</p>
+                    <p>Votre compte Medilogic (<strong>{email}</strong>) vient d'être
+                    bloqué pendant <strong>10 minutes</strong> suite à
+                    <strong>4 tentatives de connexion avec un mot de passe incorrect</strong>.</p>
+                    <p>Si c'est vous qui avez oublié votre mot de passe : patientez
+                    10 minutes puis réessayez, ou utilisez « Mot de passe oublié ? »
+                    sur la page de connexion.</p>
+                    <p>Si ce n'est pas vous : quelqu'un a peut-être essayé d'accéder à
+                    votre compte — pensez à changer votre mot de passe dès que possible.</p>
+                    <hr>
+                    <p style="color:#888; font-size:12px;">Medilogic — sécurité des comptes</p>
+                </body></html>
+                """
+            )
+            mail.send(msg)
+            print(f"✅ Email de verrouillage envoyé à {email}")
+        except Exception as e:
+            print(f"⚠️ Email de verrouillage non envoyé: {e}")
+    thread = threading.Thread(target=_send)
+    thread.daemon = True
+    thread.start()
+
+
 def envoyer_email_async(structure_nom, structure_email, structure_id, proprietaire):
     """Envoie l'email dans un thread séparé - ne bloque pas l'inscription"""
     def _send():
@@ -499,12 +594,18 @@ def index():
     if request.method == 'POST':
         email = request.form.get('email')
         password = request.form.get('password')
-        
+        se_souvenir = bool(request.form.get('remember'))
+
         print("=" * 50)
         print(f"🔐 TENTATIVE DE CONNEXION")
         print(f"📧 Email: {email}")
         print("=" * 50)
-        
+
+        minutes_restantes = _verrouillage_actif(email)
+        if minutes_restantes:
+            flash(f'🔒 Compte temporairement bloqué suite à plusieurs mots de passe incorrects. Réessayez dans {minutes_restantes} min.', 'danger')
+            return redirect(url_for('index'))
+
         try:
             spreadsheet = sheets_helper.spreadsheet
             all_worksheets = spreadsheet.worksheets()
@@ -518,6 +619,7 @@ def index():
             except Exception:
                 infos = None
             if infos:
+                session.permanent = se_souvenir
                 session['user_id'] = infos['user_id']
                 session['user_name'] = infos['user_name']
                 session['structure_id'] = infos['structure_id']
@@ -599,7 +701,8 @@ def index():
                             if structure.get('statut') == 'active':
                                 # 🔥 Récupérer le rôle
                                 role = row.get('role', 'caissier')
-                                
+                                _reinitialiser_echecs(email)
+                                session.permanent = se_souvenir
                                 session['user_id'] = row.get('ID')
                                 session['user_name'] = row.get('nom')
                                 session['structure_id'] = structure_id
@@ -619,6 +722,7 @@ def index():
                                 return redirect(url_for('index'))
                         else:
                             print("❌ Mot de passe incorrect")
+                            _enregistrer_echec(email, row.get('nom'))
                             flash('Mot de passe incorrect', 'danger')
                             return redirect(url_for('index'))
         
@@ -644,7 +748,9 @@ def index():
                                     sheet_structures.update(range_name=f'A{row_num}:M{row_num}', values=[current_row])
                             except:
                                 pass
-                            
+
+                            _reinitialiser_echecs(email)
+                            session.permanent = se_souvenir
                             session['user_id'] = structure.get('ID')
                             session['user_name'] = structure.get('nom')
                             session['structure_id'] = structure.get('ID')
@@ -660,9 +766,10 @@ def index():
                             flash('Structure en attente d\'activation', 'warning')
                             return redirect(url_for('index'))
                     else:
+                        _enregistrer_echec(email, structure.get('nom'))
                         flash('Mot de passe incorrect', 'danger')
                         return redirect(url_for('index'))
-        
+
         # ========== 3. GESTION DES ERREURS ==========
         if not user_trouve:
             flash('Email non trouvé', 'danger')
@@ -955,8 +1062,14 @@ def reset_password():
             flash('Le mot de passe doit contenir au moins 8 caractères', 'danger')
             return render_template('reset_password.html', token=token)
         
-        from werkzeug.security import generate_password_hash
-        hashed = generate_password_hash(new_password)
+        # 🔥 BUG CORRIGÉ : ce hash devait utiliser hash_password() (SHA256),
+        # exactement comme la connexion (index()) et la création de compte
+        # (/api/admin/users) — pas generate_password_hash() de Werkzeug, un
+        # format totalement différent. Le mot de passe réinitialisé était
+        # donc stocké dans un format que la connexion ne savait jamais
+        # reconnaître : le nouveau mot de passe ne fonctionnait plus,
+        # seul l'ancien (jamais écrasé au bon format) continuait à marcher.
+        hashed = hash_password(new_password)
         
         try:
             if user['type'] == 'structure':

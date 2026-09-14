@@ -1619,6 +1619,22 @@ class HabilitationTemporaire(db.Model):
     revoque_par_nom = db.Column(db.String(255))
 
 
+class VerrouillageConnexion(db.Model):
+    """Anti-brute-force sur la connexion : 4 mots de passe erronés
+    consécutifs verrouillent le compte 10 minutes (voir app.py:
+    _verrouillage_actif/_enregistrer_echec/_reinitialiser_echecs, seuls
+    endroits qui lisent/écrivent cette table). Clé sur l'email plutôt que
+    sur un ID Sheets : la connexion cherche par email et peut aboutir à
+    un compte utilisateur OU un compte structure/admin, deux univers
+    d'ID différents — l'email est le seul identifiant commun aux deux."""
+    __tablename__ = 'verrouillage_connexion'
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(255), unique=True, nullable=False)
+    tentatives_echouees = db.Column(db.Integer, default=0)
+    verrouille_jusqu_a = db.Column(db.DateTime)  # null = pas verrouillé
+    derniere_tentative = db.Column(db.DateTime)
+
+
 class MessageChat(db.Model):
     """Chat interne : salon commun (destinataire_id NULL) + messages
     privés entre deux employés. Comptes utilisateurs en Google Sheets, pas
