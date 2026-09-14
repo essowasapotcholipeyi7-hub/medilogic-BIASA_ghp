@@ -2790,10 +2790,13 @@ document.addEventListener('DOMContentLoaded', function() {
 // haut — pas de WebSocket sur cette appli.
 {% if session.user_id and not (cacher_navigation is defined and cacher_navigation) %}
 (function() {
+    const EST_ADMIN = {{ 'true' if session.is_admin else 'false' }};
     let filActif = 'salon';
     let filActifNom = 'Salon général';
+    let filSupervision = false;  // true = conversation d'AUTRES personnes, consultée par l'admin (lecture seule)
     let dernierMessageAffiche = null;
     let contacts = [];
+    let conversationsSupervisees = [];
     let panneauOuvert = false;
     let pollingFilInterval = null;
 
@@ -2873,6 +2876,7 @@ document.addEventListener('DOMContentLoaded', function() {
         panel.classList.toggle('open', panneauOuvert);
         if (panneauOuvert) {
             chargerContacts();
+            if (EST_ADMIN) chargerSupervision();
             ouvrirFil('salon', 'Salon général');
         } else if (pollingFilInterval) {
             clearInterval(pollingFilInterval);
@@ -2888,28 +2892,56 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Admin uniquement : liste de TOUTES les conversations privées de la
+    // structure (pas seulement les siennes), pour pouvoir les consulter —
+    // voir /api/admin/conversations et /api/admin/dm/<id1>/<id2>.
+    function chargerSupervision() {
+        fetch('/chat/api/admin/conversations').then(r => r.json()).then(d => {
+            if (!d.success) return;
+            conversationsSupervisees = d.conversations;
+            renderThreads();
+        });
+    }
+
     function renderThreads() {
         const zone = document.getElementById('chatThreads');
         let html = `<div class="chat-thread ${filActif === 'salon' ? 'active' : ''}" data-fil="salon">💬 Salon</div>`;
         contacts.forEach(c => {
-            html += `<div class="chat-thread ${filActif === c.id ? 'active' : ''}" data-fil="${c.id}" data-nom="${escapeHtml(c.nom || '')}">
+            html += `<div class="chat-thread ${filActif === String(c.id) ? 'active' : ''}" data-fil="${c.id}" data-nom="${escapeHtml(c.nom || '')}">
                 ${escapeHtml(c.nom || '')}
                 ${c.non_lus ? `<span class="badge-non-lu">${c.non_lus}</span>` : ''}
             </div>`;
         });
+        if (EST_ADMIN && conversationsSupervisees.length) {
+            html += `<div style="padding:6px; font-size:10px; color:#999; border-top:1px solid #eee; margin-top:4px;">🛡️ Supervision</div>`;
+            conversationsSupervisees.forEach(c => {
+                const filCle = 'admin:' + c.id1 + ':' + c.id2;
+                const label = (c.nom1 || c.id1) + ' ↔ ' + (c.nom2 || c.id2);
+                html += `<div class="chat-thread ${filActif === filCle ? 'active' : ''}" data-fil="${filCle}" data-nom="${escapeHtml(label)}" data-id1="${c.id1}" data-id2="${c.id2}" title="${escapeHtml(c.dernier_message || '')}">
+                    🛡️ ${escapeHtml(label)}
+                </div>`;
+            });
+        }
         zone.innerHTML = html;
         zone.querySelectorAll('.chat-thread').forEach(el => {
             el.addEventListener('click', function() {
                 const filBrut = this.dataset.fil;
-                const nom = filBrut === 'salon' ? 'Salon général' : this.dataset.nom;
-                ouvrirFil(filBrut === 'salon' ? 'salon' : parseInt(filBrut, 10), nom);
+                if (filBrut.startsWith('admin:')) {
+                    ouvrirFilSupervision(parseInt(this.dataset.id1, 10), parseInt(this.dataset.id2, 10), this.dataset.nom);
+                } else if (filBrut === 'salon') {
+                    ouvrirFil('salon', 'Salon général');
+                } else {
+                    ouvrirFil(filBrut, this.dataset.nom);
+                }
             });
         });
     }
 
     function ouvrirFil(fil, nom) {
-        filActif = fil;
+        filActif = String(fil);
         filActifNom = nom;
+        filSupervision = false;
+        document.getElementById('chatInputZone').style.display = 'flex';
         document.getElementById('chatHeaderTitre').textContent = (fil === 'salon' ? '💬 ' : '👤 ') + nom;
         document.getElementById('chatMessages').innerHTML = '';
         dernierMessageAffiche = null;
@@ -2920,14 +2952,35 @@ document.addEventListener('DOMContentLoaded', function() {
         renderThreads();
     }
 
+    // Admin : conversation entre deux AUTRES personnes — lecture seule,
+    // pas de zone de saisie, et on ne la marque jamais "vue" (ça
+    // fausserait le compteur de non-lus des deux vrais participants).
+    function ouvrirFilSupervision(id1, id2, nom) {
+        filActif = 'admin:' + id1 + ':' + id2;
+        filActifNom = nom;
+        filSupervision = true;
+        document.getElementById('chatInputZone').style.display = 'none';
+        document.getElementById('chatHeaderTitre').textContent = '🛡️ ' + nom;
+        document.getElementById('chatMessages').innerHTML = '';
+        dernierMessageAffiche = null;
+        chargerMessages(true);
+        if (pollingFilInterval) clearInterval(pollingFilInterval);
+        pollingFilInterval = setInterval(function() { chargerMessages(false); }, 5000);
+        renderThreads();
+    }
+
     function urlFil(fil) {
+        if (typeof fil === 'string' && fil.startsWith('admin:')) {
+            const parts = fil.split(':');
+            return '/chat/api/admin/dm/' + parts[1] + '/' + parts[2];
+        }
         return fil === 'salon' ? '/chat/api/salon' : ('/chat/api/dm/' + fil);
     }
 
     function chargerMessages(remplacer) {
         let url = urlFil(filActif);
         if (!remplacer && dernierMessageAffiche) {
-            url += '?since=' + encodeURIComponent(dernierMessageAffiche);
+            url += (url.includes('?') ? '&' : '?') + 'since=' + encodeURIComponent(dernierMessageAffiche);
         }
         fetch(url).then(r => r.json()).then(d => {
             if (!d.success || !d.messages.length) return;
@@ -2936,7 +2989,7 @@ document.addEventListener('DOMContentLoaded', function() {
             d.messages.forEach(ajouterBulle);
             dernierMessageAffiche = d.messages[d.messages.length - 1].date_envoi;
             zone.scrollTop = zone.scrollHeight;
-            if (!remplacer && d.messages.some(m => !m.de_moi)) {
+            if (!filSupervision && !remplacer && d.messages.some(m => !m.de_moi)) {
                 marquerVu(filActif);
             }
         });
@@ -2947,8 +3000,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const div = document.createElement('div');
         div.className = 'chat-bulle ' + (m.de_moi ? 'mine' : 'autre');
         const heure = m.date_envoi ? new Date(m.date_envoi).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'}) : '';
-        const auteur = (filActif === 'salon' && !m.de_moi) ? `<span class="chat-auteur">${escapeHtml(m.expediteur_nom || '')}</span>` : '';
-        const suppr = (m.de_moi && !m.supprime) ? ` <span class="chat-suppr" data-id="${m.id}">🗑</span>` : '';
+        const auteur = ((filActif === 'salon' && !m.de_moi) || filSupervision) ? `<span class="chat-auteur">${escapeHtml(m.expediteur_nom || '')}</span>` : '';
+        const suppr = (m.de_moi && !m.supprime && !filSupervision) ? ` <span class="chat-suppr" data-id="${m.id}">🗑</span>` : '';
         div.innerHTML = auteur + escapeHtml(m.contenu) + suppr + `<span class="chat-heure">${heure}</span>`;
         zone.appendChild(div);
         const btn = div.querySelector('.chat-suppr');
@@ -2962,6 +3015,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function envoyerMessage() {
+        if (filSupervision) return;  // lecture seule
         const input = document.getElementById('chatInput');
         const contenu = input.value.trim();
         if (!contenu) return;

@@ -44,7 +44,13 @@ def _parse_since(valeur):
         return None
 
 
-def _serialiser(m):
+def _serialiser(m, reference_id=None):
+    """`reference_id` sert à aligner les bulles (mien = à droite) — c'est
+    l'utilisateur courant par défaut, mais l'admin qui supervise une
+    conversation entre deux AUTRES personnes (voir /api/admin/dm) passe
+    explicitement le premier participant comme référence."""
+    if reference_id is None:
+        reference_id = session.get('user_id')
     return {
         'id': m.id,
         'expediteur_id': m.expediteur_id,
@@ -53,7 +59,7 @@ def _serialiser(m):
         'contenu': m.contenu,
         'date_envoi': m.date_envoi.isoformat() if m.date_envoi else None,
         'supprime': m.supprime,
-        'de_moi': m.expediteur_id == session.get('user_id'),
+        'de_moi': m.expediteur_id == reference_id,
     }
 
 
@@ -208,6 +214,69 @@ def api_dm_envoyer(autre_id):
     db.session.add(m)
     db.session.commit()
     return jsonify({'success': True, 'message': _serialiser(m)})
+
+
+# ============================================================
+# SUPERVISION ADMIN
+# ============================================================
+# Le salon est déjà visible de tous. Les messages privés restent invisibles
+# à qui n'y participe pas — SAUF l'admin, qui peut consulter n'importe
+# quelle conversation privée de sa structure (lecture seule : il ne peut
+# ni y écrire, ni la marquer "vue" à la place des deux participants — ça
+# ne doit pas fausser leur propre compteur de non-lus).
+
+@chat_bp.route('/api/admin/conversations', methods=['GET'])
+@login_required
+def api_admin_conversations():
+    if not session.get('is_admin'):
+        return jsonify({'success': False, 'error': 'Réservé à l\'administrateur'}), 403
+
+    structure_id = session.get('structure_id')
+    messages = MessageChat.query.filter(
+        MessageChat.structure_id == structure_id,
+        MessageChat.destinataire_id.isnot(None),
+    ).order_by(MessageChat.date_envoi.desc()).all()
+
+    paires = {}
+    for m in messages:
+        cle = tuple(sorted((m.expediteur_id, m.destinataire_id)))
+        if cle not in paires:
+            noms = {m.expediteur_id: m.expediteur_nom, m.destinataire_id: m.destinataire_nom}
+            paires[cle] = {
+                'id1': cle[0], 'id2': cle[1],
+                'nom1': noms.get(cle[0], str(cle[0])),
+                'nom2': noms.get(cle[1], str(cle[1])),
+                'dernier_message': m.contenu if not m.supprime else '[message supprimé]',
+                'date_dernier_message': m.date_envoi.isoformat() if m.date_envoi else None,
+            }
+
+    return jsonify({'success': True, 'conversations': list(paires.values())})
+
+
+@chat_bp.route('/api/admin/dm/<int:id1>/<int:id2>', methods=['GET'])
+@login_required
+def api_admin_dm(id1, id2):
+    if not session.get('is_admin'):
+        return jsonify({'success': False, 'error': 'Réservé à l\'administrateur'}), 403
+
+    structure_id = session.get('structure_id')
+    since = _parse_since(request.args.get('since'))
+
+    q = MessageChat.query.filter(
+        MessageChat.structure_id == structure_id,
+        or_(
+            and_(MessageChat.expediteur_id == id1, MessageChat.destinataire_id == id2),
+            and_(MessageChat.expediteur_id == id2, MessageChat.destinataire_id == id1),
+        ),
+    )
+    if since:
+        q = q.filter(MessageChat.date_envoi > since).order_by(MessageChat.date_envoi.asc())
+        messages = q.all()
+    else:
+        messages = q.order_by(MessageChat.date_envoi.desc()).limit(LIMITE_HISTORIQUE).all()
+        messages.reverse()
+
+    return jsonify({'success': True, 'messages': [_serialiser(m, reference_id=id1) for m in messages]})
 
 
 # ============================================================
