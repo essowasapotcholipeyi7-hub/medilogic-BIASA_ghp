@@ -10,6 +10,10 @@
     body * { visibility: hidden; }
     #qrModalBody, #qrModalBody * { visibility: visible; }
     #qrModalBody { position: fixed; top: 0; left: 0; width: 100%; }
+    /* Badge imprimé plus grand que l'aperçu écran (280px) : un code plus
+       grand sur papier se scanne de plus loin, ce qui compense les webcams
+       à mise au point fixe qui voient flou de trop près. */
+    #qrModalCode { transform: scale(1.8); transform-origin: top center; margin-top: 50px; }
 }
 </style>
         <!-- Onglets -->
@@ -1033,10 +1037,14 @@ function afficherQrModal(tokenAvecPrefixe, qrId, dateGeneration, dateDerniereUti
         <button class="btn btn-outline-primary" onclick="genererQr()"><i class="fas fa-sync me-1"></i> Régénérer</button>
         <button class="btn btn-primary" onclick="imprimerQr()"><i class="fas fa-print me-1"></i> Imprimer</button>
     `;
+    // Taille généreuse + correction d'erreur maximale (H, jusqu'à ~30% du
+    // code illisible) : un badge imprimé ou photographié est rarement
+    // parfait (froissure, reflet, angle), autant lui laisser de la marge.
     qrModalInstanceCode = new QRCode(document.getElementById('qrModalCode'), {
         text: tokenAvecPrefixe,
-        width: 200,
-        height: 200,
+        width: 280,
+        height: 280,
+        correctLevel: QRCode.CorrectLevel.H,
     });
 }
 

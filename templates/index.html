@@ -112,6 +112,12 @@
                     <div id="qrVideoZone" class="text-center mb-3" style="display:none;">
                         <video id="qrVideo" style="width:100%; max-width:320px; border-radius:12px;" muted playsinline></video>
                         <canvas id="qrCanvas" style="display:none;"></canvas>
+                        <p class="text-muted small mt-2 mb-0">
+                            Présentez le code <strong>imprimé de préférence</strong> (une photo sur
+                            écran de téléphone reflète la lumière et se lit mal) bien à plat,
+                            en pleine lumière, en le rapprochant peu à peu jusqu'à ce qu'il
+                            remplisse une bonne partie du cadre.
+                        </p>
                     </div>
 
                     <div class="form-check mb-3">
@@ -732,7 +738,18 @@ document.addEventListener('click', function(e) {
 function activerCameraQr() {
     const zone = document.getElementById('qrVideoZone');
     const video = document.getElementById('qrVideo');
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+    // Résolution la plus haute possible (une image nette compte plus que le
+    // FPS pour décoder un QR de près) + mise au point continue quand le
+    // matériel le permet — beaucoup de webcams intégrées sont sinon réglées
+    // pour la distance d'un visage et voient flou un code tenu à 10-15cm.
+    navigator.mediaDevices.getUserMedia({
+        video: {
+            facingMode: 'environment',
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            advanced: [{ focusMode: 'continuous' }],
+        },
+    })
         .then(function(flux) {
             qrFluxCamera = flux;
             video.srcObject = flux;
