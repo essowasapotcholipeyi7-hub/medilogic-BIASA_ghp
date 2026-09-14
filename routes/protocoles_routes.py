@@ -8,17 +8,24 @@ from datetime import datetime
 
 from models import db, Structure, ProtocoleMedical, HistoriqueProtocole, ProtocolePatient, Patient, Medecin
 from services.protocoles_service import ProtocolesService
+from utils.permissions import a_acces
 
 protocoles_bp = Blueprint('protocoles', __name__, url_prefix='/protocoles')
 
 from sheets_helper import sheets_helper
 
 
+# Aucune protection de rôle ne couvrait ce blueprint (seul le lien du menu
+# était masqué). a_acces('protocoles') (utils/permissions.py) est le point
+# de vérité unique — rôle par défaut OU octroi d'habilitation ponctuel
+# actif pour cet utilisateur précis.
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
             return jsonify({'error': 'Non autorisé'}), 401
+        if not a_acces('protocoles'):
+            return jsonify({'error': 'Accès non autorisé pour votre rôle'}), 403
         return f(*args, **kwargs)
     return decorated_function
 

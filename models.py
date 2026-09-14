@@ -1596,6 +1596,29 @@ class ValidationDemande(db.Model):
     traite_par_nom = db.Column(db.String(255))
 
 
+class HabilitationTemporaire(db.Model):
+    """Octroi ponctuel, par l'admin, d'un accès à une section normalement
+    fermée au rôle de l'utilisateur visé — révocable à tout moment (voir
+    utils/permissions.py:a_acces, seul endroit qui lit cette table). Les
+    comptes utilisateurs vivent dans Google Sheets (struct_N_users), pas
+    en base : comme ValidationDemande.demandeur_id/nom ci-dessus, on
+    stocke l'ID Sheets + le nom en clair plutôt qu'une vraie clé
+    étrangère. On garde la ligne après révocation (active=False) au lieu
+    de la supprimer, pour l'historique."""
+    __tablename__ = 'habilitations_temporaires'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    utilisateur_id = db.Column(db.Integer, nullable=False)  # ID Sheets (struct_N_users)
+    utilisateur_nom = db.Column(db.String(255))
+    permission_cle = db.Column(db.String(50), nullable=False)  # voir utils/permissions.py:PERMISSIONS
+    accordee_par_nom = db.Column(db.String(255))
+    date_octroi = db.Column(db.DateTime, default=datetime.utcnow)
+    date_expiration = db.Column(db.DateTime)  # optionnelle, null = indéfini (jusqu'à révocation manuelle)
+    active = db.Column(db.Boolean, default=True)
+    date_revocation = db.Column(db.DateTime)
+    revoque_par_nom = db.Column(db.String(255))
+
+
 class Caisse(db.Model):
     __tablename__ = 'caisse'
     id = db.Column(db.Integer, primary_key=True)

@@ -6,13 +6,14 @@ from flask import Blueprint, request, jsonify, render_template, session
 from functools import wraps
 from datetime import datetime, date, timedelta
 from services.journal_service import JournalService
+from utils.permissions import a_acces
 
 journal_bp = Blueprint('journal', __name__, url_prefix='/journal')
 
 # Seul le lien du menu était masqué aux non-admins — la route elle-même
-# n'exigeait qu'une connexion, pas un rôle. Même liste de rôles que la
-# Comptabilité (le journal des mouvements est un outil d'audit comptable).
-ROLES_AUTORISES = {'admin', 'comptable', 'sous_comptable', 'gestionnaire'}
+# n'exigeait qu'une connexion, pas un rôle. a_acces() (utils/permissions.py)
+# est le point de vérité unique — rôle par défaut OU octroi d'habilitation
+# ponctuel actif pour cet utilisateur précis.
 
 
 def login_required(f):
@@ -20,7 +21,7 @@ def login_required(f):
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
             return jsonify({'error': 'Non autorisé'}), 401
-        if session.get('role') not in ROLES_AUTORISES:
+        if not a_acces('journal'):
             return jsonify({'error': 'Accès non autorisé pour votre rôle'}), 403
         return f(*args, **kwargs)
     return decorated_function

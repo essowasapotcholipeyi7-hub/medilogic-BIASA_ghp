@@ -1827,7 +1827,9 @@
                     <li><a class="dropdown-item" href="{{ url_for('dashboard') }}"><i class="fas fa-tachometer-alt"></i> Tableau de bord</a></li>
                     <li><a class="dropdown-item" href="{{ url_for('historique_ventes') }}"><i class="fas fa-history"></i> Historique</a></li>
                     <li><hr class="dropdown-divider"></li>
+                    {% if a_acces('rendez_vous') %}
                     <li><a class="dropdown-item" href="{{ url_for('rendez_vous') }}"><i class="fas fa-calendar-alt"></i> Rendez-vous</a></li>
+                    {% endif %}
                     <li><a class="dropdown-item text-danger" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Déconnexion</a></li>
                     <li><a class="dropdown-item" href="#" onclick="toggleFullscreenMode(); return false;"><i class="fas fa-expand" id="fullscreenModeIcon"></i> <span id="fullscreenModeText">Mode plein écran</span></a></li>
                 </ul>
@@ -1856,9 +1858,11 @@
                 <a class="menu-item" href="{{ url_for('patients') }}">
                     Liste des patients
                 </a>
+                {% if a_acces('rendez_vous') %}
                 <a class="menu-item" href="{{ url_for('rendez_vous') }}">
                     Programmer Rendez-vous
                 </a>
+                {% endif %}
                 <a class="menu-item" href="{{ url_for('rappels') }}">
                     Rappels des rendez-vous
                 </a>
@@ -1912,13 +1916,17 @@
                     Enregistrer une charge
                 </a>
                 {% endif %}
-                {% if session.is_admin %}
+                {% if a_acces('finances') %}
                 <a class="menu-item" href="{{ url_for('admin_finances') }}">
                     Finances&Caisse&Charges
                 </a>
+                {% endif %}
+                {% if a_acces('statistiques') %}
                 <a class="menu-item" href="{{ url_for('statistiques_ventes') }}">
                     Statistiques des ventes
                 </a>
+                {% endif %}
+                {% if session.is_admin %}
                 <a class="menu-item" href="{{ url_for('page_validations') }}">
                     Demandes en attente
                     <span id="navBadgeValidations" class="badge bg-danger ms-1" style="display:none;">0</span>
@@ -1944,27 +1952,37 @@
                 </a>
             </div>
         </li>
-        {% if session.is_admin %}
+        {% if session.role in ['admin', 'gestionnaire'] or a_acces('rh') or a_acces('comptabilite') or a_acces('annulations') %}
         <li class="nav-item nav-item-administration">
             <span class="nav-link-top">
                 Administration <i class="fas fa-chevron-down arrow"></i>
             </span>
             <div class="mega-menu">
+                {% if session.role in ['admin', 'gestionnaire'] %}
                 <a class="menu-item" href="{{ url_for('admin_structure') }}">
                     <i class="fas fa-cog"></i> Administration
                 </a>
+                {% endif %}
+                {% if a_acces('rh') %}
                 <a class="menu-item" href="{{ url_for('rh.gestion_rh') }}">
                     Gestion Ressources Humaines
                 </a>
+                {% endif %}
+                {% if a_acces('comptabilite') %}
                 <a class="menu-item" href="{{ url_for('comptabilite.index') }}">
                     Comptabilité
                 </a>
+                {% endif %}
+                {% if a_acces('annulations') %}
                 <a class="menu-item" href="{{ url_for('historique_annulations') }}">
                     Historique Annulations
                 </a>
+                {% endif %}
+                {% if session.is_admin %}
                 <a class="menu-item" href="{{ url_for('sync_gestion_patients_config') }}">
                     Synchronisation gestion_patients
                 </a>
+                {% endif %}
             </div>
         </li>
         {% endif %}

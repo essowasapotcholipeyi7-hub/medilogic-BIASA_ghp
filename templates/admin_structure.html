@@ -28,6 +28,11 @@
                     <i class="fas fa-building"></i> Ma structure
                 </button>
             </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="habilitation-tab" data-bs-toggle="tab" data-bs-target="#habilitation" type="button" role="tab">
+                    <i class="fas fa-user-clock"></i> Habilitation
+                </button>
+            </li>
             {% endif %}
         </ul>
 
@@ -237,6 +242,76 @@
                             </div>
                             <button type="submit" class="btn btn-primary">Mettre à jour</button>
                         </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== ONGLET HABILITATION ========== -->
+            <div class="tab-pane fade" id="habilitation" role="tabpanel">
+                <div class="card mb-3">
+                    <div class="card-header bg-primary text-white">
+                        <h5><i class="fas fa-user-clock"></i> Accorder un accès temporaire</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted">
+                            Donne à un employé précis l'accès à une section normalement
+                            fermée pour son rôle, sans changer son rôle — révocable à
+                            tout moment ci-dessous. L'Administration générale
+                            (utilisateurs, actes médicaux, paramètres de la structure)
+                            n'est pas concernée : elle reste strictement réservée à
+                            l'admin.
+                        </p>
+                        <form id="habilitationForm">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Employé</label>
+                                    <select class="form-control" id="habilitationUtilisateur" required>
+                                        <option value="">Sélectionner un employé</option>
+                                        {% for user in users %}
+                                        <option value="{{ user.ID }}" data-nom="{{ user.nom }}">{{ user.nom }} ({{ user.email }})</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Expiration (optionnelle)</label>
+                                    <input type="datetime-local" class="form-control" id="habilitationExpiration">
+                                    <small class="text-muted">Laisser vide = pas d'expiration automatique, à révoquer manuellement.</small>
+                                </div>
+                            </div>
+                            <label class="form-label">Section(s) à accorder</label>
+                            <div class="mb-3" id="habilitationPermissions">
+                                <!-- généré en JS depuis PERMISSIONS -->
+                            </div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-user-check"></i> Accorder l'accès
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header bg-secondary text-white">
+                        <h5><i class="fas fa-list"></i> Accès accordés</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Employé</th>
+                                        <th>Section</th>
+                                        <th>Accordé par</th>
+                                        <th>Le</th>
+                                        <th>Expiration</th>
+                                        <th>Statut</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="habilitationsList">
+                                    <tr><td colspan="7" class="text-center">Chargement...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -957,7 +1032,14 @@ function deleteUser(id) {
     }
 }
 
+{% if session.role == 'admin' %}
 // ========== GESTION STRUCTURE ==========
+// Un gestionnaire n'a pas cet onglet dans le DOM (cf. garde plus haut) —
+// tout ce bloc doit rester dans ce bloc conditionnel réservé à l'admin,
+// sinon getElementById('structureForm') vaut null pour lui et l'erreur JS
+// qui en résulte arrête l'exécution du reste du script (y compris
+// l'enregistrement du DOMContentLoaded plus bas, qui charge
+// Produits & stocks — cf. note similaire sur habilitationForm ci-dessous).
 document.getElementById('structureForm').addEventListener('submit', function(e) {
     e.preventDefault();
     const data = {
@@ -967,14 +1049,14 @@ document.getElementById('structureForm').addEventListener('submit', function(e) 
         adresse: document.getElementById('structureAdresse').value,
         logo_url: document.getElementById('structureLogo').value
     };
-    
+
     fetch('/api/admin/structure', {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(data => { 
+    .then(data => {
         if(data.success) {
             alert('✓ Structure mise à jour');
             location.reload();
@@ -983,6 +1065,101 @@ document.getElementById('structureForm').addEventListener('submit', function(e) 
         }
     });
 });
+
+// ========== GESTION HABILITATION ==========
+function libelleUtilisateurSelectionne() {
+    const sel = document.getElementById('habilitationUtilisateur');
+    const opt = sel.options[sel.selectedIndex];
+    return opt ? (opt.getAttribute('data-nom') || opt.textContent) : '';
+}
+
+function chargerHabilitations() {
+    fetch('/api/admin/habilitations')
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) return;
+
+            // Cases à cocher générées depuis la liste PERMISSIONS renvoyée
+            // par le serveur — un seul endroit définit les sections
+            // habilitables (utils/permissions.py), le formulaire suit.
+            const zoneCases = document.getElementById('habilitationPermissions');
+            if (zoneCases && !zoneCases.dataset.rempli) {
+                zoneCases.innerHTML = Object.entries(data.permissions).map(([cle, label]) => `
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" value="${cle}" id="perm_${cle}">
+                        <label class="form-check-label" for="perm_${cle}">${label}</label>
+                    </div>
+                `).join('');
+                zoneCases.dataset.rempli = '1';
+            }
+
+            const tbody = document.getElementById('habilitationsList');
+            if (!data.octrois.length) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center">Aucun accès accordé</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.octrois.map(o => `
+                <tr>
+                    <td>${o.utilisateur_nom || o.utilisateur_id}</td>
+                    <td>${o.permission_label}</td>
+                    <td>${o.accordee_par_nom || '-'}</td>
+                    <td>${o.date_octroi || '-'}</td>
+                    <td>${o.date_expiration || '<span class="text-muted">Aucune</span>'}</td>
+                    <td>
+                        ${o.active
+                            ? '<span class="badge bg-success">Actif</span>'
+                            : `<span class="badge bg-secondary" title="Révoqué par ${o.revoque_par_nom || '-'} le ${o.date_revocation || '-'}">Révoqué</span>`}
+                    </td>
+                    <td>
+                        ${o.active ? `<button class="btn btn-sm btn-warning" onclick="revoquerHabilitation(${o.id})"><i class="fas fa-ban"></i> Révoquer</button>` : ''}
+                    </td>
+                </tr>
+            `).join('');
+        });
+}
+
+function revoquerHabilitation(id) {
+    if (!confirm('Révoquer cet accès ?')) return;
+    fetch(`/api/admin/habilitations/${id}/revoquer`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                chargerHabilitations();
+            } else {
+                alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+            }
+        });
+}
+
+document.getElementById('habilitationForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const permissions = Array.from(document.querySelectorAll('#habilitationPermissions input:checked')).map(el => el.value);
+    if (!permissions.length) {
+        alert('Sélectionnez au moins une section.');
+        return;
+    }
+    const expirationVal = document.getElementById('habilitationExpiration').value;
+    fetch('/api/admin/habilitations', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            utilisateur_id: document.getElementById('habilitationUtilisateur').value,
+            utilisateur_nom: libelleUtilisateurSelectionne(),
+            permissions: permissions,
+            date_expiration: expirationVal || null,
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById('habilitationForm').reset();
+            chargerHabilitations();
+        } else {
+            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+        }
+    });
+});
+{% endif %}
 
 // ========== LOADER ==========
 function showLoader() {
@@ -1012,6 +1189,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // avec 2 gros chargements en même temps juste après l'affichage de la
     // page, hypothèse du patron sur la lenteur perçue.
     chargerActesAdmin().then(() => chargerProduitsAdmin());
+    chargerHabilitations();
     {% else %}
     chargerProduitsAdmin();
     {% endif %}

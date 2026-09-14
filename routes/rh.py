@@ -7,6 +7,7 @@ import traceback
 
 from models import (db, Employe, Service, Conge, Permission, DocumentRH, SignatureRH,
                      Paie, ParametragePaie, EmpreinteEmploye, ParametragePointage, Pointage, VisageEmploye)
+from utils.permissions import a_acces
 
 rh_bp = Blueprint('rh', __name__, url_prefix='/rh')
 
@@ -15,14 +16,15 @@ rh_bp = Blueprint('rh', __name__, url_prefix='/rh')
 # ============================================================
 # Aucune protection ne couvrait ce blueprint (ni connexion, ni rôle) — seul
 # le lien du menu était masqué aux non-admins. Un seul hook pour tout le
-# blueprint plutôt que décorer ~65 routes une par une.
+# blueprint plutôt que décorer ~65 routes une par une. a_acces()
+# (utils/permissions.py) est le point de vérité unique — rôle par défaut
+# OU octroi d'habilitation ponctuel actif pour cet utilisateur précis.
 #
 # Exception volontaire : la borne de pointage plein écran (/rh/borne) et
 # les endpoints de scan en direct (webauthn/facial) restent ouverts à tout
 # compte connecté, sans filtre de rôle — c'est un poste partagé à
 # l'accueil où n'importe quel employé pose le doigt/visage pour pointer ;
 # les restreindre par rôle casserait le pointage du personnel.
-ROLES_AUTORISES = {'admin', 'comptable', 'gestionnaire'}
 CHEMINS_SANS_FILTRE_ROLE = (
     '/rh/borne',
     '/rh/api/pointage/webauthn/',
@@ -42,7 +44,7 @@ def _verifier_role_rh():
             return jsonify({'error': 'Non autorisé'}), 401
         flash('Veuillez vous connecter', 'warning')
         return redirect(url_for('index'))
-    if session.get('role') not in ROLES_AUTORISES:
+    if not a_acces('rh'):
         if chemin_api:
             return jsonify({'error': 'Accès non autorisé pour votre rôle'}), 403
         flash("Accès non autorisé pour votre rôle.", 'danger')

@@ -17,6 +17,7 @@ from services.comptabilite_service import get_soldes_caisses, creer_ecriture, CO
 from utils.plan_comptable_syscohada import (
     COMPTE_BANQUE, COMPTE_CAISSE, COMPTE_IMMO_MATERIEL_MEDICAL, COMPTE_AMORT_MATERIEL_MEDICAL,
 )
+from utils.permissions import a_acces
 
 compta_bp = Blueprint('comptabilite', __name__, url_prefix='/comptabilite')
 
@@ -28,10 +29,9 @@ compta_bp = Blueprint('comptabilite', __name__, url_prefix='/comptabilite')
 # ni rôle) — seul le lien du menu était masqué aux non-admins, ce qui
 # laissait la comptabilité accessible à quiconque connaissait/devinait
 # l'URL. Un seul hook pour tout le blueprint plutôt que décorer ~50 routes
-# une par une (risque d'en oublier une).
-ROLES_AUTORISES = {'admin', 'comptable', 'sous_comptable', 'gestionnaire'}
-
-
+# une par une (risque d'en oublier une). a_acces() (utils/permissions.py)
+# est le point de vérité unique — rôle par défaut OU octroi d'habilitation
+# ponctuel actif pour cet utilisateur précis.
 @compta_bp.before_request
 def _verifier_role_comptabilite():
     chemin_api = request.path.startswith('/comptabilite/api/')
@@ -40,7 +40,7 @@ def _verifier_role_comptabilite():
             return jsonify({'error': 'Non autorisé'}), 401
         flash('Veuillez vous connecter', 'warning')
         return redirect(url_for('index'))
-    if session.get('role') not in ROLES_AUTORISES:
+    if not a_acces('comptabilite'):
         if chemin_api:
             return jsonify({'error': 'Accès non autorisé pour votre rôle'}), 403
         flash("Accès non autorisé pour votre rôle.", 'danger')

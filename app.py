@@ -13,7 +13,8 @@ from io import BytesIO
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire
+from utils.permissions import a_acces, PERMISSIONS
 from models import RendezVous
 from models import Medecin, Patient, Structure
 from datetime import datetime, date, timedelta
@@ -50,6 +51,12 @@ app.secret_key = Config.SECRET_KEY
 
 # ⭐ Initialiser le db SQLAlchemy
 db.init_app(app)
+
+# ⭐ a_acces() (utils/permissions.py) utilisable directement dans les
+# templates Jinja — {% if a_acces('comptabilite') %} — point de vérité
+# unique partagé avec les décorateurs de routes (permission_requise) et
+# les before_request des blueprints.
+app.jinja_env.globals['a_acces'] = a_acces
 
 # ⭐ Bascule hors-ligne Neon <-> Postgres local (inactif si DATABASE_URL_LOCAL
 # n'est pas définie dans l'environnement — voir utils/db_failover.py)
@@ -391,6 +398,26 @@ def roles_required(*roles):
                 flash('Veuillez vous connecter', 'warning')
                 return redirect(url_for('index'))
             if session.get('role') not in roles:
+                flash('Accès non autorisé pour votre rôle.', 'danger')
+                return redirect(url_for('dashboard'))
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+
+# ========== PERMISSION REQUISE DECORATOR ==========
+# Comme roles_required, mais consulte le point de vérité unique
+# utils/permissions.py:a_acces() — rôle par défaut OU octroi
+# d'habilitation ponctuel actif — au lieu d'une liste de rôles figée.
+def permission_requise(permission_cle):
+    from functools import wraps
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'user_id' not in session:
+                flash('Veuillez vous connecter', 'warning')
+                return redirect(url_for('index'))
+            if not a_acces(permission_cle):
                 flash('Accès non autorisé pour votre rôle.', 'danger')
                 return redirect(url_for('dashboard'))
             return f(*args, **kwargs)
@@ -3491,6 +3518,108 @@ def api_update_structure():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+# ========== HABILITATIONS TEMPORAIRES ==========
+# Onglet "Habilitation" de l'Administration générale : l'admin donne à un
+# employé précis un accès ponctuel à une section normalement fermée à son
+# rôle, révocable à tout moment — voir utils/permissions.py:a_acces().
+# Volontairement strict-admin (comme Utilisateurs/Actes/Ma structure) :
+# "administration_generale" n'apparaît pas dans PERMISSIONS, donc aucun
+# octroi n'est possible sur la gestion des utilisateurs/actes/structure.
+
+@app.route('/api/admin/habilitations', methods=['GET'])
+@login_required
+@admin_required
+def api_liste_habilitations():
+    structure_id = session.get('structure_id')
+    octrois = HabilitationTemporaire.query.filter_by(
+        structure_id=structure_id
+    ).order_by(HabilitationTemporaire.date_octroi.desc()).all()
+    return jsonify({
+        'success': True,
+        'permissions': PERMISSIONS,
+        'octrois': [{
+            'id': o.id,
+            'utilisateur_id': o.utilisateur_id,
+            'utilisateur_nom': o.utilisateur_nom,
+            'permission_cle': o.permission_cle,
+            'permission_label': PERMISSIONS.get(o.permission_cle, o.permission_cle),
+            'accordee_par_nom': o.accordee_par_nom,
+            'date_octroi': o.date_octroi.strftime('%d/%m/%Y %H:%M') if o.date_octroi else None,
+            'date_expiration': o.date_expiration.strftime('%d/%m/%Y %H:%M') if o.date_expiration else None,
+            'active': o.active,
+            'date_revocation': o.date_revocation.strftime('%d/%m/%Y %H:%M') if o.date_revocation else None,
+            'revoque_par_nom': o.revoque_par_nom,
+        } for o in octrois],
+    })
+
+
+@app.route('/api/admin/habilitations', methods=['POST'])
+@login_required
+@admin_required
+def api_accorder_habilitation():
+    """Accorde une ou plusieurs habilitations d'un coup à un même
+    utilisateur (une ligne par section cochée)."""
+    data = request.json or {}
+    structure_id = session.get('structure_id')
+    utilisateur_id = data.get('utilisateur_id')
+    utilisateur_nom = data.get('utilisateur_nom', '')
+    permissions_cles = data.get('permissions') or []
+    date_expiration_str = data.get('date_expiration')  # optionnel, 'YYYY-MM-DDTHH:MM'
+
+    if not utilisateur_id or not permissions_cles:
+        return jsonify({'success': False, 'error': 'Utilisateur et au moins une section requis'}), 400
+
+    permissions_cles = [c for c in permissions_cles if c in PERMISSIONS]
+    if not permissions_cles:
+        return jsonify({'success': False, 'error': 'Section(s) invalide(s)'}), 400
+
+    date_expiration = None
+    if date_expiration_str:
+        try:
+            date_expiration = datetime.fromisoformat(date_expiration_str)
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Date d\'expiration invalide'}), 400
+
+    try:
+        for cle in permissions_cles:
+            db.session.add(HabilitationTemporaire(
+                structure_id=structure_id,
+                utilisateur_id=utilisateur_id,
+                utilisateur_nom=utilisateur_nom,
+                permission_cle=cle,
+                accordee_par_nom=session.get('user_name', 'Admin'),
+                date_expiration=date_expiration,
+            ))
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Erreur habilitation: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/admin/habilitations/<int:habilitation_id>/revoquer', methods=['POST'])
+@login_required
+@admin_required
+def api_revoquer_habilitation(habilitation_id):
+    structure_id = session.get('structure_id')
+    octroi = HabilitationTemporaire.query.filter_by(
+        id=habilitation_id, structure_id=structure_id
+    ).first()
+    if not octroi:
+        return jsonify({'success': False, 'error': 'Introuvable'}), 404
+    try:
+        octroi.active = False
+        octroi.date_revocation = datetime.utcnow()
+        octroi.revoque_par_nom = session.get('user_name', 'Admin')
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Erreur révocation habilitation: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/debug_ventes')
 @login_required
 def debug_ventes():
@@ -3536,6 +3665,7 @@ def debug_ventes():
 
 @app.route('/medecins')
 @login_required
+@permission_requise('medecins_activites')
 def gestion_medecins():
     """Page de gestion des medecins"""
     structure_id = session.get('structure_id')
@@ -3608,6 +3738,7 @@ def gestion_medecins():
 
 @app.route('/api/medecins', methods=['POST'])
 @login_required
+@permission_requise('medecins_activites')
 def api_ajouter_medecin():
     """Ajouter un nouveau medecin"""
     try:
@@ -3673,6 +3804,7 @@ def api_ajouter_medecin():
 
 @app.route('/api/medecins/<int:id>', methods=['PUT'])
 @login_required
+@permission_requise('medecins_activites')
 def api_modifier_medecin(id):
     """Modifier un medecin"""
     try:
@@ -3723,6 +3855,7 @@ def api_modifier_medecin(id):
 
 @app.route('/api/medecins/<int:id>/toggle', methods=['POST'])
 @login_required
+@permission_requise('medecins_activites')
 def api_toggle_medecin(id):
     """Activer/Desactiver un medecin"""
     try:
@@ -3755,6 +3888,7 @@ def api_toggle_medecin(id):
 
 @app.route('/api/medecins/<int:id>/historique', methods=['GET'])
 @login_required
+@permission_requise('medecins_activites')
 def api_historique_medecin(id):
     """Recupere l'historique complet d'un medecin - Version robuste"""
     structure_id = session.get('structure_id')
@@ -3934,6 +4068,7 @@ def api_historique_medecin(id):
 
 @app.route('/api/medecins', methods=['GET'])
 @login_required
+@permission_requise('medecins_activites')
 def get_medecins():
     """Recupere la liste des medecins avec leurs statistiques"""
     structure_id = session.get('structure_id')
@@ -4048,6 +4183,7 @@ def get_medecins():
 
 @app.route('/api/medecins/<int:id>', methods=['GET'])
 @login_required
+@permission_requise('medecins_activites')
 def get_medecin_details(id):
     """Recupere les details d'un medecin"""
     structure_id = session.get('structure_id')
@@ -4126,6 +4262,7 @@ def get_medecin_details(id):
 
 @app.route('/api/medecins/<int:id>/consultations', methods=['GET'])
 @login_required
+@permission_requise('medecins_activites')
 def get_medecin_consultations(id):
     """Recupere l'historique des consultations d'un medecin"""
     structure_id = session.get('structure_id')
@@ -4170,6 +4307,7 @@ def get_medecin_consultations(id):
 
 @app.route('/api/medecins/<int:id>/disponibilites', methods=['GET'])
 @login_required
+@permission_requise('medecins_activites')
 def get_medecin_disponibilites(id):
     """Verifie la disponibilite d'un medecin"""
     structure_id = session.get('structure_id')
@@ -4269,6 +4407,7 @@ def get_motifs():
 
 @app.route('/rendez_vous')
 @login_required
+@permission_requise('rendez_vous')
 def rendez_vous():
     """Page de gestion des rendez-vous"""
     structure_id = session.get('structure_id')
@@ -5016,6 +5155,7 @@ def print_rendez_vous():
 
 @app.route('/api/rendez_vous', methods=['POST'])
 @login_required
+@permission_requise('rendez_vous')
 def api_add_rendez_vous():
     """Ajouter un rendez-vous avec medecin"""
     try:
@@ -8107,7 +8247,7 @@ def _executer_annulation_vente(vente_id, motif, structure_id, user_id, user_name
 
 @app.route('/historique_annulations')
 @login_required
-@roles_required('admin', 'comptable', 'sous_comptable', 'gestionnaire')
+@permission_requise('annulations')
 def historique_annulations():
     """Page d'historique des annulations"""
     structure_id = session.get('structure_id')
@@ -8182,7 +8322,7 @@ def historique_annulations():
 @login_required
 def api_get_annulations():
     """API pour récupérer les annulations"""
-    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
+    if not a_acces('annulations'):
         return jsonify({'error': 'Non autorisé'}), 403
     
     structure_id = session.get('structure_id')
@@ -8211,7 +8351,7 @@ def api_get_annulations():
 
 @app.route('/admin/finances')
 @login_required
-@roles_required('admin', 'comptable', 'sous_comptable', 'gestionnaire')
+@permission_requise('finances')
 def admin_finances():
     """Page d'administration financière"""
     structure_id = session.get('structure_id')
@@ -8281,7 +8421,7 @@ def page_depenses_saisie():
 @app.route('/api/finances/stats')
 @login_required
 def api_finances_stats():
-    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
+    if not a_acces('finances'):
         return jsonify({'error': 'Non autorise'}), 403
     
     try:
@@ -8387,7 +8527,7 @@ def api_finances_stats():
 @app.route('/api/finances/recettes/detail')
 @login_required
 def api_recettes_detail():
-    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
+    if not a_acces('finances'):
         return jsonify({'error': 'Non autorise'}), 403
     
     try:
@@ -8429,7 +8569,7 @@ def api_recettes_detail():
 @login_required
 def api_finances_depenses_motif():
     """Depenses par motif"""
-    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
+    if not a_acces('finances'):
         return jsonify({'error': 'Non autorise'}), 403
     
     try:
@@ -8494,7 +8634,7 @@ def api_finances_depenses_motif():
 @login_required
 def api_finances_recettes_source():
     """Recettes par source (patients, assurances, autres)"""
-    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
+    if not a_acces('finances'):
         return jsonify({'error': 'Non autorise'}), 403
     
     try:
@@ -8665,7 +8805,7 @@ def _executer_ajout_depense(structure_id, montant, motif, motif_personnalise, de
 @login_required
 def api_add_recette():
     """Ajouter une recette (manuelle ou automatique)"""
-    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
+    if not a_acces('finances'):
         return jsonify({'success': False, 'error': 'Non autorisé'}), 403
     
     try:
@@ -8761,7 +8901,7 @@ def api_add_recette():
 @login_required
 def api_finances_sources():
     """Récupérer les sources de recettes disponibles"""
-    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
+    if not a_acces('finances'):
         return jsonify({'error': 'Non autorisé'}), 403
     
     sources = [
@@ -8773,7 +8913,7 @@ def api_finances_sources():
 
 @app.route('/statistiques_ventes')
 @login_required
-@roles_required('admin', 'comptable', 'sous_comptable', 'gestionnaire')
+@permission_requise('statistiques')
 def statistiques_ventes():
     """Page des statistiques de ventes"""
     structure_id = session.get('structure_id')
@@ -8810,7 +8950,7 @@ def statistiques_ventes():
 @app.route('/api/assurances/factures', methods=['POST'])
 @login_required
 def api_add_facture_assurance():
-    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
+    if not a_acces('statistiques'):
         return jsonify({'success': False, 'error': 'Non autorise'}), 403
     
     try:
@@ -8846,7 +8986,7 @@ def api_add_facture_assurance():
 @app.route('/api/assurances/factures/<int:facture_id>/paiement', methods=['POST'])
 @login_required
 def api_paiement_assurance(facture_id):
-    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
+    if not a_acces('statistiques'):
         return jsonify({'success': False, 'error': 'Non autorise'}), 403
     
     try:
@@ -8953,7 +9093,7 @@ def api_paiement_assurance(facture_id):
 @app.route('/api/assurances/generer_factures', methods=['POST'])
 @login_required
 def generer_factures_assurance():
-    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
+    if not a_acces('statistiques'):
         return jsonify({'success': False, 'error': 'Non autorise'}), 403
     
     try:
@@ -9692,7 +9832,7 @@ def calculer_age(date_naissance):
 @app.route('/api/finances/recettes/source')
 @login_required
 def api_recettes_source():
-    if session.get('role') not in ('admin', 'comptable', 'sous_comptable', 'gestionnaire'):
+    if not a_acces('finances'):
         return jsonify({'error': 'Non autorise'}), 403
     
     try:

@@ -72,17 +72,23 @@
                     <span class="menu-text">Historique des ventes</span>
                 </a>
 
+                {% if a_acces('medecins_activites') %}
                 <a class="nav-link {% if request.endpoint == 'gestion_medecins' %}active{% endif %}" href="{{ url_for('gestion_medecins') }}">
                     <span class="menu-text">Medecins&Activités</span>
                 </a>
+                {% endif %}
 
+                {% if a_acces('protocoles') %}
                 <a class="nav-link {% if request.endpoint == 'protocoles.page_protocoles' %}active{% endif %}" href="{{ url_for('protocoles.page_protocoles') }}">
                     <span class="menu-text">Protocoles et Modèles</span>
                 </a>
+                {% endif %}
 
+                {% if a_acces('rendez_vous') %}
                 <a class="nav-link {% if request.endpoint == 'rendez_vous' %}active{% endif %}" href="{{ url_for('rendez_vous') }}">
                     <span class="menu-text">Programmer Rendez-vous</span>
                 </a>
+                {% endif %}
 
                 <a class="nav-link {% if request.endpoint == 'rappels' %}active{% endif %}" href="{{ url_for('rappels') }}">
                     <span class="menu-text">Rappels des rendez-vous</span>
@@ -104,27 +110,37 @@
                 {% endif %}
 
                 <!-- ===== ADMINISTRATION ===== -->
-                {% if session.role in ['admin', 'comptable', 'sous_comptable', 'gestionnaire'] %}
+                {% if a_acces('statistiques') %}
                 <a class="nav-link {% if request.endpoint == 'statistiques_ventes' %}active{% endif %}" href="{{ url_for('statistiques_ventes') }}">
                     <span class="menu-text">Statistiques ventes/assurances</span>
                 </a>
+                {% endif %}
 
+                {% if a_acces('annulations') %}
                 <a class="nav-link {% if request.endpoint == 'historique_annulations' %}active{% endif %}" href="{{ url_for('historique_annulations') }}">
                     <span class="menu-text">Historiques Annulations</span>
                 </a>
+                {% endif %}
+
+                {% if a_acces('journal') %}
                 <a class="nav-link {% if request.path.startswith('/journal') %}active{% endif %}" href="{{ url_for('journal.page_journal') }}">
                     <span class="menu-text">Journal des mouvements</span>
                 </a>
+                {% endif %}
+
+                {% if a_acces('finances') %}
                 <a class="nav-link {% if request.endpoint == 'admin_finances' %}active{% endif %}" href="{{ url_for('admin_finances') }}">
                     <span class="menu-text">Finances/Caisse&Charge</span>
                 </a>
+                {% endif %}
 
+                {% if a_acces('comptabilite') %}
                 <a class="nav-link {% if request.path.startswith('/comptabilite') %}active{% endif %}" href="{{ url_for('comptabilite.index') }}">
                     <span class="menu-text">Comptabilité</span>
                 </a>
                 {% endif %}
 
-                {% if session.role in ['admin', 'comptable', 'gestionnaire'] %}
+                {% if a_acces('rh') %}
                 <a class="nav-link {% if request.path.startswith('/rh') %}active{% endif %}" href="{{ url_for('rh.gestion_rh') }}">
                     <span class="menu-text">Ressources humaines</span>
                 </a>
