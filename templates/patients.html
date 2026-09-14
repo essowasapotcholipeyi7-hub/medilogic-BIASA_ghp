@@ -213,8 +213,44 @@
                 <h5 class="modal-title"><i class="fas fa-user me-2"></i> Détails du patient</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" id="detailPatientBody">
-                <div class="text-center">Chargement...</div>
+            <!-- Onglets Informations / Achats / Rendez-vous — demande explicite de
+                 l'utilisateur de NE PAS ajouter de bouton d'action supplémentaire :
+                 tout passe par ce modal, déjà atteint via le bouton "Voir détails"
+                 (œil) existant. -->
+            <ul class="nav nav-tabs px-3 pt-2" id="detailPatientTabs">
+                <li class="nav-item">
+                    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#detailTabInfos" type="button">
+                        <i class="fas fa-user"></i> Informations
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#detailTabAchats" type="button" onclick="chargerHistoriqueAchats()">
+                        <i class="fas fa-shopping-basket"></i> Historique des achats
+                    </button>
+                </li>
+                {% if a_acces('rendez_vous') %}
+                <li class="nav-item">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#detailTabRdv" type="button" onclick="chargerRendezVousPatient()">
+                        <i class="fas fa-calendar-alt"></i> Rendez-vous
+                        <span class="badge bg-danger ms-1 d-none" id="detailTabRdvBadge">0</span>
+                    </button>
+                </li>
+                {% endif %}
+            </ul>
+            <div class="modal-body tab-content">
+                <div class="tab-pane fade show active" id="detailTabInfos">
+                    <div id="detailPatientBody">
+                        <div class="text-center">Chargement...</div>
+                    </div>
+                </div>
+                <div class="tab-pane fade" id="detailTabAchats">
+                    <div class="text-center text-muted py-4">Chargement...</div>
+                </div>
+                {% if a_acces('rendez_vous') %}
+                <div class="tab-pane fade" id="detailTabRdv">
+                    <div class="text-center text-muted py-4">Chargement...</div>
+                </div>
+                {% endif %}
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
@@ -1115,6 +1151,20 @@ function voirDetails(id) {
     }
     
     detailPatientId = id;
+
+    // Réinitialiser sur l'onglet Informations + vider les onglets Achats/
+    // Rendez-vous : sinon, en rouvrant le modal pour un AUTRE patient alors
+    // qu'on avait laissé un de ces onglets actif, il resterait affiché tel
+    // quel (le clic qui déclenche le chargement ne se reproduit pas tout
+    // seul) et montrerait les données du patient précédent.
+    const ongletInfos = document.querySelector('#detailPatientTabs .nav-link');
+    if (ongletInfos && window.bootstrap) {
+        new bootstrap.Tab(ongletInfos).show();
+    }
+    const zoneAchats = document.getElementById('detailTabAchats');
+    if (zoneAchats) zoneAchats.innerHTML = '<div class="text-center text-muted py-4">Chargement...</div>';
+    const zoneRdv = document.getElementById('detailTabRdv');
+    if (zoneRdv) zoneRdv.innerHTML = '<div class="text-center text-muted py-4">Chargement...</div>';
     
     const row = document.querySelector(`tr.patient-row[data-id="${id}"]`);
     if (!row) {
@@ -1283,6 +1333,105 @@ function afficherDetailsPatient(patient) {
     document.getElementById('btnSelectFromDetail').setAttribute('data-id', patientId);
     document.getElementById('btnEditFromDetail').setAttribute('data-id', patientId);
 }
+
+// ============================================================
+// ONGLETS "Historique des achats" / "Rendez-vous" du modal détails
+// ============================================================
+// Rechargés à chaque ouverture de l'onglet (pas de cache) : ce sont des
+// données qui bougent (une vente/un RDV peut être créé pendant que le
+// modal est ouvert sur un autre onglet), et l'appel est léger.
+function chargerHistoriqueAchats() {
+    if (!detailPatientId) return;
+    const zone = document.getElementById('detailTabAchats');
+    zone.innerHTML = '<div class="text-center text-muted py-4">Chargement...</div>';
+    fetch(`/api/patients/${detailPatientId}/historique-achats`)
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success) {
+                zone.innerHTML = '<div class="text-center text-danger py-4">Erreur de chargement</div>';
+                return;
+            }
+            if (!d.achats.length) {
+                zone.innerHTML = '<div class="text-center text-muted py-4"><i class="fas fa-shopping-basket fa-2x mb-2 d-block"></i>Aucun achat enregistré</div>';
+                return;
+            }
+            const lignes = d.achats.map(a => `
+                <tr>
+                    <td>${a.date}</td>
+                    <td><span class="badge ${a.type === 'actes' ? 'bg-primary' : 'bg-success'}">${a.type === 'actes' ? 'Acte' : 'Pharmacie'}</span></td>
+                    <td>${a.libelle}</td>
+                    <td class="text-end">${a.net_a_payer.toLocaleString('fr-FR')} FCFA</td>
+                    <td>${a.mode_paiement || '-'}</td>
+                </tr>
+            `).join('');
+            zone.innerHTML = `
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr><th>Date</th><th>Type</th><th>Détail</th><th class="text-end">Montant</th><th>Paiement</th></tr>
+                        </thead>
+                        <tbody>${lignes}</tbody>
+                    </table>
+                </div>
+                <div class="text-muted small">${d.achats.length} achat(s) au total</div>
+            `;
+        })
+        .catch(() => { zone.innerHTML = '<div class="text-center text-danger py-4">Erreur de chargement</div>'; });
+}
+
+function chargerRendezVousPatient() {
+    if (!detailPatientId) return;
+    const zone = document.getElementById('detailTabRdv');
+    if (!zone) return;  // onglet absent pour ce rôle (secret médical)
+    zone.innerHTML = '<div class="text-center text-muted py-4">Chargement...</div>';
+    fetch(`/api/patients/${detailPatientId}/rendez-vous`)
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success) {
+                zone.innerHTML = '<div class="text-center text-danger py-4">Erreur de chargement</div>';
+                return;
+            }
+            const badge = document.getElementById('detailTabRdvBadge');
+            const aVenir = d.rendez_vous.filter(r => ['programme', 'confirme'].includes(r.statut)).length;
+            if (badge) {
+                badge.textContent = aVenir;
+                badge.classList.toggle('d-none', aVenir === 0);
+            }
+            if (!d.rendez_vous.length) {
+                zone.innerHTML = '<div class="text-center text-muted py-4"><i class="fas fa-calendar-alt fa-2x mb-2 d-block"></i>Aucun rendez-vous enregistré</div>';
+                return;
+            }
+            const statutBadge = (s) => ({
+                programme: '<span class="badge bg-warning text-dark">Programmé</span>',
+                confirme: '<span class="badge bg-primary">Confirmé</span>',
+                termine: '<span class="badge bg-success">Terminé</span>',
+                annule: '<span class="badge bg-secondary">Annulé</span>',
+                reporte: '<span class="badge bg-info">Reporté</span>',
+                absent: '<span class="badge bg-danger">Absent</span>',
+            })[s] || `<span class="badge bg-light text-dark">${s}</span>`;
+            const lignes = d.rendez_vous.map(r => `
+                <tr>
+                    <td>${r.date} ${r.heure}</td>
+                    <td>${r.medecin}</td>
+                    <td>${r.motif}</td>
+                    <td>${statutBadge(r.statut)}</td>
+                </tr>
+            `).join('');
+            zone.innerHTML = `
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr><th>Date</th><th>Médecin</th><th>Motif</th><th>Statut</th></tr>
+                        </thead>
+                        <tbody>${lignes}</tbody>
+                    </table>
+                </div>
+                <div class="text-muted small">${d.rendez_vous.length} rendez-vous au total</div>
+            `;
+        })
+        .catch(() => { zone.innerHTML = '<div class="text-center text-danger py-4">Erreur de chargement</div>'; });
+}
+
 function selectionnerDepuisDetails() {
     const btn = document.getElementById('btnSelectFromDetail');
     const id = btn.getAttribute('data-id');

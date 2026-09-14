@@ -1545,6 +1545,133 @@ def api_get_patient(id):
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@app.route('/api/patients/<int:id>/historique-achats', methods=['GET'])
+@login_required
+def api_patient_historique_achats(id):
+    """Historique des achats (actes + pharmacie) d'un patient — alimente
+    l'onglet dédié du modal "Détails du patient" (templates/patients.html),
+    volontairement PAS un bouton d'action supplémentaire (demande
+    explicite : ne pas surcharger la colonne Actions)."""
+    try:
+        structure_id = session.get('structure_id')
+        ventes = db.execute_query("""
+            SELECT id, type, net_a_payer, mode_paiement, taux_assurance,
+                   date_vente, actes, produits, statut
+            FROM ventes
+            WHERE patient_id = %s AND structure_id = %s
+              AND (statut IS NULL OR statut != 'annulee')
+            ORDER BY date_vente DESC
+        """, (id, structure_id))
+
+        achats = []
+        for v in ventes:
+            if not isinstance(v, dict):
+                continue
+            items = v.get('actes') if v.get('type') == 'actes' else v.get('produits')
+            if isinstance(items, str):
+                try:
+                    items = json.loads(items)
+                except Exception:
+                    items = []
+            items = items or []
+            if items:
+                libelle = items[0].get('nom', 'Article')
+                if len(items) > 1:
+                    libelle += f" (+{len(items) - 1} autre{'s' if len(items) - 1 > 1 else ''})"
+            else:
+                libelle = 'Actes' if v.get('type') == 'actes' else 'Pharmacie'
+
+            date_vente = v.get('date_vente')
+            achats.append({
+                'id': v.get('id'),
+                'type': v.get('type'),
+                'libelle': libelle,
+                'net_a_payer': float(v.get('net_a_payer') or 0),
+                'mode_paiement': v.get('mode_paiement') or '',
+                'taux_assurance': v.get('taux_assurance') or 0,
+                'date': date_vente.strftime('%d/%m/%Y %H:%M') if hasattr(date_vente, 'strftime') else str(date_vente or ''),
+            })
+
+        return jsonify({'success': True, 'achats': achats})
+    except Exception as e:
+        print(f"❌ Erreur historique achats patient: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/patients/<int:id>/rendez-vous', methods=['GET'])
+@login_required
+@permission_requise('rendez_vous')
+def api_patient_rendez_vous(id):
+    """Rendez-vous d'un patient — même onglet que l'historique des achats,
+    même principe (pas de bouton d'action supplémentaire). Gardé derrière
+    permission_requise('rendez_vous') : secret médical, exactement comme
+    la page /rendez_vous elle-même (comptable/sous_comptable/gestionnaire
+    exclus, cf. session précédente)."""
+    try:
+        structure_id = session.get('structure_id')
+        # Même COALESCE que get_medecin_consultations() (app.py) — la table
+        # rendez_vous a, sur GHP, deux paires de colonnes date/heure selon
+        # le flux de création utilisé (voir le commentaire à cet endroit).
+        # 🔥 Mais BIASA (Neon séparé) n'a JAMAIS eu ces colonnes historiques
+        # date_rdv/heure_rdv — divergence de schéma découverte en testant
+        # ce endpoint. On tente la version complète, et on retombe sur les
+        # colonnes actuelles seules si elles n'existent pas (au lieu de
+        # planter sur BIASA) ; db.execute_query fait déjà un rollback
+        # avant de relancer l'exception, la 2e requête part donc sur une
+        # transaction propre.
+        try:
+            rdvs = db.execute_query("""
+                SELECT
+                    r.id,
+                    TO_CHAR(COALESCE(r.date_rendez_vous, r.date_rdv), 'DD/MM/YYYY') as date_rdv,
+                    COALESCE(r.heure_rendez_vous, TO_CHAR(r.heure_rdv, 'HH24:MI')) as heure_rdv,
+                    COALESCE(r.motif, '') as motif,
+                    COALESCE(r.statut, 'programme') as statut,
+                    m.titre as medecin_titre, m.nom as medecin_nom, m.prenom as medecin_prenom
+                FROM rendez_vous r
+                LEFT JOIN medecins m ON m.id = r.medecin_id
+                WHERE r.patient_id = %s AND r.structure_id = %s
+                ORDER BY COALESCE(r.date_rendez_vous, r.date_rdv) DESC,
+                         COALESCE(r.heure_rendez_vous, TO_CHAR(r.heure_rdv, 'HH24:MI')) DESC
+            """, (id, structure_id))
+        except Exception as e:
+            if 'date_rdv' not in str(e) and 'heure_rdv' not in str(e):
+                raise
+            rdvs = db.execute_query("""
+                SELECT
+                    r.id,
+                    TO_CHAR(r.date_rendez_vous, 'DD/MM/YYYY') as date_rdv,
+                    r.heure_rendez_vous as heure_rdv,
+                    COALESCE(r.motif, '') as motif,
+                    COALESCE(r.statut, 'programme') as statut,
+                    m.titre as medecin_titre, m.nom as medecin_nom, m.prenom as medecin_prenom
+                FROM rendez_vous r
+                LEFT JOIN medecins m ON m.id = r.medecin_id
+                WHERE r.patient_id = %s AND r.structure_id = %s
+                ORDER BY r.date_rendez_vous DESC, r.heure_rendez_vous DESC
+            """, (id, structure_id))
+
+        resultat = []
+        for r in rdvs:
+            if not isinstance(r, dict):
+                continue
+            medecin = ' '.join(filter(None, [r.get('medecin_titre'), r.get('medecin_nom'), r.get('medecin_prenom')])).strip()
+            resultat.append({
+                'id': r.get('id'),
+                'date': r.get('date_rdv') or '',
+                'heure': r.get('heure_rdv') or '',
+                'motif': r.get('motif') or '',
+                'statut': r.get('statut') or 'programme',
+                'medecin': medecin or 'Non assigné',
+            })
+
+        return jsonify({'success': True, 'rendez_vous': resultat})
+    except Exception as e:
+        print(f"❌ Erreur rendez-vous patient: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/patients', methods=['GET'])
 @login_required
 def api_get_patients():
