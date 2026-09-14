@@ -2331,6 +2331,137 @@ def export_rapport_txt(type_rapport):
         headers={'Content-Disposition': f'attachment; filename="{nom_fichier}"'}
     )
 
+
+# ============================================================
+# EXPORT COMPTABLE NORMALISÉ (FORMAT FEC)
+# ============================================================
+# ⭐ Le TXT ci-dessus est un rapport IMPRIMABLE (colonnes de largeur fixe,
+# libellés tronqués pour tenir dedans) — inexploitable tel quel par un
+# cabinet comptable externe qui voudrait réimporter les écritures dans son
+# propre logiciel. Cet export suit la structure du FEC (Fichier des
+# Écritures Comptables, norme française DGFiP — 18 colonnes standard,
+# valeurs séparées par tabulation, une ligne par ligne d'écriture) :
+# largement reconnu par les logiciels comptables (Sage, Ciel, Excel...),
+# donc un format d'échange "FEC ou équivalent" utile même hors de France.
+#
+# Champs non disponibles dans le modèle actuel (voir models.py,
+# EcritureComptable/LigneEcriture) et donc laissés VIDES, conformément à
+# ce que permet la norme pour ces cas : CompAuxNum/CompAuxLib (pas de
+# notion de compte auxiliaire/tiers par ligne), EcritureLet/DateLet (pas
+# de lettrage), Montantdevise/Idevise (tout est en FCFA, pas de devise
+# étrangère à tracer). EcritureNum utilise l'id technique de l'écriture
+# (croissant, unique, mais pas une numérotation sans trou par journal —
+# à signaler au cabinet comptable si une numérotation stricte est exigée).
+FEC_COLONNES = [
+    'JournalCode', 'JournalLib', 'EcritureNum', 'EcritureDate',
+    'CompteNum', 'CompteLib', 'CompAuxNum', 'CompAuxLib',
+    'PieceRef', 'PieceDate', 'EcritureLib', 'Debit', 'Credit',
+    'EcritureLet', 'DateLet', 'ValidDate', 'Montantdevise', 'Idevise',
+]
+
+
+def _fec_date(d):
+    """Format de date attendu par le FEC : AAAAMMJJ, sans séparateur."""
+    return d.strftime('%Y%m%d') if d else ''
+
+
+def _fec_montant(m):
+    """Toujours 2 décimales, séparateur décimal '.', jamais de séparateur
+    de milliers — format numérique brut attendu par le FEC (pas un format
+    d'affichage)."""
+    return f"{float(m or 0):.2f}"
+
+
+def _fec_champ(v):
+    """Neutralise tabulations/retours à la ligne dans un libellé — le FEC
+    est un format à colonnes séparées par tabulation, une valeur qui en
+    contiendrait déjà casserait l'alignement des colonnes pour toutes les
+    lignes suivantes."""
+    return (str(v) if v is not None else '').replace('\t', ' ').replace('\r', ' ').replace('\n', ' ').strip()
+
+
+@compta_bp.route('/rapport/export-fec')
+def export_fec():
+    """Export de TOUTES les écritures validées de la période, structure
+    FEC (18 colonnes, séparateur tabulation) — pour transmission à un
+    cabinet comptable externe. Contrairement à l'export TXT (par journal),
+    celui-ci couvre systématiquement TOUS les journaux : un FEC ne se
+    limite jamais à un seul journal, c'est l'ensemble de l'exercice."""
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return "Structure non trouvée", 404
+
+    date_debut = request.args.get('date_debut')
+    date_fin = request.args.get('date_fin')
+    if not date_debut or not date_fin:
+        return "Les paramètres date_debut et date_fin sont obligatoires pour un export FEC", 400
+
+    lignes = db.session.query(
+        EcritureComptable.id,
+        EcritureComptable.journal_code,
+        EcritureComptable.date_ecriture,
+        EcritureComptable.piece_justificative,
+        EcritureComptable.libelle.label('ecriture_libelle'),
+        EcritureComptable.date_validation,
+        LigneEcriture.debit,
+        LigneEcriture.credit,
+        LigneEcriture.libelle.label('ligne_libelle'),
+        CompteComptable.numero,
+        CompteComptable.nom,
+    ).join(
+        LigneEcriture, LigneEcriture.ecriture_id == EcritureComptable.id
+    ).join(
+        CompteComptable, CompteComptable.id == LigneEcriture.compte_id
+    ).filter(
+        EcritureComptable.structure_id == structure_id,
+        EcritureComptable.statut == 'valide',
+        EcritureComptable.date_ecriture >= date_debut,
+        EcritureComptable.date_ecriture <= date_fin,
+    ).order_by(EcritureComptable.date_ecriture, EcritureComptable.id).all()
+
+    if not lignes:
+        return "Aucune écriture validée sur cette période", 404
+
+    fec_lignes = ['\t'.join(FEC_COLONNES)]
+    for l in lignes:
+        journal_code = l.journal_code or 'OD'
+        journal_lib = EcritureComptable.JOURNAUX.get(journal_code, journal_code)
+        # ⭐ Le libellé de LIGNE (spécifique à un compte de la même écriture,
+        # ex: "Client" sur une ligne / "Vente" sur l'autre) est plus précis
+        # que le libellé global de l'écriture quand il est renseigné —
+        # sinon on retombe sur celui de l'écriture.
+        libelle = l.ligne_libelle or l.ecriture_libelle
+        fec_lignes.append('\t'.join([
+            _fec_champ(journal_code),
+            _fec_champ(journal_lib),
+            str(l.id),
+            _fec_date(l.date_ecriture),
+            _fec_champ(l.numero),
+            _fec_champ(l.nom),
+            '',  # CompAuxNum
+            '',  # CompAuxLib
+            _fec_champ(l.piece_justificative),
+            _fec_date(l.date_ecriture),  # PieceDate : pas de date de pièce distincte en base
+            _fec_champ(libelle),
+            _fec_montant(l.debit),
+            _fec_montant(l.credit),
+            '',  # EcritureLet (pas de lettrage)
+            '',  # DateLet
+            _fec_date(l.date_validation or l.date_ecriture),
+            '',  # Montantdevise
+            '',  # Idevise
+        ]))
+
+    contenu = '\r\n'.join(fec_lignes) + '\r\n'
+    nom_fichier = f"FEC_structure{structure_id}_{date_debut}_{date_fin}.txt"
+
+    from flask import Response
+    return Response(
+        contenu, mimetype='text/plain; charset=utf-8',
+        headers={'Content-Disposition': f'attachment; filename="{nom_fichier}"'}
+    )
+
+
 # routes/comptabilite.py - Ajouter cette route
 
 @compta_bp.route('/budget/print')

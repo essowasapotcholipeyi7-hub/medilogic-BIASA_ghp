@@ -348,6 +348,11 @@ function afficherFactures(factures) {
                         <i class="fas fa-money-bill-wave"></i>
                     </button>
                     ` : ''}
+                    ${f.statut !== 'payee' && f.patient_telephone ? `
+                    <button class="btn btn-outline-success" onclick="rappelFactureWhatsApp(${f.id})" title="Envoyer un rappel WhatsApp">
+                        <i class="fab fa-whatsapp"></i>
+                    </button>
+                    ` : ''}
                     <button class="btn btn-secondary" onclick="ouvrirChoixFormat(${f.id}, 'facture')" title="Imprimer">
                         <i class="fas fa-print"></i>
                     </button>
@@ -355,6 +360,47 @@ function afficherFactures(factures) {
             </td>
         `;
     });
+}
+
+// ⭐ Rappel WhatsApp pour une facture impayée/partielle — même mécanisme
+// que le lien de rendez-vous envoyé aux patients (voir envoyerLienPatient()
+// dans templates/patients.html) : pas d'envoi automatique (aucune
+// intégration API WhatsApp Business dans l'appli), on ouvre wa.me avec un
+// message pré-rempli que l'utilisateur envoie lui-même d'un clic.
+function rappelFactureWhatsApp(id) {
+    const facture = facturesData.find(f => f.id === id);
+    if (!facture) {
+        alert('Facture non trouvée');
+        return;
+    }
+    if (!facture.patient_telephone) {
+        alert("Ce patient n'a pas de numéro de téléphone enregistré.");
+        return;
+    }
+
+    let tel = facture.patient_telephone.toString().replace(/\s/g, '').replace(/^\+/, '');
+    if (!tel.match(/^(228|229|221)/)) {
+        tel = '228' + tel;
+    }
+
+    const reste = Math.round(facture.reste_a_payer).toLocaleString('fr-FR');
+    const echeance = facture.date_echeance ? ` (échéance : ${facture.date_echeance})` : '';
+
+    fetch('/api/structure/nom')
+        .then(response => response.json())
+        .then(data => {
+            const structureNom = data.nom || 'Notre établissement';
+            let message = `*${structureNom}*%0A%0A`;
+            message += `Bonjour *${facture.patient_nom}*,%0A%0A`;
+            message += `Nous vous rappelons que la facture *${facture.numero_facture}*${echeance} présente un solde restant de *${reste} FCFA*.%0A%0A`;
+            message += `Merci de bien vouloir régulariser votre situation dans les meilleurs délais.%0A%0A`;
+            message += `📞 Pour toute question, contactez-nous.`;
+
+            window.open(`https://wa.me/${tel}?text=${message}`, '_blank');
+        })
+        .catch(() => {
+            alert("Erreur lors de la préparation du rappel");
+        });
 }
 
 // ========== FILTRER ==========

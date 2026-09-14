@@ -184,6 +184,37 @@
             </div>
         </div>
         {% endif %}
+        <!-- ⭐ À surveiller cette semaine (stock bas / péremption) — visible
+             uniquement des rôles qui gèrent le stock (mêmes droits que la
+             page Gestion de stock). Masquée par défaut, affichée par JS
+             seulement s'il y a réellement quelque chose à signaler, pour ne
+             pas encombrer le tableau de bord quand tout va bien. -->
+        {% if session.role in ['admin', 'comptable', 'gestionnaire', 'pharmacien'] %}
+        <div class="card shadow-sm border-0 rounded-4 mb-4" id="carteAlertesStock" style="display:none;">
+            <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center rounded-top-4 border-0">
+                <span><i class="fas fa-triangle-exclamation me-2"></i> À surveiller cette semaine</span>
+                <a href="{{ url_for('gestion_stock') }}" class="btn btn-sm btn-dark rounded-pill">
+                    <i class="fas fa-boxes-stacked"></i> Gestion de stock
+                </a>
+            </div>
+            <div class="card-body">
+                <div class="row g-3 text-center">
+                    <div class="col-md-4 col-6">
+                        <div class="stat-value text-danger" id="alertePerimes">0</div>
+                        <div class="stat-label">Produits périmés</div>
+                    </div>
+                    <div class="col-md-4 col-6">
+                        <div class="stat-value text-warning" id="alertePeremptionProche">0</div>
+                        <div class="stat-label">Périment sous 30 jours</div>
+                    </div>
+                    <div class="col-md-4 col-6">
+                        <div class="stat-value text-info" id="alerteStockBas">0</div>
+                        <div class="stat-label">Stock bas</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
         <!-- Activités récentes -->
         <div class="card shadow-sm border-0 rounded-4">
             <div class="card-header bg-gradient-primary text-white d-flex justify-content-between align-items-center rounded-top-4 border-0">
@@ -407,9 +438,53 @@ function chargerDashboard() {
         });
 }
 
+// ⭐ Alertes stock (péremption / stock bas) — carte "À surveiller cette
+// semaine". Volontairement SÉPARÉ de chargerDashboard() : cette carte lit
+// Google Sheets (via /api/produits, jusqu'à ~750 produits) alors que
+// chargerDashboard() tourne toutes les 30s en continu — la refaire
+// tourner au même rythme martèlerait Sheets pour rien sur une simple
+// carte de synthèse. Un seul chargement au chargement de la page suffit.
+function chargerAlertesStock() {
+    const carte = document.getElementById('carteAlertesStock');
+    if (!carte) return; // rôle non autorisé à voir cette carte (absente du DOM)
+
+    fetch('/api/produits')
+        .then(r => r.json())
+        .then(produits => {
+            // Mêmes seuils que la page Gestion de stock (updateStats()) :
+            // stock bas = quantite_stock <= seuil_alerte, péremption
+            // proche = dans les 30 jours, périmé = date dépassée.
+            const today = new Date();
+            const dateLimite = new Date();
+            dateLimite.setDate(dateLimite.getDate() + 30);
+
+            let perimes = 0, bientotPerimes = 0, stockBas = 0;
+            (produits || []).forEach(p => {
+                if (p.date_peremption) {
+                    const perempDate = new Date(p.date_peremption);
+                    if (perempDate < today) perimes++;
+                    else if (perempDate <= dateLimite) bientotPerimes++;
+                }
+                if ((p.quantite_stock || 0) <= (p.seuil_alerte || 10)) stockBas++;
+            });
+
+            document.getElementById('alertePerimes').textContent = perimes;
+            document.getElementById('alertePeremptionProche').textContent = bientotPerimes;
+            document.getElementById('alerteStockBas').textContent = stockBas;
+
+            // N'affiche la carte que s'il y a vraiment quelque chose à
+            // surveiller — un dashboard qui va bien reste décongestionné.
+            if (perimes + bientotPerimes + stockBas > 0) {
+                carte.style.display = '';
+            }
+        })
+        .catch(err => console.error('Erreur alertes stock:', err));
+}
+
 // Initialisation
 document.addEventListener('DOMContentLoaded', function() {
     chargerDashboard();
+    chargerAlertesStock();
 });
 
 // Rafraîchissement automatique toutes les 30 secondes

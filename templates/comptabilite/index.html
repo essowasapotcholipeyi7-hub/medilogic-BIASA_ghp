@@ -474,8 +474,11 @@
                                 <button class="btn btn-primary btn-sm me-2" onclick="imprimerRapportPDF()">
                                     <i class="fas fa-file-pdf"></i> PDF
                                 </button>
-                                <button class="btn btn-outline-secondary btn-sm" onclick="exporterRapportTXT()" title="Exporter ce rapport (avec le filtre journal/compte actuel) en texte brut">
+                                <button class="btn btn-outline-secondary btn-sm me-2" onclick="exporterRapportTXT()" title="Exporter ce rapport (avec le filtre journal/compte actuel) en texte brut">
                                     <i class="fas fa-file-lines"></i> TXT
+                                </button>
+                                <button class="btn btn-outline-dark btn-sm" onclick="exporterFEC()" title="Export normalisé (format FEC) de TOUTES les écritures validées de la période — pour transmission à un cabinet comptable externe">
+                                    <i class="fas fa-file-export"></i> FEC
                                 </button>
                             </div>
                         </div>
@@ -3409,6 +3412,29 @@ function exporterRapportTXT() {
     // de navigation ni de beforeunload, et l'attribut `download` fait
     // explicitement ignorer ce lien par l'écouteur de clic global (voir
     // base.html).
+    const a = document.createElement('a');
+    a.href = url;
+    a.setAttribute('download', '');
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+
+function exporterFEC() {
+    // ⭐ Un FEC couvre TOUJOURS l'ensemble des journaux d'une période — pas
+    // de filtre journal/compte ici, juste les dates (mêmes champs que les
+    // autres exports de cet onglet).
+    const dateDebut = document.getElementById('rapportDateDebut').value;
+    const dateFin = document.getElementById('rapportDateFin').value;
+    if (!dateDebut || !dateFin) {
+        alert('Merci de renseigner une date de début et une date de fin.');
+        return;
+    }
+    const url = `/comptabilite/rapport/export-fec?date_debut=${dateDebut}&date_fin=${dateFin}`;
+
+    // Même technique que exporterRapportTXT() (lien <a download> invisible)
+    // — voir le commentaire ci-dessus pour le détail du bug que ça évite.
     const a = document.createElement('a');
     a.href = url;
     a.setAttribute('download', '');
