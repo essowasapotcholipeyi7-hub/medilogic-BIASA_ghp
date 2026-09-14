@@ -83,6 +83,9 @@ app.register_blueprint(statistiques_bp)
 app.register_blueprint(protocoles_bp)
 app.register_blueprint(journal_bp)
 
+from routes.chat import chat_bp
+app.register_blueprint(chat_bp)
+
 
 @app.after_request
 def auto_commit_after_request(response):

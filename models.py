@@ -1619,6 +1619,36 @@ class HabilitationTemporaire(db.Model):
     revoque_par_nom = db.Column(db.String(255))
 
 
+class MessageChat(db.Model):
+    """Chat interne : salon commun (destinataire_id NULL) + messages
+    privés entre deux employés. Comptes utilisateurs en Google Sheets, pas
+    en base — même pattern que ValidationDemande/HabilitationTemporaire
+    ci-dessus : ID Sheets + nom en clair plutôt qu'une clé étrangère."""
+    __tablename__ = 'messages_chat'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    expediteur_id = db.Column(db.Integer, nullable=False)
+    expediteur_nom = db.Column(db.String(255))
+    destinataire_id = db.Column(db.Integer, nullable=True)  # NULL = salon commun
+    destinataire_nom = db.Column(db.String(255))
+    contenu = db.Column(db.Text, nullable=False)
+    date_envoi = db.Column(db.DateTime, default=datetime.utcnow)
+    supprime = db.Column(db.Boolean, default=False)  # suppression douce, par l'auteur
+
+
+class ChatDernierVu(db.Model):
+    """Un seul mécanisme de 'non lus' pour le salon ET chaque DM : `fil`
+    vaut 'salon' ou l'ID Sheets (str) de l'autre utilisateur. Non-lus d'un
+    fil = messages de ce fil postérieurs à date_dernier_vu."""
+    __tablename__ = 'chat_dernier_vu'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    utilisateur_id = db.Column(db.Integer, nullable=False)
+    fil = db.Column(db.String(50), nullable=False)
+    date_dernier_vu = db.Column(db.DateTime, default=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint('structure_id', 'utilisateur_id', 'fil', name='uq_chat_vu'),)
+
+
 class Caisse(db.Model):
     __tablename__ = 'caisse'
     id = db.Column(db.Integer, primary_key=True)
