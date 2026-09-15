@@ -2212,17 +2212,39 @@ def _fmt_montant(m):
     return f"{m:,.0f}".replace(',', ' ')
 
 
-def _ligne_txt(*colonnes, largeurs):
-    return "  ".join(str(c).ljust(l) for c, l in zip(colonnes, largeurs))
+def _csv_champ(v):
+    """Échappe un champ texte pour le CSV (séparateur ';', comme les
+    autres exports CSV de l'appli — voir gestion_stock.html) : entouré de
+    guillemets, guillemets internes doublés. Sinon un libellé contenant
+    lui-même un ';' casserait l'alignement des colonnes suivantes."""
+    s = '' if v is None else str(v)
+    return '"' + s.replace('"', '""') + '"'
+
+
+def _csv_montant(m):
+    """Nombre brut (le FCFA n'a pas de sous-unité, donc pas de décimales),
+    SANS séparateur de milliers — un montant formaté "125 000" serait lu
+    comme du texte par Excel, pas comme un nombre utilisable dans une
+    somme. Vide si nul, comme à l'écran."""
+    return str(int(round(m))) if m else ''
 
 
 @compta_bp.route('/rapport/export-txt/<type_rapport>')
 def export_rapport_txt(type_rapport):
-    """Export en texte brut (.txt) d'UN rapport à la fois, avec les mêmes
-    filtres que l'écran (journal sélectionné, compte unique, dates) —
-    demandé explicitement : pouvoir imprimer/exporter chaque journal
+    """Export tableur (.csv, séparateur ';') d'UN rapport à la fois, avec
+    les mêmes filtres que l'écran (journal sélectionné, compte unique,
+    dates) — demandé explicitement : pouvoir exporter chaque journal
     individuellement, le grand livre, la balance, le résultat, le bilan,
-    plutôt qu'un seul export mélangeant tout."""
+    plutôt qu'un seul export mélangeant tout.
+
+    ⭐ Anciennement un texte à colonnes de largeur FIXE (espaces de
+    remplissage) pensé pour être lu/imprimé tel quel — mais ouvert dans
+    Excel, une largeur fixe n'est PAS un vrai séparateur de colonnes : tout
+    atterrit dans une seule colonne (bug remonté). Le PDF (imprimerRapportPDF,
+    /rapport/print/<type>) couvre déjà le besoin d'impression ; cet export-ci
+    sert en pratique à être repris dans un tableur, donc il doit l'être
+    réellement — d'où le passage en CSV point-virgule, avec somme(BOM UTF-8
+    en tête pour qu'Excel reconnaisse direct l'encodage et les accents)."""
     structure_id = session.get('structure_id')
     if not structure_id:
         return "Structure non trouvée", 404
@@ -2247,113 +2269,95 @@ def export_rapport_txt(type_rapport):
     except Exception:
         pass
 
-    lignes_txt = []
-    lignes_txt.append("=" * 78)
-    lignes_txt.append((structure_nom or "MEDILOGIC").upper())
-    lignes_txt.append(titre.upper())
-    periode = f"Période : {date_debut or '...'} au {date_fin or '...'}" if type_rapport != 'bilan' else f"Au {date_fin or datetime.now().strftime('%Y-%m-%d')}"
-    lignes_txt.append(periode)
-    lignes_txt.append(f"Édité le {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-    lignes_txt.append("=" * 78)
-    lignes_txt.append("")
+    # Quelques lignes de contexte avant le tableau — une seule cellule
+    # chacune (colonne A), sans casser le tableau à colonnes multiples qui
+    # suit : Excel les affiche simplement au-dessus, cellules B/C... vides.
+    lignes_csv = [
+        _csv_champ((structure_nom or "MEDILOGIC").upper()),
+        _csv_champ(titre),
+        _csv_champ(f"Période : {date_debut or '...'} au {date_fin or '...'}" if type_rapport != 'bilan'
+                    else f"Au {date_fin or datetime.now().strftime('%Y-%m-%d')}"),
+        _csv_champ(f"Édité le {datetime.now().strftime('%d/%m/%Y %H:%M')}"),
+        '',
+    ]
 
     if type_rapport == 'journal':
-        largeurs = [10, 14, 34, 10, 26, 14, 14]
-        lignes_txt.append(_ligne_txt("Date", "Pièce", "Libellé", "Journal", "Compte", "Débit", "Crédit", largeurs=largeurs))
-        lignes_txt.append("-" * 78)
+        lignes_csv.append(';'.join(_csv_champ(c) for c in
+                           ['Date', 'Pièce', 'Libellé', 'Journal', 'N° compte', 'Compte', 'Débit', 'Crédit']))
         total_d = total_c = 0
         for l in data:
-            lignes_txt.append(_ligne_txt(
-                l['date'], l['piece'][:14], l['libelle'][:34], l['journal_code'],
-                f"{l['compte_numero']} {l['compte_nom']}"[:26],
-                _fmt_montant(l['debit']) if l['debit'] else '', _fmt_montant(l['credit']) if l['credit'] else '',
-                largeurs=largeurs))
+            lignes_csv.append(';'.join([
+                _csv_champ(l['date']), _csv_champ(l['piece']), _csv_champ(l['libelle']), _csv_champ(l['journal_code']),
+                _csv_champ(l['compte_numero']), _csv_champ(l['compte_nom']),
+                _csv_montant(l['debit']), _csv_montant(l['credit']),
+            ]))
             total_d += l['debit']; total_c += l['credit']
-        lignes_txt.append("-" * 78)
-        lignes_txt.append(_ligne_txt("", "", "", "", "TOTAL", _fmt_montant(total_d), _fmt_montant(total_c), largeurs=largeurs))
+        lignes_csv.append(';'.join([_csv_champ('TOTAL'), '', '', '', '', '', _csv_montant(total_d), _csv_montant(total_c)]))
 
     elif type_rapport == 'grand_livre':
-        largeurs = [10, 30, 14, 34, 14, 14]
-        lignes_txt.append(_ligne_txt("Date", "Compte", "Pièce", "Libellé", "Débit", "Crédit", largeurs=largeurs))
-        lignes_txt.append("-" * 78)
+        lignes_csv.append(';'.join(_csv_champ(c) for c in
+                           ['Date', 'N° compte', 'Compte', 'Pièce', 'Libellé', 'Débit', 'Crédit']))
         total_d = total_c = 0
         for l in data:
-            lignes_txt.append(_ligne_txt(
-                l['date'], f"{l['compte_numero']} {l['compte_nom']}"[:30], l['piece'][:14], l['libelle'][:34],
-                _fmt_montant(l['debit']) if l['debit'] else '', _fmt_montant(l['credit']) if l['credit'] else '',
-                largeurs=largeurs))
+            lignes_csv.append(';'.join([
+                _csv_champ(l['date']), _csv_champ(l['compte_numero']), _csv_champ(l['compte_nom']),
+                _csv_champ(l['piece']), _csv_champ(l['libelle']),
+                _csv_montant(l['debit']), _csv_montant(l['credit']),
+            ]))
             total_d += l['debit']; total_c += l['credit']
-        lignes_txt.append("-" * 78)
-        lignes_txt.append(_ligne_txt("", "", "", "TOTAL", _fmt_montant(total_d), _fmt_montant(total_c), largeurs=largeurs))
+        lignes_csv.append(';'.join([_csv_champ('TOTAL'), '', '', '', '', _csv_montant(total_d), _csv_montant(total_c)]))
 
     elif type_rapport == 'balance':
-        largeurs = [40, 16, 16, 16]
-        lignes_txt.append(_ligne_txt("Compte", "Débit", "Crédit", "Solde", largeurs=largeurs))
-        lignes_txt.append("-" * 78)
+        lignes_csv.append(';'.join(_csv_champ(c) for c in ['N° compte', 'Compte', 'Débit', 'Crédit', 'Solde']))
         total_d = total_c = total_s = 0
         for l in data:
-            lignes_txt.append(_ligne_txt(
-                f"{l['compte_numero']} {l['compte_nom']}"[:40],
-                _fmt_montant(l['total_debit']), _fmt_montant(l['total_credit']), _fmt_montant(l['solde']),
-                largeurs=largeurs))
+            lignes_csv.append(';'.join([
+                _csv_champ(l['compte_numero']), _csv_champ(l['compte_nom']),
+                _csv_montant(l['total_debit']), _csv_montant(l['total_credit']), _csv_montant(l['solde']),
+            ]))
             total_d += l['total_debit']; total_c += l['total_credit']; total_s += l['solde']
-        lignes_txt.append("-" * 78)
-        lignes_txt.append(_ligne_txt("TOTAL", _fmt_montant(total_d), _fmt_montant(total_c), _fmt_montant(total_s), largeurs=largeurs))
+        lignes_csv.append(';'.join([_csv_champ('TOTAL'), '', _csv_montant(total_d), _csv_montant(total_c), _csv_montant(total_s)]))
 
     elif type_rapport == 'resultat':
-        largeurs = [50, 20]
-        lignes_txt.append("CHARGES")
-        lignes_txt.append("-" * 78)
+        lignes_csv.append(';'.join(_csv_champ(c) for c in ['Type', 'N° compte', 'Compte', 'Montant']))
         for l in data['charges']:
-            lignes_txt.append(_ligne_txt(f"{l['numero']} {l['nom']}"[:50], _fmt_montant(l['montant']), largeurs=largeurs))
-        lignes_txt.append(_ligne_txt("TOTAL CHARGES", _fmt_montant(data['total_charges']), largeurs=largeurs))
-        lignes_txt.append("")
-        lignes_txt.append("PRODUITS")
-        lignes_txt.append("-" * 78)
+            lignes_csv.append(';'.join([_csv_champ('Charge'), _csv_champ(l['numero']), _csv_champ(l['nom']), _csv_montant(l['montant'])]))
+        lignes_csv.append(';'.join([_csv_champ('TOTAL CHARGES'), '', '', _csv_montant(data['total_charges'])]))
         for l in data['produits']:
-            lignes_txt.append(_ligne_txt(f"{l['numero']} {l['nom']}"[:50], _fmt_montant(l['montant']), largeurs=largeurs))
-        lignes_txt.append(_ligne_txt("TOTAL PRODUITS", _fmt_montant(data['total_produits']), largeurs=largeurs))
-        lignes_txt.append("")
-        lignes_txt.append("=" * 78)
-        lignes_txt.append(_ligne_txt(f"RÉSULTAT ({data['resultat_text']})", _fmt_montant(data['resultat']), largeurs=largeurs))
+            lignes_csv.append(';'.join([_csv_champ('Produit'), _csv_champ(l['numero']), _csv_champ(l['nom']), _csv_montant(l['montant'])]))
+        lignes_csv.append(';'.join([_csv_champ('TOTAL PRODUITS'), '', '', _csv_montant(data['total_produits'])]))
+        lignes_csv.append(';'.join([_csv_champ(f"RÉSULTAT ({data['resultat_text']})"), '', '', _csv_montant(data['resultat'])]))
 
     elif type_rapport == 'bilan':
-        largeurs = [50, 20]
-        lignes_txt.append("ACTIF")
-        lignes_txt.append("-" * 78)
+        lignes_csv.append(';'.join(_csv_champ(c) for c in ['Type', 'N° compte', 'Compte', 'Montant']))
         for l in data['actifs']:
-            lignes_txt.append(_ligne_txt(f"{l['numero']} {l['nom']}"[:50], _fmt_montant(l['montant']), largeurs=largeurs))
-        lignes_txt.append(_ligne_txt("TOTAL ACTIF", _fmt_montant(data['total_actif']), largeurs=largeurs))
-        lignes_txt.append("")
-        lignes_txt.append("PASSIF")
-        lignes_txt.append("-" * 78)
+            lignes_csv.append(';'.join([_csv_champ('Actif'), _csv_champ(l['numero']), _csv_champ(l['nom']), _csv_montant(l['montant'])]))
+        lignes_csv.append(';'.join([_csv_champ('TOTAL ACTIF'), '', '', _csv_montant(data['total_actif'])]))
         for l in data['passifs']:
-            lignes_txt.append(_ligne_txt(f"{l['numero']} {l['nom']}"[:50], _fmt_montant(l['montant']), largeurs=largeurs))
-        lignes_txt.append(_ligne_txt("TOTAL PASSIF", _fmt_montant(data['total_passif']), largeurs=largeurs))
-        lignes_txt.append("")
-        lignes_txt.append("CAPITAUX PROPRES")
-        lignes_txt.append("-" * 78)
+            lignes_csv.append(';'.join([_csv_champ('Passif'), _csv_champ(l['numero']), _csv_champ(l['nom']), _csv_montant(l['montant'])]))
+        lignes_csv.append(';'.join([_csv_champ('TOTAL PASSIF'), '', '', _csv_montant(data['total_passif'])]))
         for l in data['capitaux_propres']:
-            lignes_txt.append(_ligne_txt(f"{l['numero']} {l['nom']}"[:50], _fmt_montant(l['montant']), largeurs=largeurs))
-        lignes_txt.append(_ligne_txt("TOTAL CAPITAUX PROPRES", _fmt_montant(data['total_capitaux']), largeurs=largeurs))
-        lignes_txt.append("")
-        lignes_txt.append("=" * 78)
-        lignes_txt.append(_ligne_txt("TOTAL PASSIF + CAPITAUX", _fmt_montant(data['total_passif_capitaux']), largeurs=largeurs))
-        lignes_txt.append("Équilibré" if data['est_equilibre'] else "⚠️ NON ÉQUILIBRÉ")
+            lignes_csv.append(';'.join([_csv_champ('Capitaux propres'), _csv_champ(l['numero']), _csv_champ(l['nom']), _csv_montant(l['montant'])]))
+        lignes_csv.append(';'.join([_csv_champ('TOTAL CAPITAUX PROPRES'), '', '', _csv_montant(data['total_capitaux'])]))
+        lignes_csv.append(';'.join([_csv_champ('TOTAL PASSIF + CAPITAUX'), '', '', _csv_montant(data['total_passif_capitaux'])]))
+        lignes_csv.append(';'.join([_csv_champ('Équilibré' if data['est_equilibre'] else 'NON ÉQUILIBRÉ'), '', '', '']))
 
-    lignes_txt.append("")
-    contenu = "\n".join(lignes_txt)
+    # BOM UTF-8 en tête : sans lui, Excel devine souvent un encodage ANSI
+    # et affiche les accents mal formés (voire, sur certaines versions,
+    # échoue à re-scinder correctement les colonnes) — avec, il reconnaît
+    # l'UTF-8 et le séparateur ';' immédiatement, à l'ouverture directe.
+    contenu = '﻿' + '\r\n'.join(lignes_csv) + '\r\n'
 
     nom_fichier = f"{type_rapport}"
     if journal_code:
         nom_fichier += f"_{journal_code}"
     if date_fin:
         nom_fichier += f"_{date_fin}"
-    nom_fichier += ".txt"
+    nom_fichier += ".csv"
 
     from flask import Response
     return Response(
-        contenu, mimetype='text/plain; charset=utf-8',
+        contenu, mimetype='text/csv; charset=utf-8',
         headers={'Content-Disposition': f'attachment; filename="{nom_fichier}"'}
     )
 
@@ -2478,7 +2482,12 @@ def export_fec():
             '',  # Idevise
         ]))
 
-    contenu = '\r\n'.join(fec_lignes) + '\r\n'
+    # BOM UTF-8 en tête (même raisonnement que l'export CSV ci-dessus) :
+    # aide Excel à reconnaître direct l'encodage/les colonnes à l'ouverture
+    # ; n'affecte pas la conformité FEC (transparent pour un logiciel
+    # comptable qui lit le fichier), extension/séparateur tabulation
+    # inchangés — ce sont eux qui font foi pour la norme, pas le BOM.
+    contenu = '﻿' + '\r\n'.join(fec_lignes) + '\r\n'
     nom_fichier = f"FEC_structure{structure_id}_{date_debut}_{date_fin}.txt"
 
     from flask import Response
