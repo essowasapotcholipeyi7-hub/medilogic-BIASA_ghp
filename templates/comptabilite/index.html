@@ -1291,8 +1291,19 @@
                 </div>
                 <div class="row">
                     <div class="col-md-6 mb-2">
-                        <label class="form-label small">Montant (FCFA) *</label>
-                        <input type="number" class="form-control form-control-sm" id="achatMontant" step="100">
+                        <label class="form-label small">Montant *</label>
+                        <div class="input-group input-group-sm">
+                            <input type="number" class="form-control" id="achatMontant" step="100">
+                            <!-- ⭐ Choix TTC/HT à la saisie (demandé explicitement) : le montant dû
+                                 au fournisseur (montant_total) reste toujours le TTC réel — si HT
+                                 est choisi ici, la conversion se fait côté serveur avant stockage,
+                                 voir /api/fournisseurs/achats. -->
+                            <select class="form-select" id="achatTypeMontant" style="max-width:90px;">
+                                <option value="ttc" selected>TTC</option>
+                                <option value="ht">HT</option>
+                            </select>
+                        </div>
+                        <div class="form-text" id="achatMontantAide"></div>
                     </div>
                     <div class="col-md-6 mb-2">
                         <label class="form-label small">Échéance (optionnel)</label>
@@ -2969,7 +2980,9 @@ function chargerAchatsFournisseurs() {
                 <tr>
                     <td>${a.fournisseur_nom}</td>
                     <td>${a.motif}${a.motif_personnalise ? ' — ' + a.motif_personnalise : ''}</td>
-                    <td class="text-end">${Math.round(a.montant_total).toLocaleString('fr-FR')} F</td>
+                    <td class="text-end">${Math.round(a.montant_total).toLocaleString('fr-FR')} F
+                        ${a.type_montant_saisi === 'ht' ? `<span class="badge bg-light text-dark border" title="Saisi ${Math.round(a.montant_saisi).toLocaleString('fr-FR')} F HT, converti en TTC">HT→TTC</span>` : ''}
+                    </td>
                     <td class="text-end">${Math.round(a.montant_paye).toLocaleString('fr-FR')} F</td>
                     <td class="text-end fw-bold ${a.reste_a_payer > 0 ? 'text-danger' : 'text-success'}">${Math.round(a.reste_a_payer).toLocaleString('fr-FR')} F</td>
                     <td>${a.date_echeance || '-'}</td>
@@ -3017,6 +3030,8 @@ function creerFournisseur() {
     .catch(error => alert('❌ Erreur: ' + error));
 }
 
+let _tauxTvaActuel = 18;  // rechargé à chaque ouverture du modal — voir ouvrirAjoutAchatFournisseur()
+
 function ouvrirAjoutAchatFournisseur() {
     const select = document.getElementById('achatFournisseurId');
     if (_fournisseursCache.length === 0) {
@@ -3025,22 +3040,46 @@ function ouvrirAjoutAchatFournisseur() {
     }
     select.innerHTML = _fournisseursCache.filter(f => f.actif).map(f => `<option value="${f.id}">${f.nom}</option>`).join('');
     document.getElementById('achatMontant').value = '';
+    document.getElementById('achatTypeMontant').value = 'ttc';
+    document.getElementById('achatMontantAide').textContent = '';
     document.getElementById('achatMotif').value = '';
     document.getElementById('achatDescription').value = '';
     document.getElementById('achatDateEcheance').value = '';
+
+    fetch('/comptabilite/api/tva/parametrage').then(r => r.json()).then(d => {
+        if (d.success) _tauxTvaActuel = d.assujetti ? d.taux : 0;
+    });
+
     new bootstrap.Modal(document.getElementById('achatFournisseurModal')).show();
 }
+
+function majAideMontantAchat() {
+    const montant = parseFloat(document.getElementById('achatMontant').value) || 0;
+    const type = document.getElementById('achatTypeMontant').value;
+    const aide = document.getElementById('achatMontantAide');
+    if (montant <= 0 || _tauxTvaActuel <= 0) { aide.textContent = ''; return; }
+    if (type === 'ht') {
+        const ttc = Math.round(montant * (1 + _tauxTvaActuel / 100));
+        aide.textContent = `= ${ttc.toLocaleString('fr-FR')} F TTC (au taux ${_tauxTvaActuel}%) — c'est ce montant qui sera dû au fournisseur.`;
+    } else {
+        const ht = Math.round(montant / (1 + _tauxTvaActuel / 100));
+        aide.textContent = `≈ ${ht.toLocaleString('fr-FR')} F HT (TVA à ${_tauxTvaActuel}% déjà incluse dans ce montant).`;
+    }
+}
+document.getElementById('achatMontant').addEventListener('input', majAideMontantAchat);
+document.getElementById('achatTypeMontant').addEventListener('change', majAideMontantAchat);
 
 function creerAchatFournisseur() {
     const fournisseur_id = parseInt(document.getElementById('achatFournisseurId').value);
     const montant = parseFloat(document.getElementById('achatMontant').value) || 0;
+    const type_montant = document.getElementById('achatTypeMontant').value;
     const motif = document.getElementById('achatMotif').value.trim();
     if (!fournisseur_id || montant <= 0 || !motif) { alert('Fournisseur, motif et montant sont obligatoires'); return; }
 
     fetch('/comptabilite/api/fournisseurs/achats', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
-            fournisseur_id, montant, motif,
+            fournisseur_id, montant, type_montant, motif,
             description: document.getElementById('achatDescription').value,
             date_echeance: document.getElementById('achatDateEcheance').value || null,
         })
@@ -3432,32 +3471,47 @@ function afficherRapport(data, type) {
             </tr>
         `;
     } else if (type === 'tva') {
-        thead.innerHTML = '<th>Date</th><th>Pièce</th><th>Libellé</th><th>TVA collectée</th>';
+        thead.innerHTML = '<th>Date</th><th>Pièce</th><th>Libellé</th><th>Sens</th><th>Montant</th>';
         if (!data.assujetti) {
-            html = `<tr><td colspan="4" class="text-center text-muted">Structure non assujettie à la TVA (voir le réglage ci-dessus).</td></tr>`;
-        } else if (!data.lignes || data.lignes.length === 0) {
-            html = `<tr><td colspan="4" class="text-center">Aucune vente avec TVA sur cette période.</td></tr>`;
+            html = `<tr><td colspan="5" class="text-center text-muted">Structure non assujettie à la TVA (voir le réglage ci-dessus).</td></tr>`;
         } else {
-            data.lignes.forEach(l => {
-                html += `<tr>
-                    <td>${l.date || ''}</td>
-                    <td><strong>${l.piece || '-'}</strong></td>
-                    <td>${l.libelle || ''}</td>
-                    <td class="text-end">${Math.round(l.montant).toLocaleString('fr-FR')} F</td>
-                </tr>`;
-            });
+            const lignesCollectee = data.lignes || [];
+            const lignesDeductible = data.lignes_deductible || [];
+            if (lignesCollectee.length === 0 && lignesDeductible.length === 0) {
+                html = `<tr><td colspan="5" class="text-center">Aucun mouvement de TVA sur cette période.</td></tr>`;
+            }
+            if (lignesCollectee.length) {
+                html += `<tr class="table-success"><td colspan="5"><strong>TVA COLLECTÉE (ventes)</strong></td></tr>`;
+                lignesCollectee.forEach(l => {
+                    html += `<tr>
+                        <td>${l.date || ''}</td><td><strong>${l.piece || '-'}</strong></td><td>${l.libelle || ''}</td>
+                        <td><span class="badge bg-success">Collectée</span></td>
+                        <td class="text-end">${Math.round(l.montant).toLocaleString('fr-FR')} F</td>
+                    </tr>`;
+                });
+            }
+            if (lignesDeductible.length) {
+                html += `<tr class="table-primary"><td colspan="5"><strong>TVA DÉDUCTIBLE (achats fournisseurs)</strong></td></tr>`;
+                lignesDeductible.forEach(l => {
+                    html += `<tr>
+                        <td>${l.date || ''}</td><td><strong>${l.piece || '-'}</strong></td><td>${l.libelle || ''}</td>
+                        <td><span class="badge bg-primary">Déductible</span></td>
+                        <td class="text-end">${Math.round(l.montant).toLocaleString('fr-FR')} F</td>
+                    </tr>`;
+                });
+            }
         }
         tfoot.innerHTML = `
             <tr class="fw-bold">
-                <td colspan="3" class="text-end">TVA collectée (taux ${data.taux}%) :</td>
+                <td colspan="4" class="text-end">TVA collectée (taux ${data.taux}%) :</td>
                 <td class="text-end text-success">${Math.round(data.total_collectee).toLocaleString('fr-FR')} FCFA</td>
             </tr>
-            <tr>
-                <td colspan="3" class="text-end text-muted small">TVA déductible (achats — pas encore suivie) :</td>
-                <td class="text-end text-muted small">${Math.round(data.total_deductible).toLocaleString('fr-FR')} FCFA</td>
+            <tr class="fw-bold">
+                <td colspan="4" class="text-end">TVA déductible :</td>
+                <td class="text-end text-primary">${Math.round(data.total_deductible).toLocaleString('fr-FR')} FCFA</td>
             </tr>
             <tr class="fw-bold table-info">
-                <td colspan="3" class="text-end">TVA NETTE À PAYER :</td>
+                <td colspan="4" class="text-end">TVA NETTE À PAYER (collectée - déductible) :</td>
                 <td class="text-end">${Math.round(data.tva_nette).toLocaleString('fr-FR')} FCFA</td>
             </tr>
         `;

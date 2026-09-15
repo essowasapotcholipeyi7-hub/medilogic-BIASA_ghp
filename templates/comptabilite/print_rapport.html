@@ -635,24 +635,41 @@
                     <thead>
                         <tr>
                             <th style="width:15%">Date</th>
-                            <th style="width:20%">Pièce</th>
-                            <th style="width:40%">Libellé</th>
-                            <th style="width:25%">TVA collectée</th>
+                            <th style="width:15%">Pièce</th>
+                            <th style="width:35%">Libellé</th>
+                            <th style="width:15%">Sens</th>
+                            <th style="width:20%">Montant</th>
                         </tr>
                     </thead>
                     <tbody>
+                        {% if data.lignes and data.lignes|length > 0 %}
+                        <tr class="bg-success-light"><td colspan="5"><strong>TVA COLLECTÉE (ventes)</strong></td></tr>
                         {% for l in data.lignes %}
                         <tr>
                             <td>{{ l.date or '' }}</td>
                             <td><strong>{{ l.piece or '' }}</strong></td>
                             <td>{{ l.libelle or '' }}</td>
+                            <td><span class="badge-statut produit">Collectée</span></td>
                             <td class="text-end">{{ (l.montant or 0)|round(2) }} F</td>
                         </tr>
                         {% endfor %}
+                        {% endif %}
+                        {% if data.lignes_deductible and data.lignes_deductible|length > 0 %}
+                        <tr class="bg-danger-light"><td colspan="5"><strong>TVA DÉDUCTIBLE (achats fournisseurs)</strong></td></tr>
+                        {% for l in data.lignes_deductible %}
+                        <tr>
+                            <td>{{ l.date or '' }}</td>
+                            <td><strong>{{ l.piece or '' }}</strong></td>
+                            <td>{{ l.libelle or '' }}</td>
+                            <td><span class="badge-statut charge">Déductible</span></td>
+                            <td class="text-end">{{ (l.montant or 0)|round(2) }} F</td>
+                        </tr>
+                        {% endfor %}
+                        {% endif %}
                     </tbody>
                     <tfoot style="font-weight:bold; background:#f5f7fb;">
                         <tr>
-                            <td colspan="3" class="text-end">TVA NETTE À PAYER</td>
+                            <td colspan="4" class="text-end">TVA NETTE À PAYER (collectée - déductible)</td>
                             <td class="text-end">{{ (data.tva_nette or 0)|round(2) }} F</td>
                         </tr>
                     </tfoot>

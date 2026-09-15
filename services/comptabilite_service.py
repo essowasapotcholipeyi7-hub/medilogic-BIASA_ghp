@@ -39,7 +39,7 @@ from utils.plan_comptable_syscohada import (
     COMPTE_DEPRECIATION_CREANCE, COMPTE_REPRISE_PROVISION_CREANCE,
     COMPTE_PERTE_CREANCE_IRRECOUVRABLE, COMPTE_CREANCE_ABANDONNEE,
     COMPTE_DOTATION_AMORTISSEMENT, compte_charge_pour_motif,
-    COMPTE_TVA_COLLECTEE,
+    COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE,
 )
 from utils.categorisation import categoriser_acte
 
@@ -907,21 +907,40 @@ def generer_ecriture_achat_fournisseur(achat, user_nom='SYSTEME'):
     suite (comptabilité d'engagement), mais la caisse n'est PAS impactée —
     on ne paie pas encore. Débit charge (déduite du motif) / Crédit 401
     Fournisseurs. La sortie de caisse n'arrivera qu'au règlement (voir
-    generer_ecriture_reglement_fournisseur)."""
+    generer_ecriture_reglement_fournisseur).
+
+    ⭐ TVA déductible : `achat.montant_total` représente TOUJOURS le montant
+    dû au fournisseur (TTC) — que l'utilisateur ait saisi TTC ou HT à la
+    création, la conversion a déjà eu lieu avant stockage (voir la route
+    /api/fournisseurs/achats). Le crédit 401 (dette réelle) reste donc au
+    TTC total ; seul le débit est reventilé entre charge (HT) et TVA
+    récupérable (4452), même principe que generer_ecriture_vente."""
     try:
-        montant = _to_float(achat.montant_total)
-        if montant <= 0:
+        montant_ttc = _to_float(achat.montant_total)
+        if montant_ttc <= 0:
             return None
 
         compte_charge = compte_charge_pour_motif(achat.motif or achat.motif_personnalise)
         nom_fournisseur = achat.fournisseur.nom if achat.fournisseur else 'Fournisseur'
+
+        param_tva = ParametrageTva.get_ou_creer(achat.structure_id)
+        taux_tva = _to_float(param_tva.taux) if param_tva.assujetti else 0
+        if taux_tva > 0:
+            montant_ht = round(montant_ttc / (1 + taux_tva / 100), 2)
+            montant_tva = round(montant_ttc - montant_ht, 2)
+        else:
+            montant_ht, montant_tva = montant_ttc, 0
+
         lignes = [
             {'numero_compte': compte_charge,
-             'libelle': f"{achat.motif or 'Achat'} — {nom_fournisseur}", 'debit': montant},
-            {'numero_compte': COMPTE_FOURNISSEURS,
-             'libelle': f"Dette fournisseur — {nom_fournisseur}", 'credit': montant,
-             'tiers_type': 'fournisseur', 'tiers_id': achat.fournisseur_id, 'tiers_nom': nom_fournisseur},
+             'libelle': f"{achat.motif or 'Achat'} — {nom_fournisseur}", 'debit': montant_ht},
         ]
+        if montant_tva > 0.5:
+            lignes.append({'numero_compte': COMPTE_TVA_DEDUCTIBLE,
+                            'libelle': f"TVA déductible ({taux_tva:g}%) — {nom_fournisseur}", 'debit': montant_tva})
+        lignes.append({'numero_compte': COMPTE_FOURNISSEURS,
+                        'libelle': f"Dette fournisseur — {nom_fournisseur}", 'credit': montant_ttc,
+                        'tiers_type': 'fournisseur', 'tiers_id': achat.fournisseur_id, 'tiers_nom': nom_fournisseur})
 
         return creer_ecriture(
             structure_id=achat.structure_id,

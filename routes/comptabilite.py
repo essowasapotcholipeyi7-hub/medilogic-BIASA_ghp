@@ -17,7 +17,7 @@ from models import (
 from services.comptabilite_service import get_soldes_caisses, creer_ecriture, COMPTE_CLIENTS_PATIENTS
 from utils.plan_comptable_syscohada import (
     COMPTE_BANQUE, COMPTE_CAISSE, COMPTE_IMMO_MATERIEL_MEDICAL, COMPTE_AMORT_MATERIEL_MEDICAL,
-    COMPTE_TVA_COLLECTEE,
+    COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE,
 )
 from utils.permissions import a_acces
 
@@ -1219,18 +1219,24 @@ def generer_balance(structure_id, date_debut, date_fin):
 # ========== TVA (3e chantier comptable : comptes auxiliaires → lettrage → TVA) ==========
 
 def generer_declaration_tva(structure_id, date_debut, date_fin):
-    """TVA collectée sur les ventes de la période (lignes créditées sur
-    COMPTE_TVA_COLLECTEE — voir generer_ecriture_vente). ⭐ Périmètre actuel :
-    TVA COLLECTÉE uniquement (ventes) — la TVA DÉDUCTIBLE sur les achats
-    fournisseurs n'est pas encore implémentée (demande de clarifier
-    d'abord si les montants d'achats enregistrés sont TTC ou HT), donc
-    total_deductible reste à 0 pour l'instant : tva_nette == total_collectee."""
+    """TVA collectée sur les ventes (lignes créditées sur
+    COMPTE_TVA_COLLECTEE — voir generer_ecriture_vente) ET TVA déductible
+    sur les achats fournisseurs (lignes débitées sur COMPTE_TVA_DEDUCTIBLE
+    — voir generer_ecriture_achat_fournisseur, qui convertit toujours le
+    montant saisi en TTC avant de générer l'écriture, que l'utilisateur
+    ait choisi TTC ou HT à la création de l'achat). tva_nette = collectée
+    - déductible (positif = à payer, négatif = crédit de TVA)."""
     from sqlalchemy import text
 
     date_debut_obj = parse_date(date_debut) if date_debut else None
     date_fin_obj = parse_date(date_fin) if date_fin else None
+    params_dates = {
+        'structure_id': structure_id,
+        'date_debut': date_debut_obj.strftime('%Y-%m-%d') if date_debut_obj else None,
+        'date_fin': date_fin_obj.strftime('%Y-%m-%d') if date_fin_obj else None,
+    }
 
-    rows = db.session.execute(text("""
+    rows_collectee = db.session.execute(text("""
         SELECT e.date_ecriture, e.piece_justificative, e.libelle, l.credit
         FROM ecritures_comptables e
         JOIN lignes_ecritures l ON e.id = l.ecriture_id
@@ -1241,27 +1247,44 @@ def generer_declaration_tva(structure_id, date_debut, date_fin):
         AND (:date_debut IS NULL OR e.date_ecriture >= :date_debut)
         AND (:date_fin IS NULL OR e.date_ecriture <= :date_fin)
         ORDER BY e.date_ecriture, e.id
-    """), {
-        'structure_id': structure_id,
-        'compte_tva': COMPTE_TVA_COLLECTEE,
-        'date_debut': date_debut_obj.strftime('%Y-%m-%d') if date_debut_obj else None,
-        'date_fin': date_fin_obj.strftime('%Y-%m-%d') if date_fin_obj else None,
-    }).fetchall()
+    """), {**params_dates, 'compte_tva': COMPTE_TVA_COLLECTEE}).fetchall()
 
-    lignes = [{
+    rows_deductible = db.session.execute(text("""
+        SELECT e.date_ecriture, e.piece_justificative, e.libelle, l.debit
+        FROM ecritures_comptables e
+        JOIN lignes_ecritures l ON e.id = l.ecriture_id
+        JOIN comptes_comptables c ON l.compte_id = c.id
+        WHERE e.structure_id = :structure_id
+        AND e.statut = 'valide'
+        AND c.numero = :compte_tva
+        AND (:date_debut IS NULL OR e.date_ecriture >= :date_debut)
+        AND (:date_fin IS NULL OR e.date_ecriture <= :date_fin)
+        ORDER BY e.date_ecriture, e.id
+    """), {**params_dates, 'compte_tva': COMPTE_TVA_DEDUCTIBLE}).fetchall()
+
+    lignes_collectee = [{
         'date': r.date_ecriture.strftime('%Y-%m-%d') if r.date_ecriture else '',
         'piece': r.piece_justificative or '',
         'libelle': r.libelle or '',
         'montant': float(r.credit or 0),
-    } for r in rows]
+    } for r in rows_collectee]
+
+    lignes_deductible = [{
+        'date': r.date_ecriture.strftime('%Y-%m-%d') if r.date_ecriture else '',
+        'piece': r.piece_justificative or '',
+        'libelle': r.libelle or '',
+        'montant': float(r.debit or 0),
+    } for r in rows_deductible]
 
     param = ParametrageTva.get_ou_creer(structure_id)
-    total_collectee = sum(l['montant'] for l in lignes)
+    total_collectee = sum(l['montant'] for l in lignes_collectee)
+    total_deductible = sum(l['montant'] for l in lignes_deductible)
     return {
-        'lignes': lignes,
+        'lignes': lignes_collectee,
+        'lignes_deductible': lignes_deductible,
         'total_collectee': round(total_collectee, 2),
-        'total_deductible': 0,
-        'tva_nette': round(total_collectee, 2),
+        'total_deductible': round(total_deductible, 2),
+        'tva_nette': round(total_collectee - total_deductible, 2),
         'taux': float(param.taux or 0),
         'assujetti': bool(param.assujetti),
     }
@@ -2552,12 +2575,19 @@ def export_rapport_txt(type_rapport):
     elif type_rapport == 'tva':
         lignes_csv.append(_csv_champ(f"Taux appliqué : {data['taux']:g}%" if data['assujetti'] else "Structure non assujettie à la TVA"))
         lignes_csv.append('')
-        lignes_csv.append(';'.join(_csv_champ(c) for c in ['Date', 'Pièce', 'Libellé', 'TVA collectée']))
+        lignes_csv.append(_csv_champ('TVA COLLECTÉE (ventes)'))
+        lignes_csv.append(';'.join(_csv_champ(c) for c in ['Date', 'Pièce', 'Libellé', 'Montant']))
         for l in data['lignes']:
             lignes_csv.append(';'.join([_csv_champ(l['date']), _csv_champ(l['piece']), _csv_champ(l['libelle']), _csv_montant(l['montant'])]))
         lignes_csv.append(';'.join([_csv_champ('TOTAL TVA COLLECTÉE'), '', '', _csv_montant(data['total_collectee'])]))
-        lignes_csv.append(';'.join([_csv_champ('TVA déductible (achats — non encore suivie)'), '', '', _csv_montant(data['total_deductible'])]))
-        lignes_csv.append(';'.join([_csv_champ('TVA NETTE À PAYER'), '', '', _csv_montant(data['tva_nette'])]))
+        lignes_csv.append('')
+        lignes_csv.append(_csv_champ('TVA DÉDUCTIBLE (achats fournisseurs)'))
+        lignes_csv.append(';'.join(_csv_champ(c) for c in ['Date', 'Pièce', 'Libellé', 'Montant']))
+        for l in data.get('lignes_deductible', []):
+            lignes_csv.append(';'.join([_csv_champ(l['date']), _csv_champ(l['piece']), _csv_champ(l['libelle']), _csv_montant(l['montant'])]))
+        lignes_csv.append(';'.join([_csv_champ('TOTAL TVA DÉDUCTIBLE'), '', '', _csv_montant(data['total_deductible'])]))
+        lignes_csv.append('')
+        lignes_csv.append(';'.join([_csv_champ('TVA NETTE À PAYER (collectée - déductible)'), '', '', _csv_montant(data['tva_nette'])]))
 
     elif type_rapport == 'resultat':
         lignes_csv.append(';'.join(_csv_champ(c) for c in ['Type', 'N° compte', 'Compte', 'Montant']))
@@ -3311,6 +3341,8 @@ def api_liste_achats_fournisseurs():
         'id': a.id, 'fournisseur_id': a.fournisseur_id,
         'fournisseur_nom': a.fournisseur.nom if a.fournisseur else '',
         'montant_total': float(a.montant_total or 0), 'montant_paye': float(a.montant_paye or 0),
+        'montant_saisi': float(a.montant_saisi) if a.montant_saisi is not None else float(a.montant_total or 0),
+        'type_montant_saisi': a.type_montant_saisi or 'ttc',
         'reste_a_payer': a.reste_a_payer(), 'motif': a.motif,
         'motif_personnalise': a.motif_personnalise or '', 'description': a.description or '',
         'date_achat': a.date_achat.strftime('%Y-%m-%d') if a.date_achat else '',
@@ -3342,9 +3374,22 @@ def api_creer_achat_fournisseur():
 
     date_echeance = parse_date(data.get('date_echeance')) if data.get('date_echeance') else None
 
+    # ⭐ TVA déductible : montant_total doit TOUJOURS représenter le vrai
+    # montant dû (TTC) — si l'utilisateur a saisi un montant HT, on le
+    # convertit ici, une fois, avant stockage (voir models.AchatFournisseur).
+    type_montant = data.get('type_montant') or 'ttc'
+    montant_saisi = montant
+    if type_montant == 'ht':
+        param_tva = ParametrageTva.get_ou_creer(structure_id)
+        taux_tva = float(param_tva.taux or 0) if param_tva.assujetti else 0
+        montant_total_ttc = round(montant * (1 + taux_tva / 100), 2) if taux_tva > 0 else montant
+    else:
+        montant_total_ttc = montant
+
     achat = AchatFournisseur(
         structure_id=structure_id, fournisseur_id=fournisseur_id,
-        montant_total=montant, montant_paye=0,
+        montant_total=montant_total_ttc, montant_saisi=montant_saisi, type_montant_saisi=type_montant,
+        montant_paye=0,
         motif=data.get('motif') or 'Achat', motif_personnalise=data.get('motif_personnalise', ''),
         description=data.get('description', ''), date_echeance=date_echeance,
         statut='a_regler', created_by_nom=user_name,

@@ -1861,6 +1861,16 @@ class AchatFournisseur(db.Model):
     created_by_nom = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # ⭐ TVA déductible — `montant_total` reste TOUJOURS le vrai montant dû
+    # au fournisseur (TTC), inchangé quoi que l'utilisateur ait saisi : ça
+    # garde tout le suivi existant (reste_a_payer, ReglementFournisseur)
+    # valide sans y toucher. Ces deux champs ne servent qu'à la génération
+    # de l'écriture (HT/TVA, voir generer_ecriture_achat_fournisseur) et à
+    # l'affichage ("vous avez saisi 1000 HT") — si l'utilisateur choisit
+    # HT à la saisie, la route convertit en TTC AVANT d'écrire montant_total.
+    montant_saisi = db.Column(db.Numeric)          # ce que l'utilisateur a tapé, avant conversion
+    type_montant_saisi = db.Column(db.String(5), default='ttc')  # 'ttc' | 'ht'
+
     fournisseur = db.relationship('Fournisseur', backref='achats')
 
     def reste_a_payer(self):

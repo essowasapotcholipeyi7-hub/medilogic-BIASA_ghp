@@ -80,6 +80,7 @@ PLAN_COMPTABLE = [
     {'numero': '43180000', 'nom': "AMU-INAM — part patronale à reverser", 'type': 'passif', 'classe': '4'},
     {'numero': '43190000', 'nom': "Formation professionnelle — à reverser", 'type': 'passif', 'classe': '4'},
     {'numero': '44310000', 'nom': "État — TVA collectée sur ventes", 'type': 'passif', 'classe': '4'},
+    {'numero': '44520000', 'nom': "État — TVA récupérable sur achats", 'type': 'actif', 'classe': '4'},
     {'numero': '44700000', 'nom': "État — IRPP à reverser", 'type': 'passif', 'classe': '4'},
     {'numero': '47130000', 'nom': "Écarts et opérations d'attente (caisse)", 'type': 'actif', 'classe': '4'},
 
@@ -190,12 +191,16 @@ COMPTE_IMAGERIE = '70630000'
 COMPTE_HOSPITALISATION = '70640000'
 COMPTE_AUTRES_PRESTATIONS = '70680000'
 COMPTE_PRODUITS_DIVERS = '75800000'
-# ⭐ TVA collectée sur ventes (3e chantier comptable demandé par le
-# comptable, après comptes auxiliaires et lettrage) — voir
+# ⭐ TVA collectée (ventes) et déductible (achats fournisseurs) — voir
 # models.ParametrageTva (taux/assujettissement, configurable par
-# structure) et generer_ecriture_vente() pour le calcul HT/TVA à partir
-# des prix TTC affichés dans l'appli.
+# structure), generer_ecriture_vente() et generer_ecriture_achat_fournisseur()
+# pour le calcul HT/TVA. Les prix de vente de l'appli sont TTC (montant
+# toujours normalisé côté vente) ; côté achat, l'utilisateur choisit à la
+# saisie si le montant qu'il entre est TTC ou HT (AchatFournisseur.
+# type_montant_saisi) — converti en TTC avant stockage dans montant_total,
+# qui reste dans tous les cas le vrai montant dû au fournisseur.
 COMPTE_TVA_COLLECTEE = '44310000'
+COMPTE_TVA_DEDUCTIBLE = '44520000'
 COMPTE_SALAIRES = '66100000'
 COMPTE_DOTATION_PROVISION_CREANCE = '65910000'
 COMPTE_DEPRECIATION_CREANCE = '49100000'
