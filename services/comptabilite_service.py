@@ -290,6 +290,188 @@ def _contre_passer(ecriture_origine, libelle, source_type, source_id, user_nom='
 
 
 # ============================================================
+# LETTRAGE — 2e chantier demandé par le comptable (après les comptes
+# auxiliaires) : rapprocher une créance/dette avec son ou ses règlement(s)
+# sur un MÊME compte, sous un code commun ("A", "B"...), pour distinguer
+# en un coup d'œil ce qui est soldé de ce qui reste ouvert. Volontairement
+# MANUEL par défaut (lettrer_lignes) — seul le comptable sait vraiment
+# quelles lignes se correspondent ; auto_lettrer_compte() ne traite que le
+# cas strictement non ambigu (un seul débit et un seul crédit non lettrés,
+# de montant identique) pour ne jamais rapprocher au hasard deux lignes
+# qui n'ont rien à voir.
+# ============================================================
+
+def _lettre_suivante(derniere):
+    """Incrémente un code de lettrage façon nom de colonne Excel :
+    A, B, ..., Z, AA, AB, ..., ZZ, AAA..."""
+    if not derniere:
+        return 'A'
+    chars = list(derniere)
+    i = len(chars) - 1
+    while i >= 0:
+        if chars[i] != 'Z':
+            chars[i] = chr(ord(chars[i]) + 1)
+            return ''.join(chars)
+        chars[i] = 'A'
+        i -= 1
+    return 'A' + ''.join(chars)
+
+
+def _prochaine_lettre(structure_id, compte_id):
+    """Lettres déjà utilisées SUR CE COMPTE (le lettrage est toujours
+    scopé à un compte — les mêmes codes peuvent être réutilisés sur un
+    autre compte sans se mélanger). Comparaison par (longueur, alphabet),
+    pas un tri texte naïf qui mettrait "B" après "AA"."""
+    lettres = db.session.query(LigneEcriture.lettre).join(
+        EcritureComptable, EcritureComptable.id == LigneEcriture.ecriture_id
+    ).filter(
+        EcritureComptable.structure_id == structure_id,
+        LigneEcriture.compte_id == compte_id,
+        LigneEcriture.lettre.isnot(None),
+    ).distinct().all()
+    lettres = [l[0] for l in lettres if l[0]]
+    if not lettres:
+        return 'A'
+    derniere = max(lettres, key=lambda s: (len(s), s))
+    return _lettre_suivante(derniere)
+
+
+def lettrer_lignes(structure_id, ligne_ids, user_nom='SYSTEME'):
+    """Rapproche manuellement un ensemble de lignes (même compte
+    obligatoirement, total débit = total crédit) sous un même code.
+    Ne lève jamais d'exception : retourne (lettre, None) au succès, ou
+    (None, message_erreur_utilisateur) sinon — directement renvoyable par
+    la route appelante."""
+    ligne_ids = list({int(i) for i in (ligne_ids or [])})
+    if len(ligne_ids) < 2:
+        return None, "Sélectionnez au moins deux lignes à lettrer."
+
+    lignes = LigneEcriture.query.join(
+        EcritureComptable, EcritureComptable.id == LigneEcriture.ecriture_id
+    ).filter(
+        LigneEcriture.id.in_(ligne_ids),
+        EcritureComptable.structure_id == structure_id,
+    ).all()
+
+    if len(lignes) != len(ligne_ids):
+        return None, "Une ou plusieurs lignes sont introuvables."
+
+    if len({l.compte_id for l in lignes}) > 1:
+        return None, "Le lettrage ne peut porter que sur des lignes d'un même compte."
+
+    if any(l.lettre for l in lignes):
+        return None, "Une ligne sélectionnée est déjà lettrée — délettrez d'abord son groupe."
+
+    total_debit = sum(_to_float(l.debit) for l in lignes)
+    total_credit = sum(_to_float(l.credit) for l in lignes)
+    if abs(total_debit - total_credit) > 1:
+        return None, (f"Sélection non équilibrée (débit={total_debit:.0f}, "
+                       f"crédit={total_credit:.0f}) — le total débit doit égaler le total crédit.")
+
+    compte_id = lignes[0].compte_id
+    lettre = _prochaine_lettre(structure_id, compte_id)
+    maintenant = datetime.utcnow()
+    for l in lignes:
+        l.lettre = lettre
+        l.date_lettrage = maintenant
+    db.session.commit()
+    return lettre, None
+
+
+def delettrer_lignes(structure_id, ligne_ids):
+    """Délettre le(s) GROUPE(S) entier(s) auquel appartiennent les lignes
+    données — jamais une seule ligne au sein d'un groupe (un groupe
+    partiellement délettré ne serait plus équilibré, donc plus lisible).
+    Retourne le nombre de lignes effectivement libérées."""
+    ligne_ids = list({int(i) for i in (ligne_ids or [])})
+    if not ligne_ids:
+        return 0
+
+    lignes = LigneEcriture.query.join(
+        EcritureComptable, EcritureComptable.id == LigneEcriture.ecriture_id
+    ).filter(
+        LigneEcriture.id.in_(ligne_ids),
+        EcritureComptable.structure_id == structure_id,
+    ).all()
+
+    comptes = {l.compte_id for l in lignes}
+    lettres = {l.lettre for l in lignes if l.lettre}
+    if not lettres:
+        return 0
+
+    # ⭐ FIX : Query.update() refuse un .join() préalable ("Can't call
+    # Query.update() ... when join() ... has been called") — la portée
+    # structure_id passe donc par une sous-requête (pas de jointure) plutôt
+    # que par le .join() utilisé pour la lecture ci-dessus.
+    ecritures_structure = db.session.query(EcritureComptable.id).filter(
+        EcritureComptable.structure_id == structure_id
+    )
+    n = LigneEcriture.query.filter(
+        LigneEcriture.ecriture_id.in_(ecritures_structure),
+        LigneEcriture.compte_id.in_(comptes),
+        LigneEcriture.lettre.in_(lettres),
+    ).update({'lettre': None, 'date_lettrage': None}, synchronize_session=False)
+    db.session.commit()
+    return n
+
+
+def auto_lettrer_compte(structure_id, compte_id):
+    """Lettrage automatique, restreint au cas NON AMBIGU : pour un même
+    TIERS et un même montant, s'il n'existe qu'UN SEUL débit et QU'UN SEUL
+    crédit non lettrés, ils sont rapprochés — tout le reste (montants
+    différents, plusieurs candidats possibles) est laissé à un lettrage
+    manuel plutôt que de risquer un rapprochement faux.
+
+    ⭐ Le regroupement se fait par (tiers, montant), PAS juste par montant :
+    sur ce compte, TOUS les clients (ou tous les fournisseurs) partagent le
+    même numéro de compte général (4111/401 — voir models.LigneEcriture.
+    tiers_*) ; sans ce filtre par tiers, deux clients différents ayant par
+    coïncidence chacun un débit/crédit du même montant se retrouveraient
+    lettrés ensemble à tort."""
+    from collections import defaultdict
+
+    lignes = LigneEcriture.query.join(
+        EcritureComptable, EcritureComptable.id == LigneEcriture.ecriture_id
+    ).filter(
+        EcritureComptable.structure_id == structure_id,
+        LigneEcriture.compte_id == compte_id,
+        LigneEcriture.lettre.is_(None),
+    ).all()
+
+    debits_par_cle = defaultdict(list)
+    credits_par_cle = defaultdict(list)
+    for l in lignes:
+        # ⭐ Une ligne sans tiers (écriture antérieure à ce chantier, ou
+        # compte sans notion de tiers) est exclue de l'auto-lettrage : sans
+        # tiers pour les distinguer, deux lignes différentes d'un même
+        # montant seraient indiscernables d'une vraie correspondance —
+        # laissées à un lettrage manuel, où le libellé permet de vérifier.
+        if not l.tiers_id:
+            continue
+        cle = (l.tiers_type, l.tiers_id)
+        if _to_float(l.debit) > 0.5:
+            debits_par_cle[(cle, round(_to_float(l.debit), 2))].append(l)
+        elif _to_float(l.credit) > 0.5:
+            credits_par_cle[(cle, round(_to_float(l.credit), 2))].append(l)
+
+    nb_lettrees = 0
+    maintenant = datetime.utcnow()
+    for cle_montant, debits in debits_par_cle.items():
+        credits = credits_par_cle.get(cle_montant, [])
+        if len(debits) == 1 and len(credits) == 1:
+            lettre = _prochaine_lettre(structure_id, compte_id)
+            debits[0].lettre = lettre
+            debits[0].date_lettrage = maintenant
+            credits[0].lettre = lettre
+            credits[0].date_lettrage = maintenant
+            nb_lettrees += 1
+
+    if nb_lettrees:
+        db.session.commit()
+    return nb_lettrees
+
+
+# ============================================================
 # GÉNÉRATEURS PAR ÉVÉNEMENT MÉTIER
 # ============================================================
 

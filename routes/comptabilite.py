@@ -1023,7 +1023,9 @@ def generer_grand_livre(structure_id, date_debut, date_fin, compte_id=None, tier
 
     result = db.session.execute(text("""
         SELECT
+            l.id as ligne_id,
             e.date_ecriture,
+            c.id as compte_id,
             c.numero as compte_numero,
             c.nom as compte_nom,
             e.libelle,
@@ -1032,7 +1034,9 @@ def generer_grand_livre(structure_id, date_debut, date_fin, compte_id=None, tier
             l.credit,
             l.tiers_type,
             l.tiers_id,
-            l.tiers_nom
+            l.tiers_nom,
+            l.lettre,
+            l.date_lettrage
         FROM ecritures_comptables e
         JOIN lignes_ecritures l ON e.id = l.ecriture_id
         JOIN comptes_comptables c ON l.compte_id = c.id
@@ -1061,7 +1065,9 @@ def generer_grand_livre(structure_id, date_debut, date_fin, compte_id=None, tier
         debit, credit = float(row.debit or 0), float(row.credit or 0)
         solde += debit - credit
         lignes.append({
+            'ligne_id': row.ligne_id,
             'date': row.date_ecriture.strftime('%Y-%m-%d') if row.date_ecriture else '',
+            'compte_id': row.compte_id,
             'compte_numero': row.compte_numero or '',
             'compte_nom': row.compte_nom or '',
             'libelle': row.libelle or '',
@@ -1070,6 +1076,8 @@ def generer_grand_livre(structure_id, date_debut, date_fin, compte_id=None, tier
             'credit': credit,
             'tiers_type': row.tiers_type or '',
             'tiers_nom': row.tiers_nom or '',
+            'lettre': row.lettre or '',
+            'date_lettrage': row.date_lettrage.strftime('%d/%m/%Y') if row.date_lettrage else '',
             # Solde cumulé — n'a de sens que filtré sur un seul compte/tiers
             # (mélanger plusieurs comptes dans une même colonne "solde" ne
             # voudrait rien dire) ; laissé à None sinon pour ne pas induire
@@ -1102,6 +1110,59 @@ def api_liste_tiers():
     return jsonify([{
         'tiers_type': r.tiers_type, 'tiers_id': r.tiers_id, 'tiers_nom': r.tiers_nom,
     } for r in rows])
+
+
+# ========== LETTRAGE (rapprochement créance/règlement sur un compte) ==========
+
+@compta_bp.route('/api/lettrage/lettrer', methods=['POST'])
+def api_lettrer():
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return jsonify({'success': False, 'error': 'Structure non trouvée'}), 404
+
+    from services.comptabilite_service import lettrer_lignes
+    data = request.json or {}
+    ligne_ids = data.get('ligne_ids') or []
+    user_nom = session.get('user_name', 'System')
+
+    lettre, erreur = lettrer_lignes(structure_id, ligne_ids, user_nom)
+    if erreur:
+        return jsonify({'success': False, 'error': erreur}), 400
+    return jsonify({'success': True, 'lettre': lettre})
+
+
+@compta_bp.route('/api/lettrage/delettrer', methods=['POST'])
+def api_delettrer():
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return jsonify({'success': False, 'error': 'Structure non trouvée'}), 404
+
+    from services.comptabilite_service import delettrer_lignes
+    data = request.json or {}
+    ligne_ids = data.get('ligne_ids') or []
+
+    n = delettrer_lignes(structure_id, ligne_ids)
+    return jsonify({'success': True, 'nb_lignes_liberees': n})
+
+
+@compta_bp.route('/api/lettrage/auto', methods=['POST'])
+def api_auto_lettrer():
+    """Lettrage automatique — uniquement le cas non ambigu (voir
+    auto_lettrer_compte). Un compte est requis : lettrer "tous les
+    comptes en même temps" n'a pas de sens (le lettrage compare des
+    montants À L'INTÉRIEUR d'un même compte)."""
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return jsonify({'success': False, 'error': 'Structure non trouvée'}), 404
+
+    from services.comptabilite_service import auto_lettrer_compte
+    data = request.json or {}
+    compte_id = data.get('compte_id')
+    if not compte_id:
+        return jsonify({'success': False, 'error': 'Choisissez un compte précis pour le lettrage automatique.'}), 400
+
+    nb = auto_lettrer_compte(structure_id, compte_id)
+    return jsonify({'success': True, 'nb_paires_lettrees': nb})
 
 
 def generer_balance(structure_id, date_debut, date_fin):
@@ -2361,7 +2422,7 @@ def export_rapport_txt(type_rapport):
         # ⭐ Solde courant seulement utile (donc affiché) filtré sur un seul
         # compte ou tiers — voir generer_grand_livre : None sinon.
         avec_solde = bool(data and data[0].get('solde_courant') is not None)
-        entetes = ['Date', 'N° compte', 'Compte', 'Tiers', 'Pièce', 'Libellé', 'Débit', 'Crédit']
+        entetes = ['Date', 'N° compte', 'Compte', 'Tiers', 'Pièce', 'Libellé', 'Débit', 'Crédit', 'Lettre']
         if avec_solde:
             entetes.append('Solde')
         lignes_csv.append(';'.join(_csv_champ(c) for c in entetes))
@@ -2370,13 +2431,13 @@ def export_rapport_txt(type_rapport):
             ligne = [
                 _csv_champ(l['date']), _csv_champ(l['compte_numero']), _csv_champ(l['compte_nom']), _csv_champ(l.get('tiers_nom')),
                 _csv_champ(l['piece']), _csv_champ(l['libelle']),
-                _csv_montant(l['debit']), _csv_montant(l['credit']),
+                _csv_montant(l['debit']), _csv_montant(l['credit']), _csv_champ(l.get('lettre')),
             ]
             if avec_solde:
                 ligne.append(_csv_montant(l['solde_courant']))
             lignes_csv.append(';'.join(ligne))
             total_d += l['debit']; total_c += l['credit']
-        ligne_totale = [_csv_champ('TOTAL'), '', '', '', '', '', _csv_montant(total_d), _csv_montant(total_c)]
+        ligne_totale = [_csv_champ('TOTAL'), '', '', '', '', '', _csv_montant(total_d), _csv_montant(total_c), '']
         if avec_solde:
             ligne_totale.append('')
         lignes_csv.append(';'.join(ligne_totale))
@@ -2448,14 +2509,12 @@ def export_rapport_txt(type_rapport):
 # largement reconnu par les logiciels comptables (Sage, Ciel, Excel...),
 # donc un format d'échange "FEC ou équivalent" utile même hors de France.
 #
-# CompAuxNum/CompAuxLib sont désormais renseignés quand la ligne touche un
-# compte de tiers (411 client / 401 fournisseur) — voir
-# models.LigneEcriture.tiers_*. Champs encore VIDES, non disponibles dans
-# le modèle actuel, conformément à ce que permet la norme pour ces cas :
-# EcritureLet/DateLet (lettrage — voir la suite du chantier comptabilité),
-# Montantdevise/Idevise (tout est en FCFA, pas de devise étrangère à
-# tracer). EcritureNum utilise l'id technique de l'écriture (croissant,
-# unique, mais pas une numérotation sans trou par journal — à signaler au
+# CompAuxNum/CompAuxLib et EcritureLet/DateLet sont désormais renseignés
+# (comptes auxiliaires et lettrage — voir models.LigneEcriture.tiers_*/
+# lettre/date_lettrage). Champ encore VIDE, non disponible dans le modèle
+# actuel : Montantdevise/Idevise (tout est en FCFA, pas de devise
+# étrangère à tracer). EcritureNum utilise l'id technique de l'écriture
+# (croissant, unique, mais pas une numérotation sans trou par journal — à signaler au
 # cabinet comptable si une numérotation stricte est exigée).
 FEC_COLONNES = [
     'JournalCode', 'JournalLib', 'EcritureNum', 'EcritureDate',
@@ -2514,6 +2573,8 @@ def export_fec():
         LigneEcriture.tiers_type,
         LigneEcriture.tiers_id,
         LigneEcriture.tiers_nom,
+        LigneEcriture.lettre,
+        LigneEcriture.date_lettrage,
         CompteComptable.numero,
         CompteComptable.nom,
     ).join(
@@ -2562,8 +2623,8 @@ def export_fec():
             _fec_champ(libelle),
             _fec_montant(l.debit),
             _fec_montant(l.credit),
-            '',  # EcritureLet (pas de lettrage)
-            '',  # DateLet
+            _fec_champ(l.lettre),                                        # EcritureLet
+            _fec_date(l.date_lettrage.date()) if l.date_lettrage else '',  # DateLet
             _fec_date(l.date_validation or l.date_ecriture),
             '',  # Montantdevise
             '',  # Idevise

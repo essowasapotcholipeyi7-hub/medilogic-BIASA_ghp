@@ -670,6 +670,18 @@ class LigneEcriture(db.Model):
     tiers_id = db.Column(db.Integer, index=True)
     tiers_nom = db.Column(db.String(255))
 
+    # ⭐ Lettrage — 2e chantier demandé par le comptable après les comptes
+    # auxiliaires : rapprocher une créance/dette (ligne débit) avec son ou
+    # ses règlement(s) (ligne(s) crédit) sur un MÊME compte, en leur
+    # attribuant un code commun ("A", "B"...). Uniquement manuel pour
+    # l'instant (voir services/comptabilite_service.py: lettrer_lignes) —
+    # c'est le comptable qui sait quelles lignes se correspondent
+    # vraiment ; seul le cas non-ambigu (un seul débit + un seul crédit du
+    # même montant, encore non lettrés, sur le même compte) est proposé en
+    # un clic ("auto-lettrage"), le reste se sélectionne à la main.
+    lettre = db.Column(db.String(10), index=True)
+    date_lettrage = db.Column(db.DateTime)
+
 
 class Budget(db.Model):
     __tablename__ = 'budget'

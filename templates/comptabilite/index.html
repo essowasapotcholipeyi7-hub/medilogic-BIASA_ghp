@@ -504,6 +504,25 @@
                             </div>
                         </div>
 
+                        <!-- ⭐ Lettrage : uniquement pertinent sur UN compte précis (via le
+                             filtre Compte ou Tiers ci-dessus — le rapprochement compare des
+                             montants À L'INTÉRIEUR d'un même compte, jamais entre plusieurs).
+                             Masqué sinon. -->
+                        <div class="row mb-3" id="lettrageBarWrap" style="display:none;">
+                            <div class="col-12">
+                                <button class="btn btn-outline-success btn-sm me-2" onclick="lettrerSelection()" id="btnLettrerSelection" disabled>
+                                    <i class="fas fa-link"></i> Lettrer la sélection
+                                </button>
+                                <button class="btn btn-outline-warning btn-sm me-2" onclick="delettrerSelection()" id="btnDelettrerSelection" disabled>
+                                    <i class="fas fa-unlink"></i> Délettrer la sélection
+                                </button>
+                                <button class="btn btn-outline-primary btn-sm" onclick="autoLettrer()">
+                                    <i class="fas fa-magic"></i> Lettrage automatique
+                                </button>
+                                <span class="small text-muted ms-2" id="lettrageMessage"></span>
+                            </div>
+                        </div>
+
                         <div class="table-responsive">
                             <table class="table table-hover table-sm table-bordered" id="rapportTable">
                                 <thead class="table-light" id="rapportHeader">
@@ -3193,7 +3212,7 @@ function initFiltresJournaux() {
         .catch(err => console.error('Erreur chargement tiers:', err));
 }
 
-function chargerJournal() {
+function chargerJournal(preserverMessageLettrage) {
     const tbody = document.getElementById('rapportBody');
     const thead = document.getElementById('rapportHeader');
     const tfoot = document.getElementById('rapportFooter');
@@ -3220,10 +3239,21 @@ function chargerJournal() {
     }
     if (params.length) url += '?' + params.join('&');
 
+    // ⭐ Lettrage : uniquement affiché/possible sur UN compte précis — via
+    // le filtre Compte ou Tiers (les deux narrows toujours vers un seul
+    // compte_id en pratique, un patient/fournisseur ne touchant que 411/401).
+    lettrageCompteActuel = null;
+    document.getElementById('lettrageBarWrap').style.display = 'none';
+    if (!preserverMessageLettrage) document.getElementById('lettrageMessage').textContent = '';
+
     fetch(url)
         .then(r => r.json())
         .then(data => {
             afficherRapport(data, type);
+            if (type === 'grand_livre' && (compteId || tiersId) && data && data.length) {
+                lettrageCompteActuel = data[0].compte_id;
+                document.getElementById('lettrageBarWrap').style.display = '';
+            }
         })
         .catch(error => {
             console.error('Erreur rapport:', error);
@@ -3231,6 +3261,8 @@ function chargerJournal() {
             tbody.innerHTML = `<tr><td colspan="${colspan}" class="text-center text-danger">❌ Erreur de chargement</td></tr>`;
         });
 }
+
+let lettrageCompteActuel = null;
 
 function afficherRapport(data, type) {
     const tbody = document.getElementById('rapportBody');
@@ -3272,7 +3304,7 @@ function afficherRapport(data, type) {
             </tr>
         `;
     } else if (type === 'grand_livre') {
-        thead.innerHTML = '<th>Date</th><th>Compte</th><th>Tiers</th><th>Libellé</th><th>Débit</th><th>Crédit</th><th>Solde</th>';
+        thead.innerHTML = '<th></th><th>Date</th><th>Compte</th><th>Tiers</th><th>Libellé</th><th>Débit</th><th>Crédit</th><th>Lettre</th><th>Solde</th>';
         // ⭐ Le solde cumulé n'a de sens que calculé chronologiquement (du plus
         // ancien vers le plus récent — c'est l'ordre renvoyé par le serveur,
         // trié par compte). On garde ce calcul dans cet ordre, mais on
@@ -3288,13 +3320,21 @@ function afficherRapport(data, type) {
             solde_cumul += debit - credit;
             totalDebit += debit;
             totalCredit += credit;
+            const caseACocher = item.ligne_id
+                ? `<input type="checkbox" class="form-check-input ligne-lettrage" value="${item.ligne_id}" onchange="updateLettrageBoutons()">`
+                : '';
+            const badgeLettre = item.lettre
+                ? `<span class="badge bg-success" title="Lettré le ${item.date_lettrage || ''}">${item.lettre}</span>`
+                : '<span class="text-muted">-</span>';
             lignesHtml.push(`<tr>
+                <td>${caseACocher}</td>
                 <td>${item.date || ''}</td>
                 <td>${item.compte_numero || ''} - ${item.compte_nom || ''}</td>
                 <td>${item.tiers_nom || '-'}</td>
                 <td>${item.libelle || ''}</td>
                 <td class="text-end">${debit > 0 ? Math.round(debit).toLocaleString('fr-FR') + ' F' : '-'}</td>
                 <td class="text-end">${credit > 0 ? Math.round(credit).toLocaleString('fr-FR') + ' F' : '-'}</td>
+                <td class="text-center">${badgeLettre}</td>
                 <td class="text-end fw-bold">${Math.round(solde_cumul).toLocaleString('fr-FR')} F</td>
             </tr>`);
         });
@@ -3302,12 +3342,14 @@ function afficherRapport(data, type) {
         const soldeFinal = totalDebit - totalCredit;
         tfoot.innerHTML = `
             <tr class="fw-bold">
-                <td colspan="4" class="text-end">TOTAUX :</td>
+                <td colspan="5" class="text-end">TOTAUX :</td>
                 <td class="text-end">${Math.round(totalDebit).toLocaleString('fr-FR')} FCFA</td>
                 <td class="text-end">${Math.round(totalCredit).toLocaleString('fr-FR')} FCFA</td>
+                <td></td>
                 <td class="text-end fw-bold">${Math.round(soldeFinal).toLocaleString('fr-FR')} FCFA</td>
             </tr>
         `;
+        updateLettrageBoutons();
     } else if (type === 'balance') {
         thead.innerHTML = '<th>Compte</th><th>Total Débit</th><th>Total Crédit</th><th>Solde</th>';
         data.forEach(item => {
@@ -3394,6 +3436,95 @@ function afficherRapport(data, type) {
     }
     
     tbody.innerHTML = html;
+}
+
+// ============================================================
+// LETTRAGE — rapprochement créance/règlement sur le grand livre auxiliaire
+// (voir routes/comptabilite.py: /api/lettrage/*). N'apparaît que quand un
+// compte ou un tiers précis est filtré (lettrageBarWrap, voir chargerJournal()).
+// ============================================================
+
+function lignesLettrageSelectionnees() {
+    return Array.from(document.querySelectorAll('.ligne-lettrage:checked')).map(c => parseInt(c.value));
+}
+
+function updateLettrageBoutons() {
+    const n = lignesLettrageSelectionnees().length;
+    document.getElementById('btnLettrerSelection').disabled = n < 2;
+    document.getElementById('btnDelettrerSelection').disabled = n < 1;
+}
+
+function lettrerSelection() {
+    const ligneIds = lignesLettrageSelectionnees();
+    const msg = document.getElementById('lettrageMessage');
+    msg.className = 'small text-muted ms-2';
+    msg.textContent = 'Lettrage en cours...';
+
+    fetch('/comptabilite/api/lettrage/lettrer', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ligne_ids: ligneIds }),
+    })
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) {
+                msg.className = 'small text-success ms-2';
+                msg.textContent = `Lignes lettrées sous le code "${d.lettre}".`;
+                chargerJournal(true);
+            } else {
+                msg.className = 'small text-danger ms-2';
+                msg.textContent = d.error || 'Erreur';
+            }
+        })
+        .catch(() => { msg.className = 'small text-danger ms-2'; msg.textContent = 'Erreur réseau'; });
+}
+
+function delettrerSelection() {
+    const ligneIds = lignesLettrageSelectionnees();
+    if (!confirm('Délettrer le(s) groupe(s) correspondant à cette sélection ?')) return;
+    const msg = document.getElementById('lettrageMessage');
+
+    fetch('/comptabilite/api/lettrage/delettrer', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ligne_ids: ligneIds }),
+    })
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) {
+                msg.className = 'small text-success ms-2';
+                msg.textContent = `${d.nb_lignes_liberees} ligne(s) délettrée(s).`;
+                chargerJournal(true);
+            } else {
+                msg.className = 'small text-danger ms-2';
+                msg.textContent = d.error || 'Erreur';
+            }
+        })
+        .catch(() => { msg.className = 'small text-danger ms-2'; msg.textContent = 'Erreur réseau'; });
+}
+
+function autoLettrer() {
+    if (!lettrageCompteActuel) return;
+    const msg = document.getElementById('lettrageMessage');
+    msg.className = 'small text-muted ms-2';
+    msg.textContent = 'Recherche des paires évidentes...';
+
+    fetch('/comptabilite/api/lettrage/auto', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ compte_id: lettrageCompteActuel }),
+    })
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) {
+                msg.className = 'small text-success ms-2';
+                msg.textContent = d.nb_paires_lettrees > 0
+                    ? `${d.nb_paires_lettrees} paire(s) lettrée(s) automatiquement.`
+                    : 'Aucune paire évidente trouvée — le reste nécessite un lettrage manuel.';
+                chargerJournal(true);
+            } else {
+                msg.className = 'small text-danger ms-2';
+                msg.textContent = d.error || 'Erreur';
+            }
+        })
+        .catch(() => { msg.className = 'small text-danger ms-2'; msg.textContent = 'Erreur réseau'; });
 }
 
 // Dans le fichier HTML - Ajouter cette fonction
