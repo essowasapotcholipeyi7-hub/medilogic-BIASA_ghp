@@ -11,11 +11,13 @@ from models import (
     Budget, ValidationComptable, HistoriqueEcriture, ReleveBancaire,
     LigneReleve, Cloture, SequencePiece, AnomalieComptable,
     Immobilisation, DotationAmortissement, ProvisionCreance, Facture,
-    Fournisseur, AchatFournisseur, ReglementFournisseur, Depense
+    Fournisseur, AchatFournisseur, ReglementFournisseur, Depense,
+    ParametrageTva,
 )
 from services.comptabilite_service import get_soldes_caisses, creer_ecriture, COMPTE_CLIENTS_PATIENTS
 from utils.plan_comptable_syscohada import (
     COMPTE_BANQUE, COMPTE_CAISSE, COMPTE_IMMO_MATERIEL_MEDICAL, COMPTE_AMORT_MATERIEL_MEDICAL,
+    COMPTE_TVA_COLLECTEE,
 )
 from utils.permissions import a_acces
 
@@ -944,6 +946,15 @@ def api_balance():
     return jsonify(generer_balance(structure_id, date_debut, date_fin))
 
 
+@compta_bp.route('/api/rapports/tva')
+def api_rapport_tva():
+    structure_id = session.get('structure_id')
+    date_debut = request.args.get('date_debut')
+    date_fin = request.args.get('date_fin')
+
+    return jsonify(generer_declaration_tva(structure_id, date_debut, date_fin))
+
+
 @compta_bp.route('/api/rapports/resultat')
 def api_rapport_resultat():
     structure_id = session.get('structure_id')
@@ -1201,8 +1212,90 @@ def generer_balance(structure_id, date_debut, date_fin):
                 'total_credit': total_credit,
                 'solde': solde
             })
-    
+
     return result
+
+
+# ========== TVA (3e chantier comptable : comptes auxiliaires → lettrage → TVA) ==========
+
+def generer_declaration_tva(structure_id, date_debut, date_fin):
+    """TVA collectée sur les ventes de la période (lignes créditées sur
+    COMPTE_TVA_COLLECTEE — voir generer_ecriture_vente). ⭐ Périmètre actuel :
+    TVA COLLECTÉE uniquement (ventes) — la TVA DÉDUCTIBLE sur les achats
+    fournisseurs n'est pas encore implémentée (demande de clarifier
+    d'abord si les montants d'achats enregistrés sont TTC ou HT), donc
+    total_deductible reste à 0 pour l'instant : tva_nette == total_collectee."""
+    from sqlalchemy import text
+
+    date_debut_obj = parse_date(date_debut) if date_debut else None
+    date_fin_obj = parse_date(date_fin) if date_fin else None
+
+    rows = db.session.execute(text("""
+        SELECT e.date_ecriture, e.piece_justificative, e.libelle, l.credit
+        FROM ecritures_comptables e
+        JOIN lignes_ecritures l ON e.id = l.ecriture_id
+        JOIN comptes_comptables c ON l.compte_id = c.id
+        WHERE e.structure_id = :structure_id
+        AND e.statut = 'valide'
+        AND c.numero = :compte_tva
+        AND (:date_debut IS NULL OR e.date_ecriture >= :date_debut)
+        AND (:date_fin IS NULL OR e.date_ecriture <= :date_fin)
+        ORDER BY e.date_ecriture, e.id
+    """), {
+        'structure_id': structure_id,
+        'compte_tva': COMPTE_TVA_COLLECTEE,
+        'date_debut': date_debut_obj.strftime('%Y-%m-%d') if date_debut_obj else None,
+        'date_fin': date_fin_obj.strftime('%Y-%m-%d') if date_fin_obj else None,
+    }).fetchall()
+
+    lignes = [{
+        'date': r.date_ecriture.strftime('%Y-%m-%d') if r.date_ecriture else '',
+        'piece': r.piece_justificative or '',
+        'libelle': r.libelle or '',
+        'montant': float(r.credit or 0),
+    } for r in rows]
+
+    param = ParametrageTva.get_ou_creer(structure_id)
+    total_collectee = sum(l['montant'] for l in lignes)
+    return {
+        'lignes': lignes,
+        'total_collectee': round(total_collectee, 2),
+        'total_deductible': 0,
+        'tva_nette': round(total_collectee, 2),
+        'taux': float(param.taux or 0),
+        'assujetti': bool(param.assujetti),
+    }
+
+
+@compta_bp.route('/api/tva/parametrage', methods=['GET'])
+def api_tva_parametrage_get():
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return jsonify({'success': False, 'error': 'Structure non trouvée'}), 404
+    param = ParametrageTva.get_ou_creer(structure_id)
+    return jsonify({'success': True, 'assujetti': param.assujetti, 'taux': float(param.taux or 0)})
+
+
+@compta_bp.route('/api/tva/parametrage', methods=['POST'])
+def api_tva_parametrage_post():
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return jsonify({'success': False, 'error': 'Structure non trouvée'}), 404
+
+    data = request.json or {}
+    taux = data.get('taux')
+    try:
+        taux = float(taux)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'Taux invalide'}), 400
+    if taux < 0 or taux > 100:
+        return jsonify({'success': False, 'error': 'Le taux doit être entre 0 et 100.'}), 400
+
+    param = ParametrageTva.get_ou_creer(structure_id)
+    param.assujetti = bool(data.get('assujetti', True))
+    param.taux = taux
+    db.session.commit()
+    return jsonify({'success': True})
 
 
 def get_compte_resultat(structure_id, date_debut, date_fin):
@@ -2285,6 +2378,9 @@ def _donnees_rapport(type_rapport, structure_id, date_debut, date_fin, journal_c
     elif type_rapport == 'balance':
         data = generer_balance(structure_id, date_debut, date_fin)
         titre = "Balance comptable"
+    elif type_rapport == 'tva':
+        data = generer_declaration_tva(structure_id, date_debut, date_fin)
+        titre = "Déclaration TVA"
     elif type_rapport == 'resultat':
         data = get_compte_resultat(structure_id, date_debut, date_fin)
         titre = "Compte de résultat"
@@ -2452,6 +2548,16 @@ def export_rapport_txt(type_rapport):
             ]))
             total_d += l['total_debit']; total_c += l['total_credit']; total_s += l['solde']
         lignes_csv.append(';'.join([_csv_champ('TOTAL'), '', _csv_montant(total_d), _csv_montant(total_c), _csv_montant(total_s)]))
+
+    elif type_rapport == 'tva':
+        lignes_csv.append(_csv_champ(f"Taux appliqué : {data['taux']:g}%" if data['assujetti'] else "Structure non assujettie à la TVA"))
+        lignes_csv.append('')
+        lignes_csv.append(';'.join(_csv_champ(c) for c in ['Date', 'Pièce', 'Libellé', 'TVA collectée']))
+        for l in data['lignes']:
+            lignes_csv.append(';'.join([_csv_champ(l['date']), _csv_champ(l['piece']), _csv_champ(l['libelle']), _csv_montant(l['montant'])]))
+        lignes_csv.append(';'.join([_csv_champ('TOTAL TVA COLLECTÉE'), '', '', _csv_montant(data['total_collectee'])]))
+        lignes_csv.append(';'.join([_csv_champ('TVA déductible (achats — non encore suivie)'), '', '', _csv_montant(data['total_deductible'])]))
+        lignes_csv.append(';'.join([_csv_champ('TVA NETTE À PAYER'), '', '', _csv_montant(data['tva_nette'])]))
 
     elif type_rapport == 'resultat':
         lignes_csv.append(';'.join(_csv_champ(c) for c in ['Type', 'N° compte', 'Compte', 'Montant']))

@@ -466,6 +466,7 @@
                                     <option value="journal">Journal</option>
                                     <option value="grand_livre">Grand livre</option>
                                     <option value="balance">Balance</option>
+                                    <option value="tva">Déclaration TVA</option>
                                     <option value="resultat">Compte de résultat</option>
                                     <option value="bilan">Bilan</option>
                                 </select>
@@ -520,6 +521,27 @@
                                     <i class="fas fa-magic"></i> Lettrage automatique
                                 </button>
                                 <span class="small text-muted ms-2" id="lettrageMessage"></span>
+                            </div>
+                        </div>
+
+                        <!-- ⭐ Paramétrage TVA — taux et assujettissement modifiables ici (pas
+                             figés dans le code : le taux togolais actuel est 18%, mais peut
+                             changer, et toutes les structures n'y sont pas forcément
+                             assujetties de la même façon). Visible seulement sur ce rapport. -->
+                        <div class="row mb-3" id="tvaParamWrap" style="display:none;">
+                            <div class="col-12 d-flex align-items-center gap-3 flex-wrap">
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input" type="checkbox" id="tvaAssujetti">
+                                    <label class="form-check-label small" for="tvaAssujetti">Structure assujettie à la TVA</label>
+                                </div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <label class="small mb-0" for="tvaTaux">Taux (%)</label>
+                                    <input type="number" step="0.1" min="0" max="100" class="form-control form-control-sm" style="width:90px;" id="tvaTaux" value="18">
+                                </div>
+                                <button class="btn btn-outline-primary btn-sm" onclick="enregistrerParametrageTva()">
+                                    <i class="fas fa-save"></i> Enregistrer
+                                </button>
+                                <span class="small text-muted" id="tvaParamMessage"></span>
                             </div>
                         </div>
 
@@ -3161,7 +3183,42 @@ function onChangeRapportType() {
     document.getElementById('filtreJournalCodeWrap').style.display = (type === 'journal') ? '' : 'none';
     document.getElementById('filtreCompteUniqueWrap').style.display = (type === 'grand_livre') ? '' : 'none';
     document.getElementById('filtreTiersWrap').style.display = (type === 'grand_livre') ? '' : 'none';
+    document.getElementById('tvaParamWrap').style.display = (type === 'tva') ? '' : 'none';
+    if (type === 'tva') chargerParametrageTva();
     chargerJournal();
+}
+
+function chargerParametrageTva() {
+    fetch('/comptabilite/api/tva/parametrage').then(r => r.json()).then(d => {
+        if (!d.success) return;
+        document.getElementById('tvaAssujetti').checked = d.assujetti;
+        document.getElementById('tvaTaux').value = d.taux;
+    });
+}
+
+function enregistrerParametrageTva() {
+    const msg = document.getElementById('tvaParamMessage');
+    msg.className = 'small text-muted';
+    msg.textContent = 'Enregistrement...';
+
+    fetch('/comptabilite/api/tva/parametrage', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            assujetti: document.getElementById('tvaAssujetti').checked,
+            taux: parseFloat(document.getElementById('tvaTaux').value),
+        }),
+    })
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) {
+                msg.className = 'small text-success';
+                msg.textContent = 'Enregistré. S\'applique aux prochaines ventes (pas rétroactif).';
+            } else {
+                msg.className = 'small text-danger';
+                msg.textContent = d.error || 'Erreur';
+            }
+        })
+        .catch(() => { msg.className = 'small text-danger'; msg.textContent = 'Erreur réseau'; });
 }
 
 function initFiltresJournaux() {
@@ -3372,6 +3429,36 @@ function afficherRapport(data, type) {
                 <td class="text-end">${Math.round(totalDebit).toLocaleString('fr-FR')} FCFA</td>
                 <td class="text-end">${Math.round(totalCredit).toLocaleString('fr-FR')} FCFA</td>
                 <td class="text-end fw-bold ${soldeGeneral >= 0 ? 'text-success' : 'text-danger'}">${Math.round(soldeGeneral).toLocaleString('fr-FR')} FCFA</td>
+            </tr>
+        `;
+    } else if (type === 'tva') {
+        thead.innerHTML = '<th>Date</th><th>Pièce</th><th>Libellé</th><th>TVA collectée</th>';
+        if (!data.assujetti) {
+            html = `<tr><td colspan="4" class="text-center text-muted">Structure non assujettie à la TVA (voir le réglage ci-dessus).</td></tr>`;
+        } else if (!data.lignes || data.lignes.length === 0) {
+            html = `<tr><td colspan="4" class="text-center">Aucune vente avec TVA sur cette période.</td></tr>`;
+        } else {
+            data.lignes.forEach(l => {
+                html += `<tr>
+                    <td>${l.date || ''}</td>
+                    <td><strong>${l.piece || '-'}</strong></td>
+                    <td>${l.libelle || ''}</td>
+                    <td class="text-end">${Math.round(l.montant).toLocaleString('fr-FR')} F</td>
+                </tr>`;
+            });
+        }
+        tfoot.innerHTML = `
+            <tr class="fw-bold">
+                <td colspan="3" class="text-end">TVA collectée (taux ${data.taux}%) :</td>
+                <td class="text-end text-success">${Math.round(data.total_collectee).toLocaleString('fr-FR')} FCFA</td>
+            </tr>
+            <tr>
+                <td colspan="3" class="text-end text-muted small">TVA déductible (achats — pas encore suivie) :</td>
+                <td class="text-end text-muted small">${Math.round(data.total_deductible).toLocaleString('fr-FR')} FCFA</td>
+            </tr>
+            <tr class="fw-bold table-info">
+                <td colspan="3" class="text-end">TVA NETTE À PAYER :</td>
+                <td class="text-end">${Math.round(data.tva_nette).toLocaleString('fr-FR')} FCFA</td>
             </tr>
         `;
     } else if (type === 'resultat') {

@@ -24,7 +24,8 @@ from models import (
     db, CompteComptable, EcritureComptable, LigneEcriture,
     Vente, Facture, PaiementFacture, FactureAssurance,
     AnnulationVente, Recette, Depense, AnomalieComptable,
-    Fournisseur, AchatFournisseur, ReglementFournisseur, Paie
+    Fournisseur, AchatFournisseur, ReglementFournisseur, Paie,
+    ParametrageTva,
 )
 from utils.plan_comptable_syscohada import (
     PLAN_COMPTABLE_PAR_NUMERO, COMPTE_CLIENTS_PATIENTS, COMPTE_ATTENTE,
@@ -38,6 +39,7 @@ from utils.plan_comptable_syscohada import (
     COMPTE_DEPRECIATION_CREANCE, COMPTE_REPRISE_PROVISION_CREANCE,
     COMPTE_PERTE_CREANCE_IRRECOUVRABLE, COMPTE_CREANCE_ABANDONNEE,
     COMPTE_DOTATION_AMORTISSEMENT, compte_charge_pour_motif,
+    COMPTE_TVA_COLLECTEE,
 )
 from utils.categorisation import categoriser_acte
 
@@ -587,11 +589,34 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
             ecart = round(total_debit - somme_items, 2)
             totaux_par_compte[COMPTE_AUTRES_PRESTATIONS] = totaux_par_compte.get(COMPTE_AUTRES_PRESTATIONS, 0) + ecart
 
-        for compte_num, montant in totaux_par_compte.items():
-            if montant <= 0:
+        # ⭐ TVA collectée : les prix de l'appli sont TTC (confirmé) — chaque
+        # montant TTC par catégorie de vente est donc éclaté en (part HT
+        # créditée au compte de ventes) + (part TVA, cumulée sur une seule
+        # ligne 4431 pour toute l'écriture, comme le fait un vrai ticket de
+        # caisse). Le débit (411/trésorerie) reste au montant TTC, inchangé
+        # — c'est bien ce que le client paie réellement ; seul le crédit est
+        # reventilé, donc l'équilibre débit=crédit de l'écriture n'est pas
+        # affecté par ce découpage (HT + TVA = TTC, ligne par ligne).
+        param_tva = ParametrageTva.get_ou_creer(structure_id)
+        taux_tva = _to_float(param_tva.taux) if param_tva.assujetti else 0
+
+        total_tva = 0.0
+        for compte_num, montant_ttc in totaux_par_compte.items():
+            if montant_ttc <= 0:
                 continue
+            if taux_tva > 0:
+                montant_ht = round(montant_ttc / (1 + taux_tva / 100), 2)
+                montant_tva_ligne = round(montant_ttc - montant_ht, 2)
+                total_tva += montant_tva_ligne
+            else:
+                montant_ht = round(montant_ttc, 2)
             lignes.append({'numero_compte': compte_num, 'libelle': f"Ventes — {vente.patient_nom}",
-                            'credit': round(montant, 2)})
+                            'credit': montant_ht})
+
+        if total_tva > 0.5:
+            lignes.append({'numero_compte': COMPTE_TVA_COLLECTEE,
+                            'libelle': f"TVA collectée ({taux_tva:g}%) — {vente.patient_nom}",
+                            'credit': round(total_tva, 2)})
 
         libelle = f"Vente {vente.type} #{vente.id} — {vente.patient_nom}"
         ecriture = creer_ecriture(

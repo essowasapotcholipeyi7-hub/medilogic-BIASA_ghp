@@ -683,6 +683,34 @@ class LigneEcriture(db.Model):
     date_lettrage = db.Column(db.DateTime)
 
 
+class ParametrageTva(db.Model):
+    """Assujettissement et taux de TVA par structure — 3e chantier demandé
+    par le comptable (comptes auxiliaires → lettrage → TVA). Volontairement
+    configurable (pas un COMPTE_TVA_TAUX codé en dur) : le taux togolais
+    actuel est 18%, mais peut changer, et toutes les structures utilisant
+    ce logiciel ne sont pas forcément assujetties (soins médicaux souvent
+    exonérés selon les cas — chaque structure garde la main). Les prix
+    saisis dans l'appli sont TTC (confirmé) : voir
+    services/comptabilite_service.py:generer_ecriture_vente pour le calcul
+    HT/TVA qui en découle."""
+    __tablename__ = 'parametrage_tva'
+
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False, unique=True)
+    assujetti = db.Column(db.Boolean, default=True)
+    taux = db.Column(db.Numeric, default=18.0)  # en %
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @classmethod
+    def get_ou_creer(cls, structure_id):
+        param = cls.query.filter_by(structure_id=structure_id).first()
+        if not param:
+            param = cls(structure_id=structure_id)
+            db.session.add(param)
+            db.session.commit()
+        return param
+
+
 class Budget(db.Model):
     __tablename__ = 'budget'
     
