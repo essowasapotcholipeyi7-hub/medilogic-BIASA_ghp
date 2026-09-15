@@ -664,7 +664,10 @@ function updateStats(produits) {
     dateLimite.setDate(dateLimite.getDate() + 30);
     
     produits.forEach(p => {
-        valeurStock += (p.prix_achat || 0) * (p.quantite_stock || 0);
+        // Valeur du stock au prix de vente (pas au prix d'achat) : ce que
+        // représente le stock actuel s'il était vendu, pas son coût — somme
+        // de (prix de vente × quantité en stock) pour chaque article.
+        valeurStock += (p.prix_vente || 0) * (p.quantite_stock || 0);
         
         if (p.quantite_stock <= p.seuil_alerte) stockAlerte++;
         
