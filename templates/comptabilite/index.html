@@ -496,6 +496,12 @@
                                     <option value="">Tous les comptes</option>
                                 </select>
                             </div>
+                            <div class="col-md-4" id="filtreTiersWrap" style="display:none;">
+                                <label class="form-label small">Tiers (grand livre auxiliaire — client/fournisseur)</label>
+                                <select class="form-control form-control-sm" id="rapportTiers" onchange="chargerJournal()">
+                                    <option value="">Tous les tiers</option>
+                                </select>
+                            </div>
                         </div>
 
                         <div class="table-responsive">
@@ -3135,6 +3141,7 @@ function onChangeRapportType() {
     const type = document.getElementById('rapportType').value;
     document.getElementById('filtreJournalCodeWrap').style.display = (type === 'journal') ? '' : 'none';
     document.getElementById('filtreCompteUniqueWrap').style.display = (type === 'grand_livre') ? '' : 'none';
+    document.getElementById('filtreTiersWrap').style.display = (type === 'grand_livre') ? '' : 'none';
     chargerJournal();
 }
 
@@ -3166,6 +3173,24 @@ function initFiltresJournaux() {
             });
         })
         .catch(err => console.error('Erreur chargement comptes:', err));
+
+    // Sélecteur "grand livre auxiliaire" — un tiers (client/fournisseur) par
+    // ligne, uniquement ceux ayant déjà au moins une écriture (voir
+    // /api/tiers côté serveur).
+    fetch('/comptabilite/api/tiers')
+        .then(r => r.json())
+        .then(tiers => {
+            const sel = document.getElementById('rapportTiers');
+            tiers.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t.tiers_id;
+                opt.dataset.tiersType = t.tiers_type;
+                const badge = t.tiers_type === 'fournisseur' ? 'Fournisseur' : 'Client';
+                opt.textContent = `${t.tiers_nom} (${badge})`;
+                sel.appendChild(opt);
+            });
+        })
+        .catch(err => console.error('Erreur chargement tiers:', err));
 }
 
 function chargerJournal() {
@@ -3177,6 +3202,9 @@ function chargerJournal() {
     const dateFin = document.getElementById('rapportDateFin').value;
     const journalCode = document.getElementById('rapportJournalCode') ? document.getElementById('rapportJournalCode').value : '';
     const compteId = document.getElementById('rapportCompteId') ? document.getElementById('rapportCompteId').value : '';
+    const tiersSel = document.getElementById('rapportTiers');
+    const tiersId = tiersSel ? tiersSel.value : '';
+    const tiersType = (tiersSel && tiersSel.selectedOptions[0]) ? tiersSel.selectedOptions[0].dataset.tiersType : '';
 
     tbody.innerHTML = '<tr><td colspan="6" class="text-center">⏳ Chargement...</td></tr>';
 
@@ -3186,6 +3214,10 @@ function chargerJournal() {
     if (dateFin) params.push('date_fin=' + dateFin);
     if (type === 'journal' && journalCode) params.push('journal_code=' + encodeURIComponent(journalCode));
     if (type === 'grand_livre' && compteId) params.push('compte_id=' + encodeURIComponent(compteId));
+    if (type === 'grand_livre' && tiersId) {
+        params.push('tiers_id=' + encodeURIComponent(tiersId));
+        params.push('tiers_type=' + encodeURIComponent(tiersType));
+    }
     if (params.length) url += '?' + params.join('&');
 
     fetch(url)
@@ -3240,7 +3272,7 @@ function afficherRapport(data, type) {
             </tr>
         `;
     } else if (type === 'grand_livre') {
-        thead.innerHTML = '<th>Date</th><th>Compte</th><th>Libellé</th><th>Débit</th><th>Crédit</th><th>Solde</th>';
+        thead.innerHTML = '<th>Date</th><th>Compte</th><th>Tiers</th><th>Libellé</th><th>Débit</th><th>Crédit</th><th>Solde</th>';
         // ⭐ Le solde cumulé n'a de sens que calculé chronologiquement (du plus
         // ancien vers le plus récent — c'est l'ordre renvoyé par le serveur,
         // trié par compte). On garde ce calcul dans cet ordre, mais on
@@ -3259,6 +3291,7 @@ function afficherRapport(data, type) {
             lignesHtml.push(`<tr>
                 <td>${item.date || ''}</td>
                 <td>${item.compte_numero || ''} - ${item.compte_nom || ''}</td>
+                <td>${item.tiers_nom || '-'}</td>
                 <td>${item.libelle || ''}</td>
                 <td class="text-end">${debit > 0 ? Math.round(debit).toLocaleString('fr-FR') + ' F' : '-'}</td>
                 <td class="text-end">${credit > 0 ? Math.round(credit).toLocaleString('fr-FR') + ' F' : '-'}</td>
@@ -3269,7 +3302,7 @@ function afficherRapport(data, type) {
         const soldeFinal = totalDebit - totalCredit;
         tfoot.innerHTML = `
             <tr class="fw-bold">
-                <td colspan="3" class="text-end">TOTAUX :</td>
+                <td colspan="4" class="text-end">TOTAUX :</td>
                 <td class="text-end">${Math.round(totalDebit).toLocaleString('fr-FR')} FCFA</td>
                 <td class="text-end">${Math.round(totalCredit).toLocaleString('fr-FR')} FCFA</td>
                 <td class="text-end fw-bold">${Math.round(soldeFinal).toLocaleString('fr-FR')} FCFA</td>
@@ -3375,12 +3408,19 @@ function _paramsRapportCourant() {
     const dateFin = document.getElementById('rapportDateFin').value;
     const journalCode = document.getElementById('rapportJournalCode') ? document.getElementById('rapportJournalCode').value : '';
     const compteId = document.getElementById('rapportCompteId') ? document.getElementById('rapportCompteId').value : '';
+    const tiersSel = document.getElementById('rapportTiers');
+    const tiersId = tiersSel ? tiersSel.value : '';
+    const tiersType = (tiersSel && tiersSel.selectedOptions[0]) ? tiersSel.selectedOptions[0].dataset.tiersType : '';
 
     const params = [];
     if (dateDebut) params.push('date_debut=' + dateDebut);
     if (dateFin) params.push('date_fin=' + dateFin);
     if (type === 'journal' && journalCode) params.push('journal_code=' + encodeURIComponent(journalCode));
     if (type === 'grand_livre' && compteId) params.push('compte_id=' + compteId);
+    if (type === 'grand_livre' && tiersId) {
+        params.push('tiers_id=' + tiersId);
+        params.push('tiers_type=' + encodeURIComponent(tiersType));
+    }
     return { type, params };
 }
 

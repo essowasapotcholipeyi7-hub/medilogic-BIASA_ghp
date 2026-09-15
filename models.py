@@ -647,7 +647,7 @@ class EcritureComptable(db.Model):
 
 class LigneEcriture(db.Model):
     __tablename__ = 'lignes_ecritures'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     ecriture_id = db.Column(db.Integer, db.ForeignKey('ecritures_comptables.id'), nullable=False)
     compte_id = db.Column(db.Integer, db.ForeignKey('comptes_comptables.id'), nullable=False)
@@ -655,6 +655,20 @@ class LigneEcriture(db.Model):
     credit = db.Column(db.Numeric, default=0)
     libelle = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # ⭐ Compte auxiliaire (tiers) — demande explicite du comptable : pouvoir
+    # suivre le solde d'un client/fournisseur précis, pas seulement le compte
+    # général 4111/401 où tout le monde est mélangé. Rempli UNIQUEMENT sur
+    # les lignes qui touchent réellement un compte de tiers (voir
+    # services/comptabilite_service.py) — vide sur les autres (une ligne de
+    # charge/vente/trésorerie n'a pas de tiers). Pas de vraie FK : 'patient'
+    # pointe vers Patient.id, 'fournisseur' vers Fournisseur.id — deux
+    # univers d'id différents partageant ce même champ, comme ailleurs dans
+    # l'appli (CodeQrConnexion, IdentifiantWebauthn...). tiers_nom est
+    # dénormalisé pour l'affichage/le FEC (CompAuxLib) sans jointure.
+    tiers_type = db.Column(db.String(20))   # 'patient' | 'fournisseur'
+    tiers_id = db.Column(db.Integer, index=True)
+    tiers_nom = db.Column(db.String(255))
 
 
 class Budget(db.Model):

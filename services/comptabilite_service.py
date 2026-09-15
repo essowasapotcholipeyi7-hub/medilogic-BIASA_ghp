@@ -151,7 +151,11 @@ def creer_ecriture(structure_id, date_ecriture, libelle, lignes, journal_code,
     """
     Crée une écriture comptable équilibrée.
 
-    lignes : liste de dicts {numero_compte, libelle, debit=0, credit=0}
+    lignes : liste de dicts {numero_compte, libelle, debit=0, credit=0,
+             tiers_type=None, tiers_id=None, tiers_nom=None} — les 3
+             derniers champs (compte auxiliaire) ne sont à renseigner que
+             sur les lignes qui touchent réellement un compte de tiers
+             (411 client / 401 fournisseur), voir models.LigneEcriture.
     auto=True  -> écriture générée automatiquement, validée immédiatement.
     auto=False -> comportement du circuit manuel existant (brouillon).
 
@@ -206,7 +210,10 @@ def creer_ecriture(structure_id, date_ecriture, libelle, lignes, journal_code,
             compte_id=compte_id,
             debit=round(_to_float(l.get('debit')), 2),
             credit=round(_to_float(l.get('credit')), 2),
-            libelle=l.get('libelle') or libelle
+            libelle=l.get('libelle') or libelle,
+            tiers_type=l.get('tiers_type'),
+            tiers_id=l.get('tiers_id'),
+            tiers_nom=l.get('tiers_nom'),
         ))
 
     db.session.commit()
@@ -260,6 +267,11 @@ def _contre_passer(ecriture_origine, libelle, source_type, source_id, user_nom='
         'libelle': libelle,
         'debit': _to_float(l.credit),
         'credit': _to_float(l.debit),
+        # Le compte auxiliaire (s'il y en a un) se contre-passe à l'identique
+        # — une annulation d'écriture client reste rattachée au même client.
+        'tiers_type': l.tiers_type,
+        'tiers_id': l.tiers_id,
+        'tiers_nom': l.tiers_nom,
     } for l in ecriture_origine.lignes]
 
     return creer_ecriture(
@@ -314,7 +326,8 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
         if montant_effectif > 0:
             lignes.append({'numero_compte': COMPTE_CLIENTS_PATIENTS,
                             'libelle': f"Créance client — {vente.patient_nom} (réglée immédiatement)",
-                            'debit': montant_effectif})
+                            'debit': montant_effectif,
+                            'tiers_type': 'patient', 'tiers_id': vente.patient_id, 'tiers_nom': vente.patient_nom})
             total_debit += montant_effectif
 
         if prise_en_charge > 0:
@@ -343,7 +356,8 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
         if reste_a_payer > 0.5:
             lignes.append({'numero_compte': COMPTE_CLIENTS_PATIENTS,
                             'libelle': f"Créance client — {vente.patient_nom} (reste à payer)",
-                            'debit': reste_a_payer})
+                            'debit': reste_a_payer,
+                            'tiers_type': 'patient', 'tiers_id': vente.patient_id, 'tiers_nom': vente.patient_nom})
             total_debit += reste_a_payer
 
         if total_debit <= 0.5:
@@ -421,7 +435,8 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
                 {'numero_compte': _compte_tresorerie(vente.mode_paiement),
                  'libelle': f"Encaissement vente — {vente.patient_nom}", 'debit': montant_effectif},
                 {'numero_compte': COMPTE_CLIENTS_PATIENTS,
-                 'libelle': f"Encaissement vente — {vente.patient_nom}", 'credit': montant_effectif},
+                 'libelle': f"Encaissement vente — {vente.patient_nom}", 'credit': montant_effectif,
+                 'tiers_type': 'patient', 'tiers_id': vente.patient_id, 'tiers_nom': vente.patient_nom},
             ]
             journal_encaissement = 'CAI' if _compte_tresorerie(vente.mode_paiement) == COMPTE_CAISSE else 'BQ'
             ecriture_encaissement = creer_ecriture(
@@ -517,7 +532,8 @@ def generer_ecriture_paiement_facture(paiement, facture, user_nom='SYSTEME'):
             {'numero_compte': _compte_tresorerie(paiement.mode_paiement),
              'libelle': f"Règlement facture {facture.numero_facture}", 'debit': montant},
             {'numero_compte': COMPTE_CLIENTS_PATIENTS,
-             'libelle': f"Solde créance — {facture.patient_nom}", 'credit': montant},
+             'libelle': f"Solde créance — {facture.patient_nom}", 'credit': montant,
+             'tiers_type': 'patient', 'tiers_id': facture.patient_id, 'tiers_nom': facture.patient_nom},
         ]
 
         return creer_ecriture(
@@ -615,7 +631,8 @@ def generer_ecriture_annulation_facture(facture, montant_annule, user_nom='SYSTE
             {'numero_compte': COMPTE_CREANCE_ABANDONNEE, 'libelle': f"Créance abandonnée — facture {facture.numero_facture}",
              'debit': montant_annule},
             {'numero_compte': COMPTE_CLIENTS_PATIENTS,
-             'libelle': f"Annulation créance — {facture.patient_nom}", 'credit': montant_annule},
+             'libelle': f"Annulation créance — {facture.patient_nom}", 'credit': montant_annule,
+             'tiers_type': 'patient', 'tiers_id': facture.patient_id, 'tiers_nom': facture.patient_nom},
         ]
 
         return creer_ecriture(
@@ -695,7 +712,8 @@ def generer_ecriture_achat_fournisseur(achat, user_nom='SYSTEME'):
             {'numero_compte': compte_charge,
              'libelle': f"{achat.motif or 'Achat'} — {nom_fournisseur}", 'debit': montant},
             {'numero_compte': COMPTE_FOURNISSEURS,
-             'libelle': f"Dette fournisseur — {nom_fournisseur}", 'credit': montant},
+             'libelle': f"Dette fournisseur — {nom_fournisseur}", 'credit': montant,
+             'tiers_type': 'fournisseur', 'tiers_id': achat.fournisseur_id, 'tiers_nom': nom_fournisseur},
         ]
 
         return creer_ecriture(
@@ -730,7 +748,8 @@ def generer_ecriture_reglement_fournisseur(reglement, achat, user_nom='SYSTEME')
         nom_fournisseur = achat.fournisseur.nom if achat.fournisseur else 'Fournisseur'
         lignes = [
             {'numero_compte': COMPTE_FOURNISSEURS,
-             'libelle': f"Règlement — {nom_fournisseur}", 'debit': montant},
+             'libelle': f"Règlement — {nom_fournisseur}", 'debit': montant,
+             'tiers_type': 'fournisseur', 'tiers_id': achat.fournisseur_id, 'tiers_nom': nom_fournisseur},
             {'numero_compte': _compte_tresorerie(reglement.mode_paiement),
              'libelle': f"Règlement — {nom_fournisseur}", 'credit': montant},
         ]
@@ -924,14 +943,15 @@ def generer_ecriture_paie(paie, employe, user_nom='SYSTEME'):
 # PROVISIONS POUR CRÉANCES DOUTEUSES
 # ============================================================
 
-def generer_ecriture_provision(structure_id, montant_provisionne, patient_nom, provision_id, user_nom='SYSTEME'):
+def generer_ecriture_provision(structure_id, montant_provisionne, patient_nom, provision_id, user_nom='SYSTEME', patient_id=None):
     """Constate une dépréciation estimée sur une créance qui traîne :
     Débit 6591 (charge) / Crédit 491 (dépréciation, contra-actif). Ne
     touche PAS le compte 4111 — la créance reste due en totalité, c'est
     juste une estimation comptable de la perte probable."""
+    tiers = {'tiers_type': 'patient', 'tiers_id': patient_id, 'tiers_nom': patient_nom}
     lignes = [
-        {'numero_compte': COMPTE_DOTATION_PROVISION_CREANCE, 'libelle': f"Provision créance douteuse — {patient_nom}", 'debit': montant_provisionne},
-        {'numero_compte': COMPTE_DEPRECIATION_CREANCE, 'libelle': f"Dépréciation créance — {patient_nom}", 'credit': montant_provisionne},
+        {'numero_compte': COMPTE_DOTATION_PROVISION_CREANCE, 'libelle': f"Provision créance douteuse — {patient_nom}", 'debit': montant_provisionne, **tiers},
+        {'numero_compte': COMPTE_DEPRECIATION_CREANCE, 'libelle': f"Dépréciation créance — {patient_nom}", 'credit': montant_provisionne, **tiers},
     ]
     return creer_ecriture(
         structure_id=structure_id, date_ecriture=datetime.utcnow().date(),
@@ -941,12 +961,13 @@ def generer_ecriture_provision(structure_id, montant_provisionne, patient_nom, p
     )
 
 
-def generer_ecriture_reprise_provision(structure_id, montant_provisionne, patient_nom, provision_id, user_nom='SYSTEME'):
+def generer_ecriture_reprise_provision(structure_id, montant_provisionne, patient_nom, provision_id, user_nom='SYSTEME', patient_id=None):
     """Annule une provision devenue sans objet (le patient a finalement
     payé, ou la créance est recouvrée autrement) : Débit 491 / Crédit 7591."""
+    tiers = {'tiers_type': 'patient', 'tiers_id': patient_id, 'tiers_nom': patient_nom}
     lignes = [
-        {'numero_compte': COMPTE_DEPRECIATION_CREANCE, 'libelle': f"Reprise provision — {patient_nom}", 'debit': montant_provisionne},
-        {'numero_compte': COMPTE_REPRISE_PROVISION_CREANCE, 'libelle': f"Reprise provision créance douteuse — {patient_nom}", 'credit': montant_provisionne},
+        {'numero_compte': COMPTE_DEPRECIATION_CREANCE, 'libelle': f"Reprise provision — {patient_nom}", 'debit': montant_provisionne, **tiers},
+        {'numero_compte': COMPTE_REPRISE_PROVISION_CREANCE, 'libelle': f"Reprise provision créance douteuse — {patient_nom}", 'credit': montant_provisionne, **tiers},
     ]
     return creer_ecriture(
         structure_id=structure_id, date_ecriture=datetime.utcnow().date(),
@@ -957,7 +978,7 @@ def generer_ecriture_reprise_provision(structure_id, montant_provisionne, patien
 
 
 def generer_ecriture_perte_creance(structure_id, montant_creance, montant_provisionne, patient_nom,
-                                    provision_id, user_nom='SYSTEME'):
+                                    provision_id, user_nom='SYSTEME', patient_id=None):
     """Passe une créance définitivement en perte (client insolvable,
     créance abandonnée) : éteint le 4111 pour le montant total ; la partie
     déjà couverte par une provision sort de 491, le reste est une charge
@@ -967,7 +988,8 @@ def generer_ecriture_perte_creance(structure_id, montant_creance, montant_provis
     reste_non_couvert = round(montant_creance - montant_provisionne, 2)
 
     lignes = [{'numero_compte': COMPTE_CLIENTS_PATIENTS, 'libelle': f"Créance passée en perte — {patient_nom}",
-               'credit': montant_creance}]
+               'credit': montant_creance,
+               'tiers_type': 'patient', 'tiers_id': patient_id, 'tiers_nom': patient_nom}]
     if montant_provisionne > 0:
         lignes.append({'numero_compte': COMPTE_DEPRECIATION_CREANCE, 'libelle': f"Consommation provision — {patient_nom}", 'debit': montant_provisionne})
     if reste_non_couvert > 0:

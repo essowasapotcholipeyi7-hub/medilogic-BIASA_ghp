@@ -915,8 +915,10 @@ def api_grand_livre():
     date_debut = request.args.get('date_debut')
     date_fin = request.args.get('date_fin')
     compte_id = request.args.get('compte_id', type=int)  # vue "grand livre d'un seul compte"
+    tiers_type = request.args.get('tiers_type') or None
+    tiers_id = request.args.get('tiers_id', type=int)     # vue "grand livre auxiliaire" (client/fournisseur)
 
-    return jsonify(generer_grand_livre(structure_id, date_debut, date_fin, compte_id))
+    return jsonify(generer_grand_livre(structure_id, date_debut, date_fin, compte_id, tiers_type, tiers_id))
 
 
 @compta_bp.route('/api/caisses')
@@ -975,7 +977,8 @@ def generer_journal(structure_id, date_debut, date_fin, journal_code=None):
             c.numero as compte_numero,
             c.nom as compte_nom,
             l.debit,
-            l.credit
+            l.credit,
+            l.tiers_nom
         FROM ecritures_comptables e
         JOIN lignes_ecritures l ON e.id = l.ecriture_id
         JOIN comptes_comptables c ON l.compte_id = c.id
@@ -1003,11 +1006,16 @@ def generer_journal(structure_id, date_debut, date_fin, journal_code=None):
         'compte_numero': row.compte_numero or '',
         'compte_nom': row.compte_nom or '',
         'debit': float(row.debit or 0),
-        'credit': float(row.credit or 0)
+        'credit': float(row.credit or 0),
+        'tiers_nom': row.tiers_nom or '',
     } for row in rows]
 
 
-def generer_grand_livre(structure_id, date_debut, date_fin, compte_id=None):
+def generer_grand_livre(structure_id, date_debut, date_fin, compte_id=None, tiers_type=None, tiers_id=None):
+    """⭐ tiers_type/tiers_id (en plus de compte_id) : grand livre AUXILIAIRE
+    d'un client ou fournisseur précis — mêmes lignes que le grand livre
+    général, mais filtrées sur un tiers plutôt que (ou en plus) d'un
+    compte, avec solde courant cumulé (comme un relevé de compte client)."""
     from sqlalchemy import text
 
     date_debut_obj = parse_date(date_debut) if date_debut else None
@@ -1021,7 +1029,10 @@ def generer_grand_livre(structure_id, date_debut, date_fin, compte_id=None):
             e.libelle,
             e.piece_justificative,
             l.debit,
-            l.credit
+            l.credit,
+            l.tiers_type,
+            l.tiers_id,
+            l.tiers_nom
         FROM ecritures_comptables e
         JOIN lignes_ecritures l ON e.id = l.ecriture_id
         JOIN comptes_comptables c ON l.compte_id = c.id
@@ -1030,25 +1041,67 @@ def generer_grand_livre(structure_id, date_debut, date_fin, compte_id=None):
         AND (:date_debut IS NULL OR e.date_ecriture >= :date_debut)
         AND (:date_fin IS NULL OR e.date_ecriture <= :date_fin)
         AND (:compte_id IS NULL OR l.compte_id = :compte_id)
-        ORDER BY c.numero, e.date_ecriture
+        AND (:tiers_type IS NULL OR l.tiers_type = :tiers_type)
+        AND (:tiers_id IS NULL OR l.tiers_id = :tiers_id)
+        ORDER BY c.numero, e.date_ecriture, e.id
     """), {
         'structure_id': structure_id,
         'date_debut': date_debut_obj.strftime('%Y-%m-%d') if date_debut_obj else None,
         'date_fin': date_fin_obj.strftime('%Y-%m-%d') if date_fin_obj else None,
         'compte_id': compte_id,
+        'tiers_type': tiers_type,
+        'tiers_id': tiers_id,
     })
 
     rows = result.fetchall()
 
-    return [{
-        'date': row.date_ecriture.strftime('%Y-%m-%d') if row.date_ecriture else '',
-        'compte_numero': row.compte_numero or '',
-        'compte_nom': row.compte_nom or '',
-        'libelle': row.libelle or '',
-        'piece': row.piece_justificative or '',
-        'debit': float(row.debit or 0),
-        'credit': float(row.credit or 0)
-    } for row in rows]
+    solde = 0.0
+    lignes = []
+    for row in rows:
+        debit, credit = float(row.debit or 0), float(row.credit or 0)
+        solde += debit - credit
+        lignes.append({
+            'date': row.date_ecriture.strftime('%Y-%m-%d') if row.date_ecriture else '',
+            'compte_numero': row.compte_numero or '',
+            'compte_nom': row.compte_nom or '',
+            'libelle': row.libelle or '',
+            'piece': row.piece_justificative or '',
+            'debit': debit,
+            'credit': credit,
+            'tiers_type': row.tiers_type or '',
+            'tiers_nom': row.tiers_nom or '',
+            # Solde cumulé — n'a de sens que filtré sur un seul compte/tiers
+            # (mélanger plusieurs comptes dans une même colonne "solde" ne
+            # voudrait rien dire) ; laissé à None sinon pour ne pas induire
+            # en erreur côté affichage/export.
+            'solde_courant': round(solde, 2) if (compte_id or tiers_id) else None,
+        })
+    return lignes
+
+
+@compta_bp.route('/api/tiers')
+def api_liste_tiers():
+    """Liste des tiers (clients/fournisseurs) ayant AU MOINS une écriture —
+    pour peupler le sélecteur "Grand livre auxiliaire" ; volontairement pas
+    la liste complète des patients/fournisseurs de la structure (souvent
+    bien plus grande, et sans intérêt comptable pour ceux qui n'ont jamais
+    mouvementé un compte 411/401)."""
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return jsonify([])
+
+    from sqlalchemy import text
+    rows = db.session.execute(text("""
+        SELECT DISTINCT l.tiers_type, l.tiers_id, l.tiers_nom
+        FROM lignes_ecritures l
+        JOIN ecritures_comptables e ON e.id = l.ecriture_id
+        WHERE e.structure_id = :structure_id AND l.tiers_id IS NOT NULL
+        ORDER BY l.tiers_nom
+    """), {'structure_id': structure_id}).fetchall()
+
+    return jsonify([{
+        'tiers_type': r.tiers_type, 'tiers_id': r.tiers_id, 'tiers_nom': r.tiers_nom,
+    } for r in rows])
 
 
 def generer_balance(structure_id, date_debut, date_fin):
@@ -2143,13 +2196,14 @@ def api_init_comptes():
 
 # routes/comptabilite.py - Route simplifiée
 
-def _donnees_rapport(type_rapport, structure_id, date_debut, date_fin, journal_code=None, compte_id=None):
+def _donnees_rapport(type_rapport, structure_id, date_debut, date_fin, journal_code=None, compte_id=None,
+                      tiers_type=None, tiers_id=None):
     """Point d'entrée commun (imprimable ET export TXT) — construit les
     données d'un rapport en respectant les mêmes filtres que l'écran
-    (journal sélectionné, compte unique pour le grand livre). ⭐ FIX :
-    auparavant, print_rapport() ignorait journal_code/compte_id, donc
-    "Imprimer" ressortait TOUJOURS tous les journaux mélangés même si un
-    seul était filtré à l'écran."""
+    (journal sélectionné, compte unique pour le grand livre, tiers pour le
+    grand livre auxiliaire). ⭐ FIX : auparavant, print_rapport() ignorait
+    journal_code/compte_id, donc "Imprimer" ressortait TOUJOURS tous les
+    journaux mélangés même si un seul était filtré à l'écran."""
     if type_rapport == 'journal':
         data = generer_journal(structure_id, date_debut, date_fin, journal_code)
         # ⭐ FIX : les valeurs de EcritureComptable.JOURNAUX commencent déjà
@@ -2158,8 +2212,11 @@ def _donnees_rapport(type_rapport, structure_id, date_debut, date_fin, journal_c
         # imprimé/exporté.
         titre = EcritureComptable.JOURNAUX.get(journal_code, journal_code) if journal_code else "Journal comptable (tous journaux)"
     elif type_rapport == 'grand_livre':
-        data = generer_grand_livre(structure_id, date_debut, date_fin, compte_id)
-        if compte_id:
+        data = generer_grand_livre(structure_id, date_debut, date_fin, compte_id, tiers_type, tiers_id)
+        if tiers_id:
+            nom_tiers = data[0]['tiers_nom'] if data else None
+            titre = f"Grand livre auxiliaire — {nom_tiers or 'tiers'}"
+        elif compte_id:
             compte = CompteComptable.query.get(compte_id)
             titre = f"Grand livre — {compte.numero} {compte.nom}" if compte else "Grand livre"
         else:
@@ -2192,8 +2249,11 @@ def print_rapport(type_rapport):
     date_fin = request.args.get('date_fin')
     journal_code = request.args.get('journal_code') or None
     compte_id = request.args.get('compte_id', type=int)
+    tiers_type = request.args.get('tiers_type') or None
+    tiers_id = request.args.get('tiers_id', type=int)
 
-    data, titre = _donnees_rapport(type_rapport, structure_id, date_debut, date_fin, journal_code, compte_id)
+    data, titre = _donnees_rapport(type_rapport, structure_id, date_debut, date_fin, journal_code, compte_id,
+                                    tiers_type, tiers_id)
     if data is None:
         flash('Type de rapport invalide', 'danger')
         return redirect(url_for('comptabilite.index'))
@@ -2253,8 +2313,11 @@ def export_rapport_txt(type_rapport):
     date_fin = request.args.get('date_fin')
     journal_code = request.args.get('journal_code') or None
     compte_id = request.args.get('compte_id', type=int)
+    tiers_type = request.args.get('tiers_type') or None
+    tiers_id = request.args.get('tiers_id', type=int)
 
-    data, titre = _donnees_rapport(type_rapport, structure_id, date_debut, date_fin, journal_code, compte_id)
+    data, titre = _donnees_rapport(type_rapport, structure_id, date_debut, date_fin, journal_code, compte_id,
+                                    tiers_type, tiers_id)
     if data is None:
         return "Type de rapport invalide", 400
 
@@ -2283,29 +2346,40 @@ def export_rapport_txt(type_rapport):
 
     if type_rapport == 'journal':
         lignes_csv.append(';'.join(_csv_champ(c) for c in
-                           ['Date', 'Pièce', 'Libellé', 'Journal', 'N° compte', 'Compte', 'Débit', 'Crédit']))
+                           ['Date', 'Pièce', 'Libellé', 'Journal', 'N° compte', 'Compte', 'Tiers', 'Débit', 'Crédit']))
         total_d = total_c = 0
         for l in data:
             lignes_csv.append(';'.join([
                 _csv_champ(l['date']), _csv_champ(l['piece']), _csv_champ(l['libelle']), _csv_champ(l['journal_code']),
-                _csv_champ(l['compte_numero']), _csv_champ(l['compte_nom']),
+                _csv_champ(l['compte_numero']), _csv_champ(l['compte_nom']), _csv_champ(l.get('tiers_nom')),
                 _csv_montant(l['debit']), _csv_montant(l['credit']),
             ]))
             total_d += l['debit']; total_c += l['credit']
-        lignes_csv.append(';'.join([_csv_champ('TOTAL'), '', '', '', '', '', _csv_montant(total_d), _csv_montant(total_c)]))
+        lignes_csv.append(';'.join([_csv_champ('TOTAL'), '', '', '', '', '', '', _csv_montant(total_d), _csv_montant(total_c)]))
 
     elif type_rapport == 'grand_livre':
-        lignes_csv.append(';'.join(_csv_champ(c) for c in
-                           ['Date', 'N° compte', 'Compte', 'Pièce', 'Libellé', 'Débit', 'Crédit']))
+        # ⭐ Solde courant seulement utile (donc affiché) filtré sur un seul
+        # compte ou tiers — voir generer_grand_livre : None sinon.
+        avec_solde = bool(data and data[0].get('solde_courant') is not None)
+        entetes = ['Date', 'N° compte', 'Compte', 'Tiers', 'Pièce', 'Libellé', 'Débit', 'Crédit']
+        if avec_solde:
+            entetes.append('Solde')
+        lignes_csv.append(';'.join(_csv_champ(c) for c in entetes))
         total_d = total_c = 0
         for l in data:
-            lignes_csv.append(';'.join([
-                _csv_champ(l['date']), _csv_champ(l['compte_numero']), _csv_champ(l['compte_nom']),
+            ligne = [
+                _csv_champ(l['date']), _csv_champ(l['compte_numero']), _csv_champ(l['compte_nom']), _csv_champ(l.get('tiers_nom')),
                 _csv_champ(l['piece']), _csv_champ(l['libelle']),
                 _csv_montant(l['debit']), _csv_montant(l['credit']),
-            ]))
+            ]
+            if avec_solde:
+                ligne.append(_csv_montant(l['solde_courant']))
+            lignes_csv.append(';'.join(ligne))
             total_d += l['debit']; total_c += l['credit']
-        lignes_csv.append(';'.join([_csv_champ('TOTAL'), '', '', '', '', _csv_montant(total_d), _csv_montant(total_c)]))
+        ligne_totale = [_csv_champ('TOTAL'), '', '', '', '', '', _csv_montant(total_d), _csv_montant(total_c)]
+        if avec_solde:
+            ligne_totale.append('')
+        lignes_csv.append(';'.join(ligne_totale))
 
     elif type_rapport == 'balance':
         lignes_csv.append(';'.join(_csv_champ(c) for c in ['N° compte', 'Compte', 'Débit', 'Crédit', 'Solde']))
@@ -2374,14 +2448,15 @@ def export_rapport_txt(type_rapport):
 # largement reconnu par les logiciels comptables (Sage, Ciel, Excel...),
 # donc un format d'échange "FEC ou équivalent" utile même hors de France.
 #
-# Champs non disponibles dans le modèle actuel (voir models.py,
-# EcritureComptable/LigneEcriture) et donc laissés VIDES, conformément à
-# ce que permet la norme pour ces cas : CompAuxNum/CompAuxLib (pas de
-# notion de compte auxiliaire/tiers par ligne), EcritureLet/DateLet (pas
-# de lettrage), Montantdevise/Idevise (tout est en FCFA, pas de devise
-# étrangère à tracer). EcritureNum utilise l'id technique de l'écriture
-# (croissant, unique, mais pas une numérotation sans trou par journal —
-# à signaler au cabinet comptable si une numérotation stricte est exigée).
+# CompAuxNum/CompAuxLib sont désormais renseignés quand la ligne touche un
+# compte de tiers (411 client / 401 fournisseur) — voir
+# models.LigneEcriture.tiers_*. Champs encore VIDES, non disponibles dans
+# le modèle actuel, conformément à ce que permet la norme pour ces cas :
+# EcritureLet/DateLet (lettrage — voir la suite du chantier comptabilité),
+# Montantdevise/Idevise (tout est en FCFA, pas de devise étrangère à
+# tracer). EcritureNum utilise l'id technique de l'écriture (croissant,
+# unique, mais pas une numérotation sans trou par journal — à signaler au
+# cabinet comptable si une numérotation stricte est exigée).
 FEC_COLONNES = [
     'JournalCode', 'JournalLib', 'EcritureNum', 'EcritureDate',
     'CompteNum', 'CompteLib', 'CompAuxNum', 'CompAuxLib',
@@ -2436,6 +2511,9 @@ def export_fec():
         LigneEcriture.debit,
         LigneEcriture.credit,
         LigneEcriture.libelle.label('ligne_libelle'),
+        LigneEcriture.tiers_type,
+        LigneEcriture.tiers_id,
+        LigneEcriture.tiers_nom,
         CompteComptable.numero,
         CompteComptable.nom,
     ).join(
@@ -2461,6 +2539,15 @@ def export_fec():
         # que le libellé global de l'écriture quand il est renseigné —
         # sinon on retombe sur celui de l'écriture.
         libelle = l.ligne_libelle or l.ecriture_libelle
+        # ⭐ Compte auxiliaire (client/fournisseur) — voir models.LigneEcriture.
+        # Pas de vraie numérotation de sous-compte dans l'appli : code
+        # synthétique lisible (P<id>/F<id>), suffisant pour que le cabinet
+        # comptable regroupe/filtre par tiers à l'import.
+        comp_aux_num = ''
+        if l.tiers_id and l.tiers_type == 'patient':
+            comp_aux_num = f"P{l.tiers_id}"
+        elif l.tiers_id and l.tiers_type == 'fournisseur':
+            comp_aux_num = f"F{l.tiers_id}"
         fec_lignes.append('\t'.join([
             _fec_champ(journal_code),
             _fec_champ(journal_lib),
@@ -2468,8 +2555,8 @@ def export_fec():
             _fec_date(l.date_ecriture),
             _fec_champ(l.numero),
             _fec_champ(l.nom),
-            '',  # CompAuxNum
-            '',  # CompAuxLib
+            _fec_champ(comp_aux_num),          # CompAuxNum
+            _fec_champ(l.tiers_nom),           # CompAuxLib
             _fec_champ(l.piece_justificative),
             _fec_date(l.date_ecriture),  # PieceDate : pas de date de pièce distincte en base
             _fec_champ(libelle),
@@ -2710,7 +2797,7 @@ def api_provisionner_creance(facture_id):
     db.session.flush()
 
     from services.comptabilite_service import generer_ecriture_provision
-    ecriture = generer_ecriture_provision(structure_id, montant_provisionne, facture.patient_nom, provision.id, user_name)
+    ecriture = generer_ecriture_provision(structure_id, montant_provisionne, facture.patient_nom, provision.id, user_name, patient_id=facture.patient_id)
     # ⭐ FIX : generer_ecriture_provision() committe déjà en interne, ce qui
     # expire `provision` (expire_on_commit) — lui assigner un attribut
     # ensuite peut déclencher un rafraîchissement en échec (ObjectDeletedError,
@@ -2748,7 +2835,8 @@ def api_reprendre_provision(id):
     provision_id = provision.id
     from services.comptabilite_service import generer_ecriture_reprise_provision
     ecriture = generer_ecriture_reprise_provision(
-        structure_id, float(provision.montant_provisionne), provision.patient_nom, provision_id, user_name)
+        structure_id, float(provision.montant_provisionne), provision.patient_nom, provision_id, user_name,
+        patient_id=provision.patient_id)
 
     # ⭐ FIX : voir commentaire dans api_provisionner_creance — UPDATE direct
     # plutôt que de muter l'instance chargée avant le commit interne.
@@ -2773,7 +2861,7 @@ def api_provision_passer_en_perte(id):
     from services.comptabilite_service import generer_ecriture_perte_creance
     ecriture = generer_ecriture_perte_creance(
         structure_id, float(provision.montant_creance), float(provision.montant_provisionne),
-        provision.patient_nom, provision_id, user_name)
+        provision.patient_nom, provision_id, user_name, patient_id=provision.patient_id)
 
     # ⭐ FIX : voir commentaire dans api_provisionner_creance — UPDATE direct
     # (par id, sans recharger les instances) plutôt que de muter provision/
@@ -2826,7 +2914,7 @@ def api_perte_directe(facture_id):
 
     provision_id, facture_id_lie = provision.id, facture.id
     from services.comptabilite_service import generer_ecriture_perte_creance
-    ecriture = generer_ecriture_perte_creance(structure_id, montant, 0, facture.patient_nom, provision_id, user_name)
+    ecriture = generer_ecriture_perte_creance(structure_id, montant, 0, facture.patient_nom, provision_id, user_name, patient_id=facture.patient_id)
 
     # ⭐ FIX : voir commentaire dans api_provisionner_creance.
     maj = {'statut': 'perte', 'date_cloture': datetime.utcnow()}
