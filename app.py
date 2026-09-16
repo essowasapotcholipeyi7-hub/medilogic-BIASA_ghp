@@ -2867,6 +2867,8 @@ def admin_global():
 @app.route('/admin/activate/<int:structure_id>')
 def activate_structure(structure_id):
     """Activer une structure"""
+    if 'super_admin' not in session:
+        return redirect(url_for('admin_login'))
     try:
         sheet_structures = sheets_helper.spreadsheet.worksheet("structures")
         
@@ -2892,9 +2894,43 @@ def activate_structure(structure_id):
     
     return redirect(url_for('admin_global'))
 
+@app.route('/admin/reset_password/<int:structure_id>', methods=['POST'])
+def admin_reset_password(structure_id):
+    """Réinitialise le mot de passe de connexion d'une structure, depuis
+    l'administration globale (bouton clé sur admin_global.html). Même
+    format de hash que la connexion (index()) et l'auto-réinitialisation
+    par email (reset_password() ci-dessus) : hash_password(), jamais
+    generate_password_hash() de Werkzeug."""
+    if 'super_admin' not in session:
+        return jsonify({'success': False, 'error': 'Non autorisé'}), 401
+
+    data = request.get_json(silent=True) or {}
+    password = (data.get('password') or '').strip()
+    if len(password) < 6:
+        return jsonify({'success': False, 'error': 'Le mot de passe doit contenir au moins 6 caractères'}), 400
+
+    try:
+        hashed = hash_password(password)
+        sheets_helper.update_record_by_id(
+            'structures',
+            structure_id,
+            {
+                'mot_de_passe': hashed,
+                'reset_token': '',
+                'reset_token_expiry': ''
+            },
+            id_column='ID',
+            use_prefix=False
+        )
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/admin/suspend/<int:structure_id>')
 def suspend_structure(structure_id):
     """Suspendre une structure"""
+    if 'super_admin' not in session:
+        return redirect(url_for('admin_login'))
     try:
         sheet_structures = sheets_helper.spreadsheet.worksheet("structures")
         
@@ -2923,6 +2959,8 @@ def suspend_structure(structure_id):
 @app.route('/admin/delete/<int:structure_id>')
 def delete_structure(structure_id):
     """Supprimer une structure"""
+    if 'super_admin' not in session:
+        return redirect(url_for('admin_login'))
     try:
         sheet_structures = sheets_helper.spreadsheet.worksheet("structures")
         
