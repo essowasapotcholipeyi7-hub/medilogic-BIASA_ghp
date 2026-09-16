@@ -13,7 +13,7 @@ from io import BytesIO
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
@@ -9501,6 +9501,104 @@ def admin_abonnement_post(structure_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/admin/installation/<int:structure_id>')
+def admin_installation_liste(structure_id):
+    """Historique des paiements d'installation d'une structure — pour la
+    modale "Installation" de admin_global.html."""
+    if 'super_admin' not in session:
+        return jsonify({'success': False, 'error': 'Non autorisé'}), 401
+    paiements = PaiementInstallation.query.filter_by(structure_id=structure_id).order_by(PaiementInstallation.date_paiement.desc()).all()
+    return jsonify({
+        'success': True,
+        'paiements': [{
+            'id': p.id,
+            'montant_espece': float(p.montant_espece or 0),
+            'montant_mixx': float(p.montant_mixx or 0),
+            'reference_mixx': p.reference_mixx,
+            'montant_moov': float(p.montant_moov or 0),
+            'reference_moov': p.reference_moov,
+            'montant_total': float(p.montant_total),
+            'date_paiement': p.date_paiement.isoformat() if p.date_paiement else None,
+            'note': p.note,
+        } for p in paiements],
+    })
+
+
+@app.route('/admin/installation/<int:structure_id>', methods=['POST'])
+def admin_installation_ajouter(structure_id):
+    """Enregistre un paiement d'installation — super-admin uniquement,
+    aucun circuit de validation (c'est lui-même qui encaisse). Un même
+    versement peut être réparti sur plusieurs moyens (espèces + Mixx by
+    Yas + Moov Money) — voir PaiementInstallation."""
+    if 'super_admin' not in session:
+        return jsonify({'success': False, 'error': 'Non autorisé'}), 401
+
+    data = request.get_json(silent=True) or {}
+
+    def _montant(cle):
+        try:
+            return max(0.0, float(data.get(cle) or 0))
+        except (TypeError, ValueError):
+            return 0.0
+
+    montant_espece = _montant('montant_espece')
+    montant_mixx = _montant('montant_mixx')
+    montant_moov = _montant('montant_moov')
+    reference_mixx = (data.get('reference_mixx') or '').strip()
+    reference_moov = (data.get('reference_moov') or '').strip()
+    date_paiement = data.get('date_paiement')
+
+    if montant_espece + montant_mixx + montant_moov <= 0:
+        return jsonify({'success': False, 'error': 'Le montant total doit être supérieur à zéro.'}), 400
+    if not date_paiement:
+        return jsonify({'success': False, 'error': 'La date du paiement est obligatoire.'}), 400
+    if montant_mixx > 0 and not reference_mixx:
+        return jsonify({'success': False, 'error': 'Référence Mixx by Yas obligatoire pour la part payée par Mixx.'}), 400
+    if montant_moov > 0 and not reference_moov:
+        return jsonify({'success': False, 'error': 'Référence Moov Money obligatoire pour la part payée par Moov Money.'}), 400
+
+    try:
+        date_paiement_obj = datetime.strptime(date_paiement, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'success': False, 'error': 'Date de paiement invalide'}), 400
+
+    paiement = PaiementInstallation(
+        structure_id=structure_id,
+        montant_espece=montant_espece,
+        montant_mixx=montant_mixx,
+        reference_mixx=reference_mixx or None,
+        montant_moov=montant_moov,
+        reference_moov=reference_moov or None,
+        date_paiement=date_paiement_obj,
+        enregistre_par=session.get('super_admin_name', 'Super Admin'),
+        note=(data.get('note') or '').strip() or None,
+    )
+    db.session.add(paiement)
+    try:
+        db.session.commit()
+        return jsonify({'success': True, 'paiement_id': paiement.id})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/admin/installation/recu/<int:paiement_id>')
+def admin_installation_recu(paiement_id):
+    """Reçu imprimable (PDF via html2pdf.js) d'un paiement d'installation —
+    même style que recu_abonnement.html."""
+    if 'super_admin' not in session:
+        flash('Accès non autorisé', 'danger')
+        return redirect(url_for('admin_login'))
+    paiement = PaiementInstallation.query.get(paiement_id)
+    if not paiement:
+        flash('Reçu introuvable', 'danger')
+        return redirect(url_for('admin_global'))
+    structures = sheets_helper.get_all_records('structures', use_prefix=False)
+    structure = next((s for s in structures if str(s.get('ID')) == str(paiement.structure_id)), None)
+    return render_template('recu_installation.html', paiement=paiement,
+                            structure_nom=(structure.get('nom') if structure else ''))
 
 
 def _executer_ajout_depense(structure_id, montant, motif, motif_personnalise, description, user_name,

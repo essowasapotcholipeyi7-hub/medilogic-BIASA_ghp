@@ -744,6 +744,33 @@ class ParametrageAbonnement(db.Model):
         return [c.strip() for c in (self.onglets_masques or '').split(',') if c.strip()]
 
 
+class PaiementInstallation(db.Model):
+    """Paiement de la somme d'installation de SSoftOneV10 par une structure
+    — enregistré directement par le super-admin depuis admin_global.html
+    (pas de circuit de validation ici, c'est lui-même qui encaisse). Un
+    même versement peut être réparti sur plusieurs moyens à la fois (ex.
+    espèces + Mixx by Yas) — d'où trois montants distincts plutôt qu'un
+    unique moyen_paiement comme pour l'abonnement mensuel (voir Depense).
+    Le montant total est la somme des trois, calculée à l'affichage."""
+    __tablename__ = 'paiements_installation'
+
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    montant_espece = db.Column(db.Numeric, default=0)
+    montant_mixx = db.Column(db.Numeric, default=0)
+    reference_mixx = db.Column(db.String(100))
+    montant_moov = db.Column(db.Numeric, default=0)
+    reference_moov = db.Column(db.String(100))
+    date_paiement = db.Column(db.Date, nullable=False)
+    date_enregistrement = db.Column(db.DateTime, default=datetime.utcnow)
+    enregistre_par = db.Column(db.String(255))
+    note = db.Column(db.Text)
+
+    @property
+    def montant_total(self):
+        return (self.montant_espece or 0) + (self.montant_mixx or 0) + (self.montant_moov or 0)
+
+
 class Budget(db.Model):
     __tablename__ = 'budget'
     

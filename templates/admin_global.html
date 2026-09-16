@@ -93,6 +93,11 @@
                                     <i class="fas fa-money-check-dollar"></i>
                                 </button>
 
+                                <!-- Bouton Installation -->
+                                <button class="btn btn-sm" style="background:#6a1b9a;color:white;" onclick="showInstallationModal({{ structure.ID }}, '{{ structure.nom }}')" title="Paiement d'installation">
+                                    <i class="fas fa-hand-holding-dollar"></i>
+                                </button>
+
                                 <a href="#" onclick="confirmDelete({{ structure.ID }})" class="btn btn-sm btn-danger" title="Supprimer">
                                     <i class="fas fa-trash"></i>
                                 </a>
@@ -184,6 +189,76 @@
     </div>
 </div>
 
+<!-- Modal Paiement d'installation -->
+<div class="modal fade" id="installationModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header text-white" style="background:#6a1b9a;">
+                <h5 class="modal-title"><i class="fas fa-hand-holding-dollar"></i> Installation — <span id="installationStructureNom"></span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <h6>Historique des paiements</h6>
+                <div class="table-responsive mb-4">
+                    <table class="table table-sm table-bordered">
+                        <thead class="table-light">
+                            <tr><th>Date</th><th>Total</th><th>Détail</th><th>Reçu</th></tr>
+                        </thead>
+                        <tbody id="installationHistorique">
+                            <tr><td colspan="4" class="text-center text-muted">Chargement…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <hr>
+                <h6>Enregistrer un nouveau paiement</h6>
+                <p class="text-muted small">Un même versement peut être réparti sur plusieurs moyens à la fois — laisser à 0 les moyens non utilisés.</p>
+
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">💵 Espèces (FCFA)</label>
+                        <input type="number" class="form-control" id="instMontantEspece" min="0" value="0">
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">📱 Mixx by Yas (FCFA)</label>
+                        <input type="number" class="form-control" id="instMontantMixx" min="0" value="0" onchange="toggleReferenceInstallation()">
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">📱 Moov Money (FCFA)</label>
+                        <input type="number" class="form-control" id="instMontantMoov" min="0" value="0" onchange="toggleReferenceInstallation()">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3" id="instReferenceMixxDiv" style="display:none;">
+                        <label class="form-label">Référence Mixx by Yas *</label>
+                        <input type="text" class="form-control" id="instReferenceMixx">
+                    </div>
+                    <div class="col-md-6 mb-3" id="instReferenceMoovDiv" style="display:none;">
+                        <label class="form-label">Référence Moov Money *</label>
+                        <input type="text" class="form-control" id="instReferenceMoov">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Date du paiement *</label>
+                        <input type="date" class="form-control" id="instDatePaiement">
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Note (optionnel)</label>
+                    <input type="text" class="form-control" id="instNote" placeholder="Ex: acompte, solde, etc.">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                <button type="button" class="btn btn-primary" style="background:#6a1b9a;border-color:#6a1b9a;" onclick="enregistrerInstallation()">
+                    <i class="fas fa-save"></i> Enregistrer et générer le reçu
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 const MODULES_STRUCTURE = {{ MODULES_STRUCTURE|tojson }};
 let abonnementStructureId = null;
@@ -239,6 +314,95 @@ function enregistrerAbonnement() {
         if (result.success) {
             bootstrap.Modal.getInstance(document.getElementById('abonnementModal')).hide();
             location.reload();
+        } else {
+            alert('Erreur : ' + result.error);
+        }
+    })
+    .catch(() => alert('Erreur réseau'));
+}
+
+let installationStructureId = null;
+
+function toggleReferenceInstallation() {
+    const mixx = parseFloat(document.getElementById('instMontantMixx').value) || 0;
+    const moov = parseFloat(document.getElementById('instMontantMoov').value) || 0;
+    document.getElementById('instReferenceMixxDiv').style.display = mixx > 0 ? 'block' : 'none';
+    document.getElementById('instReferenceMoovDiv').style.display = moov > 0 ? 'block' : 'none';
+}
+
+function showInstallationModal(id, nom) {
+    installationStructureId = id;
+    document.getElementById('installationStructureNom').innerText = nom;
+    document.getElementById('instMontantEspece').value = 0;
+    document.getElementById('instMontantMixx').value = 0;
+    document.getElementById('instMontantMoov').value = 0;
+    document.getElementById('instReferenceMixx').value = '';
+    document.getElementById('instReferenceMoov').value = '';
+    document.getElementById('instDatePaiement').value = '';
+    document.getElementById('instNote').value = '';
+    toggleReferenceInstallation();
+    chargerHistoriqueInstallation(id);
+    new bootstrap.Modal(document.getElementById('installationModal')).show();
+}
+
+function chargerHistoriqueInstallation(id) {
+    const tbody = document.getElementById('installationHistorique');
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Chargement…</td></tr>';
+    fetch(`/admin/installation/${id}`)
+        .then(r => r.json())
+        .then(data => {
+            const paiements = data.paiements || [];
+            if (paiements.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Aucun paiement enregistré</td></tr>';
+                return;
+            }
+            tbody.innerHTML = paiements.map(p => {
+                const detail = [];
+                if (p.montant_espece > 0) detail.push(`Espèces: ${Math.round(p.montant_espece).toLocaleString('fr-FR')}`);
+                if (p.montant_mixx > 0) detail.push(`Mixx: ${Math.round(p.montant_mixx).toLocaleString('fr-FR')} (réf. ${p.reference_mixx || '-'})`);
+                if (p.montant_moov > 0) detail.push(`Moov: ${Math.round(p.montant_moov).toLocaleString('fr-FR')} (réf. ${p.reference_moov || '-'})`);
+                const dateFmt = p.date_paiement ? new Date(p.date_paiement + 'T00:00:00').toLocaleDateString('fr-FR') : '-';
+                return `<tr>
+                    <td>${dateFmt}</td>
+                    <td><strong>${Math.round(p.montant_total).toLocaleString('fr-FR')} FCFA</strong></td>
+                    <td><small>${detail.join('<br>')}</small></td>
+                    <td><a href="/admin/installation/recu/${p.id}" target="_blank" class="btn btn-sm" style="background:#6a1b9a;color:white;"><i class="fas fa-receipt"></i></a></td>
+                </tr>`;
+            }).join('');
+        })
+        .catch(() => { tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Erreur de chargement</td></tr>'; });
+}
+
+function enregistrerInstallation() {
+    const data = {
+        montant_espece: document.getElementById('instMontantEspece').value || 0,
+        montant_mixx: document.getElementById('instMontantMixx').value || 0,
+        reference_mixx: document.getElementById('instReferenceMixx').value,
+        montant_moov: document.getElementById('instMontantMoov').value || 0,
+        reference_moov: document.getElementById('instReferenceMoov').value,
+        date_paiement: document.getElementById('instDatePaiement').value,
+        note: document.getElementById('instNote').value,
+    };
+
+    fetch(`/admin/installation/${installationStructureId}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            chargerHistoriqueInstallation(installationStructureId);
+            window.open(`/admin/installation/recu/${result.paiement_id}?auto=1`, '_blank');
+            // Réinitialise le formulaire de saisie pour un éventuel autre versement
+            document.getElementById('instMontantEspece').value = 0;
+            document.getElementById('instMontantMixx').value = 0;
+            document.getElementById('instMontantMoov').value = 0;
+            document.getElementById('instReferenceMixx').value = '';
+            document.getElementById('instReferenceMoov').value = '';
+            document.getElementById('instDatePaiement').value = '';
+            document.getElementById('instNote').value = '';
+            toggleReferenceInstallation();
         } else {
             alert('Erreur : ' + result.error);
         }

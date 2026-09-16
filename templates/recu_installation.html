@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reçu d'installation #{{ paiement.id }}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- html2pdf pour l'export PDF — même pattern que recu_abonnement.html / factures/recu_paiement.html -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f0f2f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 650px;
+            margin: 0 auto;
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 2px solid #1a1a2e;
+            padding-bottom: 14px;
+            margin-bottom: 16px;
+        }
+
+        .header h2 { font-size: 18px; color: #1a1a2e; margin: 0; }
+        .header p { margin: 2px 0; font-size: 11px; color: #555; }
+
+        .badge {
+            background: #6a1b9a;
+            color: white !important;
+            padding: 5px 14px;
+            border-radius: 30px;
+            font-size: 12px;
+            font-weight: bold;
+            display: inline-block;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 14px 0;
+            font-size: 13px;
+        }
+
+        table td {
+            border: 1px solid #dee2e6;
+            padding: 9px 10px;
+        }
+
+        table td:first-child {
+            width: 45%;
+            background: #f8f9fa;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .montant-box {
+            background: #f3e5f5;
+            border-radius: 8px;
+            padding: 14px;
+            text-align: center;
+            margin: 16px 0;
+        }
+
+        .montant-box .montant {
+            font-size: 26px;
+            font-weight: bold;
+            color: #6a1b9a;
+        }
+
+        .repartition {
+            margin: 14px 0;
+        }
+
+        .repartition h3 {
+            font-size: 13px;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .ligne-moyen {
+            display: flex;
+            justify-content: space-between;
+            padding: 7px 10px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+
+        .ligne-moyen .moyen-nom { font-weight: bold; }
+        .ligne-moyen .moyen-ref { color: #6c757d; font-size: 11px; }
+        .ligne-moyen .moyen-montant { color: #6a1b9a; font-weight: bold; }
+
+        .footer {
+            margin-top: 20px;
+            padding-top: 12px;
+            border-top: 1px dashed #ccc;
+            font-size: 11px;
+            color: #6c757d;
+            text-align: center;
+        }
+
+        .no-print { margin-top: 20px; text-align: center; }
+        .no-print button {
+            border: none;
+            padding: 10px 18px;
+            margin: 4px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            color: white;
+        }
+        .btn-print { background: #1a1a2e; }
+        .btn-pdf { background: #dc3545; }
+        .btn-whatsapp { background: #25d366; }
+        .btn-back { background: #6c757d; }
+
+        @media print {
+            body { background: white; padding: 0; }
+            .container { box-shadow: none; max-width: 100%; }
+            .no-print { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="recuContenu">
+        <div class="header">
+            <div>
+                <h2>SSoftOneV10</h2>
+                <p>Reçu généré le {{ paiement.date_enregistrement.strftime('%d/%m/%Y à %H:%M') if paiement.date_enregistrement else '' }}</p>
+            </div>
+            <div style="text-align: right;">
+                <span class="badge">REÇU D'INSTALLATION</span>
+                <p style="margin-top: 4px;">N° {{ paiement.id }}</p>
+            </div>
+        </div>
+
+        <div class="montant-box">
+            <div style="font-size: 12px; color: #555;">Somme versée pour l'installation de SSoftOneV10</div>
+            <div class="montant">{{ '{:,}'.format(paiement.montant_total|round(0)|int).replace(',', ' ') }} FCFA</div>
+        </div>
+
+        <div class="repartition">
+            <h3>Répartition du paiement</h3>
+            {% if paiement.montant_espece and paiement.montant_espece > 0 %}
+            <div class="ligne-moyen">
+                <span><span class="moyen-nom">💵 Espèces</span></span>
+                <span class="moyen-montant">{{ '{:,}'.format(paiement.montant_espece|round(0)|int).replace(',', ' ') }} FCFA</span>
+            </div>
+            {% endif %}
+            {% if paiement.montant_mixx and paiement.montant_mixx > 0 %}
+            <div class="ligne-moyen">
+                <span><span class="moyen-nom">📱 Mixx by Yas</span> <span class="moyen-ref">réf. {{ paiement.reference_mixx or '-' }}</span></span>
+                <span class="moyen-montant">{{ '{:,}'.format(paiement.montant_mixx|round(0)|int).replace(',', ' ') }} FCFA</span>
+            </div>
+            {% endif %}
+            {% if paiement.montant_moov and paiement.montant_moov > 0 %}
+            <div class="ligne-moyen">
+                <span><span class="moyen-nom">📱 Moov Money</span> <span class="moyen-ref">réf. {{ paiement.reference_moov or '-' }}</span></span>
+                <span class="moyen-montant">{{ '{:,}'.format(paiement.montant_moov|round(0)|int).replace(',', ' ') }} FCFA</span>
+            </div>
+            {% endif %}
+        </div>
+
+        <table>
+            <tr>
+                <td>Structure</td>
+                <td>{{ structure_nom or '-' }}</td>
+            </tr>
+            <tr>
+                <td>Date du paiement</td>
+                <td>{{ paiement.date_paiement.strftime('%d/%m/%Y') if paiement.date_paiement else '-' }}</td>
+            </tr>
+            <tr>
+                <td>Reçu par</td>
+                <td>{{ paiement.enregistre_par or '-' }}</td>
+            </tr>
+            {% if paiement.note %}
+            <tr>
+                <td>Note</td>
+                <td>{{ paiement.note }}</td>
+            </tr>
+            {% endif %}
+        </table>
+
+        <div class="footer">
+            Reçu généré automatiquement par SSoftOneV10 — à conserver comme justificatif.
+        </div>
+    </div>
+
+    <div class="no-print">
+        <button class="btn-print" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
+        <button class="btn-pdf" onclick="telechargerPDF()"><i class="fas fa-file-pdf"></i> PDF</button>
+        <button class="btn-whatsapp" onclick="envoyerWhatsApp()"><i class="fab fa-whatsapp"></i> Envoyer par WhatsApp</button>
+        <button class="btn-back" onclick="window.close()"><i class="fas fa-times"></i> Fermer</button>
+    </div>
+
+    <script>
+    function telechargerPDF() {
+        const element = document.getElementById('recuContenu');
+        const opt = {
+            margin: [0.4, 0.4, 0.4, 0.4],
+            filename: 'recu_installation_{{ paiement.id }}.pdf',
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, useCORS: true, logging: false },
+            jsPDF: { unit: 'in', format: 'a5', orientation: 'portrait' },
+            pagebreak: { mode: 'avoid-all' }
+        };
+        html2pdf().set(opt).from(element).save();
+    }
+
+    function envoyerWhatsApp() {
+        // Télécharge le PDF d'abord — WhatsApp ne permet pas de joindre un
+        // fichier via un simple lien wa.me, il faut l'attacher à la main
+        // dans la conversation une fois le fichier téléchargé.
+        telechargerPDF();
+        let details = [];
+        {% if paiement.montant_espece and paiement.montant_espece > 0 %}
+        details.push(`Espèces : {{ '{:,}'.format(paiement.montant_espece|round(0)|int).replace(',', ' ') }} FCFA`);
+        {% endif %}
+        {% if paiement.montant_mixx and paiement.montant_mixx > 0 %}
+        details.push(`Mixx by Yas : {{ '{:,}'.format(paiement.montant_mixx|round(0)|int).replace(',', ' ') }} FCFA (réf. {{ paiement.reference_mixx or '' }})`);
+        {% endif %}
+        {% if paiement.montant_moov and paiement.montant_moov > 0 %}
+        details.push(`Moov Money : {{ '{:,}'.format(paiement.montant_moov|round(0)|int).replace(',', ' ') }} FCFA (réf. {{ paiement.reference_moov or '' }})`);
+        {% endif %}
+        const message = `Reçu de paiement — Installation SSoftOneV10\n` +
+            `Structure : {{ structure_nom or '' }}\n` +
+            `Montant total : {{ '{:,}'.format(paiement.montant_total|round(0)|int).replace(',', ' ') }} FCFA\n` +
+            details.join('\n') + '\n' +
+            `Date du paiement : {{ paiement.date_paiement.strftime('%d/%m/%Y') if paiement.date_paiement else '' }}\n\n` +
+            `Le PDF du reçu vient d'être téléchargé — pensez à le joindre au message.`;
+        window.open(`https://wa.me/{{ ABONNEMENT_WHATSAPP_NUMERO }}?text=${encodeURIComponent(message)}`, '_blank');
+    }
+
+    // Ouvert automatiquement juste après l'enregistrement (voir admin_global.html)
+    document.addEventListener('DOMContentLoaded', function() {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('auto') === '1') {
+            setTimeout(envoyerWhatsApp, 600);
+        }
+    });
+    </script>
+</body>
+</html>
