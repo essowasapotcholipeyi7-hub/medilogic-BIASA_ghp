@@ -1844,6 +1844,8 @@
      TOP NAV - CONSERVÉE
      ============================================ -->
 {% if session.user_id and not (cacher_navigation is defined and cacher_navigation) %}
+{% set _ab = abonnement() %}
+{% set _bloq = _ab.bloque_effectif %}
 <div class="top-nav">
     <ul class="nav-group">
         <li class="nav-item nav-item-accueil">
@@ -1851,6 +1853,7 @@
                 Accueil
             </a>
         </li>
+        {% if not onglet_cache('patients') and not _bloq %}
         <li class="nav-item nav-item-patients">
             <a class="nav-link-top" href="#" onclick="return false;">
                 Patients <i class="fas fa-chevron-down arrow"></i>
@@ -1859,36 +1862,44 @@
                 <a class="menu-item" href="{{ url_for('patients') }}">
                     Liste des patients
                 </a>
-                {% if a_acces('rendez_vous') %}
+                {% if a_acces('rendez_vous') and not onglet_cache('rendez_vous') %}
                 <a class="menu-item" href="{{ url_for('rendez_vous') }}">
                     Programmer Rendez-vous
                 </a>
                 {% endif %}
-                {% if a_acces('rappels') %}
+                {% if a_acces('rappels') and not onglet_cache('rappels') %}
                 <a class="menu-item" href="{{ url_for('rappels') }}">
                     Rappels des rendez-vous
                 </a>
                 {% endif %}
             </div>
         </li>
+        {% endif %}
+        {% if not _bloq %}
         <li class="nav-item nav-item-soins">
             <a class="nav-link-top" href="#" onclick="return false;">
                 Soins&actes&vente <i class="fas fa-chevron-down arrow"></i>
             </a>
             <div class="mega-menu large">
+                {% if not onglet_cache('consultation') %}
                 <a class="menu-item" href="{{ url_for('consultation') }}">
                     Consultation
                 </a>
+                {% endif %}
+                {% if not onglet_cache('actes_vente') %}
                 <a class="menu-item" href="{{ url_for('actes_vente') }}">
                     Labo/Radio/Hospi/Actes
                 </a>
-                {% if a_acces('prescriptions_recues') %}
+                {% endif %}
+                {% if a_acces('prescriptions_recues') and not onglet_cache('prescriptions_recues') %}
                 <a class="menu-item" href="{{ url_for('prescriptions_recues') }}">
                     Prescriptions reçues
                 </a>
                 {% endif %}
             </div>
         </li>
+        {% endif %}
+        {% if not onglet_cache('pharmacie') and not _bloq %}
         <li class="nav-item nav-item-pharmacie">
             <a class="nav-link-top" href="#" onclick="return false;">
                 Pharmacie <i class="fas fa-chevron-down arrow"></i>
@@ -1902,35 +1913,44 @@
                 </a>
             </div>
         </li>
+        {% endif %}
         <li class="nav-item nav-item-finances">
             <span class="nav-link-top">
                 Finances <i class="fas fa-chevron-down arrow"></i>
             </span>
             <div class="mega-menu">
+                {% if not onglet_cache('factures') and not _bloq %}
                 <a class="menu-item" href="{{ url_for('factures') }}">
                     Factures clients&Créances
                 </a>
+                {% endif %}
+                {% if not onglet_cache('proformas') and not _bloq %}
                 <a class="menu-item" href="{{ url_for('proformas') }}">
                     Factures Proforma
                 </a>
-                {% if not session.is_admin %}
+                {% endif %}
+                {% if not session.is_admin and not _bloq %}
                 <a class="menu-item" href="{{ url_for('page_factures_assurances') }}">
                     Factures assurances
                 </a>
+                {% endif %}
+                <!-- Enregistrer une charge : jamais masqué, c'est l'échappatoire -->
+                {% if not session.is_admin %}
                 <a class="menu-item" href="{{ url_for('page_depenses_saisie') }}">
                     Enregistrer une charge
                 </a>
                 {% endif %}
-                {% if a_acces('finances') %}
+                {% if a_acces('finances') and not onglet_cache('finances') and not _bloq %}
                 <a class="menu-item" href="{{ url_for('admin_finances') }}">
                     Finances&Caisse&Charges
                 </a>
                 {% endif %}
-                {% if a_acces('statistiques') %}
+                {% if a_acces('statistiques') and not onglet_cache('statistiques') and not _bloq %}
                 <a class="menu-item" href="{{ url_for('statistiques_ventes') }}">
                     Statistiques des ventes
                 </a>
                 {% endif %}
+                <!-- Demandes en attente : jamais masqué, c'est là qu'on valide sa propre charge d'abonnement -->
                 {% if session.is_admin %}
                 <a class="menu-item" href="{{ url_for('page_validations') }}">
                     Demandes en attente
@@ -1939,11 +1959,14 @@
                 {% endif %}
             </div>
         </li>
+        {% if not onglet_cache('historique_ventes') and not _bloq %}
         <li class="nav-item nav-item-historique">
             <a class="nav-link-top" href="{{ url_for('historique_ventes') }}">
                 Historique des ventes
             </a>
         </li>
+        {% endif %}
+        {% if not _bloq %}
         <li class="nav-item nav-item-referentiels">
             <span class="nav-link-top">
                 Référentiels AMU <i class="fas fa-chevron-down arrow"></i>
@@ -1957,28 +1980,30 @@
                 </a>
             </div>
         </li>
-        {% if session.role in ['admin', 'gestionnaire'] or a_acces('rh') or a_acces('comptabilite') or a_acces('annulations') %}
+        {% endif %}
+        {% if session.role in ['admin', 'gestionnaire'] or (a_acces('rh') and not onglet_cache('rh')) or (a_acces('comptabilite') and not onglet_cache('comptabilite')) or (a_acces('annulations') and not onglet_cache('annulations')) %}
         <li class="nav-item nav-item-administration">
             <span class="nav-link-top">
                 Administration <i class="fas fa-chevron-down arrow"></i>
             </span>
             <div class="mega-menu">
+                <!-- Administration générale : jamais masquée, ni verrouillée (même logique que administration_generale dans a_acces) -->
                 {% if session.role in ['admin', 'gestionnaire'] %}
                 <a class="menu-item" href="{{ url_for('admin_structure') }}">
                     <i class="fas fa-cog"></i> Administration
                 </a>
                 {% endif %}
-                {% if a_acces('rh') %}
+                {% if a_acces('rh') and not onglet_cache('rh') and not _bloq %}
                 <a class="menu-item" href="{{ url_for('rh.gestion_rh') }}">
                     Gestion Ressources Humaines
                 </a>
                 {% endif %}
-                {% if a_acces('comptabilite') %}
+                {% if a_acces('comptabilite') and not onglet_cache('comptabilite') and not _bloq %}
                 <a class="menu-item" href="{{ url_for('comptabilite.index') }}">
                     Comptabilité
                 </a>
                 {% endif %}
-                {% if a_acces('annulations') %}
+                {% if a_acces('annulations') and not onglet_cache('annulations') and not _bloq %}
                 <a class="menu-item" href="{{ url_for('historique_annulations') }}">
                     Historique Annulations
                 </a>
@@ -2070,6 +2095,20 @@
     
     <!-- ===== CONTENU PRINCIPAL ===== -->
     <main class="main-content" id="mainContent">
+
+        <!-- ===== BANNIÈRE ABONNEMENT SSOFTONEV10 (jaune/rouge/bloqué) ===== -->
+        {% set _ab_banner = abonnement() %}
+        {% if _ab_banner.niveau_alerte in ('jaune', 'rouge') %}
+        <div class="alert {{ 'alert-warning' if _ab_banner.niveau_alerte == 'jaune' else 'alert-danger' }} d-flex align-items-center justify-content-between shadow-sm mb-2" role="alert">
+            <span><i class="fas fa-triangle-exclamation me-2"></i>{{ _ab_banner.message }}</span>
+            <a href="{{ url_for('page_depenses_saisie') }}" class="btn btn-sm btn-dark">Régulariser maintenant</a>
+        </div>
+        {% elif _ab_banner.bloque_effectif %}
+        <div class="alert alert-danger d-flex align-items-center justify-content-between shadow-sm mb-2" role="alert">
+            <span><i class="fas fa-lock me-2"></i>{{ _ab_banner.message }}</span>
+            <a href="{{ url_for('page_depenses_saisie') }}" class="btn btn-sm btn-dark">Régulariser maintenant</a>
+        </div>
+        {% endif %}
 
         <!-- ===== BANNIÈRE MODE HORS-LIGNE (bascule Neon <-> local) ===== -->
         <div id="offlineBanner" class="alert alert-warning d-flex align-items-center justify-content-between shadow-sm mb-2" role="alert" hidden>

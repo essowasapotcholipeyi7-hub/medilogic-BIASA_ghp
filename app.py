@@ -13,8 +13,14 @@ from io import BytesIO
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement
 from utils.permissions import a_acces, PERMISSIONS
+from utils.modules_structure import MODULES_STRUCTURE
+from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
+
+# ⭐ Numéro WhatsApp de l'éditeur (Togo, +228) pour l'envoi du reçu
+# d'abonnement — voir admin_finances.html.
+ABONNEMENT_WHATSAPP_NUMERO = "22893850013"
 from models import RendezVous
 from models import Medecin, Patient, Structure
 from datetime import datetime, date, timedelta
@@ -60,6 +66,26 @@ db.init_app(app)
 # unique partagé avec les décorateurs de routes (permission_requise) et
 # les before_request des blueprints.
 app.jinja_env.globals['a_acces'] = a_acces
+
+# ⭐ abonnement()/onglet_cache() : mêmes globals Jinja, pour le verrou
+# d'abonnement mensuel et le masquage d'onglets par le super-admin — voir
+# services/abonnement_service.py. `abonnement()` est mémoïsé sur flask.g
+# pour ne calculer le statut qu'une fois par requête (appelé depuis le
+# bandeau ET le mega-menu ET le sidebar sur la même page).
+def _abonnement_statut_session():
+    from flask import g
+    if not hasattr(g, '_abonnement_statut_cache'):
+        g._abonnement_statut_cache = statut_abonnement(session.get('structure_id'))
+    return g._abonnement_statut_cache
+
+app.jinja_env.globals['abonnement'] = _abonnement_statut_session
+app.jinja_env.globals['onglet_cache'] = lambda cle: onglet_cache(session.get('structure_id'), cle)
+app.jinja_env.globals['ABONNEMENT_WHATSAPP_NUMERO'] = ABONNEMENT_WHATSAPP_NUMERO
+# ⭐ Variante prenant un structure_id explicite — pour admin_global.html
+# (session super-admin, pas de session structure) : un badge de statut par
+# ligne de la liste des structures.
+app.jinja_env.globals['statut_abonnement_pour'] = statut_abonnement
+app.jinja_env.globals['MODULES_STRUCTURE'] = MODULES_STRUCTURE
 
 # ⭐ Bascule hors-ligne Neon <-> Postgres local (inactif si DATABASE_URL_LOCAL
 # n'est pas définie dans l'environnement — voir utils/db_failover.py)
@@ -9321,13 +9347,26 @@ def api_add_depense():
     structure_id = session.get('structure_id')
     user_id = session.get('user_id')
     user_name = session.get('user_name', 'Utilisateur')
+    motif = data.get('motif')
     montant = float(data.get('montant') or 0)
+
+    # 🔥 Charge "Abonnement SSoftOneV10" : le montant n'est JAMAIS celui
+    # envoyé par le client (juste indicatif côté JS, en lecture seule) —
+    # toujours recalculé ici à partir du prix programmé par le super-admin,
+    # pour qu'aucune manipulation ne puisse faire passer un autre montant
+    # sous ce motif. Voir services/abonnement_service.py.
+    if motif == MOTIF_ABONNEMENT:
+        from models import ParametrageAbonnement
+        param = ParametrageAbonnement.query.filter_by(structure_id=structure_id).first()
+        if not param or not param.prix_mensuel:
+            return jsonify({'success': False, 'error': "Aucun prix d'abonnement n'est encore programmé pour votre structure. Contactez l'éditeur."}), 400
+        montant = float(param.prix_mensuel)
 
     try:
         demande = _demander_validation(
             structure_id=structure_id, type_demande='depense',
             payload={
-                'montant': montant, 'motif': data.get('motif'),
+                'montant': montant, 'motif': motif,
                 'motif_personnalise': data.get('motif_personnalise', ''),
                 'description': data.get('description', ''),
             },
@@ -9340,6 +9379,78 @@ def api_add_depense():
         })
     except Exception as e:
         print(f"Erreur api_add_depense: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/abonnement/prix')
+@login_required
+def api_abonnement_prix():
+    """Prix mensuel programmé par le super-admin pour la structure connectée
+    — utilisé par depenses_saisie.html/admin_finances.html pour remplir
+    (en lecture seule) le montant de la charge "Abonnement SSoftOneV10"."""
+    structure_id = session.get('structure_id')
+    param = ParametrageAbonnement.query.filter_by(structure_id=structure_id).first()
+    prix = float(param.prix_mensuel) if (param and param.prix_mensuel) else None
+    return jsonify({'success': True, 'prix_mensuel': prix})
+
+
+@app.route('/admin/abonnement/<int:structure_id>')
+def admin_abonnement_get(structure_id):
+    """Paramétrage abonnement actuel d'une structure, pour préremplir la
+    modale de admin_global.html."""
+    if 'super_admin' not in session:
+        return jsonify({'success': False, 'error': 'Non autorisé'}), 401
+    param = ParametrageAbonnement.query.filter_by(structure_id=structure_id).first()
+    if not param:
+        return jsonify({
+            'success': True, 'prix_mensuel': None, 'date_debut_suivi': None,
+            'grace_active': False, 'grace_note': '', 'onglets_masques': [],
+        })
+    return jsonify({
+        'success': True,
+        'prix_mensuel': float(param.prix_mensuel) if param.prix_mensuel else None,
+        'date_debut_suivi': param.date_debut_suivi.isoformat() if param.date_debut_suivi else None,
+        'grace_active': bool(param.grace_active),
+        'grace_note': param.grace_note or '',
+        'onglets_masques': param.liste_onglets_masques(),
+    })
+
+
+@app.route('/admin/abonnement/<int:structure_id>', methods=['POST'])
+def admin_abonnement_post(structure_id):
+    """Enregistre le paramétrage abonnement d'une structure depuis
+    l'administration globale : prix mensuel, date de début de surveillance,
+    dérogation manuelle, onglets masqués."""
+    if 'super_admin' not in session:
+        return jsonify({'success': False, 'error': 'Non autorisé'}), 401
+
+    data = request.get_json(silent=True) or {}
+    param = ParametrageAbonnement.get_ou_creer(structure_id)
+
+    prix = data.get('prix_mensuel')
+    param.prix_mensuel = float(prix) if prix not in (None, '') else None
+
+    date_debut = data.get('date_debut_suivi')
+    if date_debut:
+        try:
+            param.date_debut_suivi = datetime.strptime(date_debut, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Date de début invalide'}), 400
+    else:
+        param.date_debut_suivi = None
+
+    param.grace_active = bool(data.get('grace_active'))
+    param.grace_note = (data.get('grace_note') or '').strip()
+
+    onglets = data.get('onglets_masques') or []
+    cles_valides = set(MODULES_STRUCTURE.keys())
+    param.onglets_masques = ','.join(sorted(c for c in onglets if c in cles_valides))
+
+    try:
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -14493,6 +14604,42 @@ def api_prix_actes():
     except Exception as e:
         print(f"❌ Erreur: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
+
+# ============================================================
+# VERROU D'ABONNEMENT — application programmatique sur les endpoints de
+# MODULES_STRUCTURE, plutôt que 18 décorateurs à poser (et à ne pas
+# oublier) à la main. Placé ici, en toute fin de fichier : app.view_functions
+# est déjà peuplé par TOUTES les routes @app.route de ce fichier, et par
+# celles des blueprints (enregistrés plus haut — un blueprint publie ses
+# endpoints dans app.view_functions dès register_blueprint()).
+# Voir services/abonnement_service.py et utils/modules_structure.py.
+# ============================================================
+from functools import wraps as _wraps_abonnement
+
+
+def _verrou_module(view_func, module_key):
+    @_wraps_abonnement(view_func)
+    def wrapped(*args, **kwargs):
+        structure_id = session.get('structure_id')
+        if structure_id:
+            if onglet_cache(structure_id, module_key):
+                flash("Ce module n'est pas activé pour votre structure. Contactez l'éditeur si besoin.", 'warning')
+                return redirect(url_for('dashboard'))
+            if statut_abonnement(structure_id)['bloque_effectif']:
+                flash("Accès limité : l'abonnement SSoftOneV10 du mois n'est pas réglé. "
+                      "Rendez-vous dans « Enregistrer une charge » pour régulariser.", 'danger')
+                return redirect(url_for('dashboard'))
+        return view_func(*args, **kwargs)
+    return wrapped
+
+
+for _module_key, _module_def in MODULES_STRUCTURE.items():
+    for _endpoint in _module_def['endpoints']:
+        if _endpoint in app.view_functions:
+            app.view_functions[_endpoint] = _verrou_module(app.view_functions[_endpoint], _module_key)
+        else:
+            print(f"⚠️ MODULES_STRUCTURE: endpoint '{_endpoint}' introuvable, verrou non posé")
+
 
 if __name__ == '__main__':
     import os

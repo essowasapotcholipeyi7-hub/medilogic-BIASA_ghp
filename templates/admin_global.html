@@ -25,11 +25,13 @@
                         <th>Téléphone</th>
                         <th>Date inscription</th>
                         <th>Statut</th>
+                        <th>Abonnement</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for structure in structures %}
+                    {% set ab = statut_abonnement_pour(structure.ID) %}
                     <tr>
                         <td><strong>{{ structure.ID }}</strong></td>
                         <td>{{ structure.nom }}</td>
@@ -51,6 +53,21 @@
                             {% endif %}
                         </td>
                         <td>
+                            {% if not ab.suivi_actif %}
+                                <span class="badge bg-secondary">Suivi inactif</span>
+                            {% elif ab.grace_active %}
+                                <span class="badge bg-info">🤝 Dérogation</span>
+                            {% elif ab.mois_paye %}
+                                <span class="badge bg-success">✅ Payé ce mois</span>
+                            {% elif ab.niveau_alerte == 'jaune' %}
+                                <span class="badge bg-warning text-dark">🟡 En attente</span>
+                            {% elif ab.niveau_alerte == 'rouge' %}
+                                <span class="badge bg-danger">🔴 Urgent</span>
+                            {% else %}
+                                <span class="badge bg-dark">🔒 Bloqué</span>
+                            {% endif %}
+                        </td>
+                        <td>
                             <div class="btn-group btn-group-sm" role="group">
                                 {% if structure.statut == 'pending' %}
                                 <a href="{{ url_for('activate_structure', structure_id=structure.ID) }}" class="btn btn-sm btn-success" title="Activer">
@@ -65,12 +82,17 @@
                                     <i class="fas fa-play"></i>
                                 </a>
                                 {% endif %}
-                                
+
                                 <!-- Bouton Réinitialiser mot de passe -->
                                 <button class="btn btn-sm btn-info" onclick="showResetPasswordModal({{ structure.ID }}, '{{ structure.nom }}')" title="Réinitialiser mot de passe">
                                     <i class="fas fa-key"></i>
                                 </button>
-                                
+
+                                <!-- Bouton Abonnement -->
+                                <button class="btn btn-sm btn-primary" onclick="showAbonnementModal({{ structure.ID }}, '{{ structure.nom }}')" title="Paramétrer l'abonnement">
+                                    <i class="fas fa-money-check-dollar"></i>
+                                </button>
+
                                 <a href="#" onclick="confirmDelete({{ structure.ID }})" class="btn btn-sm btn-danger" title="Supprimer">
                                     <i class="fas fa-trash"></i>
                                 </a>
@@ -79,7 +101,7 @@
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="8" class="text-center">Aucune structure inscrite</td>
+                        <td colspan="9" class="text-center">Aucune structure inscrite</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -116,7 +138,114 @@
     </div>
 </div>
 
+<!-- Modal Paramétrage Abonnement -->
+<div class="modal fade" id="abonnementModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-money-check-dollar"></i> Abonnement — <span id="abonnementStructureNom"></span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Prix mensuel (FCFA)</label>
+                        <input type="number" class="form-control" id="abPrixMensuel" min="0" placeholder="Ex: 25000">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Début de la surveillance</label>
+                        <input type="date" class="form-control" id="abDateDebut">
+                        <small class="text-muted">Vide = aucune surveillance, jamais de verrouillage.</small>
+                    </div>
+                </div>
+
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="abGraceActive">
+                    <label class="form-check-label" for="abGraceActive">
+                        Dérogation active — débloquer même sans paiement du mois
+                    </label>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Note (visible ici seulement)</label>
+                    <input type="text" class="form-control" id="abGraceNote" placeholder="Ex: a appelé, paiera avant vendredi">
+                </div>
+
+                <hr>
+                <label class="form-label">Onglets masqués pour cette structure</label>
+                <div class="row" id="abOngletsMasques">
+                    <!-- rempli en JS depuis MODULES_STRUCTURE -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="enregistrerAbonnement()">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
+const MODULES_STRUCTURE = {{ MODULES_STRUCTURE|tojson }};
+let abonnementStructureId = null;
+
+function showAbonnementModal(id, nom) {
+    abonnementStructureId = id;
+    document.getElementById('abonnementStructureNom').innerText = nom;
+
+    // Génère les cases à cocher des onglets masquables
+    const wrap = document.getElementById('abOngletsMasques');
+    wrap.innerHTML = Object.entries(MODULES_STRUCTURE).map(([cle, mod]) => `
+        <div class="col-md-4 mb-1">
+            <div class="form-check">
+                <input class="form-check-input ab-onglet-check" type="checkbox" value="${cle}" id="abOnglet_${cle}">
+                <label class="form-check-label" for="abOnglet_${cle}">${mod.label}</label>
+            </div>
+        </div>
+    `).join('');
+
+    fetch(`/admin/abonnement/${id}`)
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('abPrixMensuel').value = data.prix_mensuel || '';
+            document.getElementById('abDateDebut').value = data.date_debut_suivi || '';
+            document.getElementById('abGraceActive').checked = !!data.grace_active;
+            document.getElementById('abGraceNote').value = data.grace_note || '';
+            (data.onglets_masques || []).forEach(cle => {
+                const cb = document.getElementById(`abOnglet_${cle}`);
+                if (cb) cb.checked = true;
+            });
+            new bootstrap.Modal(document.getElementById('abonnementModal')).show();
+        })
+        .catch(() => alert('Erreur de chargement du paramétrage abonnement'));
+}
+
+function enregistrerAbonnement() {
+    const onglets = Array.from(document.querySelectorAll('.ab-onglet-check:checked')).map(cb => cb.value);
+    const data = {
+        prix_mensuel: document.getElementById('abPrixMensuel').value || null,
+        date_debut_suivi: document.getElementById('abDateDebut').value || null,
+        grace_active: document.getElementById('abGraceActive').checked,
+        grace_note: document.getElementById('abGraceNote').value,
+        onglets_masques: onglets,
+    };
+
+    fetch(`/admin/abonnement/${abonnementStructureId}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            bootstrap.Modal.getInstance(document.getElementById('abonnementModal')).hide();
+            location.reload();
+        } else {
+            alert('Erreur : ' + result.error);
+        }
+    })
+    .catch(() => alert('Erreur réseau'));
+}
+
 let resetStructureId = null;
 
 function showResetPasswordModal(id, nom) {

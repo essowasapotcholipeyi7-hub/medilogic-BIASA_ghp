@@ -711,6 +711,39 @@ class ParametrageTva(db.Model):
         return param
 
 
+class ParametrageAbonnement(db.Model):
+    """Abonnement mensuel SSoftOneV10 par structure — paramétré depuis
+    l'administration globale (super-admin), pas par la structure elle-même.
+    `prix_mensuel` et `date_debut_suivi` restent à None tant que le
+    super-admin n'a rien configuré : dans ce cas aucun verrouillage ne
+    s'applique (voir services/abonnement_service.py:statut_abonnement).
+    Le paiement lui-même n'est pas suivi ici : c'est une Depense réelle
+    (donc déjà validée, voir _demander_validation) avec
+    motif='abonnement_ssoftonev10' dans le mois courant qui fait foi."""
+    __tablename__ = 'parametrage_abonnement'
+
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False, unique=True)
+    prix_mensuel = db.Column(db.Numeric)
+    date_debut_suivi = db.Column(db.Date)
+    onglets_masques = db.Column(db.Text, default='')  # clés MODULES_STRUCTURE séparées par virgules
+    grace_active = db.Column(db.Boolean, default=False)
+    grace_note = db.Column(db.Text)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @classmethod
+    def get_ou_creer(cls, structure_id):
+        param = cls.query.filter_by(structure_id=structure_id).first()
+        if not param:
+            param = cls(structure_id=structure_id)
+            db.session.add(param)
+            db.session.commit()
+        return param
+
+    def liste_onglets_masques(self):
+        return [c.strip() for c in (self.onglets_masques or '').split(',') if c.strip()]
+
+
 class Budget(db.Model):
     __tablename__ = 'budget'
     

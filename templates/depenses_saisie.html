@@ -18,10 +18,14 @@
                     <div class="mb-3">
                         <label class="form-label">Montant (FCFA) *</label>
                         <input type="number" class="form-control" id="depenseMontant" required min="1">
+                        <small class="text-muted" id="depenseMontantAide" style="display:none;">
+                            Montant fixé par l'éditeur SSoftOneV10, non modifiable.
+                        </small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Motif *</label>
                         <select class="form-control" id="depenseMotif" onchange="toggleMotifPersonnalise()">
+                            <option value="abonnement_ssoftonev10">💳 Abonnement SSoftOneV10</option>
                             <option value="salaire">Salaire personnel</option>
                             <option value="assurance">Versement part assurance</option>
                             <option value="reparation">Réparation de la clinique</option>
@@ -78,6 +82,28 @@
 function toggleMotifPersonnalise() {
     const motif = document.getElementById('depenseMotif').value;
     document.getElementById('motifPersonnaliseDiv').style.display = motif === 'autres' ? 'block' : 'none';
+
+    const montantInput = document.getElementById('depenseMontant');
+    const aide = document.getElementById('depenseMontantAide');
+    if (motif === 'abonnement_ssoftonev10') {
+        montantInput.readOnly = true;
+        aide.style.display = 'block';
+        fetch('/api/abonnement/prix')
+            .then(r => r.json())
+            .then(data => {
+                if (data.success && data.prix_mensuel) {
+                    montantInput.value = data.prix_mensuel;
+                } else {
+                    montantInput.value = '';
+                    aide.textContent = "Aucun prix d'abonnement n'est encore programmé pour votre structure. Contactez l'éditeur.";
+                }
+            })
+            .catch(() => { montantInput.value = ''; });
+    } else {
+        montantInput.readOnly = false;
+        aide.style.display = 'none';
+        aide.textContent = "Montant fixé par l'éditeur SSoftOneV10, non modifiable.";
+    }
 }
 
 function saveDepense() {
@@ -147,6 +173,9 @@ function chargerMesDemandes() {
         .catch(() => {});
 }
 
-document.addEventListener('DOMContentLoaded', chargerMesDemandes);
+document.addEventListener('DOMContentLoaded', function() {
+    chargerMesDemandes();
+    toggleMotifPersonnalise(); // le motif "Abonnement SSoftOneV10" est sélectionné par défaut
+});
 </script>
 {% endblock %}

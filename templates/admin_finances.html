@@ -55,6 +55,7 @@
     .motif-reparation { background: #fff3e0; color: #e65100; }
     .motif-fourniture { background: #f3e5f5; color: #6a1b9a; }
     .motif-autres { background: #eceff1; color: #455a64; }
+    .motif-abonnement { background: #e0f2f1; color: #00695c; }
     .stat-card {
         border-radius: 20px;
         transition: all 0.3s ease;
@@ -162,6 +163,7 @@
                         <label class="form-label small">Filtre charge</label>
                         <select id="filtreMotif" class="form-control form-control-sm" onchange="filtrerDepenses()">
                             <option value="">Tous les motifs</option>
+                            <option value="abonnement_ssoftonev10">Abonnement SSoftOneV10</option>
                             <option value="salaire">Salaire personnel</option>
                             <option value="assurance">Versement assurance</option>
                             <option value="reparation">Réparation clinique</option>
@@ -199,6 +201,7 @@
                             <th>Montant (FCFA)</th>
                             <th>Description</th>
                             <th>Enregistré par</th>
+                            <th>Reçu</th>
                         </tr>
                     </thead>
                     <tbody id="depensesList">
@@ -207,13 +210,15 @@
                             <td>{{ d.id }}</td>
                             <td>{{ d.date_depense.strftime('%Y-%m-%d %H:%M') if d.date_depense else '-' }}</td>
                             <td>
-                                <span class="motif-badge 
-                                    {% if d.motif == 'salaire' %}motif-salaire
+                                <span class="motif-badge
+                                    {% if d.motif == 'abonnement_ssoftonev10' %}motif-abonnement
+                                    {% elif d.motif == 'salaire' %}motif-salaire
                                     {% elif d.motif == 'assurance' %}motif-assurance
                                     {% elif d.motif == 'reparation' %}motif-reparation
                                     {% elif d.motif == 'fourniture' %}motif-fourniture
                                     {% else %}motif-autres{% endif %}">
-                                    {% if d.motif == 'salaire' %}Salaire
+                                    {% if d.motif == 'abonnement_ssoftonev10' %}Abonnement SSoftOneV10
+                                    {% elif d.motif == 'salaire' %}Salaire
                                     {% elif d.motif == 'assurance' %}Assurance
                                     {% elif d.motif == 'reparation' %}Reparation
                                     {% elif d.motif == 'fourniture' %}Fourniture
@@ -230,10 +235,21 @@
                             <td class="text-danger fw-bold">{{ d.montant|round(0)|int }} FCFA</td>
                             <td>{{ d.description or '-' }}</td>
                             <td>{{ d.created_by_nom or '-' }}</td>
+                            <td>
+                                {% if d.motif == 'abonnement_ssoftonev10' %}
+                                <button type="button" class="btn btn-sm btn-success"
+                                        title="Envoyer le reçu par WhatsApp"
+                                        onclick="envoyerRecuWhatsApp('{{ d.date_depense.strftime('%Y-%m-%d') if d.date_depense else '' }}', {{ d.montant|round(0)|int }})">
+                                    <i class="fab fa-whatsapp"></i>
+                                </button>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="6" class="text-center">Aucune charge</td>
+                            <td colspan="7" class="text-center">Aucune charge</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -451,10 +467,14 @@
                     <div class="mb-3">
                         <label class="form-label">Montant (FCFA) *</label>
                         <input type="number" class="form-control" id="depenseMontant" required min="1">
+                        <small class="text-muted" id="depenseMontantAide" style="display:none;">
+                            Montant fixé par l'éditeur SSoftOneV10, non modifiable.
+                        </small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Motif *</label>
                         <select class="form-control" id="depenseMotif" onchange="toggleMotifPersonnalise()">
+                            <option value="abonnement_ssoftonev10">💳 Abonnement SSoftOneV10</option>
                             <option value="salaire">Salaire personnel</option>
                             <option value="assurance">Versement part assurance</option>
                             <option value="reparation">Réparation de la clinique</option>
@@ -521,6 +541,7 @@ function hideLoader() {
 function showAddDepenseModal() {
     document.getElementById('depenseForm').reset();
     document.getElementById('motifPersonnaliseDiv').style.display = 'none';
+    toggleMotifPersonnalise();
     new bootstrap.Modal(document.getElementById('addDepenseModal')).show();
 }
 
@@ -528,6 +549,28 @@ function toggleMotifPersonnalise() {
     const motif = document.getElementById('depenseMotif').value;
     const div = document.getElementById('motifPersonnaliseDiv');
     div.style.display = motif === 'autres' ? 'block' : 'none';
+
+    const montantInput = document.getElementById('depenseMontant');
+    const aide = document.getElementById('depenseMontantAide');
+    if (motif === 'abonnement_ssoftonev10') {
+        montantInput.readOnly = true;
+        aide.style.display = 'block';
+        fetch('/api/abonnement/prix')
+            .then(r => r.json())
+            .then(data => {
+                if (data.success && data.prix_mensuel) {
+                    montantInput.value = data.prix_mensuel;
+                } else {
+                    montantInput.value = '';
+                    aide.textContent = "Aucun prix d'abonnement n'est encore programmé pour cette structure.";
+                }
+            })
+            .catch(() => { montantInput.value = ''; });
+    } else {
+        montantInput.readOnly = false;
+        aide.style.display = 'none';
+        aide.textContent = "Montant fixé par l'éditeur SSoftOneV10, non modifiable.";
+    }
 }
 
 function saveDepense() {
@@ -567,6 +610,17 @@ function saveDepense() {
         }
     })
     .catch(() => { hideLoader(); alert('❌ Erreur'); });
+}
+
+// ⭐ Reçu WhatsApp d'une charge d'abonnement — même pattern que
+// templates/patients.html (window.open sur wa.me avec un texte pré-rempli).
+function envoyerRecuWhatsApp(dateDepense, montant) {
+    const structureNom = "{{ session.structure_nom|default('la structure', true) }}";
+    const message = `Reçu de paiement — Abonnement SSoftOneV10\n` +
+        `Structure : ${structureNom}\n` +
+        `Montant : ${montant.toLocaleString('fr-FR')} FCFA\n` +
+        `Date : ${dateDepense}`;
+    window.open(`https://wa.me/22893850013?text=${encodeURIComponent(message)}`, '_blank');
 }
 
 function filtrerDepenses() {

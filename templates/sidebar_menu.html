@@ -15,42 +15,56 @@
 
 <div class="nav flex-column">
 
-                <!-- ===== PRINCIPAL ===== -->
+                {% set _ab = abonnement() %}
+                {% set _bloq = _ab.bloque_effectif %}
+
+                <!-- ===== PRINCIPAL (jamais masqués : voir utils/modules_structure.py) ===== -->
                 <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">
                     <span class="menu-text">Tableau de bord</span>
                 </a>
-                
+
+                {% if not onglet_cache('patients') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'patients' %}active{% endif %}" href="{{ url_for('patients') }}">
                     <span class="menu-text">Liste Patients</span>
                 </a>
-                
-                {% if a_acces('prescriptions_recues') %}
+                {% endif %}
+
+                {% if a_acces('prescriptions_recues') and not onglet_cache('prescriptions_recues') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'prescriptions_recues' %}active{% endif %}" href="{{ url_for('prescriptions_recues') }}">
                     <span class="menu-text">Prescriptions reçues</span>
                     <span class="badge bg-danger ms-1" id="prescriptionBadge">0</span>
                 </a>
                 {% endif %}
 
+                {% if not onglet_cache('actes_vente') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'actes_vente' %}active{% endif %}" href="{{ url_for('actes_vente') }}">
                     <span class="menu-text">Labo/Radio/Hospi/Actes&Vente</span>
                 </a>
-                
+                {% endif %}
+
+                {% if not onglet_cache('pharmacie') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'pharma_vente' %}active{% endif %}" href="{{ url_for('pharma_vente') }}">
                     <span class="menu-text">Pharmacie&Vente</span>
                 </a>
-                
+                {% endif %}
+
+                {% if not onglet_cache('factures') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'factures' %}active{% endif %}" href="{{ url_for('factures') }}">
                     <span class="menu-text">Factures clients&Créances</span>
                 </a>
+                {% endif %}
 
                 <!-- ===== FACTURES PROFORMA ===== -->
+                {% if not onglet_cache('proformas') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'proformas' %}active{% endif %}" href="{{ url_for('proformas') }}">
                     <span class="menu-text">Factures Proforma</span>
                     <span class="badge bg-warning text-dark float-end" id="proformaBadge" style="display:none;">0</span>
                 </a>
+                {% endif %}
 
-                
+
                 <!-- ===== RÉFÉRENTIELS AMU ===== -->
+                {% if not _bloq %}
                 <div class="dropdown">
                     <a class="nav-link dropdown-toggle" href="#" id="amuDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                         <span class="menu-text">Référentiels AMU</span>
@@ -68,31 +82,34 @@
                         </li>
                     </ul>
                 </div>
+                {% endif %}
 
                 <!-- ===== HISTORIQUE & RENDEZ-VOUS ===== -->
+                {% if not onglet_cache('historique_ventes') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'historique_ventes' %}active{% endif %}" href="{{ url_for('historique_ventes') }}">
                     <span class="menu-text">Historique des ventes</span>
                 </a>
+                {% endif %}
 
-                {% if a_acces('medecins_activites') %}
+                {% if a_acces('medecins_activites') and not onglet_cache('medecins_activites') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'gestion_medecins' %}active{% endif %}" href="{{ url_for('gestion_medecins') }}">
                     <span class="menu-text">Medecins&Activités</span>
                 </a>
                 {% endif %}
 
-                {% if a_acces('protocoles') %}
+                {% if a_acces('protocoles') and not onglet_cache('protocoles') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'protocoles.page_protocoles' %}active{% endif %}" href="{{ url_for('protocoles.page_protocoles') }}">
                     <span class="menu-text">Protocoles et Modèles</span>
                 </a>
                 {% endif %}
 
-                {% if a_acces('rendez_vous') %}
+                {% if a_acces('rendez_vous') and not onglet_cache('rendez_vous') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'rendez_vous' %}active{% endif %}" href="{{ url_for('rendez_vous') }}">
                     <span class="menu-text">Programmer Rendez-vous</span>
                 </a>
                 {% endif %}
 
-                {% if a_acces('rappels') %}
+                {% if a_acces('rappels') and not onglet_cache('rappels') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'rappels' %}active{% endif %}" href="{{ url_for('rappels') }}">
                     <span class="menu-text">Rappels des rendez-vous</span>
                 </a>
@@ -100,51 +117,56 @@
 
 
                 <!-- ===== CONSULTATION ===== -->
-                {% if session.role in ['admin', 'medecin', 'paramedical'] %}
+                {% if session.role in ['admin', 'medecin', 'paramedical'] and not onglet_cache('consultation') and not _bloq %}
                     <a class="nav-link {% if request.endpoint == 'consultation' %}active{% endif %}" href="{{ url_for('consultation') }}">
                         <span class="menu-text">Consultation & Prise en charge</span>
                     </a>
                 {% endif %}
 
                 <!-- ===== GESTION DES STOCKS ===== -->
-                {% if session.role in ['admin', 'comptable', 'gestionnaire', 'pharmacien'] %}
+                {% if session.role in ['admin', 'comptable', 'gestionnaire', 'pharmacien'] and not onglet_cache('pharmacie') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'gestion_stock' %}active{% endif %}" href="{{ url_for('gestion_stock') }}">
                     <span class="menu-text">Gestion des stocks</span>
                 </a>
                 {% endif %}
 
                 <!-- ===== ADMINISTRATION ===== -->
-                {% if a_acces('statistiques') %}
+                {% if a_acces('statistiques') and not onglet_cache('statistiques') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'statistiques_ventes' %}active{% endif %}" href="{{ url_for('statistiques_ventes') }}">
                     <span class="menu-text">Statistiques ventes/assurances</span>
                 </a>
                 {% endif %}
 
-                {% if a_acces('annulations') %}
+                {% if a_acces('annulations') and not onglet_cache('annulations') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'historique_annulations' %}active{% endif %}" href="{{ url_for('historique_annulations') }}">
                     <span class="menu-text">Historiques Annulations</span>
                 </a>
                 {% endif %}
 
-                {% if a_acces('journal') %}
+                {% if a_acces('journal') and not onglet_cache('journal') and not _bloq %}
                 <a class="nav-link {% if request.path.startswith('/journal') %}active{% endif %}" href="{{ url_for('journal.page_journal') }}">
                     <span class="menu-text">Journal des mouvements</span>
                 </a>
                 {% endif %}
 
-                {% if a_acces('finances') %}
+                {% if a_acces('finances') and not onglet_cache('finances') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'admin_finances' %}active{% endif %}" href="{{ url_for('admin_finances') }}">
                     <span class="menu-text">Finances/Caisse&Charge</span>
                 </a>
                 {% endif %}
 
-                {% if a_acces('comptabilite') %}
+                <!-- ===== ENREGISTRER UNE CHARGE (jamais masqué — échappatoire) ===== -->
+                <a class="nav-link {% if request.endpoint == 'page_depenses_saisie' %}active{% endif %}" href="{{ url_for('page_depenses_saisie') }}">
+                    <span class="menu-text">Enregistrer une charge</span>
+                </a>
+
+                {% if a_acces('comptabilite') and not onglet_cache('comptabilite') and not _bloq %}
                 <a class="nav-link {% if request.path.startswith('/comptabilite') %}active{% endif %}" href="{{ url_for('comptabilite.index') }}">
                     <span class="menu-text">Comptabilité</span>
                 </a>
                 {% endif %}
 
-                {% if a_acces('rh') %}
+                {% if a_acces('rh') and not onglet_cache('rh') and not _bloq %}
                 <a class="nav-link {% if request.path.startswith('/rh') %}active{% endif %}" href="{{ url_for('rh.gestion_rh') }}">
                     <span class="menu-text">Ressources humaines</span>
                 </a>
