@@ -21,6 +21,7 @@ from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, ong
 # ⭐ Numéro WhatsApp de l'éditeur (Togo, +228) pour l'envoi du reçu
 # d'abonnement — voir admin_finances.html.
 ABONNEMENT_WHATSAPP_NUMERO = "22893850013"
+MOYENS_PAIEMENT_LABELS = {'mixx': 'Mixx by Yas', 'moov': 'Moov Money'}
 from models import RendezVous
 from models import Medecin, Patient, Structure
 from datetime import datetime, date, timedelta
@@ -86,6 +87,7 @@ app.jinja_env.globals['ABONNEMENT_WHATSAPP_NUMERO'] = ABONNEMENT_WHATSAPP_NUMERO
 # ligne de la liste des structures.
 app.jinja_env.globals['statut_abonnement_pour'] = statut_abonnement
 app.jinja_env.globals['MODULES_STRUCTURE'] = MODULES_STRUCTURE
+app.jinja_env.globals['MOYENS_PAIEMENT_LABELS'] = MOYENS_PAIEMENT_LABELS
 
 # ⭐ Bascule hors-ligne Neon <-> Postgres local (inactif si DATABASE_URL_LOCAL
 # n'est pas définie dans l'environnement — voir utils/db_failover.py)
@@ -6728,6 +6730,15 @@ def _log_mouvement_stock(structure_id, produit_id, produit_nom, type_mouvement,
         print(f"⚠️ Erreur journalisation mouvement stock ({type_mouvement}, produit {produit_id}): {e}")
 
 
+def _peut_valider_demandes():
+    """Vrai pour l'admin (propriétaire de la structure) ET pour le rôle
+    'gestionnaire' — celui-ci peut désormais valider/refuser les demandes en
+    attente à la place de l'administrateur quand ce dernier n'est pas
+    disponible. Chaque action reste tracée nommément (traite_par_nom) donc
+    l'administrateur peut toujours voir qui a validé quoi, même a posteriori."""
+    return bool(session.get('is_admin')) or session.get('role') == 'gestionnaire'
+
+
 def _demander_validation(structure_id, type_demande, payload, resume, user_id, user_name, reference_id=None):
     """Crée une demande en attente de validation admin (annulation de vente,
     dépense, encaissement facture assurance) — voir ValidationDemande dans
@@ -9350,11 +9361,20 @@ def api_add_depense():
     motif = data.get('motif')
     montant = float(data.get('montant') or 0)
 
+    payload = {
+        'montant': montant, 'motif': motif,
+        'motif_personnalise': data.get('motif_personnalise', ''),
+        'description': data.get('description', ''),
+    }
+    resume = f"Dépense — {motif} — {int(montant):,} FCFA".replace(',', ' ')
+
     # 🔥 Charge "Abonnement SSoftOneV10" : le montant n'est JAMAIS celui
     # envoyé par le client (juste indicatif côté JS, en lecture seule) —
     # toujours recalculé ici à partir du prix programmé par le super-admin,
     # pour qu'aucune manipulation ne puisse faire passer un autre montant
-    # sous ce motif. Voir services/abonnement_service.py.
+    # sous ce motif. Voir services/abonnement_service.py. Justificatif de
+    # paiement mobile money obligatoire, pour que le validateur (admin ou
+    # gestionnaire) le voie avant de valider.
     if motif == MOTIF_ABONNEMENT:
         from models import ParametrageAbonnement
         param = ParametrageAbonnement.query.filter_by(structure_id=structure_id).first()
@@ -9362,15 +9382,25 @@ def api_add_depense():
             return jsonify({'success': False, 'error': "Aucun prix d'abonnement n'est encore programmé pour votre structure. Contactez l'éditeur."}), 400
         montant = float(param.prix_mensuel)
 
+        moyen_paiement = (data.get('moyen_paiement') or '').strip()
+        reference_paiement = (data.get('reference_paiement') or '').strip()
+        date_paiement = data.get('date_paiement')
+        if moyen_paiement not in ('mixx', 'moov') or not reference_paiement or not date_paiement:
+            return jsonify({'success': False, 'error': "Le moyen de paiement, la référence et la date du paiement sont obligatoires pour l'abonnement."}), 400
+
+        payload['montant'] = montant
+        payload['moyen_paiement'] = moyen_paiement
+        payload['reference_paiement'] = reference_paiement
+        payload['date_paiement'] = date_paiement
+        moyen_libelle = MOYENS_PAIEMENT_LABELS.get(moyen_paiement, moyen_paiement)
+        resume = (f"Dépense — Abonnement SSoftOneV10 — {int(montant):,} FCFA".replace(',', ' ') +
+                  f" — {moyen_libelle} réf. {reference_paiement} du {date_paiement}")
+
     try:
         demande = _demander_validation(
             structure_id=structure_id, type_demande='depense',
-            payload={
-                'montant': montant, 'motif': motif,
-                'motif_personnalise': data.get('motif_personnalise', ''),
-                'description': data.get('description', ''),
-            },
-            resume=f"Dépense — {data.get('motif')} — {int(montant):,} FCFA".replace(',', ' '),
+            payload=payload,
+            resume=resume,
             user_id=user_id, user_name=user_name,
         )
         return jsonify({
@@ -9392,6 +9422,25 @@ def api_abonnement_prix():
     param = ParametrageAbonnement.query.filter_by(structure_id=structure_id).first()
     prix = float(param.prix_mensuel) if (param and param.prix_mensuel) else None
     return jsonify({'success': True, 'prix_mensuel': prix})
+
+
+@app.route('/finances/depenses/<int:depense_id>/recu')
+@login_required
+def recu_abonnement(depense_id):
+    """Reçu imprimable (PDF via html2pdf.js côté client, voir le template)
+    d'une charge "Abonnement SSoftOneV10" déjà validée — montre la
+    référence et la date du paiement mobile money, pour l'envoyer à
+    l'éditeur juste après validation (voir validations_en_attente.html)."""
+    if not _peut_valider_demandes():
+        flash('Accès non autorisé', 'danger')
+        return redirect(url_for('dashboard'))
+    structure_id = session.get('structure_id')
+    depense = Depense.query.filter_by(id=depense_id, structure_id=structure_id).first()
+    if not depense or depense.motif != MOTIF_ABONNEMENT:
+        flash('Reçu introuvable', 'danger')
+        return redirect(url_for('dashboard'))
+    return render_template('recu_abonnement.html', depense=depense,
+                            structure_nom=session.get('structure_nom', ''))
 
 
 @app.route('/admin/abonnement/<int:structure_id>')
@@ -9454,9 +9503,13 @@ def admin_abonnement_post(structure_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-def _executer_ajout_depense(structure_id, montant, motif, motif_personnalise, description, user_name):
+def _executer_ajout_depense(structure_id, montant, motif, motif_personnalise, description, user_name,
+                             moyen_paiement=None, reference_paiement=None, date_paiement=None):
     """Exécute réellement l'enregistrement de la dépense (caisse, écriture
-    comptable...). Lève une exception en cas d'échec."""
+    comptable...). Lève une exception en cas d'échec.
+    moyen_paiement/reference_paiement/date_paiement : justificatif de
+    paiement mobile money, renseigné pour la charge "Abonnement
+    SSoftOneV10" (voir api_add_depense), None pour les autres motifs."""
     if True:
         # 🔥 Verifier le solde suffisant (exclure annulations)
         recettes_total = db.execute_query("""
@@ -9477,8 +9530,9 @@ def _executer_ajout_depense(structure_id, montant, motif, motif_personnalise, de
             raise ValueError(f'Solde insuffisant. Solde actuel: {int(solde)} FCFA')
 
         result = db.execute_query("""
-            INSERT INTO depenses (structure_id, montant, motif, motif_personnalise, description, created_by_nom)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO depenses (structure_id, montant, motif, motif_personnalise, description, created_by_nom,
+                                   moyen_paiement, reference_paiement, date_paiement)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             structure_id,
@@ -9486,7 +9540,10 @@ def _executer_ajout_depense(structure_id, montant, motif, motif_personnalise, de
             motif,
             motif_personnalise,
             description,
-            user_name
+            user_name,
+            moyen_paiement,
+            reference_paiement,
+            date_paiement
         ))
         
         # 🔥 Mettre à jour le solde de caisse
@@ -10405,8 +10462,9 @@ def _executer_paiement_assurance(facture_id, structure_id, montant, numero_refer
 @login_required
 def page_validations():
     """Page listant les demandes (annulation vente, dépense, encaissement
-    assurance) en attente de validation — admin uniquement."""
-    if not session.get('is_admin'):
+    assurance) en attente de validation — admin ou gestionnaire (voir
+    _peut_valider_demandes)."""
+    if not _peut_valider_demandes():
         flash('Accès non autorisé', 'danger')
         return redirect(url_for('dashboard'))
     return render_template('validations_en_attente.html')
@@ -10415,12 +10473,13 @@ def page_validations():
 @app.route('/api/validations')
 @login_required
 def api_liste_validations():
-    """Un admin voit toutes les demandes de sa structure. Un non-admin ne
-    voit que les SIENNES (pour suivre où en sont ses propres demandes)."""
+    """Un admin ou un gestionnaire voit toutes les demandes de sa structure.
+    Les autres rôles ne voient que les SIENNES (pour suivre où en sont leurs
+    propres demandes)."""
     structure_id = session.get('structure_id')
     statut = request.args.get('statut', 'en_attente')
     query = ValidationDemande.query.filter_by(structure_id=structure_id)
-    if not session.get('is_admin'):
+    if not _peut_valider_demandes():
         query = query.filter_by(demandeur_id=session.get('user_id'))
     if statut != 'toutes':
         query = query.filter_by(statut=statut)
@@ -10442,8 +10501,9 @@ def api_liste_validations():
 @app.route('/api/validations/count')
 @login_required
 def api_validations_count():
-    """Nombre de demandes en attente — alimente le badge du menu (admin)."""
-    if not session.get('is_admin'):
+    """Nombre de demandes en attente — alimente le badge du menu (admin ou
+    gestionnaire)."""
+    if not _peut_valider_demandes():
         return jsonify({'count': 0})
     structure_id = session.get('structure_id')
     count = ValidationDemande.query.filter_by(structure_id=structure_id, statut='en_attente').count()
@@ -10456,11 +10516,15 @@ def api_valider_demande(demande_id):
     """Valide une demande en attente et EXÉCUTE RÉELLEMENT l'action associée
     (annulation de vente, dépense, encaissement assurance) — c'est ici, et
     seulement ici, que la caisse et les écritures comptables sont touchées
-    pour une demande créée par un non-admin."""
-    if not session.get('is_admin'):
+    pour une demande créée par un non-admin. Accessible à l'admin ET au
+    gestionnaire (voir _peut_valider_demandes) — quand l'administrateur
+    n'est pas disponible, le gestionnaire peut assumer cette responsabilité ;
+    traite_par_nom garde la trace de qui a réellement validé."""
+    if not _peut_valider_demandes():
         return jsonify({'success': False, 'error': 'Non autorise'}), 403
     structure_id = session.get('structure_id')
     user_name = session.get('user_name', 'Admin')
+    role = session.get('role')
 
     demande = ValidationDemande.query.filter_by(id=demande_id, structure_id=structure_id).first()
     if not demande:
@@ -10480,6 +10544,9 @@ def api_valider_demande(demande_id):
                 structure_id, payload['montant'], payload.get('motif'),
                 payload.get('motif_personnalise', ''), payload.get('description', ''),
                 demande.demandeur_nom,
+                moyen_paiement=payload.get('moyen_paiement'),
+                reference_paiement=payload.get('reference_paiement'),
+                date_paiement=payload.get('date_paiement'),
             )
         elif demande.type_demande == 'encaissement_assurance':
             resultat = _executer_paiement_assurance(
@@ -10494,7 +10561,10 @@ def api_valider_demande(demande_id):
 
     demande.statut = 'validee'
     demande.date_traitement = datetime.utcnow()
-    demande.traite_par_nom = user_name
+    # ⭐ "Rendre compte à l'administrateur" : quand c'est le gestionnaire qui
+    # a validé (pas l'admin lui-même), son rôle est ajouté au nom pour que
+    # ce soit visible d'un coup d'œil dans l'onglet "Validées".
+    demande.traite_par_nom = f"{user_name} (gestionnaire)" if (role == 'gestionnaire' and not session.get('is_admin')) else user_name
     db.session.commit()
 
     try:
@@ -10508,14 +10578,29 @@ def api_valider_demande(demande_id):
     except Exception as e:
         print(f"⚠️ Erreur journal d'activité (validation demande #{demande_id}): {e}")
 
-    return jsonify({'success': True, 'message': 'Demande validée et exécutée avec succès', 'resultat': resultat})
+    reponse = {'success': True, 'message': 'Demande validée et exécutée avec succès', 'resultat': resultat}
+
+    # ⭐ Charge "Abonnement SSoftOneV10" validée : renvoie tout de suite ce
+    # qu'il faut pour proposer le reçu (PDF) et l'envoi WhatsApp, sans aller
+    # le rechercher ailleurs — voir validations_en_attente.html.
+    if demande.type_demande == 'depense' and payload.get('motif') == MOTIF_ABONNEMENT and isinstance(resultat, dict) and resultat.get('id'):
+        reponse['recu'] = {
+            'depense_id': resultat['id'],
+            'structure_nom': session.get('structure_nom', ''),
+            'montant': payload.get('montant'),
+            'moyen_paiement': payload.get('moyen_paiement'),
+            'reference_paiement': payload.get('reference_paiement'),
+            'date_paiement': payload.get('date_paiement'),
+        }
+
+    return jsonify(reponse)
 
 
 @app.route('/api/validations/<int:demande_id>/refuser', methods=['POST'])
 @login_required
 def api_refuser_demande(demande_id):
     """Refuse une demande en attente — aucune action n'est exécutée."""
-    if not session.get('is_admin'):
+    if not _peut_valider_demandes():
         return jsonify({'success': False, 'error': 'Non autorise'}), 403
     structure_id = session.get('structure_id')
     user_name = session.get('user_name', 'Admin')
@@ -10531,7 +10616,8 @@ def api_refuser_demande(demande_id):
     demande.statut = 'refusee'
     demande.motif_refus = motif_refus or None
     demande.date_traitement = datetime.utcnow()
-    demande.traite_par_nom = user_name
+    role = session.get('role')
+    demande.traite_par_nom = f"{user_name} (gestionnaire)" if (role == 'gestionnaire' and not session.get('is_admin')) else user_name
     db.session.commit()
 
     try:

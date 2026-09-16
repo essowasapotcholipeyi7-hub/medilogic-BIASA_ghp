@@ -160,6 +160,14 @@
                     <span class="menu-text">Enregistrer une charge</span>
                 </a>
 
+                <!-- ===== DEMANDES EN ATTENTE (admin ou gestionnaire) ===== -->
+                {% if session.is_admin or session.role == 'gestionnaire' %}
+                <a class="nav-link {% if request.endpoint == 'page_validations' %}active{% endif %}" href="{{ url_for('page_validations') }}">
+                    <span class="menu-text">Demandes en attente</span>
+                    <span id="navBadgeValidationsSidebar" class="badge bg-danger ms-1" style="display:none;">0</span>
+                </a>
+                {% endif %}
+
                 {% if a_acces('comptabilite') and not onglet_cache('comptabilite') and not _bloq %}
                 <a class="nav-link {% if request.path.startswith('/comptabilite') %}active{% endif %}" href="{{ url_for('comptabilite.index') }}">
                     <span class="menu-text">Comptabilité</span>

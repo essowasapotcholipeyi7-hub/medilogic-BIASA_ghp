@@ -237,11 +237,10 @@
                             <td>{{ d.created_by_nom or '-' }}</td>
                             <td>
                                 {% if d.motif == 'abonnement_ssoftonev10' %}
-                                <button type="button" class="btn btn-sm btn-success"
-                                        title="Envoyer le reçu par WhatsApp"
-                                        onclick="envoyerRecuWhatsApp('{{ d.date_depense.strftime('%Y-%m-%d') if d.date_depense else '' }}', {{ d.montant|round(0)|int }})">
-                                    <i class="fab fa-whatsapp"></i>
-                                </button>
+                                <a href="{{ url_for('recu_abonnement', depense_id=d.id) }}" target="_blank"
+                                   class="btn btn-sm btn-success" title="Voir le reçu (PDF / WhatsApp)">
+                                    <i class="fas fa-receipt"></i>
+                                </a>
                                 {% else %}
                                 -
                                 {% endif %}
@@ -493,6 +492,30 @@
                         <label class="form-label">Précisez le motif</label>
                         <input type="text" class="form-control" id="depenseMotifPersonnalise" placeholder="Ex: Achat de matériel, Formation, etc...">
                     </div>
+
+                    <div id="justificatifPaiementDiv" style="display:none;">
+                        <div class="alert alert-info py-2">
+                            <i class="fas fa-mobile-screen-button"></i>
+                            Justificatif du paiement mobile money — obligatoire pour l'abonnement.
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Moyen de paiement *</label>
+                            <select class="form-control" id="depenseMoyenPaiement">
+                                <option value="">-- Choisir --</option>
+                                <option value="mixx">Mixx by Yas</option>
+                                <option value="moov">Moov Money</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Référence de paiement *</label>
+                            <input type="text" class="form-control" id="depenseReferencePaiement" placeholder="Ex: référence de la transaction">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Date du paiement *</label>
+                            <input type="date" class="form-control" id="depenseDatePaiement">
+                        </div>
+                    </div>
+
                     <div class="mb-3">
                         <label class="form-label">Description (optionnel)</label>
                         <textarea class="form-control" id="depenseDescription" rows="2"></textarea>
@@ -549,6 +572,7 @@ function toggleMotifPersonnalise() {
     const motif = document.getElementById('depenseMotif').value;
     const div = document.getElementById('motifPersonnaliseDiv');
     div.style.display = motif === 'autres' ? 'block' : 'none';
+    document.getElementById('justificatifPaiementDiv').style.display = motif === 'abonnement_ssoftonev10' ? 'block' : 'none';
 
     const montantInput = document.getElementById('depenseMontant');
     const aide = document.getElementById('depenseMontantAide');
@@ -582,14 +606,27 @@ function saveDepense() {
     
     const motif = document.getElementById('depenseMotif').value;
     const motifPersonnalise = document.getElementById('depenseMotifPersonnalise').value;
-    
+
     const data = {
         montant: parseFloat(montant),
         motif: motif,
         motif_personnalise: motif === 'autres' ? motifPersonnalise : '',
         description: document.getElementById('depenseDescription').value
     };
-    
+
+    if (motif === 'abonnement_ssoftonev10') {
+        const moyen = document.getElementById('depenseMoyenPaiement').value;
+        const reference = document.getElementById('depenseReferencePaiement').value.trim();
+        const datePaiement = document.getElementById('depenseDatePaiement').value;
+        if (!moyen || !reference || !datePaiement) {
+            alert('Le moyen de paiement, la référence et la date du paiement sont obligatoires pour l\'abonnement.');
+            return;
+        }
+        data.moyen_paiement = moyen;
+        data.reference_paiement = reference;
+        data.date_paiement = datePaiement;
+    }
+
     showLoader('Enregistrement...');
     
     fetch('/api/finances/depenses', {
@@ -610,17 +647,6 @@ function saveDepense() {
         }
     })
     .catch(() => { hideLoader(); alert('❌ Erreur'); });
-}
-
-// ⭐ Reçu WhatsApp d'une charge d'abonnement — même pattern que
-// templates/patients.html (window.open sur wa.me avec un texte pré-rempli).
-function envoyerRecuWhatsApp(dateDepense, montant) {
-    const structureNom = "{{ session.structure_nom|default('la structure', true) }}";
-    const message = `Reçu de paiement — Abonnement SSoftOneV10\n` +
-        `Structure : ${structureNom}\n` +
-        `Montant : ${montant.toLocaleString('fr-FR')} FCFA\n` +
-        `Date : ${dateDepense}`;
-    window.open(`https://wa.me/22893850013?text=${encodeURIComponent(message)}`, '_blank');
 }
 
 function filtrerDepenses() {

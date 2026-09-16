@@ -1800,7 +1800,7 @@
                 </button>
             </div>
             
-            {% if session.is_admin %}
+            {% if session.is_admin or session.role == 'gestionnaire' %}
             <!-- ⭐ Cloche de notification : demandes en attente de validation
                  (annulation vente, dépense, encaissement assurance). Compteur
                  rafraîchi par actualiserBadgeValidations() (voir plus bas) —
@@ -1950,8 +1950,9 @@
                     Statistiques des ventes
                 </a>
                 {% endif %}
-                <!-- Demandes en attente : jamais masqué, c'est là qu'on valide sa propre charge d'abonnement -->
-                {% if session.is_admin %}
+                <!-- Demandes en attente : jamais masqué, c'est là qu'on valide sa propre charge d'abonnement.
+                     Visible aussi au gestionnaire — il peut valider à la place de l'admin (voir plan de session). -->
+                {% if session.is_admin or session.role == 'gestionnaire' %}
                 <a class="menu-item" href="{{ url_for('page_validations') }}">
                     Demandes en attente
                     <span id="navBadgeValidations" class="badge bg-danger ms-1" style="display:none;">0</span>
@@ -2484,6 +2485,15 @@ function actualiserBadgeValidations() {
                     menuBadge.style.display = 'inline-block';
                 } else {
                     menuBadge.style.display = 'none';
+                }
+            }
+            const sidebarBadge = document.getElementById('navBadgeValidationsSidebar');
+            if (sidebarBadge) {
+                if (count > 0) {
+                    sidebarBadge.innerText = count;
+                    sidebarBadge.style.display = 'inline-block';
+                } else {
+                    sidebarBadge.style.display = 'none';
                 }
             }
             const bellBadge = document.getElementById('navBellBadge');

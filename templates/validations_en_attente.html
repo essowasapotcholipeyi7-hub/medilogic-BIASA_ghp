@@ -15,6 +15,11 @@
                     Toute demande d'annulation de vente, de dépense ou d'encaissement de facture
                     d'assurance — la vôtre comprise — attend ici votre validation. Rien n'est
                     appliqué (caisse, comptabilité) tant que vous n'avez pas validé.
+                    {% if not session.is_admin %}
+                    <br><span class="badge bg-info text-dark">Rôle gestionnaire</span>
+                    Vous validez ici à la place de l'administrateur — chaque action reste
+                    enregistrée à votre nom, visible par lui dans l'onglet « Validées ».
+                    {% endif %}
                 </p>
 
                 <ul class="nav nav-tabs mb-3" id="statutTabs">
@@ -133,6 +138,11 @@ function validerDemande(id) {
         .then(data => {
             if (data.success) {
                 alert('✅ ' + data.message);
+                // ⭐ Abonnement SSoftOneV10 validé : ouvre tout de suite le
+                // reçu (PDF + WhatsApp), avant même de revenir sur la liste.
+                if (data.recu && data.recu.depense_id) {
+                    window.open(`/finances/depenses/${data.recu.depense_id}/recu?auto=1`, '_blank');
+                }
                 chargerDemandes();
             } else {
                 alert('❌ Erreur : ' + data.error);

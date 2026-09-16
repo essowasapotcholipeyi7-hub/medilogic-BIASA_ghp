@@ -1843,6 +1843,12 @@ class Depense(db.Model):
     # (SUM(depenses.montant), utilisé tel quel à de nombreux endroits) avec
     # un montant qui n'est pas encore réellement sorti de la caisse.
     fournisseur_id = db.Column(db.Integer, db.ForeignKey('fournisseurs.id'), nullable=True)
+    # ⭐ Justificatif de paiement mobile money — obligatoire pour la charge
+    # "Abonnement SSoftOneV10" (voir api_add_depense), laissé vide pour les
+    # autres motifs. moyen_paiement: 'mixx' | 'moov'.
+    moyen_paiement = db.Column(db.String(20))
+    reference_paiement = db.Column(db.String(100))
+    date_paiement = db.Column(db.Date)
 
 
 class Fournisseur(db.Model):
