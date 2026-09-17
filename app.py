@@ -12241,6 +12241,53 @@ def api_toggle_assurance_hospitalisation(hospit_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/hospitalisation/<int:hospit_id>/date_entree', methods=['POST'])
+@login_required
+def api_modifier_date_entree_hospitalisation(hospit_id):
+    """Corrige la date d'entrée — uniquement tant que le séjour est en
+    cours (pas encore clôturé) : une fois la sortie enregistrée, le nombre
+    de jours facturés et l'éventuelle répartition par palier en dépendent
+    déjà, la changer après coup romprait cette cohérence."""
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        hospit = Hospitalisation.query.filter_by(id=hospit_id, structure_id=structure_id).first()
+        if not hospit:
+            return jsonify({'success': False, 'error': 'Séjour introuvable'}), 404
+        if hospit.statut != 'en_cours':
+            return jsonify({'success': False, 'error': "La date d'entrée n'est modifiable que tant que le séjour est en cours (pas encore clôturé)."}), 400
+
+        date_str = data.get('date_entree')
+        if not date_str:
+            return jsonify({'success': False, 'error': "Date d'entrée requise"}), 400
+        try:
+            nouvelle_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Date invalide'}), 400
+
+        if nouvelle_date > date.today():
+            return jsonify({'success': False, 'error': "La date d'entrée ne peut pas être dans le futur."}), 400
+
+        # ⭐ Un soin déjà enregistré fait foi : impossible de faire remonter
+        # l'entrée après une date où un soin est déjà daté (incohérent —
+        # soigné avant d'être officiellement admis).
+        premier_soin = SoinHospitalisation.query.filter_by(hospitalisation_id=hospit_id)\
+            .order_by(SoinHospitalisation.date_prestation.asc()).first()
+        if premier_soin and nouvelle_date > premier_soin.date_prestation:
+            return jsonify({
+                'success': False,
+                'error': f"Impossible : un soin est déjà enregistré le {premier_soin.date_prestation.strftime('%d/%m/%Y')}, "
+                         f"avant cette nouvelle date d'entrée."
+            }), 400
+
+        hospit.date_entree = nouvelle_date
+        db.session.commit()
+        return jsonify({'success': True, 'date_entree': nouvelle_date.isoformat(), 'nombre_jours': hospit.nombre_jours})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/hospitalisation/<int:hospit_id>/soins', methods=['POST'])
 @login_required
 def api_ajouter_soin_hospitalisation(hospit_id):
@@ -12271,11 +12318,22 @@ def api_ajouter_soin_hospitalisation(hospit_id):
         if not nom or quantite <= 0:
             return jsonify({'success': False, 'error': 'Nom et quantité requis'}), 400
 
+        # ⭐ La date de prestation est désormais OBLIGATOIRE — elle se
+        # remplissait avant silencieusement à la date du jour si omise, ce
+        # qui pouvait enregistrer un soin à la mauvaise date sans que
+        # personne s'en rende compte (signalé). Le caissier/soignant doit
+        # la choisir explicitement à chaque ajout (repli côté client sur
+        # aujourd'hui possible, mais jamais automatique/invisible ici).
         date_prestation_str = data.get('date_prestation')
+        if not date_prestation_str:
+            return jsonify({'success': False, 'error': 'Date de prestation requise'}), 400
         try:
-            date_prestation = datetime.strptime(date_prestation_str, '%Y-%m-%d').date() if date_prestation_str else date.today()
+            date_prestation = datetime.strptime(date_prestation_str, '%Y-%m-%d').date()
         except ValueError:
             return jsonify({'success': False, 'error': 'Date invalide'}), 400
+
+        if hospit.date_entree and date_prestation < hospit.date_entree:
+            return jsonify({'success': False, 'error': "La date du soin ne peut pas précéder la date d'entrée du séjour."}), 400
 
         heure_prestation = None
         heure_str = data.get('heure_prestation')

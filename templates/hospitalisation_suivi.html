@@ -57,8 +57,26 @@
     <div class="col-md-3">
         <div class="card text-center h-100">
             <div class="card-body">
-                <div class="text-muted small">Entrée</div>
-                <div class="fw-bold">{{ hospit.date_entree.strftime('%d/%m/%Y') if hospit.date_entree else '-' }}</div>
+                <div class="text-muted small">
+                    Entrée
+                    {% if hospit.statut == 'en_cours' %}
+                    <button class="btn btn-sm btn-link p-0 ms-1" onclick="modifierDateEntree()" title="Modifier la date d'entrée">
+                        <i class="fas fa-pen"></i>
+                    </button>
+                    {% endif %}
+                </div>
+                <div class="fw-bold" id="dateEntreeAffichee">{{ hospit.date_entree.strftime('%d/%m/%Y') if hospit.date_entree else '-' }}</div>
+                {% if hospit.statut == 'en_cours' %}
+                <div class="mt-1" id="dateEntreeEditBloc" style="display:none;">
+                    <input type="date" class="form-control form-control-sm" id="dateEntreeInput" value="{{ hospit.date_entree.strftime('%Y-%m-%d') if hospit.date_entree else '' }}">
+                    <div class="mt-1 d-flex gap-1 justify-content-center">
+                        <button class="btn btn-sm btn-success" onclick="enregistrerDateEntree()"><i class="fas fa-check"></i></button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('dateEntreeEditBloc').style.display='none'; document.getElementById('dateEntreeAffichee').style.display='';">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -234,8 +252,8 @@
                         <input type="number" min="1" value="1" class="form-control" id="acteQuantite">
                     </div>
                     <div class="col-4">
-                        <label class="form-label small mb-0">Date</label>
-                        <input type="date" class="form-control" id="acteDate">
+                        <label class="form-label small mb-0">Date <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control" id="acteDate" required>
                     </div>
                     <div class="col-4">
                         <label class="form-label small mb-0">Heure</label>
@@ -268,8 +286,8 @@
                         <input type="number" min="1" value="1" class="form-control" id="produitQuantite">
                     </div>
                     <div class="col-4">
-                        <label class="form-label small mb-0">Date</label>
-                        <input type="date" class="form-control" id="produitDate">
+                        <label class="form-label small mb-0">Date <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control" id="produitDate" required>
                     </div>
                     <div class="col-4">
                         <label class="form-label small mb-0">Heure</label>
@@ -352,8 +370,14 @@ let acteChoisi = null;
 let produitChoisi = null;
 let debounceActe = null;
 
-document.getElementById('acteDate') && (document.getElementById('acteDate').value = new Date().toISOString().slice(0,10));
-document.getElementById('produitDate') && (document.getElementById('produitDate').value = new Date().toISOString().slice(0,10));
+// ⭐ Champ Date volontairement laissé vide au chargement — il se
+// pré-remplissait avant à la date du jour, ce qui pouvait faire enregistrer
+// un soin à la mauvaise date sans que personne y prête attention (signalé).
+// Obligatoire (attribut required + vérif ci-dessous), à choisir à chaque
+// ajout ; limité au maximum à aujourd'hui, pas de saisie dans le futur.
+const AUJOURD_HUI = new Date().toISOString().slice(0, 10);
+document.getElementById('acteDate') && (document.getElementById('acteDate').max = AUJOURD_HUI);
+document.getElementById('produitDate') && (document.getElementById('produitDate').max = AUJOURD_HUI);
 
 // ===================== RECHERCHE ACTES =====================
 document.getElementById('acteSearch')?.addEventListener('input', function() {
@@ -474,6 +498,15 @@ function ajouterSoin(type, confirmerDoublon) {
     const choix = type === 'acte' ? acteChoisi : produitChoisi;
     if (!choix) { alert('Choisissez d\'abord un article dans la liste.'); return; }
 
+    // ⭐ Date obligatoire — le bouton n'est pas dans un <form>, donc l'attribut
+    // HTML "required" seul ne bloque rien ici : vérification explicite.
+    const dateEl = document.getElementById(type === 'acte' ? 'acteDate' : 'produitDate');
+    if (!dateEl.value) {
+        alert('Indiquez la date à laquelle ce soin a été réellement administré.');
+        dateEl.focus();
+        return;
+    }
+
     if (type === 'medicament' && choix.date_peremption) {
         const perempDate = new Date(choix.date_peremption);
         const joursRestants = Math.ceil((perempDate - new Date()) / (1000 * 60 * 60 * 24));
@@ -525,6 +558,30 @@ function supprimerSoin(soinId) {
     fetch(`/api/hospitalisation/${HOSPIT_ID}/soins/${soinId}`, { method: 'DELETE' })
         .then(r => r.json())
         .then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+}
+
+// ===================== MODIFIER LA DATE D'ENTRÉE (tant qu'en cours) =====================
+function modifierDateEntree() {
+    document.getElementById('dateEntreeAffichee').style.display = 'none';
+    document.getElementById('dateEntreeEditBloc').style.display = '';
+}
+
+function enregistrerDateEntree() {
+    const valeur = document.getElementById('dateEntreeInput').value;
+    if (!valeur) { alert("Choisissez une date d'entrée."); return; }
+    fetch(`/api/hospitalisation/${HOSPIT_ID}/date_entree`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date_entree: valeur })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            window.location.reload();
+        } else {
+            alert('Erreur : ' + (data.error || 'inconnue'));
+        }
+    })
+    .catch(e => alert('Erreur : ' + e));
 }
 
 // ===================== TOGGLE ASSURANCE (AMU / CAC) DU SÉJOUR =====================
