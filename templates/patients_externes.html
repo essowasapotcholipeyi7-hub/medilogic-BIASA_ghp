@@ -28,6 +28,12 @@
         <span><i class="fas fa-list me-1"></i> Patients externes enregistrés</span>
         <span id="totalPatientsExternes" class="badge bg-light text-dark">0</span>
     </div>
+    <div class="card-body border-bottom py-2">
+        <div class="input-group input-group-sm" style="max-width: 380px;">
+            <span class="input-group-text bg-white"><i class="fas fa-search"></i></span>
+            <input type="text" class="form-control" id="recherchePatientsExternes" placeholder="Rechercher un patient, un prescripteur..." oninput="filtrerPatientsExternes()">
+        </div>
+    </div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
@@ -321,12 +327,25 @@ function badgePaiementPx(statut, motif) {
     return `<span class="badge bg-warning text-dark" title="${titre}">${label}</span>`;
 }
 
+let TOUS_PATIENTS_EXTERNES = [];
+
 function chargerPatientsExternes() {
     fetch('/api/patients-externes').then(r => r.json()).then(lignes => {
+        TOUS_PATIENTS_EXTERNES = lignes;
+        filtrerPatientsExternes();
+    });
+}
+
+function filtrerPatientsExternes() {
+    const q = (document.getElementById('recherchePatientsExternes').value || '').trim().toLowerCase();
+    const lignes = !q ? TOUS_PATIENTS_EXTERNES : TOUS_PATIENTS_EXTERNES.filter(f =>
+        (f.patient_nom || '').toLowerCase().includes(q) || (f.prescripteur_nom || '').toLowerCase().includes(q)
+    );
+    {
         document.getElementById('totalPatientsExternes').textContent = lignes.length;
         const corps = document.getElementById('corpsPatientsExternes');
         if (!lignes.length) {
-            corps.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Aucun patient externe enregistré.</td></tr>';
+            corps.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Aucun patient externe.</td></tr>';
             return;
         }
         corps.innerHTML = lignes.map(f => {
@@ -345,7 +364,7 @@ function chargerPatientsExternes() {
                     <td class="text-end"><button class="btn btn-sm btn-outline-danger" onclick="retirerPatientExterne(${f.id})" title="Retirer"><i class="fas fa-trash"></i></button></td>
                 </tr>`;
         }).join('');
-    });
+    }
 }
 
 document.addEventListener('click', function(e) {

@@ -236,6 +236,16 @@
                     </button>
                 </li>
                 {% endif %}
+                <!-- ⭐ Code d'accès au portail résultats (voir /portail-patient) —
+                     jusqu'ici uniquement visible depuis /resultats-analyses UNE
+                     FOIS un résultat déjà saisi, ce qui le rendait introuvable
+                     pour le donner au patient à l'avance (signalé). Onglet dédié
+                     ici : accessible pour n'importe quel patient, à tout moment. -->
+                <li class="nav-item">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#detailTabPortail" type="button" onclick="chargerCodePortailPatient()">
+                        <i class="fas fa-key"></i> Portail résultats
+                    </button>
+                </li>
             </ul>
             <div class="modal-body tab-content">
                 <div class="tab-pane fade show active" id="detailTabInfos">
@@ -251,6 +261,18 @@
                     <div class="text-center text-muted py-4">Chargement...</div>
                 </div>
                 {% endif %}
+                <div class="tab-pane fade" id="detailTabPortail">
+                    <div class="p-3">
+                        <p class="text-muted small">
+                            Ce code, avec le numéro de téléphone du patient, lui donne accès à
+                            <a href="{{ url_for('page_portail_patient') }}" target="_blank">son portail résultats</a>
+                            pour télécharger/imprimer ses résultats disponibles et voir son prochain rendez-vous.
+                        </p>
+                        <div id="portailCodeZone" class="text-center py-3">
+                            <div class="text-muted">Chargement...</div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
@@ -1437,6 +1459,50 @@ function chargerRendezVousPatient() {
             `;
         })
         .catch(() => { zone.innerHTML = '<div class="text-center text-danger py-4">Erreur de chargement</div>'; });
+}
+
+// ⭐ Code d'accès au portail résultats (voir /portail-patient, app.py) —
+// affiche le code existant, ou propose de le générer s'il n'y en a pas
+// encore (jusqu'ici un code n'apparaissait qu'après un premier résultat
+// saisi, introuvable pour le préparer à l'avance — signalé).
+function chargerCodePortailPatient() {
+    if (!detailPatientId) return;
+    const zone = document.getElementById('portailCodeZone');
+    zone.innerHTML = '<div class="text-muted">Chargement...</div>';
+    fetch(`/api/patients/${detailPatientId}/code-portail`)
+        .then(r => r.json())
+        .then(d => { afficherCodePortailPatient(d.code_acces); })
+        .catch(() => { zone.innerHTML = '<div class="text-center text-danger py-4">Erreur de chargement</div>'; });
+}
+
+function afficherCodePortailPatient(code) {
+    const zone = document.getElementById('portailCodeZone');
+    if (code) {
+        zone.innerHTML = `
+            <div class="fs-3 fw-bold mb-2" style="letter-spacing:3px; font-family:monospace;">${code}</div>
+            <button class="btn btn-sm btn-outline-secondary" onclick="regenererCodePortailPatient()">
+                <i class="fas fa-sync-alt me-1"></i> Régénérer (invalide l'ancien code)
+            </button>`;
+    } else {
+        zone.innerHTML = `
+            <p class="text-muted">Aucun code généré pour ce patient pour le moment.</p>
+            <button class="btn btn-primary" onclick="genererCodePortailPatient()">
+                <i class="fas fa-key me-1"></i> Générer un code d'accès
+            </button>`;
+    }
+}
+
+function genererCodePortailPatient() {
+    fetch(`/api/patients/${detailPatientId}/generer-code-portail`, { method: 'POST' })
+        .then(r => r.json())
+        .then(d => { if (d.success) afficherCodePortailPatient(d.code_acces); else alert('Erreur : ' + (d.error || 'inconnue')); });
+}
+
+function regenererCodePortailPatient() {
+    if (!confirm("Régénérer le code ? L'ancien code ne fonctionnera plus.")) return;
+    fetch(`/api/patients/${detailPatientId}/regenerer-code-portail`, { method: 'POST' })
+        .then(r => r.json())
+        .then(d => { if (d.success) afficherCodePortailPatient(d.code_acces); else alert('Erreur : ' + (d.error || 'inconnue')); });
 }
 
 function selectionnerDepuisDetails() {

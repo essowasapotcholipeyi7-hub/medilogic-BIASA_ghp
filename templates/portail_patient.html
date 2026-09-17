@@ -11,28 +11,74 @@
                 <i class="fas fa-file-medical me-2"></i><strong>Accéder à mes résultats</strong>
             </div>
             <div class="card-body">
-                <p class="text-muted small">
-                    Le code d'accès vous a été communiqué par la clinique. Renseignez le numéro de téléphone
-                    enregistré dans votre dossier ainsi que ce code.
-                </p>
-                <div class="mb-3">
-                    <label class="form-label">Numéro de téléphone</label>
-                    <input type="text" class="form-control" id="ppTelephone" placeholder="Ex. 90112233">
+                <ul class="nav nav-pills nav-fill mb-3" id="ppModeTabs">
+                    <li class="nav-item">
+                        <button type="button" class="nav-link active" id="ppOngletCode" onclick="basculerMode('code')">
+                            <i class="fas fa-key me-1"></i> Code d'accès
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button type="button" class="nav-link" id="ppOngletPin" onclick="basculerMode('pin')">
+                            <i class="fas fa-fingerprint me-1"></i> Code rapide
+                        </button>
+                    </li>
+                </ul>
+
+                <div id="ppBlocCode">
+                    <p class="text-muted small">
+                        Le code d'accès vous a été communiqué par la clinique. Renseignez le numéro de téléphone
+                        enregistré dans votre dossier ainsi que ce code.
+                    </p>
+                    <form id="ppFormCode" autocomplete="on" onsubmit="event.preventDefault(); verifierAcces();">
+                        <div class="mb-3">
+                            <label class="form-label">Numéro de téléphone</label>
+                            <input type="text" class="form-control" id="ppTelephone" placeholder="Ex. 90112233" autocomplete="username">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Code d'accès</label>
+                            <input type="text" class="form-control text-uppercase" id="ppCode" placeholder="8 caractères" maxlength="8" style="letter-spacing:2px;" autocomplete="off">
+                        </div>
+                        <div id="ppErreur" class="alert alert-danger py-2 small" style="display:none;"></div>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="fas fa-unlock me-1"></i> Voir mes résultats
+                        </button>
+                    </form>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Code d'accès</label>
-                    <input type="text" class="form-control text-uppercase" id="ppCode" placeholder="8 caractères" maxlength="8" style="letter-spacing:2px;">
+
+                <div id="ppBlocPin" style="display:none;">
+                    <p class="text-muted small">
+                        Si vous avez déjà défini un code rapide (depuis la page de vos résultats), connectez-vous
+                        directement avec lui. <span class="text-muted">Votre téléphone peut le mémoriser et vous
+                        laisser revenir avec votre empreinte ou Face ID.</span>
+                    </p>
+                    <form id="ppFormPin" autocomplete="on" onsubmit="event.preventDefault(); verifierPin();">
+                        <div class="mb-3">
+                            <label class="form-label">Numéro de téléphone</label>
+                            <input type="text" class="form-control" id="ppTelephonePin" placeholder="Ex. 90112233" autocomplete="username">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Code rapide (4 à 6 chiffres)</label>
+                            <input type="password" inputmode="numeric" class="form-control" id="ppPin" placeholder="••••" maxlength="6" autocomplete="current-password">
+                        </div>
+                        <div id="ppErreurPin" class="alert alert-danger py-2 small" style="display:none;"></div>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="fas fa-unlock me-1"></i> Voir mes résultats
+                        </button>
+                    </form>
                 </div>
-                <div id="ppErreur" class="alert alert-danger py-2 small" style="display:none;"></div>
-                <button class="btn btn-primary w-100" onclick="verifierAcces()">
-                    <i class="fas fa-unlock me-1"></i> Voir mes résultats
-                </button>
             </div>
         </div>
     </div>
 </div>
 
 <script>
+function basculerMode(mode) {
+    document.getElementById('ppOngletCode').classList.toggle('active', mode === 'code');
+    document.getElementById('ppOngletPin').classList.toggle('active', mode === 'pin');
+    document.getElementById('ppBlocCode').style.display = mode === 'code' ? '' : 'none';
+    document.getElementById('ppBlocPin').style.display = mode === 'pin' ? '' : 'none';
+}
+
 function verifierAcces() {
     const telephone = document.getElementById('ppTelephone').value.trim();
     const code = document.getElementById('ppCode').value.trim();
@@ -64,8 +110,42 @@ function verifierAcces() {
     });
 }
 
+function verifierPin() {
+    const telephone = document.getElementById('ppTelephonePin').value.trim();
+    const pin = document.getElementById('ppPin').value.trim();
+    const erreur = document.getElementById('ppErreurPin');
+    erreur.style.display = 'none';
+
+    if (!telephone || !pin) {
+        erreur.textContent = 'Renseignez le téléphone et le code rapide.';
+        erreur.style.display = 'block';
+        return;
+    }
+
+    fetch('/api/portail-patient/connexion-pin', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ telephone: telephone, pin: pin })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            window.location.href = "{{ url_for('page_portail_resultats') }}";
+        } else {
+            erreur.textContent = data.error || 'Téléphone ou code incorrect.';
+            erreur.style.display = 'block';
+        }
+    })
+    .catch(() => {
+        erreur.textContent = 'Erreur de connexion, réessayez.';
+        erreur.style.display = 'block';
+    });
+}
+
 document.getElementById('ppCode').addEventListener('keyup', function(e) {
     if (e.key === 'Enter') verifierAcces();
+});
+document.getElementById('ppPin').addEventListener('keyup', function(e) {
+    if (e.key === 'Enter') verifierPin();
 });
 </script>
 {% endblock %}

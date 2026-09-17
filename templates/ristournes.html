@@ -33,6 +33,12 @@
 
 <div class="card">
     <div class="card-header bg-dark text-white">Historique des clôtures</div>
+    <div class="card-body border-bottom py-2">
+        <div class="input-group input-group-sm" style="max-width: 380px;">
+            <span class="input-group-text bg-white"><i class="fas fa-search"></i></span>
+            <input type="text" class="form-control" id="rechercheHistorique" placeholder="Rechercher un prescripteur..." oninput="filtrerHistorique()">
+        </div>
+    </div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-sm mb-0 align-middle">
@@ -233,11 +239,22 @@ function chargerEnAttente() {
     });
 }
 
+let TOUT_HISTORIQUE = [];
+
 function chargerHistorique() {
     fetch('/api/ristournes').then(r => r.json()).then(lignes => {
+        TOUT_HISTORIQUE = lignes;
+        filtrerHistorique();
+    });
+}
+
+function filtrerHistorique() {
+    const q = (document.getElementById('rechercheHistorique').value || '').trim().toLowerCase();
+    const lignes = !q ? TOUT_HISTORIQUE : TOUT_HISTORIQUE.filter(l => (l.prescripteur_nom || '').toLowerCase().includes(q));
+    {
         const corps = document.getElementById('corpsHistorique');
         if (!lignes.length) {
-            corps.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Aucune clôture pour le moment.</td></tr>';
+            corps.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Aucune clôture.</td></tr>';
             return;
         }
         const badgeStatut = (s) => ({
@@ -263,7 +280,7 @@ function chargerHistorique() {
                     <td class="text-end">${actions}</td>
                 </tr>`;
         }).join('');
-    });
+    }
 }
 
 function chargerTout() { chargerEnAttente(); chargerHistorique(); }

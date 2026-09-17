@@ -12,14 +12,41 @@ directe (actes) et la conversion de proforma, plutôt que dupliquée.
 import secrets
 import string
 from models import db, ClassificationActe, PatientExterne, DemandeExamen, AccesPortailPatient, PeriodeRistourne, PrescripteurExterne
+from utils.categorisation import categoriser_acte
+
+# Catégorisation déjà utilisée pour la comptabilité (utils/categorisation.py,
+# COMPTE_PAR_CATEGORIE) réutilisée telle quelle ici comme classement AUTOMATIQUE
+# labo/radio — demande explicite : "il y a un fichier qui catégorise déjà les
+# actes... tu le fais exactement comme ça". 'classification_actes' (saisie
+# manuelle, page /classification-actes) reste prioritaire et ne sert plus
+# que pour les cas exceptionnels (acte sans code standard, ou qu'on veut
+# forcer dans un sens différent de la catégorie comptable).
+_CATEGORIE_VERS_TYPE_PRESTATION = {
+    'laboratoire': 'analyse',
+    'imagerie': 'examen',
+}
 
 
 def charger_classification_actes(structure_id):
-    """{nom_acte: 'analyse'|'examen'} pour cette structure — vide tant que
-    rien n'a été classé (voir /classification-actes), zéro régression :
-    un acte absent d'ici ne génère jamais de demande."""
+    """{nom_acte: 'analyse'|'examen'} — exceptions saisies manuellement
+    (voir /classification-actes) uniquement. La classification automatique
+    (via categoriser_acte, la même que la comptabilité) est appliquée en
+    repli dans determiner_type_prestation(), pas ici."""
     lignes = ClassificationActe.query.filter_by(structure_id=structure_id).all()
     return {l.nom_acte: l.type_prestation for l in lignes}
+
+
+def determiner_type_prestation(nom_acte, classification_manuelle):
+    """'analyse' | 'examen' | None pour cet acte : priorité à une exception
+    manuelle (classification_manuelle, /classification-actes) ; sinon
+    classement automatique via categoriser_acte() — le même fichier qui sert
+    déjà à orienter les écritures comptables (codes R1xx-R919 = laboratoire,
+    Q1xx-Q510 = imagerie). None si l'acte n'est ni l'un ni l'autre (ex.
+    consultation, pharmacie) — aucune demande n'est créée dans ce cas."""
+    if nom_acte in classification_manuelle:
+        return classification_manuelle[nom_acte]
+    categorie = categoriser_acte(nom_acte).get('categorie')
+    return _CATEGORIE_VERS_TYPE_PRESTATION.get(categorie)
 
 
 def statut_paiement_depuis_montants(net_a_payer, reste_a_payer):
@@ -44,12 +71,14 @@ def creer_demandes_pour_vente(structure_id, patient_id, patient_nom, articles,
     cette filière (biologie/imagerie), la demande est rattachée à son
     prescripteur (patient_externe_id) pour la ristourne.
 
-    Ne fait RIEN (retourne []) tant qu'aucune classification n'a été
-    saisie pour la structure — comportement inchangé pour une structure
-    qui n'utilise pas ce module."""
-    classification = charger_classification_actes(structure_id)
-    if not classification or not articles:
+    Classement automatique (via categoriser_acte, cf. utils/categorisation.py
+    — même logique que la comptabilité) sauf exception saisie manuellement
+    dans /classification-actes. Ne fait RIEN (retourne []) si la vente ne
+    contient aucun article, ou si aucun de ses articles n'est un acte de
+    labo/radio (ex. vente 100% pharmacie)."""
+    if not articles:
         return []
+    classification = charger_classification_actes(structure_id)
 
     fiche_externe = PatientExterne.query.filter_by(
         structure_id=structure_id, patient_id=patient_id, actif=True
@@ -58,7 +87,7 @@ def creer_demandes_pour_vente(structure_id, patient_id, patient_nom, articles,
     demandes = []
     for a in articles:
         nom = a.get('nom')
-        type_prestation = classification.get(nom)
+        type_prestation = determiner_type_prestation(nom, classification)
         if not type_prestation:
             continue
 

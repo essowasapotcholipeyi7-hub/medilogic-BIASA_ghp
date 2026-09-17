@@ -8321,9 +8321,10 @@ def api_add_acte_vente():
         print(f"✅ Vente actes enregistrée dans Neon avec ID: {vente_id}")
 
         # ⭐ Circuit Laboratoire/Radiologie : génère automatiquement une
-        # demande pour chaque acte classé analyse/examen (ClassificationActe)
-        # — ne fait rien tant que rien n'a été classé (voir
-        # creer_demandes_pour_vente, services/laboratoire_service.py).
+        # demande pour chaque acte classé analyse/examen — classement
+        # automatique via categoriser_acte() (comptabilité, codes R/Q) sauf
+        # exception saisie manuellement dans /classification-actes (voir
+        # determiner_type_prestation, services/laboratoire_service.py).
         try:
             statut_paiement = statut_paiement_depuis_montants(data.get('net_a_payer'), reste_a_payer)
             creer_demandes_pour_vente(
@@ -9447,6 +9448,20 @@ def page_imprimer_resultat(resultat_id):
     return render_template('resultat_imprimer.html', resultat=resultat, demande=demande, structure=structure_info)
 
 
+@app.route('/api/patients/<int:patient_id>/generer-code-portail', methods=['POST'])
+@login_required
+def api_generer_code_portail(patient_id):
+    """Get-or-create — JAMAIS destructif (contrairement à regenerer_code_acces
+    ci-dessous) : crée un code si ce patient n'en a pas encore, pour le lui
+    donner à l'avance (avant même qu'un résultat ne soit disponible)."""
+    try:
+        structure_id = session.get('structure_id')
+        acces = obtenir_ou_creer_code_acces(structure_id, patient_id, session.get('user_name', 'System'))
+        return jsonify({'success': True, 'code_acces': acces.code_acces})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/patients/<int:patient_id>/regenerer-code-portail', methods=['POST'])
 @login_required
 def api_regenerer_code_portail(patient_id):
@@ -9506,6 +9521,62 @@ def api_verifier_portail_patient():
         # connecté à son propre dossier tant qu'il ne ferme pas l'onglet.
         session['portail_patient_id'] = acces.patient_id
         session['portail_structure_id'] = acces.structure_id
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/portail-patient/connexion-pin', methods=['POST'])
+def api_connexion_pin_portail_patient():
+    """Connexion rapide (après une 1ère connexion classique) : téléphone +
+    code PIN choisi par le patient — voir le commentaire sur
+    AccesPortailPatient.pin_hash (models.py) pour pourquoi ça vaut aussi
+    pour "empreinte/Face ID" côté téléphone du patient."""
+    try:
+        data = request.json or {}
+        telephone = (data.get('telephone') or '').strip()
+        pin = (data.get('pin') or '').strip()
+        if not telephone or not pin:
+            return jsonify({'success': False, 'error': 'Téléphone et code requis'}), 400
+
+        lignes = db.execute_query("""
+            SELECT a.id, a.patient_id, a.structure_id, a.pin_hash
+            FROM acces_portail_patients a
+            JOIN patients p ON p.id = a.patient_id
+            WHERE p.telephone = %s AND a.pin_hash IS NOT NULL
+        """, (telephone,))
+        pin_hash = hash_password(pin)
+        for ligne in (lignes or []):
+            if ligne['pin_hash'] == pin_hash:
+                session['portail_patient_id'] = ligne['patient_id']
+                session['portail_structure_id'] = ligne['structure_id']
+                return jsonify({'success': True})
+        return jsonify({'success': False, 'error': 'Téléphone ou code incorrect'}), 401
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/portail-patient/definir-pin', methods=['POST'])
+def api_definir_pin_portail_patient():
+    """Le patient, déjà connecté (session portail), choisit son code
+    rapide à 4-6 chiffres pour les prochaines fois — jamais à la toute
+    première connexion (qui reste obligatoirement téléphone+code_acces)."""
+    patient_id = session.get('portail_patient_id')
+    structure_id = session.get('portail_structure_id')
+    if not patient_id:
+        return jsonify({'success': False, 'error': 'Non authentifié'}), 401
+    try:
+        data = request.json or {}
+        pin = (data.get('pin') or '').strip()
+        if not pin.isdigit() or not (4 <= len(pin) <= 6):
+            return jsonify({'success': False, 'error': 'Le code doit contenir 4 à 6 chiffres'}), 400
+
+        acces = AccesPortailPatient.query.filter_by(structure_id=structure_id, patient_id=patient_id).first()
+        if not acces:
+            return jsonify({'success': False, 'error': 'Accès introuvable'}), 404
+        acces.pin_hash = hash_password(pin)
+        acces.pin_defini_le = datetime.utcnow()
+        db.session.commit()
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

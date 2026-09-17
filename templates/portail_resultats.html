@@ -24,10 +24,60 @@
                 <div class="text-center text-muted py-4">Chargement...</div>
             </div>
         </div>
+
+        <div class="card mt-3" id="ppCartePin">
+            <div class="card-header bg-light">
+                <i class="fas fa-fingerprint me-1"></i> Connexion rapide (empreinte / Face ID)
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-2">
+                    Définissez un code à 4-6 chiffres pour ne plus ressaisir le code d'accès la prochaine fois.
+                    Si votre téléphone propose de le mémoriser, il pourra ensuite vous laisser revenir avec votre
+                    empreinte ou Face ID au lieu de le taper.
+                </p>
+                <form id="ppFormDefinirPin" autocomplete="on" onsubmit="event.preventDefault(); definirPin();" class="row g-2 align-items-end">
+                    <div class="col-8 col-sm-6">
+                        <label class="form-label mb-1 small">Nouveau code rapide</label>
+                        <input type="password" inputmode="numeric" class="form-control" id="ppNouveauPin" placeholder="4 à 6 chiffres" maxlength="6" autocomplete="new-password">
+                    </div>
+                    <div class="col-4 col-sm-6">
+                        <button type="submit" class="btn btn-success w-100"><i class="fas fa-check me-1"></i> Enregistrer</button>
+                    </div>
+                </form>
+                <div id="ppPinMsg" class="small mt-2"></div>
+            </div>
+        </div>
     </div>
 </div>
 
 <script>
+function definirPin() {
+    const pin = document.getElementById('ppNouveauPin').value.trim();
+    const msg = document.getElementById('ppPinMsg');
+    msg.className = 'small mt-2';
+    if (!/^\d{4,6}$/.test(pin)) {
+        msg.textContent = 'Le code doit contenir 4 à 6 chiffres.';
+        msg.classList.add('text-danger');
+        return;
+    }
+    fetch('/api/portail-patient/definir-pin', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: pin })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            msg.textContent = 'Code rapide enregistré — votre téléphone a peut-être proposé de le mémoriser.';
+            msg.classList.add('text-success');
+            document.getElementById('ppNouveauPin').value = '';
+        } else {
+            msg.textContent = data.error || 'Erreur, réessayez.';
+            msg.classList.add('text-danger');
+        }
+    })
+    .catch(() => { msg.textContent = 'Erreur de connexion, réessayez.'; msg.classList.add('text-danger'); });
+}
+
 fetch('/api/portail-patient/resultats').then(r => r.json()).then(data => {
     if (!data.success) { window.location.href = "{{ url_for('page_portail_patient') }}"; return; }
 

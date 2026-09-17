@@ -29,6 +29,12 @@
         <span><i class="fas fa-list me-1"></i> Demandes</span>
         <span id="totalDemandes" class="badge bg-light text-dark">0</span>
     </div>
+    <div class="card-body border-bottom py-2">
+        <div class="input-group input-group-sm" style="max-width: 380px;">
+            <span class="input-group-text bg-white"><i class="fas fa-search"></i></span>
+            <input type="text" class="form-control" id="rechercheDemandes" placeholder="Rechercher un patient, un acte, un prescripteur..." oninput="filtrerDemandes()">
+        </div>
+    </div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
@@ -68,15 +74,30 @@ function badgeStatut(statut) {
     return '<span class="badge bg-primary">En attente</span>';
 }
 
+let TOUTES_DEMANDES = [];
+
 function chargerDemandes() {
     const inclureRealisees = document.getElementById('toggleRealisees').checked ? '1' : '0';
     fetch(`/api/demandes-examens?filiere=${FILIERE}&inclure_realisees=${inclureRealisees}`)
         .then(r => r.json())
         .then(lignes => {
+            TOUTES_DEMANDES = lignes;
+            filtrerDemandes();
+        });
+}
+
+function filtrerDemandes() {
+    const q = (document.getElementById('rechercheDemandes').value || '').trim().toLowerCase();
+    const lignes = !q ? TOUTES_DEMANDES : TOUTES_DEMANDES.filter(l =>
+        (l.patient_nom || '').toLowerCase().includes(q) ||
+        (l.acte_nom || '').toLowerCase().includes(q) ||
+        (l.prescripteur_nom || '').toLowerCase().includes(q)
+    );
+    {
             document.getElementById('totalDemandes').textContent = lignes.length;
             const corps = document.getElementById('corpsDemandes');
             if (!lignes.length) {
-                corps.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Aucune demande en attente.</td></tr>';
+                corps.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Aucune demande.</td></tr>';
                 return;
             }
             corps.innerHTML = lignes.map(l => `
@@ -99,7 +120,7 @@ function chargerDemandes() {
                     </td>
                 </tr>
             `).join('');
-        });
+    }
 }
 
 function changerStatutDemande(id, statut) {

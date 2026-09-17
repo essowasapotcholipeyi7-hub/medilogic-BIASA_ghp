@@ -2459,6 +2459,22 @@ class AccesPortailPatient(db.Model):
     structure_id = db.Column(db.Integer, nullable=False)
     patient_id = db.Column(db.Integer, nullable=False)
     code_acces = db.Column(db.String(20), nullable=False, unique=True)
+    # ⭐ Code rapide (4-6 chiffres, choisi par le patient lui-même une fois
+    # connecté au moins une fois avec téléphone+code_acces) — patron :
+    # "le patient puisse mettre son code de téléphone mot de passe ou
+    # empreinte ou face id pour y accéder ... pour la première fois c'est
+    # avec numéro téléphone et code d'accès". Stocké haché (hash_password,
+    # même convention que les mots de passe du personnel) — jamais en
+    # clair. Le code_acces d'origine (donné par la clinique) reste
+    # valable indéfiniment : ce PIN est un raccourci, pas un remplacement.
+    # "Empreinte/Face ID" n'est pas une biométrie traitée côté serveur :
+    # champ <input type="password"> avec autocomplete="current-password"
+    # dans un <form> → le téléphone propose de MÉMORISER ce PIN dans son
+    # trousseau (Face ID/empreinte du téléphone déverrouille le
+    # trousseau), exactement comme pour n'importe quel site — aucune
+    # donnée biométrique ne transite jamais par ce serveur.
+    pin_hash = db.Column(db.String(255))
+    pin_defini_le = db.Column(db.DateTime)
     created_by = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

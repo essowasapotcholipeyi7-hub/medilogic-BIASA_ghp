@@ -23,6 +23,12 @@
         <span><i class="fas fa-list me-1"></i> Actes réalisés</span>
         <span id="totalResultats" class="badge bg-light text-dark">0</span>
     </div>
+    <div class="card-body border-bottom py-2">
+        <div class="input-group input-group-sm" style="max-width: 380px;">
+            <span class="input-group-text bg-white"><i class="fas fa-search"></i></span>
+            <input type="text" class="form-control" id="rechercheResultats" placeholder="Rechercher un patient, un acte, un interprète..." oninput="filtrerResultats()">
+        </div>
+    </div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
@@ -111,12 +117,27 @@ function enregistrerResultat() {
         .catch(e => alert('Erreur : ' + e));
 }
 
+let TOUS_RESULTATS = [];
+
 function chargerResultats() {
     fetch('/api/resultats-analyses').then(r => r.json()).then(lignes => {
+        TOUS_RESULTATS = lignes;
+        filtrerResultats();
+    });
+}
+
+function filtrerResultats() {
+    const q = (document.getElementById('rechercheResultats').value || '').trim().toLowerCase();
+    const lignes = !q ? TOUS_RESULTATS : TOUS_RESULTATS.filter(l =>
+        (l.patient_nom || '').toLowerCase().includes(q) ||
+        (l.acte_nom || '').toLowerCase().includes(q) ||
+        (l.nom_interprete || '').toLowerCase().includes(q)
+    );
+    {
         document.getElementById('totalResultats').textContent = lignes.length;
         const corps = document.getElementById('corpsResultats');
         if (!lignes.length) {
-            corps.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Aucun acte réalisé pour le moment.</td></tr>';
+            corps.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Aucun acte réalisé.</td></tr>';
             return;
         }
         corps.innerHTML = lignes.map(l => {
@@ -148,7 +169,7 @@ function chargerResultats() {
                     <td class="text-end">${actions}</td>
                 </tr>`;
         }).join('');
-    });
+    }
 }
 
 function afficherCodePortail(patientId, patientNom) {
