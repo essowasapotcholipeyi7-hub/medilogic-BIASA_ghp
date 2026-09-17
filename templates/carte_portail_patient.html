@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% set cacher_navigation = True %}
+
+{% block title %}Carte d'accès portail — {{ patient.nom }} {{ patient.prenom }}{% endblock %}
+
+{% block extra_css %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+    @media print {
+        @page { size: A4; margin: 12mm; }
+        .no-print { display: none !important; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card" id="carteContenu">
+            <div class="card-body text-center" style="font-family: 'Segoe UI', Arial, sans-serif;">
+
+                <div class="row" style="background: linear-gradient(135deg, #1d6fa5 0%, #0f4c75 100%); color: white; margin: -20px -20px 20px -20px; padding: 18px; border-radius: 10px 10px 0 0;">
+                    <div class="col-12 d-flex align-items-center gap-3 text-start">
+                        {% if structure.logo_url %}
+                        <img src="{{ structure.logo_url }}" alt="Logo" style="max-height: 55px; max-width: 110px; background: white; padding: 4px; border-radius: 6px;">
+                        {% endif %}
+                        <div>
+                            <h5 style="margin: 0;">{{ structure.nom or "SSoftOne v10" }}</h5>
+                            <p style="margin: 3px 0 0 0; font-size: 11px; opacity: 0.9;">Accès sécurisé à mes résultats</p>
+                        </div>
+                    </div>
+                </div>
+
+                <h5 class="mb-1">{{ patient.nom }} {{ patient.prenom }}</h5>
+                <p class="text-muted small mb-3">
+                    Scannez ce code avec votre téléphone pour accéder à vos résultats et votre prochain rendez-vous.
+                </p>
+
+                <div id="qrcode" class="d-flex justify-content-center mb-3"></div>
+
+                <div class="mb-1 small text-muted">Ou rendez-vous sur</div>
+                <div class="mb-3"><strong>{{ portail_url.replace('https://', '').replace('http://', '') }}</strong></div>
+
+                <div class="mb-1 small text-muted">et saisissez votre numéro de téléphone avec le code</div>
+                <div class="fs-3 fw-bold" style="letter-spacing:3px; font-family:monospace;">{{ acces.code_acces }}</div>
+            </div>
+        </div>
+
+        <div class="text-center mt-3 no-print">
+            <button onclick="window.print()" class="btn btn-primary btn-sm"><i class="fas fa-print"></i> Imprimer</button>
+            <a href="{{ url_for('patients') }}" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</a>
+        </div>
+    </div>
+</div>
+
+<script>
+new QRCode(document.getElementById("qrcode"), {
+    text: {{ qr_data|tojson }},
+    width: 180,
+    height: 180,
+    correctLevel: QRCode.CorrectLevel.M
+});
+</script>
+{% endblock %}

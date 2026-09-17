@@ -147,5 +147,15 @@ document.getElementById('ppCode').addEventListener('keyup', function(e) {
 document.getElementById('ppPin').addEventListener('keyup', function(e) {
     if (e.key === 'Enter') verifierPin();
 });
+
+// ⭐ Carte imprimée / QR code (carte_portail_patient.html) : le code est
+// dans l'URL scannée, seul le téléphone reste à saisir par le patient.
+(function() {
+    const code = new URLSearchParams(window.location.search).get('code');
+    if (code) {
+        document.getElementById('ppCode').value = code.toUpperCase();
+        document.getElementById('ppTelephone').focus();
+    }
+})();
 </script>
 {% endblock %}

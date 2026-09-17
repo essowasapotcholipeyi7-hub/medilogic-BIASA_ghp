@@ -1482,13 +1482,19 @@ function afficherCodePortailPatient(code) {
             <div class="fs-3 fw-bold mb-2" style="letter-spacing:3px; font-family:monospace;">${code}</div>
             <button class="btn btn-sm btn-outline-secondary" onclick="regenererCodePortailPatient()">
                 <i class="fas fa-sync-alt me-1"></i> Régénérer (invalide l'ancien code)
-            </button>`;
+            </button>
+            <a class="btn btn-sm btn-outline-primary" href="/patients/${detailPatientId}/carte-portail" target="_blank">
+                <i class="fas fa-qrcode me-1"></i> Imprimer une carte (QR code)
+            </a>`;
     } else {
         zone.innerHTML = `
             <p class="text-muted">Aucun code généré pour ce patient pour le moment.</p>
             <button class="btn btn-primary" onclick="genererCodePortailPatient()">
                 <i class="fas fa-key me-1"></i> Générer un code d'accès
-            </button>`;
+            </button>
+            <a class="btn btn-outline-primary" href="/patients/${detailPatientId}/carte-portail" target="_blank">
+                <i class="fas fa-qrcode me-1"></i> Générer et imprimer une carte
+            </a>`;
     }
 }
 

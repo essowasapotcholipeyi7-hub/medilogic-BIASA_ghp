@@ -9483,6 +9483,37 @@ def api_lire_code_portail(patient_id):
     return jsonify({'code_acces': acces.code_acces if acces else None})
 
 
+@app.route('/patients/<int:patient_id>/carte-portail')
+@login_required
+def page_carte_portail_patient(patient_id):
+    """Petite carte imprimable (code QR + code en clair) à remettre au
+    patient à l'accueil — patron : "un code qr à imprimer". Génère le
+    code d'accès à la volée s'il n'existe pas encore (même logique
+    get-or-create que api_generer_code_portail, jamais destructif)."""
+    structure_id = session.get('structure_id')
+    patient_row = db.execute_query(
+        "SELECT id, nom, prenom, telephone FROM patients WHERE id = %s AND structure_id = %s",
+        (patient_id, structure_id)
+    )
+    if not patient_row:
+        flash('Patient introuvable', 'danger')
+        return redirect(url_for('patients'))
+
+    acces = obtenir_ou_creer_code_acces(structure_id, patient_id, session.get('user_name', 'System'))
+
+    structures = sheets_helper.get_all_records('structures', use_prefix=False)
+    structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
+
+    portail_url = f"{BASE_URL}{url_for('page_portail_patient')}"
+    # ⭐ Le code dans l'URL n'est pas plus sensible que le code déjà
+    # affiché/imprimé en clair juste en dessous — le patient doit de
+    # toute façon saisir SON téléphone, que ce QR ne contient pas.
+    qr_data = f"{portail_url}?code={acces.code_acces}"
+
+    return render_template('carte_portail_patient.html', patient=patient_row[0], acces=acces,
+                            structure=structure_info, portail_url=portail_url, qr_data=qr_data)
+
+
 # ============================================================
 # PORTAIL PATIENT — accès public sécurisé (téléphone + code d'accès)
 # ============================================================
