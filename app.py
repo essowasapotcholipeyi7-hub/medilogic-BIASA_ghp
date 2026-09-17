@@ -65,6 +65,23 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
 # ⭐ Initialiser le db SQLAlchemy
 db.init_app(app)
 
+# ⭐ Domaine dédié au portail patient (ex. "resultat.tg") — patron :
+# "est-ce possible qu'on camoufle ce lien derrière un autre lien... si
+# le patient met juste medilogic-ghp.onrender.com il accède à la page
+# de connexion [du personnel]". Tant que PORTAIL_DOMAIN n'est pas
+# configuré (variable d'env Render), ce hook ne fait RIEN — zéro
+# changement de comportement. Dès qu'un domaine dédié est ajouté sur
+# Render et pointé ici, sa racine "/" sert directement le portail — le
+# domaine interne (onrender.com) garde sa page de connexion habituelle,
+# jamais mélangés.
+PORTAIL_DOMAIN = os.environ.get('PORTAIL_DOMAIN', '').strip().lower()
+
+
+@app.before_request
+def _rediriger_domaine_portail():
+    if PORTAIL_DOMAIN and request.host.split(':')[0].lower() == PORTAIL_DOMAIN and request.path == '/':
+        return redirect(url_for('page_portail_patient'))
+
 # ⭐ a_acces() (utils/permissions.py) utilisable directement dans les
 # templates Jinja — {% if a_acces('comptabilite') %} — point de vérité
 # unique partagé avec les décorateurs de routes (permission_requise) et
