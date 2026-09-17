@@ -121,6 +121,17 @@
                                         <a href="{{ url_for('proforma_print', proforma_id=p.id) }}?format=A4" target="_blank" class="btn btn-info" title="A4">
                                             <i class="fas fa-file-pdf"></i>
                                         </a>
+                                        {% if p.statut != 'converti_en_vente' %}
+                                        <!-- ⭐ Modifier/Accepter/Refuser n'ont plus de sens une
+                                             fois la proforma CONVERTIE EN VENTE — une vraie
+                                             vente existe déjà (p.vente_id), séparée en base.
+                                             Avant ce correctif, ces boutons restaient actifs et
+                                             cliquer dessus écrasait silencieusement le statut
+                                             "Convertie en vente" par "Accepté"/"Refusé" (aucune
+                                             protection côté API), faisant disparaître à tort la
+                                             trace qu'une vente a été faite — signalé par le
+                                             patron ("normalement si une vente est faite ces
+                                             deux boutons doivent disparaitre"). -->
                                         <button onclick="modifierProforma({{ p.id }})" class="btn btn-warning" title="Modifier">
                                             <i class="fas fa-edit"></i>
                                         </button>
@@ -130,7 +141,6 @@
                                         <button onclick="changerStatut({{ p.id }}, 'refuse')" class="btn btn-danger" title="Refuser">
                                             <i class="fas fa-times"></i>
                                         </button>
-                                        {% if p.statut != 'converti_en_vente' %}
                                         <button onclick="convertirEnVente({{ p.id }})" class="btn btn-primary" title="Convertir en vente">
                                             <i class="fas fa-receipt"></i> Vente
                                         </button>

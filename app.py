@@ -11509,9 +11509,24 @@ def api_changer_statut_proforma(proforma_id):
         
         if nouveau_statut not in ['en_attente', 'accepte', 'refuse', 'converti_en_vente', 'expire']:
             return jsonify({'success': False, 'error': 'Statut invalide'}), 400
-        
+
+        # ⭐ Garde-fou : une proforma déjà CONVERTIE EN VENTE a une vraie
+        # vente qui existe en base (vente_id) — changer son statut ici
+        # écraserait silencieusement cette trace ("Convertie en vente" →
+        # "Accepté"/"Refusé") sans toucher la vente elle-même, laissant le
+        # statut affiché incohérent avec la réalité. Les boutons qui
+        # appellent cette route sont maintenant masqués côté template une
+        # fois convertie (proformas.html) ; ce garde-fou protège aussi
+        # contre un appel direct à l'API (page pas rechargée, etc.).
+        actuelle = db.execute_query(
+            "SELECT statut FROM proformas WHERE id = %s AND structure_id = %s",
+            (proforma_id, structure_id)
+        )
+        if actuelle and actuelle[0].get('statut') == 'converti_en_vente':
+            return jsonify({'success': False, 'error': 'Cette proforma a déjà été convertie en vente, son statut ne peut plus être modifié.'}), 400
+
         db.execute_query("""
-            UPDATE proformas 
+            UPDATE proformas
             SET statut = %s, updated_at = NOW()
             WHERE id = %s AND structure_id = %s
         """, (nouveau_statut, proforma_id, structure_id))
@@ -11838,8 +11853,17 @@ def api_convertir_proforma():
                 'date_fin_prestation': a.get('date_fin_prestation'),
             }
 
-            # 🔥 AMU
-            if prise_amu and pbr > 0:
+            # 🔥 AMU — ET seulement si le patient a réellement une
+            # assurance AMU active sur cette proforma (est_assure). Sans ce
+            # garde-fou, un article "P160" (taux_amu_pour_article() renvoie
+            # 90% SANS regarder taux_assurance) se voyait déduire une part
+            # AMU même pour un patient NON ASSURÉ — même bug que celui
+            # trouvé et corrigé dans proforma_print(), ici sur le calcul
+            # RÉELLEMENT enregistré (pas seulement affiché) : la base CAC
+            # ci-dessous en était amputée à tort (ex. 9 733 F de part SUNU
+            # attendus, 5 232,50 F réellement enregistrés) — signalé par le
+            # patron en testant la conversion en direct.
+            if prise_amu and pbr > 0 and est_assure:
                 sous_total_amu += total
                 base_amu = min(prix, pbr) * quantite
                 pbr_total_amu += base_amu
@@ -11850,7 +11874,7 @@ def api_convertir_proforma():
 
             # 🔥 CAC article par article
             if prise_cac:
-                if prise_amu and pbr > 0:
+                if prise_amu and pbr > 0 and est_assure:
                     base_amu = min(prix, pbr) * quantite
                     prise_amu_article = (base_amu * taux_item) / 100
                     reste = total - prise_amu_article
@@ -12008,12 +12032,15 @@ def api_convertir_proforma():
             upsert_societe_assurance(structure_id, assurance2_nom, societe_assurance2)
         upsert_compagnie_complementaire(structure_id, assurance2_nom)
         
-        # Marquer la proforma comme convertie
+        # Marquer la proforma comme convertie — vente_id renseigné (jamais
+        # fait jusqu'ici : la colonne existe mais restait NULL après
+        # conversion), pour que le lien retour proforma→vente soit
+        # exploitable plus tard sans avoir à chercher par proforma_id.
         db.execute_query("""
-            UPDATE proformas 
-            SET statut = 'converti_en_vente', updated_at = NOW() 
+            UPDATE proformas
+            SET statut = 'converti_en_vente', vente_id = %s, updated_at = NOW()
             WHERE id = %s
-        """, (proforma_id,))
+        """, (vente_id, proforma_id))
         
         # 🔥 Ajouter la recette patient
         montant_effectif = montant_donne - rendu
