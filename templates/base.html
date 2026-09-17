@@ -1734,6 +1734,40 @@
     transform-origin: top center;
 }
 
+/* ⭐ Indicateur "connecté" — pulsation violette chic à côté de l'horloge,
+   voir verifierEtatSynchro() (JS) pour ce qui pilote .offline. Le halo qui
+   se dilate en s'effaçant (::after) donne l'effet "battement" plutôt qu'un
+   clignotement brut, moins fatigant à l'œil en continu toute la journée. */
+.statut-connexion-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4C2A85;
+    display: inline-block;
+    position: relative;
+    flex-shrink: 0;
+}
+.statut-connexion-dot::after {
+    content: '';
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+    border: 1.5px solid #4C2A85;
+    opacity: 0.65;
+    animation: statutConnexionPulse 1.8s ease-out infinite;
+}
+@keyframes statutConnexionPulse {
+    0%   { transform: scale(0.5); opacity: 0.65; }
+    70%  { transform: scale(1.8); opacity: 0; }
+    100% { transform: scale(1.8); opacity: 0; }
+}
+.statut-connexion-dot.hors-ligne {
+    background: #9AA3AB;
+}
+.statut-connexion-dot.hors-ligne::after {
+    display: none;
+}
+
     </style>
     {% block extra_css %}{% endblock %}
 </head>
@@ -1774,14 +1808,21 @@
             <!-- Horloge temps réel -->
             <div class="d-none d-md-block" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); padding: 8px 18px; border-radius: 40px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
                 <div id="horloge" class="d-flex align-items-center gap-2">
+                    <!-- ⭐ Petit indicateur "connecté" — pulse violet tant que la
+                         connexion au serveur principal est confirmée (branché sur
+                         verifierEtatSynchro(), déjà utilisé pour la bannière
+                         hors-ligne) ; passe gris/statique si le mode hors-ligne
+                         local prend le relais. Demandé comme touche "chic". -->
+                    <span class="statut-connexion-dot" id="statutConnexionDot" title="Connecté au serveur principal"></span>
                     <span id="dateActuelle" style="font-size: 13px; font-weight: 500; color: #4a5568;"></span>
                     <i class="fas fa-clock text-primary ms-1"></i>
                     <span id="heureActuelle" style="font-size: 13px; font-weight: 700; background: linear-gradient(135deg, #0E9D67, #0B7C52); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;"></span>
                 </div>
             </div>
-            
+
             <div class="d-md-none">
-                <div id="horlogeMobile" style="background: #f8f9fa; padding: 5px 12px; border-radius: 30px;">
+                <div id="horlogeMobile" style="background: #f8f9fa; padding: 5px 12px; border-radius: 30px; display:flex; align-items:center; gap:7px;">
+                    <span class="statut-connexion-dot" id="statutConnexionDotMobile" title="Connecté au serveur principal"></span>
                     <span id="heureMobile" style="font-size: 12px; font-weight: 600; color: #0E9D67;"></span>
                 </div>
             </div>
@@ -2247,17 +2288,33 @@ updateHorloge();
 // ============================================
 let syncPollingActif = null;
 
+// ⭐ Pilote le petit point pulsant à côté de l'horloge (desktop + mobile) —
+// violet et animé tant que la connexion au serveur principal est confirmée,
+// gris et statique dès qu'on bascule sur la copie locale (voir CSS
+// .statut-connexion-dot). Un seul point de vérité pour les deux variantes
+// (desktop/mobile) appelées depuis les 3 issues possibles de la requête
+// ci-dessous (ok / bascule non configurée / requête en échec).
+function mettreAJourStatutConnexionDot(horsLigne) {
+    document.querySelectorAll('.statut-connexion-dot').forEach(dot => {
+        dot.classList.toggle('hors-ligne', horsLigne);
+        dot.title = horsLigne ? 'Hors-ligne — travail sur la copie locale' : 'Connecté au serveur principal';
+    });
+}
+
 function verifierEtatSynchro() {
     fetch('/api/sync/status').then(r => r.ok ? r.json() : null).then(etat => {
         if (!etat || !etat.enabled) {
             // Bascule non configurée sur ce serveur (ex: Render, sans base
             // locale de secours) : inutile de re-sonder toutes les 15s.
+            // La requête elle-même a réussi -> bien connecté au serveur.
+            mettreAJourStatutConnexionDot(false);
             if (syncPollingActif) { clearInterval(syncPollingActif); syncPollingActif = null; }
             return;
         }
         const banniere = document.getElementById('offlineBanner');
         const texte = document.getElementById('offlineBannerText');
         const badge = document.getElementById('offlineBannerPending');
+        mettreAJourStatutConnexionDot(etat.is_offline);
         if (etat.is_offline) {
             banniere.hidden = false;
             texte.textContent = "Mode hors-ligne — connexion au serveur principal indisponible, vous travaillez sur la copie locale. La synchronisation se fera automatiquement au retour de la connexion.";
@@ -2269,7 +2326,11 @@ function verifierEtatSynchro() {
         } else {
             banniere.hidden = true;
         }
-    }).catch(() => {});
+    }).catch(() => {
+        // La requête de vérification elle-même a échoué -> signal fiable
+        // que la connexion au serveur principal a un problème.
+        mettreAJourStatutConnexionDot(true);
+    });
 }
 verifierEtatSynchro();
 syncPollingActif = setInterval(verifierEtatSynchro, 15000);
