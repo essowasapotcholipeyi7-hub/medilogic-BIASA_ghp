@@ -1863,6 +1863,15 @@ function convertirEnVente(proformaId) {
             proformaConversionData = data;
             
             // 🔥 Récupérer les articles avec PBR
+            // ⭐ date_prestation/date_fin_prestation : PRÉSENTES sur la
+            // proforma (ex. un acte réalisé deux jours différents pendant
+            // une hospitalisation garde une date par ligne), mais jusqu'ici
+            // silencieusement perdues ICI en construisant le panier de
+            // conversion — la vente créée n'avait donc plus aucune date par
+            // article, même quand la proforma d'origine les avait (signalé,
+            // constaté sur une vraie vente). Le reçu (recu_client.html)
+            // sait déjà afficher cette colonne quand elle est présente —
+            // il ne la voyait simplement jamais arriver jusque-là.
             panierConversion = data.articles ? data.articles.map(a => ({
                 id: a.id || null,
                 nom: a.nom,
@@ -1873,7 +1882,9 @@ function convertirEnVente(proformaId) {
                 pbr: (a.pbr !== undefined && a.pbr !== null) ? a.pbr : 0,
                 total: (a.prix || a.prix_unitaire || 0) * (a.quantite || 1),
                 prise_en_charge_amu: a.prise_en_charge_amu !== false,
-                prise_en_charge_cac: a.prise_en_charge_cac !== false
+                prise_en_charge_cac: a.prise_en_charge_cac !== false,
+                date_prestation: a.date_prestation || null,
+                date_fin_prestation: a.date_fin_prestation || null
             })) : [];
             
             console.log('📊 Panier conversion avec PBR:', panierConversion);
@@ -1967,7 +1978,7 @@ function afficherModalConversion(data) {
                                 '<tr><td colspan="6" class="text-center text-muted">Aucun article</td></tr>' :
                                 panierConversion.map((item, index) => `
                                     <tr>
-                                        <td>${item.nom}</td>
+                                        <td>${item.nom}${formatDatePrestationConversion(item)}</td>
                                         <td><span class="badge ${item.type === 'acte' ? 'bg-primary' : 'bg-success'}">${item.type === 'acte' ? 'Acte' : 'Produit'}</span></td>
                                         <td>
                                             <input type="number" class="form-control form-control-sm" value="${item.quantite}" 
@@ -2192,6 +2203,27 @@ function afficherModalConversion(data) {
 // ============================================
 // FONCTIONS DE CALCUL POUR LA CONVERSION (CORRIGÉES)
 // ============================================
+
+// ⭐ Petite date affichée sous le nom d'un article dans le panier de
+// conversion — utile SURTOUT quand le même acte/médicament apparaît
+// plusieurs fois (ex. NFS faite deux jours différents pendant un séjour) :
+// sans elle, deux lignes identiques dans le panier semblent être un
+// doublon de saisie, alors que ce sont deux prestations réelles à des
+// dates différentes. Même logique d'affichage que date_prestation_affichee
+// côté reçu (route recu(), app.py) : "dd/mm" pour une date unique, "du X au
+// Y" pour une tranche (ligne de chambre par palier).
+function formatDateFrConversion(iso) {
+    if (!iso) return null;
+    const p = String(iso).split('-');
+    return p.length === 3 ? `${p[2]}/${p[1]}` : iso;
+}
+function formatDatePrestationConversion(item) {
+    const debut = formatDateFrConversion(item.date_prestation);
+    if (!debut) return '';
+    const fin = formatDateFrConversion(item.date_fin_prestation);
+    const texte = (fin && fin !== debut) ? `du ${debut} au ${fin}` : debut;
+    return `<br><small class="text-muted"><i class="fas fa-calendar-day"></i> ${texte}</small>`;
+}
 
 function calculeSousTotalConversion() {
     return panierConversion.reduce((sum, item) => sum + (item.prix * item.quantite), 0);
@@ -2653,7 +2685,12 @@ function finaliserConversionVente() {
         pbr: (item.pbr !== undefined && item.pbr !== null) ? item.pbr : 0,  // 🔥 Garde 0
         total: item.prix * item.quantite,
         prise_en_charge_amu: item.prise_en_charge_amu !== false,  // 🔥 TRUE/FALSE réel
-        prise_en_charge_cac: item.prise_en_charge_cac !== false   // 🔥 TRUE/FALSE réel
+        prise_en_charge_cac: item.prise_en_charge_cac !== false,  // 🔥 TRUE/FALSE réel
+        // ⭐ Voir le commentaire sur panierConversion plus haut — sans ces
+        // deux champs ici, la vente perdait la date par article même quand
+        // la proforma l'avait (signalé, constaté sur une vraie vente).
+        date_prestation: item.date_prestation || null,
+        date_fin_prestation: item.date_fin_prestation || null
     }));
     
     // 🔥 Calculer les totaux avec les bonnes valeurs
