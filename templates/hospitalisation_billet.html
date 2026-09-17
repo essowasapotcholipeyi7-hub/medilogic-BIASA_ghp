@@ -161,6 +161,11 @@
                     <div class="val">{{ hospit.date_sortie.strftime('%d/%m/%Y') if hospit.date_sortie else 'En cours' }}</div>
                 </div>
             </div>
+            {% if hospit.dernier_jour_facture %}
+            <div style="text-align:center; font-size:11px; color:#666; margin-top:8px;">
+                (nuitées facturées du {{ hospit.date_entree.strftime('%d/%m/%Y') }} au {{ hospit.dernier_jour_facture.strftime('%d/%m/%Y') }} — la sortie elle-même n'est pas une nuitée)
+            </div>
+            {% endif %}
         </div>
 
         <div class="mb-2" style="margin-bottom: 12px;">

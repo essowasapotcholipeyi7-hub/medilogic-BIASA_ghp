@@ -46,6 +46,11 @@
             <div class="card-body">
                 <div class="text-muted small">Jours</div>
                 <div class="fw-bold">{{ hospit.nombre_jours }}</div>
+                {% if hospit.dernier_jour_facture %}
+                <div class="text-muted" style="font-size:11px;" title="La date de sortie elle-même n'est pas une nuitée facturée — c'est le jour du départ.">
+                    nuitées du {{ hospit.date_entree.strftime('%d/%m') }} au {{ hospit.dernier_jour_facture.strftime('%d/%m') }}
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -322,19 +327,45 @@ function choisirActe(a) {
 }
 
 // ===================== RECHERCHE PRODUITS (médicaments) =====================
+// ⭐ /api/produits relit toute la feuille Google Sheets du catalogue (peut
+// dépasser 700 lignes) — lent. On le précharge dès l'arrivée sur la page
+// (pas seulement à la première frappe) et on gère l'échec explicitement
+// (alerte visible), sinon une erreur réseau/lenteur se traduisait par une
+// recherche qui ne répondait jamais sans aucun message (signalé par le
+// patron). Même précaution que pharma_vente.html (chargerProduits()).
 let tousLesProduits = null;
+let chargementProduitsPromise = null;
 function chargerProduits() {
     if (tousLesProduits) return Promise.resolve(tousLesProduits);
-    return fetch('/api/produits').then(r => r.json()).then(data => { tousLesProduits = data; return data; });
+    if (chargementProduitsPromise) return chargementProduitsPromise;
+    chargementProduitsPromise = fetch('/api/produits')
+        .then(r => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        })
+        .then(data => { tousLesProduits = data; return data; })
+        .catch(e => {
+            chargementProduitsPromise = null;
+            console.error('Erreur chargement médicaments:', e);
+            throw e;
+        });
+    return chargementProduitsPromise;
 }
+// Préchargement dès l'ouverture de la page, sans attendre la 1ère frappe.
+chargerProduits().catch(() => {});
 
 document.getElementById('produitSearch')?.addEventListener('input', function() {
     const q = this.value.trim().toLowerCase();
     const box = document.getElementById('produitResultats');
     if (q.length < 2) { box.style.display = 'none'; return; }
+    box.innerHTML = '<div class="list-group-item text-muted small"><i class="fas fa-spinner fa-spin me-1"></i> Chargement des médicaments...</div>';
+    box.style.display = 'block';
     chargerProduits().then(liste => {
         const filtres = liste.filter(p => p.nom.toLowerCase().includes(q)).slice(0, 20);
-        if (!filtres.length) { box.style.display = 'none'; return; }
+        if (!filtres.length) {
+            box.innerHTML = '<div class="list-group-item text-muted small">Aucun médicament trouvé</div>';
+            return;
+        }
         box.innerHTML = filtres.map(p => `
             <a href="#" class="list-group-item list-group-item-action" onclick='choisirProduit(${JSON.stringify(p).replace(/'/g, "&apos;")}); return false;'>
                 <div class="d-flex justify-content-between">
@@ -343,6 +374,8 @@ document.getElementById('produitSearch')?.addEventListener('input', function() {
                 </div>
             </a>`).join('');
         box.style.display = 'block';
+    }).catch(() => {
+        box.innerHTML = '<div class="list-group-item text-danger small">❌ Erreur de chargement des médicaments — réessayez.</div>';
     });
 });
 

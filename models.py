@@ -2125,6 +2125,19 @@ class Hospitalisation(db.Model):
             return 0
         return max((fin - self.date_entree).days, 0)
 
+    @property
+    def dernier_jour_facture(self):
+        """Dernière nuitée réellement facturée (convention hôtelière déjà
+        utilisée pour nombre_jours : la date de sortie elle-même n'est pas
+        une nuit facturée, c'est le jour du départ). Ex. entrée 10/09,
+        sortie 19/09 -> 9 jours facturés, du 10/09 au 18/09 inclus.
+        Affiché explicitement dans les templates pour éviter la confusion
+        entre "nombre de jours" et la date de sortie brute (signalé comme
+        source de confusion)."""
+        if not self.date_entree or self.nombre_jours <= 0:
+            return None
+        return self.date_entree + timedelta(days=self.nombre_jours - 1)
+
 
 class SoinHospitalisation(db.Model):
     """Une ligne de soin (acte ou médicament) administrée à une date/heure

@@ -90,7 +90,8 @@
                 <h2>{{ structure_nom }}</h2>
                 <p>{{ hospit.patient_nom }} — Séjour #{{ hospit.numero_local or hospit.id }}</p>
                 <p>Du {{ hospit.date_entree.strftime('%d/%m/%Y') if hospit.date_entree else '-' }}
-                   au {{ hospit.date_sortie.strftime('%d/%m/%Y') if hospit.date_sortie else "aujourd'hui" }}</p>
+                   au {{ hospit.date_sortie.strftime('%d/%m/%Y') if hospit.date_sortie else "aujourd'hui" }}
+                   {% if hospit.dernier_jour_facture %}<span style="color:#888; font-size:10px;">(nuitées facturées jusqu'au {{ hospit.dernier_jour_facture.strftime('%d/%m/%Y') }})</span>{% endif %}</p>
             </div>
             <div style="text-align: right;">
                 <span class="badge">
