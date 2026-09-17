@@ -125,8 +125,22 @@
                             <tr><td colspan="9" class="text-center">Aucun acte dans le panier</td></tr>
                         </tbody>
                         <tfoot>
+                            <!-- ⭐ Décomposition HT/TVA/TTC — visible uniquement si
+                                 "Appliquer TVA 18%" est coché (voir toggleAppliquerTva
+                                 plus bas). Purement informatif, sur le même sous-total
+                                 déjà TTC : ne change aucun calcul AMU/CAC en dessous. -->
+                            <tr id="sousTotalHtRow" style="display:none;">
+                                <th colspan="6" class="text-end text-muted">Sous-total HT :</th>
+                                <th id="sousTotalHt" class="text-end text-muted">0 FCFA</th>
+                                <th></th>
+                            </tr>
+                            <tr id="montantTvaRow" style="display:none;">
+                                <th colspan="6" class="text-end text-muted">TVA (<span id="tauxTvaAffiche">18</span>%) :</th>
+                                <th id="montantTva" class="text-end text-muted">0 FCFA</th>
+                                <th></th>
+                            </tr>
                             <tr>
-                                <th colspan="6" class="text-end">Sous-total clinique :</th>
+                                <th colspan="6" class="text-end" id="sousTotalLabel">Sous-total clinique :</th>
                                 <th id="sousTotal" class="text-end">0 FCFA</th>
                                 <th></th>
                             </tr>
@@ -249,6 +263,24 @@
                 <option value="defaut" selected>PBR habituel</option>
                 <option value="alternatif">PBR alternatif</option>
             </select>
+        </div>
+    </div>
+</div>
+
+<!-- ===== TVA — décochée par défaut, voir models.py:Vente.applique_tva ===== -->
+<div class="row mt-2">
+    <div class="col-md-12">
+        <div class="form-check form-switch d-flex align-items-center gap-2">
+            <!-- ⭐ Les prix de l'appli sont déjà TTC (ParametrageTva) —
+                 cocher n'ajoute AUCUN montant, ça affiche juste la
+                 décomposition Sous-total HT / TVA / Total TTC ci-dessus
+                 pour un document plus formel (ex. facture demandée par une
+                 compagnie/assurance). Taux chargé une fois via
+                 /api/parametrage-tva (chargerTauxTva()). -->
+            <input class="form-check-input" type="checkbox" id="toggleAppliquerTva" style="width:38px; height:20px;" onchange="calculerTotal(); calculerRendu();">
+            <label class="form-check-label small" for="toggleAppliquerTva">
+                Appliquer TVA (<span id="tauxTvaLabel">18</span>%) — affiche la décomposition HT/TVA/TTC sur le reçu
+            </label>
         </div>
     </div>
 </div>
@@ -402,6 +434,7 @@
 // ============================================
 // VARIABLES GLOBALES
 // ============================================
+let tauxTvaActuel = 18;
 let panier = [];
 let patientId = null;
 let patientTaux = 0;
@@ -1397,6 +1430,7 @@ function calculerTotal() {
     
     // 🔥🔥🔥 MISE À JOUR DE L'AFFICHAGE 🔥🔥🔥
     document.getElementById('sousTotal').innerHTML = Math.round(sousTotal).toLocaleString('fr-FR') + ' FCFA';
+    afficherDecompositionTva(sousTotal);
     document.getElementById('baseRemboursement').innerHTML = Math.round(baseRemboursement).toLocaleString('fr-FR') + ' FCFA';
     document.getElementById('priseEnCharge').innerHTML = Math.round(priseEnChargeAMU).toLocaleString('fr-FR') + ' FCFA';
     
@@ -1505,6 +1539,47 @@ function calculerCACPourVarianteActes(variante) {
         if (reste > 0) baseCAC += reste;
     }
     return (baseCAC * tauxComplementaire) / 100;
+}
+
+// ⭐ Taux de TVA de la structure (18% par défaut, configurable — voir
+// ParametrageTva/models.py) — chargé une fois au chargement de la page,
+// utilisé par afficherDecompositionTva() quand #toggleAppliquerTva est
+// coché. Décoché par défaut : aucun effet tant que la caissière ne
+// l'active pas explicitement.
+function chargerTauxTva() {
+    fetch('/api/parametrage-tva')
+        .then(r => r.json())
+        .then(data => {
+            tauxTvaActuel = parseFloat(data.taux) || 18;
+            document.getElementById('tauxTvaLabel').textContent = tauxTvaActuel;
+            document.getElementById('tauxTvaAffiche').textContent = tauxTvaActuel;
+        })
+        .catch(() => {});
+}
+chargerTauxTva();
+
+// ⭐ Affiche/masque la décomposition Sous-total HT / TVA / Sous-total TTC
+// dans le pied du tableau — purement informatif, ne modifie sousTotal ni
+// aucun calcul AMU/CAC. Les prix de l'appli sont déjà TTC : cocher ne fait
+// qu'EXPLICITER cette part de TVA déjà comprise dans le prix affiché.
+function afficherDecompositionTva(sousTotalTTC) {
+    const coche = document.getElementById('toggleAppliquerTva')?.checked;
+    const rowHt = document.getElementById('sousTotalHtRow');
+    const rowTva = document.getElementById('montantTvaRow');
+    const label = document.getElementById('sousTotalLabel');
+    if (!coche || tauxTvaActuel <= 0) {
+        rowHt.style.display = 'none';
+        rowTva.style.display = 'none';
+        label.textContent = 'Sous-total clinique :';
+        return;
+    }
+    const sousTotalHt = sousTotalTTC / (1 + tauxTvaActuel / 100);
+    const montantTva = sousTotalTTC - sousTotalHt;
+    document.getElementById('sousTotalHt').textContent = Math.round(sousTotalHt).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('montantTva').textContent = Math.round(montantTva).toLocaleString('fr-FR') + ' FCFA';
+    rowHt.style.display = '';
+    rowTva.style.display = '';
+    label.textContent = 'Sous-total TTC :';
 }
 
 function mettreAJourLabelsPbrCacVarianteActes() {
@@ -2164,6 +2239,7 @@ function finaliserVente() {
         assurance2_active: assurance2Active,
         applique_pbr_cac: (() => { const t = document.getElementById('toggleAppliquePbrCac'); return t ? t.checked : true; })(),
         pbr_cac_variante: document.getElementById('selectPbrCacVarianteActes')?.value || 'defaut',
+        applique_tva: (() => { const t = document.getElementById('toggleAppliquerTva'); return t ? t.checked : false; })(),
         taux_temp_modifie: tauxTempModifie,
         taux_original: patientTaux2Original || 0,
         montant_donne: montantDonne,

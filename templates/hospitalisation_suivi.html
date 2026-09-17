@@ -63,6 +63,19 @@
                 {% endif %}
             </div>
             {% endif %}
+            <!-- ⭐ TVA — décochée par défaut, voir actes_vente.html pour le même
+                 mécanisme (models.py:Hospitalisation.applique_tva). Indépendante
+                 des assurances : décomposition purement informative sur le reçu/
+                 la facture à la clôture du séjour, aucun effet sur le calcul. -->
+            <div class="form-check form-switch d-flex align-items-center gap-2 mb-0">
+                <input class="form-check-input" type="checkbox" role="switch" id="toggleTva" style="width:38px; height:20px;"
+                       {% if hospit.applique_tva %}checked{% endif %}
+                       {% if hospit.statut == 'facturee' %}disabled{% endif %}
+                       onchange="toggleAssuranceHospit('applique_tva', this.checked)">
+                <label class="form-check-label small" for="toggleTva">
+                    Appliquer TVA ({{ taux_tva|round(2) }}%) — HT/TVA/TTC sur le reçu
+                </label>
+            </div>
             {% if not a_assurance_principale and not hospit.assurance2_nom %}
                 <span class="badge bg-secondary">Non assuré</span>
             {% endif %}

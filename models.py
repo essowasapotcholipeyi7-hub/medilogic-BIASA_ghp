@@ -2075,6 +2075,14 @@ class Proforma(db.Model):
     # d'habitude) ou 'alternatif' (pbr_2, si ce contrat précis diffère).
     # Choisissable en direct depuis la vente.
     pbr_cac_variante = db.Column(db.String(20), default='defaut')
+    # ⭐ Affichage HT/TVA/TTC sur le reçu/facture papier — décoché par
+    # défaut (les prix de l'appli sont déjà TTC, voir ParametrageTva ;
+    # cocher n'ajoute AUCUN montant, ça affiche juste la décomposition
+    # Sous-total HT / TVA / Total TTC pour un document plus formel, ex. une
+    # facture demandée par une compagnie/assurance). Taux repris de
+    # ParametrageTva.taux (18% par défaut, configurable par structure) —
+    # pas de taux propre ici, un seul réglage cohérent partout.
+    applique_tva = db.Column(db.Boolean, default=False)
     taux_modifie = db.Column(db.Boolean, default=False)
     taux_original = db.Column(db.Numeric, default=0)
     prise_en_charge2 = db.Column(db.Numeric, default=0)
@@ -2164,6 +2172,10 @@ class Hospitalisation(db.Model):
     # ⭐ Voir le même champ sur Proforma — 'defaut' (pbr_1) ou 'alternatif'
     # (pbr_2), choisissable en direct depuis le suivi du séjour.
     pbr_cac_variante = db.Column(db.String(20), default='defaut')
+    # ⭐ Voir le même champ sur Proforma — affichage HT/TVA/TTC sur le
+    # reçu/facture papier, décoché par défaut, choisissable en direct
+    # depuis le suivi du séjour avant facturation.
+    applique_tva = db.Column(db.Boolean, default=False)
     statut = db.Column(db.String(50), default='en_cours')  # en_cours/sortie/facturee
     proforma_id = db.Column(db.Integer)
     vente_id = db.Column(db.Integer)

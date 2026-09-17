@@ -261,7 +261,7 @@
             <th style="padding:4px; text-align:center; width:14%;">Date</th>
             {% endif %}
             <th style="padding:4px; text-align:center; width:10%;">Qté</th>
-            <th style="padding:4px; text-align:right; width:{{ '16%' if patient_amu else '20%' }};">Prix</th>
+            <th style="padding:4px; text-align:right; width:{{ '16%' if patient_amu else '20%' }};">{{ 'PU TTC' if applique_tva else 'Prix' }}</th>
             {% if patient_amu %}
             <th style="padding:4px; text-align:right; width:16%;">PBR</th>
             {% endif %}
@@ -301,11 +301,31 @@
 
 <!-- TOTAUX -->
 <div style="margin-top:6px; font-size:10px;">
+    <!-- ⭐ Décomposition HT/TVA/TTC — affichée UNIQUEMENT si "Appliquer TVA"
+         a été coché à la vente (applique_tva, voir app.py:recu()) ; sinon
+         comportement inchangé (juste "Sous-total clinique" comme avant).
+         Purement informatif : le sous-total et tous les calculs en dessous
+         (AMU, CAC, net à payer) restent identiques, en TTC, comme toujours. -->
+    {% if applique_tva %}
+    <div style="display:flex; justify-content:space-between; color:#6c757d;">
+        <span>Sous-total HT :</span>
+        <span>{{ sous_total_ht|default(0)|round(0)|int }} FCFA</span>
+    </div>
+    <div style="display:flex; justify-content:space-between; color:#6c757d;">
+        <span>TVA ({{ taux_tva|default(0)|round(2) }}%) :</span>
+        <span>{{ montant_tva|default(0)|round(0)|int }} FCFA</span>
+    </div>
+    <div style="display:flex; justify-content:space-between;">
+        <span>Sous-total TTC :</span>
+        <span><strong>{{ sous_total|default(0)|round(0)|int }} FCFA</strong></span>
+    </div>
+    {% else %}
     <div style="display:flex; justify-content:space-between;">
         <span>Sous-total clinique :</span>
         <span><strong>{{ sous_total|default(0)|round(0)|int }} FCFA</strong></span>
     </div>
-    
+    {% endif %}
+
     {% if type_assurance in ['AMU-CNSS', 'AMU-INAM', 'AMU-TNS'] and base_remboursement and base_remboursement > 0 %}
     <div style="display:flex; justify-content:space-between; color:#6c757d; font-size:0.9em; border-top:1px dashed #ddd; padding-top:2px; margin-top:2px;">
         <span>Base remboursement (PBR) :</span>

@@ -203,7 +203,7 @@
                         <tr style="background: #f8f9fa;">
                             <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6; width: 50%;">Désignation</th>
                             <th style="padding: 12px; text-align: center; border-bottom: 2px solid #dee2e6; width: 15%;">Qté</th>
-                            <th style="padding: 12px; text-align: right; border-bottom: 2px solid #dee2e6; width: 15%;">Prix unitaire</th>
+                            <th style="padding: 12px; text-align: right; border-bottom: 2px solid #dee2e6; width: 15%;">{{ 'PU TTC' if applique_tva else 'Prix unitaire' }}</th>
                             <th style="padding: 12px; text-align: right; border-bottom: 2px solid #dee2e6; width: 20%;">Total</th>
                         </tr>
                     </thead>
@@ -221,11 +221,29 @@
 
 <!-- ===== TOTAUX AVEC DOUBLE ASSURANCE ===== -->
 <div style="margin-top:10px;">
+    <!-- ⭐ Décomposition HT/TVA/TTC — voir le même bloc dans recu_client.html
+         (app.py:facture()) : uniquement si "Appliquer TVA" a été coché à la
+         vente, purement informatif, ne change aucun calcul en dessous. -->
+    {% if applique_tva %}
+    <div style="display:flex; justify-content:space-between; color:#6c757d;">
+        <span>Sous-total HT :</span>
+        <span>{{ sous_total_ht|default(0)|round(0)|int }} FCFA</span>
+    </div>
+    <div style="display:flex; justify-content:space-between; color:#6c757d;">
+        <span>TVA ({{ taux_tva|default(0)|round(2) }}%) :</span>
+        <span>{{ montant_tva|default(0)|round(0)|int }} FCFA</span>
+    </div>
+    <div style="display:flex; justify-content:space-between;">
+        <span>Sous-total TTC :</span>
+        <span><strong>{{ sous_total|default(0)|round(0)|int }} FCFA</strong></span>
+    </div>
+    {% else %}
     <div style="display:flex; justify-content:space-between;">
         <span>Sous-total :</span>
         <span><strong>{{ sous_total|default(0)|round(0)|int }} FCFA</strong></span>
     </div>
-    
+    {% endif %}
+
     <!-- 🔥 Prise en charge principale -->
     {% if prise_en_charge > 0 %}
     <div style="display:flex; justify-content:space-between; color:#28a745;">

@@ -584,6 +584,8 @@ let assurance2TauxOriginal = 0;
 // afficherModalConversion(), utilisé par partCACArticleConversion() pour
 // plafonner la base CAC.
 let pbrCacConversionMap = {};
+let tauxTvaActuel = 18;
+fetch('/api/parametrage-tva').then(r => r.json()).then(data => { tauxTvaActuel = parseFloat(data.taux) || 18; }).catch(() => {});
 
 // ⭐ Choisit pbr_1 (habituel, par défaut) ou pbr_2 (alternatif) dans une
 // entrée de pbrCacConversionMap — miroir JS de pbr_cac_variante_valeur()
@@ -2027,8 +2029,20 @@ function afficherModalConversion(data) {
                                 `).join('')}
                         </tbody>
                         <tfoot class="table-light">
+                            <!-- ⭐ Décomposition HT/TVA/TTC — voir actes_vente.html pour
+                                 le même mécanisme (convertAppliquerTva ci-dessous). -->
+                            <tr id="convertSousTotalHtRow" style="display:none;">
+                                <th colspan="4" class="text-end text-muted">Sous-total HT :</th>
+                                <th id="convertSousTotalHt" class="text-end text-muted">0 F</th>
+                                <th></th>
+                            </tr>
+                            <tr id="convertMontantTvaRow" style="display:none;">
+                                <th colspan="4" class="text-end text-muted">TVA (<span id="convertTauxTvaAffiche">18</span>%) :</th>
+                                <th id="convertMontantTva" class="text-end text-muted">0 F</th>
+                                <th></th>
+                            </tr>
                             <tr>
-                                <th colspan="4" class="text-end">Sous-total :</th>
+                                <th colspan="4" class="text-end" id="convertSousTotalLabel">Sous-total :</th>
                                 <th id="convertSousTotal" class="text-end">${Math.round(calculeSousTotalConversion()).toLocaleString('fr-FR')} F</th>
                                 <th></th>
                             </tr>
@@ -2162,6 +2176,22 @@ function afficherModalConversion(data) {
                     </div>
                 </div>
                 ` : ''}
+                <!-- ⭐ TVA — décochée par défaut, voir actes_vente.html pour le même
+                     mécanisme (models.py:Proforma/Vente.applique_tva). Indépendant
+                     du PBR CAC ci-dessus : visible même sans assurance complémentaire. -->
+                <div class="row mb-2">
+                    <div class="col-md-12">
+                        <div class="form-check form-switch d-flex align-items-center gap-2 mb-0">
+                            <input class="form-check-input" type="checkbox" id="convertAppliquerTva"
+                                   style="width: 38px; height: 20px; cursor: pointer;"
+                                   ${data.applique_tva === true ? 'checked' : ''}
+                                   onchange="mettreAJourTotauxConversion()">
+                            <label class="form-check-label small" for="convertAppliquerTva">
+                                Appliquer TVA (<span id="convertTauxTvaLabel">18</span>%) — affiche la décomposition HT/TVA/TTC
+                            </label>
+                        </div>
+                    </div>
+                </div>
                 <div class="row">
                     <div class="col-md-4">
                         <label class="form-label">Taux assurance principale (%)</label>
@@ -2531,6 +2561,35 @@ function rafraichirPartAssurance() {
     }).join('');
 }
 
+// ⭐ Voir actes_vente.html pour le même mécanisme — décomposition
+// purement informative, affichée seulement si #convertAppliquerTva est
+// coché (décoché par défaut à l'ouverture du modal, sauf si la proforma
+// d'origine avait déjà applique_tva=true).
+function afficherDecompositionTvaConversion(sousTotalTTC) {
+    const toggle = document.getElementById('convertAppliquerTva');
+    const rowHt = document.getElementById('convertSousTotalHtRow');
+    const rowTva = document.getElementById('convertMontantTvaRow');
+    const label = document.getElementById('convertSousTotalLabel');
+    if (!toggle || !rowHt || !rowTva || !label) return;
+    const labelTva = document.getElementById('convertTauxTvaLabel');
+    if (labelTva) labelTva.textContent = tauxTvaActuel;
+    const labelAffiche = document.getElementById('convertTauxTvaAffiche');
+    if (labelAffiche) labelAffiche.textContent = tauxTvaActuel;
+    if (!toggle.checked || tauxTvaActuel <= 0) {
+        rowHt.style.display = 'none';
+        rowTva.style.display = 'none';
+        label.textContent = 'Sous-total :';
+        return;
+    }
+    const sousTotalHt = sousTotalTTC / (1 + tauxTvaActuel / 100);
+    const montantTva = sousTotalTTC - sousTotalHt;
+    document.getElementById('convertSousTotalHt').textContent = Math.round(sousTotalHt).toLocaleString('fr-FR') + ' F';
+    document.getElementById('convertMontantTva').textContent = Math.round(montantTva).toLocaleString('fr-FR') + ' F';
+    rowHt.style.display = '';
+    rowTva.style.display = '';
+    label.textContent = 'Sous-total TTC :';
+}
+
 function mettreAJourTotauxConversion() {
     const sousTotal = calculeSousTotalConversion();
     const priseEnCharge = calculePriseEnChargeConversion();
@@ -2540,6 +2599,7 @@ function mettreAJourTotauxConversion() {
     conversionNetAPayer = netAPayer;
 
     document.getElementById('convertSousTotal').textContent = Math.round(sousTotal).toLocaleString('fr-FR') + ' F';
+    afficherDecompositionTvaConversion(sousTotal);
     document.getElementById('convertPriseEnCharge').textContent = Math.round(priseEnCharge).toLocaleString('fr-FR') + ' F';
     document.getElementById('convertNetAPayer').textContent = Math.round(netAPayer).toLocaleString('fr-FR') + ' F';
 
@@ -2848,6 +2908,7 @@ function finaliserConversionVente() {
         assurance2_active: assurance2Active_,
         applique_pbr_cac: (() => { const t = document.getElementById('convertAppliquePbrCac'); return t ? t.checked : true; })(),
         pbr_cac_variante: document.getElementById('convertPbrCacVariante')?.value || 'defaut',
+        applique_tva: (() => { const t = document.getElementById('convertAppliquerTva'); return t ? t.checked : false; })(),
         assurance_principale_active: assurancePrincipaleActive,
         montant_donne: montantDonne,
         type_document: typeDocument,

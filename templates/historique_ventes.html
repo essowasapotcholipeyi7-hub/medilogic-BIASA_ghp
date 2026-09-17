@@ -575,7 +575,11 @@ function afficherPageVentes(page) {
         html += '<td><strong>#' + (v.numero_local || v.ID || (start + i + 1)) + '</strong></td>';
         html += '<td>' + dateStr + '</td>';
         html += '<td><strong>' + (v.patient_nom || 'Patient') + '</strong></td>';
-        html += '<td><span class="badge ' + badgeClass + '">' + typeLabel + '</span></td>';
+        html += '<td><span class="badge ' + badgeClass + '">' + typeLabel + '</span>';
+        if (v.applique_tva) {
+            html += ' <span class="badge bg-light text-dark border" title="Décomposition HT/TVA/TTC affichée sur le reçu/la facture">TVA</span>';
+        }
+        html += '</td>';
         html += '<td class="text-end fw-bold">' + Math.round(netAPayer).toLocaleString('fr-FR') + ' F</td>';
         html += '<td class="text-end" style="color:#28a745;">' + Math.round(montantDonne).toLocaleString('fr-FR') + ' F</td>';
         html += '<td class="text-end" style="color:#dc3545;">' + Math.round(resteAPayer).toLocaleString('fr-FR') + ' F</td>';
@@ -672,7 +676,8 @@ function voirDetailVente(venteId, type) {
         <div class="row">
             <div class="col-md-4">
                 <h6><i class="fas fa-tag"></i> Type</h6>
-                <p><span class="badge ${v.type === 'actes' ? 'bg-primary' : 'bg-success'}">${v.type === 'actes' ? 'Acte' : 'Pharmacie'}</span></p>
+                <p><span class="badge ${v.type === 'actes' ? 'bg-primary' : 'bg-success'}">${v.type === 'actes' ? 'Acte' : 'Pharmacie'}</span>
+                ${v.applique_tva ? ' <span class="badge bg-light text-dark border">TVA appliquée</span>' : ' <span class="badge bg-light text-muted border">TVA non appliquée</span>'}</p>
             </div>
             <div class="col-md-4">
                 <h6><i class="fas fa-file-invoice"></i> Détail</h6>

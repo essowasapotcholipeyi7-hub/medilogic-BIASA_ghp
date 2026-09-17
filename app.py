@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, PbrComplementaire, CompagnieComplementaire
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, PbrComplementaire, CompagnieComplementaire, ParametrageTva
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
@@ -1835,6 +1835,22 @@ def api_compagnies_complementaires():
     return jsonify(sorted(resultat, key=lambda s: s.lower()))
 
 
+@app.route('/api/parametrage-tva', methods=['GET'])
+@login_required
+def api_parametrage_tva():
+    """Taux de TVA de CETTE structure (18% par défaut, voir ParametrageTva)
+    — utilisé par les écrans de vente (actes/pharma/proforma/hospitalisation)
+    pour calculer en direct la décomposition Sous-total HT / TVA / Total
+    TTC quand le bouton "Appliquer TVA" est coché. Même taux que celui déjà
+    utilisé en interne pour les écritures comptables (un seul réglage,
+    cohérent partout) — voir services/comptabilite_service.py."""
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return jsonify({'taux': 18.0})
+    param = ParametrageTva.get_ou_creer(structure_id)
+    return jsonify({'taux': float(param.taux or 0)})
+
+
 @app.route('/api/societes-assurance', methods=['GET'])
 @login_required
 def api_societes_assurance():
@@ -2637,6 +2653,10 @@ def facture(vente_id, type):
     
     articles = []
     sous_total = 0
+    applique_tva_facture = False
+    taux_tva_facture = 0.0
+    sous_total_ht_facture = 0.0
+    montant_tva_facture = 0.0
     taux_assurance = 0
     prise_en_charge = 0
     net_a_payer = 0
@@ -2687,6 +2707,18 @@ def facture(vente_id, type):
         prise_en_charge = float(v.get('prise_en_charge') or 0)
         net_a_payer = float(v.get('net_a_payer') or 0)
         sous_total = float(v.get('sous_total') or 0)
+
+        # Voir le meme bloc dans recu() (app.py) - decomposition HT/TVA/TTC
+        # decochee par defaut, purement informative, ne change aucun calcul.
+        applique_tva_facture = bool(v.get('applique_tva', False))
+        taux_tva_facture = 0.0
+        sous_total_ht_facture = sous_total
+        montant_tva_facture = 0.0
+        if applique_tva_facture:
+            taux_tva_facture = float(ParametrageTva.get_ou_creer(structure_id).taux or 0)
+            if taux_tva_facture > 0:
+                sous_total_ht_facture = round(sous_total / (1 + taux_tva_facture / 100), 2)
+                montant_tva_facture = round(sous_total - sous_total_ht_facture, 2)
         type_assurance = v.get('type_assurance', 'non_assure')
         numero_assure = v.get('numero_assure', '')
         # ⭐ N° affiché au client : propre à CETTE structure, distinct
@@ -2784,7 +2816,11 @@ def facture(vente_id, type):
                          societe_assurance2=societe_assurance2,
                          assurance2_appliquee=assurance2_appliquee,
                          taux_modifie=taux_modifie,
-                         taux_original=taux_original)
+                         taux_original=taux_original,
+                         applique_tva=applique_tva_facture,
+                         taux_tva=taux_tva_facture,
+                         sous_total_ht=sous_total_ht_facture,
+                         montant_tva=montant_tva_facture)
 
 @app.route('/facture_structure/<int:vente_id>/<string:type>')
 @login_required
@@ -3131,6 +3167,10 @@ def recu(vente_id, type):
     
     articles = []
     sous_total = 0
+    applique_tva_recu = False
+    taux_tva_recu = 0.0
+    sous_total_ht_recu = 0.0
+    montant_tva_recu = 0.0
     base_remboursement = 0
     taux_assurance = 0
     prise_en_charge = 0
@@ -3210,6 +3250,23 @@ def recu(vente_id, type):
         taux_assurance = float(v.get('taux_assurance') or 0)
         
         sous_total = float(v.get('sous_total') or 0)
+
+        # ⭐ Decomposition HT/TVA/TTC sur le recu - decochee par defaut a la
+        # vente (voir applique_tva ci-dessus), donc absente du recu tant que
+        # la caissiere n'a pas coche "Appliquer TVA" au moment de la vente.
+        # Ne change RIEN au calcul AMU/CAC/net a payer (toujours sur le prix
+        # TTC, comme avant) : ce n'est qu'un affichage informatif en plus,
+        # sur le sous_total deja fige. Taux repris de ParametrageTva (meme
+        # reglage que la comptabilite interne, voir api_parametrage_tva).
+        applique_tva_recu = bool(v.get('applique_tva', False))
+        taux_tva_recu = 0.0
+        sous_total_ht_recu = sous_total
+        montant_tva_recu = 0.0
+        if applique_tva_recu:
+            taux_tva_recu = float(ParametrageTva.get_ou_creer(structure_id).taux or 0)
+            if taux_tva_recu > 0:
+                sous_total_ht_recu = round(sous_total / (1 + taux_tva_recu / 100), 2)
+                montant_tva_recu = round(sous_total - sous_total_ht_recu, 2)
         type_assurance = v.get('type_assurance', 'non_assure')
         numero_assure = v.get('numero_assure', '')
         # ⭐ N° affiché au client : propre à CETTE structure, distinct
@@ -3513,7 +3570,11 @@ def recu(vente_id, type):
                          assurance_principale_active=assurance_principale_active,
                          taux_aide=taux_aide,
                          aide_hospitaliere=aide_hospitaliere,
-                         type_aide=type_aide)
+                         type_aide=type_aide,
+                         applique_tva=applique_tva_recu,
+                         taux_tva=taux_tva_recu,
+                         sous_total_ht=sous_total_ht_recu,
+                         montant_tva=montant_tva_recu)
 
 @app.route('/recu_structure/<int:vente_id>/<string:type>')
 @login_required
@@ -3694,13 +3755,14 @@ def historique_ventes():
     
     # ========== 1. VENTES ACTES (Neon) ==========
     ventes_actes_db = db.execute_query("""
-        SELECT 
-            id, patient_nom, net_a_payer, taux_assurance, 
+        SELECT
+            id, patient_nom, net_a_payer, taux_assurance,
             date_vente, actes, created_by_nom,
             montant_donne, rendu,
-            sous_total, prise_en_charge, prise_en_charge2
-        FROM ventes 
-        WHERE structure_id = %s 
+            sous_total, prise_en_charge, prise_en_charge2,
+            applique_tva
+        FROM ventes
+        WHERE structure_id = %s
         AND type = 'actes'
         AND (statut IS NULL OR statut != 'annulee')
         ORDER BY date_vente DESC
@@ -3739,17 +3801,19 @@ def historique_ventes():
                 'created_by_nom': v.get('created_by_nom', 'System'),
                 'montant_donne': montant_donne,
                 'rendu': rendu,
-                'ca_effectif': ca_effectif
+                'ca_effectif': ca_effectif,
+                'applique_tva': bool(v.get('applique_tva', False))
             })
-    
+
     # ========== 2. VENTES PHARMACIE (Neon) ==========
     ventes_pharma_db = db.execute_query("""
-        SELECT 
-            id, patient_nom, net_a_payer, taux_assurance, 
+        SELECT
+            id, patient_nom, net_a_payer, taux_assurance,
             date_vente, produits, created_by_nom,
-            montant_donne, rendu
-        FROM ventes 
-        WHERE structure_id = %s 
+            montant_donne, rendu,
+            applique_tva
+        FROM ventes
+        WHERE structure_id = %s
         AND type IN ('pharma', 'pharmacie')
         AND (statut IS NULL OR statut != 'annulee')
         ORDER BY date_vente DESC
@@ -3789,9 +3853,10 @@ def historique_ventes():
                 'created_by_nom': v.get('created_by_nom', 'System'),
                 'montant_donne': montant_donne,
                 'rendu': rendu,
-                'ca_effectif': ca_effectif
+                'ca_effectif': ca_effectif,
+                'applique_tva': bool(v.get('applique_tva', False))
             })
-    
+
     # ========== 3. FUSIONNER ET TRIER ==========
     toutes_ventes = ventes_actes + ventes_pharma
     
@@ -7664,9 +7729,10 @@ def api_vente_pharma():
                 type_aide,
                 numero_local,
                 applique_pbr_cac,
-                pbr_cac_variante
+                pbr_cac_variante,
+                applique_tva
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             patient_id,
@@ -7700,6 +7766,9 @@ def api_vente_pharma():
             # ici pour que recu() applique le même choix qu'à la vente.
             data.get('applique_pbr_cac', True),
             data.get('pbr_cac_variante') or 'defaut',
+            # ⭐ Affichage HT/TVA/TTC sur le reçu — décoché par défaut, voir
+            # ParametrageTva/api_parametrage_tva et le même champ sur recu().
+            bool(data.get('applique_tva', False)),
         ))
 
         if not result or len(result) == 0:
@@ -8186,9 +8255,10 @@ def api_add_acte_vente():
                 type_aide,
                 numero_local,
                 applique_pbr_cac,
-                pbr_cac_variante
+                pbr_cac_variante,
+                applique_tva
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             patient_id,
@@ -8225,6 +8295,9 @@ def api_add_acte_vente():
             # qu'au moment de la vente, pas un plafond par défaut différent.
             data.get('applique_pbr_cac', True),
             data.get('pbr_cac_variante') or 'defaut',
+            # ⭐ Affichage HT/TVA/TTC sur le reçu — décoché par défaut, voir
+            # ParametrageTva/api_parametrage_tva et le même champ sur recu().
+            bool(data.get('applique_tva', False)),
         ))
 
         if not result or len(result) == 0:
@@ -8387,7 +8460,8 @@ def api_get_all_ventes():
                 v.aide_hospitaliere,
                 v.prise_en_charge,
                 v.type_aide,
-                v.numero_local
+                v.numero_local,
+                v.applique_tva
             FROM ventes v
             LEFT JOIN patients p ON v.patient_id = p.id
             WHERE v.structure_id = %s
@@ -8551,7 +8625,8 @@ def api_get_all_ventes():
                     # 🔥 Ajouter le nombre d'articles pour l'affichage
                     'nb_actes': len(actes_data),
                     'nb_produits': len(produits_data),
-                    'total_articles': len(actes_data) + len(produits_data)
+                    'total_articles': len(actes_data) + len(produits_data),
+                    'applique_tva': bool(v.get('applique_tva', False))
                 })
             else:
                 # Format tuple (pour compatibilité)
@@ -8647,9 +8722,10 @@ def api_get_all_ventes():
                     'taux_original': taux_original,
                     'nb_actes': len(actes_data),
                     'nb_produits': len(produits_data),
-                    'total_articles': len(actes_data) + len(produits_data)
+                    'total_articles': len(actes_data) + len(produits_data),
+                    'applique_tva': bool(v[30]) if len(v) > 30 else False
                 })
-        
+
         return jsonify(result)
         
     except Exception as e:
@@ -11349,9 +11425,10 @@ def api_creer_proforma():
                 statut,
                 created_at,
                 applique_pbr_cac,
-                pbr_cac_variante
+                pbr_cac_variante,
+                applique_tva
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, NOW(), %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, NOW(), %s, %s, %s)
             RETURNING id
         """, (
             structure_id,
@@ -11385,8 +11462,11 @@ def api_creer_proforma():
             'en_attente',
             applique_pbr_cac,
             pbr_cac_variante,
+            # ⭐ Affichage HT/TVA/TTC sur la proforma/le reçu — décoché par
+            # défaut, voir ParametrageTva/api_parametrage_tva.
+            bool(data.get('applique_tva', False)),
         ))
-        
+
         proforma_id = result[0]['id']
         
         print(f"✅ Proforma #{proforma_id} créée (Numéro: {prochain_numero})")
@@ -11672,6 +11752,14 @@ def api_convertir_proforma():
             applique_pbr_cac = proforma.get('applique_pbr_cac', True)
         pbr_cac_variante = data.get('pbr_cac_variante') or proforma.get('pbr_cac_variante') or 'defaut'
 
+        # ⭐ Affichage HT/TVA/TTC sur le reçu — décoché par défaut, reprend
+        # celui de la proforma d'origine si non précisé à la conversion
+        # (même mécanique que applique_pbr_cac ci-dessus).
+        applique_tva = data.get('applique_tva')
+        if applique_tva is None:
+            applique_tva = proforma.get('applique_tva', False)
+        applique_tva = bool(applique_tva)
+
         # 🔥 Société souscriptrice de l'assurance complémentaire : la proforma
         # ne porte pas ce champ (créée avant son existence éventuelle), on la
         # relit donc depuis la fiche patient au moment de la conversion.
@@ -11864,9 +11952,9 @@ def api_convertir_proforma():
                 assurance_principale_active, proforma_id,
                 base_remboursement,
                 taux_aide, aide_hospitaliere, type_aide,
-                numero_local, applique_pbr_cac, pbr_cac_variante
+                numero_local, applique_pbr_cac, pbr_cac_variante, applique_tva
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s::jsonb, %s, 'validee', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s::jsonb, %s, 'validee', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             data.get('patient_id'),
@@ -11899,6 +11987,7 @@ def api_convertir_proforma():
             # ici pour que recu() applique le même choix qu'à la conversion.
             applique_pbr_cac,
             pbr_cac_variante,
+            applique_tva,
         ))
 
         if not result or len(result) == 0:
@@ -12520,10 +12609,13 @@ def page_hospitalisation_suivi(hospit_id):
         montant_pbr_defaut = calculer_repartition_assurance(soins_pour_repartition, hospit, pbr_cac_par_acte, 'defaut')['part_cac']
         montant_pbr_alternatif = calculer_repartition_assurance(soins_pour_repartition, hospit, pbr_cac_par_acte, 'alternatif')['part_cac']
 
+    taux_tva = float(ParametrageTva.get_ou_creer(structure_id).taux or 0)
+
     return render_template('hospitalisation_suivi.html', hospit=hospit, soins=soins, solde_en_cours=solde_en_cours,
                             patient_a_amu=patient_a_amu, patient_a_cac=patient_a_cac, patient_amu_ep=patient_amu_ep,
                             repartition=repartition, ligne_chambre_projetee=ligne_chambre_projetee,
-                            montant_pbr_defaut=montant_pbr_defaut, montant_pbr_alternatif=montant_pbr_alternatif)
+                            montant_pbr_defaut=montant_pbr_defaut, montant_pbr_alternatif=montant_pbr_alternatif,
+                            taux_tva=taux_tva)
 
 
 @app.route('/api/hospitalisation/<int:hospit_id>/assurance', methods=['POST'])
@@ -12554,6 +12646,8 @@ def api_toggle_assurance_hospitalisation(hospit_id):
             hospit.applique_pbr_cac = bool(data.get('applique_pbr_cac'))
         if 'pbr_cac_variante' in data and data.get('pbr_cac_variante') in ('defaut', 'alternatif'):
             hospit.pbr_cac_variante = data.get('pbr_cac_variante')
+        if 'applique_tva' in data:
+            hospit.applique_tva = bool(data.get('applique_tva'))
         db.session.commit()
 
         return jsonify({
@@ -12562,6 +12656,7 @@ def api_toggle_assurance_hospitalisation(hospit_id):
             'assurance2_active': hospit.assurance2_active,
             'applique_pbr_cac': hospit.applique_pbr_cac,
             'pbr_cac_variante': hospit.pbr_cac_variante,
+            'applique_tva': hospit.applique_tva,
         })
     except Exception as e:
         db.session.rollback()
@@ -13006,9 +13101,9 @@ def api_facturer_hospitalisation(hospit_id):
                 prise_en_charge2, net_a_payer, base_remboursement, notes,
                 created_by, expires_at, numero_proforma, assurances_data,
                 base_cac, assurance_principale_active, hospitalisation_id,
-                statut, created_at, applique_pbr_cac, pbr_cac_variante
+                statut, created_at, applique_pbr_cac, pbr_cac_variante, applique_tva
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, NOW(), %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, NOW(), %s, %s, %s)
             RETURNING id
         """, (
             structure_id, hospit.patient_id, hospit.patient_nom, '',
@@ -13019,7 +13114,7 @@ def api_facturer_hospitalisation(hospit_id):
             f"du {hospit.date_entree.strftime('%d/%m/%Y')} au {hospit.date_sortie.strftime('%d/%m/%Y')}",
             user_name, expires_at, prochain_numero, json.dumps(assurances_data, ensure_ascii=False),
             base_cac_articles, True, hospit.id,
-            'en_attente', hospit.applique_pbr_cac, hospit.pbr_cac_variante,
+            'en_attente', hospit.applique_pbr_cac, hospit.pbr_cac_variante, hospit.applique_tva,
         ))
 
         if not result:
