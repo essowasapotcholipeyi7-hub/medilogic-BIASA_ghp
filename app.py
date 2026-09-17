@@ -13,10 +13,11 @@ from io import BytesIO
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
+from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre
 
 # ⭐ Numéro WhatsApp de l'éditeur (Togo, +228) pour l'envoi du reçu
 # d'abonnement — voir admin_finances.html.
@@ -11831,6 +11832,446 @@ def api_convertir_proforma():
         traceback.print_exc()
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+
+# ============================================================
+# HOSPITALISATION — suivi de séjour au jour le jour
+# ============================================================
+# Chaque soin (acte ou médicament) est enregistré avec sa propre date/heure
+# (résout le problème d'un même acte répété le même jour sur un reçu à date
+# unique, ex. NFS x2, qui inquiète l'assurance). Les actes "chambre"
+# porteurs d'un palier hebdomadaire (voir services/hospitalisation_service.py)
+# sont répartis automatiquement. La facturation NE réécrit PAS le circuit
+# financier : elle construit une Proforma (même calcul AMU/CAC que
+# api_creer_proforma ci-dessus, même table `proformas`) puis renvoie
+# l'utilisateur sur l'écran de conversion proforma→vente déjà existant —
+# créance, caisse, comptabilité et facturation assurance mensuelle restent
+# donc automatiquement cohérents avec le reste de l'application.
+
+@app.route('/hospitalisation')
+@login_required
+def page_hospitalisation():
+    structure_id = session.get('structure_id')
+    hospitalisations = Hospitalisation.query.filter_by(structure_id=structure_id)\
+        .order_by(Hospitalisation.created_at.desc()).all()
+    return render_template('hospitalisation_liste.html', hospitalisations=hospitalisations)
+
+
+@app.route('/api/hospitalisation', methods=['POST'])
+@login_required
+def api_creer_hospitalisation():
+    try:
+        data = request.json or {}
+        structure_id = session.get('structure_id')
+        user_name = session.get('user_name', 'System')
+
+        patient_id = data.get('patient_id')
+        if not patient_id:
+            return jsonify({'success': False, 'error': 'Patient requis'}), 400
+
+        patient = Patient.query.get(patient_id)
+        if not patient or str(patient.structure_id) != str(structure_id):
+            return jsonify({'success': False, 'error': 'Patient introuvable'}), 404
+
+        date_entree_str = data.get('date_entree')
+        try:
+            date_entree = datetime.strptime(date_entree_str, '%Y-%m-%d').date() if date_entree_str else date.today()
+        except ValueError:
+            return jsonify({'success': False, 'error': "Date d'entrée invalide"}), 400
+
+        numero_local = prochain_numero_local('hospitalisations', structure_id)
+
+        hospit = Hospitalisation(
+            structure_id=structure_id,
+            numero_local=numero_local,
+            patient_id=patient.id,
+            patient_nom=f"{patient.prenom} {patient.nom}".strip(),
+            date_entree=date_entree,
+            chambre_service=data.get('chambre_service', ''),
+            assurance_nom=patient.type_assurance,
+            taux_assurance=patient.taux_prise_charge or 0,
+            assurance2_nom=patient.assurance2_nom,
+            taux_assurance2=patient.taux_assurance2 or 0,
+            societe_assurance2=patient.societe_assurance2,
+            statut='en_cours',
+            created_by=user_name,
+        )
+        db.session.add(hospit)
+        db.session.commit()
+
+        return jsonify({'success': True, 'hospitalisation_id': hospit.id, 'numero_local': numero_local})
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Erreur création hospitalisation: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/hospitalisation/<int:hospit_id>')
+@login_required
+def page_hospitalisation_suivi(hospit_id):
+    structure_id = session.get('structure_id')
+    hospit = Hospitalisation.query.filter_by(id=hospit_id, structure_id=structure_id).first()
+    if not hospit:
+        flash('Séjour introuvable', 'danger')
+        return redirect(url_for('page_hospitalisation'))
+    soins = SoinHospitalisation.query.filter_by(hospitalisation_id=hospit_id)\
+        .order_by(SoinHospitalisation.date_prestation, SoinHospitalisation.heure_prestation).all()
+    solde_en_cours = sum(float(s.prix or 0) * int(s.quantite or 0) for s in soins if s.statut == 'en_cours')
+    return render_template('hospitalisation_suivi.html', hospit=hospit, soins=soins, solde_en_cours=solde_en_cours)
+
+
+@app.route('/api/hospitalisation/<int:hospit_id>/soins', methods=['POST'])
+@login_required
+def api_ajouter_soin_hospitalisation(hospit_id):
+    try:
+        data = request.json or {}
+        structure_id = session.get('structure_id')
+        user_name = session.get('user_name', 'System')
+
+        hospit = Hospitalisation.query.filter_by(id=hospit_id, structure_id=structure_id).first()
+        if not hospit:
+            return jsonify({'success': False, 'error': 'Séjour introuvable'}), 404
+        if hospit.statut == 'facturee':
+            return jsonify({'success': False, 'error': 'Ce séjour est déjà facturé'}), 400
+
+        type_soin = data.get('type')
+        if type_soin not in ('acte', 'medicament'):
+            return jsonify({'success': False, 'error': 'Type de soin invalide'}), 400
+
+        nom = data.get('nom')
+        prix = float(data.get('prix') or 0)
+        pbr = float(data.get('pbr') or prix)
+        quantite = int(data.get('quantite') or 1)
+        reference_id = data.get('reference_id')
+        prise_amu = bool(data.get('prise_en_charge_amu', True))
+        prise_cac = bool(data.get('prise_en_charge_cac', True))
+        note = data.get('note', '')
+
+        if not nom or quantite <= 0:
+            return jsonify({'success': False, 'error': 'Nom et quantité requis'}), 400
+
+        date_prestation_str = data.get('date_prestation')
+        try:
+            date_prestation = datetime.strptime(date_prestation_str, '%Y-%m-%d').date() if date_prestation_str else date.today()
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Date invalide'}), 400
+
+        heure_prestation = None
+        heure_str = data.get('heure_prestation')
+        if heure_str:
+            try:
+                heure_prestation = datetime.strptime(heure_str, '%H:%M').time()
+            except ValueError:
+                heure_prestation = None
+        if heure_prestation is None:
+            heure_prestation = datetime.now().time().replace(microsecond=0)
+
+        patient_assure = bool(hospit.assurance_nom) and hospit.assurance_nom not in ('non_assure', 'Non assuré') \
+            and float(hospit.taux_assurance or 0) > 0
+
+        # ⭐ Détection auto des paliers hebdomadaires — uniquement pour un
+        # acte "chambre" (nom se terminant par un suffixe de palier connu),
+        # patient assuré, et quantité > 7 jours (voir plan : sinon une seule
+        # tranche suffit, pas besoin d'aller chercher les actes sœurs).
+        lignes_a_inserer = []
+        if type_soin == 'acte' and quantite > 7 and patient_assure:
+            tous_les_actes = sheets_helper.get_all_records('actes', use_prefix=True)
+            acte_choisi = {'id': reference_id, 'nom': nom, 'prix': prix, 'pbr': pbr}
+            for l in construire_lignes_chambre(acte_choisi, quantite, date_prestation, tous_les_actes, patient_assure=True):
+                lignes_a_inserer.append(l)
+        else:
+            lignes_a_inserer.append({
+                'reference_id': reference_id, 'nom': nom, 'prix': prix, 'pbr': pbr,
+                'quantite': quantite, 'date_prestation': date_prestation, 'date_fin_prestation': None,
+            })
+
+        # ⭐ Avertissement non bloquant : même reference_id déjà enregistré
+        # ce même jour sur ce séjour (ex. NFS deux fois le 10/09) — on laisse
+        # passer si prise_confirmer_doublon est explicitement envoyé.
+        doublon = False
+        if reference_id and not data.get('confirmer_doublon'):
+            doublon = SoinHospitalisation.query.filter_by(
+                hospitalisation_id=hospit_id, reference_id=reference_id,
+                date_prestation=date_prestation, statut='en_cours'
+            ).first() is not None
+
+        if doublon:
+            return jsonify({
+                'success': False, 'doublon': True,
+                'error': f"« {nom} » a déjà été enregistré ce jour pour ce séjour. Confirmer quand même ?"
+            }), 409
+
+        ids_crees = []
+        for l in lignes_a_inserer:
+            soin = SoinHospitalisation(
+                hospitalisation_id=hospit_id, structure_id=structure_id, type=type_soin,
+                reference_id=l['reference_id'], nom=l['nom'], prix=l['prix'], pbr=l['pbr'],
+                quantite=l['quantite'], prise_en_charge_amu=prise_amu, prise_en_charge_cac=prise_cac,
+                date_prestation=l['date_prestation'], heure_prestation=heure_prestation,
+                date_fin_prestation=l['date_fin_prestation'], note=note,
+                enregistre_par=user_name, statut='en_cours',
+            )
+            db.session.add(soin)
+            db.session.flush()
+            ids_crees.append(soin.id)
+
+        db.session.commit()
+        return jsonify({'success': True, 'soin_ids': ids_crees, 'lignes': len(ids_crees)})
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Erreur ajout soin hospitalisation: {e}")
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/hospitalisation/<int:hospit_id>/soins/<int:soin_id>', methods=['DELETE'])
+@login_required
+def api_supprimer_soin_hospitalisation(hospit_id, soin_id):
+    try:
+        structure_id = session.get('structure_id')
+        soin = SoinHospitalisation.query.filter_by(id=soin_id, hospitalisation_id=hospit_id, structure_id=structure_id).first()
+        if not soin:
+            return jsonify({'success': False, 'error': 'Ligne introuvable'}), 404
+        if soin.statut != 'en_cours':
+            return jsonify({'success': False, 'error': 'Cette ligne est déjà facturée'}), 400
+        db.session.delete(soin)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/hospitalisation/<int:hospit_id>/sortie', methods=['POST'])
+@login_required
+def api_sortie_hospitalisation(hospit_id):
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        hospit = Hospitalisation.query.filter_by(id=hospit_id, structure_id=structure_id).first()
+        if not hospit:
+            return jsonify({'success': False, 'error': 'Séjour introuvable'}), 404
+
+        date_sortie_str = data.get('date_sortie')
+        try:
+            date_sortie = datetime.strptime(date_sortie_str, '%Y-%m-%d').date() if date_sortie_str else date.today()
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Date invalide'}), 400
+
+        if date_sortie < hospit.date_entree:
+            return jsonify({'success': False, 'error': "La date de sortie ne peut pas précéder la date d'entrée"}), 400
+
+        hospit.date_sortie = date_sortie
+        if hospit.statut == 'en_cours':
+            hospit.statut = 'sortie'
+        db.session.commit()
+        return jsonify({'success': True, 'nombre_jours': hospit.nombre_jours})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/hospitalisation/<int:hospit_id>/facturer', methods=['POST'])
+@login_required
+def api_facturer_hospitalisation(hospit_id):
+    """Construit une Proforma à partir des soins 'en_cours' du séjour — même
+    calcul AMU/CAC par article (taux_amu_pour_article, P160=90%) et même
+    table `proformas` que api_creer_proforma() : tout le reste (conversion
+    en vente, créance, caisse, comptabilité, facturation assurance
+    mensuelle via generer_factures_assurance) passe par le pipeline déjà en
+    place, sans code financier dupliqué."""
+    try:
+        structure_id = session.get('structure_id')
+        user_name = session.get('user_name', 'System')
+
+        hospit = Hospitalisation.query.filter_by(id=hospit_id, structure_id=structure_id).first()
+        if not hospit:
+            return jsonify({'success': False, 'error': 'Séjour introuvable'}), 404
+        if hospit.statut == 'facturee':
+            return jsonify({'success': False, 'error': 'Séjour déjà facturé'}), 400
+        if not hospit.date_sortie:
+            return jsonify({'success': False, 'error': "Enregistrez d'abord la date de sortie"}), 400
+
+        soins = SoinHospitalisation.query.filter_by(hospitalisation_id=hospit_id, statut='en_cours').all()
+        if not soins:
+            return jsonify({'success': False, 'error': 'Aucun soin à facturer'}), 400
+
+        assurance_nom = hospit.assurance_nom or 'Non assuré'
+        taux_assurance = float(hospit.taux_assurance or 0)
+        est_assure = bool(assurance_nom) and assurance_nom not in ('non_assure', 'Non assuré') and taux_assurance > 0
+
+        assurance2_active = bool(hospit.assurance2_nom)
+        assurance2_nom = hospit.assurance2_nom or ''
+        taux_assurance2 = float(hospit.taux_assurance2 or 0) if assurance2_active else 0
+
+        sous_total = 0
+        pbr_total_amu = 0
+        sous_total_amu = 0
+        base_cac_articles = 0
+        prise_en_charge_par_article = 0
+        articles = []
+
+        for s in soins:
+            prix = float(s.prix or 0)
+            pbr = float(s.pbr or prix)
+            quantite = int(s.quantite or 0)
+            total = prix * quantite
+            sous_total += total
+
+            prise_amu = bool(s.prise_en_charge_amu)
+            prise_cac = bool(s.prise_en_charge_cac)
+            taux_item = taux_amu_pour_article(s.nom, taux_assurance) if est_assure else 0
+
+            if est_assure and prise_amu and pbr > 0:
+                sous_total_amu += total
+                base_amu_article = min(prix, pbr) * quantite
+                pbr_total_amu += base_amu_article
+                if taux_item > 0:
+                    prise_en_charge_par_article += (base_amu_article * taux_item) / 100
+
+            if prise_cac:
+                if est_assure and prise_amu and pbr > 0 and taux_assurance > 0:
+                    base_amu_article = min(prix, pbr) * quantite
+                    prise_amu_article = (base_amu_article * taux_item) / 100
+                    reste = total - prise_amu_article
+                    if reste > 0:
+                        base_cac_articles += reste
+                else:
+                    base_cac_articles += total
+
+            articles.append({
+                'id': s.reference_id, 'nom': s.nom, 'prix': prix, 'prix_unitaire': prix, 'pbr': pbr,
+                'quantite': quantite, 'total': total,
+                'prise_en_charge_amu': prise_amu, 'prise_en_charge_cac': prise_cac,
+                'type': 'produit' if s.type == 'medicament' else 'acte',
+                'date_prestation': s.date_prestation.isoformat() if s.date_prestation else None,
+                'date_fin_prestation': s.date_fin_prestation.isoformat() if s.date_fin_prestation else None,
+            })
+
+        prise_en_charge = 0
+        base_remboursement = 0
+        if est_assure:
+            base_remboursement = min(sous_total_amu, pbr_total_amu)
+            if base_remboursement > 0:
+                prise_en_charge = prise_en_charge_par_article
+
+        prise_en_charge2 = 0
+        if assurance2_active and taux_assurance2 > 0 and base_cac_articles > 0:
+            prise_en_charge2 = base_cac_articles * (taux_assurance2 / 100)
+
+        net_a_payer = sous_total - prise_en_charge - prise_en_charge2
+        if net_a_payer < 0:
+            net_a_payer = 0
+
+        types_presents = set(a['type'] for a in articles)
+        type_proforma = 'mixte' if len(types_presents) > 1 else ('pharmacie' if 'produit' in types_presents else 'actes')
+
+        expires_at = datetime.now() + timedelta(days=7)
+        next_numero = db.execute_query("""
+            SELECT COALESCE(MAX(numero_proforma), 0) + 1 as next_num FROM proformas WHERE structure_id = %s
+        """, (structure_id,))
+        prochain_numero = next_numero[0]['next_num'] if next_numero else 1
+
+        assurances_data = {
+            'principale': {'nom': assurance_nom, 'taux': taux_assurance,
+                           'montant_prise_en_charge': prise_en_charge, 'base_remboursement': base_remboursement},
+            'complementaire': {'nom': assurance2_nom, 'taux': taux_assurance2,
+                                'montant_prise_en_charge': prise_en_charge2, 'active': assurance2_active}
+                              if assurance2_active else None,
+        }
+
+        result = db.execute_query("""
+            INSERT INTO proformas (
+                structure_id, patient_id, patient_nom, patient_telephone,
+                assurance_nom, taux_assurance, assurance2_nom, taux_assurance2,
+                assurance2_active, type, articles, sous_total, prise_en_charge,
+                prise_en_charge2, net_a_payer, base_remboursement, notes,
+                created_by, expires_at, numero_proforma, assurances_data,
+                base_cac, assurance_principale_active, hospitalisation_id,
+                statut, created_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, NOW())
+            RETURNING id
+        """, (
+            structure_id, hospit.patient_id, hospit.patient_nom, '',
+            assurance_nom, taux_assurance, assurance2_nom, taux_assurance2,
+            assurance2_active, type_proforma, json.dumps(articles, ensure_ascii=False), sous_total, prise_en_charge,
+            prise_en_charge2, net_a_payer, base_remboursement,
+            f"Hospitalisation #{hospit.numero_local or hospit.id} — {hospit.patient_nom} — "
+            f"du {hospit.date_entree.strftime('%d/%m/%Y')} au {hospit.date_sortie.strftime('%d/%m/%Y')}",
+            user_name, expires_at, prochain_numero, json.dumps(assurances_data, ensure_ascii=False),
+            base_cac_articles, True, hospit.id,
+            'en_attente'
+        ))
+
+        if not result:
+            return jsonify({'success': False, 'error': 'Erreur création proforma'}), 500
+        proforma_id = result[0]['id']
+
+        SoinHospitalisation.query.filter_by(hospitalisation_id=hospit_id, statut='en_cours').update({'statut': 'facture'})
+        hospit.statut = 'facturee'
+        hospit.proforma_id = proforma_id
+        db.session.commit()
+
+        return jsonify({'success': True, 'proforma_id': proforma_id})
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Erreur facturation hospitalisation: {e}")
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/hospitalisation/<int:hospit_id>/billet')
+@login_required
+def hospitalisation_billet(hospit_id):
+    structure_id = session.get('structure_id')
+    hospit = Hospitalisation.query.filter_by(id=hospit_id, structure_id=structure_id).first()
+    if not hospit:
+        flash('Séjour introuvable', 'danger')
+        return redirect(url_for('page_hospitalisation'))
+
+    soins = SoinHospitalisation.query.filter_by(hospitalisation_id=hospit_id).all()
+    a_amu = any(s.prise_en_charge_amu for s in soins)
+    a_cac = any(s.prise_en_charge_cac for s in soins)
+
+    structures = sheets_helper.get_all_records('structures', use_prefix=False)
+    structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
+
+    return render_template('hospitalisation_billet.html', hospit=hospit, a_amu=a_amu, a_cac=a_cac,
+                            structure_nom=structure_info.get('nom', 'SSoftOneV10'),
+                            structure_adresse=structure_info.get('adresse', ''),
+                            structure_telephone=structure_info.get('telephone', ''))
+
+
+@app.route('/hospitalisation/<int:hospit_id>/releve')
+@login_required
+def hospitalisation_releve(hospit_id):
+    structure_id = session.get('structure_id')
+    hospit = Hospitalisation.query.filter_by(id=hospit_id, structure_id=structure_id).first()
+    if not hospit:
+        flash('Séjour introuvable', 'danger')
+        return redirect(url_for('page_hospitalisation'))
+
+    type_filtre = request.args.get('type', 'global')
+    q = SoinHospitalisation.query.filter_by(hospitalisation_id=hospit_id, statut='en_cours')
+    if type_filtre == 'actes':
+        q = q.filter_by(type='acte')
+    elif type_filtre == 'medicaments':
+        q = q.filter_by(type='medicament')
+    soins = q.order_by(SoinHospitalisation.date_prestation).all()
+
+    groupes = {}
+    for s in soins:
+        groupes.setdefault(s.date_prestation, []).append(s)
+    jours = [{'date': d, 'lignes': groupes[d], 'total': sum(l.total for l in groupes[d])} for d in sorted(groupes.keys())]
+    total_general = sum(j['total'] for j in jours)
+
+    structures = sheets_helper.get_all_records('structures', use_prefix=False)
+    structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
+
+    return render_template('hospitalisation_releve.html', hospit=hospit, jours=jours, total_general=total_general,
+                            type_filtre=type_filtre, structure_nom=structure_info.get('nom', 'SSoftOneV10'))
 
 
 @app.route('/api/proformas/count')

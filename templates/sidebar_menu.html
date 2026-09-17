@@ -42,6 +42,12 @@
                 </a>
                 {% endif %}
 
+                {% if not onglet_cache('hospitalisation') and not _bloq %}
+                <a class="nav-link {% if request.endpoint and request.endpoint.startswith('hospitalisation') or request.endpoint == 'page_hospitalisation' or request.endpoint == 'page_hospitalisation_suivi' %}active{% endif %}" href="{{ url_for('page_hospitalisation') }}">
+                    <span class="menu-text">Hospitalisation (suivi de séjour)</span>
+                </a>
+                {% endif %}
+
                 {% if not onglet_cache('pharmacie') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'pharma_vente' %}active{% endif %}" href="{{ url_for('pharma_vente') }}">
                     <span class="menu-text">Pharmacie&Vente</span>

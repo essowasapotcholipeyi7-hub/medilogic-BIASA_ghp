@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Billet d'hospitalisation #{{ hospit.numero_local or hospit.id }}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- html2pdf pour l'export PDF — même pattern que recu_abonnement.html / recu_installation.html -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f0f2f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+            background: white;
+            padding: 28px;
+            border-radius: 10px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 2px solid #1a1a2e;
+            padding-bottom: 14px;
+            margin-bottom: 18px;
+        }
+
+        .header h2 { font-size: 18px; color: #1a1a2e; margin: 0; }
+        .header p { margin: 2px 0; font-size: 11px; color: #555; }
+
+        .badge {
+            background: #1c3d5a;
+            color: white !important;
+            padding: 5px 14px;
+            border-radius: 30px;
+            font-size: 12px;
+            font-weight: bold;
+            display: inline-block;
+        }
+
+        .badge-assurance {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-right: 6px;
+        }
+        .badge-amu { background: #e3f2fd; color: #0d47a1; }
+        .badge-cac { background: #e8f5e9; color: #1b5e20; }
+        .badge-aucune { background: #f5f5f5; color: #616161; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 14px 0;
+            font-size: 13px;
+        }
+
+        table td {
+            border: 1px solid #dee2e6;
+            padding: 9px 10px;
+        }
+
+        table td:first-child {
+            width: 45%;
+            background: #f8f9fa;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .jours-box {
+            background: #eef3f8;
+            border-radius: 8px;
+            padding: 18px;
+            text-align: center;
+            margin: 18px 0;
+        }
+
+        .jours-box .nombre {
+            font-size: 34px;
+            font-weight: bold;
+            color: #1c3d5a;
+        }
+
+        .jours-box .label { font-size: 12px; color: #555; margin-top: 4px; }
+
+        .periode {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 10px;
+            font-size: 13px;
+        }
+        .periode .item { text-align: center; }
+        .periode .item .val { font-weight: bold; color: #1c3d5a; }
+
+        .footer {
+            margin-top: 22px;
+            padding-top: 12px;
+            border-top: 1px dashed #ccc;
+            font-size: 11px;
+            color: #6c757d;
+            text-align: center;
+        }
+
+        .no-print { margin-top: 20px; text-align: center; }
+        .no-print button {
+            border: none;
+            padding: 10px 18px;
+            margin: 4px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            color: white;
+        }
+        .btn-print { background: #1a1a2e; }
+        .btn-pdf { background: #dc3545; }
+        .btn-back { background: #6c757d; }
+
+        @media print {
+            body { background: white; padding: 0; }
+            .container { box-shadow: none; max-width: 100%; }
+            .no-print { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="billetContenu">
+        <div class="header">
+            <div>
+                <h2>{{ structure_nom }}</h2>
+                {% if structure_adresse %}<p>{{ structure_adresse }}</p>{% endif %}
+                {% if structure_telephone %}<p>Tél. {{ structure_telephone }}</p>{% endif %}
+            </div>
+            <div style="text-align: right;">
+                <span class="badge">BILLET D'HOSPITALISATION</span>
+                <p style="margin-top: 4px;">N° {{ hospit.numero_local or hospit.id }}</p>
+            </div>
+        </div>
+
+        <div class="jours-box">
+            <div class="nombre">{{ hospit.nombre_jours }}</div>
+            <div class="label">jour{{ 's' if hospit.nombre_jours != 1 else '' }} d'hospitalisation</div>
+            <div class="periode">
+                <div class="item">
+                    <div>Entrée</div>
+                    <div class="val">{{ hospit.date_entree.strftime('%d/%m/%Y') if hospit.date_entree else '-' }}</div>
+                </div>
+                <div class="item">
+                    <div>Sortie</div>
+                    <div class="val">{{ hospit.date_sortie.strftime('%d/%m/%Y') if hospit.date_sortie else 'En cours' }}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mb-2" style="margin-bottom: 12px;">
+            <strong>Destinataire : </strong>
+            {% if a_amu %}<span class="badge-assurance badge-amu">AMU</span>{% endif %}
+            {% if a_cac %}<span class="badge-assurance badge-cac">CAC</span>{% endif %}
+            {% if not a_amu and not a_cac %}<span class="badge-assurance badge-aucune">Patient</span>{% endif %}
+        </div>
+
+        <table>
+            <tr>
+                <td>Patient</td>
+                <td>{{ hospit.patient_nom }}</td>
+            </tr>
+            <tr>
+                <td>Chambre / Service</td>
+                <td>{{ hospit.chambre_service or '-' }}</td>
+            </tr>
+            {% if hospit.assurance_nom and hospit.assurance_nom not in ('non_assure', 'Non assuré') %}
+            <tr>
+                <td>Assurance principale</td>
+                <td>{{ hospit.assurance_nom }} ({{ hospit.taux_assurance|int }}%)</td>
+            </tr>
+            {% endif %}
+            {% if hospit.assurance2_nom %}
+            <tr>
+                <td>Assurance complémentaire</td>
+                <td>{{ hospit.assurance2_nom }} ({{ hospit.taux_assurance2|int }}%)</td>
+            </tr>
+            {% endif %}
+            <tr>
+                <td>Émis le</td>
+                <td>{{ hospit.created_at.strftime('%d/%m/%Y à %H:%M') if hospit.created_at else '' }}</td>
+            </tr>
+        </table>
+
+        <div class="footer">
+            Billet généré automatiquement par {{ structure_nom }} — à remettre à l'assurance concernée.
+        </div>
+    </div>
+
+    <div class="no-print">
+        <button class="btn-print" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
+        <button class="btn-pdf" onclick="telechargerPDF()"><i class="fas fa-file-pdf"></i> PDF</button>
+        <button class="btn-back" onclick="window.close()"><i class="fas fa-times"></i> Fermer</button>
+    </div>
+
+    <script>
+    function telechargerPDF() {
+        const element = document.getElementById('billetContenu');
+        const opt = {
+            margin: [0.4, 0.4, 0.4, 0.4],
+            filename: 'billet_hospitalisation_{{ hospit.numero_local or hospit.id }}.pdf',
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, useCORS: true, logging: false },
+            jsPDF: { unit: 'in', format: 'a5', orientation: 'portrait' },
+            pagebreak: { mode: 'avoid-all' }
+        };
+        html2pdf().set(opt).from(element).save();
+    }
+    </script>
+</body>
+</html>

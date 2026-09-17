@@ -2079,6 +2079,82 @@ class Proforma(db.Model):
     # mécanisme que Vente.assurance_principale_active, absent jusqu'ici du
     # formulaire de création proforma.
     assurance_principale_active = db.Column(db.Boolean, default=True)
+    # ⭐ Traçabilité : proforma générée automatiquement depuis "Facturer le
+    # séjour" (module Hospitalisation) — NULL pour une proforma classique.
+    hospitalisation_id = db.Column(db.Integer)
+
+
+# ============================================================
+# HOSPITALISATION — suivi jour par jour + tarification par palier
+# ============================================================
+class Hospitalisation(db.Model):
+    """Un séjour hospitalier. Les soins (actes/médicaments) administrés
+    jour après jour sont enregistrés à part (SoinHospitalisation) et
+    convertis en Proforma puis en Vente à la clôture — voir
+    services/hospitalisation_service.py et la route
+    /api/hospitalisation/<id>/facturer, qui réutilisent intégralement le
+    pipeline proforma→vente existant (créance, caisse, comptabilité,
+    journal, facturation assurance mensuelle) plutôt que d'en écrire un
+    parallèle."""
+    __tablename__ = 'hospitalisations'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    numero_local = db.Column(db.Integer)
+    patient_id = db.Column(db.Integer, nullable=False)
+    patient_nom = db.Column(db.String(255), nullable=False)
+    date_entree = db.Column(db.Date, nullable=False)
+    date_sortie = db.Column(db.Date)  # NULL tant que le séjour est en cours
+    chambre_service = db.Column(db.String(255))
+    # Snapshot de l'assurance du patient au moment de l'admission (même
+    # schéma que Proforma/Vente) — éditable ligne par ligne à la conversion.
+    assurance_nom = db.Column(db.String(255))
+    taux_assurance = db.Column(db.Numeric, default=0)
+    assurance2_nom = db.Column(db.String(255))
+    taux_assurance2 = db.Column(db.Numeric, default=0)
+    societe_assurance2 = db.Column(db.String(255))
+    statut = db.Column(db.String(50), default='en_cours')  # en_cours/sortie/facturee
+    proforma_id = db.Column(db.Integer)
+    vente_id = db.Column(db.Integer)
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @property
+    def nombre_jours(self):
+        fin = self.date_sortie or date.today()
+        if not self.date_entree:
+            return 0
+        return max((fin - self.date_entree).days, 0)
+
+
+class SoinHospitalisation(db.Model):
+    """Une ligne de soin (acte ou médicament) administrée à une date/heure
+    donnée pendant un séjour. `date_fin_prestation` n'est renseigné que
+    pour une tranche de palier "chambre" (période de plusieurs jours au
+    même tarif) — NULL pour un acte/médicament ponctuel, dont la date
+    unique suffit à le distinguer d'une même prestation un autre jour."""
+    __tablename__ = 'soins_hospitalisation'
+    id = db.Column(db.Integer, primary_key=True)
+    hospitalisation_id = db.Column(db.Integer, nullable=False)
+    structure_id = db.Column(db.Integer, nullable=False)
+    type = db.Column(db.String(20), nullable=False)  # 'acte' | 'medicament'
+    reference_id = db.Column(db.Integer)
+    nom = db.Column(db.String(255), nullable=False)
+    prix = db.Column(db.Numeric, default=0)
+    pbr = db.Column(db.Numeric, default=0)
+    quantite = db.Column(db.Integer, default=1)
+    prise_en_charge_amu = db.Column(db.Boolean, default=True)
+    prise_en_charge_cac = db.Column(db.Boolean, default=True)
+    date_prestation = db.Column(db.Date, nullable=False)
+    heure_prestation = db.Column(db.Time)
+    date_fin_prestation = db.Column(db.Date)
+    note = db.Column(db.Text)
+    enregistre_par = db.Column(db.String(255))
+    date_enregistrement = db.Column(db.DateTime, default=datetime.utcnow)
+    statut = db.Column(db.String(20), default='en_cours')  # en_cours/facture
+
+    @property
+    def total(self):
+        return float(self.prix or 0) * int(self.quantite or 0)
 
 
 class ProformaLunette(db.Model):

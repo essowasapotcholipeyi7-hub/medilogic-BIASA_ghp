@@ -1891,6 +1891,11 @@
                     Labo/Radio/Hospi/Actes
                 </a>
                 {% endif %}
+                {% if not onglet_cache('hospitalisation') %}
+                <a class="menu-item" href="{{ url_for('page_hospitalisation') }}">
+                    Hospitalisation (suivi de séjour)
+                </a>
+                {% endif %}
                 {% if a_acces('prescriptions_recues') and not onglet_cache('prescriptions_recues') %}
                 <a class="menu-item" href="{{ url_for('prescriptions_recues') }}">
                     Prescriptions reçues

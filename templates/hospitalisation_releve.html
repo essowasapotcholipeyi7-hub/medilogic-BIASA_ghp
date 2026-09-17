@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relevé — Séjour #{{ hospit.numero_local or hospit.id }}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, Helvetica, sans-serif; background: #f0f2f5; padding: 20px; }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 28px;
+            border-radius: 10px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 2px solid #1a1a2e;
+            padding-bottom: 14px;
+            margin-bottom: 18px;
+        }
+        .header h2 { font-size: 18px; color: #1a1a2e; margin: 0; }
+        .header p { margin: 2px 0; font-size: 11px; color: #555; }
+
+        .badge {
+            background: #495057;
+            color: white !important;
+            padding: 5px 14px;
+            border-radius: 30px;
+            font-size: 12px;
+            font-weight: bold;
+            display: inline-block;
+        }
+
+        .jour-bloc { margin-bottom: 18px; }
+        .jour-titre {
+            background: #f1f3f5;
+            padding: 6px 12px;
+            font-weight: bold;
+            font-size: 13px;
+            border-radius: 6px 6px 0 0;
+            color: #333;
+        }
+        table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+        table th, table td { border: 1px solid #dee2e6; padding: 6px 8px; text-align: left; }
+        table th { background: #fafafa; font-size: 11px; text-transform: uppercase; color: #666; }
+        table td.num, table th.num { text-align: right; }
+        .type-acte { color: #0d47a1; font-weight: 600; }
+        .type-medicament { color: #1b5e20; font-weight: 600; }
+
+        .total-jour { text-align: right; font-size: 12px; padding: 4px 8px; color: #495057; background: #fbfbfb; border: 1px solid #dee2e6; border-top: none; }
+        .total-general {
+            margin-top: 16px;
+            text-align: right;
+            font-size: 20px;
+            font-weight: bold;
+            color: #1c3d5a;
+            padding: 12px;
+            background: #eef3f8;
+            border-radius: 8px;
+        }
+
+        .footer { margin-top: 20px; padding-top: 12px; border-top: 1px dashed #ccc; font-size: 11px; color: #6c757d; text-align: center; }
+        .no-print { margin-top: 20px; text-align: center; }
+        .no-print button { border: none; padding: 10px 18px; margin: 4px; border-radius: 6px; font-size: 13px; cursor: pointer; color: white; }
+        .btn-print { background: #1a1a2e; }
+        .btn-pdf { background: #dc3545; }
+        .btn-back { background: #6c757d; }
+
+        @media print {
+            body { background: white; padding: 0; }
+            .container { box-shadow: none; max-width: 100%; }
+            .no-print { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="releveContenu">
+        <div class="header">
+            <div>
+                <h2>{{ structure_nom }}</h2>
+                <p>{{ hospit.patient_nom }} — Séjour #{{ hospit.numero_local or hospit.id }}</p>
+                <p>Du {{ hospit.date_entree.strftime('%d/%m/%Y') if hospit.date_entree else '-' }}
+                   au {{ hospit.date_sortie.strftime('%d/%m/%Y') if hospit.date_sortie else "aujourd'hui" }}</p>
+            </div>
+            <div style="text-align: right;">
+                <span class="badge">
+                    {% if type_filtre == 'actes' %}RELEVÉ — ACTES
+                    {% elif type_filtre == 'medicaments' %}RELEVÉ — MÉDICAMENTS
+                    {% else %}RELEVÉ GLOBAL{% endif %}
+                </span>
+            </div>
+        </div>
+
+        {% for j in jours %}
+        <div class="jour-bloc">
+            <div class="jour-titre">{{ j.date.strftime('%d/%m/%Y') }}</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Libellé</th>
+                        <th class="num">Qté</th>
+                        <th class="num">P.U.</th>
+                        <th class="num">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for l in j.lignes %}
+                    <tr>
+                        <td class="{{ 'type-acte' if l.type == 'acte' else 'type-medicament' }}">
+                            {{ 'Acte' if l.type == 'acte' else 'Médicament' }}
+                        </td>
+                        <td>
+                            {{ l.nom }}
+                            {% if l.date_fin_prestation %}
+                                <br><small style="color:#888;">période du {{ l.date_prestation.strftime('%d/%m') }} au {{ l.date_fin_prestation.strftime('%d/%m/%Y') }}</small>
+                            {% endif %}
+                        </td>
+                        <td class="num">{{ l.quantite }}</td>
+                        <td class="num">{{ '{:,}'.format(l.prix|round(0)|int).replace(',', ' ') }}</td>
+                        <td class="num">{{ '{:,}'.format(l.total|round(0)|int).replace(',', ' ') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="total-jour">Total du jour : {{ '{:,}'.format(j.total|round(0)|int).replace(',', ' ') }} FCFA</div>
+        </div>
+        {% else %}
+        <p style="text-align:center; color:#888; padding: 30px 0;">Aucun soin enregistré pour ce filtre.</p>
+        {% endfor %}
+
+        {% if jours %}
+        <div class="total-general">Total général : {{ '{:,}'.format(total_general|round(0)|int).replace(',', ' ') }} FCFA</div>
+        {% endif %}
+
+        <div class="footer">
+            Relevé généré automatiquement par {{ structure_nom }} — chaque ligne porte sa propre date de prestation.
+        </div>
+    </div>
+
+    <div class="no-print">
+        <button class="btn-print" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
+        <button class="btn-pdf" onclick="telechargerPDF()"><i class="fas fa-file-pdf"></i> PDF</button>
+        <button class="btn-back" onclick="window.close()"><i class="fas fa-times"></i> Fermer</button>
+    </div>
+
+    <script>
+    function telechargerPDF() {
+        const element = document.getElementById('releveContenu');
+        const opt = {
+            margin: [0.4, 0.4, 0.4, 0.4],
+            filename: 'releve_sejour_{{ hospit.numero_local or hospit.id }}.pdf',
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, useCORS: true, logging: false },
+            jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' },
+            pagebreak: { mode: ['css', 'legacy'] }
+        };
+        html2pdf().set(opt).from(element).save();
+    }
+    </script>
+</body>
+</html>

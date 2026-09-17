@@ -2125,14 +2125,25 @@ function showPatientDestinationModal(id, nom, assurance, taux, assurance2, taux2
                                 </button>
                             </div>
                             <div class="col-md-4">
-                                <button class="btn btn-outline-warning w-100 py-4 destination-btn" 
+                                <button class="btn btn-outline-warning w-100 py-4 destination-btn"
                                         style="border-radius: 15px; border-width: 2px; transition: all 0.3s;"
-                                        onmouseover="this.style.transform='scale(1.03)'" 
+                                        onmouseover="this.style.transform='scale(1.03)'"
                                         onmouseout="this.style.transform='scale(1)'"
                                         onclick="redirigerVers('prescriptions')">
                                     <span style="font-size: 18px; font-weight: 600;">Prescriptions</span>
                                     <br>
                                     <small class="text-muted">Voir les prescriptions reçues</small>
+                                </button>
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-outline-dark w-100 py-4 destination-btn"
+                                        style="border-radius: 15px; border-width: 2px; transition: all 0.3s;"
+                                        onmouseover="this.style.transform='scale(1.03)'"
+                                        onmouseout="this.style.transform='scale(1)'"
+                                        onclick="redirigerVers('hospitalisation')">
+                                    <span style="font-size: 18px; font-weight: 600;">Hospitalisation</span>
+                                    <br>
+                                    <small class="text-muted">Nouveau séjour / suivi</small>
                                 </button>
                             </div>
                         </div>
@@ -2170,6 +2181,9 @@ function redirigerVers(destination) {
             break;
         case 'prescriptions':
             window.location.href = '/prescriptions-recues';
+            break;
+        case 'hospitalisation':
+            window.location.href = '/hospitalisation?nouveau=1';
             break;
         default:
             window.location.href = '/dashboard';

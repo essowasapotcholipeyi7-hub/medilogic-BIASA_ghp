@@ -1,0 +1,403 @@
+{% extends "base.html" %}
+
+{% block title %}Séjour #{{ hospit.numero_local or hospit.id }} — {{ hospit.patient_nom }}{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+    <div>
+        <h4 class="mb-1"><i class="fas fa-bed me-2"></i>Séjour #{{ hospit.numero_local or hospit.id }} — {{ hospit.patient_nom }}</h4>
+        <div class="text-muted">
+            {{ hospit.chambre_service or 'Chambre/service non précisé' }}
+            {% if hospit.assurance_nom and hospit.assurance_nom not in ('non_assure', 'Non assuré') %}
+                <span class="badge bg-primary ms-2"><i class="fas fa-shield-alt"></i> {{ hospit.assurance_nom }} ({{ hospit.taux_assurance|int }}%)</span>
+            {% else %}
+                <span class="badge bg-secondary ms-2">Non assuré</span>
+            {% endif %}
+            {% if hospit.assurance2_nom %}
+                <span class="badge bg-info ms-1">+ {{ hospit.assurance2_nom }} ({{ hospit.taux_assurance2|int }}%)</span>
+            {% endif %}
+        </div>
+    </div>
+    <a href="{{ url_for('page_hospitalisation') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i> Liste des séjours
+    </a>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div class="text-muted small">Entrée</div>
+                <div class="fw-bold">{{ hospit.date_entree.strftime('%d/%m/%Y') if hospit.date_entree else '-' }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div class="text-muted small">Sortie</div>
+                <div class="fw-bold">{{ hospit.date_sortie.strftime('%d/%m/%Y') if hospit.date_sortie else 'En cours' }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div class="text-muted small">Jours</div>
+                <div class="fw-bold">{{ hospit.nombre_jours }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center h-100 border-dark">
+            <div class="card-body">
+                <div class="text-muted small">Solde en cours</div>
+                <div class="fw-bold fs-5" id="soldeEnCours">{{ '{:,}'.format(solde_en_cours|round(0)|int).replace(',', ' ') }} FCFA</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body d-flex flex-wrap gap-2 align-items-center">
+        <a href="{{ url_for('hospitalisation_billet', hospit_id=hospit.id) }}" target="_blank" class="btn btn-outline-dark btn-sm">
+            <i class="fas fa-file-medical me-1"></i> Billet d'hospitalisation
+        </a>
+        <a href="{{ url_for('hospitalisation_releve', hospit_id=hospit.id) }}?type=actes" target="_blank" class="btn btn-outline-primary btn-sm">
+            <i class="fas fa-print me-1"></i> Relevé Actes
+        </a>
+        <a href="{{ url_for('hospitalisation_releve', hospit_id=hospit.id) }}?type=medicaments" target="_blank" class="btn btn-outline-success btn-sm">
+            <i class="fas fa-print me-1"></i> Relevé Médicaments
+        </a>
+        <a href="{{ url_for('hospitalisation_releve', hospit_id=hospit.id) }}?type=global" target="_blank" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-print me-1"></i> Relevé Global
+        </a>
+
+        <div class="ms-auto d-flex gap-2 align-items-center">
+            {% if hospit.statut == 'en_cours' %}
+            <input type="date" class="form-control form-control-sm" id="dateSortieInput" style="width:160px;" value="{{ hospit.date_sortie.strftime('%Y-%m-%d') if hospit.date_sortie else '' }}">
+            <button class="btn btn-warning btn-sm" onclick="enregistrerSortie()"><i class="fas fa-door-open me-1"></i> Enregistrer la sortie</button>
+            {% elif hospit.statut == 'sortie' %}
+            <button class="btn btn-dark btn-sm" onclick="facturerSejour()"><i class="fas fa-file-invoice me-1"></i> Facturer le séjour</button>
+            {% else %}
+            <span class="badge bg-secondary">Séjour facturé — <a href="/proformas" class="text-white">voir la proforma</a></span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% if hospit.statut != 'facturee' %}
+<div class="row g-3 mb-3">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-primary text-white"><i class="fas fa-stethoscope me-1"></i> Ajouter un acte</div>
+            <div class="card-body">
+                <div class="position-relative mb-2">
+                    <input type="text" class="form-control" id="acteSearch" placeholder="Rechercher un acte (ex. NFS, P160 Hospi...)" autocomplete="off">
+                    <div id="acteResultats" class="list-group position-absolute w-100" style="z-index:1000; max-height:260px; overflow-y:auto; display:none;"></div>
+                </div>
+                <div id="acteChoisiBloc" style="display:none;" class="mb-2 p-2 border rounded bg-light">
+                    <strong id="acteChoisiNom"></strong> — <span id="acteChoisiPrix"></span> FCFA
+                    <span class="text-muted small">(PBR <span id="acteChoisiPbr"></span>)</span>
+                </div>
+                <div class="row g-2">
+                    <div class="col-4">
+                        <label class="form-label small mb-0">Quantité / jours</label>
+                        <input type="number" min="1" value="1" class="form-control" id="acteQuantite">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label small mb-0">Date</label>
+                        <input type="date" class="form-control" id="acteDate">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label small mb-0">Heure</label>
+                        <input type="time" class="form-control" id="acteHeure">
+                    </div>
+                </div>
+                <div class="form-text">Quantité &gt; 7 jours sur un acte "chambre" (P160...) répartit automatiquement 1ère semaine / 8e-14e jour / 15e jour et + si le patient est assuré.</div>
+                <button class="btn btn-primary mt-2 w-100" id="btnAjouterActe" onclick="ajouterSoin('acte')" disabled>
+                    <i class="fas fa-plus me-1"></i> Ajouter l'acte
+                </button>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-success text-white"><i class="fas fa-pills me-1"></i> Ajouter un médicament</div>
+            <div class="card-body">
+                <div class="position-relative mb-2">
+                    <input type="text" class="form-control" id="produitSearch" placeholder="Rechercher un médicament" autocomplete="off">
+                    <div id="produitResultats" class="list-group position-absolute w-100" style="z-index:1000; max-height:260px; overflow-y:auto; display:none;"></div>
+                </div>
+                <div id="produitChoisiBloc" style="display:none;" class="mb-2 p-2 border rounded bg-light">
+                    <strong id="produitChoisiNom"></strong> — <span id="produitChoisiPrix"></span> FCFA
+                    <span class="text-muted small">(stock <span id="produitChoisiStock"></span>)</span>
+                    <div id="produitPeremptionInfo" class="small"></div>
+                </div>
+                <div class="row g-2">
+                    <div class="col-4">
+                        <label class="form-label small mb-0">Quantité</label>
+                        <input type="number" min="1" value="1" class="form-control" id="produitQuantite">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label small mb-0">Date</label>
+                        <input type="date" class="form-control" id="produitDate">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label small mb-0">Heure</label>
+                        <input type="time" class="form-control" id="produitHeure">
+                    </div>
+                </div>
+                <button class="btn btn-success mt-2 w-100" id="btnAjouterProduit" onclick="ajouterSoin('medicament')" disabled>
+                    <i class="fas fa-plus me-1"></i> Ajouter le médicament
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header bg-dark text-white">Historique des soins</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Date</th>
+                        <th>Heure</th>
+                        <th>Type</th>
+                        <th>Libellé</th>
+                        <th class="text-end">Qté</th>
+                        <th class="text-end">Prix</th>
+                        <th class="text-end">Total</th>
+                        <th>Assur.</th>
+                        <th>Enregistré par</th>
+                        <th>Statut</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in soins %}
+                    <tr>
+                        <td>
+                            {{ s.date_prestation.strftime('%d/%m/%Y') if s.date_prestation else '-' }}
+                            {% if s.date_fin_prestation %}<br><small class="text-muted">au {{ s.date_fin_prestation.strftime('%d/%m/%Y') }}</small>{% endif %}
+                        </td>
+                        <td>{{ s.heure_prestation.strftime('%H:%M') if s.heure_prestation else '-' }}</td>
+                        <td>{% if s.type == 'acte' %}<span class="badge bg-primary">Acte</span>{% else %}<span class="badge bg-success">Médicament</span>{% endif %}</td>
+                        <td>{{ s.nom }}{% if s.note %}<br><small class="text-muted">{{ s.note }}</small>{% endif %}</td>
+                        <td class="text-end">{{ s.quantite }}</td>
+                        <td class="text-end">{{ '{:,}'.format(s.prix|round(0)|int).replace(',', ' ') }}</td>
+                        <td class="text-end">{{ '{:,}'.format(s.total|round(0)|int).replace(',', ' ') }}</td>
+                        <td>
+                            {% if s.prise_en_charge_amu %}<span class="badge bg-primary" title="AMU">AMU</span>{% endif %}
+                            {% if s.prise_en_charge_cac %}<span class="badge bg-info" title="CAC">CAC</span>{% endif %}
+                        </td>
+                        <td><small>{{ s.enregistre_par or '-' }}</small></td>
+                        <td>
+                            {% if s.statut == 'en_cours' %}<span class="badge bg-warning text-dark">En cours</span>
+                            {% else %}<span class="badge bg-secondary">Facturé</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if s.statut == 'en_cours' %}
+                            <button class="btn btn-sm btn-outline-danger" onclick="supprimerSoin({{ s.id }})" title="Retirer">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="11" class="text-center text-muted py-4">Aucun soin enregistré pour ce séjour</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+const HOSPIT_ID = {{ hospit.id }};
+let acteChoisi = null;
+let produitChoisi = null;
+let debounceActe = null;
+
+document.getElementById('acteDate') && (document.getElementById('acteDate').value = new Date().toISOString().slice(0,10));
+document.getElementById('produitDate') && (document.getElementById('produitDate').value = new Date().toISOString().slice(0,10));
+
+// ===================== RECHERCHE ACTES =====================
+document.getElementById('acteSearch')?.addEventListener('input', function() {
+    const q = this.value.trim();
+    clearTimeout(debounceActe);
+    if (q.length < 2) { document.getElementById('acteResultats').style.display = 'none'; return; }
+    debounceActe = setTimeout(() => {
+        fetch('/api/actes?search=' + encodeURIComponent(q) + '&limit=20')
+            .then(r => r.json())
+            .then(data => {
+                const box = document.getElementById('acteResultats');
+                const liste = data.data || [];
+                if (!liste.length) { box.style.display = 'none'; return; }
+                box.innerHTML = liste.map(a => `
+                    <a href="#" class="list-group-item list-group-item-action" onclick='choisirActe(${JSON.stringify(a).replace(/'/g, "&apos;")}); return false;'>
+                        <div class="d-flex justify-content-between">
+                            <span>${a.nom}</span>
+                            <strong>${Math.round(a.prix).toLocaleString()} FCFA</strong>
+                        </div>
+                    </a>`).join('');
+                box.style.display = 'block';
+            });
+    }, 250);
+});
+
+function choisirActe(a) {
+    acteChoisi = a;
+    document.getElementById('acteChoisiNom').textContent = a.nom;
+    document.getElementById('acteChoisiPrix').textContent = Math.round(a.prix).toLocaleString();
+    document.getElementById('acteChoisiPbr').textContent = Math.round(a.pbr).toLocaleString();
+    document.getElementById('acteChoisiBloc').style.display = '';
+    document.getElementById('acteResultats').style.display = 'none';
+    document.getElementById('acteSearch').value = a.nom;
+    document.getElementById('btnAjouterActe').disabled = false;
+}
+
+// ===================== RECHERCHE PRODUITS (médicaments) =====================
+let tousLesProduits = null;
+function chargerProduits() {
+    if (tousLesProduits) return Promise.resolve(tousLesProduits);
+    return fetch('/api/produits').then(r => r.json()).then(data => { tousLesProduits = data; return data; });
+}
+
+document.getElementById('produitSearch')?.addEventListener('input', function() {
+    const q = this.value.trim().toLowerCase();
+    const box = document.getElementById('produitResultats');
+    if (q.length < 2) { box.style.display = 'none'; return; }
+    chargerProduits().then(liste => {
+        const filtres = liste.filter(p => p.nom.toLowerCase().includes(q)).slice(0, 20);
+        if (!filtres.length) { box.style.display = 'none'; return; }
+        box.innerHTML = filtres.map(p => `
+            <a href="#" class="list-group-item list-group-item-action" onclick='choisirProduit(${JSON.stringify(p).replace(/'/g, "&apos;")}); return false;'>
+                <div class="d-flex justify-content-between">
+                    <span>${p.nom}</span>
+                    <strong>${Math.round(p.prix_vente).toLocaleString()} FCFA</strong>
+                </div>
+            </a>`).join('');
+        box.style.display = 'block';
+    });
+});
+
+function choisirProduit(p) {
+    produitChoisi = p;
+    document.getElementById('produitChoisiNom').textContent = p.nom;
+    document.getElementById('produitChoisiPrix').textContent = Math.round(p.prix_vente).toLocaleString();
+    document.getElementById('produitChoisiStock').textContent = p.quantite_stock;
+    document.getElementById('produitResultats').style.display = 'none';
+    document.getElementById('produitSearch').value = p.nom;
+
+    // ⭐ Vérification péremption — même règle que pharma_vente.html : bloque
+    // si périmé, avertit si périme bientôt.
+    const infoEl = document.getElementById('produitPeremptionInfo');
+    infoEl.innerHTML = '';
+    document.getElementById('btnAjouterProduit').disabled = false;
+    if (p.date_peremption) {
+        const perempDate = new Date(p.date_peremption);
+        const joursRestants = Math.ceil((perempDate - new Date()) / (1000 * 60 * 60 * 24));
+        if (joursRestants < 0) {
+            infoEl.innerHTML = `<span class="text-danger">🔴 PÉRIMÉ depuis le ${p.date_peremption}</span>`;
+            document.getElementById('btnAjouterProduit').disabled = true;
+        } else if (joursRestants <= 30) {
+            infoEl.innerHTML = `<span class="text-warning">⚠️ Expire dans ${joursRestants} jour(s) (${p.date_peremption})</span>`;
+        }
+    }
+    document.getElementById('produitChoisiBloc').style.display = '';
+}
+
+// ===================== AJOUT D'UN SOIN =====================
+function ajouterSoin(type, confirmerDoublon) {
+    const choix = type === 'acte' ? acteChoisi : produitChoisi;
+    if (!choix) { alert('Choisissez d\'abord un article dans la liste.'); return; }
+
+    if (type === 'medicament' && choix.date_peremption) {
+        const perempDate = new Date(choix.date_peremption);
+        const joursRestants = Math.ceil((perempDate - new Date()) / (1000 * 60 * 60 * 24));
+        if (joursRestants < 0) {
+            alert(`❌ « ${choix.nom} » est PÉRIMÉ depuis le ${choix.date_peremption}. Impossible de l'ajouter.`);
+            return;
+        }
+        if (joursRestants <= 30 && !confirmerDoublon) {
+            if (!confirm(`⚠️ « ${choix.nom} » expire dans ${joursRestants} jour(s) (${choix.date_peremption}). Continuer ?`)) return;
+        }
+    }
+
+    const payload = {
+        type: type,
+        reference_id: choix.id,
+        nom: choix.nom,
+        prix: type === 'acte' ? choix.prix : choix.prix_vente,
+        pbr: choix.pbr,
+        quantite: parseInt(document.getElementById(type === 'acte' ? 'acteQuantite' : 'produitQuantite').value || '1'),
+        date_prestation: document.getElementById(type === 'acte' ? 'acteDate' : 'produitDate').value,
+        heure_prestation: document.getElementById(type === 'acte' ? 'acteHeure' : 'produitHeure').value,
+        prise_en_charge_amu: choix.prise_en_charge_amu !== false,
+        prise_en_charge_cac: choix.prise_en_charge_cac !== false,
+        confirmer_doublon: !!confirmerDoublon,
+    };
+
+    fetch(`/api/hospitalisation/${HOSPIT_ID}/soins`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    })
+    .then(r => r.json().then(data => ({ status: r.status, data })))
+    .then(({ status, data }) => {
+        if (status === 409 && data.doublon) {
+            if (confirm(data.error + '\n\nConfirmer l\'ajout quand même ?')) {
+                ajouterSoin(type, true);
+            }
+            return;
+        }
+        if (data.success) {
+            window.location.reload();
+        } else {
+            alert('Erreur : ' + (data.error || 'inconnue'));
+        }
+    })
+    .catch(e => alert('Erreur : ' + e));
+}
+
+function supprimerSoin(soinId) {
+    if (!confirm('Retirer cette ligne du séjour ?')) return;
+    fetch(`/api/hospitalisation/${HOSPIT_ID}/soins/${soinId}`, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+}
+
+function enregistrerSortie() {
+    const dateSortie = document.getElementById('dateSortieInput').value;
+    if (!dateSortie) { alert('Choisissez une date de sortie.'); return; }
+    fetch(`/api/hospitalisation/${HOSPIT_ID}/sortie`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date_sortie: dateSortie })
+    })
+    .then(r => r.json())
+    .then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+}
+
+function facturerSejour() {
+    if (!confirm('Facturer ce séjour ? Une proforma sera créée avec tous les soins en cours — vous pourrez encore ajuster quantités/prix avant la conversion finale en vente.')) return;
+    fetch(`/api/hospitalisation/${HOSPIT_ID}/facturer`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                window.location.href = '/proformas?convertir=' + data.proforma_id;
+            } else {
+                alert('Erreur : ' + (data.error || 'inconnue'));
+            }
+        });
+}
+
+// Fermer les listes de résultats au clic ailleurs
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('#acteSearch') && !e.target.closest('#acteResultats')) document.getElementById('acteResultats').style.display = 'none';
+    if (!e.target.closest('#produitSearch') && !e.target.closest('#produitResultats')) document.getElementById('produitResultats').style.display = 'none';
+});
+</script>
+
+{% endblock %}

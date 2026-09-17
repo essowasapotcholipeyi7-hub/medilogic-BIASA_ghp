@@ -45,4 +45,5 @@ MODULES_STRUCTURE = {
     'finances':              {'label': 'Finances / Caisse & Charges',     'endpoints': ['admin_finances']},
     'comptabilite':          {'label': 'Comptabilité',                    'endpoints': ['comptabilite.index']},
     'rh':                    {'label': 'Ressources humaines',             'endpoints': ['rh.gestion_rh']},
+    'hospitalisation':       {'label': 'Hospitalisation (suivi de séjour)','endpoints': ['page_hospitalisation']},
 }

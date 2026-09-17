@@ -3237,6 +3237,16 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('assurance2TauxApplique')?.addEventListener('change', function() {
         calculerTotal();
     });
+
+    // ⭐ Ouverture automatique de l'écran de conversion quand on arrive
+    // depuis "Facturer le séjour" (module Hospitalisation) avec
+    // ?convertir=<proforma_id> — même écran de conversion que pour une
+    // proforma classique, aucune duplication d'UI.
+    const paramsUrl = new URLSearchParams(window.location.search);
+    const idAConvertir = paramsUrl.get('convertir');
+    if (idAConvertir) {
+        convertirEnVente(parseInt(idAConvertir, 10));
+    }
 });
 </script>
 {% endblock %}
