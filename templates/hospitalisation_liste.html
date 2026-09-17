@@ -6,9 +6,14 @@
 
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <h4 class="mb-0"><i class="fas fa-bed me-2"></i>Hospitalisation — Séjours</h4>
-    <button class="btn btn-dark" onclick="ouvrirNouveauSejour()">
-        <i class="fas fa-plus me-1"></i> Nouveau séjour
-    </button>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('page_hospitalisation_configuration') }}" class="btn btn-outline-secondary">
+            <i class="fas fa-cog me-1"></i> Configurer les chambres
+        </a>
+        <button class="btn btn-dark" onclick="ouvrirNouveauSejour()">
+            <i class="fas fa-plus me-1"></i> Nouveau séjour
+        </button>
+    </div>
 </div>
 
 <div class="alert alert-info" id="patientPreselectionne" style="display:none;">
@@ -112,10 +117,30 @@
                     <label class="form-label">Date d'entrée</label>
                     <input type="date" class="form-control" id="nsDateEntree">
                 </div>
+
+                {% if a_inventaire %}
+                <div class="mb-3">
+                    <label class="form-label">Service</label>
+                    <select class="form-select" id="nsService" onchange="chargerDisponibilite()">
+                        <option value="">-- Choisir un service --</option>
+                    </select>
+                </div>
+                <div class="mb-3" id="nsDisponibiliteBloc" style="display:none;">
+                    <label class="form-label">Chambre / Lit disponible</label>
+                    <div id="nsChambresListe" style="max-height:260px; overflow-y:auto;"></div>
+                </div>
+                <input type="hidden" id="nsLitId" value="">
+                <div class="small text-muted" id="nsLitChoisiTexte"></div>
+                {% else %}
                 <div class="mb-3">
                     <label class="form-label">Chambre / Service</label>
                     <input type="text" class="form-control" id="nsChambreService" placeholder="Ex. Cabine climatisée 1 lit — Chambre 4">
+                    <div class="form-text">
+                        Astuce : <a href="{{ url_for('page_hospitalisation_configuration') }}">configurez vos chambres et lits</a>
+                        pour choisir directement un lit disponible la prochaine fois.
+                    </div>
                 </div>
+                {% endif %}
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
@@ -155,21 +180,90 @@ function ouvrirNouveauSejour() {
         document.getElementById('btnCreerSejour').disabled = true;
     }
     document.getElementById('nsDateEntree').value = new Date().toISOString().slice(0, 10);
+    if (document.getElementById('nsService')) {
+        chargerServices();
+    }
     new bootstrap.Modal(document.getElementById('modalNouveauSejour')).show();
+}
+
+// ===================== SÉLECTION SERVICE > CHAMBRE > LIT =====================
+function chargerServices() {
+    const select = document.getElementById('nsService');
+    select.innerHTML = '<option value="">-- Choisir un service --</option>';
+    document.getElementById('nsDisponibiliteBloc').style.display = 'none';
+    document.getElementById('nsLitId').value = '';
+    document.getElementById('nsLitChoisiTexte').textContent = '';
+    fetch('/api/hospitalisation/services')
+        .then(r => r.json())
+        .then(data => {
+            (data.services || []).forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.id; opt.textContent = s.nom;
+                select.appendChild(opt);
+            });
+        });
+}
+
+function chargerDisponibilite() {
+    const serviceId = document.getElementById('nsService').value;
+    const bloc = document.getElementById('nsDisponibiliteBloc');
+    const liste = document.getElementById('nsChambresListe');
+    document.getElementById('nsLitId').value = '';
+    document.getElementById('nsLitChoisiTexte').textContent = '';
+    if (!serviceId) { bloc.style.display = 'none'; return; }
+
+    liste.innerHTML = '<div class="text-muted small">Chargement...</div>';
+    bloc.style.display = '';
+    fetch('/api/hospitalisation/disponibilite?service_id=' + serviceId)
+        .then(r => r.json())
+        .then(data => {
+            const chambres = data.chambres || [];
+            if (!chambres.length) {
+                liste.innerHTML = '<div class="text-muted small">Aucune chambre dans ce service.</div>';
+                return;
+            }
+            liste.innerHTML = chambres.map(c => `
+                <div class="border rounded p-2 mb-2">
+                    <div class="fw-bold small mb-1">${c.nom} <span class="text-muted">(${c.lits_libres}/${c.lits_total} libre(s))</span></div>
+                    <div class="d-flex flex-wrap gap-1">
+                        ${c.lits.map(l => l.statut === 'libre'
+                            ? `<button type="button" class="btn btn-sm btn-outline-success" onclick="choisirLit(${l.id}, '${c.nom.replace(/'/g, "\\'")} — ${l.nom.replace(/'/g, "\\'")}', this)">${l.nom}</button>`
+                            : `<button type="button" class="btn btn-sm btn-outline-secondary" disabled title="Occupé par ${l.occupant_nom || 'un patient'}">${l.nom} 🔒</button>`
+                        ).join('')}
+                    </div>
+                </div>`).join('');
+        });
+}
+
+function choisirLit(litId, texte, btn) {
+    document.getElementById('nsLitId').value = litId;
+    document.getElementById('nsLitChoisiTexte').innerHTML = `<i class="fas fa-check-circle text-success"></i> Lit choisi : <strong>${texte}</strong>`;
+    document.querySelectorAll('#nsChambresListe button').forEach(b => b.classList.remove('btn-success'));
+    if (btn) { btn.classList.remove('btn-outline-success'); btn.classList.add('btn-success'); }
 }
 
 function creerSejour() {
     if (!nsPatientId) return;
+    const litIdEl = document.getElementById('nsLitId');
+    if (litIdEl && document.getElementById('nsService') && document.getElementById('nsService').value && !litIdEl.value) {
+        alert('Choisissez un lit disponible (ou laissez le service vide pour ne pas en assigner).');
+        return;
+    }
     const btn = document.getElementById('btnCreerSejour');
     btn.disabled = true;
+    const payload = {
+        patient_id: nsPatientId,
+        date_entree: document.getElementById('nsDateEntree').value,
+    };
+    if (litIdEl && litIdEl.value) {
+        payload.lit_id = litIdEl.value;
+    } else if (document.getElementById('nsChambreService')) {
+        payload.chambre_service = document.getElementById('nsChambreService').value;
+    }
     fetch('/api/hospitalisation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            patient_id: nsPatientId,
-            date_entree: document.getElementById('nsDateEntree').value,
-            chambre_service: document.getElementById('nsChambreService').value,
-        })
+        body: JSON.stringify(payload)
     })
     .then(r => r.json())
     .then(data => {

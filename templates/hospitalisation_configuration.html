@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block title %}Configuration Chambres & Lits{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h4 class="mb-0"><i class="fas fa-hospital me-2"></i>Configuration — Services, chambres & lits</h4>
+    <a href="{{ url_for('page_hospitalisation') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i> Liste des séjours
+    </a>
+</div>
+
+<div class="alert alert-info">
+    <i class="fas fa-info-circle me-1"></i>
+    Préparez ici une bonne fois vos services (ex. Médecine interne, Chirurgie), leurs chambres et leurs lits.
+    Ensuite, "Nouveau séjour" ne proposera que les lits réellement <strong>libres</strong> — occupation et libération
+    se font automatiquement à l'entrée et à la clôture du séjour.
+</div>
+
+<div class="card mb-3">
+    <div class="card-header bg-dark text-white">
+        <i class="fas fa-plus me-1"></i> Nouveau service
+    </div>
+    <div class="card-body d-flex gap-2">
+        <input type="text" class="form-control" id="nouveauServiceNom" placeholder="Nom du service (ex. Médecine interne)">
+        <button class="btn btn-dark" onclick="creerService()"><i class="fas fa-check me-1"></i> Créer</button>
+    </div>
+</div>
+
+<div class="accordion" id="accordionServices">
+    {% for service in services %}
+    <div class="accordion-item mb-2">
+        <h2 class="accordion-header">
+            <button class="accordion-button {{ 'collapsed' if not loop.first else '' }}" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#service{{ service.id }}">
+                <i class="fas fa-door-open me-2"></i> {{ service.nom }}
+                {% if not service.actif %}<span class="badge bg-secondary ms-2">Désactivé</span>{% endif %}
+                <span class="badge bg-light text-dark ms-2">{{ chambres_par_service.get(service.id, [])|length }} chambre(s)</span>
+            </button>
+        </h2>
+        <div id="service{{ service.id }}" class="accordion-collapse collapse {{ 'show' if loop.first else '' }}" data-bs-parent="#accordionServices">
+            <div class="accordion-body">
+                <div class="d-flex justify-content-end mb-2">
+                    <button class="btn btn-sm btn-outline-{{ 'danger' if service.actif else 'success' }}" onclick="toggleService({{ service.id }}, this)">
+                        <i class="fas fa-power-off"></i> {{ 'Désactiver le service' if service.actif else 'Réactiver le service' }}
+                    </button>
+                </div>
+
+                <div class="input-group input-group-sm mb-3" style="max-width: 420px;">
+                    <input type="text" class="form-control" id="nouvelleChambreNom{{ service.id }}" placeholder="Nom de la chambre (ex. Chambre 12)">
+                    <button class="btn btn-outline-primary" onclick="creerChambre({{ service.id }})"><i class="fas fa-plus"></i> Ajouter la chambre</button>
+                </div>
+
+                {% for chambre in chambres_par_service.get(service.id, []) %}
+                <div class="card mb-2">
+                    <div class="card-header d-flex justify-content-between align-items-center py-2">
+                        <span><i class="fas fa-bed me-1"></i> <strong>{{ chambre.nom }}</strong>
+                            {% if not chambre.actif %}<span class="badge bg-secondary ms-1">Désactivée</span>{% endif %}
+                        </span>
+                        <button class="btn btn-sm btn-outline-{{ 'danger' if chambre.actif else 'success' }}" onclick="toggleChambre({{ chambre.id }}, this)">
+                            <i class="fas fa-power-off"></i>
+                        </button>
+                    </div>
+                    <div class="card-body py-2">
+                        <div class="d-flex flex-wrap gap-2 mb-2">
+                            {% for lit in lits_par_chambre.get(chambre.id, []) %}
+                            <div class="border rounded px-2 py-1 {{ 'border-danger' if lit.statut == 'occupe' else 'border-success' }}" style="min-width:150px;">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <strong>{{ lit.nom }}</strong>
+                                    <button class="btn btn-sm btn-link p-0 {{ 'text-success' if not lit.actif else 'text-danger' }}"
+                                            onclick="toggleLit({{ lit.id }}, this)" title="{{ 'Réactiver' if not lit.actif else 'Désactiver' }}">
+                                        <i class="fas fa-power-off"></i>
+                                    </button>
+                                </div>
+                                {% if lit.statut == 'occupe' %}
+                                    <span class="badge bg-danger">Occupé</span>
+                                    {% if lit.occupant %}
+                                    <div class="small text-muted">{{ lit.occupant.patient_nom }} — séjour #{{ lit.occupant.numero_local or lit.occupant.id }}</div>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="badge bg-success">Libre</span>
+                                {% endif %}
+                                {% if not lit.actif %}<div class="small text-muted">désactivé</div>{% endif %}
+                            </div>
+                            {% else %}
+                            <span class="text-muted small">Aucun lit dans cette chambre</span>
+                            {% endfor %}
+                        </div>
+                        <div class="input-group input-group-sm" style="max-width: 320px;">
+                            <input type="number" min="1" value="1" class="form-control" id="nombreLits{{ chambre.id }}" style="max-width:80px;">
+                            <button class="btn btn-outline-success" onclick="creerLits({{ chambre.id }})"><i class="fas fa-plus"></i> Ajouter le(s) lit(s)</button>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <p class="text-muted small">Aucune chambre dans ce service.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <p class="text-muted">Aucun service configuré pour l'instant — créez-en un ci-dessus pour commencer.</p>
+    {% endfor %}
+</div>
+
+<script>
+function creerService() {
+    const nom = document.getElementById('nouveauServiceNom').value.trim();
+    if (!nom) { alert('Indiquez un nom de service.'); return; }
+    fetch('/api/hospitalisation/services', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nom })
+    }).then(r => r.json()).then(data => {
+        if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue'));
+    });
+}
+
+function creerChambre(serviceId) {
+    const input = document.getElementById('nouvelleChambreNom' + serviceId);
+    const nom = input.value.trim();
+    if (!nom) { alert('Indiquez un nom de chambre.'); return; }
+    fetch('/api/hospitalisation/chambres', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ service_id: serviceId, nom })
+    }).then(r => r.json()).then(data => {
+        if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue'));
+    });
+}
+
+function creerLits(chambreId) {
+    const nombre = parseInt(document.getElementById('nombreLits' + chambreId).value) || 1;
+    fetch('/api/hospitalisation/lits', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chambre_id: chambreId, nombre })
+    }).then(r => r.json()).then(data => {
+        if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue'));
+    });
+}
+
+function toggleService(id, btn) {
+    fetch(`/api/hospitalisation/services/${id}/toggle`, { method: 'POST' })
+        .then(r => r.json()).then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+}
+function toggleChambre(id, btn) {
+    fetch(`/api/hospitalisation/chambres/${id}/toggle`, { method: 'POST' })
+        .then(r => r.json()).then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+}
+function toggleLit(id, btn) {
+    fetch(`/api/hospitalisation/lits/${id}/toggle`, { method: 'POST' })
+        .then(r => r.json()).then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+}
+</script>
+
+{% endblock %}

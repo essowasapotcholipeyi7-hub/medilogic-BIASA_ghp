@@ -2104,7 +2104,14 @@ class Hospitalisation(db.Model):
     patient_nom = db.Column(db.String(255), nullable=False)
     date_entree = db.Column(db.Date, nullable=False)
     date_sortie = db.Column(db.Date)  # NULL tant que le séjour est en cours
+    # ⭐ chambre_service reste le texte affiché partout (dérivé automatiquement
+    # de service > chambre > lit à la création si lit_id est fourni, saisi
+    # à la main sinon — structure n'ayant pas encore configuré son
+    # inventaire, comportement inchangé). lit_id est la référence
+    # structurée qui pilote l'occupation automatique (voir
+    # LitHospitalisation) ; NULL si pas d'inventaire utilisé pour ce séjour.
     chambre_service = db.Column(db.String(255))
+    lit_id = db.Column(db.Integer)
     # Snapshot de l'assurance du patient au moment de l'admission (même
     # schéma que Proforma/Vente) — éditable ligne par ligne à la conversion.
     assurance_nom = db.Column(db.String(255))
@@ -2200,6 +2207,45 @@ class SoinHospitalisation(db.Model):
     @property
     def total(self):
         return float(self.prix or 0) * int(self.quantite or 0)
+
+
+# ============================================================
+# HOSPITALISATION — inventaire chambres/lits + occupation
+# ============================================================
+# Pré-créé une bonne fois par la structure (page de configuration), pour
+# qu'ouvrir un séjour se fasse en choisissant un service puis un lit LIBRE
+# plutôt qu'en tapant un texte libre à chaque fois — occupation/libération
+# automatique, voir api_creer_hospitalisation / api_sortie_hospitalisation
+# (app.py). `actif` = suppression douce : désactiver un service/chambre/lit
+# ne casse pas l'historique des séjours qui le référencent déjà.
+class ServiceHospitalisation(db.Model):
+    __tablename__ = 'services_hospitalisation'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    nom = db.Column(db.String(255), nullable=False)
+    actif = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ChambreHospitalisation(db.Model):
+    __tablename__ = 'chambres_hospitalisation'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    service_id = db.Column(db.Integer, nullable=False)
+    nom = db.Column(db.String(255), nullable=False)  # ex. "Chambre 12"
+    actif = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class LitHospitalisation(db.Model):
+    __tablename__ = 'lits_hospitalisation'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    chambre_id = db.Column(db.Integer, nullable=False)
+    nom = db.Column(db.String(100), nullable=False)  # ex. "Lit 1"
+    statut = db.Column(db.String(20), default='libre')  # libre / occupe
+    actif = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class ProformaLunette(db.Model):

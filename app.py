@@ -13,7 +13,7 @@ from io import BytesIO
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
@@ -11849,13 +11849,221 @@ def api_convertir_proforma():
 # créance, caisse, comptabilité et facturation assurance mensuelle restent
 # donc automatiquement cohérents avec le reste de l'application.
 
+# ============================================================
+# HOSPITALISATION — inventaire chambres/lits (config) + disponibilité
+# ============================================================
+# Pré-créé une bonne fois par service > chambre > lit, pour qu'ouvrir un
+# séjour se fasse en choisissant un lit LIBRE plutôt qu'en tapant un texte
+# libre à chaque fois. Occupation à la création (api_creer_hospitalisation),
+# libération à la clôture (api_sortie_hospitalisation) — un seul geste
+# existant, rien de nouveau à cliquer pour libérer une chambre.
+
+@app.route('/hospitalisation/configuration')
+@login_required
+def page_hospitalisation_configuration():
+    structure_id = session.get('structure_id')
+    services = ServiceHospitalisation.query.filter_by(structure_id=structure_id)\
+        .order_by(ServiceHospitalisation.nom).all()
+
+    chambres_par_service = {}
+    lits_par_chambre = {}
+    for service in services:
+        chambres = ChambreHospitalisation.query.filter_by(structure_id=structure_id, service_id=service.id)\
+            .order_by(ChambreHospitalisation.nom).all()
+        chambres_par_service[service.id] = chambres
+        for chambre in chambres:
+            lits = LitHospitalisation.query.filter_by(structure_id=structure_id, chambre_id=chambre.id)\
+                .order_by(LitHospitalisation.nom).all()
+            # ⭐ Qui occupe ce lit, pour l'afficher directement (patient +
+            # numéro de séjour) plutôt qu'un simple badge "Occupé" muet.
+            for lit in lits:
+                lit.occupant = None
+                if lit.statut == 'occupe':
+                    lit.occupant = Hospitalisation.query.filter_by(
+                        structure_id=structure_id, lit_id=lit.id, statut='en_cours'
+                    ).first() or Hospitalisation.query.filter_by(
+                        structure_id=structure_id, lit_id=lit.id
+                    ).order_by(Hospitalisation.created_at.desc()).first()
+            lits_par_chambre[chambre.id] = lits
+
+    return render_template('hospitalisation_configuration.html', services=services,
+                            chambres_par_service=chambres_par_service, lits_par_chambre=lits_par_chambre)
+
+
+@app.route('/api/hospitalisation/services')
+@login_required
+def api_lister_services_hospitalisation():
+    structure_id = session.get('structure_id')
+    services = ServiceHospitalisation.query.filter_by(structure_id=structure_id, actif=True)\
+        .order_by(ServiceHospitalisation.nom).all()
+    return jsonify({'success': True, 'services': [{'id': s.id, 'nom': s.nom} for s in services]})
+
+
+@app.route('/api/hospitalisation/services', methods=['POST'])
+@login_required
+def api_creer_service_hospitalisation():
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        nom = (data.get('nom') or '').strip()
+        if not nom:
+            return jsonify({'success': False, 'error': 'Nom du service requis'}), 400
+        service = ServiceHospitalisation(structure_id=structure_id, nom=nom, actif=True)
+        db.session.add(service)
+        db.session.commit()
+        return jsonify({'success': True, 'service_id': service.id})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/hospitalisation/chambres', methods=['POST'])
+@login_required
+def api_creer_chambre_hospitalisation():
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        service_id = data.get('service_id')
+        nom = (data.get('nom') or '').strip()
+        service = ServiceHospitalisation.query.filter_by(id=service_id, structure_id=structure_id).first()
+        if not service:
+            return jsonify({'success': False, 'error': 'Service introuvable'}), 404
+        if not nom:
+            return jsonify({'success': False, 'error': 'Nom de la chambre requis'}), 400
+        chambre = ChambreHospitalisation(structure_id=structure_id, service_id=service_id, nom=nom, actif=True)
+        db.session.add(chambre)
+        db.session.commit()
+        return jsonify({'success': True, 'chambre_id': chambre.id})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/hospitalisation/lits', methods=['POST'])
+@login_required
+def api_creer_lits_hospitalisation():
+    """Crée un ou plusieurs lits d'un coup pour une chambre — soit une
+    liste de noms explicites (`noms`), soit un nombre (`nombre`) qui génère
+    "Lit 1", "Lit 2"... à la suite des lits déjà existants dans la chambre."""
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        chambre_id = data.get('chambre_id')
+        chambre = ChambreHospitalisation.query.filter_by(id=chambre_id, structure_id=structure_id).first()
+        if not chambre:
+            return jsonify({'success': False, 'error': 'Chambre introuvable'}), 404
+
+        noms = data.get('noms')
+        if not noms:
+            nombre = int(data.get('nombre') or 0)
+            if nombre <= 0:
+                return jsonify({'success': False, 'error': 'Indiquez au moins un nom de lit ou un nombre'}), 400
+            deja = LitHospitalisation.query.filter_by(chambre_id=chambre_id).count()
+            noms = [f"Lit {deja + i + 1}" for i in range(nombre)]
+
+        crees = []
+        for nom in noms:
+            nom = (nom or '').strip()
+            if not nom:
+                continue
+            lit = LitHospitalisation(structure_id=structure_id, chambre_id=chambre_id, nom=nom,
+                                      statut='libre', actif=True)
+            db.session.add(lit)
+            crees.append(lit)
+        db.session.commit()
+        return jsonify({'success': True, 'lit_ids': [l.id for l in crees]})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/hospitalisation/services/<int:service_id>/toggle', methods=['POST'])
+@login_required
+def api_toggle_service_hospitalisation(service_id):
+    structure_id = session.get('structure_id')
+    service = ServiceHospitalisation.query.filter_by(id=service_id, structure_id=structure_id).first()
+    if not service:
+        return jsonify({'success': False, 'error': 'Service introuvable'}), 404
+    service.actif = not service.actif
+    db.session.commit()
+    return jsonify({'success': True, 'actif': service.actif})
+
+
+@app.route('/api/hospitalisation/chambres/<int:chambre_id>/toggle', methods=['POST'])
+@login_required
+def api_toggle_chambre_hospitalisation(chambre_id):
+    structure_id = session.get('structure_id')
+    chambre = ChambreHospitalisation.query.filter_by(id=chambre_id, structure_id=structure_id).first()
+    if not chambre:
+        return jsonify({'success': False, 'error': 'Chambre introuvable'}), 404
+    chambre.actif = not chambre.actif
+    db.session.commit()
+    return jsonify({'success': True, 'actif': chambre.actif})
+
+
+@app.route('/api/hospitalisation/lits/<int:lit_id>/toggle', methods=['POST'])
+@login_required
+def api_toggle_lit_hospitalisation(lit_id):
+    structure_id = session.get('structure_id')
+    lit = LitHospitalisation.query.filter_by(id=lit_id, structure_id=structure_id).first()
+    if not lit:
+        return jsonify({'success': False, 'error': 'Lit introuvable'}), 404
+    if lit.actif and lit.statut == 'occupe':
+        return jsonify({'success': False, 'error': 'Ce lit est occupé — impossible de le désactiver maintenant.'}), 409
+    lit.actif = not lit.actif
+    db.session.commit()
+    return jsonify({'success': True, 'actif': lit.actif})
+
+
+@app.route('/api/hospitalisation/disponibilite')
+@login_required
+def api_disponibilite_hospitalisation():
+    """Pour un service donné, ses chambres actives avec leurs lits actifs
+    et le statut de chacun — un seul appel réseau pour tout afficher côté
+    "Nouveau séjour" (cascade Service > Chambre > Lit)."""
+    structure_id = session.get('structure_id')
+    service_id = request.args.get('service_id')
+    if not service_id:
+        return jsonify({'success': False, 'error': 'service_id requis'}), 400
+
+    chambres = ChambreHospitalisation.query.filter_by(
+        structure_id=structure_id, service_id=service_id, actif=True
+    ).order_by(ChambreHospitalisation.nom).all()
+
+    resultat = []
+    for chambre in chambres:
+        lits = LitHospitalisation.query.filter_by(
+            structure_id=structure_id, chambre_id=chambre.id, actif=True
+        ).order_by(LitHospitalisation.nom).all()
+        lits_data = []
+        for lit in lits:
+            occupant_nom = None
+            if lit.statut == 'occupe':
+                occ = Hospitalisation.query.filter_by(structure_id=structure_id, lit_id=lit.id, statut='en_cours').first()
+                occupant_nom = occ.patient_nom if occ else None
+            lits_data.append({'id': lit.id, 'nom': lit.nom, 'statut': lit.statut, 'occupant_nom': occupant_nom})
+        resultat.append({
+            'id': chambre.id, 'nom': chambre.nom, 'lits': lits_data,
+            'lits_libres': sum(1 for l in lits_data if l['statut'] == 'libre'),
+            'lits_total': len(lits_data),
+        })
+
+    return jsonify({'success': True, 'chambres': resultat})
+
+
 @app.route('/hospitalisation')
 @login_required
 def page_hospitalisation():
     structure_id = session.get('structure_id')
     hospitalisations = Hospitalisation.query.filter_by(structure_id=structure_id)\
         .order_by(Hospitalisation.created_at.desc()).all()
-    return render_template('hospitalisation_liste.html', hospitalisations=hospitalisations)
+    # ⭐ La modale "Nouveau séjour" propose la cascade Service > Chambre >
+    # Lit seulement si la structure a déjà configuré au moins un service —
+    # sinon repli sur le champ texte libre d'origine (zéro régression pour
+    # une structure qui n'a pas encore fait sa configuration).
+    a_inventaire = db.session.query(ServiceHospitalisation.id)\
+        .filter_by(structure_id=structure_id, actif=True).first() is not None
+    return render_template('hospitalisation_liste.html', hospitalisations=hospitalisations, a_inventaire=a_inventaire)
 
 
 @app.route('/api/hospitalisation', methods=['POST'])
@@ -11882,13 +12090,31 @@ def api_creer_hospitalisation():
 
         numero_local = prochain_numero_local('hospitalisations', structure_id)
 
+        # ⭐ Occupation automatique : si un lit précis est choisi (inventaire
+        # configuré pour cette structure), on le réserve ICI et on en dérive
+        # le texte affiché — sinon on garde le texte libre saisi à la main
+        # (structure sans inventaire, comportement d'origine inchangé).
+        lit_id = data.get('lit_id')
+        chambre_service = data.get('chambre_service', '')
+        lit = None
+        if lit_id:
+            lit = LitHospitalisation.query.filter_by(id=lit_id, structure_id=structure_id, actif=True).first()
+            if not lit:
+                return jsonify({'success': False, 'error': 'Lit introuvable'}), 404
+            if lit.statut == 'occupe':
+                return jsonify({'success': False, 'error': 'Ce lit est déjà occupé — choisissez-en un autre.'}), 409
+            chambre = ChambreHospitalisation.query.get(lit.chambre_id)
+            service = ServiceHospitalisation.query.get(chambre.service_id) if chambre else None
+            chambre_service = f"{service.nom} > {chambre.nom} > {lit.nom}" if (service and chambre) else lit.nom
+
         hospit = Hospitalisation(
             structure_id=structure_id,
             numero_local=numero_local,
             patient_id=patient.id,
             patient_nom=f"{patient.prenom} {patient.nom}".strip(),
             date_entree=date_entree,
-            chambre_service=data.get('chambre_service', ''),
+            chambre_service=chambre_service,
+            lit_id=lit.id if lit else None,
             assurance_nom=patient.type_assurance,
             taux_assurance=patient.taux_prise_charge or 0,
             assurance2_nom=patient.assurance2_nom,
@@ -11897,6 +12123,8 @@ def api_creer_hospitalisation():
             statut='en_cours',
             created_by=user_name,
         )
+        if lit:
+            lit.statut = 'occupe'
         db.session.add(hospit)
         db.session.commit()
 
@@ -12162,6 +12390,13 @@ def api_sortie_hospitalisation(hospit_id):
                 )
                 db.session.add(soin)
                 lignes_chambre_creees += 1
+
+        # ⭐ Libération automatique du lit — même geste que la clôture, rien
+        # à cliquer en plus (voir api_creer_hospitalisation pour la réservation).
+        if hospit.lit_id:
+            lit_occupe = LitHospitalisation.query.get(hospit.lit_id)
+            if lit_occupe:
+                lit_occupe.statut = 'libre'
 
         hospit.date_sortie = date_sortie
         if hospit.statut == 'en_cours':

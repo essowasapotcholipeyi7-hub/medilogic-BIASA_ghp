@@ -698,10 +698,10 @@
                 </h5>
                 
                 <div class="row g-3">
-                    <div class="col-md-4">
-                        <button class="btn btn-outline-primary w-100 py-4 destination-btn" 
+                    <div class="col-md-6">
+                        <button class="btn btn-outline-primary w-100 py-4 destination-btn"
                                 style="border-radius: 15px; border-width: 2px; transition: all 0.3s;"
-                                onmouseover="this.style.transform='scale(1.03)'" 
+                                onmouseover="this.style.transform='scale(1.03)'"
                                 onmouseout="this.style.transform='scale(1)'"
                                 onclick="redirigerVers('actes')">
                             <span style="font-size: 18px; font-weight: 600;">Actes</span>
@@ -709,10 +709,10 @@
                             <small class="text-muted">Vente d'actes médicaux</small>
                         </button>
                     </div>
-                    <div class="col-md-4">
-                        <button class="btn btn-outline-success w-100 py-4 destination-btn" 
+                    <div class="col-md-6">
+                        <button class="btn btn-outline-success w-100 py-4 destination-btn"
                                 style="border-radius: 15px; border-width: 2px; transition: all 0.3s;"
-                                onmouseover="this.style.transform='scale(1.03)'" 
+                                onmouseover="this.style.transform='scale(1.03)'"
                                 onmouseout="this.style.transform='scale(1)'"
                                 onclick="redirigerVers('pharma')">
                             <span style="font-size: 18px; font-weight: 600;">Pharmacie</span>
@@ -720,10 +720,10 @@
                             <small class="text-muted">Vente de médicaments</small>
                         </button>
                     </div>
-                    <div class="col-md-4">
-                        <button class="btn btn-outline-warning w-100 py-4 destination-btn" 
+                    <div class="col-md-6">
+                        <button class="btn btn-outline-warning w-100 py-4 destination-btn"
                                 style="border-radius: 15px; border-width: 2px; transition: all 0.3s;"
-                                onmouseover="this.style.transform='scale(1.03)'" 
+                                onmouseover="this.style.transform='scale(1.03)'"
                                 onmouseout="this.style.transform='scale(1)'"
                                 onclick="redirigerVers('prescriptions')">
                             <span style="font-size: 18px; font-weight: 600;">Prescriptions</span>
@@ -731,10 +731,21 @@
                             <small class="text-muted">Voir les prescriptions reçues</small>
                         </button>
                     </div>
+                    <div class="col-md-6">
+                        <button class="btn btn-outline-dark w-100 py-4 destination-btn"
+                                style="border-radius: 15px; border-width: 2px; transition: all 0.3s;"
+                                onmouseover="this.style.transform='scale(1.03)'"
+                                onmouseout="this.style.transform='scale(1)'"
+                                onclick="redirigerVers('hospitalisation')">
+                            <span style="font-size: 18px; font-weight: 600;">Hospitalisation</span>
+                            <br>
+                            <small class="text-muted">Nouveau séjour / suivi</small>
+                        </button>
+                    </div>
                 </div>
-                
+
                 <hr>
-                
+
                 <div class="text-center">
                     <button class="btn btn-outline-secondary btn-sm" onclick="fermerModalDestination()">
                         <i class="fas fa-times me-1"></i> Annuler
@@ -2041,6 +2052,15 @@ function selectPatient(id, nom, assurance, taux, assurance2, taux2, societeAssur
 // ============================================
 // MODAL CHOIX DE DESTINATION
 // ============================================
+// ⭐ Le HTML statique de #patientDestinationModal (plus haut dans le
+// template, en dur) existe déjà à chaque chargement de page -> la branche
+// `if (modal)` ci-dessous est TOUJOURS celle qui s'exécute en pratique
+// (juste une mise à jour des textes), jamais celle qui construit
+// `modalHtml` plus bas. Un bouton de destination ajouté seulement dans
+// `modalHtml` (comme "Hospitalisation" un temps) n'apparaît donc jamais à
+// l'écran tant qu'il n'est pas AUSSI ajouté au bloc HTML statique —
+// signalé par le patron, corrigé en synchronisant les deux copies (mais
+// gardez ça en tête pour toute future destination ajoutée ici).
 function showPatientDestinationModal(id, nom, assurance, taux, assurance2, taux2) {
     let modal = document.getElementById('patientDestinationModal');
     if (modal) {
