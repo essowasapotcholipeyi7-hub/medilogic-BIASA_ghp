@@ -3217,6 +3217,19 @@ def recu(vente_id, type):
                 tous_articles = actes_data
                 print(f"📊 ACTES: {len(actes_data)} actes")
         
+        # ⭐ PBR propre à LA compagnie complémentaire de ce patient (voir
+        # PbrComplementaire/models.py, charger_pbr_complementaires) — figé
+        # sur v.get('applique_pbr_cac') au moment de la vente (même
+        # compagnie, même acte, un autre patient peut ne pas avoir ce PBR
+        # sur son contrat) pour que ce reçu, qui RECALCULE la part CAC
+        # depuis les articles plutôt que de relire prise_en_charge2,
+        # applique exactement le même plafond qu'à la vente — sans ce
+        # champ, le reçu affichait le montant non plafonné (signalé,
+        # constaté en test : vente à 180 FCFA de part CAC, reçu affichant
+        # 420 FCFA pour la même vente).
+        applique_pbr_cac_recu = v.get('applique_pbr_cac', True)
+        pbr_cac_par_acte_recu = charger_pbr_complementaires(structure_id, assurance2_nom) if (assurance2_nom and applique_pbr_cac_recu) else {}
+
         # 🔥 Traiter les articles
         sous_total_amu = 0
         pbr_total_amu = 0
@@ -3274,12 +3287,14 @@ def recu(vente_id, type):
                         baseAMU = min(prix_unitaire, pbr_article)
                         priseAMU = (baseAMU * taux_item * quantite) / 100
                         reste = total_article - priseAMU
-                        if reste > 0:
-                            baseCAC += reste
                     else:
-                        baseCAC += total_article
+                        reste = total_article
                 else:
-                    baseCAC += total_article
+                    reste = total_article
+                if item.get('nom') in pbr_cac_par_acte_recu:
+                    reste = min(reste, pbr_cac_par_acte_recu[item.get('nom')] * quantite)
+                if reste > 0:
+                    baseCAC += reste
 
             # ⭐ Date(s) de prestation (hospitalisation) — reformatées en
             # jj/mm ici, côté serveur, plutôt que dans le template : ce sont
@@ -7571,9 +7586,10 @@ def api_vente_pharma():
                 taux_aide,
                 aide_hospitaliere,
                 type_aide,
-                numero_local
+                numero_local,
+                applique_pbr_cac
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             patient_id,
@@ -7602,7 +7618,10 @@ def api_vente_pharma():
             taux_aide,                    # 🔥 NOUVEAU
             aide_hospitaliere,            # 🔥 NOUVEAU
             type_aide,                    # 🔥 NOUVEAU
-            numero_local
+            numero_local,
+            # ⭐ Voir le même commentaire dans api_add_acte_vente() — figé
+            # ici pour que recu() applique le même choix qu'à la vente.
+            data.get('applique_pbr_cac', True),
         ))
 
         if not result or len(result) == 0:
@@ -8086,9 +8105,10 @@ def api_add_acte_vente():
                 taux_aide,
                 aide_hospitaliere,
                 type_aide,
-                numero_local
+                numero_local,
+                applique_pbr_cac
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             patient_id,
@@ -8117,7 +8137,13 @@ def api_add_acte_vente():
             taux_aide,                    # 🔥 NOUVEAU
             aide_hospitaliere,            # 🔥 NOUVEAU
             type_aide,                    # 🔥 NOUVEAU
-            numero_local
+            numero_local,
+            # ⭐ Même compagnie, même acte : un PBR peut exister pour ce
+            # patient et pas pour un autre — figé ici pour que recu() (qui
+            # RECALCULE la part CAC depuis les articles plutôt que de
+            # relire prise_en_charge2) applique exactement le même choix
+            # qu'au moment de la vente, pas un plafond par défaut différent.
+            data.get('applique_pbr_cac', True),
         ))
 
         if not result or len(result) == 0:
@@ -11020,6 +11046,14 @@ def api_creer_proforma():
         assurance_principale_active = data.get('assurance_principale_active', True)
         taux_assurance = float(data.get('taux_assurance') or 0) if assurance_principale_active else 0
 
+        # ⭐ PBR propre à LA compagnie complémentaire de ce patient — voir
+        # PbrComplementaire (models.py), charger_pbr_complementaires().
+        # Chargé avant la boucle CAC ci-dessous (même compagnie, même
+        # acte, un autre patient peut ne pas avoir ce PBR sur son contrat).
+        assurance2_nom_pour_pbr = data.get('assurance2_nom', '')
+        applique_pbr_cac = data.get('applique_pbr_cac', True)
+        pbr_cac_par_acte = charger_pbr_complementaires(structure_id, assurance2_nom_pour_pbr) if (data.get('assurance2_active', False) and applique_pbr_cac) else {}
+
         for article in articles:
             prix = float(article.get('prix', article.get('prix_unitaire', 0)))
             pbr = float(article.get('pbr', prix))
@@ -11050,11 +11084,13 @@ def api_creer_proforma():
                     base_amu_article = min(prix, pbr) * quantite
                     prise_amu_article = (base_amu_article * taux_item) / 100
                     reste = total - prise_amu_article
-                    if reste > 0:
-                        base_cac_articles += reste
                 else:
                     # 🔥 Article sans AMU → CAC sur le prix total
-                    base_cac_articles += total
+                    reste = total
+                if article.get('nom') in pbr_cac_par_acte:
+                    reste = min(reste, pbr_cac_par_acte[article.get('nom')] * quantite)
+                if reste > 0:
+                    base_cac_articles += reste
 
                 print(f"🔍 {article.get('nom')}: Base CAC={base_cac_articles}")
         
@@ -11206,9 +11242,10 @@ def api_creer_proforma():
                 taux_aide, aide_hospitaliere, type_aide,
                 assurance_principale_active,
                 statut,
-                created_at
+                created_at,
+                applique_pbr_cac
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, NOW())
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, NOW(), %s)
             RETURNING id
         """, (
             structure_id,
@@ -11239,7 +11276,8 @@ def api_creer_proforma():
             base_cac_articles,  # 🔥 NOUVEAU
             taux_aide, aide_hospitaliere, type_aide,
             assurance_principale_active,
-            'en_attente'
+            'en_attente',
+            applique_pbr_cac,
         ))
         
         proforma_id = result[0]['id']
@@ -11718,9 +11756,9 @@ def api_convertir_proforma():
                 assurance_principale_active, proforma_id,
                 base_remboursement,
                 taux_aide, aide_hospitaliere, type_aide,
-                numero_local
+                numero_local, applique_pbr_cac
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s::jsonb, %s, 'validee', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s::jsonb, %s, 'validee', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             data.get('patient_id'),
@@ -11748,7 +11786,10 @@ def api_convertir_proforma():
             taux_aide,
             aide_hospitaliere,
             type_aide,
-            numero_local
+            numero_local,
+            # ⭐ Voir le même commentaire dans api_add_acte_vente() — figé
+            # ici pour que recu() applique le même choix qu'à la conversion.
+            applique_pbr_cac,
         ))
 
         if not result or len(result) == 0:
@@ -12748,6 +12789,13 @@ def api_facturer_hospitalisation(hospit_id):
         assurance2_nom = hospit.assurance2_nom if assurance2_active else ''
         taux_assurance2 = hospit.taux_assurance2_effectif
 
+        # ⭐ Voir calculer_repartition_assurance() (services/hospitalisation_
+        # service.py) — même plafond PBR propre à la compagnie complémentaire
+        # de ce patient, même interrupteur hospit.applique_pbr_cac. Sans ça,
+        # la proforma générée ici (donc la vente créée à sa conversion, et
+        # le reçu) surestimait la part CAC sur tout acte ayant une entrée.
+        pbr_cac_par_acte = charger_pbr_complementaires(structure_id, assurance2_nom) if (assurance2_active and hospit.applique_pbr_cac) else {}
+
         sous_total = 0
         pbr_total_amu = 0
         sous_total_amu = 0
@@ -12778,10 +12826,12 @@ def api_facturer_hospitalisation(hospit_id):
                     base_amu_article = min(prix, pbr) * quantite
                     prise_amu_article = (base_amu_article * taux_item) / 100
                     reste = total - prise_amu_article
-                    if reste > 0:
-                        base_cac_articles += reste
                 else:
-                    base_cac_articles += total
+                    reste = total
+                if s.nom in pbr_cac_par_acte:
+                    reste = min(reste, pbr_cac_par_acte[s.nom] * quantite)
+                if reste > 0:
+                    base_cac_articles += reste
 
             articles.append({
                 'id': s.reference_id, 'nom': s.nom, 'prix': prix, 'prix_unitaire': prix, 'pbr': pbr,
@@ -12832,9 +12882,9 @@ def api_facturer_hospitalisation(hospit_id):
                 prise_en_charge2, net_a_payer, base_remboursement, notes,
                 created_by, expires_at, numero_proforma, assurances_data,
                 base_cac, assurance_principale_active, hospitalisation_id,
-                statut, created_at
+                statut, created_at, applique_pbr_cac
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, NOW())
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, NOW(), %s)
             RETURNING id
         """, (
             structure_id, hospit.patient_id, hospit.patient_nom, '',
@@ -12845,7 +12895,7 @@ def api_facturer_hospitalisation(hospit_id):
             f"du {hospit.date_entree.strftime('%d/%m/%Y')} au {hospit.date_sortie.strftime('%d/%m/%Y')}",
             user_name, expires_at, prochain_numero, json.dumps(assurances_data, ensure_ascii=False),
             base_cac_articles, True, hospit.id,
-            'en_attente'
+            'en_attente', hospit.applique_pbr_cac,
         ))
 
         if not result:

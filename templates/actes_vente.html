@@ -227,8 +227,19 @@
             </div>
         </div>
         <div class="small text-muted mt-1" id="assurance2Info">
-            <i class="fas fa-info-circle"></i> 
+            <i class="fas fa-info-circle"></i>
             L'assurance complémentaire s'applique sur le reste à charge après l'assurance principale.
+        </div>
+        <!-- ⭐ Même compagnie, même acte : un PBR peut exister pour CE patient
+             (son contrat) et pas pour un autre assuré de la même compagnie
+             (remboursé directement sur le prix clinique) — voir
+             PbrComplementaire (models.py) / /api/pbr-complementaires.
+             Affiché seulement si la complémentaire est active. -->
+        <div class="form-check form-switch d-flex align-items-center gap-2 mt-1" id="blocAppliquePbrCac" style="display:none;">
+            <input class="form-check-input" type="checkbox" id="toggleAppliquePbrCac" style="width:38px; height:20px;" checked onchange="calculerTotal(); calculerRendu();">
+            <label class="form-check-label small" for="toggleAppliquePbrCac">
+                Appliquer le PBR <span id="pbrCacCompagnieLabel"></span> de ce patient (si connu) — sinon reste après AMU non plafonné
+            </label>
         </div>
     </div>
 </div>
@@ -392,6 +403,11 @@ let patientSocieteAssurance2 = '';
 let patientTaux2 = 0;
 let patientTaux2Original = 0;
 let tauxTempModifie = false;
+// ⭐ {nom_acte: pbr} propre à la compagnie complémentaire du patient
+// sélectionné — voir /api/pbr-complementaires, chargé dans
+// checkAssuranceComplementaire(), utilisé dans calculerTotal() et le
+// rendu du panier pour plafonner la base CAC par article.
+let pbrCacMapActes = {};
 let tauxTempValeur = 0;
 let assurance2Active = false;
 let assurance2Nom = '';
@@ -1061,6 +1077,10 @@ function afficherPanier() {
                 } else {
                     baseCACLigne = total;
                 }
+                const toggleAppliquePbrCacLigne = document.getElementById('toggleAppliquePbrCac');
+                if ((toggleAppliquePbrCacLigne ? toggleAppliquePbrCacLigne.checked : true) && pbrCacMapActes[item.nom] !== undefined) {
+                    baseCACLigne = Math.min(baseCACLigne, pbrCacMapActes[item.nom] * item.quantite);
+                }
                 partCACLigne = (baseCACLigne * tauxCACPourPanier) / 100;
             }
         }
@@ -1266,6 +1286,7 @@ function calculerTotal() {
                 const total = prix * item.quantite;
                 
                 if (item.prise_en_charge_cac) {
+                    let reste;
                     if (estAssure && assurancePrincipaleActive) {
                         // Patient assuré → CAC sur le reste après AMU
                         if (item.prise_en_charge_amu) {
@@ -1273,16 +1294,25 @@ function calculerTotal() {
                             // ⭐ FIX : même taux par article que le calcul AMU
                             // principal ci-dessus (P160 = 90%, reste = tauxAMU).
                             let priseAMU = (baseAMU * tauxAMUPourArticle(item, tauxAMU) * item.quantite) / 100;
-                            let reste = total - priseAMU;
-                            if (reste > 0) {
-                                baseCAC += reste;
-                            }
+                            reste = total - priseAMU;
                         } else {
-                            baseCAC += total;
+                            reste = total;
                         }
                     } else {
                         // 🔥 PATIENT NON ASSURÉ OU ASSURANCE PRINCIPALE DÉSACTIVÉE → CAC SUR LE PRIX TOTAL
-                        baseCAC += total;
+                        reste = total;
+                    }
+                    // ⭐ Plafond propre à la compagnie complémentaire de ce
+                    // patient (voir pbrCacMapActes) — seulement si le toggle
+                    // "Appliquer le PBR..." est coché (par défaut) ET qu'une
+                    // entrée existe pour cet acte.
+                    const toggleAppliquePbrCac = document.getElementById('toggleAppliquePbrCac');
+                    const appliquePbrCacActes = toggleAppliquePbrCac ? toggleAppliquePbrCac.checked : true;
+                    if (appliquePbrCacActes && pbrCacMapActes[item.nom] !== undefined) {
+                        reste = Math.min(reste, pbrCacMapActes[item.nom] * item.quantite);
+                    }
+                    if (reste > 0) {
+                        baseCAC += reste;
                     }
                 }
             }
@@ -1516,6 +1546,17 @@ function checkAssuranceComplementaire() {
         
         toggle.checked = true;
         assurance2Active = true;
+
+        // ⭐ Charge le PBR complémentaire propre à cette compagnie (voir
+        // pbrCacMapActes plus haut) et affiche le toggle correspondant.
+        const blocPbrCac = document.getElementById('blocAppliquePbrCac');
+        document.getElementById('pbrCacCompagnieLabel').textContent = assurance2Nom;
+        blocPbrCac.style.display = '';
+        pbrCacMapActes = {};
+        fetch('/api/pbr-complementaires?compagnie=' + encodeURIComponent(assurance2Nom))
+            .then(r => r.json())
+            .then(map => { pbrCacMapActes = map || {}; if (panier.length > 0) calculerTotal(); })
+            .catch(() => {});
     } else {
         toggle.disabled = true;
         toggle.checked = false;
@@ -1525,10 +1566,12 @@ function checkAssuranceComplementaire() {
         tauxEdit.style.display = 'none';
         assurance2Active = false;
         tauxTempModifie = false;
+        pbrCacMapActes = {};
+        document.getElementById('blocAppliquePbrCac').style.display = 'none';
         localStorage.removeItem('tauxTempValeur');
         localStorage.removeItem('tauxTempModifie');
     }
-    
+
     if (panier.length > 0) {
         calculerTotal();
         calculerRendu();
@@ -2046,6 +2089,7 @@ function finaliserVente() {
         taux_assurance2: assurance2Active ? parseFloat(tauxComplementaire || 0) : 0,
         societe_assurance2: assurance2Active ? (patientSocieteAssurance2 || '') : '',
         assurance2_active: assurance2Active,
+        applique_pbr_cac: (() => { const t = document.getElementById('toggleAppliquePbrCac'); return t ? t.checked : true; })(),
         taux_temp_modifie: tauxTempModifie,
         taux_original: patientTaux2Original || 0,
         montant_donne: montantDonne,
