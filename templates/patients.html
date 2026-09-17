@@ -394,7 +394,7 @@
                         </div>
                         <div class="card-body">
                             <div class="row">
-                                <div class="col-md-5 mb-2">
+                                <div class="col-md-5 mb-2 position-relative">
                                     <label class="form-label">Nom de l'assurance</label>
                                     <!-- ⭐ Choix dans la liste CANONIQUE déjà connue de la
                                          structure (voir /api/compagnies-complementaires,
@@ -403,11 +403,22 @@
                                          "SUNOU" ailleurs, ce qui romprait silencieusement
                                          le rapprochement avec les PBR complémentaires
                                          (voir /pbr-complementaires). Taper un nom inédit
-                                         reste possible : il rejoint la liste canonique. -->
+                                         reste possible : il rejoint la liste canonique.
+
+                                         ⭐ Liste déroulante MAISON au lieu d'un <datalist>
+                                         natif — constaté en direct que le <datalist> ne
+                                         s'ouvrait ni au clic ni en tapant à l'intérieur
+                                         d'un modal Bootstrap (#patientModal ici) : bug
+                                         connu des navigateurs Chromium avec un champ dans
+                                         un ancêtre transform/overflow (l'animation d'un
+                                         modal Bootstrap). Voir aussi pbr_complementaires.html. -->
                                     <input type="text" class="form-control" id="assurance2_nom"
-                                           list="assurance2NomsConnus" placeholder="-- Aucune --"
-                                           oninput="toggleAssurance2()" autocomplete="off">
-                                    <datalist id="assurance2NomsConnus"></datalist>
+                                           placeholder="-- Aucune --"
+                                           oninput="toggleAssurance2(); filtrerCompagniesPatient('assurance2_nom', 'assurance2NomsResultats');"
+                                           onfocus="filtrerCompagniesPatient('assurance2_nom', 'assurance2NomsResultats')"
+                                           onclick="filtrerCompagniesPatient('assurance2_nom', 'assurance2NomsResultats')"
+                                           autocomplete="off">
+                                    <div id="assurance2NomsResultats" class="list-group position-absolute w-100" style="z-index:1000; max-height:180px; overflow-y:auto; display:none;"></div>
                                 </div>
                                 <div class="col-md-4 mb-2">
                                     <label class="form-label">Taux (%)</label>
@@ -576,12 +587,15 @@
                         </div>
                         <div class="card-body">
                             <div class="row">
-                                <div class="col-md-5 mb-2">
+                                <div class="col-md-5 mb-2 position-relative">
                                     <label class="form-label">Nom de l'assurance</label>
                                     <input type="text" class="form-control" id="editAssurance2_nom"
-                                           list="editAssurance2NomsConnus" placeholder="-- Aucune --"
-                                           oninput="toggleEditAssurance2()" autocomplete="off">
-                                    <datalist id="editAssurance2NomsConnus"></datalist>
+                                           placeholder="-- Aucune --"
+                                           oninput="toggleEditAssurance2(); filtrerCompagniesPatient('editAssurance2_nom', 'editAssurance2NomsResultats');"
+                                           onfocus="filtrerCompagniesPatient('editAssurance2_nom', 'editAssurance2NomsResultats')"
+                                           onclick="filtrerCompagniesPatient('editAssurance2_nom', 'editAssurance2NomsResultats')"
+                                           autocomplete="off">
+                                    <div id="editAssurance2NomsResultats" class="list-group position-absolute w-100" style="z-index:1000; max-height:180px; overflow-y:auto; display:none;"></div>
                                 </div>
                                 <div class="col-md-4 mb-2">
                                     <label class="form-label">Taux (%)</label>
@@ -1603,24 +1617,58 @@ function toggleEditAssurance2() {
     }
 }
 
-// ⭐ Alimente les deux datalists (création + édition) avec la liste
-// canonique des compagnies complémentaires déjà connues de la structure —
-// voir /api/compagnies-complementaires. Appelée une fois au chargement de
-// la page (les noms nouveaux tapés rejoignent la liste côté serveur dès
-// l'enregistrement du patient, voir upsert_compagnie_complementaire()).
+// ⭐ Charge la liste canonique des compagnies complémentaires déjà
+// connues de la structure — voir /api/compagnies-complementaires. Appelée
+// une fois au chargement de la page (les noms nouveaux tapés rejoignent la
+// liste côté serveur dès l'enregistrement du patient, voir
+// upsert_compagnie_complementaire()). Alimente une liste déroulante MAISON
+// (#assurance2NomsResultats / #editAssurance2NomsResultats) plutôt qu'un
+// <datalist> natif — voir filtrerCompagniesPatient() ci-dessous pour le
+// pourquoi (même bug que pbr_complementaires.html, constaté en direct).
+let compagniesConnuesPatients = [];
 function chargerCompagniesComplementaires() {
     fetch('/api/compagnies-complementaires')
         .then(r => r.json())
-        .then(noms => {
-            const options = (noms || []).map(n => `<option value="${n}">`).join('');
-            const d1 = document.getElementById('assurance2NomsConnus');
-            const d2 = document.getElementById('editAssurance2NomsConnus');
-            if (d1) d1.innerHTML = options;
-            if (d2) d2.innerHTML = options;
-        })
-        .catch(() => {});
+        .then(noms => { compagniesConnuesPatients = noms || []; })
+        .catch(() => { compagniesConnuesPatients = []; });
 }
 chargerCompagniesComplementaires();
+
+// ⭐ Filtre compagniesConnuesPatients (toutes si le champ est vide — clic
+// direct — sinon par sous-chaîne insensible à la casse pendant la frappe)
+// et affiche le résultat dans la boîte `resultatsId` juste sous le champ
+// `inputId`. Partagée par assurance2_nom (création) et editAssurance2_nom
+// (édition).
+function filtrerCompagniesPatient(inputId, resultatsId) {
+    const q = document.getElementById(inputId).value.trim().toLowerCase();
+    const box = document.getElementById(resultatsId);
+    const resultats = q === ''
+        ? compagniesConnuesPatients
+        : compagniesConnuesPatients.filter(n => n.toLowerCase().includes(q));
+    if (!resultats.length) { box.style.display = 'none'; return; }
+    box.innerHTML = resultats.map(n => `
+        <a href="#" class="list-group-item list-group-item-action" onclick='choisirCompagniePatient(${JSON.stringify(inputId)}, ${JSON.stringify(resultatsId)}, ${JSON.stringify(n).replace(/'/g, "&apos;")}); return false;'>
+            ${n}
+        </a>`).join('');
+    box.style.display = 'block';
+}
+
+function choisirCompagniePatient(inputId, resultatsId, nom) {
+    document.getElementById(inputId).value = nom;
+    document.getElementById(resultatsId).style.display = 'none';
+    // ⭐ Même comportement que si l'utilisateur avait tapé le nom (affichage
+    // du champ "société souscriptrice", taux par défaut...) — SANS
+    // ré-appeler filtrerCompagniesPatient (ré-ouvrirait aussitôt la liste).
+    if (inputId === 'assurance2_nom') toggleAssurance2();
+    else if (inputId === 'editAssurance2_nom') toggleEditAssurance2();
+}
+
+document.addEventListener('click', function(e) {
+    const b1 = document.getElementById('assurance2NomsResultats');
+    if (b1 && !e.target.closest('#assurance2_nom') && !e.target.closest('#assurance2NomsResultats')) b1.style.display = 'none';
+    const b2 = document.getElementById('editAssurance2NomsResultats');
+    if (b2 && !e.target.closest('#editAssurance2_nom') && !e.target.closest('#editAssurance2NomsResultats')) b2.style.display = 'none';
+});
 
 // ============================================
 // AUTOCOMPLÉTION DES SOCIÉTÉS SOUSCRIPTRICES

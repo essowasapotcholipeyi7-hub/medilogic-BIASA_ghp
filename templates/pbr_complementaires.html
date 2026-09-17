@@ -59,7 +59,7 @@
                 <div id="pbrChoisiBloc" style="display:none;" class="mb-2 p-2 border rounded bg-light">
                     <strong id="pbrChoisiNom"></strong>
                 </div>
-                <div class="mb-2">
+                <div class="position-relative mb-2">
                     <label class="form-label mb-1">Compagnie complémentaire</label>
                     <!-- ⭐ Choix dans la liste CANONIQUE déjà connue (fiches
                          patients + entrées PBR précédentes), voir
@@ -68,10 +68,22 @@
                          qu'une même compagnie soit tapée "SUNU" ici et
                          "SUNOU" à la fiche patient, ce qui romprait
                          silencieusement le rapprochement. Taper un nom
-                         inédit reste possible (datalist) : il rejoint alors
-                         la liste canonique pour la prochaine fois. -->
-                    <input type="text" class="form-control" id="pbrCompagnie" list="pbrCompagniesConnues" placeholder="Ex. SUNU" autocomplete="off">
-                    <datalist id="pbrCompagniesConnues"></datalist>
+                         inédit reste possible : il rejoint alors la liste
+                         canonique pour la prochaine fois.
+
+                         ⭐ Liste déroulante MAISON (comme #pbrSearch
+                         ci-dessus) au lieu d'un <datalist> natif : constaté
+                         en direct que le <datalist> ne s'ouvrait ni au clic
+                         ni en tapant à l'intérieur de CE modal Bootstrap
+                         (rien ne s'affichait bien que les options soient
+                         correctement chargées dans le DOM) — comportement
+                         connu des navigateurs Chromium quand le champ est
+                         dans un ancêtre avec transform/overflow, ce
+                         qu'utilise l'animation d'un modal Bootstrap. Signalé
+                         par le patron ("xa n'apparait pas comme une liste
+                         pour choisir ni xa ne vient pas par recherche"). -->
+                    <input type="text" class="form-control" id="pbrCompagnie" placeholder="Ex. SUNU" autocomplete="off">
+                    <div id="pbrCompagnieResultats" class="list-group position-absolute w-100" style="z-index:1000; max-height:180px; overflow-y:auto; display:none;"></div>
                 </div>
                 <div class="row">
                     <div class="col-md-6 mb-2">
@@ -104,6 +116,7 @@ let pbrTypeActuel = 'acte';
 let pbrChoisi = null;
 let debouncePbr = null;
 let toutesLesEntrees = [];
+let compagniesConnues = [];
 
 function typePbrChange() {
     pbrTypeActuel = document.querySelector('input[name="pbrType"]:checked').value;
@@ -123,17 +136,39 @@ function ouvrirModalPbr() {
 function chargerCompagniesConnues() {
     fetch('/api/compagnies-complementaires')
         .then(r => r.json())
-        .then(noms => {
-            document.getElementById('pbrCompagniesConnues').innerHTML =
-                (noms || []).map(n => `<option value="${n}">`).join('');
-        })
-        .catch(() => {});
+        .then(noms => { compagniesConnues = noms || []; })
+        .catch(() => { compagniesConnues = []; });
+}
+
+// ⭐ Affiche la liste déroulante maison (voir #pbrCompagnieResultats) —
+// TOUTES les compagnies connues si le champ est vide (clic direct), sinon
+// filtrées par sous-chaîne insensible à la casse pendant la frappe. Taper
+// un nom qui ne correspond à rien reste possible : il n'apparaît juste pas
+// dans la liste (nouvelle compagnie).
+function filtrerCompagnies() {
+    const q = document.getElementById('pbrCompagnie').value.trim().toLowerCase();
+    const box = document.getElementById('pbrCompagnieResultats');
+    const resultats = q === ''
+        ? compagniesConnues
+        : compagniesConnues.filter(n => n.toLowerCase().includes(q));
+    if (!resultats.length) { box.style.display = 'none'; return; }
+    box.innerHTML = resultats.map(n => `
+        <a href="#" class="list-group-item list-group-item-action" onclick='choisirCompagnie(${JSON.stringify(n).replace(/'/g, "&apos;")}); return false;'>
+            ${n}
+        </a>`).join('');
+    box.style.display = 'block';
+}
+
+function choisirCompagnie(nom) {
+    document.getElementById('pbrCompagnie').value = nom;
+    document.getElementById('pbrCompagnieResultats').style.display = 'none';
 }
 
 function viderPbrChoisi() {
     pbrChoisi = null;
     document.getElementById('pbrChoisiBloc').style.display = 'none';
     document.getElementById('pbrResultats').style.display = 'none';
+    document.getElementById('pbrCompagnieResultats').style.display = 'none';
 }
 
 document.getElementById('pbrSearch').addEventListener('input', function() {
@@ -164,6 +199,10 @@ function choisirPbrArticle(nom) {
     document.getElementById('pbrResultats').style.display = 'none';
     document.getElementById('pbrSearch').value = nom;
 }
+
+document.getElementById('pbrCompagnie').addEventListener('input', filtrerCompagnies);
+document.getElementById('pbrCompagnie').addEventListener('focus', filtrerCompagnies);
+document.getElementById('pbrCompagnie').addEventListener('click', filtrerCompagnies);
 
 function enregistrerPbr() {
     const compagnie = document.getElementById('pbrCompagnie').value.trim();
@@ -254,6 +293,9 @@ function chargerPbrComplementaires() {
 document.addEventListener('click', function(e) {
     const box = document.getElementById('pbrResultats');
     if (box && !e.target.closest('#pbrSearch') && !e.target.closest('#pbrResultats')) box.style.display = 'none';
+
+    const boxCompagnie = document.getElementById('pbrCompagnieResultats');
+    if (boxCompagnie && !e.target.closest('#pbrCompagnie') && !e.target.closest('#pbrCompagnieResultats')) boxCompagnie.style.display = 'none';
 });
 
 chargerPbrComplementaires();
