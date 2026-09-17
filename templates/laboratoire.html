@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block title %}{{ titre }}{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h4 class="mb-1">
+            {% if filiere == 'analyse' %}<i class="fas fa-vial me-2"></i>{% else %}<i class="fas fa-x-ray me-2"></i>{% endif %}
+            {{ titre }}
+        </h4>
+        <div class="text-muted small">
+            {% if filiere == 'analyse' %}
+            Les demandes apparaissent ici automatiquement dès qu'un patient règle un acte classé "Analyse" — jamais les examens d'imagerie.
+            {% else %}
+            Les demandes apparaissent ici automatiquement dès qu'un patient règle un acte classé "Examen" — jamais les analyses de biologie.
+            {% endif %}
+        </div>
+    </div>
+    <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="toggleRealisees" onchange="chargerDemandes()">
+        <label class="form-check-label" for="toggleRealisees">Afficher aussi les demandes réalisées</label>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <span><i class="fas fa-list me-1"></i> Demandes</span>
+        <span id="totalDemandes" class="badge bg-light text-dark">0</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Patient</th>
+                        <th>Acte</th>
+                        <th class="text-end">Prix</th>
+                        <th>Paiement</th>
+                        <th>Origine</th>
+                        <th>Statut</th>
+                        <th>Reçu le</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="corpsDemandes">
+                    <tr><td colspan="8" class="text-center text-muted py-4">Chargement...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+const FILIERE = "{{ filiere }}";
+
+function badgePaiement(statut, motif) {
+    if (statut === 'paye') return '<span class="badge bg-success">Payé</span>';
+    const label = statut === 'partiel' ? 'Partiel' : 'Non payé';
+    const titre = motif ? motif.replace(/"/g, '&quot;') : 'Motif non renseigné';
+    return `<span class="badge bg-warning text-dark" title="${titre}"><i class="fas fa-exclamation-triangle me-1"></i>${label}</span>`;
+}
+
+function badgeStatut(statut) {
+    if (statut === 'realisee') return '<span class="badge bg-info">Réalisée</span>';
+    if (statut === 'annulee') return '<span class="badge bg-secondary">Annulée</span>';
+    return '<span class="badge bg-primary">En attente</span>';
+}
+
+function chargerDemandes() {
+    const inclureRealisees = document.getElementById('toggleRealisees').checked ? '1' : '0';
+    fetch(`/api/demandes-examens?filiere=${FILIERE}&inclure_realisees=${inclureRealisees}`)
+        .then(r => r.json())
+        .then(lignes => {
+            document.getElementById('totalDemandes').textContent = lignes.length;
+            const corps = document.getElementById('corpsDemandes');
+            if (!lignes.length) {
+                corps.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Aucune demande en attente.</td></tr>';
+                return;
+            }
+            corps.innerHTML = lignes.map(l => `
+                <tr>
+                    <td><strong>${l.patient_nom || 'Patient'}</strong></td>
+                    <td>${l.acte_nom}${l.quantite > 1 ? ' <span class="text-muted">x' + l.quantite + '</span>' : ''}</td>
+                    <td class="text-end">${Math.round(l.prix * l.quantite).toLocaleString('fr-FR')} F</td>
+                    <td>${badgePaiement(l.statut_paiement, l.motif)}</td>
+                    <td>${l.externe ? '<span class="badge bg-light text-dark border" title="Envoyé par ' + (l.prescripteur_nom || 'un prescripteur externe') + '"><i class="fas fa-user-md me-1"></i>' + (l.prescripteur_nom || 'Externe') + '</span>' : '<span class="text-muted small">Interne</span>'}</td>
+                    <td>${badgeStatut(l.statut)}</td>
+                    <td class="small text-muted">${l.created_at}</td>
+                    <td class="text-end">
+                        ${l.statut === 'en_attente' ? `
+                        <button class="btn btn-sm btn-success" onclick="changerStatutDemande(${l.id}, 'realisee')" title="Marquer réalisée">
+                            <i class="fas fa-check"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="changerStatutDemande(${l.id}, 'annulee')" title="Annuler">
+                            <i class="fas fa-times"></i>
+                        </button>` : ''}
+                    </td>
+                </tr>
+            `).join('');
+        });
+}
+
+function changerStatutDemande(id, statut) {
+    fetch(`/api/demandes-examens/${id}/statut`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ statut: statut })
+    })
+    .then(r => r.json())
+    .then(data => { if (data.success) chargerDemandes(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+}
+
+chargerDemandes();
+setInterval(chargerDemandes, 30000);
+</script>
+
+{% endblock %}

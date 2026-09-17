@@ -23,6 +23,13 @@
                     <span class="menu-text">Tableau de bord</span>
                 </a>
 
+                <!-- ⭐ Laborantin/Radiologue : tableau de bord COMPLÈTEMENT
+                     restreint (patron : "on va restreindre complètement leur
+                     tableau de bord") — tout le menu clinique/administratif
+                     normal est masqué pour ces deux rôles, ils ne voient que
+                     leur file de demandes (bloc plus bas) + Guide d'utilisation. -->
+                {% if session.role not in ['laborantin', 'radiologue'] %}
+
                 {% if not onglet_cache('patients') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'patients' %}active{% endif %}" href="{{ url_for('patients') }}">
                     <span class="menu-text">Liste Patients</span>
@@ -143,6 +150,35 @@
                 </a>
                 {% endif %}
 
+                {% endif %} {# fin restriction laborantin/radiologue (ouverte près de "Tableau de bord") #}
+
+                <!-- ===== LABORATOIRE / RADIOLOGIE (toujours visible, même
+                     restreint : ce sont CES 2 rôles qui l'utilisent) ===== -->
+                {% if (session.role == 'laborantin' or a_acces('demandes_laboratoire')) and not _bloq %}
+                <a class="nav-link {% if request.endpoint == 'page_laboratoire' %}active{% endif %}" href="{{ url_for('page_laboratoire') }}">
+                    <span class="menu-text"><i class="fas fa-vial me-1"></i> Laboratoire</span>
+                </a>
+                {% endif %}
+
+                {% if (session.role == 'radiologue' or a_acces('demandes_radiologie')) and not _bloq %}
+                <a class="nav-link {% if request.endpoint == 'page_radiologie' %}active{% endif %}" href="{{ url_for('page_radiologie') }}">
+                    <span class="menu-text"><i class="fas fa-x-ray me-1"></i> Radiologie</span>
+                </a>
+                {% endif %}
+
+                {% if a_acces('patients_externes') and not _bloq %}
+                <a class="nav-link {% if request.endpoint == 'page_patients_externes' %}active{% endif %}" href="{{ url_for('page_patients_externes') }}">
+                    <span class="menu-text">Patients externes &amp; prescripteurs</span>
+                </a>
+                {% endif %}
+
+                {% if session.is_admin and not _bloq %}
+                <a class="nav-link {% if request.endpoint == 'page_classification_actes' %}active{% endif %}" href="{{ url_for('page_classification_actes') }}">
+                    <span class="menu-text">Classification Labo/Radio</span>
+                </a>
+                {% endif %}
+
+                {% if session.role not in ['laborantin', 'radiologue'] %}
                 <!-- ===== ADMINISTRATION ===== -->
                 {% if a_acces('statistiques') and not onglet_cache('statistiques') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'statistiques_ventes' %}active{% endif %}" href="{{ url_for('statistiques_ventes') }}">
@@ -198,6 +234,8 @@
                     <span class="menu-text">Administration générale</span>
                 </a>
                 {% endif %}
+
+                {% endif %} {# fin 2e restriction laborantin/radiologue (section ADMINISTRATION) #}
 
                 <!-- ===== GUIDE D'UTILISATION (visible à tous les utilisateurs) ===== -->
                 <a class="nav-link {% if request.endpoint == 'guide_utilisation' %}active{% endif %}" href="{{ url_for('guide_utilisation') }}">

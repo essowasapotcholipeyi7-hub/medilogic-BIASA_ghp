@@ -2202,6 +2202,14 @@ function afficherModalConversion(data) {
                         </div>
                     </div>
                 </div>
+                <!-- ⭐ Circuit Laboratoire/Radiologie — voir actes_vente.html
+                     pour le même mécanisme. -->
+                <div class="row mb-2">
+                    <div class="col-md-12">
+                        <label class="form-label small text-muted mb-1">Motif si non payé intégralement <span class="text-muted">(labo/radio)</span></label>
+                        <input type="text" class="form-control form-control-sm" id="convertMotifLaboRadio" placeholder="Ex. attend accord assurance, problème de carte...">
+                    </div>
+                </div>
                 <div class="row">
                     <div class="col-md-4">
                         <label class="form-label">Taux assurance principale (%)</label>
@@ -2919,6 +2927,7 @@ function finaliserConversionVente() {
         applique_pbr_cac: (() => { const t = document.getElementById('convertAppliquePbrCac'); return t ? t.checked : true; })(),
         pbr_cac_variante: document.getElementById('convertPbrCacVariante')?.value || 'defaut',
         applique_tva: (() => { const t = document.getElementById('convertAppliquerTva'); return t ? t.checked : false; })(),
+        motif_labo_radio: (document.getElementById('convertMotifLaboRadio')?.value || '').trim(),
         assurance_principale_active: assurancePrincipaleActive,
         montant_donne: montantDonne,
         type_document: typeDocument,

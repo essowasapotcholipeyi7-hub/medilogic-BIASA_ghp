@@ -285,6 +285,20 @@
     </div>
 </div>
 
+                <!-- ⭐ Circuit Laboratoire/Radiologie : si un acte analyse/examen
+                     est réglé partiellement ou pas du tout, ce motif s'affiche
+                     sur la demande générée automatiquement (voir
+                     creer_demandes_pour_vente, services/laboratoire_service.py)
+                     — le labo/radio décide alors de servir ou non. Toujours
+                     visible, sans effet si aucun acte classé n'est dans le
+                     panier ou si le paiement est complet. -->
+                <div class="row mt-2">
+                    <div class="col-md-6">
+                        <label class="form-label small text-muted">Motif si non payé intégralement <span class="text-muted">(labo/radio)</span></label>
+                        <input type="text" class="form-control form-control-sm" id="motifLaboRadio" placeholder="Ex. attend accord assurance, problème de carte...">
+                    </div>
+                </div>
+
                 <div class="row mt-3">
                     <div class="col-md-2">
                         <label class="form-label">Mode de paiement</label>
@@ -2240,6 +2254,7 @@ function finaliserVente() {
         applique_pbr_cac: (() => { const t = document.getElementById('toggleAppliquePbrCac'); return t ? t.checked : true; })(),
         pbr_cac_variante: document.getElementById('selectPbrCacVarianteActes')?.value || 'defaut',
         applique_tva: (() => { const t = document.getElementById('toggleAppliquerTva'); return t ? t.checked : false; })(),
+        motif_labo_radio: (document.getElementById('motifLaboRadio')?.value || '').trim(),
         taux_temp_modifie: tauxTempModifie,
         taux_original: patientTaux2Original || 0,
         montant_donne: montantDonne,

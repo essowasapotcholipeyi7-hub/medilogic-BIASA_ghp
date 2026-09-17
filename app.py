@@ -14,11 +14,12 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, PbrComplementaire, CompagnieComplementaire, ParametrageTva
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
 from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur
+from services.laboratoire_service import charger_classification_actes, statut_paiement_depuis_montants, creer_demandes_pour_vente
 
 # ⭐ Numéro WhatsApp de l'éditeur (Togo, +228) pour l'envoi du reçu
 # d'abonnement — voir admin_finances.html.
@@ -1607,7 +1608,16 @@ def dashboard():
     from models import Patient
     from datetime import datetime
     from sqlalchemy import text
-    
+
+    # ⭐ Laborantin/Radiologue : leur "tableau de bord" EST leur file de
+    # demandes — pas le tableau de bord général (patients/CA/ventes, sans
+    # aucun rapport avec leur travail). Redirection systématique, comme
+    # demandé ("on va restreindre complètement leur tableau de bord").
+    if session.get('role') == 'laborantin':
+        return redirect(url_for('page_laboratoire'))
+    if session.get('role') == 'radiologue':
+        return redirect(url_for('page_radiologie'))
+
     # ⭐ Récupérer structure_id depuis la session
     structure_id = session.get('structure_id')
     
@@ -8309,7 +8319,20 @@ def api_add_acte_vente():
 
         vente_id = result[0]['id']
         print(f"✅ Vente actes enregistrée dans Neon avec ID: {vente_id}")
-        
+
+        # ⭐ Circuit Laboratoire/Radiologie : génère automatiquement une
+        # demande pour chaque acte classé analyse/examen (ClassificationActe)
+        # — ne fait rien tant que rien n'a été classé (voir
+        # creer_demandes_pour_vente, services/laboratoire_service.py).
+        try:
+            statut_paiement = statut_paiement_depuis_montants(data.get('net_a_payer'), reste_a_payer)
+            creer_demandes_pour_vente(
+                structure_id, patient_id, data.get('patient_nom', 'Patient'), actes_data,
+                vente_id, statut_paiement, data.get('motif_labo_radio'), user_name,
+            )
+        except Exception as e:
+            print(f"⚠️ Erreur génération demande labo/radio (vente #{vente_id} conservée): {e}")
+
         # ========== 2. AJOUTER LA RECETTE PATIENT ==========
         montant_effectif = montant_donne - rendu
         if montant_effectif > 0:
@@ -8874,6 +8897,325 @@ def api_supprimer_pbr_complementaire(ligne_id):
         db.session.delete(ligne)
         db.session.commit()
         return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================
+# LABORATOIRE / RADIOLOGIE — classification des actes
+# ============================================================
+@app.route('/classification-actes')
+@admin_required
+def page_classification_actes():
+    """Page d'administration : quel acte relève de la biologie (Analyse,
+    file du Laborantin) ou de l'imagerie (Examen, file du Radiologue) —
+    voir ClassificationActe (models.py). Strictement admin, même logique
+    que la gestion du catalogue d'actes (utils/permissions.py)."""
+    return render_template('classification_actes.html')
+
+
+@app.route('/api/classification-actes', methods=['GET'])
+@login_required
+def api_lister_classification_actes():
+    structure_id = session.get('structure_id')
+    lignes = ClassificationActe.query.filter_by(structure_id=structure_id).order_by(ClassificationActe.type_prestation, ClassificationActe.nom_acte).all()
+    return jsonify([{
+        'id': l.id, 'nom_acte': l.nom_acte, 'type_prestation': l.type_prestation,
+    } for l in lignes])
+
+
+@app.route('/api/classification-actes', methods=['POST'])
+@admin_required
+def api_creer_classification_acte():
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        nom_acte = (data.get('nom_acte') or '').strip()
+        type_prestation = data.get('type_prestation')
+        if not nom_acte:
+            return jsonify({'success': False, 'error': 'Acte requis'}), 400
+        if type_prestation not in ('analyse', 'examen'):
+            return jsonify({'success': False, 'error': "type_prestation doit être 'analyse' ou 'examen'"}), 400
+
+        existante = ClassificationActe.query.filter_by(structure_id=structure_id, nom_acte=nom_acte).first()
+        if existante:
+            existante.type_prestation = type_prestation
+            db.session.commit()
+            return jsonify({'success': True, 'id': existante.id, 'mis_a_jour': True})
+
+        ligne = ClassificationActe(
+            structure_id=structure_id, nom_acte=nom_acte, type_prestation=type_prestation,
+            created_by=session.get('user_name', 'System'),
+        )
+        db.session.add(ligne)
+        db.session.commit()
+        return jsonify({'success': True, 'id': ligne.id, 'mis_a_jour': False})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/classification-actes/<int:ligne_id>', methods=['DELETE'])
+@admin_required
+def api_supprimer_classification_acte(ligne_id):
+    try:
+        structure_id = session.get('structure_id')
+        ligne = ClassificationActe.query.filter_by(id=ligne_id, structure_id=structure_id).first()
+        if not ligne:
+            return jsonify({'success': False, 'error': 'Introuvable'}), 404
+        db.session.delete(ligne)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================
+# LABORATOIRE / RADIOLOGIE — files d'attente (tableaux de bord restreints)
+# ============================================================
+@app.route('/laboratoire')
+@login_required
+def page_laboratoire():
+    """Tableau de bord du Laborantin — STRICTEMENT les demandes 'analyse'.
+    Accessible aussi à l'admin/médecin (voir a_acces), jamais au
+    Radiologue (dont les demandes 'examen' n'apparaissent jamais ici)."""
+    if session.get('role') not in ('laborantin',) and not a_acces('demandes_laboratoire'):
+        flash('Accès non autorisé pour votre rôle.', 'danger')
+        return redirect(url_for('dashboard'))
+    return render_template('laboratoire.html', filiere='analyse', titre='Laboratoire — Demandes d\'analyses')
+
+
+@app.route('/radiologie')
+@login_required
+def page_radiologie():
+    """Tableau de bord du Radiologue — STRICTEMENT les demandes 'examen'.
+    Même page (laboratoire.html) que /laboratoire, filtrée par filiere :
+    même logique d'affichage des deux côtés, un seul template à maintenir."""
+    if session.get('role') not in ('radiologue',) and not a_acces('demandes_radiologie'):
+        flash('Accès non autorisé pour votre rôle.', 'danger')
+        return redirect(url_for('dashboard'))
+    return render_template('laboratoire.html', filiere='examen', titre='Radiologie — Demandes d\'examens')
+
+
+@app.route('/api/demandes-examens', methods=['GET'])
+@login_required
+def api_lister_demandes_examens():
+    """?filiere=analyse|examen (obligatoire) — la route se garde elle-même
+    sur le rôle, en plus du gardien de page : un laborantin qui appellerait
+    directement l'API avec filiere=examen se voit quand même refuser
+    (défense en profondeur, même principe que le reste de l'appli)."""
+    structure_id = session.get('structure_id')
+    filiere = request.args.get('filiere')
+    if filiere not in ('analyse', 'examen'):
+        return jsonify({'success': False, 'error': 'filiere requise (analyse|examen)'}), 400
+
+    role = session.get('role')
+    if filiere == 'analyse' and role == 'radiologue':
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    if filiere == 'examen' and role == 'laborantin':
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+
+    inclure_realisees = request.args.get('inclure_realisees') == '1'
+    q = DemandeExamen.query.filter_by(structure_id=structure_id, type_prestation=filiere)
+    if not inclure_realisees:
+        q = q.filter(DemandeExamen.statut == 'en_attente')
+    lignes = q.order_by(DemandeExamen.created_at.desc()).all()
+
+    resultat = []
+    for l in lignes:
+        prescripteur_nom = None
+        if l.patient_externe_id:
+            fiche = PatientExterne.query.get(l.patient_externe_id)
+            if fiche:
+                presc = PrescripteurExterne.query.get(fiche.prescripteur_id)
+                prescripteur_nom = presc.nom if presc else None
+        resultat.append({
+            'id': l.id, 'patient_id': l.patient_id, 'patient_nom': l.patient_nom,
+            'acte_nom': l.acte_nom, 'quantite': l.quantite, 'prix': float(l.prix or 0),
+            'statut_paiement': l.statut_paiement, 'motif': l.motif, 'statut': l.statut,
+            'externe': bool(l.patient_externe_id), 'prescripteur_nom': prescripteur_nom,
+            'created_at': l.created_at.strftime('%d/%m/%Y %H:%M') if l.created_at else '',
+        })
+    return jsonify(resultat)
+
+
+@app.route('/api/demandes-examens/<int:demande_id>/statut', methods=['POST'])
+@login_required
+def api_changer_statut_demande_examen(demande_id):
+    """Marquer une demande 'realisee' ou 'annulee'. Gardée par filière :
+    un laborantin ne peut toucher qu'une demande 'analyse', un radiologue
+    qu'une demande 'examen' — admin/médecin peuvent les deux."""
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        nouveau_statut = data.get('statut')
+        if nouveau_statut not in ('en_attente', 'realisee', 'annulee'):
+            return jsonify({'success': False, 'error': 'Statut invalide'}), 400
+
+        demande = DemandeExamen.query.filter_by(id=demande_id, structure_id=structure_id).first()
+        if not demande:
+            return jsonify({'success': False, 'error': 'Demande introuvable'}), 404
+
+        role = session.get('role')
+        if demande.type_prestation == 'analyse' and role == 'radiologue':
+            return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+        if demande.type_prestation == 'examen' and role == 'laborantin':
+            return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+
+        demande.statut = nouveau_statut
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================
+# LABORATOIRE / RADIOLOGIE — prescripteurs externes & ristournes
+# ============================================================
+@app.route('/patients-externes')
+@login_required
+def page_patients_externes():
+    """Onglet secrétaire/admin : liste des prescripteurs externes (avec
+    leur taux de ristourne mémorisé) + enregistrement des patients reçus
+    pour le compte de l'un d'eux (biologie et/ou imagerie), assignation
+    obligatoire au prescripteur."""
+    if not a_acces('patients_externes'):
+        flash('Accès non autorisé pour votre rôle.', 'danger')
+        return redirect(url_for('dashboard'))
+    return render_template('patients_externes.html')
+
+
+@app.route('/api/prescripteurs-externes', methods=['GET'])
+@login_required
+def api_lister_prescripteurs_externes():
+    structure_id = session.get('structure_id')
+    lignes = PrescripteurExterne.query.filter_by(structure_id=structure_id, actif=True).order_by(PrescripteurExterne.nom).all()
+    return jsonify([{
+        'id': l.id, 'nom': l.nom, 'telephone': l.telephone, 'email': l.email,
+        'specialite': l.specialite, 'taux_ristourne': float(l.taux_ristourne) if l.taux_ristourne is not None else None,
+    } for l in lignes])
+
+
+@app.route('/api/prescripteurs-externes', methods=['POST'])
+@login_required
+def api_creer_prescripteur_externe():
+    """Crée un nouveau prescripteur, OU met à jour son taux si `id` est
+    fourni — c'est ce deuxième cas qui fait que le taux saisi une première
+    fois se propose ensuite tout seul (patron : "si on saisit un taux pour
+    la première fois que ce taux se propose pour les prochaines fois") :
+    le formulaire pré-remplit taux_ristourne à l'édition, la secrétaire
+    n'a qu'à confirmer ou corriger au cas par cas."""
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        presc_id = data.get('id')
+        nom = (data.get('nom') or '').strip()
+        taux = data.get('taux_ristourne')
+
+        if presc_id:
+            presc = PrescripteurExterne.query.filter_by(id=presc_id, structure_id=structure_id).first()
+            if not presc:
+                return jsonify({'success': False, 'error': 'Prescripteur introuvable'}), 404
+        else:
+            if not nom:
+                return jsonify({'success': False, 'error': 'Nom requis'}), 400
+            presc = PrescripteurExterne(structure_id=structure_id, created_by=session.get('user_name', 'System'))
+            db.session.add(presc)
+
+        if nom:
+            presc.nom = nom
+        presc.telephone = data.get('telephone', presc.telephone)
+        presc.email = data.get('email', presc.email)
+        presc.specialite = data.get('specialite', presc.specialite)
+        if taux is not None and taux != '':
+            presc.taux_ristourne = float(taux)
+
+        db.session.commit()
+        return jsonify({'success': True, 'id': presc.id, 'taux_ristourne': float(presc.taux_ristourne) if presc.taux_ristourne is not None else None})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/patients-externes', methods=['GET'])
+@login_required
+def api_lister_patients_externes():
+    """Liste des fiches actives, avec pour chacune les demandes déjà
+    générées (acte, prix, statut de paiement) — affiche directement
+    'l'acte à payer à côté du nom avec statut payé/non payé/partiel'."""
+    structure_id = session.get('structure_id')
+    fiches = PatientExterne.query.filter_by(structure_id=structure_id, actif=True).order_by(PatientExterne.created_at.desc()).all()
+    resultat = []
+    for f in fiches:
+        presc = PrescripteurExterne.query.get(f.prescripteur_id)
+        demandes = DemandeExamen.query.filter_by(patient_externe_id=f.id).order_by(DemandeExamen.created_at.desc()).all()
+        resultat.append({
+            'id': f.id, 'patient_id': f.patient_id, 'patient_nom': f.patient_nom,
+            'prescripteur_id': f.prescripteur_id, 'prescripteur_nom': presc.nom if presc else '—',
+            'biologie': f.biologie, 'imagerie': f.imagerie,
+            'created_at': f.created_at.strftime('%d/%m/%Y') if f.created_at else '',
+            'demandes': [{
+                'acte_nom': d.acte_nom, 'prix': float(d.prix or 0), 'quantite': d.quantite,
+                'statut_paiement': d.statut_paiement, 'motif': d.motif, 'type_prestation': d.type_prestation,
+            } for d in demandes],
+        })
+    return jsonify(resultat)
+
+
+@app.route('/api/patients-externes', methods=['POST'])
+@login_required
+def api_creer_patient_externe():
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        patient_id = data.get('patient_id')
+        prescripteur_id = data.get('prescripteur_id')
+        biologie = bool(data.get('biologie'))
+        imagerie = bool(data.get('imagerie'))
+
+        if not patient_id:
+            return jsonify({'success': False, 'error': 'Patient requis'}), 400
+        if not prescripteur_id:
+            return jsonify({'success': False, 'error': 'Prescripteur obligatoire'}), 400
+        if not biologie and not imagerie:
+            return jsonify({'success': False, 'error': 'Cochez Biologie et/ou Imagerie'}), 400
+
+        presc = PrescripteurExterne.query.filter_by(id=prescripteur_id, structure_id=structure_id).first()
+        if not presc:
+            return jsonify({'success': False, 'error': 'Prescripteur introuvable'}), 404
+
+        patient_row = db.execute_query("SELECT nom, prenom FROM patients WHERE id = %s AND structure_id = %s", (patient_id, structure_id))
+        if not patient_row:
+            return jsonify({'success': False, 'error': 'Patient introuvable'}), 404
+        patient_nom = f"{patient_row[0].get('nom', '')} {patient_row[0].get('prenom', '')}".strip()
+
+        fiche = PatientExterne(
+            structure_id=structure_id, patient_id=patient_id, patient_nom=patient_nom,
+            prescripteur_id=prescripteur_id, biologie=biologie, imagerie=imagerie,
+            created_by=session.get('user_name', 'System'),
+        )
+        db.session.add(fiche)
+        db.session.commit()
+        return jsonify({'success': True, 'id': fiche.id})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/patients-externes/<int:fiche_id>/toggle', methods=['POST'])
+@login_required
+def api_toggle_patient_externe(fiche_id):
+    try:
+        structure_id = session.get('structure_id')
+        fiche = PatientExterne.query.filter_by(id=fiche_id, structure_id=structure_id).first()
+        if not fiche:
+            return jsonify({'success': False, 'error': 'Introuvable'}), 404
+        fiche.actif = not fiche.actif
+        db.session.commit()
+        return jsonify({'success': True, 'actif': fiche.actif})
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -12028,6 +12370,20 @@ def api_convertir_proforma():
 
         vente_id = result[0]['id']
         print(f"✅ Vente créée depuis proforma #{proforma_id} avec ID: {vente_id}")
+
+        # ⭐ Circuit Laboratoire/Radiologie — voir le même commentaire dans
+        # api_add_acte_vente(). Couvre aussi bien une conversion directe
+        # qu'une vente issue d'une hospitalisation (les deux passent par
+        # cette route à la conversion finale).
+        try:
+            statut_paiement = statut_paiement_depuis_montants(net_a_payer, reste_a_payer)
+            creer_demandes_pour_vente(
+                structure_id, data.get('patient_id'), data.get('patient_nom', 'Patient'), articles_transformes,
+                vente_id, statut_paiement, data.get('motif_labo_radio'), user_name,
+            )
+        except Exception as e:
+            print(f"⚠️ Erreur génération demande labo/radio (vente #{vente_id} conservée): {e}")
+
         if assurance2_active:
             upsert_societe_assurance(structure_id, assurance2_nom, societe_assurance2)
         upsert_compagnie_complementaire(structure_id, assurance2_nom)

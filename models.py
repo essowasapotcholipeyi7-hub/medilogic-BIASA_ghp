@@ -2308,6 +2308,101 @@ class CompagnieComplementaire(db.Model):
 
 
 # ============================================================
+# LABORATOIRE / RADIOLOGIE — circuit de demandes + ristournes
+# ============================================================
+# ⭐ Quel acte du catalogue relève de la biologie (laborantin) ou de
+# l'imagerie (radiologue) — table Postgres plutôt qu'une colonne de plus
+# sur le catalogue Sheets (même choix que PbrComplementaire cette
+# session) : évite de toucher au schéma des feuilles struct_<id>_actes,
+# et une entrée absente = acte "standard" (ni labo ni radio), zéro
+# régression. Voir /classification-actes et charger_classification_actes()
+# (services/laboratoire_service.py).
+class ClassificationActe(db.Model):
+    __tablename__ = 'classification_actes'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    nom_acte = db.Column(db.String(255), nullable=False)
+    type_prestation = db.Column(db.String(20), nullable=False)  # 'analyse' | 'examen'
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# ⭐ Médecin EXTÉRIEUR à la clinique qui envoie un patient réaliser une
+# analyse/un examen — a droit à une ristourne sur le prix de l'acte, à un
+# taux propre à lui (voir taux_ristourne : mémorisé, proposé par défaut la
+# prochaine fois, modifiable au cas par cas — patron : "si on saisit un
+# taux pour la première fois que ce taux se propose pour les prochaines
+# fois"). Distinct des Medecin internes (services/medecins) qui, eux,
+# consultent à la clinique et n'ouvrent jamais droit à ristourne.
+class PrescripteurExterne(db.Model):
+    __tablename__ = 'prescripteurs_externes'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    nom = db.Column(db.String(200), nullable=False)
+    telephone = db.Column(db.String(50))  # ⭐ pour l'envoi du reçu par WhatsApp
+    email = db.Column(db.String(150))
+    specialite = db.Column(db.String(150))
+    taux_ristourne = db.Column(db.Numeric)  # % — dernier taux saisi, proposé par défaut
+    actif = db.Column(db.Boolean, default=True)
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# ⭐ Un patient signalé par la secrétaire comme venu d'un prescripteur
+# EXTERNE pour réaliser une analyse et/ou un examen — le patient lui-même
+# reste enregistré normalement (Patient, inchangé) ; cette fiche est
+# juste le lien vers son prescripteur, posé une fois depuis l'onglet
+# "Patients externes" (patron : "les secrétaires depuis un onglet
+# constituent la liste des patients externes tout en leur assignant
+# obligatoirement un prescripteur"). biologie/imagerie indiquent ce que
+# couvre CETTE référence (sert à filtrer quelles DemandeExamen comptent
+# pour la ristourne de ce prescripteur — voir calculer_ristournes()).
+class PatientExterne(db.Model):
+    __tablename__ = 'patients_externes'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    patient_id = db.Column(db.Integer, nullable=False)
+    patient_nom = db.Column(db.String(255))
+    prescripteur_id = db.Column(db.Integer, nullable=False)
+    biologie = db.Column(db.Boolean, default=False)
+    imagerie = db.Column(db.Boolean, default=False)
+    actif = db.Column(db.Boolean, default=True)
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# ⭐ Le cœur du circuit : une ligne par acte "analyse"/"examen" réglé
+# (même partiellement) — créée AUTOMATIQUEMENT à l'encaissement (vente
+# directe ou conversion de proforma), jamais saisie à la main. Oriente
+# vers le Laborantin ou le Radiologue selon type_prestation ; si le
+# patient a une fiche PatientExterne active, patient_externe_id est
+# renseigné et cette ligne compte dans la ristourne de son prescripteur.
+class DemandeExamen(db.Model):
+    __tablename__ = 'demandes_examens'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    patient_id = db.Column(db.Integer, nullable=False)
+    patient_nom = db.Column(db.String(255))
+    type_prestation = db.Column(db.String(20), nullable=False)  # 'analyse' | 'examen'
+    acte_nom = db.Column(db.String(255), nullable=False)
+    quantite = db.Column(db.Integer, default=1)
+    prix = db.Column(db.Numeric, default=0)
+    vente_id = db.Column(db.Integer)  # traçabilité — vente d'origine
+    patient_externe_id = db.Column(db.Integer)  # NULL = patient interne, pas de ristourne
+    # ⭐ Statut du RÈGLEMENT de cet acte précis, au moment de la création
+    # de la demande — pas rafraîchi ensuite (un paiement complété plus
+    # tard nécessite de le rouvrir/le resservir, pas de le recalculer en
+    # silence). 'motif' expliqué par la caissière si partiel/impayé, pour
+    # que le labo/radio décide de servir ou non (patron : "afin de
+    # décider s'il faut le servir ou pas").
+    statut_paiement = db.Column(db.String(20), default='paye')  # 'paye' | 'partiel' | 'impaye'
+    motif = db.Column(db.Text)
+    statut = db.Column(db.String(20), default='en_attente')  # 'en_attente' | 'realisee' | 'annulee'
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# ============================================================
 # HOSPITALISATION — inventaire chambres/lits + occupation
 # ============================================================
 # Pré-créé une bonne fois par la structure (page de configuration), pour

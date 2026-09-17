@@ -1899,6 +1899,13 @@
                 Accueil
             </a>
         </li>
+        <!-- ⭐ Laborantin/Radiologue : cette barre du haut contournait
+             complètement la restriction posée sur le sidebar (elle n'a
+             jamais été gardée par rôle) — un labo/radio pouvait rouvrir
+             Patients/Actes&Vente/Pharmacie/Finances depuis ici. Bloc
+             entier masqué pour ces 2 rôles, même principe que
+             sidebar_menu.html. -->
+        {% if session.role not in ['laborantin', 'radiologue'] %}
         {% if not onglet_cache('patients') and not _bloq %}
         <li class="nav-item nav-item-patients">
             <a class="nav-link-top" href="#" onclick="return false;">
@@ -2066,6 +2073,23 @@
                 </a>
                 {% endif %}
             </div>
+        </li>
+        {% endif %}
+
+        {% endif %} {# fin restriction laborantin/radiologue #}
+
+        {% if session.role == 'laborantin' %}
+        <li class="nav-item">
+            <a class="nav-link-top" href="{{ url_for('page_laboratoire') }}">
+                <i class="fas fa-vial"></i> Laboratoire
+            </a>
+        </li>
+        {% endif %}
+        {% if session.role == 'radiologue' %}
+        <li class="nav-item">
+            <a class="nav-link-top" href="{{ url_for('page_radiologie') }}">
+                <i class="fas fa-x-ray"></i> Radiologie
+            </a>
         </li>
         {% endif %}
     </ul>

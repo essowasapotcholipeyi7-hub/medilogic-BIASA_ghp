@@ -1,0 +1,361 @@
+{% extends "base.html" %}
+
+{% block title %}Patients Externes{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h4 class="mb-0"><i class="fas fa-user-md me-2"></i>Patients externes &amp; prescripteurs</h4>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-dark btn-sm" onclick="ouvrirModalPrescripteur()">
+            <i class="fas fa-plus me-1"></i> Prescripteur
+        </button>
+        <button class="btn btn-dark btn-sm" onclick="ouvrirModalPatientExterne()">
+            <i class="fas fa-plus me-1"></i> Patient externe
+        </button>
+    </div>
+</div>
+
+<div class="alert alert-info">
+    <i class="fas fa-info-circle me-1"></i>
+    Le patient s'enregistre normalement (Liste Patients). Utilisez cette page pour signaler qu'il vient
+    d'un <strong>prescripteur externe</strong> (pas une consultation interne) — il apparaîtra automatiquement chez le
+    Laborantin et/ou le Radiologue dès le règlement de ses actes, et comptera pour la ristourne de son prescripteur.
+</div>
+
+<div class="card">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <span><i class="fas fa-list me-1"></i> Patients externes enregistrés</span>
+        <span id="totalPatientsExternes" class="badge bg-light text-dark">0</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Patient</th>
+                        <th>Prescripteur</th>
+                        <th>Filière</th>
+                        <th>Actes réglés</th>
+                        <th>Date</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="corpsPatientsExternes">
+                    <tr><td colspan="6" class="text-center text-muted py-4">Chargement...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<hr class="my-4">
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <h5 class="mb-0"><i class="fas fa-address-book me-2"></i>Prescripteurs externes</h5>
+</div>
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm mb-0 align-middle">
+                <thead class="table-light">
+                    <tr><th>Nom</th><th>Téléphone</th><th>Spécialité</th><th class="text-end">Taux de ristourne</th><th></th></tr>
+                </thead>
+                <tbody id="corpsPrescripteurs">
+                    <tr><td colspan="5" class="text-center text-muted py-4">Chargement...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Prescripteur -->
+<div class="modal fade" id="modalPrescripteur" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-user-md me-2"></i><span id="prescripteurModalTitre">Nouveau prescripteur</span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="prescripteurId">
+                <div class="mb-2">
+                    <label class="form-label mb-1">Nom <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="prescripteurNom" placeholder="Dr. ...">
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label mb-1">Téléphone</label>
+                        <input type="text" class="form-control" id="prescripteurTelephone" placeholder="Pour l'envoi WhatsApp du reçu">
+                    </div>
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label mb-1">Spécialité</label>
+                        <input type="text" class="form-control" id="prescripteurSpecialite">
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label mb-1">Taux de ristourne (%)</label>
+                    <!-- ⭐ Pré-rempli à l'édition avec le dernier taux saisi pour
+                         CE prescripteur — patron : "si on saisit un taux pour la
+                         première fois que ce taux se propose pour les prochaines
+                         fois". Toujours modifiable au cas par cas. -->
+                    <input type="number" class="form-control" id="prescripteurTaux" min="0" max="100" step="0.5" placeholder="Ex. 10">
+                    <small class="text-muted">Proposé automatiquement la prochaine fois — modifiable si la clause change.</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="enregistrerPrescripteur()">
+                    <i class="fas fa-check me-1"></i> Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Patient externe -->
+<div class="modal fade" id="modalPatientExterne" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-user-plus me-2"></i>Nouveau patient externe</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="position-relative mb-2">
+                    <label class="form-label mb-1">Patient <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="pxPatientSearch" placeholder="Rechercher par nom..." autocomplete="off">
+                    <div id="pxPatientResultats" class="list-group position-absolute w-100" style="z-index:1000; max-height:200px; overflow-y:auto; display:none;"></div>
+                </div>
+                <div id="pxPatientChoisiBloc" style="display:none;" class="mb-2 p-2 border rounded bg-light">
+                    <strong id="pxPatientChoisiNom"></strong>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label mb-1">Prescripteur externe <span class="text-danger">*</span></label>
+                    <select class="form-select" id="pxPrescripteur">
+                        <option value="">-- Sélectionner --</option>
+                    </select>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label mb-1">Filière <span class="text-danger">*</span></label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="pxBiologie">
+                        <label class="form-check-label" for="pxBiologie"><i class="fas fa-vial me-1"></i>Biologie (analyses)</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="pxImagerie">
+                        <label class="form-check-label" for="pxImagerie"><i class="fas fa-x-ray me-1"></i>Imagerie (examens)</label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="enregistrerPatientExterne()">
+                    <i class="fas fa-check me-1"></i> Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let listePrescripteurs = [];
+let listePatients = [];
+let pxPatientChoisi = null;
+let debouncePxPatient = null;
+
+// ===================== PRESCRIPTEURS =====================
+function ouvrirModalPrescripteur(id) {
+    document.getElementById('prescripteurId').value = id || '';
+    document.getElementById('prescripteurModalTitre').textContent = id ? 'Modifier le prescripteur' : 'Nouveau prescripteur';
+    if (id) {
+        const p = listePrescripteurs.find(x => x.id === id);
+        if (p) {
+            document.getElementById('prescripteurNom').value = p.nom || '';
+            document.getElementById('prescripteurTelephone').value = p.telephone || '';
+            document.getElementById('prescripteurSpecialite').value = p.specialite || '';
+            document.getElementById('prescripteurTaux').value = p.taux_ristourne !== null ? p.taux_ristourne : '';
+        }
+    } else {
+        document.getElementById('prescripteurNom').value = '';
+        document.getElementById('prescripteurTelephone').value = '';
+        document.getElementById('prescripteurSpecialite').value = '';
+        document.getElementById('prescripteurTaux').value = '';
+    }
+    new bootstrap.Modal(document.getElementById('modalPrescripteur')).show();
+}
+
+function enregistrerPrescripteur() {
+    const id = document.getElementById('prescripteurId').value;
+    const nom = document.getElementById('prescripteurNom').value.trim();
+    if (!id && !nom) { alert('Le nom est obligatoire.'); return; }
+    const payload = {
+        id: id ? parseInt(id) : null,
+        nom: nom,
+        telephone: document.getElementById('prescripteurTelephone').value.trim(),
+        email: '',
+        specialite: document.getElementById('prescripteurSpecialite').value.trim(),
+        taux_ristourne: document.getElementById('prescripteurTaux').value,
+    };
+    fetch('/api/prescripteurs-externes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('modalPrescripteur')).hide();
+            chargerPrescripteurs();
+        } else {
+            alert('Erreur : ' + (data.error || 'inconnue'));
+        }
+    })
+    .catch(e => alert('Erreur : ' + e));
+}
+
+function chargerPrescripteurs() {
+    return fetch('/api/prescripteurs-externes').then(r => r.json()).then(lignes => {
+        listePrescripteurs = lignes;
+        const corps = document.getElementById('corpsPrescripteurs');
+        const select = document.getElementById('pxPrescripteur');
+        if (!lignes.length) {
+            corps.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">Aucun prescripteur enregistré.</td></tr>';
+            select.innerHTML = '<option value="">-- Sélectionner --</option>';
+            return;
+        }
+        corps.innerHTML = lignes.map(p => `
+            <tr>
+                <td><strong>${p.nom}</strong></td>
+                <td>${p.telephone || '-'}</td>
+                <td>${p.specialite || '-'}</td>
+                <td class="text-end">${p.taux_ristourne !== null ? p.taux_ristourne + ' %' : '<span class="text-muted">non défini</span>'}</td>
+                <td class="text-end"><button class="btn btn-sm btn-outline-secondary" onclick="ouvrirModalPrescripteur(${p.id})" title="Modifier"><i class="fas fa-edit"></i></button></td>
+            </tr>
+        `).join('');
+        select.innerHTML = '<option value="">-- Sélectionner --</option>' + lignes.map(p => `<option value="${p.id}">${p.nom}${p.taux_ristourne !== null ? ' (' + p.taux_ristourne + '%)' : ''}</option>`).join('');
+    });
+}
+
+// ===================== PATIENTS EXTERNES =====================
+function ouvrirModalPatientExterne() {
+    document.getElementById('pxPatientSearch').value = '';
+    document.getElementById('pxBiologie').checked = false;
+    document.getElementById('pxImagerie').checked = false;
+    document.getElementById('pxPrescripteur').value = '';
+    viderPxPatientChoisi();
+    if (!listePatients.length) chargerListePatients();
+    new bootstrap.Modal(document.getElementById('modalPatientExterne')).show();
+}
+
+function chargerListePatients() {
+    fetch('/api/patients/liste').then(r => r.json()).then(data => { listePatients = data.data || []; });
+}
+
+function viderPxPatientChoisi() {
+    pxPatientChoisi = null;
+    document.getElementById('pxPatientChoisiBloc').style.display = 'none';
+    document.getElementById('pxPatientResultats').style.display = 'none';
+}
+
+document.getElementById('pxPatientSearch').addEventListener('input', function() {
+    const q = this.value.trim().toLowerCase();
+    clearTimeout(debouncePxPatient);
+    if (q.length < 2) { document.getElementById('pxPatientResultats').style.display = 'none'; return; }
+    debouncePxPatient = setTimeout(() => {
+        const box = document.getElementById('pxPatientResultats');
+        const resultats = listePatients.filter(p =>
+            (p.nom + ' ' + p.prenom).toLowerCase().includes(q) || (p.telephone || '').includes(q)
+        ).slice(0, 20);
+        if (!resultats.length) { box.style.display = 'none'; return; }
+        box.innerHTML = resultats.map(p => `
+            <a href="#" class="list-group-item list-group-item-action" onclick='choisirPxPatient(${p.id}, ${JSON.stringify(p.nom + " " + p.prenom)}); return false;'>
+                ${p.nom} ${p.prenom} <span class="text-muted small">${p.telephone || ''}</span>
+            </a>`).join('');
+        box.style.display = 'block';
+    }, 150);
+});
+
+function choisirPxPatient(id, nom) {
+    pxPatientChoisi = { id: id, nom: nom };
+    document.getElementById('pxPatientChoisiNom').textContent = nom;
+    document.getElementById('pxPatientChoisiBloc').style.display = '';
+    document.getElementById('pxPatientResultats').style.display = 'none';
+    document.getElementById('pxPatientSearch').value = nom;
+}
+
+function enregistrerPatientExterne() {
+    if (!pxPatientChoisi) { alert('Choisissez un patient dans la liste.'); return; }
+    const prescripteur_id = document.getElementById('pxPrescripteur').value;
+    if (!prescripteur_id) { alert('Le prescripteur est obligatoire.'); return; }
+    const biologie = document.getElementById('pxBiologie').checked;
+    const imagerie = document.getElementById('pxImagerie').checked;
+    if (!biologie && !imagerie) { alert('Cochez Biologie et/ou Imagerie.'); return; }
+
+    fetch('/api/patients-externes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patient_id: pxPatientChoisi.id, prescripteur_id: parseInt(prescripteur_id), biologie: biologie, imagerie: imagerie })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('modalPatientExterne')).hide();
+            chargerPatientsExternes();
+        } else {
+            alert('Erreur : ' + (data.error || 'inconnue'));
+        }
+    })
+    .catch(e => alert('Erreur : ' + e));
+}
+
+function retirerPatientExterne(id) {
+    if (!confirm('Retirer ce patient de la liste des externes ?')) return;
+    fetch('/api/patients-externes/' + id + '/toggle', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => { if (data.success) chargerPatientsExternes(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+}
+
+function badgePaiementPx(statut, motif) {
+    if (statut === 'paye') return '<span class="badge bg-success">Payé</span>';
+    const label = statut === 'partiel' ? 'Partiel' : 'Non payé';
+    const titre = motif ? motif.replace(/"/g, '&quot;') : 'Motif non renseigné';
+    return `<span class="badge bg-warning text-dark" title="${titre}">${label}</span>`;
+}
+
+function chargerPatientsExternes() {
+    fetch('/api/patients-externes').then(r => r.json()).then(lignes => {
+        document.getElementById('totalPatientsExternes').textContent = lignes.length;
+        const corps = document.getElementById('corpsPatientsExternes');
+        if (!lignes.length) {
+            corps.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Aucun patient externe enregistré.</td></tr>';
+            return;
+        }
+        corps.innerHTML = lignes.map(f => {
+            const filieres = [f.biologie ? '<span class="badge bg-primary me-1"><i class="fas fa-vial"></i> Biologie</span>' : '',
+                               f.imagerie ? '<span class="badge bg-success"><i class="fas fa-x-ray"></i> Imagerie</span>' : ''].join('');
+            const actes = f.demandes.length
+                ? f.demandes.map(d => `<div>${d.acte_nom} — ${Math.round(d.prix * d.quantite).toLocaleString('fr-FR')} F ${badgePaiementPx(d.statut_paiement, d.motif)}</div>`).join('')
+                : '<span class="text-muted small">Aucun acte réglé pour le moment</span>';
+            return `
+                <tr>
+                    <td><strong>${f.patient_nom}</strong></td>
+                    <td>${f.prescripteur_nom}</td>
+                    <td>${filieres}</td>
+                    <td>${actes}</td>
+                    <td class="small text-muted">${f.created_at}</td>
+                    <td class="text-end"><button class="btn btn-sm btn-outline-danger" onclick="retirerPatientExterne(${f.id})" title="Retirer"><i class="fas fa-trash"></i></button></td>
+                </tr>`;
+        }).join('');
+    });
+}
+
+document.addEventListener('click', function(e) {
+    const box = document.getElementById('pxPatientResultats');
+    if (box && !e.target.closest('#pxPatientSearch') && !e.target.closest('#pxPatientResultats')) box.style.display = 'none';
+});
+
+chargerPrescripteurs();
+chargerPatientsExternes();
+chargerListePatients();
+</script>
+
+{% endblock %}

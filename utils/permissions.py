@@ -29,6 +29,9 @@ PERMISSIONS = {
     'annulations': 'Historique des annulations',
     'journal': 'Journal des mouvements',
     'rh': 'Ressources humaines',
+    'demandes_laboratoire': 'Demandes de laboratoire',
+    'demandes_radiologie': 'Demandes de radiologie',
+    'patients_externes': 'Patients externes & prescripteurs',
 }
 
 # Rôles ayant accès par défaut à chaque section, sans octroi nécessaire.
@@ -49,6 +52,16 @@ ROLES_PAR_DEFAUT = {
     'annulations':        {'admin', 'comptable', 'sous_comptable', 'gestionnaire'},
     'journal':            {'admin', 'comptable', 'sous_comptable', 'gestionnaire'},
     'rh':                 {'admin', 'comptable', 'gestionnaire'},
+    # ⭐ Circuit Laboratoire/Radiologie — cloisonnement strict demandé :
+    # le laborantin ne voit jamais une demande de radiologie et
+    # inversement (médecin/admin gardent les deux, ce sont eux qui
+    # prescrivent). Le laborantin/radiologue lui-même n'a PAS besoin
+    # d'être listé ici : sa route dédiée (/laboratoire, /radiologie) se
+    # garde directement sur son propre rôle, ce fichier ne gère que le
+    # cas "en plus du rôle propriétaire".
+    'demandes_laboratoire': {'admin', 'medecin'},
+    'demandes_radiologie':  {'admin', 'medecin'},
+    'patients_externes':    {'admin', 'secretaire', 'caissier'},
 }
 
 

@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block title %}Classification Labo/Radio{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h4 class="mb-0"><i class="fas fa-flask me-2"></i>Classification des actes — Laboratoire / Radiologie</h4>
+    <button class="btn btn-dark btn-sm" onclick="ouvrirModalClassification()">
+        <i class="fas fa-plus me-1"></i> Classer un acte
+    </button>
+</div>
+
+<div class="alert alert-info">
+    <i class="fas fa-info-circle me-1"></i>
+    Un acte classé ici <strong>Analyse</strong> ou <strong>Examen</strong> génère automatiquement une demande
+    chez le Laborantin ou le Radiologue dès qu'un patient le règle (même partiellement) — voir
+    <a href="{{ url_for('page_laboratoire') }}">Laboratoire</a> et <a href="{{ url_for('page_radiologie') }}">Radiologie</a>.
+    Un acte non classé ici continue de se comporter exactement comme avant.
+</div>
+
+<div class="row g-3">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-vial me-1"></i> Analyses (Laboratoire)</span>
+                <span class="badge bg-light text-dark" id="totalAnalyses">0</span>
+            </div>
+            <div class="card-body p-0">
+                <div id="listeAnalyses"><div class="text-center text-muted py-4">Chargement...</div></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-x-ray me-1"></i> Examens (Radiologie)</span>
+                <span class="badge bg-light text-dark" id="totalExamens">0</span>
+            </div>
+            <div class="card-body p-0">
+                <div id="listeExamens"><div class="text-center text-muted py-4">Chargement...</div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal classer un acte -->
+<div class="modal fade" id="modalClassification" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-flask me-2"></i>Classer un acte</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="position-relative mb-2">
+                    <label class="form-label mb-1">Acte</label>
+                    <input type="text" class="form-control" id="classifSearch" placeholder="Rechercher un acte..." autocomplete="off">
+                    <div id="classifResultats" class="list-group position-absolute w-100" style="z-index:1000; max-height:220px; overflow-y:auto; display:none;"></div>
+                </div>
+                <div id="classifChoisiBloc" style="display:none;" class="mb-2 p-2 border rounded bg-light">
+                    <strong id="classifChoisiNom"></strong>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label mb-1">Filière</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="classifType" id="classifAnalyse" value="analyse" checked>
+                        <label class="btn btn-outline-primary" for="classifAnalyse"><i class="fas fa-vial me-1"></i>Analyse</label>
+                        <input type="radio" class="btn-check" name="classifType" id="classifExamen" value="examen">
+                        <label class="btn btn-outline-success" for="classifExamen"><i class="fas fa-x-ray me-1"></i>Examen</label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="enregistrerClassification()">
+                    <i class="fas fa-check me-1"></i> Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let classifChoisi = null;
+let debounceClassif = null;
+
+function ouvrirModalClassification() {
+    document.getElementById('classifSearch').value = '';
+    document.getElementById('classifAnalyse').checked = true;
+    viderClassifChoisi();
+    new bootstrap.Modal(document.getElementById('modalClassification')).show();
+}
+
+function viderClassifChoisi() {
+    classifChoisi = null;
+    document.getElementById('classifChoisiBloc').style.display = 'none';
+    document.getElementById('classifResultats').style.display = 'none';
+}
+
+document.getElementById('classifSearch').addEventListener('input', function() {
+    const q = this.value.trim();
+    clearTimeout(debounceClassif);
+    if (q.length < 2) { document.getElementById('classifResultats').style.display = 'none'; return; }
+    debounceClassif = setTimeout(() => {
+        fetch('/api/actes?search=' + encodeURIComponent(q) + '&limit=20').then(r => r.json()).then(data => {
+            const box = document.getElementById('classifResultats');
+            const liste = data.data || [];
+            if (!liste.length) { box.style.display = 'none'; return; }
+            box.innerHTML = liste.map(a => `
+                <a href="#" class="list-group-item list-group-item-action" onclick='choisirActeClassif(${JSON.stringify(a.nom).replace(/'/g, "&apos;")}); return false;'>
+                    ${a.nom}
+                </a>`).join('');
+            box.style.display = 'block';
+        });
+    }, 250);
+});
+
+function choisirActeClassif(nom) {
+    classifChoisi = nom;
+    document.getElementById('classifChoisiNom').textContent = nom;
+    document.getElementById('classifChoisiBloc').style.display = '';
+    document.getElementById('classifResultats').style.display = 'none';
+    document.getElementById('classifSearch').value = nom;
+}
+
+function enregistrerClassification() {
+    if (!classifChoisi) { alert('Choisissez un acte dans la liste.'); return; }
+    const type_prestation = document.querySelector('input[name="classifType"]:checked').value;
+    fetch('/api/classification-actes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nom_acte: classifChoisi, type_prestation: type_prestation })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('modalClassification')).hide();
+            chargerClassifications();
+        } else {
+            alert('Erreur : ' + (data.error || 'inconnue'));
+        }
+    })
+    .catch(e => alert('Erreur : ' + e));
+}
+
+function supprimerClassification(id) {
+    if (!confirm('Retirer cette classification ? L\'acte redeviendra un acte standard (plus de demande générée).')) return;
+    fetch('/api/classification-actes/' + id, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(data => { if (data.success) chargerClassifications(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+}
+
+function chargerClassifications() {
+    fetch('/api/classification-actes').then(r => r.json()).then(lignes => {
+        const analyses = lignes.filter(l => l.type_prestation === 'analyse');
+        const examens = lignes.filter(l => l.type_prestation === 'examen');
+        document.getElementById('totalAnalyses').textContent = analyses.length;
+        document.getElementById('totalExamens').textContent = examens.length;
+
+        const rendre = (liste) => liste.length
+            ? '<div class="list-group list-group-flush">' + liste.map(l => `
+                <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <span>${l.nom_acte}</span>
+                    <button class="btn btn-sm btn-outline-danger" onclick="supprimerClassification(${l.id})" title="Retirer">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>`).join('') + '</div>'
+            : '<div class="text-center text-muted py-4">Aucun acte classé pour le moment.</div>';
+
+        document.getElementById('listeAnalyses').innerHTML = rendre(analyses);
+        document.getElementById('listeExamens').innerHTML = rendre(examens);
+    });
+}
+
+document.addEventListener('click', function(e) {
+    const box = document.getElementById('classifResultats');
+    if (box && !e.target.closest('#classifSearch') && !e.target.closest('#classifResultats')) box.style.display = 'none';
+});
+
+chargerClassifications();
+</script>
+
+{% endblock %}
