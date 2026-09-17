@@ -127,37 +127,41 @@
                                 <!-- ⭐ Part AMU par ligne : ce que l'assurance prend en
                                      charge pour CE produit précis. -->
                                 <th style="width: 13%" class="text-center">Part AMU (FCFA)</th>
+                                <!-- ⭐ Part CAC par ligne — même principe que Part AMU,
+                                     pour remplir directement la feuille de bordereau de
+                                     l'assurance complémentaire sans recalculer à la main. -->
+                                <th style="width: 13%" class="text-center">Part CAC (FCFA)</th>
                                 <th style="width: 13%" class="text-center">Quantité</th>
                                 <th style="width: 13%" class="text-end">Total (FCFA)</th>
                                 <th style="width: 10%" class="text-center">Action</th>
                             </tr>
                         </thead>
                         <tbody id="panierBody">
-                            <tr><td colspan="7" class="text-center">Aucun produit dans le panier</td></tr>
+                            <tr><td colspan="8" class="text-center">Aucun produit dans le panier</td></tr>
                         </tbody>
                         <tfoot class="table-light">
                             <tr>
-                                <th colspan="5" class="text-end">Sous-total clinique :</th>
+                                <th colspan="6" class="text-end">Sous-total clinique :</th>
                                 <th id="sousTotal" class="text-end">0 FCFA</th>
                                 <th></th>
                             </tr>
                             <tr>
-                                <th colspan="5" class="text-end text-primary">Base remboursement (PBR) :</th>
+                                <th colspan="6" class="text-end text-primary">Base remboursement (PBR) :</th>
                                 <th id="baseRemboursement" class="text-end text-primary">0 FCFA</th>
                                 <th></th>
                             </tr>
                             <tr>
-                                <th colspan="5" class="text-end text-success">Prise en charge (assurance) :</th>
+                                <th colspan="6" class="text-end text-success">Prise en charge (assurance) :</th>
                                 <th id="priseEnCharge" class="text-end text-success">0 FCFA</th>
                                 <th></th>
                             </tr>
                             <tr id="priseEnCharge2Row" style="display:none;">
-                                <th colspan="5" class="text-end text-info">Prise en charge complémentaire :</th>
+                                <th colspan="6" class="text-end text-info">Prise en charge complémentaire :</th>
                                 <th id="priseEnCharge2" class="text-end text-info">0 FCFA</th>
                                 <th></th>
                             </tr>
                             <tr>
-                                <th colspan="5" class="text-end text-danger">À payer par le patient :</th>
+                                <th colspan="6" class="text-end text-danger">À payer par le patient :</th>
                                 <th id="netAPayer" class="text-end text-danger">0 FCFA</th>
                                 <th></th>
                             </tr>
@@ -1237,7 +1241,7 @@ function afficherPanier() {
     tbody.innerHTML = '';
 
     if (panier.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center">Aucun produit dans le panier</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center">Aucun produit dans le panier</td></tr>';
         document.getElementById('finaliserBtn').disabled = true;
         document.getElementById('proformaBtn').disabled = true;
         document.getElementById('sousTotal').innerHTML = '0 FCFA';
@@ -1286,11 +1290,15 @@ function afficherPanier() {
                    onchange="modifierPrix(${index}, this.value)">
         `;
 
+        // ⭐ La base de remboursement (PBR) n'a de sens que pour un patient
+        // assuré AMU — l'afficher pour un patient non assuré laissait croire
+        // à tort qu'un remboursement s'appliquait (signalé comme trompeur).
         const cellPBR = row.insertCell(2);
         cellPBR.className = 'text-center';
         cellPBR.style.verticalAlign = 'middle';
-        // 🔥 CORRECTION : Afficher "Non pris en charge" si PBR = 0
-        if (pbr === 0) {
+        if (!estAssurePourPanier) {
+            cellPBR.innerHTML = `<span class="text-muted">-</span>`;
+        } else if (pbr === 0) {
             cellPBR.innerHTML = `<span class="badge bg-secondary">Non pris en charge</span>`;
         } else {
             cellPBR.innerHTML = `<span class="badge bg-primary">${Math.round(pbr).toLocaleString('fr-FR')} F</span>`;
@@ -1309,7 +1317,34 @@ function afficherPanier() {
             ? `<span class="badge bg-success">${Math.round(partAMULigne).toLocaleString('fr-FR')} F</span>`
             : `<span class="text-muted">-</span>`;
 
-        const cellQte = row.insertCell(4);
+        // ⭐ Part CAC de cette ligne précise — même principe que Part AMU,
+        // même formule (reste après la part AMU de CETTE ligne si elle y est
+        // éligible, sinon le prix total) que le total "Prise en charge
+        // complémentaire" calculé plus bas dans calculerTotal().
+        const cellPartCAC = row.insertCell(4);
+        cellPartCAC.className = 'text-center';
+        cellPartCAC.style.verticalAlign = 'middle';
+        let partCACLigne = 0;
+        if (assurance2Active && patientAssurance2 && patientAssurance2 !== 'Aucune' && item.prise_en_charge_cac) {
+            const tauxCACPourPanier = tauxTempModifie ? tauxTempValeur : (patientTaux2Original || 0);
+            if (tauxCACPourPanier > 0) {
+                const total = prix * item.quantite;
+                let baseCACLigne;
+                if (estAssurePourPanier && assurancePrincipaleActive && item.prise_en_charge_amu && pbr > 0) {
+                    const baseAMU = Math.min(prix, pbr) * item.quantite;
+                    const priseAMU = (baseAMU * tauxAMUPourPanier) / 100;
+                    baseCACLigne = Math.max(total - priseAMU, 0);
+                } else {
+                    baseCACLigne = total;
+                }
+                partCACLigne = (baseCACLigne * tauxCACPourPanier) / 100;
+            }
+        }
+        cellPartCAC.innerHTML = partCACLigne > 0
+            ? `<span class="badge bg-info">${Math.round(partCACLigne).toLocaleString('fr-FR')} F</span>`
+            : `<span class="text-muted">-</span>`;
+
+        const cellQte = row.insertCell(5);
         cellQte.className = 'text-center';
         cellQte.style.verticalAlign = 'middle';
         cellQte.innerHTML = `
@@ -1322,12 +1357,12 @@ function afficherPanier() {
             </div>
         `;
 
-        const cellTotal = row.insertCell(5);
+        const cellTotal = row.insertCell(6);
         cellTotal.className = 'text-end fw-bold';
         cellTotal.style.verticalAlign = 'middle';
         cellTotal.innerHTML = `${Math.round(total).toLocaleString('fr-FR')} FCFA`;
 
-        const cellAction = row.insertCell(6);
+        const cellAction = row.insertCell(7);
         cellAction.className = 'text-center';
         cellAction.style.verticalAlign = 'middle';
         cellAction.innerHTML = `

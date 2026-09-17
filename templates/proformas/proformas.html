@@ -1888,7 +1888,13 @@ function convertirEnVente(proformaId) {
 
 function afficherModalConversion(data) {
     document.getElementById('convertProformaNumero').textContent = data.numero_proforma || data.id;
-    
+
+    // ⭐ "Voir part assurance" (bouton + détail par article ci-dessous) :
+    // uniquement utile pour remplir les feuilles AMU/CAC d'un patient
+    // réellement assuré — masqué sinon.
+    const patientAssureConversion = !!(data.assurance_nom && data.assurance_nom !== 'non_assure' &&
+        data.assurance_nom !== 'Non assuré' && (data.taux_assurance || 0) > 0);
+
     let html = `
         <div class="row">
             <div class="col-md-6">
@@ -1930,6 +1936,11 @@ function afficherModalConversion(data) {
             <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
                 <span><i class="fas fa-boxes"></i> Articles (${panierConversion.length})</span>
                 <span>
+                    ${patientAssureConversion ? `
+                    <button class="btn btn-sm btn-outline-light" id="btnVoirPartAssurance" onclick="toggleVoirPartAssurance()">
+                        <i class="fas fa-shield-alt"></i> Voir part assurance
+                    </button>
+                    ` : ''}
                     <button class="btn btn-sm btn-light" onclick="ajouterArticleConversion()">
                         <i class="fas fa-plus"></i> Ajouter
                     </button>
@@ -2010,6 +2021,33 @@ function afficherModalConversion(data) {
                 </div>
             </div>
         </div>
+
+        ${patientAssureConversion ? `
+        <!-- ⭐ Détail "Voir part assurance" : ce que CHAQUE article rapporte
+             à l'AMU et/ou à la CAC, pour remplir directement les feuilles
+             de bordereau de l'assurance sans recalculer à la main. -->
+        <div class="card mb-3" id="convertPartAssuranceBloc" style="display:none;">
+            <div class="card-header bg-primary text-white">
+                <i class="fas fa-shield-alt"></i> Part de l'assurance par article
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Article</th>
+                                <th class="text-end">Prix</th>
+                                <th class="text-end">PBR</th>
+                                <th class="text-end text-success">Part AMU</th>
+                                ${data.assurance2_active && data.assurance2_nom ? '<th class="text-end text-info">Part ' + data.assurance2_nom + '</th>' : ''}
+                            </tr>
+                        </thead>
+                        <tbody id="convertPartAssuranceBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        ` : ''}
 
         <!-- ⭐ Assurance principale désactivable + aide hospitalière,
              modifiables directement au moment de la conversion (le patient
@@ -2129,6 +2167,18 @@ function calculeSousTotalConversion() {
     return panierConversion.reduce((sum, item) => sum + (item.prix * item.quantite), 0);
 }
 
+// ⭐ Taux AMU par article, pas un taux unique pour tout le panier — même
+// correctif déjà appliqué côté actes_vente.html/pharma_vente.html
+// (tauxAMUPourArticle) : l'acte P160 est remboursé à 90% par l'AMU même
+// quand le taux général de l'assurance du patient est 80%. Absent
+// jusqu'ici du modal de conversion, où un P160 était donc sous-remboursé
+// dans le calcul (mais pas dans la vente elle-même : la conversion réelle,
+// côté serveur dans api_convertir_proforma, applique déjà ce correctif —
+// seul cet aperçu avant validation en tenait pas compte).
+function tauxAMUPourArticleConversion(item, tauxDefaut) {
+    return (item.nom && item.nom.includes('P160')) ? 90 : tauxDefaut;
+}
+
 // ⭐ Taux d'assurance principale actuellement affiché dans le modal de
 // conversion — lit le champ #convertTauxAssurance (modifiable/désactivable
 // par le caissier) une fois le HTML du modal inséré ; avant cet instant
@@ -2141,78 +2191,62 @@ function tauxAssurancePrincipaleConversionActuel() {
 }
 
 function calculePriseEnChargeConversion() {
-    const sousTotal = calculeSousTotalConversion();
     const taux = tauxAssurancePrincipaleConversionActuel();
-
-    let pbrTotal = 0;
-    let sousTotalAMU = 0;
-    
+    let total = 0;
     for (const item of panierConversion) {
-        const prix = item.prix || 0;
-        const pbr = (item.pbr !== undefined && item.pbr !== null) ? item.pbr : 0;
-        const quantite = item.quantite || 1;
-        const total = prix * quantite;
-        
-        // Si l'article est pris en charge par AMU ET PBR > 0
-        if (item.prise_en_charge_amu !== false && pbr > 0) {
-            sousTotalAMU += total;
-            pbrTotal += Math.min(prix, pbr) * quantite;
-        }
+        total += partAMUArticleConversion(item, taux);
     }
-    
-    const baseRemboursement = Math.min(sousTotalAMU, pbrTotal);
-    
-    if (baseRemboursement > 0 && taux > 0) {
-        return (baseRemboursement * taux) / 100;
-    }
-    return 0;
+    return total;
+}
+
+// ⭐ Part AMU d'un article précis — base plafonnée au PBR (l'assurance ne
+// rembourse jamais plus que sa propre base), taux par article (P160=90%).
+// Réutilisé à la fois pour le total et pour le détail "Voir part
+// assurance" ci-dessous, pour qu'ils restent toujours cohérents entre eux.
+function partAMUArticleConversion(item, tauxDefaut) {
+    const prix = item.prix || 0;
+    const pbr = (item.pbr !== undefined && item.pbr !== null) ? item.pbr : 0;
+    const quantite = item.quantite || 1;
+    if (item.prise_en_charge_amu === false || pbr <= 0 || tauxDefaut <= 0) return 0;
+    const base = Math.min(prix, pbr) * quantite;
+    const tauxLigne = tauxAMUPourArticleConversion(item, tauxDefaut);
+    return (base * tauxLigne) / 100;
 }
 
 // 🔥🔥🔥 CORRECTION : CAC article par article 🔥🔥🔥
 function calculePriseEnCharge2Conversion() {
-    const sousTotal = calculeSousTotalConversion();
-    const priseEnCharge = calculePriseEnChargeConversion();
-    const tauxAMU = tauxAssurancePrincipaleConversionActuel();
     const taux2 = proformaConversionData && proformaConversionData.assurance2_active ?
                   proformaConversionData.taux_assurance2 || 0 : 0;
-    
     if (!proformaConversionData || !proformaConversionData.assurance2_active || taux2 <= 0) {
         return 0;
     }
-    
-    // 🔥 Calcul de la base CAC article par article
-    let baseCAC = 0;
-    
+    let total = 0;
     for (const item of panierConversion) {
-        // 🔥 Seulement si l'article est pris en charge par CAC
-        if (item.prise_en_charge_cac === false) {
-            continue;
-        }
-        
-        const prix = item.prix || 0;
-        const pbr = (item.pbr !== undefined && item.pbr !== null) ? item.pbr : 0;
-        const quantite = item.quantite || 1;
-        const total = prix * quantite;
-        
-        // 🔥 Si l'article a AMU, CAC sur le reste après AMU
-        if (item.prise_en_charge_amu !== false && pbr > 0) {
-            const baseAMU = Math.min(prix, pbr) * quantite;
-            const priseAMU = (baseAMU * tauxAMU) / 100;
-            const reste = total - priseAMU;
-            if (reste > 0) {
-                baseCAC += reste;
-            }
-        } else {
-            // 🔥 Si l'article n'a pas AMU, CAC sur le prix total
-            baseCAC += total;
-        }
+        total += partCACArticleConversion(item, taux2);
     }
-    
-    // 🔥 Appliquer le taux CAC sur la base calculée
-    if (baseCAC > 0 && taux2 > 0) {
-        return (baseCAC * taux2) / 100;
+    return total;
+}
+
+// ⭐ Part CAC d'un article précis — sur le reste après la part AMU (elle
+// aussi calculée par article, voir partAMUArticleConversion) si l'article
+// est aussi pris en charge par l'AMU, sinon sur le prix total.
+function partCACArticleConversion(item, taux2) {
+    if (item.prise_en_charge_cac === false || taux2 <= 0) return 0;
+    const tauxAMU = tauxAssurancePrincipaleConversionActuel();
+    const prix = item.prix || 0;
+    const quantite = item.quantite || 1;
+    const total = prix * quantite;
+    const pbr = (item.pbr !== undefined && item.pbr !== null) ? item.pbr : 0;
+
+    let baseCAC;
+    if (item.prise_en_charge_amu !== false && pbr > 0) {
+        const priseAMU = partAMUArticleConversion(item, tauxAMU);
+        const reste = total - priseAMU;
+        baseCAC = reste > 0 ? reste : 0;
+    } else {
+        baseCAC = total;
     }
-    return 0;
+    return (baseCAC * taux2) / 100;
 }
 
 // ⭐ Aide hospitalière (remise) au moment de la conversion — % (plafonné à
@@ -2287,6 +2321,55 @@ function onChangeTypeAideConversion() {
     }
 }
 
+// ⭐ "Voir part assurance" : bascule + (re)construit le détail par article,
+// pensé pour remplir directement les feuilles de bordereau AMU/CAC sans
+// recalculer à la main — voir partAMUArticleConversion/partCACArticleConversion
+// ci-dessus, les MÊMES fonctions que celles utilisées pour les totaux, donc
+// toujours cohérent avec le NET À PAYER affiché au-dessus.
+function toggleVoirPartAssurance() {
+    const bloc = document.getElementById('convertPartAssuranceBloc');
+    if (!bloc) return;
+    const visible = bloc.style.display !== 'none';
+    bloc.style.display = visible ? 'none' : '';
+    const btn = document.getElementById('btnVoirPartAssurance');
+    if (btn) {
+        btn.innerHTML = visible
+            ? '<i class="fas fa-shield-alt"></i> Voir part assurance'
+            : '<i class="fas fa-eye-slash"></i> Masquer part assurance';
+    }
+    if (!visible) rafraichirPartAssurance();
+}
+
+function rafraichirPartAssurance() {
+    const bloc = document.getElementById('convertPartAssuranceBloc');
+    const body = document.getElementById('convertPartAssuranceBody');
+    if (!bloc || !body || bloc.style.display === 'none') return;
+
+    const tauxAMU = tauxAssurancePrincipaleConversionActuel();
+    const taux2 = proformaConversionData && proformaConversionData.assurance2_active ?
+                  (proformaConversionData.taux_assurance2 || 0) : 0;
+    const avecCAC = proformaConversionData && proformaConversionData.assurance2_active && proformaConversionData.assurance2_nom;
+
+    if (panierConversion.length === 0) {
+        body.innerHTML = `<tr><td colspan="${avecCAC ? 5 : 4}" class="text-center text-muted">Aucun article</td></tr>`;
+        return;
+    }
+
+    body.innerHTML = panierConversion.map(item => {
+        const pbr = (item.pbr !== undefined && item.pbr !== null) ? item.pbr : 0;
+        const partAMU = partAMUArticleConversion(item, tauxAMU);
+        const partCAC = avecCAC ? partCACArticleConversion(item, taux2) : 0;
+        return `
+            <tr>
+                <td>${item.nom}</td>
+                <td class="text-end">${Math.round(item.prix).toLocaleString('fr-FR')} F</td>
+                <td class="text-end">${pbr > 0 ? Math.round(pbr).toLocaleString('fr-FR') + ' F' : '<span class="text-muted">-</span>'}</td>
+                <td class="text-end text-success">${partAMU > 0 ? Math.round(partAMU).toLocaleString('fr-FR') + ' F' : '<span class="text-muted">-</span>'}</td>
+                ${avecCAC ? `<td class="text-end text-info">${partCAC > 0 ? Math.round(partCAC).toLocaleString('fr-FR') + ' F' : '<span class="text-muted">-</span>'}</td>` : ''}
+            </tr>`;
+    }).join('');
+}
+
 function mettreAJourTotauxConversion() {
     const sousTotal = calculeSousTotalConversion();
     const priseEnCharge = calculePriseEnChargeConversion();
@@ -2321,6 +2404,7 @@ function mettreAJourTotauxConversion() {
         btn.innerHTML = `<i class="fas fa-receipt"></i> Finaliser la vente (${Math.round(netAPayer).toLocaleString('fr-FR')} F)`;
     }
 
+    rafraichirPartAssurance();
     calculerRenduConversion();
 }
 
