@@ -111,6 +111,69 @@
     </div>
 </div>
 
+{% if hospit.statut == 'en_cours' %}
+<!-- Porteur de données (jamais de chaîne Jinja réémise dans un <script>,
+     voir l'incident de la session : on relit ces attributs HTML déjà
+     correctement échappés plutôt que de reconstruire une chaîne JS). -->
+<span id="chambreTarifData" hidden
+      data-id="{{ hospit.chambre_acte_id or '' }}"
+      data-nom="{{ hospit.chambre_acte_nom or '' }}"
+      data-prix="{{ hospit.chambre_prix or '' }}"
+      data-pbr="{{ hospit.chambre_pbr or '' }}"
+      data-amu="{{ 1 if hospit.chambre_prise_en_charge_amu else 0 }}"
+      data-cac="{{ 1 if hospit.chambre_prise_en_charge_cac else 0 }}"></span>
+<!-- ⭐ Tarif de chambre du séjour — choisi ici pour être PROJETÉ (tarif x
+     nombre_jours) dans "Solde en cours" et la répartition assurance
+     ci-dessus, mis à jour automatiquement à chaque chargement de page (donc
+     dès qu'on corrige la date d'entrée) au lieu d'attendre la clôture. -->
+<div class="card mb-3">
+    <div class="card-body d-flex flex-wrap align-items-center gap-2">
+        <i class="fas fa-bed text-muted"></i>
+        {% if hospit.chambre_prix %}
+        <span>
+            Tarif de chambre : <strong>{{ hospit.chambre_acte_nom }}</strong>
+            — {{ '{:,}'.format(hospit.chambre_prix|round(0)|int).replace(',', ' ') }} FCFA/jour
+            × {{ hospit.nombre_jours }} jour{{ 's' if hospit.nombre_jours > 1 else '' }}
+            = <strong>{{ '{:,}'.format((hospit.chambre_prix|float * hospit.nombre_jours)|round(0)|int).replace(',', ' ') }} FCFA</strong>
+            <span class="text-muted small">(projeté, non enregistré tant que le séjour n'est pas clôturé)</span>
+        </span>
+        <button class="btn btn-sm btn-link p-0" onclick="ouvrirModalChambreTarif()">Modifier</button>
+        <button class="btn btn-sm btn-link text-danger p-0" onclick="retirerChambreTarif()">Retirer</button>
+        {% else %}
+        <span class="text-muted">Aucun tarif de chambre défini pour ce séjour.</span>
+        <button class="btn btn-sm btn-link p-0" onclick="ouvrirModalChambreTarif()">Définir un tarif de chambre</button>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Modal Tarif de chambre (indépendant de la clôture) -->
+<div class="modal fade" id="modalChambreTarif" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-bed me-2"></i>Tarif de chambre du séjour</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="position-relative mb-2">
+                    <input type="text" class="form-control" id="chambreTarifSearch" placeholder="Rechercher la chambre (ex. P160 Hospi Cabine...)" autocomplete="off">
+                    <div id="chambreTarifResultats" class="list-group position-absolute w-100" style="z-index:1000; max-height:220px; overflow-y:auto; display:none;"></div>
+                </div>
+                <div id="chambreTarifChoisieBloc" style="display:none;" class="p-2 border rounded bg-light">
+                    <strong id="chambreTarifChoisieNom"></strong> — <span id="chambreTarifChoisiePrix"></span> FCFA/jour
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="enregistrerChambreTarif()">
+                    <i class="fas fa-check me-1"></i> Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 {% if repartition and (repartition.est_assure_amu or repartition.a_cac) %}
 {% set nb_cartes = (1 if repartition.est_assure_amu else 0) + (1 if repartition.a_cac else 0) + 1 %}
 {% set col_class = 'col-md-4' if nb_cartes == 3 else 'col-md-6' %}
@@ -372,6 +435,17 @@ const HOSPIT_ID = {{ hospit.id }};
 // souci) plutôt que réémise directement ici — plus simple et évite de
 // dupliquer le formatage de date.
 const DATE_ENTREE_SEJOUR = document.getElementById('acteDate')?.min || null;
+// Lu depuis les attributs data- (voir commentaire au-dessus de la carte
+// "Tarif de chambre") — null si aucun tarif n'a encore été choisi.
+const CHAMBRE_TARIF_DATA = document.getElementById('chambreTarifData');
+const CHAMBRE_TARIF_INITIALE = (CHAMBRE_TARIF_DATA && CHAMBRE_TARIF_DATA.dataset.prix) ? {
+    id: CHAMBRE_TARIF_DATA.dataset.id || null,
+    nom: CHAMBRE_TARIF_DATA.dataset.nom,
+    prix: parseFloat(CHAMBRE_TARIF_DATA.dataset.prix),
+    pbr: parseFloat(CHAMBRE_TARIF_DATA.dataset.pbr || CHAMBRE_TARIF_DATA.dataset.prix),
+    prise_en_charge_amu: CHAMBRE_TARIF_DATA.dataset.amu === '1',
+    prise_en_charge_cac: CHAMBRE_TARIF_DATA.dataset.cac === '1',
+} : null;
 let acteChoisi = null;
 let produitChoisi = null;
 let debounceActe = null;
@@ -621,6 +695,85 @@ function toggleAssuranceHospit(champ, valeur) {
     .catch(e => alert('Erreur : ' + e));
 }
 
+// ===================== TARIF DE CHAMBRE DU SÉJOUR (projeté en direct) =====================
+let chambreTarifChoisie = null;
+let debounceChambreTarif = null;
+
+function ouvrirModalChambreTarif() {
+    const modalEl = document.getElementById('modalChambreTarif');
+    if (!modalEl) return;
+    chambreTarifChoisie = null;
+    document.getElementById('chambreTarifSearch').value = '';
+    document.getElementById('chambreTarifChoisieBloc').style.display = 'none';
+    new bootstrap.Modal(modalEl).show();
+}
+
+document.getElementById('chambreTarifSearch')?.addEventListener('input', function() {
+    const q = this.value.trim();
+    clearTimeout(debounceChambreTarif);
+    if (q.length < 2) { document.getElementById('chambreTarifResultats').style.display = 'none'; return; }
+    debounceChambreTarif = setTimeout(() => {
+        fetch('/api/actes?search=' + encodeURIComponent(q) + '&limit=20')
+            .then(r => r.json())
+            .then(data => {
+                const box = document.getElementById('chambreTarifResultats');
+                const liste = data.data || [];
+                if (!liste.length) { box.style.display = 'none'; return; }
+                box.innerHTML = liste.map(a => `
+                    <a href="#" class="list-group-item list-group-item-action" onclick='choisirChambreTarif(${JSON.stringify(a).replace(/'/g, "&apos;")}); return false;'>
+                        <div class="d-flex justify-content-between">
+                            <span>${a.nom}</span>
+                            <strong>${Math.round(a.prix).toLocaleString()} FCFA</strong>
+                        </div>
+                    </a>`).join('');
+                box.style.display = 'block';
+            });
+    }, 250);
+});
+
+function choisirChambreTarif(a) {
+    chambreTarifChoisie = a;
+    document.getElementById('chambreTarifChoisieNom').textContent = a.nom;
+    document.getElementById('chambreTarifChoisiePrix').textContent = Math.round(a.prix).toLocaleString();
+    document.getElementById('chambreTarifChoisieBloc').style.display = '';
+    document.getElementById('chambreTarifResultats').style.display = 'none';
+    document.getElementById('chambreTarifSearch').value = a.nom;
+}
+
+function enregistrerChambreTarif() {
+    if (!chambreTarifChoisie) { alert('Choisissez une chambre dans la liste.'); return; }
+    fetch(`/api/hospitalisation/${HOSPIT_ID}/chambre_tarif`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            reference_id: chambreTarifChoisie.id,
+            nom: chambreTarifChoisie.nom,
+            prix: chambreTarifChoisie.prix,
+            pbr: chambreTarifChoisie.pbr,
+            prise_en_charge_amu: chambreTarifChoisie.prise_en_charge_amu !== false,
+            prise_en_charge_cac: chambreTarifChoisie.prise_en_charge_cac !== false,
+        })
+    })
+    .then(r => r.json())
+    .then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); })
+    .catch(e => alert('Erreur : ' + e));
+}
+
+function retirerChambreTarif() {
+    if (!confirm('Retirer le tarif de chambre de ce séjour ?')) return;
+    fetch(`/api/hospitalisation/${HOSPIT_ID}/chambre_tarif`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vider: true })
+    })
+    .then(r => r.json())
+    .then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); })
+    .catch(e => alert('Erreur : ' + e));
+}
+
+document.addEventListener('click', function(e) {
+    const chambreTarifResultatsEl = document.getElementById('chambreTarifResultats');
+    if (chambreTarifResultatsEl && !e.target.closest('#chambreTarifSearch') && !e.target.closest('#chambreTarifResultats')) chambreTarifResultatsEl.style.display = 'none';
+});
+
 // ===================== CLÔTURE DU SÉJOUR (chambre choisie ici) =====================
 let chambreChoisie = null;
 let debounceChambre = null;
@@ -628,6 +781,13 @@ let debounceChambre = null;
 function ouvrirModalCloture() {
     const modalEl = document.getElementById('modalCloture');
     if (!modalEl) return;
+    // ⭐ Préremplit avec le tarif de chambre déjà choisi pendant le séjour
+    // (voir carte "Tarif de chambre" plus haut) — évite de le rechercher
+    // deux fois ; reste modifiable ici si besoin de changer au moment de
+    // la clôture.
+    if (CHAMBRE_TARIF_INITIALE) {
+        choisirChambre(CHAMBRE_TARIF_INITIALE);
+    }
     new bootstrap.Modal(modalEl).show();
 }
 

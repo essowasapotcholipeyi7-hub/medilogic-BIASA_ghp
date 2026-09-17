@@ -2112,6 +2112,20 @@ class Hospitalisation(db.Model):
     # LitHospitalisation) ; NULL si pas d'inventaire utilisé pour ce séjour.
     chambre_service = db.Column(db.String(255))
     lit_id = db.Column(db.Integer)
+    # ⭐ Tarif de chambre du séjour (acte du catalogue, choisi tôt — pas
+    # seulement à la clôture) : permet de PROJETER en direct, tant que le
+    # séjour est en cours, une charge chambre = ce tarif x nombre_jours
+    # dans "Solde en cours" et la répartition assurance (voir
+    # page_hospitalisation_suivi) — sans quoi ces deux totaux ne bougent
+    # jamais avant la clôture, même si on corrige la date d'entrée
+    # (signalé). Optionnel : NULL si la structure facture uniquement des
+    # actes/médicaments au jour le jour sans tarif de chambre dédié.
+    chambre_acte_id = db.Column(db.Integer)
+    chambre_acte_nom = db.Column(db.String(255))
+    chambre_prix = db.Column(db.Numeric)
+    chambre_pbr = db.Column(db.Numeric)
+    chambre_prise_en_charge_amu = db.Column(db.Boolean, default=True)
+    chambre_prise_en_charge_cac = db.Column(db.Boolean, default=True)
     # Snapshot de l'assurance du patient au moment de l'admission (même
     # schéma que Proforma/Vente) — éditable ligne par ligne à la conversion.
     assurance_nom = db.Column(db.String(255))

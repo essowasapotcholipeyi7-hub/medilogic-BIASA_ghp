@@ -10,6 +10,7 @@ import json
 import os
 import pandas as pd
 from io import BytesIO
+from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
@@ -12198,11 +12199,36 @@ def page_hospitalisation_suivi(hospit_id):
     # la clôture) — même calcul que la facturation finale
     # (calculer_repartition_assurance), sur les soins en_cours uniquement.
     soins_en_cours = [s for s in soins if s.statut == 'en_cours']
-    repartition = calculer_repartition_assurance(soins_en_cours, hospit) if soins_en_cours else None
+
+    # ⭐ Projection de la charge de chambre — SANS ELLE, "Solde en cours" et
+    # la répartition assurance ne bougent JAMAIS avant la clôture (les
+    # lignes de chambre ne sont créées pour de vrai qu'à ce moment-là),
+    # donc corriger la date d'entrée n'avait aucun effet visible sur ces
+    # deux totaux (signalé). Si un tarif de chambre a été choisi pour ce
+    # séjour (voir /api/hospitalisation/<id>/chambre_tarif) et que le
+    # séjour est encore en cours, on ajoute une ligne VIRTUELLE (jamais
+    # enregistrée en base) de tarif x nombre_jours, recalculée à chaque
+    # chargement de la page — donc automatiquement à jour dès que la date
+    # d'entrée change. La ligne réelle, avec la vraie répartition par
+    # palier, n'est créée qu'à la clôture (construire_lignes_chambre).
+    ligne_chambre_projetee = None
+    if hospit.statut == 'en_cours' and hospit.chambre_prix and hospit.nombre_jours > 0:
+        ligne_chambre_projetee = SimpleNamespace(
+            nom=hospit.chambre_acte_nom,
+            prix=float(hospit.chambre_prix or 0),
+            pbr=float(hospit.chambre_pbr or hospit.chambre_prix or 0),
+            quantite=hospit.nombre_jours,
+            prise_en_charge_amu=hospit.chambre_prise_en_charge_amu,
+            prise_en_charge_cac=hospit.chambre_prise_en_charge_cac,
+        )
+        solde_en_cours += ligne_chambre_projetee.prix * ligne_chambre_projetee.quantite
+
+    soins_pour_repartition = soins_en_cours + ([ligne_chambre_projetee] if ligne_chambre_projetee else [])
+    repartition = calculer_repartition_assurance(soins_pour_repartition, hospit) if soins_pour_repartition else None
 
     return render_template('hospitalisation_suivi.html', hospit=hospit, soins=soins, solde_en_cours=solde_en_cours,
                             patient_a_amu=patient_a_amu, patient_a_cac=patient_a_cac, patient_amu_ep=patient_amu_ep,
-                            repartition=repartition)
+                            repartition=repartition, ligne_chambre_projetee=ligne_chambre_projetee)
 
 
 @app.route('/api/hospitalisation/<int:hospit_id>/assurance', methods=['POST'])
@@ -12283,6 +12309,50 @@ def api_modifier_date_entree_hospitalisation(hospit_id):
         hospit.date_entree = nouvelle_date
         db.session.commit()
         return jsonify({'success': True, 'date_entree': nouvelle_date.isoformat(), 'nombre_jours': hospit.nombre_jours})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/hospitalisation/<int:hospit_id>/chambre_tarif', methods=['POST'])
+@login_required
+def api_definir_chambre_tarif_hospitalisation(hospit_id):
+    """Choisit (ou retire) le tarif de chambre du séjour, dès que possible
+    pendant le séjour (pas seulement à la clôture) — c'est ce qui permet à
+    "Solde en cours" et à la répartition assurance de PROJETER une charge
+    chambre = tarif x nombre_jours, remise à jour à chaque chargement de la
+    page (voir page_hospitalisation_suivi). Purement une aide à la
+    visualisation en cours de séjour : la ligne réelle, avec la vraie
+    répartition par palier, est de toute façon (re)créée à la clôture."""
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        hospit = Hospitalisation.query.filter_by(id=hospit_id, structure_id=structure_id).first()
+        if not hospit:
+            return jsonify({'success': False, 'error': 'Séjour introuvable'}), 404
+        if hospit.statut != 'en_cours':
+            return jsonify({'success': False, 'error': "Le tarif de chambre n'est modifiable que tant que le séjour est en cours."}), 400
+
+        if data.get('vider'):
+            hospit.chambre_acte_id = None
+            hospit.chambre_acte_nom = None
+            hospit.chambre_prix = None
+            hospit.chambre_pbr = None
+            hospit.chambre_prise_en_charge_amu = True
+            hospit.chambre_prise_en_charge_cac = True
+        else:
+            nom = data.get('nom')
+            prix = data.get('prix')
+            if not nom or prix is None:
+                return jsonify({'success': False, 'error': 'Acte de chambre invalide (nom/prix requis)'}), 400
+            hospit.chambre_acte_id = data.get('reference_id')
+            hospit.chambre_acte_nom = nom
+            hospit.chambre_prix = float(prix or 0)
+            hospit.chambre_pbr = float(data.get('pbr') or prix or 0)
+            hospit.chambre_prise_en_charge_amu = bool(data.get('prise_en_charge_amu', True))
+            hospit.chambre_prise_en_charge_cac = bool(data.get('prise_en_charge_cac', True))
+        db.session.commit()
+        return jsonify({'success': True})
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
