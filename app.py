@@ -1791,13 +1791,48 @@ def patients():
 def api_compagnies_complementaires():
     """Liste canonique des compagnies complémentaires déjà connues pour
     CETTE structure (SUNU, OLEA, GTA...) — pour proposer un choix au
-    lieu d'une re-saisie manuelle (fiche patient ET page PBR
-    complémentaires), voir upsert_compagnie_complementaire()."""
+    lieu d'une re-saisie manuelle (fiche patient, ventes, conversion de
+    proforma ET page PBR complémentaires), voir
+    upsert_compagnie_complementaire().
+
+    ⭐ Complétée avec les compagnies déjà présentes dans les fiches patient
+    (Patient.assurance2_nom), UNION-ée en direct plutôt que par une seule
+    migration ponctuelle : sans ça, un patient enregistré AVANT ce
+    chantier (donc jamais re-sauvegardé depuis) restait invisible dans
+    cette liste — signalé par le patron ("on me donne pas le choix de
+    choisir une cac déjà présente dans la base depuis l'enregistrement
+    des patients"). Dédoublonnée insensible à la casse/aux espaces (ex.
+    "Sunu" et "SUNU " ne comptent qu'une fois), en gardant la graphie la
+    plus fréquente."""
     structure_id = session.get('structure_id')
     if not structure_id:
         return jsonify([])
-    lignes = CompagnieComplementaire.query.filter_by(structure_id=structure_id).order_by(CompagnieComplementaire.nom).all()
-    return jsonify([l.nom for l in lignes])
+    lignes = CompagnieComplementaire.query.filter_by(structure_id=structure_id).all()
+    noms = [l.nom for l in lignes if l.nom]
+    patients_noms = db.session.query(Patient.assurance2_nom).filter(
+        Patient.structure_id == structure_id,
+        Patient.assurance2_nom.isnot(None),
+        Patient.assurance2_nom != ''
+    ).all()
+    noms += [n[0] for n in patients_noms if n[0]]
+
+    # Dédoublonnage insensible à la casse/espaces, en gardant la graphie
+    # la plus fréquemment rencontrée pour chaque compagnie.
+    graphie_par_cle = {}
+    for nom in noms:
+        nom = nom.strip()
+        if not nom:
+            continue
+        cle = nom.lower()
+        graphie_par_cle.setdefault(cle, {})
+        graphie_par_cle[cle][nom] = graphie_par_cle[cle].get(nom, 0) + 1
+
+    resultat = []
+    for cle, variantes in graphie_par_cle.items():
+        graphie_retenue = max(variantes.items(), key=lambda kv: kv[1])[0]
+        resultat.append(graphie_retenue)
+
+    return jsonify(sorted(resultat, key=lambda s: s.lower()))
 
 
 @app.route('/api/societes-assurance', methods=['GET'])
@@ -12475,9 +12510,20 @@ def page_hospitalisation_suivi(hospit_id):
     pbr_cac_par_acte = charger_pbr_complementaires(structure_id, hospit.assurance2_nom) if (hospit.a_cac and hospit.applique_pbr_cac) else {}
     repartition = calculer_repartition_assurance(soins_pour_repartition, hospit, pbr_cac_par_acte, hospit.pbr_cac_variante) if soins_pour_repartition else None
 
+    # ⭐ Part CAC pour CHAQUE variante (habituel/alternatif), indépendamment
+    # de celle actuellement sélectionnée — affichée directement dans le
+    # sélecteur #selectPbrCacVariante (voir template) pour que le choix ne
+    # se fasse pas "à l'aveugle" (signalé par le patron : "on veut ça
+    # correspond à quelle somme, 2000 ou 5000 ?").
+    montant_pbr_defaut = montant_pbr_alternatif = None
+    if soins_pour_repartition and pbr_cac_par_acte:
+        montant_pbr_defaut = calculer_repartition_assurance(soins_pour_repartition, hospit, pbr_cac_par_acte, 'defaut')['part_cac']
+        montant_pbr_alternatif = calculer_repartition_assurance(soins_pour_repartition, hospit, pbr_cac_par_acte, 'alternatif')['part_cac']
+
     return render_template('hospitalisation_suivi.html', hospit=hospit, soins=soins, solde_en_cours=solde_en_cours,
                             patient_a_amu=patient_a_amu, patient_a_cac=patient_a_cac, patient_amu_ep=patient_amu_ep,
-                            repartition=repartition, ligne_chambre_projetee=ligne_chambre_projetee)
+                            repartition=repartition, ligne_chambre_projetee=ligne_chambre_projetee,
+                            montant_pbr_defaut=montant_pbr_defaut, montant_pbr_alternatif=montant_pbr_alternatif)
 
 
 @app.route('/api/hospitalisation/<int:hospit_id>/assurance', methods=['POST'])

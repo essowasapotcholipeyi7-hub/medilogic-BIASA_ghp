@@ -57,8 +57,8 @@
                 <select class="form-select form-select-sm" style="width:auto;" id="selectPbrCacVariante"
                         {% if hospit.statut == 'facturee' %}disabled{% endif %}
                         onchange="toggleAssuranceHospit('pbr_cac_variante', this.value)">
-                    <option value="defaut" {% if hospit.pbr_cac_variante != 'alternatif' %}selected{% endif %}>PBR habituel</option>
-                    <option value="alternatif" {% if hospit.pbr_cac_variante == 'alternatif' %}selected{% endif %}>PBR alternatif</option>
+                    <option value="defaut" {% if hospit.pbr_cac_variante != 'alternatif' %}selected{% endif %}>PBR habituel{% if montant_pbr_defaut is not none %} ({{ '{:,.0f}'.format(montant_pbr_defaut).replace(',', ' ') }} F){% endif %}</option>
+                    <option value="alternatif" {% if hospit.pbr_cac_variante == 'alternatif' %}selected{% endif %}>PBR alternatif{% if montant_pbr_alternatif is not none %} ({{ '{:,.0f}'.format(montant_pbr_alternatif).replace(',', ' ') }} F){% endif %}</option>
                 </select>
                 {% endif %}
             </div>

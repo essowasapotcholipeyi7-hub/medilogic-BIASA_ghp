@@ -2567,6 +2567,57 @@ function mettreAJourTotauxConversion() {
 
     rafraichirPartAssurance();
     calculerRenduConversion();
+    mettreAJourLabelsPbrCacVarianteConversion();
+}
+
+// ⭐ Calcule la part CAC totale pour UNE variante donnée (indépendamment
+// de ce que le select affiche actuellement) — sert uniquement à afficher,
+// dans le select #convertPbrCacVariante lui-même, la somme FCFA que
+// représente chaque option (habituel/alternatif), pour que la caissière
+// ne bascule pas "à l'aveugle" entre les deux (signalé par le patron).
+// Réplique volontairement le calcul CAC de partCACArticleConversion() /
+// calculePriseEnCharge2Conversion() ci-dessus, figé sur `variante` au
+// lieu de lire le select.
+function calculePriseEnCharge2ConversionPourVariante(variante) {
+    if (!proformaConversionData || !assurance2ConversionActive()) return 0;
+    const taux2 = tauxAssurance2ConversionActuel();
+    if (taux2 <= 0) return 0;
+    const toggleApplique = document.getElementById('convertAppliquePbrCac');
+    const appliquePbrCac = toggleApplique ? toggleApplique.checked : true;
+    const tauxAMU = tauxAssurancePrincipaleConversionActuel();
+    let total = 0;
+    for (const item of panierConversion) {
+        if (item.prise_en_charge_cac === false || taux2 <= 0) continue;
+        const prix = item.prix || 0;
+        const quantite = item.quantite || 1;
+        const totalItem = prix * quantite;
+        const pbr = (item.pbr !== undefined && item.pbr !== null) ? item.pbr : 0;
+
+        let baseCAC;
+        if (item.prise_en_charge_amu !== false && pbr > 0) {
+            const priseAMU = partAMUArticleConversion(item, tauxAMU);
+            const reste = totalItem - priseAMU;
+            baseCAC = reste > 0 ? reste : 0;
+        } else {
+            baseCAC = totalItem;
+        }
+        if (appliquePbrCac && pbrCacConversionMap[item.nom] !== undefined) {
+            baseCAC = Math.min(baseCAC, pbrCacVarianteValeur(pbrCacConversionMap[item.nom], variante) * quantite);
+        }
+        total += (baseCAC * taux2) / 100;
+    }
+    return total;
+}
+
+function mettreAJourLabelsPbrCacVarianteConversion() {
+    const select = document.getElementById('convertPbrCacVariante');
+    if (!select) return;
+    const montantDefaut = calculePriseEnCharge2ConversionPourVariante('defaut');
+    const montantAlt = calculePriseEnCharge2ConversionPourVariante('alternatif');
+    const optDefaut = select.querySelector('option[value="defaut"]');
+    const optAlt = select.querySelector('option[value="alternatif"]');
+    if (optDefaut) optDefaut.textContent = 'PBR habituel (' + Math.round(montantDefaut).toLocaleString('fr-FR') + ' F)';
+    if (optAlt) optAlt.textContent = 'PBR alternatif (' + Math.round(montantAlt).toLocaleString('fr-FR') + ' F)';
 }
 
 function modifierArticleConversion(index, champ, valeur) {

@@ -1462,6 +1462,60 @@ function calculerTotal() {
         tauxAMU: tauxAMU,
         tauxAide: tauxAide
     });
+
+    mettreAJourLabelsPbrCacVarianteActes();
+}
+
+// ⭐ Calcule la part CAC totale pour UNE variante donnée (indépendamment
+// de ce que le select affiche actuellement) — sert uniquement à afficher,
+// dans le select #selectPbrCacVarianteActes lui-même, la somme FCFA que
+// représente chaque option (habituel/alternatif), pour que la caissière
+// ne bascule pas "à l'aveugle" entre les deux (signalé par le patron).
+// Réplique volontairement le calcul CAC de calculerTotal() ci-dessus,
+// figé sur `variante` au lieu de lire le select.
+function calculerCACPourVarianteActes(variante) {
+    if (!(assurance2Active && patientAssurance2 && patientAssurance2 !== 'Aucune')) return 0;
+    const tauxComplementaire = tauxTempModifie ? tauxTempValeur : (patientTaux2Original || 0);
+    if (tauxComplementaire <= 0) return 0;
+
+    const typeAssurance = sessionStorage.getItem('selectedPatientAssurance') || '';
+    const estAssure = typeAssurance === 'amu_cnss' || typeAssurance === 'amu_inam' || typeAssurance === 'amu_tns';
+    const tauxAMU = (estAssure && assurancePrincipaleActive) ? (parseFloat(document.getElementById('tauxVente')?.value) || 0) : 0;
+
+    const toggleAppliquePbrCac = document.getElementById('toggleAppliquePbrCac');
+    const appliquePbrCacActes = toggleAppliquePbrCac ? toggleAppliquePbrCac.checked : true;
+
+    let baseCAC = 0;
+    for (const item of panier) {
+        if (!item.prise_en_charge_cac) continue;
+        const prix = item.prix;
+        const pbr = item.pbr || item.prix;
+        const total = prix * item.quantite;
+        let reste;
+        if (estAssure && assurancePrincipaleActive && item.prise_en_charge_amu) {
+            const baseAMU = (prix < pbr) ? prix : pbr;
+            const priseAMU = (baseAMU * tauxAMUPourArticle(item, tauxAMU) * item.quantite) / 100;
+            reste = total - priseAMU;
+        } else {
+            reste = total;
+        }
+        if (appliquePbrCacActes && pbrCacMapActes[item.nom] !== undefined) {
+            reste = Math.min(reste, pbrCacVarianteValeurActes(pbrCacMapActes[item.nom], variante) * item.quantite);
+        }
+        if (reste > 0) baseCAC += reste;
+    }
+    return (baseCAC * tauxComplementaire) / 100;
+}
+
+function mettreAJourLabelsPbrCacVarianteActes() {
+    const select = document.getElementById('selectPbrCacVarianteActes');
+    if (!select) return;
+    const montantDefaut = calculerCACPourVarianteActes('defaut');
+    const montantAlt = calculerCACPourVarianteActes('alternatif');
+    const optDefaut = select.querySelector('option[value="defaut"]');
+    const optAlt = select.querySelector('option[value="alternatif"]');
+    if (optDefaut) optDefaut.textContent = 'PBR habituel (' + Math.round(montantDefaut).toLocaleString('fr-FR') + ' F)';
+    if (optAlt) optAlt.textContent = 'PBR alternatif (' + Math.round(montantAlt).toLocaleString('fr-FR') + ' F)';
 }
 
 // ============================================
