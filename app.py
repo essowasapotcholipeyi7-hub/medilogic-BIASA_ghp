@@ -12212,6 +12212,7 @@ def page_hospitalisation_suivi(hospit_id):
     # d'entrée change. La ligne réelle, avec la vraie répartition par
     # palier, n'est créée qu'à la clôture (construire_lignes_chambre).
     ligne_chambre_projetee = None
+    lignes_chambre_projetees = []
     if hospit.statut == 'en_cours' and hospit.chambre_prix and hospit.nombre_jours > 0:
         ligne_chambre_projetee = SimpleNamespace(
             nom=hospit.chambre_acte_nom,
@@ -12223,7 +12224,27 @@ def page_hospitalisation_suivi(hospit_id):
         )
         solde_en_cours += ligne_chambre_projetee.prix * ligne_chambre_projetee.quantite
 
-    soins_pour_repartition = soins_en_cours + ([ligne_chambre_projetee] if ligne_chambre_projetee else [])
+        # ⭐ Pour LA RÉPARTITION (pas pour le total ci-dessus, identique dans
+        # les deux cas puisque le prix clinique ne change pas d'un palier à
+        # l'autre) : on réutilise EXACTEMENT le même découpage par palier
+        # que celui appliqué à la clôture (construire_lignes_chambre), pour
+        # qu'un séjour AMU de plus de 7 jours affiche déjà, pendant le
+        # séjour, la VRAIE part assurance/patient (pbr dégressif par
+        # palier) — pas une estimation à plat qui surestimerait la prise en
+        # charge assurance sur un long séjour.
+        acte_choisi = {
+            'id': hospit.chambre_acte_id, 'nom': hospit.chambre_acte_nom,
+            'prix': float(hospit.chambre_prix or 0), 'pbr': float(hospit.chambre_pbr or hospit.chambre_prix or 0),
+        }
+        tous_les_actes = sheets_helper.get_all_records('actes', use_prefix=True)
+        for l in construire_lignes_chambre(acte_choisi, hospit.nombre_jours, hospit.date_entree, tous_les_actes, hospit.est_assure_amu):
+            lignes_chambre_projetees.append(SimpleNamespace(
+                nom=l['nom'], prix=l['prix'], pbr=l['pbr'], quantite=l['quantite'],
+                prise_en_charge_amu=hospit.chambre_prise_en_charge_amu,
+                prise_en_charge_cac=hospit.chambre_prise_en_charge_cac,
+            ))
+
+    soins_pour_repartition = soins_en_cours + lignes_chambre_projetees
     repartition = calculer_repartition_assurance(soins_pour_repartition, hospit) if soins_pour_repartition else None
 
     return render_template('hospitalisation_suivi.html', hospit=hospit, soins=soins, solde_en_cours=solde_en_cours,
