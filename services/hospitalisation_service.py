@@ -167,11 +167,14 @@ def _taux_amu_article(nom, taux_defaut):
 
 
 def charger_pbr_complementaires(structure_id, compagnie):
-    """{nom_acte: pbr} pour CETTE structure et CETTE compagnie complémentaire
-    précisément (ex. "SUNU") — contrairement à l'AMU, chaque compagnie a sa
-    propre base de remboursement sur un même acte, d'où la table
-    PbrComplementaire (models.py) plutôt qu'une colonne de plus dans le
-    catalogue. Vide si `compagnie` est vide/absente ou si aucune entrée
+    """{nom_acte: {'pbr_1':.., 'pbr_2': .. ou None}} pour CETTE structure et
+    CETTE compagnie complémentaire précisément (ex. "SUNU") — contrairement
+    à l'AMU, chaque compagnie a sa propre base de remboursement sur un même
+    acte, d'où la table PbrComplementaire (models.py) plutôt qu'une colonne
+    de plus dans le catalogue. pbr_1 = celui qu'on applique d'habitude
+    (utilisé par défaut), pbr_2 = un alternatif optionnel, pour un contrat
+    de ce patient qui diffère de l'habitude (voir pbr_cac_variante_valeur
+    ci-dessous). Vide si `compagnie` est vide/absente ou si aucune entrée
     n'a encore été saisie pour elle -> calculer_repartition_assurance()
     retombe alors naturellement sur le comportement d'avant (reste après
     AMU, non plafonné), donc zéro régression tant que rien n'est saisi."""
@@ -180,10 +183,27 @@ def charger_pbr_complementaires(structure_id, compagnie):
     lignes = PbrComplementaire.query.filter_by(
         structure_id=structure_id, compagnie=compagnie
     ).all()
-    return {l.nom_acte: float(l.pbr or 0) for l in lignes}
+    return {
+        l.nom_acte: {
+            'pbr_1': float(l.pbr_1 or 0),
+            'pbr_2': float(l.pbr_2) if l.pbr_2 is not None else None,
+        }
+        for l in lignes
+    }
 
 
-def calculer_repartition_assurance(soins, hospit, pbr_cac_par_acte=None):
+def pbr_cac_variante_valeur(entree, variante):
+    """Choisit pbr_1 (défaut/habituel) ou pbr_2 (alternatif) dans une entrée
+    de charger_pbr_complementaires() ci-dessus, selon `variante`
+    ('defaut'|'alternatif' — voir Hospitalisation/Proforma.pbr_cac_variante).
+    Se replie sur pbr_1 si l'alternatif est demandé mais absent pour cet
+    acte (toutes les compagnies n'ont pas forcément un second tarif)."""
+    if variante == 'alternatif' and entree.get('pbr_2') is not None:
+        return entree['pbr_2']
+    return entree['pbr_1']
+
+
+def calculer_repartition_assurance(soins, hospit, pbr_cac_par_acte=None, pbr_cac_variante='defaut'):
     """Part AMU / part CAC / part patient pour une liste de soins (objets
     SoinHospitalisation ou équivalents avec .nom/.prix/.pbr/.quantite/
     .prise_en_charge_amu/.prise_en_charge_cac) et un séjour `hospit`
@@ -191,10 +211,12 @@ def calculer_repartition_assurance(soins, hospit, pbr_cac_par_acte=None):
     le toggle assurance_principale_active/assurance2_active de CE séjour).
 
     `pbr_cac_par_acte` (optionnel, voir charger_pbr_complementaires ci-
-    dessus) : {nom_acte: pbr} propre à la compagnie complémentaire du
-    patient — plafonne la base CAC de chaque article qui y figure, comme
-    l'AMU le fait déjà avec son propre PBR. Absent ou vide (par défaut) :
-    comportement inchangé (reste après AMU, non plafonné).
+    dessus) : {nom_acte: {'pbr_1':.., 'pbr_2':..}} propre à la compagnie
+    complémentaire du patient — plafonne la base CAC de chaque article qui
+    y figure, comme l'AMU le fait déjà avec son propre PBR. `pbr_cac_variante`
+    choisit pbr_1 (défaut) ou pbr_2 (alternatif, voir pbr_cac_variante_valeur
+    ci-dessus). Absent ou vide (par défaut) : comportement inchangé (reste
+    après AMU, non plafonné).
 
     Même formule que celle utilisée à la facturation finale
     (api_facturer_hospitalisation, app.py) — un seul endroit pour ce
@@ -242,7 +264,7 @@ def calculer_repartition_assurance(soins, hospit, pbr_cac_par_acte=None):
             # charger_pbr_complementaires() ci-dessus. Rien à faire si
             # cet acte n'a pas d'entrée pour cette compagnie (reste tel quel).
             if s.nom in pbr_cac_par_acte:
-                plafond_cac = pbr_cac_par_acte[s.nom] * quantite
+                plafond_cac = pbr_cac_variante_valeur(pbr_cac_par_acte[s.nom], pbr_cac_variante) * quantite
                 reste = min(reste, plafond_cac)
             if reste > 0:
                 base_cac += reste

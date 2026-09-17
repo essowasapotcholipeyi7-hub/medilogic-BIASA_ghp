@@ -2070,6 +2070,11 @@ class Proforma(db.Model):
     # quand une entrée existe) ; décoché ici, le calcul retombe sur le
     # reste après AMU non plafonné même si une entrée existe pour l'acte.
     applique_pbr_cac = db.Column(db.Boolean, default=True)
+    # ⭐ Lequel des deux PBR (PbrComplementaire.pbr_1/pbr_2) utiliser quand
+    # applique_pbr_cac est actif — 'defaut' (pbr_1, celui qu'on applique
+    # d'habitude) ou 'alternatif' (pbr_2, si ce contrat précis diffère).
+    # Choisissable en direct depuis la vente.
+    pbr_cac_variante = db.Column(db.String(20), default='defaut')
     taux_modifie = db.Column(db.Boolean, default=False)
     taux_original = db.Column(db.Numeric, default=0)
     prise_en_charge2 = db.Column(db.Numeric, default=0)
@@ -2156,6 +2161,9 @@ class Hospitalisation(db.Model):
     # (services/hospitalisation_service.py). Décoché, le calcul retombe
     # sur le reste après AMU non plafonné même si une entrée existe.
     applique_pbr_cac = db.Column(db.Boolean, default=True)
+    # ⭐ Voir le même champ sur Proforma — 'defaut' (pbr_1) ou 'alternatif'
+    # (pbr_2), choisissable en direct depuis le suivi du séjour.
+    pbr_cac_variante = db.Column(db.String(20), default='defaut')
     statut = db.Column(db.String(50), default='en_cours')  # en_cours/sortie/facturee
     proforma_id = db.Column(db.Integer)
     vente_id = db.Column(db.Integer)
@@ -2259,8 +2267,31 @@ class PbrComplementaire(db.Model):
     type = db.Column(db.String(20), nullable=False)  # 'acte' | 'produit'
     nom_acte = db.Column(db.String(255), nullable=False)
     compagnie = db.Column(db.String(150), nullable=False)  # = Patient.assurance2_nom
-    pbr = db.Column(db.Numeric, nullable=False)
+    # ⭐ Deux PBR possibles pour le même (acte, compagnie) — signalé : une
+    # même compagnie applique parfois une autre base selon le contrat du
+    # patient. pbr_1 = celui qu'on applique d'habitude (utilisé par
+    # défaut) ; pbr_2 = l'alternatif, optionnel, choisissable EN DIRECT
+    # depuis la vente (voir pbr_cac_variante sur Hospitalisation/
+    # Proforma/Vente) si le premier ne correspond pas pour ce patient.
+    pbr_1 = db.Column(db.Numeric, nullable=False)
+    pbr_2 = db.Column(db.Numeric)
     created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# ⭐ Liste canonique des compagnies complémentaires (SUNU, OLEA, GTA...)
+# d'UNE structure — évite qu'une même compagnie soit saisie sous deux
+# orthographes différentes (ex. "SUNU" vs "SUNOU") à la fiche patient et
+# à la page PBR complémentaires, ce qui romprait silencieusement le
+# rapprochement (acte, compagnie) -> PBR. Alimentée automatiquement dès
+# qu'un nom nouveau est saisi quelque part (voir
+# upsert_compagnie_complementaire(), app.py) — même mécanisme déjà en
+# place pour societes_assurance (société souscriptrice).
+class CompagnieComplementaire(db.Model):
+    __tablename__ = 'compagnies_complementaires'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    nom = db.Column(db.String(150), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 

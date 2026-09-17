@@ -396,17 +396,18 @@
                             <div class="row">
                                 <div class="col-md-5 mb-2">
                                     <label class="form-label">Nom de l'assurance</label>
-                                    <select class="form-control" id="assurance2_nom" onchange="toggleAssurance2()">
-                                        <option value="">-- Aucune --</option>
-                                        <option value="GTA">GTA</option>
-                                        <option value="OLEA">OLEA</option>
-                                        <option value="NSIA">NSIA</option>
-                                        <option value="SUNU">SUNU</option>
-                                        <option value="C2A">C2A</option>
-                                        <option value="GCA">GCA</option>
-                                        <option value="FIDELIA">FIDELIA</option>
-                                        <option value="autre">Autre</option>
-                                    </select>
+                                    <!-- ⭐ Choix dans la liste CANONIQUE déjà connue de la
+                                         structure (voir /api/compagnies-complementaires,
+                                         upsert_compagnie_complementaire() app.py) — évite
+                                         qu'une même compagnie soit tapée "SUNU" ici et
+                                         "SUNOU" ailleurs, ce qui romprait silencieusement
+                                         le rapprochement avec les PBR complémentaires
+                                         (voir /pbr-complementaires). Taper un nom inédit
+                                         reste possible : il rejoint la liste canonique. -->
+                                    <input type="text" class="form-control" id="assurance2_nom"
+                                           list="assurance2NomsConnus" placeholder="-- Aucune --"
+                                           oninput="toggleAssurance2()" autocomplete="off">
+                                    <datalist id="assurance2NomsConnus"></datalist>
                                 </div>
                                 <div class="col-md-4 mb-2">
                                     <label class="form-label">Taux (%)</label>
@@ -415,12 +416,6 @@
                                 <div class="col-md-3 mb-2">
                                     <label class="form-label">N° Assuré</label>
                                     <input type="text" class="form-control" id="numero_assure2" placeholder="Numéro CAC">
-                                </div>
-                            </div>
-                            <div class="row" id="autre_assurance2_div" style="display:none;">
-                                <div class="col-md-12">
-                                    <label class="form-label">Précisez le nom</label>
-                                    <input type="text" class="form-control" id="autre_assurance2" placeholder="Ex: MUTUELLE, CNPS...">
                                 </div>
                             </div>
                             <div class="row" id="societe_assurance2_div" style="display:none;">
@@ -583,17 +578,10 @@
                             <div class="row">
                                 <div class="col-md-5 mb-2">
                                     <label class="form-label">Nom de l'assurance</label>
-                                    <select class="form-control" id="editAssurance2_nom" onchange="toggleEditAssurance2()">
-                                        <option value="">-- Aucune --</option>
-                                        <option value="GTA">GTA</option>
-                                        <option value="OLEA">OLEA</option>
-                                        <option value="NSIA">NSIA</option>
-                                        <option value="SUNU">SUNU</option>
-                                        <option value="C2A">C2A</option>
-                                        <option value="GCA">GCA</option>
-                                        <option value="FIDELIA">FIDELIA</option>
-                                        <option value="autre">Autre</option>
-                                    </select>
+                                    <input type="text" class="form-control" id="editAssurance2_nom"
+                                           list="editAssurance2NomsConnus" placeholder="-- Aucune --"
+                                           oninput="toggleEditAssurance2()" autocomplete="off">
+                                    <datalist id="editAssurance2NomsConnus"></datalist>
                                 </div>
                                 <div class="col-md-4 mb-2">
                                     <label class="form-label">Taux (%)</label>
@@ -602,12 +590,6 @@
                                 <div class="col-md-3 mb-2">
                                     <label class="form-label">N° Assuré</label>
                                     <input type="text" class="form-control" id="editNumeroAssure2" placeholder="Numéro CAC">
-                                </div>
-                            </div>
-                            <div class="row" id="editAutreAssurance2Div" style="display:none;">
-                                <div class="col-md-12">
-                                    <label class="form-label">Précisez le nom</label>
-                                    <input type="text" class="form-control" id="editAutreAssurance2" placeholder="Ex: MUTUELLE, CNPS...">
                                 </div>
                             </div>
                             <div class="row" id="editSocieteAssurance2Div" style="display:none;">
@@ -1577,57 +1559,68 @@ function toggleEditTaux() {
 // ============================================
 // GESTION ASSURANCE COMPLÉMENTAIRE
 // ============================================
+// ⭐ Taux par défaut suggéré à la saisie d'une compagnie connue — simple
+// aide au remplissage, reste modifiable. Comparaison insensible à la
+// casse (le nom vient maintenant d'un champ libre + datalist, plus d'un
+// <select> à valeurs figées).
+const TAUX_PAR_DEFAUT_ASSURANCE2 = { gta: 60, olea: 70, nsia: 65, sunu: 50, fidelia: 50 };
+
 function toggleAssurance2() {
-    const type = document.getElementById('assurance2_nom').value;
+    const type = document.getElementById('assurance2_nom').value.trim();
     const tauxInput = document.getElementById('taux_assurance2');
-    const autreDiv = document.getElementById('autre_assurance2_div');
     const societeDiv = document.getElementById('societe_assurance2_div');
 
     if (!type) {
         tauxInput.value = 0;
         tauxInput.readOnly = true;
-        autreDiv.style.display = 'none';
         societeDiv.style.display = 'none';
         document.getElementById('societe_assurance2').value = '';
     } else {
         tauxInput.readOnly = false;
-        autreDiv.style.display = (type === 'autre') ? 'block' : 'none';
         societeDiv.style.display = 'block';
-        if (type === 'GTA') tauxInput.value = 60;
-        else if (type === 'OLEA') tauxInput.value = 70;
-        else if (type === 'NSIA') tauxInput.value = 65;
-        else if (type === 'SUNU') tauxInput.value = 50;
-        else if (type === 'FIDELIA') tauxInput.value = 50;
-        else if (type === 'autre') tauxInput.value = 50;
+        const defaut = TAUX_PAR_DEFAUT_ASSURANCE2[type.toLowerCase()];
+        if (defaut !== undefined) tauxInput.value = defaut;
         chargerSocietesAssurance(type, 'societesAssuranceList');
     }
 }
 
 function toggleEditAssurance2() {
-    const type = document.getElementById('editAssurance2_nom').value;
+    const type = document.getElementById('editAssurance2_nom').value.trim();
     const tauxInput = document.getElementById('editTauxAssurance2');
-    const autreDiv = document.getElementById('editAutreAssurance2Div');
     const societeDiv = document.getElementById('editSocieteAssurance2Div');
 
     if (!type) {
         tauxInput.value = 0;
         tauxInput.readOnly = true;
-        autreDiv.style.display = 'none';
         societeDiv.style.display = 'none';
         document.getElementById('editSocieteAssurance2').value = '';
     } else {
         tauxInput.readOnly = false;
-        autreDiv.style.display = (type === 'autre') ? 'block' : 'none';
         societeDiv.style.display = 'block';
-        if (type === 'GTA') tauxInput.value = 60;
-        else if (type === 'OLEA') tauxInput.value = 70;
-        else if (type === 'NSIA') tauxInput.value = 65;
-        else if (type === 'SUNU') tauxInput.value = 50;
-        else if (type === 'FIDELIA') tauxInput.value = 50;
-        else if (type === 'autre') tauxInput.value = 50;
+        const defaut = TAUX_PAR_DEFAUT_ASSURANCE2[type.toLowerCase()];
+        if (defaut !== undefined) tauxInput.value = defaut;
         chargerSocietesAssurance(type, 'editSocietesAssuranceList');
     }
 }
+
+// ⭐ Alimente les deux datalists (création + édition) avec la liste
+// canonique des compagnies complémentaires déjà connues de la structure —
+// voir /api/compagnies-complementaires. Appelée une fois au chargement de
+// la page (les noms nouveaux tapés rejoignent la liste côté serveur dès
+// l'enregistrement du patient, voir upsert_compagnie_complementaire()).
+function chargerCompagniesComplementaires() {
+    fetch('/api/compagnies-complementaires')
+        .then(r => r.json())
+        .then(noms => {
+            const options = (noms || []).map(n => `<option value="${n}">`).join('');
+            const d1 = document.getElementById('assurance2NomsConnus');
+            const d2 = document.getElementById('editAssurance2NomsConnus');
+            if (d1) d1.innerHTML = options;
+            if (d2) d2.innerHTML = options;
+        })
+        .catch(() => {});
+}
+chargerCompagniesComplementaires();
 
 // ============================================
 // AUTOCOMPLÉTION DES SOCIÉTÉS SOUSCRIPTRICES
@@ -1662,7 +1655,6 @@ function showAddModal() {
     document.getElementById('age').value = '';
     document.getElementById('taux_assurance2').value = 0;
     document.getElementById('taux_assurance2').readOnly = true;
-    document.getElementById('autre_assurance2_div').style.display = 'none';
     document.getElementById('societe_assurance2_div').style.display = 'none';
     document.getElementById('societe_assurance2').value = '';
     document.getElementById('personne_prevenir_nom').value = '';
@@ -1694,17 +1686,8 @@ function savePatient() {
         dateNaissance = `${year}-01-01`;
     }
     
-    let assurance2Nom = document.getElementById('assurance2_nom').value;
-    let autreAssurance2 = document.getElementById('autre_assurance2').value;
-    
-    if (assurance2Nom === 'autre' && autreAssurance2.trim() !== '') {
-        assurance2Nom = autreAssurance2.trim();
-    } else if (assurance2Nom === 'autre' && autreAssurance2.trim() === '') {
-        alert('Veuillez préciser le nom de l\'assurance complémentaire');
-        document.getElementById('autre_assurance2').focus();
-        return;
-    }
-    
+    let assurance2Nom = document.getElementById('assurance2_nom').value.trim();
+
     let tauxAssurance2 = parseFloat(document.getElementById('taux_assurance2').value) || 0;
     if (assurance2Nom && assurance2Nom !== '' && tauxAssurance2 === 0) {
         if (!confirm(`Le taux de l'assurance complémentaire "${assurance2Nom}" est à 0%. Voulez-vous continuer ?`)) {
@@ -1874,8 +1857,6 @@ function editPatient(id) {
             document.getElementById('editTauxAssurance2').value = patient.taux_assurance2 || 0;
             document.getElementById('editNumeroAssure2').value = patient.numero_assure2 || '';
             document.getElementById('editSocieteAssurance2').value = patient.societe_assurance2 || '';
-            document.getElementById('editAutreAssurance2').value = '';
-            document.getElementById('editAutreAssurance2Div').style.display = 'none';
 
             document.getElementById('editPersonnePrevenirNom').value = patient.personne_a_prevenir_nom || '';
             document.getElementById('editPersonnePrevenirTelephone').value = patient.personne_a_prevenir_telephone || '';
@@ -1909,8 +1890,6 @@ function editPatient(id) {
             document.getElementById('editTauxAssurance2').value = parseFloat(taux2Text) || 0;
             document.getElementById('editNumeroAssure2').value = '';
             document.getElementById('editSocieteAssurance2').value = societeAssurance2Text;
-            document.getElementById('editAutreAssurance2').value = '';
-            document.getElementById('editAutreAssurance2Div').style.display = 'none';
             
             document.getElementById('editPersonnePrevenirNom').value = cells[9]?.innerText || '';
             document.getElementById('editPersonnePrevenirTelephone').value = cells[10]?.innerText || '';
@@ -1937,16 +1916,7 @@ function saveEditPatient() {
     let personnePrevenirTelephone = document.getElementById('editPersonnePrevenirTelephone').value.trim();
     let personnePrevenirRelation = document.getElementById('editPersonnePrevenirRelation').value;
     
-    let assurance2Nom = document.getElementById('editAssurance2_nom').value;
-    let autreAssurance2 = document.getElementById('editAutreAssurance2').value;
-    
-    if (assurance2Nom === 'autre' && autreAssurance2.trim() !== '') {
-        assurance2Nom = autreAssurance2.trim();
-    } else if (assurance2Nom === 'autre' && autreAssurance2.trim() === '') {
-        alert('Veuillez préciser le nom de l\'assurance complémentaire');
-        document.getElementById('editAutreAssurance2').focus();
-        return;
-    }
+    let assurance2Nom = document.getElementById('editAssurance2_nom').value.trim();
 
     let societeAssurance2 = document.getElementById('editSocieteAssurance2').value.trim();
     if (assurance2Nom && assurance2Nom !== '' && societeAssurance2 === '') {

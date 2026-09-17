@@ -48,6 +48,19 @@
                     Appliquer le PBR {{ hospit.assurance2_nom }}
                     {% if not hospit.applique_pbr_cac %}<span class="text-muted">— reste après AMU non plafonné</span>{% endif %}
                 </label>
+                {% if hospit.applique_pbr_cac %}
+                <!-- ⭐ Même compagnie, même acte : un contrat de ce patient
+                     peut différer de l'habituel — voir PbrComplementaire
+                     (pbr_1/pbr_2, models.py). Sans effet si l'acte n'a pas
+                     de second tarif (repli automatique sur l'habituel,
+                     voir pbr_cac_variante_valeur). -->
+                <select class="form-select form-select-sm" style="width:auto;" id="selectPbrCacVariante"
+                        {% if hospit.statut == 'facturee' %}disabled{% endif %}
+                        onchange="toggleAssuranceHospit('pbr_cac_variante', this.value)">
+                    <option value="defaut" {% if hospit.pbr_cac_variante != 'alternatif' %}selected{% endif %}>PBR habituel</option>
+                    <option value="alternatif" {% if hospit.pbr_cac_variante == 'alternatif' %}selected{% endif %}>PBR alternatif</option>
+                </select>
+                {% endif %}
             </div>
             {% endif %}
             {% if not a_assurance_principale and not hospit.assurance2_nom %}

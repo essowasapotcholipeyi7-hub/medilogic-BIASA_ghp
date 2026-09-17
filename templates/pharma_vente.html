@@ -250,11 +250,20 @@
                              autre assuré de la même compagnie (remboursé
                              directement sur le prix clinique) — voir
                              PbrComplementaire (models.py) / /api/pbr-complementaires. -->
-                        <div class="form-check form-switch d-flex align-items-center gap-2 mt-1" id="blocAppliquePbrCac" style="display:none;">
-                            <input class="form-check-input" type="checkbox" id="toggleAppliquePbrCac" style="width:38px; height:20px;" checked onchange="calculerTotal(); calculerRendu();">
-                            <label class="form-check-label small" for="toggleAppliquePbrCac">
-                                Appliquer le PBR <span id="pbrCacCompagnieLabel"></span> de ce patient (si connu) — sinon reste après AMU non plafonné
-                            </label>
+                        <div class="d-flex align-items-center flex-wrap gap-2 mt-1" id="blocAppliquePbrCac" style="display:none;">
+                            <div class="form-check form-switch d-flex align-items-center gap-2 mb-0">
+                                <input class="form-check-input" type="checkbox" id="toggleAppliquePbrCac" style="width:38px; height:20px;" checked onchange="calculerTotal(); calculerRendu();">
+                                <label class="form-check-label small" for="toggleAppliquePbrCac">
+                                    Appliquer le PBR <span id="pbrCacCompagnieLabel"></span> de ce patient (si connu) — sinon reste après AMU non plafonné
+                                </label>
+                            </div>
+                            <!-- ⭐ Même compagnie, même acte/médicament : un contrat
+                                 de ce patient peut différer de l'habituel — voir
+                                 PbrComplementaire (pbr_1/pbr_2, models.py). -->
+                            <select class="form-select form-select-sm" style="width:auto;" id="selectPbrCacVariantePharma" onchange="calculerTotal(); calculerRendu();">
+                                <option value="defaut" selected>PBR habituel</option>
+                                <option value="alternatif">PBR alternatif</option>
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -455,11 +464,18 @@ let patientSocieteAssurance2 = '';
 let patientTaux2 = 0;
 let patientTaux2Original = 0;
 let tauxTempModifie = false;
-// ⭐ {nom_produit: pbr} propre à la compagnie complémentaire du patient
-// sélectionné — voir /api/pbr-complementaires, chargé dans
+// ⭐ {nom_produit: {pbr_1, pbr_2}} propre à la compagnie complémentaire du
+// patient sélectionné — voir /api/pbr-complementaires, chargé dans
 // checkAssuranceComplementaire(), utilisé dans calculerTotal() pour
 // plafonner la base CAC par article.
 let pbrCacMapPharma = {};
+
+// ⭐ Choisit pbr_1 (habituel, par défaut) ou pbr_2 (alternatif) — miroir
+// JS de pbr_cac_variante_valeur() (services/hospitalisation_service.py).
+function pbrCacVarianteValeurPharma(entree, variante) {
+    if (variante === 'alternatif' && entree.pbr_2 !== null && entree.pbr_2 !== undefined) return entree.pbr_2;
+    return entree.pbr_1;
+}
 let tauxTempValeur = 0;
 let assurance2Active = false;
 let assurance2Nom = '';
@@ -1355,7 +1371,8 @@ function afficherPanier() {
                 }
                 const toggleAppliquePbrCacLigne = document.getElementById('toggleAppliquePbrCac');
                 if ((toggleAppliquePbrCacLigne ? toggleAppliquePbrCacLigne.checked : true) && pbrCacMapPharma[item.nom] !== undefined) {
-                    baseCACLigne = Math.min(baseCACLigne, pbrCacMapPharma[item.nom] * item.quantite);
+                    const varianteLigne = document.getElementById('selectPbrCacVariantePharma')?.value || 'defaut';
+                    baseCACLigne = Math.min(baseCACLigne, pbrCacVarianteValeurPharma(pbrCacMapPharma[item.nom], varianteLigne) * item.quantite);
                 }
                 partCACLigne = (baseCACLigne * tauxCACPourPanier) / 100;
             }
@@ -1581,7 +1598,8 @@ function calculerTotal() {
                     const toggleAppliquePbrCacPharma = document.getElementById('toggleAppliquePbrCac');
                     const appliquePbrCacPharma = toggleAppliquePbrCacPharma ? toggleAppliquePbrCacPharma.checked : true;
                     if (appliquePbrCacPharma && pbrCacMapPharma[item.nom] !== undefined) {
-                        reste = Math.min(reste, pbrCacMapPharma[item.nom] * item.quantite);
+                        const variante = document.getElementById('selectPbrCacVariantePharma')?.value || 'defaut';
+                        reste = Math.min(reste, pbrCacVarianteValeurPharma(pbrCacMapPharma[item.nom], variante) * item.quantite);
                     }
                     if (reste > 0) {
                         baseCAC += reste;
@@ -2064,6 +2082,7 @@ function finaliserVente() {
         societe_assurance2: assurance2Active ? (patientSocieteAssurance2 || '') : '',
         assurance2_active: assurance2Active,
         applique_pbr_cac: (() => { const t = document.getElementById('toggleAppliquePbrCac'); return t ? t.checked : true; })(),
+        pbr_cac_variante: document.getElementById('selectPbrCacVariantePharma')?.value || 'defaut',
         assurance_nom: patientAssurance || 'non_assure',
         montant_donne: montantDonne,
         rendu: rendu,

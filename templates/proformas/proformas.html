@@ -578,11 +578,21 @@ let produitSearchTimeout = null;
 let assurance2Active = false;
 let assurance2Nom = '';
 let assurance2TauxOriginal = 0;
-// ⭐ {nom_acte: pbr} propre à LA compagnie complémentaire du patient en
-// cours de conversion (voir /api/pbr-complementaires, PbrComplementaire
-// dans models.py) — chargé une fois dans afficherModalConversion(),
-// utilisé par partCACArticleConversion() pour plafonner la base CAC.
+// ⭐ {nom_acte: {pbr_1, pbr_2}} propre à LA compagnie complémentaire du
+// patient en cours de conversion (voir /api/pbr-complementaires,
+// PbrComplementaire dans models.py) — chargé une fois dans
+// afficherModalConversion(), utilisé par partCACArticleConversion() pour
+// plafonner la base CAC.
 let pbrCacConversionMap = {};
+
+// ⭐ Choisit pbr_1 (habituel, par défaut) ou pbr_2 (alternatif) dans une
+// entrée de pbrCacConversionMap — miroir JS de pbr_cac_variante_valeur()
+// (services/hospitalisation_service.py). Repli sur pbr_1 si l'alternatif
+// est demandé mais absent pour cet acte.
+function pbrCacVarianteValeur(entree, variante) {
+    if (variante === 'alternatif' && entree.pbr_2 !== null && entree.pbr_2 !== undefined) return entree.pbr_2;
+    return entree.pbr_1;
+}
 let assurance2TauxApplique = 0;
 let tauxModifie = false;
 
@@ -2131,8 +2141,8 @@ function afficherModalConversion(data) {
                      clinique) — voir PbrComplementaire (models.py). Coché
                      par défaut, décochable au moment de la conversion. -->
                 <div class="row mb-2">
-                    <div class="col-md-12">
-                        <div class="form-check form-switch d-flex align-items-center gap-2">
+                    <div class="col-md-12 d-flex align-items-center flex-wrap gap-2">
+                        <div class="form-check form-switch d-flex align-items-center gap-2 mb-0">
                             <input class="form-check-input" type="checkbox" id="convertAppliquePbrCac"
                                    style="width: 38px; height: 20px; cursor: pointer;"
                                    ${data.applique_pbr_cac !== false ? 'checked' : ''}
@@ -2141,6 +2151,14 @@ function afficherModalConversion(data) {
                                 Appliquer le PBR ${data.assurance2_nom} de ce patient (si connu) — sinon reste après AMU non plafonné
                             </label>
                         </div>
+                        <!-- ⭐ Même compagnie, même acte : un contrat de ce
+                             patient peut différer de l'habituel — voir
+                             PbrComplementaire (pbr_1/pbr_2, models.py).
+                             Sans effet si l'acte n'a pas de second tarif. -->
+                        <select class="form-select form-select-sm" style="width:auto;" id="convertPbrCacVariante" onchange="mettreAJourTotauxConversion()">
+                            <option value="defaut" ${data.pbr_cac_variante !== 'alternatif' ? 'selected' : ''}>PBR habituel</option>
+                            <option value="alternatif" ${data.pbr_cac_variante === 'alternatif' ? 'selected' : ''}>PBR alternatif</option>
+                        </select>
                     </div>
                 </div>
                 ` : ''}
@@ -2361,11 +2379,14 @@ function partCACArticleConversion(item, taux2) {
     // pbrCacConversionMap) — seulement si le toggle "Appliquer le PBR..."
     // est coché (par défaut) ET qu'une entrée existe pour cet acte ; même
     // compagnie, même acte, un autre assuré peut ne pas en avoir (décoché
-    // -> reste tel quel, sur le prix clinique).
+    // -> reste tel quel, sur le prix clinique). Habituel (pbr_1) ou
+    // alternatif (pbr_2) selon #convertPbrCacVariante — voir
+    // pbrCacVarianteValeur().
     const toggleApplique = document.getElementById('convertAppliquePbrCac');
     const appliquePbrCac = toggleApplique ? toggleApplique.checked : true;
     if (appliquePbrCac && pbrCacConversionMap[item.nom] !== undefined) {
-        baseCAC = Math.min(baseCAC, pbrCacConversionMap[item.nom] * quantite);
+        const variante = document.getElementById('convertPbrCacVariante')?.value || 'defaut';
+        baseCAC = Math.min(baseCAC, pbrCacVarianteValeur(pbrCacConversionMap[item.nom], variante) * quantite);
     }
     return (baseCAC * taux2) / 100;
 }
@@ -2775,6 +2796,7 @@ function finaliserConversionVente() {
         taux_assurance2: tauxAssurance2Actuel,
         assurance2_active: assurance2Active_,
         applique_pbr_cac: (() => { const t = document.getElementById('convertAppliquePbrCac'); return t ? t.checked : true; })(),
+        pbr_cac_variante: document.getElementById('convertPbrCacVariante')?.value || 'defaut',
         assurance_principale_active: assurancePrincipaleActive,
         montant_donne: montantDonne,
         type_document: typeDocument,

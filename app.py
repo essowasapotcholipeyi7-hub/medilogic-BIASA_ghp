@@ -14,11 +14,11 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, PbrComplementaire
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, PbrComplementaire, CompagnieComplementaire
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
-from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires
+from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur
 
 # ⭐ Numéro WhatsApp de l'éditeur (Togo, +228) pour l'envoi du reçu
 # d'abonnement — voir admin_finances.html.
@@ -289,6 +289,30 @@ def upsert_societe_assurance(structure_id, assurance_nom, nom_societe):
         """, (structure_id, assurance_nom, nom_societe), commit=True)
     except Exception as e:
         print(f"⚠️ upsert_societe_assurance: {e}")
+
+
+def upsert_compagnie_complementaire(structure_id, nom):
+    """Mémorise (une seule fois) le nom d'une compagnie complémentaire pour
+    CETTE structure, afin que la fiche patient ET la page PBR complémentaires
+    proposent toujours le même choix au lieu d'une re-saisie manuelle —
+    évite qu'une même compagnie soit tapée sous deux orthographes ("SUNU"
+    vs "SUNOU"), ce qui romprait silencieusement le rapprochement (acte,
+    compagnie) -> PBR (voir PbrComplementaire, models.py). Même mécanique
+    que upsert_societe_assurance() ci-dessus. Ne doit jamais faire échouer
+    l'appelant (patient/vente) si l'enregistrement échoue."""
+    if not nom or not structure_id:
+        return
+    nom = str(nom).strip()
+    if not nom:
+        return
+    try:
+        existe = CompagnieComplementaire.query.filter_by(structure_id=structure_id, nom=nom).first()
+        if not existe:
+            db.session.add(CompagnieComplementaire(structure_id=structure_id, nom=nom))
+            db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"⚠️ upsert_compagnie_complementaire: {e}")
 
 
 # ========== CONFIGURATION EMAIL ==========
@@ -1762,6 +1786,20 @@ def patients():
         flash(f'Erreur: {str(e)}', 'error')
         return render_template('patients.html', patients=[])
 
+@app.route('/api/compagnies-complementaires', methods=['GET'])
+@login_required
+def api_compagnies_complementaires():
+    """Liste canonique des compagnies complémentaires déjà connues pour
+    CETTE structure (SUNU, OLEA, GTA...) — pour proposer un choix au
+    lieu d'une re-saisie manuelle (fiche patient ET page PBR
+    complémentaires), voir upsert_compagnie_complementaire()."""
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return jsonify([])
+    lignes = CompagnieComplementaire.query.filter_by(structure_id=structure_id).order_by(CompagnieComplementaire.nom).all()
+    return jsonify([l.nom for l in lignes])
+
+
 @app.route('/api/societes-assurance', methods=['GET'])
 @login_required
 def api_societes_assurance():
@@ -1841,6 +1879,7 @@ def api_add_patient():
 
         if result and len(result) > 0:
             upsert_societe_assurance(structure_id, data.get('assurance2_nom'), data.get('societe_assurance2'))
+            upsert_compagnie_complementaire(structure_id, data.get('assurance2_nom'))
             return jsonify({'success': True, 'id': result[0]['id'], 'numero_local': numero_local})
         return jsonify({'success': False, 'error': 'Erreur insertion'}), 500
 
@@ -3228,6 +3267,7 @@ def recu(vente_id, type):
         # constaté en test : vente à 180 FCFA de part CAC, reçu affichant
         # 420 FCFA pour la même vente).
         applique_pbr_cac_recu = v.get('applique_pbr_cac', True)
+        pbr_cac_variante_recu = v.get('pbr_cac_variante') or 'defaut'
         pbr_cac_par_acte_recu = charger_pbr_complementaires(structure_id, assurance2_nom) if (assurance2_nom and applique_pbr_cac_recu) else {}
 
         # 🔥 Traiter les articles
@@ -3292,7 +3332,7 @@ def recu(vente_id, type):
                 else:
                     reste = total_article
                 if item.get('nom') in pbr_cac_par_acte_recu:
-                    reste = min(reste, pbr_cac_par_acte_recu[item.get('nom')] * quantite)
+                    reste = min(reste, pbr_cac_variante_valeur(pbr_cac_par_acte_recu[item.get('nom')], pbr_cac_variante_recu) * quantite)
                 if reste > 0:
                     baseCAC += reste
 
@@ -6717,6 +6757,7 @@ def api_update_patient(patient_id):
         ))
 
         upsert_societe_assurance(structure_id, data.get('assurance2_nom'), data.get('societe_assurance2'))
+        upsert_compagnie_complementaire(structure_id, data.get('assurance2_nom'))
 
         return jsonify({'success': True})
     except Exception as e:
@@ -7587,9 +7628,10 @@ def api_vente_pharma():
                 aide_hospitaliere,
                 type_aide,
                 numero_local,
-                applique_pbr_cac
+                applique_pbr_cac,
+                pbr_cac_variante
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             patient_id,
@@ -7622,6 +7664,7 @@ def api_vente_pharma():
             # ⭐ Voir le même commentaire dans api_add_acte_vente() — figé
             # ici pour que recu() applique le même choix qu'à la vente.
             data.get('applique_pbr_cac', True),
+            data.get('pbr_cac_variante') or 'defaut',
         ))
 
         if not result or len(result) == 0:
@@ -7629,6 +7672,7 @@ def api_vente_pharma():
             return jsonify({'success': False, 'error': 'Erreur insertion vente'}), 500
 
         upsert_societe_assurance(structure_id, assurance2_nom, societe_assurance2)
+        upsert_compagnie_complementaire(structure_id, assurance2_nom)
 
         vente_id = result[0]['id']
         print(f"✅ Vente pharmacie enregistrée dans Neon avec ID: {vente_id}")
@@ -8106,9 +8150,10 @@ def api_add_acte_vente():
                 aide_hospitaliere,
                 type_aide,
                 numero_local,
-                applique_pbr_cac
+                applique_pbr_cac,
+                pbr_cac_variante
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             patient_id,
@@ -8144,6 +8189,7 @@ def api_add_acte_vente():
             # relire prise_en_charge2) applique exactement le même choix
             # qu'au moment de la vente, pas un plafond par défaut différent.
             data.get('applique_pbr_cac', True),
+            data.get('pbr_cac_variante') or 'defaut',
         ))
 
         if not result or len(result) == 0:
@@ -8151,6 +8197,7 @@ def api_add_acte_vente():
             return jsonify({'success': False, 'error': 'Erreur insertion vente'}), 500
 
         upsert_societe_assurance(structure_id, assurance2_nom, societe_assurance2)
+        upsert_compagnie_complementaire(structure_id, assurance2_nom)
 
         vente_id = result[0]['id']
         print(f"✅ Vente actes enregistrée dans Neon avec ID: {vente_id}")
@@ -8623,28 +8670,34 @@ def page_pbr_complementaires():
 @login_required
 def api_lister_pbr_complementaires():
     """Sans `compagnie` : toutes les entrées de la structure (pour la page
-    d'admin). Avec `compagnie` : {nom_acte: pbr} pour cette compagnie
-    précisément (pour les 3 miroirs JS qui calculent la part CAC en
-    direct — proformas.html/actes_vente.html/pharma_vente.html)."""
+    d'admin). Avec `compagnie` : {nom_acte: {'pbr_1':.., 'pbr_2':..}} pour
+    cette compagnie précisément (pour les 4 miroirs JS qui calculent la
+    part CAC en direct — hospitalisation_suivi/proformas/actes_vente/
+    pharma_vente.html)."""
     structure_id = session.get('structure_id')
     compagnie = request.args.get('compagnie', '').strip()
     q = PbrComplementaire.query.filter_by(structure_id=structure_id)
     if compagnie:
         lignes = q.filter_by(compagnie=compagnie).all()
-        return jsonify({l.nom_acte: float(l.pbr or 0) for l in lignes})
+        return jsonify({
+            l.nom_acte: {'pbr_1': float(l.pbr_1 or 0), 'pbr_2': float(l.pbr_2) if l.pbr_2 is not None else None}
+            for l in lignes
+        })
     lignes = q.order_by(PbrComplementaire.compagnie, PbrComplementaire.nom_acte).all()
     return jsonify([{
-        'id': l.id, 'type': l.type, 'nom_acte': l.nom_acte,
-        'compagnie': l.compagnie, 'pbr': float(l.pbr or 0),
+        'id': l.id, 'type': l.type, 'nom_acte': l.nom_acte, 'compagnie': l.compagnie,
+        'pbr_1': float(l.pbr_1 or 0), 'pbr_2': float(l.pbr_2) if l.pbr_2 is not None else None,
     } for l in lignes])
 
 
 @app.route('/api/pbr-complementaires', methods=['POST'])
 @login_required
 def api_creer_pbr_complementaire():
-    """Crée une entrée, ou met à jour le PBR si (acte, compagnie) existe
+    """Crée une entrée, ou met à jour ses PBR si (acte, compagnie) existe
     déjà pour cette structure — évite les doublons silencieux plutôt que
-    de laisser deux lignes concurrentes fausser charger_pbr_complementaires()."""
+    de laisser deux lignes concurrentes fausser charger_pbr_complementaires().
+    pbr_1 = celui qu'on applique d'habitude (obligatoire), pbr_2 = un
+    alternatif optionnel (voir pbr_cac_variante_valeur)."""
     try:
         structure_id = session.get('structure_id')
         user_name = session.get('user_name', 'System')
@@ -8652,28 +8705,44 @@ def api_creer_pbr_complementaire():
         type_ = data.get('type', 'acte')
         nom_acte = (data.get('nom_acte') or '').strip()
         compagnie = (data.get('compagnie') or '').strip()
-        pbr = data.get('pbr')
+        pbr_1 = data.get('pbr_1')
+        pbr_2 = data.get('pbr_2')
 
         if not nom_acte or not compagnie:
             return jsonify({'success': False, 'error': "Acte et compagnie requis"}), 400
         try:
-            pbr = float(pbr)
+            pbr_1 = float(pbr_1)
         except (TypeError, ValueError):
-            return jsonify({'success': False, 'error': "PBR invalide"}), 400
-        if pbr < 0:
-            return jsonify({'success': False, 'error': "PBR invalide"}), 400
+            return jsonify({'success': False, 'error': "PBR (habituel) invalide"}), 400
+        if pbr_1 < 0:
+            return jsonify({'success': False, 'error': "PBR (habituel) invalide"}), 400
+        if pbr_2 is not None and pbr_2 != '':
+            try:
+                pbr_2 = float(pbr_2)
+            except (TypeError, ValueError):
+                return jsonify({'success': False, 'error': "PBR alternatif invalide"}), 400
+            if pbr_2 < 0:
+                return jsonify({'success': False, 'error': "PBR alternatif invalide"}), 400
+        else:
+            pbr_2 = None
+
+        # ⭐ Garde la compagnie dans la liste canonique — évite qu'une entrée
+        # PBR référence une compagnie jamais vue à la fiche patient (ou vice-
+        # versa), voir upsert_compagnie_complementaire().
+        upsert_compagnie_complementaire(structure_id, compagnie)
 
         existante = PbrComplementaire.query.filter_by(
             structure_id=structure_id, type=type_, nom_acte=nom_acte, compagnie=compagnie
         ).first()
         if existante:
-            existante.pbr = pbr
+            existante.pbr_1 = pbr_1
+            existante.pbr_2 = pbr_2
             db.session.commit()
             return jsonify({'success': True, 'id': existante.id, 'mis_a_jour': True})
 
         ligne = PbrComplementaire(
             structure_id=structure_id, type=type_, nom_acte=nom_acte,
-            compagnie=compagnie, pbr=pbr, created_by=user_name,
+            compagnie=compagnie, pbr_1=pbr_1, pbr_2=pbr_2, created_by=user_name,
         )
         db.session.add(ligne)
         db.session.commit()
@@ -11052,6 +11121,7 @@ def api_creer_proforma():
         # acte, un autre patient peut ne pas avoir ce PBR sur son contrat).
         assurance2_nom_pour_pbr = data.get('assurance2_nom', '')
         applique_pbr_cac = data.get('applique_pbr_cac', True)
+        pbr_cac_variante = data.get('pbr_cac_variante') or 'defaut'
         pbr_cac_par_acte = charger_pbr_complementaires(structure_id, assurance2_nom_pour_pbr) if (data.get('assurance2_active', False) and applique_pbr_cac) else {}
 
         for article in articles:
@@ -11088,7 +11158,7 @@ def api_creer_proforma():
                     # 🔥 Article sans AMU → CAC sur le prix total
                     reste = total
                 if article.get('nom') in pbr_cac_par_acte:
-                    reste = min(reste, pbr_cac_par_acte[article.get('nom')] * quantite)
+                    reste = min(reste, pbr_cac_variante_valeur(pbr_cac_par_acte[article.get('nom')], pbr_cac_variante) * quantite)
                 if reste > 0:
                     base_cac_articles += reste
 
@@ -11243,9 +11313,10 @@ def api_creer_proforma():
                 assurance_principale_active,
                 statut,
                 created_at,
-                applique_pbr_cac
+                applique_pbr_cac,
+                pbr_cac_variante
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, NOW(), %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, NOW(), %s, %s)
             RETURNING id
         """, (
             structure_id,
@@ -11278,6 +11349,7 @@ def api_creer_proforma():
             assurance_principale_active,
             'en_attente',
             applique_pbr_cac,
+            pbr_cac_variante,
         ))
         
         proforma_id = result[0]['id']
@@ -11563,6 +11635,7 @@ def api_convertir_proforma():
         applique_pbr_cac = data.get('applique_pbr_cac')
         if applique_pbr_cac is None:
             applique_pbr_cac = proforma.get('applique_pbr_cac', True)
+        pbr_cac_variante = data.get('pbr_cac_variante') or proforma.get('pbr_cac_variante') or 'defaut'
 
         # 🔥 Société souscriptrice de l'assurance complémentaire : la proforma
         # ne porte pas ce champ (créée avant son existence éventuelle), on la
@@ -11654,7 +11727,7 @@ def api_convertir_proforma():
                 # ⭐ Plafond propre à la compagnie complémentaire, comme
                 # l'AMU le fait déjà avec son PBR (voir plus haut).
                 if a.get('nom') in pbr_cac_par_acte:
-                    reste = min(reste, pbr_cac_par_acte[a.get('nom')] * quantite)
+                    reste = min(reste, pbr_cac_variante_valeur(pbr_cac_par_acte[a.get('nom')], pbr_cac_variante) * quantite)
                 if reste > 0:
                     base_cac += reste
 
@@ -11756,9 +11829,9 @@ def api_convertir_proforma():
                 assurance_principale_active, proforma_id,
                 base_remboursement,
                 taux_aide, aide_hospitaliere, type_aide,
-                numero_local, applique_pbr_cac
+                numero_local, applique_pbr_cac, pbr_cac_variante
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s::jsonb, %s, 'validee', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s::jsonb, %s, 'validee', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             data.get('patient_id'),
@@ -11790,6 +11863,7 @@ def api_convertir_proforma():
             # ⭐ Voir le même commentaire dans api_add_acte_vente() — figé
             # ici pour que recu() applique le même choix qu'à la conversion.
             applique_pbr_cac,
+            pbr_cac_variante,
         ))
 
         if not result or len(result) == 0:
@@ -11799,6 +11873,7 @@ def api_convertir_proforma():
         print(f"✅ Vente créée depuis proforma #{proforma_id} avec ID: {vente_id}")
         if assurance2_active:
             upsert_societe_assurance(structure_id, assurance2_nom, societe_assurance2)
+        upsert_compagnie_complementaire(structure_id, assurance2_nom)
         
         # Marquer la proforma comme convertie
         db.execute_query("""
@@ -12398,7 +12473,7 @@ def page_hospitalisation_suivi(hospit_id):
 
     soins_pour_repartition = soins_en_cours + lignes_chambre_projetees
     pbr_cac_par_acte = charger_pbr_complementaires(structure_id, hospit.assurance2_nom) if (hospit.a_cac and hospit.applique_pbr_cac) else {}
-    repartition = calculer_repartition_assurance(soins_pour_repartition, hospit, pbr_cac_par_acte) if soins_pour_repartition else None
+    repartition = calculer_repartition_assurance(soins_pour_repartition, hospit, pbr_cac_par_acte, hospit.pbr_cac_variante) if soins_pour_repartition else None
 
     return render_template('hospitalisation_suivi.html', hospit=hospit, soins=soins, solde_en_cours=solde_en_cours,
                             patient_a_amu=patient_a_amu, patient_a_cac=patient_a_cac, patient_amu_ep=patient_amu_ep,
@@ -12431,6 +12506,8 @@ def api_toggle_assurance_hospitalisation(hospit_id):
             hospit.assurance2_active = bool(data.get('assurance2_active'))
         if 'applique_pbr_cac' in data:
             hospit.applique_pbr_cac = bool(data.get('applique_pbr_cac'))
+        if 'pbr_cac_variante' in data and data.get('pbr_cac_variante') in ('defaut', 'alternatif'):
+            hospit.pbr_cac_variante = data.get('pbr_cac_variante')
         db.session.commit()
 
         return jsonify({
@@ -12438,6 +12515,7 @@ def api_toggle_assurance_hospitalisation(hospit_id):
             'assurance_principale_active': hospit.assurance_principale_active,
             'assurance2_active': hospit.assurance2_active,
             'applique_pbr_cac': hospit.applique_pbr_cac,
+            'pbr_cac_variante': hospit.pbr_cac_variante,
         })
     except Exception as e:
         db.session.rollback()
@@ -12829,7 +12907,7 @@ def api_facturer_hospitalisation(hospit_id):
                 else:
                     reste = total
                 if s.nom in pbr_cac_par_acte:
-                    reste = min(reste, pbr_cac_par_acte[s.nom] * quantite)
+                    reste = min(reste, pbr_cac_variante_valeur(pbr_cac_par_acte[s.nom], hospit.pbr_cac_variante) * quantite)
                 if reste > 0:
                     base_cac_articles += reste
 
@@ -12882,9 +12960,9 @@ def api_facturer_hospitalisation(hospit_id):
                 prise_en_charge2, net_a_payer, base_remboursement, notes,
                 created_by, expires_at, numero_proforma, assurances_data,
                 base_cac, assurance_principale_active, hospitalisation_id,
-                statut, created_at, applique_pbr_cac
+                statut, created_at, applique_pbr_cac, pbr_cac_variante
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, NOW(), %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, NOW(), %s, %s)
             RETURNING id
         """, (
             structure_id, hospit.patient_id, hospit.patient_nom, '',
@@ -12895,7 +12973,7 @@ def api_facturer_hospitalisation(hospit_id):
             f"du {hospit.date_entree.strftime('%d/%m/%Y')} au {hospit.date_sortie.strftime('%d/%m/%Y')}",
             user_name, expires_at, prochain_numero, json.dumps(assurances_data, ensure_ascii=False),
             base_cac_articles, True, hospit.id,
-            'en_attente', hospit.applique_pbr_cac,
+            'en_attente', hospit.applique_pbr_cac, hospit.pbr_cac_variante,
         ))
 
         if not result:
@@ -12974,7 +13052,7 @@ def hospitalisation_releve(hospit_id):
     # relevé affichait le montant "prix × quantité" brut comme si le
     # patient payait tout cash, même quand il est assuré (signalé).
     pbr_cac_par_acte = charger_pbr_complementaires(structure_id, hospit.assurance2_nom) if (hospit.a_cac and hospit.applique_pbr_cac) else {}
-    repartition = calculer_repartition_assurance(soins, hospit, pbr_cac_par_acte) if soins else None
+    repartition = calculer_repartition_assurance(soins, hospit, pbr_cac_par_acte, hospit.pbr_cac_variante) if soins else None
 
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
