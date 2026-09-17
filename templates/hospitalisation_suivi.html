@@ -253,7 +253,8 @@
                     </div>
                     <div class="col-4">
                         <label class="form-label small mb-0">Date <span class="text-danger">*</span></label>
-                        <input type="date" class="form-control" id="acteDate" required>
+                        <input type="date" class="form-control" id="acteDate" required
+                               {% if hospit.date_entree %}min="{{ hospit.date_entree.strftime('%Y-%m-%d') }}"{% endif %}>
                     </div>
                     <div class="col-4">
                         <label class="form-label small mb-0">Heure</label>
@@ -287,7 +288,8 @@
                     </div>
                     <div class="col-4">
                         <label class="form-label small mb-0">Date <span class="text-danger">*</span></label>
-                        <input type="date" class="form-control" id="produitDate" required>
+                        <input type="date" class="form-control" id="produitDate" required
+                               {% if hospit.date_entree %}min="{{ hospit.date_entree.strftime('%Y-%m-%d') }}"{% endif %}>
                     </div>
                     <div class="col-4">
                         <label class="form-label small mb-0">Heure</label>
@@ -366,6 +368,10 @@
 
 <script>
 const HOSPIT_ID = {{ hospit.id }};
+// Lue depuis l'attribut "min" du champ Date (déjà rendu plus bas, sans
+// souci) plutôt que réémise directement ici — plus simple et évite de
+// dupliquer le formatage de date.
+const DATE_ENTREE_SEJOUR = document.getElementById('acteDate')?.min || null;
 let acteChoisi = null;
 let produitChoisi = null;
 let debounceActe = null;
@@ -503,6 +509,16 @@ function ajouterSoin(type, confirmerDoublon) {
     const dateEl = document.getElementById(type === 'acte' ? 'acteDate' : 'produitDate');
     if (!dateEl.value) {
         alert('Indiquez la date à laquelle ce soin a été réellement administré.');
+        dateEl.focus();
+        return;
+    }
+    // ⭐ Un soin ne peut pas être daté avant l'entrée du séjour (contrôle
+    // aussi via l'attribut "min" du champ, mais certains navigateurs
+    // laissent quand même taper une date manuellement) — même règle que
+    // côté serveur (api_ajouter_soin_hospitalisation), vérifiée ici en plus
+    // pour un message immédiat sans aller-retour réseau.
+    if (DATE_ENTREE_SEJOUR && dateEl.value < DATE_ENTREE_SEJOUR) {
+        alert("Cette date précède l'entrée du séjour (" + DATE_ENTREE_SEJOUR.split('-').reverse().join('/') + "). Corrigez la date, ou modifiez d'abord la date d'entrée si elle est erronée.");
         dateEl.focus();
         return;
     }
