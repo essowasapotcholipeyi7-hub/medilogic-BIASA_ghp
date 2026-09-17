@@ -9,7 +9,9 @@ ressaisie manuelle côté labo/radio. Ce module centralise cette logique
 pour qu'elle soit appelée de façon identique depuis les 2 points de vente
 directe (actes) et la conversion de proforma, plutôt que dupliquée.
 """
-from models import db, ClassificationActe, PatientExterne, DemandeExamen
+import secrets
+import string
+from models import db, ClassificationActe, PatientExterne, DemandeExamen, AccesPortailPatient
 
 
 def charger_classification_actes(structure_id):
@@ -91,3 +93,39 @@ def creer_demandes_pour_vente(structure_id, patient_id, patient_nom, articles,
     if demandes:
         db.session.commit()
     return demandes
+
+
+# ⭐ Alphabet volontairement sans caractères ambigus à l'oral/à l'écrit
+# (pas de 0/O, 1/I/l) — le code est communiqué au patient de vive voix ou
+# sur un ticket imprimé, doit rester lisible sans confusion.
+_ALPHABET_CODE = string.ascii_uppercase.replace('O', '').replace('I', '') + \
+                 string.digits.replace('0', '').replace('1', '') + '#@%'
+
+
+def obtenir_ou_creer_code_acces(structure_id, patient_id, user_name):
+    """Code d'accès actif de ce patient au portail résultats — le crée
+    (8 caractères, mélange lettres/chiffres/symboles) s'il n'en a pas
+    encore. Ne régénère JAMAIS automatiquement un code existant (un code
+    déjà donné au patient doit rester valable) — voir
+    regenerer_code_acces() pour un renouvellement volontaire."""
+    existant = AccesPortailPatient.query.filter_by(structure_id=structure_id, patient_id=patient_id).first()
+    if existant:
+        return existant
+
+    for _ in range(10):  # évite en théorie une collision, jamais vue en pratique sur 8 caractères
+        code = ''.join(secrets.choice(_ALPHABET_CODE) for _ in range(8))
+        if not AccesPortailPatient.query.filter_by(code_acces=code).first():
+            break
+
+    acces = AccesPortailPatient(structure_id=structure_id, patient_id=patient_id, code_acces=code, created_by=user_name)
+    db.session.add(acces)
+    db.session.commit()
+    return acces
+
+
+def regenerer_code_acces(structure_id, patient_id, user_name):
+    """Invalide le code existant et en émet un nouveau — pour un patient
+    qui l'a perdu ou en cas de doute sur sa confidentialité."""
+    AccesPortailPatient.query.filter_by(structure_id=structure_id, patient_id=patient_id).delete()
+    db.session.commit()
+    return obtenir_ou_creer_code_acces(structure_id, patient_id, user_name)

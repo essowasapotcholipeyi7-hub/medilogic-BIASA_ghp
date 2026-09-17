@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% set cacher_navigation = True %}
+
+{% block title %}Résultat — {{ demande.patient_nom }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    @media print {
+        @page { size: A4; margin: 12mm; }
+        .no-print { display: none !important; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card" id="resultatContenu">
+            <div class="card-body" style="font-family: 'Segoe UI', Arial, sans-serif;">
+
+                <!-- EN-TÊTE CLINIQUE -->
+                <div class="row" style="background: linear-gradient(135deg, #1d6fa5 0%, #0f4c75 100%); color: white; margin: -20px -20px 20px -20px; padding: 18px; border-radius: 10px 10px 0 0;">
+                    <div class="col-8">
+                        <div class="d-flex align-items-center gap-3">
+                            {% if structure.logo_url %}
+                            <img src="{{ structure.logo_url }}" alt="Logo" style="max-height: 55px; max-width: 110px; background: white; padding: 4px; border-radius: 6px;">
+                            {% endif %}
+                            <div>
+                                <h5 style="margin: 0;">{{ structure.nom or "SSoftOne v10" }}</h5>
+                                <p style="margin: 3px 0 0 0; font-size: 11px; opacity: 0.9; white-space: pre-line;">{{ structure.adresse or "" }}
+Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-4 text-end">
+                        <h6 style="margin: 0;">
+                            {% if demande.type_prestation == 'analyse' %}RÉSULTAT D'ANALYSE{% else %}RÉSULTAT D'EXAMEN{% endif %}
+                        </h6>
+                        <p style="margin: 2px 0 0 0; font-size: 11px;">{{ resultat.created_at.strftime('%d/%m/%Y') if resultat.created_at else '' }}</p>
+                    </div>
+                </div>
+
+                <!-- PATIENT -->
+                <div style="font-size: 13px; margin-bottom: 14px; padding: 8px 12px; background: #f8f9fa; border-radius: 6px;">
+                    <strong>Patient :</strong> {{ demande.patient_nom }}<br>
+                    <strong>Acte :</strong> {{ demande.acte_nom }}
+                </div>
+
+                <!-- FICHIER DU RÉSULTAT -->
+                {% if resultat.fichier_mime and 'pdf' in resultat.fichier_mime %}
+                <iframe src="{{ url_for('api_telecharger_resultat', resultat_id=resultat.id) }}" style="width:100%; height:600px; border:1px solid #dee2e6; border-radius:6px;"></iframe>
+                {% else %}
+                <div class="alert alert-light border text-center">
+                    <i class="fas fa-file fa-2x text-muted mb-2 d-block"></i>
+                    Fichier joint : {{ resultat.fichier_nom }}<br>
+                    <a href="{{ url_for('api_telecharger_resultat', resultat_id=resultat.id) }}" class="btn btn-sm btn-primary mt-2" target="_blank">
+                        <i class="fas fa-download me-1"></i> Ouvrir le fichier
+                    </a>
+                </div>
+                {% endif %}
+
+                <!-- INTERPRÈTE -->
+                <div class="mt-4 text-end" style="font-size: 13px;">
+                    <strong>{% if demande.type_prestation == 'analyse' %}Biologiste{% else %}Radiologue / Interprète{% endif %} :</strong>
+                    {{ resultat.nom_interprete }}
+                </div>
+
+                <hr>
+                <div class="text-center text-muted small">Document confidentiel — {{ structure.nom or "SSoftOne v10" }}</div>
+            </div>
+        </div>
+
+        <div class="text-center mt-3 no-print">
+            <button onclick="window.print()" class="btn btn-primary btn-sm"><i class="fas fa-print"></i> Imprimer</button>
+            <a href="{{ url_for('page_resultats_analyses') }}" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

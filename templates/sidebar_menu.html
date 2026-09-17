@@ -166,6 +166,12 @@
                 </a>
                 {% endif %}
 
+                {% if session.role in ['admin', 'medecin', 'laborantin', 'radiologue', 'secretaire'] and not _bloq %}
+                <a class="nav-link {% if request.endpoint == 'page_resultats_analyses' %}active{% endif %}" href="{{ url_for('page_resultats_analyses') }}">
+                    <span class="menu-text"><i class="fas fa-file-medical me-1"></i> Résultats d'analyses</span>
+                </a>
+                {% endif %}
+
                 {% if a_acces('patients_externes') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'page_patients_externes' %}active{% endif %}" href="{{ url_for('page_patients_externes') }}">
                     <span class="menu-text">Patients externes &amp; prescripteurs</span>
@@ -175,6 +181,12 @@
                 {% if session.is_admin and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'page_classification_actes' %}active{% endif %}" href="{{ url_for('page_classification_actes') }}">
                     <span class="menu-text">Classification Labo/Radio</span>
+                </a>
+                {% endif %}
+
+                {% if session.role in ['laborantin', 'radiologue'] and not _bloq %}
+                <a class="nav-link {% if request.endpoint == 'page_modeles_resultats' %}active{% endif %}" href="{{ url_for('page_modeles_resultats') }}">
+                    <span class="menu-text">Modèles de résultats</span>
                 </a>
                 {% endif %}
 

@@ -14,12 +14,12 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
 from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur
-from services.laboratoire_service import charger_classification_actes, statut_paiement_depuis_montants, creer_demandes_pour_vente
+from services.laboratoire_service import charger_classification_actes, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces
 
 # ⭐ Numéro WhatsApp de l'éditeur (Togo, +228) pour l'envoi du reçu
 # d'abonnement — voir admin_finances.html.
@@ -9219,6 +9219,362 @@ def api_toggle_patient_externe(fiche_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================
+# LABORATOIRE / RADIOLOGIE — modèles de résultats (Word/Excel)
+# ============================================================
+@app.route('/modeles-resultats')
+@login_required
+def page_modeles_resultats():
+    if session.get('role') not in ('laborantin', 'radiologue') and not a_acces('demandes_laboratoire') and not a_acces('demandes_radiologie'):
+        flash('Accès non autorisé pour votre rôle.', 'danger')
+        return redirect(url_for('dashboard'))
+    return render_template('modeles_resultats.html')
+
+
+@app.route('/api/modeles-resultats', methods=['GET'])
+@login_required
+def api_lister_modeles_resultats():
+    structure_id = session.get('structure_id')
+    lignes = ModeleResultat.query.filter_by(structure_id=structure_id).order_by(ModeleResultat.type_prestation, ModeleResultat.nom).all()
+    return jsonify([{
+        'id': l.id, 'nom': l.nom, 'type_prestation': l.type_prestation,
+        'fichier_nom': l.fichier_nom, 'created_at': l.created_at.strftime('%d/%m/%Y') if l.created_at else '',
+    } for l in lignes])
+
+
+@app.route('/api/modeles-resultats', methods=['POST'])
+@login_required
+def api_creer_modele_resultat():
+    try:
+        structure_id = session.get('structure_id')
+        nom = (request.form.get('nom') or '').strip()
+        type_prestation = request.form.get('type_prestation')
+        fichier = request.files.get('fichier')
+
+        if not nom or not fichier:
+            return jsonify({'success': False, 'error': 'Nom et fichier requis'}), 400
+        if type_prestation not in ('analyse', 'examen'):
+            return jsonify({'success': False, 'error': "type_prestation doit être 'analyse' ou 'examen'"}), 400
+
+        modele = ModeleResultat(
+            structure_id=structure_id, type_prestation=type_prestation, nom=nom,
+            fichier_nom=fichier.filename, fichier_mime=fichier.mimetype,
+            fichier_data=fichier.read(), created_by=session.get('user_name', 'System'),
+        )
+        db.session.add(modele)
+        db.session.commit()
+        return jsonify({'success': True, 'id': modele.id})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/modeles-resultats/<int:modele_id>/fichier', methods=['GET'])
+@login_required
+def api_telecharger_modele_resultat(modele_id):
+    structure_id = session.get('structure_id')
+    modele = ModeleResultat.query.filter_by(id=modele_id, structure_id=structure_id).first()
+    if not modele:
+        return "Modèle introuvable", 404
+    from flask import Response
+    return Response(
+        modele.fichier_data, mimetype=modele.fichier_mime or 'application/octet-stream',
+        headers={'Content-Disposition': f'attachment; filename="{modele.fichier_nom or "modele"}"'}
+    )
+
+
+@app.route('/api/modeles-resultats/<int:modele_id>', methods=['DELETE'])
+@login_required
+def api_supprimer_modele_resultat(modele_id):
+    try:
+        structure_id = session.get('structure_id')
+        modele = ModeleResultat.query.filter_by(id=modele_id, structure_id=structure_id).first()
+        if not modele:
+            return jsonify({'success': False, 'error': 'Introuvable'}), 404
+        db.session.delete(modele)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================
+# LABORATOIRE / RADIOLOGIE — onglet Résultats d'analyses
+# ============================================================
+@app.route('/resultats-analyses')
+@login_required
+def page_resultats_analyses():
+    """⭐ Accès :
+       - Admin/Médecin : direct.
+       - Laborantin/Radiologue : direct, mais uniquement leur filière
+         (filtré côté API, voir api_lister_resultats_analyses).
+       - Secrétaire : un écran de déontologie s'affiche EN PREMIER, une
+         seule fois par session (session['deonto_resultats_ok']), avant
+         d'accéder au contenu — patron : "on met un message de la
+         déontologie pour lui dire qu'elle doit se taire sur les secrets
+         des patients, données sensibles"."""
+    role = session.get('role')
+    autorise = role in ('admin', 'medecin', 'laborantin', 'radiologue', 'secretaire') or a_acces('patients_externes')
+    if not autorise:
+        flash('Accès non autorisé pour votre rôle.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    if role == 'secretaire' and not session.get('deonto_resultats_ok'):
+        return render_template('resultats_deontologie.html')
+
+    return render_template('resultats_analyses.html')
+
+
+@app.route('/api/resultats-analyses/accepter-deontologie', methods=['POST'])
+@login_required
+def api_accepter_deontologie_resultats():
+    session['deonto_resultats_ok'] = True
+    return jsonify({'success': True})
+
+
+@app.route('/api/resultats-analyses', methods=['GET'])
+@login_required
+def api_lister_resultats_analyses():
+    """Demandes RÉALISÉES (le labo/radio a fait l'acte) — avec ou sans
+    résultat déjà saisi. Un laborantin ne voit que 'analyse', un
+    radiologue que 'examen' ; admin/médecin/secrétaire voient les deux."""
+    structure_id = session.get('structure_id')
+    role = session.get('role')
+
+    q = DemandeExamen.query.filter_by(structure_id=structure_id, statut='realisee')
+    if role == 'laborantin':
+        q = q.filter(DemandeExamen.type_prestation == 'analyse')
+    elif role == 'radiologue':
+        q = q.filter(DemandeExamen.type_prestation == 'examen')
+    demandes = q.order_by(DemandeExamen.created_at.desc()).all()
+
+    resultat = []
+    for d in demandes:
+        r = ResultatExamen.query.filter_by(demande_id=d.id).order_by(ResultatExamen.id.desc()).first()
+        resultat.append({
+            'demande_id': d.id, 'patient_id': d.patient_id, 'patient_nom': d.patient_nom,
+            'type_prestation': d.type_prestation, 'acte_nom': d.acte_nom,
+            'resultat_id': r.id if r else None,
+            'nom_interprete': r.nom_interprete if r else None,
+            'fichier_nom': r.fichier_nom if r else None,
+            'date_resultat': r.created_at.strftime('%d/%m/%Y %H:%M') if r and r.created_at else None,
+        })
+    return jsonify(resultat)
+
+
+@app.route('/api/resultats-analyses/<int:demande_id>', methods=['POST'])
+@login_required
+def api_enregistrer_resultat(demande_id):
+    """Saisie du résultat — upload direct (PDF de préférence, Word/Excel
+    accepté). Gardée par filière comme le reste du circuit : un
+    laborantin ne peut saisir un résultat que pour une demande 'analyse'."""
+    try:
+        structure_id = session.get('structure_id')
+        demande = DemandeExamen.query.filter_by(id=demande_id, structure_id=structure_id).first()
+        if not demande:
+            return jsonify({'success': False, 'error': 'Demande introuvable'}), 404
+
+        role = session.get('role')
+        if demande.type_prestation == 'analyse' and role == 'radiologue':
+            return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+        if demande.type_prestation == 'examen' and role == 'laborantin':
+            return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+
+        nom_interprete = (request.form.get('nom_interprete') or '').strip()
+        fichier = request.files.get('fichier')
+        modele_id = request.form.get('modele_utilise_id')
+
+        if not nom_interprete:
+            return jsonify({'success': False, 'error': f"Nom du {'biologiste' if demande.type_prestation == 'analyse' else 'radiologue/interprète'} requis"}), 400
+        if not fichier:
+            return jsonify({'success': False, 'error': 'Fichier de résultat requis'}), 400
+
+        resultat = ResultatExamen(
+            structure_id=structure_id, demande_id=demande_id,
+            fichier_nom=fichier.filename, fichier_mime=fichier.mimetype, fichier_data=fichier.read(),
+            modele_utilise_id=int(modele_id) if modele_id else None,
+            nom_interprete=nom_interprete, created_by=session.get('user_name', 'System'),
+        )
+        db.session.add(resultat)
+
+        # ⭐ Le code d'accès du portail patient est généré dès que son
+        # premier résultat devient disponible — pas avant (pas de code
+        # inutile pour un patient qui n'a encore aucun résultat prêt).
+        obtenir_ou_creer_code_acces(structure_id, demande.patient_id, session.get('user_name', 'System'))
+
+        db.session.commit()
+        return jsonify({'success': True, 'id': resultat.id})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/resultats-analyses/<int:resultat_id>/fichier', methods=['GET'])
+@login_required
+def api_telecharger_resultat(resultat_id):
+    structure_id = session.get('structure_id')
+    resultat = ResultatExamen.query.filter_by(id=resultat_id, structure_id=structure_id).first()
+    if not resultat:
+        return "Résultat introuvable", 404
+    from flask import Response
+    return Response(
+        resultat.fichier_data, mimetype=resultat.fichier_mime or 'application/octet-stream',
+        headers={'Content-Disposition': f'inline; filename="{resultat.fichier_nom or "resultat"}"'}
+    )
+
+
+@app.route('/resultats-analyses/<int:resultat_id>/imprimer')
+@login_required
+def page_imprimer_resultat(resultat_id):
+    """En-tête clinique + nom de l'interprète, quel que soit qui imprime
+    (patron : 'peu importe celui qui va imprimer le résultat que le nom
+    du radiologue et/ou de l'interpréteur soit sur le résultat') —
+    intègre le fichier du résultat (aperçu PDF si c'en est un)."""
+    structure_id = session.get('structure_id')
+    resultat = ResultatExamen.query.filter_by(id=resultat_id, structure_id=structure_id).first()
+    if not resultat:
+        flash('Résultat introuvable', 'danger')
+        return redirect(url_for('page_resultats_analyses'))
+    demande = DemandeExamen.query.get(resultat.demande_id)
+
+    structures = sheets_helper.get_all_records('structures', use_prefix=False)
+    structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
+    structure_info['adresse'] = sheets_helper.format_adresse(structure_info.get('adresse', ''))
+
+    return render_template('resultat_imprimer.html', resultat=resultat, demande=demande, structure=structure_info)
+
+
+@app.route('/api/patients/<int:patient_id>/regenerer-code-portail', methods=['POST'])
+@login_required
+def api_regenerer_code_portail(patient_id):
+    """Un patient qui a perdu son code, ou dont on doute qu'il l'ait
+    partagé : on l'invalide et on en émet un autre."""
+    try:
+        structure_id = session.get('structure_id')
+        acces = regenerer_code_acces(structure_id, patient_id, session.get('user_name', 'System'))
+        return jsonify({'success': True, 'code_acces': acces.code_acces})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/patients/<int:patient_id>/code-portail', methods=['GET'])
+@login_required
+def api_lire_code_portail(patient_id):
+    structure_id = session.get('structure_id')
+    acces = AccesPortailPatient.query.filter_by(structure_id=structure_id, patient_id=patient_id).first()
+    return jsonify({'code_acces': acces.code_acces if acces else None})
+
+
+# ============================================================
+# PORTAIL PATIENT — accès public sécurisé (téléphone + code d'accès)
+# ============================================================
+# ⭐ AUCUN login_required ici volontairement : c'est le patient, chez lui,
+# qui y accède — sécurité posée par la vérification téléphone+code
+# (obtenir_ou_creer_code_acces), pas par une session utilisateur de
+# l'appli. Ne PAS utiliser de WhatsApp pour transmettre un résultat
+# médical (patron : "pas sécurisé") — ce portail remplace cet usage.
+@app.route('/portail-patient')
+def page_portail_patient():
+    return render_template('portail_patient.html')
+
+
+@app.route('/api/portail-patient/verifier', methods=['POST'])
+def api_verifier_portail_patient():
+    try:
+        data = request.json or {}
+        telephone = (data.get('telephone') or '').strip()
+        code = (data.get('code_acces') or '').strip().upper()
+        if not telephone or not code:
+            return jsonify({'success': False, 'error': 'Téléphone et code requis'}), 400
+
+        acces = AccesPortailPatient.query.filter_by(code_acces=code).first()
+        if not acces:
+            return jsonify({'success': False, 'error': 'Téléphone ou code incorrect'}), 401
+
+        patient_row = db.execute_query(
+            "SELECT id, nom, prenom, telephone FROM patients WHERE id = %s AND structure_id = %s",
+            (acces.patient_id, acces.structure_id)
+        )
+        if not patient_row or (patient_row[0].get('telephone') or '').strip() != telephone:
+            return jsonify({'success': False, 'error': 'Téléphone ou code incorrect'}), 401
+
+        # ⭐ Session dédiée au portail (distincte de session['user_id'] —
+        # jamais un compte du personnel) : le navigateur du patient reste
+        # connecté à son propre dossier tant qu'il ne ferme pas l'onglet.
+        session['portail_patient_id'] = acces.patient_id
+        session['portail_structure_id'] = acces.structure_id
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/portail-patient/resultats')
+def page_portail_resultats():
+    if not session.get('portail_patient_id'):
+        return redirect(url_for('page_portail_patient'))
+    return render_template('portail_resultats.html')
+
+
+@app.route('/api/portail-patient/resultats', methods=['GET'])
+def api_portail_resultats():
+    patient_id = session.get('portail_patient_id')
+    structure_id = session.get('portail_structure_id')
+    if not patient_id:
+        return jsonify({'success': False, 'error': 'Non authentifié'}), 401
+
+    demandes = DemandeExamen.query.filter_by(structure_id=structure_id, patient_id=patient_id).all()
+    resultats = []
+    for d in demandes:
+        r = ResultatExamen.query.filter_by(demande_id=d.id).order_by(ResultatExamen.id.desc()).first()
+        if r:
+            resultats.append({
+                'resultat_id': r.id, 'acte_nom': d.acte_nom, 'nom_interprete': r.nom_interprete,
+                'date_resultat': r.created_at.strftime('%d/%m/%Y') if r.created_at else '',
+            })
+
+    # ⭐ Bonus demandé : le prochain rendez-vous, sur la même page.
+    from datetime import date as _date
+    prochain_rdv = None
+    rdv = RendezVous.query.filter_by(structure_id=structure_id, patient_id=patient_id) \
+        .filter(RendezVous.date_rendez_vous >= _date.today()) \
+        .filter(RendezVous.statut.in_(['programme', 'confirme'])) \
+        .order_by(RendezVous.date_rendez_vous.asc(), RendezVous.heure_rendez_vous.asc()).first()
+    if rdv:
+        medecin = Medecin.query.get(rdv.medecin_id)
+        prochain_rdv = {
+            'date': rdv.date_rendez_vous.strftime('%d/%m/%Y'), 'heure': rdv.heure_rendez_vous,
+            'medecin_nom': medecin.nom if medecin else '', 'motif': rdv.motif,
+        }
+
+    return jsonify({'success': True, 'resultats': resultats, 'prochain_rdv': prochain_rdv})
+
+
+@app.route('/api/portail-patient/resultats/<int:resultat_id>/telecharger', methods=['GET'])
+def api_portail_telecharger_resultat(resultat_id):
+    patient_id = session.get('portail_patient_id')
+    if not patient_id:
+        return "Non authentifié", 401
+    resultat = ResultatExamen.query.get(resultat_id)
+    if not resultat:
+        return "Introuvable", 404
+    demande = DemandeExamen.query.get(resultat.demande_id)
+    if not demande or demande.patient_id != patient_id:
+        return "Accès non autorisé", 403
+    from flask import Response
+    return Response(
+        resultat.fichier_data, mimetype=resultat.fichier_mime or 'application/octet-stream',
+        headers={'Content-Disposition': f'inline; filename="{resultat.fichier_nom or "resultat"}"'}
+    )
+
+
+@app.route('/portail-patient/deconnexion')
+def portail_patient_deconnexion():
+    session.pop('portail_patient_id', None)
+    session.pop('portail_structure_id', None)
+    return redirect(url_for('page_portail_patient'))
 
 
 @app.route('/api/actes')

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% set cacher_navigation = True %}
+
+{% block title %}Confidentialité{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-7">
+        <div class="card border-warning shadow-sm mt-4">
+            <div class="card-header bg-warning text-dark">
+                <i class="fas fa-user-shield me-2"></i><strong>Avant d'accéder aux résultats des patients</strong>
+            </div>
+            <div class="card-body">
+                <p>
+                    Les résultats d'analyses et d'examens sont des <strong>données médicales sensibles</strong>,
+                    protégées par le secret professionnel.
+                </p>
+                <ul>
+                    <li>Vous accédez à cette page uniquement pour <strong>consulter et imprimer</strong> un résultat
+                        à la demande d'un patient — jamais pour le consulter par curiosité.</li>
+                    <li>Vous ne devez <strong>jamais communiquer, montrer ou divulguer</strong> un résultat à une
+                        personne autre que le patient lui-même (ou son représentant légal dûment identifié).</li>
+                    <li>Toute divulgation d'une information médicale sans autorisation engage votre responsabilité.</li>
+                </ul>
+                <p class="mb-0">En continuant, vous confirmez avoir compris cet engagement de confidentialité.</p>
+            </div>
+            <div class="card-footer text-end bg-white">
+                <button class="btn btn-warning" onclick="accepterDeontologie()">
+                    <i class="fas fa-check me-1"></i> J'ai compris, je m'engage à respecter la confidentialité
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function accepterDeontologie() {
+    fetch('/api/resultats-analyses/accepter-deontologie', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => { if (data.success) window.location.href = "{{ url_for('page_resultats_analyses') }}"; });
+}
+</script>
+{% endblock %}

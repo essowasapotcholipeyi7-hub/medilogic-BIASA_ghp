@@ -2402,6 +2402,61 @@ class DemandeExamen(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+# ⭐ Modèle de résultat (Word/Excel) réutilisable — le laborantin/radiologue
+# le télécharge, le complète sur son poste, puis renvoie le résultat final
+# via ResultatExamen.fichier_data ci-dessous. Stocké EN BASE (bytea), pas
+# sur le disque du serveur : l'appli tourne sur Render, dont le disque
+# n'est pas garanti persister entre redéploiements — un fichier local
+# aurait pu disparaître silencieusement au prochain déploiement.
+class ModeleResultat(db.Model):
+    __tablename__ = 'modeles_resultats'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    type_prestation = db.Column(db.String(20), nullable=False)  # 'analyse' | 'examen'
+    nom = db.Column(db.String(200), nullable=False)
+    fichier_nom = db.Column(db.String(255))
+    fichier_mime = db.Column(db.String(100))
+    fichier_data = db.Column(db.LargeBinary)
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# ⭐ Le résultat final d'une DemandeExamen réalisée — un fichier (PDF de
+# préférence, Word/Excel accepté aussi) + le nom de celui qui interprète
+# (biologiste ou radiologue), imprimé sur le résultat quel que soit qui
+# déclenche l'impression ensuite (patron : "peu importe celui qui va
+# imprimer le résultat que le nom du radiologue et/ou de l'interpréteur
+# soit sur le résultat"). Même stockage bytea que ModeleResultat.
+class ResultatExamen(db.Model):
+    __tablename__ = 'resultats_examens'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    demande_id = db.Column(db.Integer, nullable=False)
+    fichier_nom = db.Column(db.String(255))
+    fichier_mime = db.Column(db.String(100))
+    fichier_data = db.Column(db.LargeBinary, nullable=False)
+    modele_utilise_id = db.Column(db.Integer)  # traçabilité — modèle de départ, si utilisé
+    nom_interprete = db.Column(db.String(200), nullable=False)  # biologiste (analyse) / radiologue (examen)
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# ⭐ Code d'accès du portail patient (voir /portail-patient, app.py) — un
+# code actif par patient, régénérable à tout moment par le personnel
+# (régénérer invalide l'ancien). Table séparée plutôt qu'un champ sur
+# Patient : fonctionnalité optionnelle, facile à ignorer/retirer sans
+# toucher au modèle Patient central. Vérifié en plus du numéro de
+# téléphone du patient (2 facteurs) à l'entrée du portail.
+class AccesPortailPatient(db.Model):
+    __tablename__ = 'acces_portail_patients'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    patient_id = db.Column(db.Integer, nullable=False)
+    code_acces = db.Column(db.String(20), nullable=False, unique=True)
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 # ============================================================
 # HOSPITALISATION — inventaire chambres/lits + occupation
 # ============================================================

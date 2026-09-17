@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}Résultats d'analyses{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h4 class="mb-0"><i class="fas fa-file-medical me-2"></i>Résultats d'analyses</h4>
+    {% if session.role in ('laborantin', 'radiologue') %}
+    <a href="{{ url_for('page_modeles_resultats') }}" class="btn btn-outline-dark btn-sm">
+        <i class="fas fa-file-word me-1"></i> Modèles
+    </a>
+    {% endif %}
+</div>
+
+<div class="alert alert-secondary small">
+    <i class="fas fa-shield-alt me-1"></i>
+    Ces résultats sont des données médicales confidentielles — ne les communiquez qu'au patient concerné.
+</div>
+
+<div class="card">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <span><i class="fas fa-list me-1"></i> Actes réalisés</span>
+        <span id="totalResultats" class="badge bg-light text-dark">0</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Patient</th><th>Acte</th><th>Filière</th><th>Résultat</th><th>Interprète</th><th></th>
+                    </tr>
+                </thead>
+                <tbody id="corpsResultats">
+                    <tr><td colspan="6" class="text-center text-muted py-4">Chargement...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal saisie résultat -->
+<div class="modal fade" id="modalResultat" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-file-upload me-2"></i>Enregistrer le résultat</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="resultatDemandeId">
+                <div class="mb-2 p-2 border rounded bg-light">
+                    <strong id="resultatPatientActe"></strong>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label mb-1" id="labelInterprete">Nom du biologiste <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="resultatNomInterprete" placeholder="Sera imprimé sur le résultat">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label mb-1">Fichier du résultat (PDF de préférence) <span class="text-danger">*</span></label>
+                    <input type="file" class="form-control" id="resultatFichier">
+                    <small class="text-muted">Un modèle Word/Excel peut être téléchargé, complété, puis joint ici une fois prêt.</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="enregistrerResultat()">
+                    <i class="fas fa-check me-1"></i> Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const ROLE = "{{ session.role }}";
+let demandeChoisie = null;
+
+function ouvrirModalResultat(demandeId, patientNom, acteNom, typePrestation) {
+    demandeChoisie = demandeId;
+    document.getElementById('resultatDemandeId').value = demandeId;
+    document.getElementById('resultatPatientActe').textContent = patientNom + ' — ' + acteNom;
+    document.getElementById('resultatNomInterprete').value = '';
+    document.getElementById('resultatFichier').value = '';
+    document.getElementById('labelInterprete').innerHTML = typePrestation === 'analyse'
+        ? 'Nom du biologiste <span class="text-danger">*</span>'
+        : 'Nom du radiologue / interprète <span class="text-danger">*</span>';
+    new bootstrap.Modal(document.getElementById('modalResultat')).show();
+}
+
+function enregistrerResultat() {
+    const nom = document.getElementById('resultatNomInterprete').value.trim();
+    const fichier = document.getElementById('resultatFichier').files[0];
+    if (!nom) { alert('Le nom de l\'interprète est obligatoire.'); return; }
+    if (!fichier) { alert('Choisissez le fichier du résultat.'); return; }
+
+    const fd = new FormData();
+    fd.append('nom_interprete', nom);
+    fd.append('fichier', fichier);
+
+    fetch('/api/resultats-analyses/' + demandeChoisie, { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('modalResultat')).hide();
+                chargerResultats();
+            } else {
+                alert('Erreur : ' + (data.error || 'inconnue'));
+            }
+        })
+        .catch(e => alert('Erreur : ' + e));
+}
+
+function chargerResultats() {
+    fetch('/api/resultats-analyses').then(r => r.json()).then(lignes => {
+        document.getElementById('totalResultats').textContent = lignes.length;
+        const corps = document.getElementById('corpsResultats');
+        if (!lignes.length) {
+            corps.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Aucun acte réalisé pour le moment.</td></tr>';
+            return;
+        }
+        corps.innerHTML = lignes.map(l => {
+            const filiereBadge = l.type_prestation === 'analyse'
+                ? '<span class="badge bg-primary"><i class="fas fa-vial"></i> Biologie</span>'
+                : '<span class="badge bg-success"><i class="fas fa-x-ray"></i> Imagerie</span>';
+            const peutSaisir = (ROLE === 'laborantin' && l.type_prestation === 'analyse')
+                             || (ROLE === 'radiologue' && l.type_prestation === 'examen')
+                             || ROLE === 'admin' || ROLE === 'medecin';
+            let actions;
+            if (l.resultat_id) {
+                actions = `
+                    <a href="/resultats-analyses/${l.resultat_id}/imprimer" target="_blank" class="btn btn-sm btn-outline-primary" title="Imprimer"><i class="fas fa-print"></i></a>
+                    <a href="/api/resultats-analyses/${l.resultat_id}/fichier" target="_blank" class="btn btn-sm btn-outline-secondary" title="Voir le fichier"><i class="fas fa-eye"></i></a>
+                    <button class="btn btn-sm btn-outline-dark" onclick="afficherCodePortail(${l.patient_id}, ${JSON.stringify(l.patient_nom)})" title="Code d'accès portail patient"><i class="fas fa-key"></i></button>`;
+            } else if (peutSaisir) {
+                actions = `<button class="btn btn-sm btn-success" onclick='ouvrirModalResultat(${l.demande_id}, ${JSON.stringify(l.patient_nom)}, ${JSON.stringify(l.acte_nom)}, ${JSON.stringify(l.type_prestation)})'>
+                    <i class="fas fa-file-upload"></i> Saisir</button>`;
+            } else {
+                actions = '<span class="text-muted small">En attente de saisie</span>';
+            }
+            return `
+                <tr>
+                    <td><strong>${l.patient_nom}</strong></td>
+                    <td>${l.acte_nom}</td>
+                    <td>${filiereBadge}</td>
+                    <td>${l.resultat_id ? '<span class="badge bg-info">Disponible</span>' : '<span class="badge bg-secondary">Non saisi</span>'}</td>
+                    <td>${l.nom_interprete || '-'}</td>
+                    <td class="text-end">${actions}</td>
+                </tr>`;
+        }).join('');
+    });
+}
+
+function afficherCodePortail(patientId, patientNom) {
+    fetch('/api/patients/' + patientId + '/code-portail').then(r => r.json()).then(data => {
+        const code = data.code_acces || '(non généré)';
+        const regen = confirm(
+            `Code d'accès portail de ${patientNom} : ${code}\n\n` +
+            `À transmettre au patient avec son numéro de téléphone (portail : /portail-patient).\n\n` +
+            `OK pour régénérer un nouveau code (l'ancien ne fonctionnera plus) — Annuler pour garder celui-ci.`
+        );
+        if (regen) {
+            fetch('/api/patients/' + patientId + '/regenerer-code-portail', { method: 'POST' })
+                .then(r => r.json())
+                .then(d => { if (d.success) alert('Nouveau code : ' + d.code_acces); });
+        }
+    });
+}
+
+chargerResultats();
+</script>
+
+{% endblock %}

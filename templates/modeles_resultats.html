@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}Modèles de résultats{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h4 class="mb-0"><i class="fas fa-file-word me-2"></i>Modèles de résultats (Word/Excel)</h4>
+    <button class="btn btn-dark btn-sm" onclick="ouvrirModalModele()">
+        <i class="fas fa-upload me-1"></i> Importer un modèle
+    </button>
+</div>
+
+<div class="alert alert-info">
+    <i class="fas fa-info-circle me-1"></i>
+    Ces modèles sont des points de départ réutilisables : téléchargez-en un, complétez-le sur votre poste pour
+    le patient, puis joignez le fichier final depuis
+    <a href="{{ url_for('page_resultats_analyses') }}">Résultats d'analyses</a>. L'upload direct d'un PDF déjà prêt
+    reste toujours possible sans passer par un modèle.
+</div>
+
+<div class="row g-3">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-primary text-white"><i class="fas fa-vial me-1"></i> Biologie</div>
+            <div class="card-body p-0"><div id="listeModelesAnalyse"><div class="text-center text-muted py-4">Chargement...</div></div></div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-success text-white"><i class="fas fa-x-ray me-1"></i> Imagerie</div>
+            <div class="card-body p-0"><div id="listeModelesExamen"><div class="text-center text-muted py-4">Chargement...</div></div></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalModele" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-upload me-2"></i>Importer un modèle</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-2">
+                    <label class="form-label mb-1">Nom du modèle <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="modeleNom" placeholder="Ex. NFS type, Radio thorax type...">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label mb-1">Filière</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="modeleType" id="modeleAnalyse" value="analyse" checked>
+                        <label class="btn btn-outline-primary" for="modeleAnalyse"><i class="fas fa-vial me-1"></i>Biologie</label>
+                        <input type="radio" class="btn-check" name="modeleType" id="modeleExamen" value="examen">
+                        <label class="btn btn-outline-success" for="modeleExamen"><i class="fas fa-x-ray me-1"></i>Imagerie</label>
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label mb-1">Fichier (.docx, .xlsx...) <span class="text-danger">*</span></label>
+                    <input type="file" class="form-control" id="modeleFichier">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="enregistrerModele()">
+                    <i class="fas fa-check me-1"></i> Importer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function ouvrirModalModele() {
+    document.getElementById('modeleNom').value = '';
+    document.getElementById('modeleFichier').value = '';
+    document.getElementById('modeleAnalyse').checked = true;
+    new bootstrap.Modal(document.getElementById('modalModele')).show();
+}
+
+function enregistrerModele() {
+    const nom = document.getElementById('modeleNom').value.trim();
+    const fichier = document.getElementById('modeleFichier').files[0];
+    if (!nom) { alert('Le nom est obligatoire.'); return; }
+    if (!fichier) { alert('Choisissez un fichier.'); return; }
+
+    const fd = new FormData();
+    fd.append('nom', nom);
+    fd.append('type_prestation', document.querySelector('input[name="modeleType"]:checked').value);
+    fd.append('fichier', fichier);
+
+    fetch('/api/modeles-resultats', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('modalModele')).hide();
+                chargerModeles();
+            } else {
+                alert('Erreur : ' + (data.error || 'inconnue'));
+            }
+        })
+        .catch(e => alert('Erreur : ' + e));
+}
+
+function supprimerModele(id) {
+    if (!confirm('Supprimer ce modèle ?')) return;
+    fetch('/api/modeles-resultats/' + id, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(data => { if (data.success) chargerModeles(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+}
+
+function chargerModeles() {
+    fetch('/api/modeles-resultats').then(r => r.json()).then(lignes => {
+        const rendre = (liste) => liste.length
+            ? '<div class="list-group list-group-flush">' + liste.map(m => `
+                <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="fw-bold">${m.nom}</div>
+                        <div class="text-muted small">${m.fichier_nom} — ${m.created_at}</div>
+                    </div>
+                    <div>
+                        <a href="/api/modeles-resultats/${m.id}/fichier" class="btn btn-sm btn-outline-primary" title="Télécharger"><i class="fas fa-download"></i></a>
+                        <button class="btn btn-sm btn-outline-danger" onclick="supprimerModele(${m.id})" title="Supprimer"><i class="fas fa-trash"></i></button>
+                    </div>
+                </div>`).join('') + '</div>'
+            : '<div class="text-center text-muted py-4">Aucun modèle pour le moment.</div>';
+        document.getElementById('listeModelesAnalyse').innerHTML = rendre(lignes.filter(l => l.type_prestation === 'analyse'));
+        document.getElementById('listeModelesExamen').innerHTML = rendre(lignes.filter(l => l.type_prestation === 'examen'));
+    });
+}
+
+chargerModeles();
+</script>
+
+{% endblock %}
