@@ -76,8 +76,9 @@
 
         <div class="ms-auto d-flex gap-2 align-items-center">
             {% if hospit.statut == 'en_cours' %}
-            <input type="date" class="form-control form-control-sm" id="dateSortieInput" style="width:160px;" value="{{ hospit.date_sortie.strftime('%Y-%m-%d') if hospit.date_sortie else '' }}">
-            <button class="btn btn-warning btn-sm" onclick="enregistrerSortie()"><i class="fas fa-door-open me-1"></i> Enregistrer la sortie</button>
+            <button class="btn btn-warning btn-sm" onclick="ouvrirModalCloture()">
+                <i class="fas fa-door-open me-1"></i> Clôturer le séjour
+            </button>
             {% elif hospit.statut == 'sortie' %}
             <button class="btn btn-dark btn-sm" onclick="facturerSejour()"><i class="fas fa-file-invoice me-1"></i> Facturer le séjour</button>
             {% else %}
@@ -86,6 +87,63 @@
         </div>
     </div>
 </div>
+
+{% if hospit.statut == 'en_cours' %}
+<!-- Modal Clôture du séjour — date de sortie + chambre facturée en une seule étape -->
+<div class="modal fade" id="modalCloture" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title"><i class="fas fa-door-open me-2"></i>Clôturer le séjour</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Date de sortie</label>
+                    <input type="date" class="form-control" id="dateSortieInput" value="{{ hospit.date_sortie.strftime('%Y-%m-%d') if hospit.date_sortie else '' }}">
+                </div>
+
+                <hr>
+                <div class="mb-2">
+                    <label class="form-label mb-0"><i class="fas fa-bed me-1"></i> Chambre facturée <span class="text-muted small">(optionnel)</span></label>
+                    <div class="form-text mt-0 mb-2">
+                        Choisissez ici la chambre/prestation d'hospitalisation à facturer : le nombre de jours
+                        (entrée → sortie) est calculé automatiquement et réparti par palier si besoin — plus
+                        besoin de l'ajouter séparément via « Ajouter un acte ».
+                    </div>
+                </div>
+                <div class="position-relative mb-2">
+                    <input type="text" class="form-control" id="chambreSearch" placeholder="Rechercher la chambre (ex. P160 Hospi Cabine...)" autocomplete="off">
+                    <div id="chambreResultats" class="list-group position-absolute w-100" style="z-index:1000; max-height:220px; overflow-y:auto; display:none;"></div>
+                </div>
+                <div id="chambreChoisieBloc" style="display:none;" class="mb-2 p-2 border rounded bg-light">
+                    <strong id="chambreChoisieNom"></strong> — <span id="chambreChoisiePrix"></span> FCFA/jour
+                    <button type="button" class="btn btn-sm btn-link text-danger p-0 float-end" onclick="viderChambreChoisie()">Retirer</button>
+                </div>
+
+                {% if patient_amu_ep %}
+                <div id="blocEP" class="alert alert-warning mt-2">
+                    <i class="fas fa-exclamation-triangle me-1"></i>
+                    Patient assuré <strong>AMU</strong> : l'hospitalisation est soumise à <strong>Entente Préalable (EP)</strong>.
+                    <div class="form-check mt-2">
+                        <input class="form-check-input" type="checkbox" id="epConfirme">
+                        <label class="form-check-label" for="epConfirme">
+                            Je confirme avoir reçu l'accord de l'assurance avant de clôturer.
+                        </label>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-warning" onclick="cloturerSejour()">
+                    <i class="fas fa-check me-1"></i> Clôturer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 {% if hospit.statut != 'facturee' %}
 <div class="row g-3 mb-3">
@@ -115,7 +173,7 @@
                         <input type="time" class="form-control" id="acteHeure">
                     </div>
                 </div>
-                <div class="form-text">Quantité &gt; 7 jours sur un acte "chambre" (P160...) répartit automatiquement 1ère semaine / 8e-14e jour / 15e jour et + si le patient est assuré.</div>
+                <div class="form-text">Pour les actes ponctuels (NFS, pansement...). La chambre d'hospitalisation se choisit au moment de « Clôturer le séjour », avec la répartition par palier automatique.</div>
                 <button class="btn btn-primary mt-2 w-100" id="btnAjouterActe" onclick="ajouterSoin('acte')" disabled>
                     <i class="fas fa-plus me-1"></i> Ajouter l'acte
                 </button>
@@ -192,8 +250,10 @@
                         <td class="text-end">{{ '{:,}'.format(s.prix|round(0)|int).replace(',', ' ') }}</td>
                         <td class="text-end">{{ '{:,}'.format(s.total|round(0)|int).replace(',', ' ') }}</td>
                         <td>
-                            {% if s.prise_en_charge_amu %}<span class="badge bg-primary" title="AMU">AMU</span>{% endif %}
-                            {% if s.prise_en_charge_cac %}<span class="badge bg-info" title="CAC">CAC</span>{% endif %}
+                            {# Le patient doit RÉELLEMENT avoir l'assurance — pas juste que la ligne y soit éligible dans le catalogue #}
+                            {% if patient_a_amu and s.prise_en_charge_amu %}<span class="badge bg-primary" title="AMU">AMU</span>{% endif %}
+                            {% if patient_a_cac and s.prise_en_charge_cac %}<span class="badge bg-info" title="CAC">CAC</span>{% endif %}
+                            {% if not (patient_a_amu and s.prise_en_charge_amu) and not (patient_a_cac and s.prise_en_charge_cac) %}<span class="text-muted small">—</span>{% endif %}
                         </td>
                         <td><small>{{ s.enregistre_par or '-' }}</small></td>
                         <td>
@@ -370,14 +430,95 @@ function supprimerSoin(soinId) {
         .then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); });
 }
 
-function enregistrerSortie() {
+// ===================== CLÔTURE DU SÉJOUR (chambre choisie ici) =====================
+let chambreChoisie = null;
+let debounceChambre = null;
+
+function ouvrirModalCloture() {
+    const modalEl = document.getElementById('modalCloture');
+    if (!modalEl) return;
+    new bootstrap.Modal(modalEl).show();
+}
+
+document.getElementById('chambreSearch')?.addEventListener('input', function() {
+    const q = this.value.trim();
+    clearTimeout(debounceChambre);
+    if (q.length < 2) { document.getElementById('chambreResultats').style.display = 'none'; return; }
+    debounceChambre = setTimeout(() => {
+        fetch('/api/actes?search=' + encodeURIComponent(q) + '&limit=20')
+            .then(r => r.json())
+            .then(data => {
+                const box = document.getElementById('chambreResultats');
+                const liste = data.data || [];
+                if (!liste.length) { box.style.display = 'none'; return; }
+                box.innerHTML = liste.map(a => `
+                    <a href="#" class="list-group-item list-group-item-action" onclick='choisirChambre(${JSON.stringify(a).replace(/'/g, "&apos;")}); return false;'>
+                        <div class="d-flex justify-content-between">
+                            <span>${a.nom}</span>
+                            <strong>${Math.round(a.prix).toLocaleString()} FCFA</strong>
+                        </div>
+                    </a>`).join('');
+                box.style.display = 'block';
+            });
+    }, 250);
+});
+
+function choisirChambre(a) {
+    chambreChoisie = a;
+    document.getElementById('chambreChoisieNom').textContent = a.nom;
+    document.getElementById('chambreChoisiePrix').textContent = Math.round(a.prix).toLocaleString();
+    document.getElementById('chambreChoisieBloc').style.display = '';
+    document.getElementById('chambreResultats').style.display = 'none';
+    document.getElementById('chambreSearch').value = a.nom;
+}
+
+function viderChambreChoisie() {
+    chambreChoisie = null;
+    document.getElementById('chambreSearch').value = '';
+    document.getElementById('chambreChoisieBloc').style.display = 'none';
+}
+
+function cloturerSejour() {
     const dateSortie = document.getElementById('dateSortieInput').value;
     if (!dateSortie) { alert('Choisissez une date de sortie.'); return; }
+
+    const epCheckbox = document.getElementById('epConfirme');
+    if (epCheckbox && !epCheckbox.checked) {
+        alert("Patient assuré AMU : confirmez avoir reçu l'accord de l'assurance (Entente Préalable) avant de clôturer.");
+        return;
+    }
+
+    const payload = {
+        date_sortie: dateSortie,
+        ep_confirme: epCheckbox ? epCheckbox.checked : false,
+    };
+    if (chambreChoisie) {
+        payload.chambre = {
+            reference_id: chambreChoisie.id,
+            nom: chambreChoisie.nom,
+            prix: chambreChoisie.prix,
+            pbr: chambreChoisie.pbr,
+            prise_en_charge_amu: chambreChoisie.prise_en_charge_amu !== false,
+            prise_en_charge_cac: chambreChoisie.prise_en_charge_cac !== false,
+        };
+    }
+
     fetch(`/api/hospitalisation/${HOSPIT_ID}/sortie`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date_sortie: dateSortie })
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
     })
-    .then(r => r.json())
-    .then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+    .then(r => r.json().then(data => ({ status: r.status, data })))
+    .then(({ status, data }) => {
+        if (status === 409 && data.ep_requis) {
+            alert(data.error);
+            return;
+        }
+        if (data.success) {
+            window.location.reload();
+        } else {
+            alert('Erreur : ' + (data.error || 'inconnue'));
+        }
+    })
+    .catch(e => alert('Erreur : ' + e));
 }
 
 function facturerSejour() {
@@ -397,6 +538,8 @@ function facturerSejour() {
 document.addEventListener('click', function(e) {
     if (!e.target.closest('#acteSearch') && !e.target.closest('#acteResultats')) document.getElementById('acteResultats').style.display = 'none';
     if (!e.target.closest('#produitSearch') && !e.target.closest('#produitResultats')) document.getElementById('produitResultats').style.display = 'none';
+    const chambreResultatsEl = document.getElementById('chambreResultats');
+    if (chambreResultatsEl && !e.target.closest('#chambreSearch') && !e.target.closest('#chambreResultats')) chambreResultatsEl.style.display = 'none';
 });
 </script>
 

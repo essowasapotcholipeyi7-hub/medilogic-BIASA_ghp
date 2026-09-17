@@ -11918,7 +11918,18 @@ def page_hospitalisation_suivi(hospit_id):
     soins = SoinHospitalisation.query.filter_by(hospitalisation_id=hospit_id)\
         .order_by(SoinHospitalisation.date_prestation, SoinHospitalisation.heure_prestation).all()
     solde_en_cours = sum(float(s.prix or 0) * int(s.quantite or 0) for s in soins if s.statut == 'en_cours')
-    return render_template('hospitalisation_suivi.html', hospit=hospit, soins=soins, solde_en_cours=solde_en_cours)
+    # ⭐ Ce que le patient a RÉELLEMENT comme assurance — distinct de
+    # "cet acte est éligible AMU/CAC dans le catalogue" (prise_en_charge_amu/
+    # cac, vrai par défaut sur presque tous les actes) : sans cette
+    # distinction, les badges Assur. affichaient AMU ET CAC sur chaque ligne
+    # même pour un patient sans assurance complémentaire, ce qui n'a pas de
+    # sens (signalé par le patron).
+    patient_a_amu = bool(hospit.assurance_nom) and hospit.assurance_nom not in ('non_assure', 'Non assuré') \
+        and float(hospit.taux_assurance or 0) > 0
+    patient_a_cac = bool(hospit.assurance2_nom)
+    patient_amu_ep = patient_a_amu and str(hospit.assurance_nom).lower().startswith('amu')
+    return render_template('hospitalisation_suivi.html', hospit=hospit, soins=soins, solde_en_cours=solde_en_cours,
+                            patient_a_amu=patient_a_amu, patient_a_cac=patient_a_cac, patient_amu_ep=patient_amu_ep)
 
 
 @app.route('/api/hospitalisation/<int:hospit_id>/soins', methods=['POST'])
@@ -11967,24 +11978,15 @@ def api_ajouter_soin_hospitalisation(hospit_id):
         if heure_prestation is None:
             heure_prestation = datetime.now().time().replace(microsecond=0)
 
-        patient_assure = bool(hospit.assurance_nom) and hospit.assurance_nom not in ('non_assure', 'Non assuré') \
-            and float(hospit.taux_assurance or 0) > 0
-
-        # ⭐ Détection auto des paliers hebdomadaires — uniquement pour un
-        # acte "chambre" (nom se terminant par un suffixe de palier connu),
-        # patient assuré, et quantité > 7 jours (voir plan : sinon une seule
-        # tranche suffit, pas besoin d'aller chercher les actes sœurs).
-        lignes_a_inserer = []
-        if type_soin == 'acte' and quantite > 7 and patient_assure:
-            tous_les_actes = sheets_helper.get_all_records('actes', use_prefix=True)
-            acte_choisi = {'id': reference_id, 'nom': nom, 'prix': prix, 'pbr': pbr}
-            for l in construire_lignes_chambre(acte_choisi, quantite, date_prestation, tous_les_actes, patient_assure=True):
-                lignes_a_inserer.append(l)
-        else:
-            lignes_a_inserer.append({
-                'reference_id': reference_id, 'nom': nom, 'prix': prix, 'pbr': pbr,
-                'quantite': quantite, 'date_prestation': date_prestation, 'date_fin_prestation': None,
-            })
+        # ⭐ Ajout ponctuel : toujours une seule ligne. La charge de chambre
+        # (avec sa répartition automatique par palier) se fait désormais en
+        # UNE seule étape à la clôture du séjour (voir
+        # api_sortie_hospitalisation) — plus besoin de la rechercher une
+        # 2e fois ici après avoir déjà indiqué la date de sortie.
+        lignes_a_inserer = [{
+            'reference_id': reference_id, 'nom': nom, 'prix': prix, 'pbr': pbr,
+            'quantite': quantite, 'date_prestation': date_prestation, 'date_fin_prestation': None,
+        }]
 
         # ⭐ Avertissement non bloquant : même reference_id déjà enregistré
         # ce même jour sur ce séjour (ex. NFS deux fois le 10/09) — on laisse
@@ -12046,12 +12048,21 @@ def api_supprimer_soin_hospitalisation(hospit_id, soin_id):
 @app.route('/api/hospitalisation/<int:hospit_id>/sortie', methods=['POST'])
 @login_required
 def api_sortie_hospitalisation(hospit_id):
+    """Clôture le séjour. La chambre facturée (optionnelle) se choisit ICI,
+    en même temps que la date de sortie : le nombre de jours se calcule
+    automatiquement (date_sortie - date_entree) et la répartition par
+    palier (voir services/hospitalisation_service.py) s'applique dans la
+    foulée — plus besoin de repasser par "Ajouter un acte" pour la charge
+    de chambre une fois la sortie enregistrée."""
     try:
         structure_id = session.get('structure_id')
+        user_name = session.get('user_name', 'System')
         data = request.json or {}
         hospit = Hospitalisation.query.filter_by(id=hospit_id, structure_id=structure_id).first()
         if not hospit:
             return jsonify({'success': False, 'error': 'Séjour introuvable'}), 404
+        if hospit.statut == 'facturee':
+            return jsonify({'success': False, 'error': 'Séjour déjà facturé'}), 400
 
         date_sortie_str = data.get('date_sortie')
         try:
@@ -12062,13 +12073,57 @@ def api_sortie_hospitalisation(hospit_id):
         if date_sortie < hospit.date_entree:
             return jsonify({'success': False, 'error': "La date de sortie ne peut pas précéder la date d'entrée"}), 400
 
+        patient_assure = bool(hospit.assurance_nom) and hospit.assurance_nom not in ('non_assure', 'Non assuré') \
+            and float(hospit.taux_assurance or 0) > 0
+
+        # ⭐ Entente Préalable (EP) : une hospitalisation sur un patient
+        # assuré AMU (amu_cnss/amu_inam/amu_tns) nécessite l'accord préalable
+        # de l'assurance — on ne bloque pas la clôture indéfiniment, mais on
+        # exige que le caissier/secrétaire confirme explicitement l'avoir
+        # obtenu avant de clôturer (même pattern que confirmer_doublon :
+        # rappel côté client, vérifié aussi côté serveur pour ne pas
+        # dépendre uniquement du JS). S'applique à toute clôture d'un
+        # patient AMU, pas seulement quand une chambre est choisie.
+        patient_amu = patient_assure and str(hospit.assurance_nom).lower().startswith('amu')
+        if patient_amu and not data.get('ep_confirme'):
+            return jsonify({
+                'success': False, 'ep_requis': True,
+                'error': "Ce patient est assuré AMU : l'hospitalisation est soumise à Entente Préalable (EP). "
+                         "Confirmez avoir reçu l'accord de l'assurance avant de clôturer."
+            }), 409
+
+        nb_jours = max((date_sortie - hospit.date_entree).days, 0)
+        chambre = data.get('chambre')
+        lignes_chambre_creees = 0
+
+        if chambre and chambre.get('nom') and nb_jours > 0:
+            tous_les_actes = sheets_helper.get_all_records('actes', use_prefix=True)
+            acte_choisi = {
+                'id': chambre.get('reference_id'), 'nom': chambre.get('nom'),
+                'prix': float(chambre.get('prix') or 0), 'pbr': float(chambre.get('pbr') or chambre.get('prix') or 0),
+            }
+            for l in construire_lignes_chambre(acte_choisi, nb_jours, hospit.date_entree, tous_les_actes, patient_assure):
+                soin = SoinHospitalisation(
+                    hospitalisation_id=hospit_id, structure_id=structure_id, type='acte',
+                    reference_id=l['reference_id'], nom=l['nom'], prix=l['prix'], pbr=l['pbr'],
+                    quantite=l['quantite'],
+                    prise_en_charge_amu=bool(chambre.get('prise_en_charge_amu', True)),
+                    prise_en_charge_cac=bool(chambre.get('prise_en_charge_cac', True)),
+                    date_prestation=l['date_prestation'], date_fin_prestation=l['date_fin_prestation'],
+                    enregistre_par=user_name, statut='en_cours',
+                )
+                db.session.add(soin)
+                lignes_chambre_creees += 1
+
         hospit.date_sortie = date_sortie
         if hospit.statut == 'en_cours':
             hospit.statut = 'sortie'
         db.session.commit()
-        return jsonify({'success': True, 'nombre_jours': hospit.nombre_jours})
+        return jsonify({'success': True, 'nombre_jours': hospit.nombre_jours, 'lignes_chambre': lignes_chambre_creees})
     except Exception as e:
         db.session.rollback()
+        print(f"❌ Erreur clôture hospitalisation: {e}")
+        import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -12232,8 +12287,13 @@ def hospitalisation_billet(hospit_id):
         return redirect(url_for('page_hospitalisation'))
 
     soins = SoinHospitalisation.query.filter_by(hospitalisation_id=hospit_id).all()
-    a_amu = any(s.prise_en_charge_amu for s in soins)
-    a_cac = any(s.prise_en_charge_cac for s in soins)
+    # ⭐ Le patient doit RÉELLEMENT avoir l'assurance, pas juste que l'acte y
+    # soit éligible dans le catalogue (voir page_hospitalisation_suivi).
+    patient_a_amu = bool(hospit.assurance_nom) and hospit.assurance_nom not in ('non_assure', 'Non assuré') \
+        and float(hospit.taux_assurance or 0) > 0
+    patient_a_cac = bool(hospit.assurance2_nom)
+    a_amu = patient_a_amu and any(s.prise_en_charge_amu for s in soins)
+    a_cac = patient_a_cac and any(s.prise_en_charge_cac for s in soins)
 
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
