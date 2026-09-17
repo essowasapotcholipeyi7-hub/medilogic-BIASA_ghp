@@ -1674,13 +1674,17 @@
     box-shadow: 0 6px 20px rgba(0,0,0,0.25);
 }
 
-/* Quand le menu est visible, le bouton est décalé */
+/* ⭐ Le menu a déjà son propre bouton pour se refermer (chevron dans son
+   en-tête, voir .sidebar-toggle) — pas besoin d'un deuxième bouton flottant
+   par-dessus le contenu tant qu'il est visible (signalé, redondant).
+   Le bouton flottant ne sert donc qu'à RAMENER le menu une fois caché. */
 .sidebar:not(.hidden) ~ .global-toggle-btn {
-    left: 270px;
+    display: none;
 }
 
-/* Quand le menu est caché, le bouton est à gauche */
+/* Quand le menu est caché, le bouton est à gauche, seul moyen de le ramener */
 .sidebar.hidden ~ .global-toggle-btn {
+    display: flex;
     left: 10px;
 }
 
@@ -1699,10 +1703,11 @@
     }
 
     .sidebar:not(.hidden) ~ .global-toggle-btn {
-        left: 290px;
+        display: none;
     }
 
     .sidebar.hidden ~ .global-toggle-btn {
+        display: flex;
         left: 10px;
     }
 
