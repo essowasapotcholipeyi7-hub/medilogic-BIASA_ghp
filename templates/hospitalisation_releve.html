@@ -59,7 +59,7 @@
 
         .total-jour { text-align: right; font-size: 12px; padding: 4px 8px; color: #495057; background: #fbfbfb; border: 1px solid #dee2e6; border-top: none; }
         .total-general {
-            margin-top: 16px;
+            margin-top: 8px;
             text-align: right;
             font-size: 20px;
             font-weight: bold;
@@ -68,6 +68,9 @@
             background: #eef3f8;
             border-radius: 8px;
         }
+
+        .recap-assurance { margin-top: 16px; font-size: 13px; }
+        .ligne-recap { display: flex; justify-content: space-between; padding: 3px 4px; }
 
         .footer { margin-top: 20px; padding-top: 12px; border-top: 1px dashed #ccc; font-size: 11px; color: #6c757d; text-align: center; }
         .no-print { margin-top: 20px; text-align: center; }
@@ -141,7 +144,31 @@
         {% endfor %}
 
         {% if jours %}
-        <div class="total-general">Total général : {{ '{:,}'.format(total_general|round(0)|int).replace(',', ' ') }} FCFA</div>
+        <div class="recap-assurance">
+            <div class="ligne-recap">
+                <span>Sous-total clinique :</span>
+                <span>{{ '{:,}'.format(total_general|round(0)|int).replace(',', ' ') }} FCFA</span>
+            </div>
+            {% if repartition and repartition.est_assure_amu %}
+            <div class="ligne-recap" style="color:#2e7d32;">
+                <span>Prise en charge AMU :</span>
+                <span>- {{ '{:,}'.format(repartition.part_amu|round(0)|int).replace(',', ' ') }} FCFA</span>
+            </div>
+            {% endif %}
+            {% if repartition and repartition.a_cac %}
+            <div class="ligne-recap" style="color:#0277bd;">
+                <span>Prise en charge {{ hospit.assurance2_nom }} :</span>
+                <span>- {{ '{:,}'.format(repartition.part_cac|round(0)|int).replace(',', ' ') }} FCFA</span>
+            </div>
+            {% endif %}
+        </div>
+        <div class="total-general">
+            {% if repartition and (repartition.est_assure_amu or repartition.a_cac) %}
+                Reste à charge du patient : {{ '{:,}'.format(repartition.part_patient|round(0)|int).replace(',', ' ') }} FCFA
+            {% else %}
+                Total général : {{ '{:,}'.format(total_general|round(0)|int).replace(',', ' ') }} FCFA
+            {% endif %}
+        </div>
         {% endif %}
 
         <div class="footer">

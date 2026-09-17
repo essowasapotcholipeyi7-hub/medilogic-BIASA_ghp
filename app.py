@@ -3280,6 +3280,26 @@ def recu(vente_id, type):
                 else:
                     baseCAC += total_article
 
+            # ⭐ Date(s) de prestation (hospitalisation) — reformatées en
+            # jj/mm ici, côté serveur, plutôt que dans le template : ce sont
+            # de simples chaînes ISO ('YYYY-MM-DD') venant du JSON stocké,
+            # Jinja ne sait pas les parser comme des dates. "du X au Y" pour
+            # une tranche de palier chambre (plusieurs jours au même tarif),
+            # une seule date pour un acte/médicament ponctuel.
+            date_aff = None
+            dp = item.get('date_prestation')
+            dfp = item.get('date_fin_prestation')
+            if dp:
+                try:
+                    dp_fmt = datetime.strptime(dp, '%Y-%m-%d').strftime('%d/%m')
+                    if dfp and dfp != dp:
+                        dfp_fmt = datetime.strptime(dfp, '%Y-%m-%d').strftime('%d/%m')
+                        date_aff = f"du {dp_fmt} au {dfp_fmt}"
+                    else:
+                        date_aff = dp_fmt
+                except ValueError:
+                    date_aff = None
+
             articles.append({
                 'nom': item.get('nom', 'Article'),
                 'quantite': quantite,
@@ -3288,7 +3308,8 @@ def recu(vente_id, type):
                 'total': total_article,
                 'prise_en_charge_amu': prise_amu,
                 'prise_en_charge_cac': prise_cac,
-                'type': type_article
+                'type': type_article,
+                'date_prestation_affichee': date_aff,
             })
 
         # 🔥 Appliquer le taux CAC
@@ -3359,7 +3380,13 @@ def recu(vente_id, type):
     if assurance2_nom and assurance2_nom != '' and assurance2_nom != 'Aucune' and prise_en_charge2 > 0:
         assurance2_appliquee = True
 
+    # ⭐ Colonne "Date" affichée seulement si au moins un article en porte une
+    # (vente issue d'une hospitalisation) — une vente directe classique n'a
+    # jamais ce champ, colonne absente, aucun changement visuel pour elle.
+    a_dates_prestation = any(a.get('date_prestation_affichee') for a in articles)
+
     return render_template('recu_client.html',
+                         a_dates_prestation=a_dates_prestation,
                          vente_id=vente_id,
                          numero_local_vente=numero_local_vente,
                          type_vente=type_bd,
@@ -11448,7 +11475,16 @@ def api_convertir_proforma():
                 'total': total,
                 'prise_en_charge_amu': prise_amu,
                 'prise_en_charge_cac': prise_cac,
-                'type': a.get('type', 'acte')
+                'type': a.get('type', 'acte'),
+                # ⭐ Date(s) de prestation — portées par les articles venant
+                # d'une hospitalisation (voir api_facturer_hospitalisation,
+                # app.py) pour qu'un même acte répété à des jours différents
+                # (ex. NFS x2) reste distinguable sur le reçu final, et pas
+                # seulement dans le relevé interne. Absent (None) pour une
+                # vente directe classique — sans lien avec ce champ, aucun
+                # changement de comportement pour elle.
+                'date_prestation': a.get('date_prestation'),
+                'date_fin_prestation': a.get('date_fin_prestation'),
             }
 
             # 🔥 AMU
@@ -12618,11 +12654,19 @@ def hospitalisation_releve(hospit_id):
     jours = [{'date': d, 'lignes': groupes[d], 'total': sum(l.total for l in groupes[d])} for d in sorted(groupes.keys())]
     total_general = sum(j['total'] for j in jours)
 
+    # ⭐ Répartition part AMU / part CAC / part patient — sur EXACTEMENT les
+    # lignes affichées dans ce relevé (respecte le filtre actes/médicaments/
+    # global et le toggle d'assurance de ce séjour). Absente jusqu'ici : le
+    # relevé affichait le montant "prix × quantité" brut comme si le
+    # patient payait tout cash, même quand il est assuré (signalé).
+    repartition = calculer_repartition_assurance(soins, hospit) if soins else None
+
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
 
     return render_template('hospitalisation_releve.html', hospit=hospit, jours=jours, total_general=total_general,
-                            type_filtre=type_filtre, structure_nom=structure_info.get('nom', 'SSoftOneV10'))
+                            type_filtre=type_filtre, structure_nom=structure_info.get('nom', 'SSoftOneV10'),
+                            repartition=repartition)
 
 
 @app.route('/api/proformas/count')

@@ -22,20 +22,32 @@
     — <a href="#" onclick="ouvrirNouveauSejour(); return false;">créer son séjour</a>
 </div>
 
+<style>
+/* ⭐ Bootstrap donne à .nav-tabs .nav-link.active un fond CLAIR par défaut
+   (pensé pour un en-tête clair) — sur ce card-header bg-dark, l'onglet
+   actif devenait fond blanc + texte blanc (hérité de .text-white posé sur
+   TOUS les onglets par filtrer() ci-dessous), donc illisible tant qu'on
+   n'en changeait pas (signalé). On fixe ici explicitement fond clair +
+   texte sombre pour l'onglet actif, fond transparent + texte clair pour
+   les autres, au lieu de laisser Bootstrap et nos classes se contredire. */
+#filtreTabs .nav-link { color: rgba(255,255,255,0.65); border-color: transparent; }
+#filtreTabs .nav-link:hover { color: #fff; }
+#filtreTabs .nav-link.active { background-color: #fff; color: #1a1a2e; border-color: #fff #fff transparent; font-weight: 600; }
+</style>
 <div class="card">
     <div class="card-header bg-dark text-white">
         <ul class="nav nav-tabs card-header-tabs" id="filtreTabs">
             <li class="nav-item">
-                <a class="nav-link active text-white" href="#" data-filtre="en_cours" onclick="filtrer(this)">En cours</a>
+                <a class="nav-link active" href="#" data-filtre="en_cours" onclick="filtrer(this)">En cours</a>
             </li>
             <li class="nav-item">
-                <a class="nav-link text-white-50" href="#" data-filtre="sortie" onclick="filtrer(this)">Sorties (à facturer)</a>
+                <a class="nav-link" href="#" data-filtre="sortie" onclick="filtrer(this)">Sorties (à facturer)</a>
             </li>
             <li class="nav-item">
-                <a class="nav-link text-white-50" href="#" data-filtre="facturee" onclick="filtrer(this)">Facturés</a>
+                <a class="nav-link" href="#" data-filtre="facturee" onclick="filtrer(this)">Facturés</a>
             </li>
             <li class="nav-item">
-                <a class="nav-link text-white-50" href="#" data-filtre="tous" onclick="filtrer(this)">Tous</a>
+                <a class="nav-link" href="#" data-filtre="tous" onclick="filtrer(this)">Tous</a>
             </li>
         </ul>
     </div>
@@ -154,8 +166,11 @@
 
 <script>
 function filtrer(el) {
-    document.querySelectorAll('#filtreTabs .nav-link').forEach(a => { a.classList.remove('active'); a.classList.add('text-white-50'); a.classList.remove('text-white'); });
-    el.classList.add('active'); el.classList.add('text-white'); el.classList.remove('text-white-50');
+    // ⭐ La couleur active/inactive vient maintenant du CSS scopé #filtreTabs
+    // plus haut (voir le commentaire à côté) — plus besoin de jongler avec
+    // text-white/text-white-50 ici, source de l'onglet devenu illisible.
+    document.querySelectorAll('#filtreTabs .nav-link').forEach(a => a.classList.remove('active'));
+    el.classList.add('active');
     const f = el.getAttribute('data-filtre');
     document.querySelectorAll('.ligne-sejour').forEach(tr => {
         tr.style.display = (f === 'tous' || tr.getAttribute('data-statut') === f) ? '' : 'none';

@@ -247,10 +247,19 @@
      article.pbr retombait sur le prix normal et s'affichait quand même,
      laissant croire à tort à une prise en charge AMU inexistante). -->
 {% set patient_amu = type_assurance in ['AMU-CNSS', 'AMU-INAM', 'AMU-TNS'] %}
+<!-- ⭐ Colonne "Date" — uniquement pour une vente issue d'une hospitalisation
+     (voir a_dates_prestation, app.py) : sur une facture globale de séjour,
+     un même acte peut revenir à des jours différents (ex. NFS le 10/09 ET
+     le 14/09) — sans cette colonne, deux lignes identiques sur un reçu à
+     date unique paraissent suspectes pour l'assurance qui le contrôle.
+     Absente pour une vente directe classique, aucun changement pour elle. -->
 <table style="width:100%; border-collapse: collapse; font-size: 10px;">
     <thead>
         <tr style="background:#f8f9fa; border-bottom: 2px solid #dee2e6;">
-            <th style="padding:4px; text-align:left; width:32%;">Article</th>
+            <th style="padding:4px; text-align:left; width:{{ '22%' if a_dates_prestation else '32%' }};">Article</th>
+            {% if a_dates_prestation %}
+            <th style="padding:4px; text-align:center; width:14%;">Date</th>
+            {% endif %}
             <th style="padding:4px; text-align:center; width:10%;">Qté</th>
             <th style="padding:4px; text-align:right; width:{{ '16%' if patient_amu else '20%' }};">Prix</th>
             {% if patient_amu %}
@@ -265,6 +274,9 @@
             <td style="padding:4px; font-weight:500; font-size:9px;">
                 {{ article.nom }}
             </td>
+            {% if a_dates_prestation %}
+            <td style="text-align:center; font-size:8.5px; white-space:nowrap;">{{ article.date_prestation_affichee or '-' }}</td>
+            {% endif %}
             <td style="text-align:center; font-size:9px;">{{ article.quantite }}</td>
             <td style="text-align:right; font-size:9px;">{{ article.prix_unitaire|default(0)|round(0)|int }} F</td>
             {% if patient_amu %}
