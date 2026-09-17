@@ -136,6 +136,13 @@
                 </a>
                 {% endif %}
 
+                <!-- ===== PBR COMPLÉMENTAIRES ===== -->
+                {% if session.role in ['admin', 'comptable', 'gestionnaire'] and not _bloq %}
+                <a class="nav-link {% if request.endpoint == 'page_pbr_complementaires' %}active{% endif %}" href="{{ url_for('page_pbr_complementaires') }}">
+                    <span class="menu-text">PBR Complémentaires</span>
+                </a>
+                {% endif %}
+
                 <!-- ===== ADMINISTRATION ===== -->
                 {% if a_acces('statistiques') and not onglet_cache('statistiques') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'statistiques_ventes' %}active{% endif %}" href="{{ url_for('statistiques_ventes') }}">

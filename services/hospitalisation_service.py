@@ -15,6 +15,10 @@ import re
 import unicodedata
 from datetime import timedelta
 
+# ⭐ Import différé (pas de circularité : models.py n'importe jamais ce
+# module) — utilisé uniquement par charger_pbr_complementaires() ci-dessous.
+from models import PbrComplementaire
+
 # Suffixe (normalisé) -> palier 1/2/3. Plusieurs variantes tolérées
 # (accents/orthographe observés dans le catalogue réel).
 _SUFFIXES_PALIER = {
@@ -162,17 +166,41 @@ def _taux_amu_article(nom, taux_defaut):
     return 90 if (nom and 'P160' in nom) else taux_defaut
 
 
-def calculer_repartition_assurance(soins, hospit):
+def charger_pbr_complementaires(structure_id, compagnie):
+    """{nom_acte: pbr} pour CETTE structure et CETTE compagnie complémentaire
+    précisément (ex. "SUNU") — contrairement à l'AMU, chaque compagnie a sa
+    propre base de remboursement sur un même acte, d'où la table
+    PbrComplementaire (models.py) plutôt qu'une colonne de plus dans le
+    catalogue. Vide si `compagnie` est vide/absente ou si aucune entrée
+    n'a encore été saisie pour elle -> calculer_repartition_assurance()
+    retombe alors naturellement sur le comportement d'avant (reste après
+    AMU, non plafonné), donc zéro régression tant que rien n'est saisi."""
+    if not compagnie:
+        return {}
+    lignes = PbrComplementaire.query.filter_by(
+        structure_id=structure_id, compagnie=compagnie
+    ).all()
+    return {l.nom_acte: float(l.pbr or 0) for l in lignes}
+
+
+def calculer_repartition_assurance(soins, hospit, pbr_cac_par_acte=None):
     """Part AMU / part CAC / part patient pour une liste de soins (objets
     SoinHospitalisation ou équivalents avec .nom/.prix/.pbr/.quantite/
     .prise_en_charge_amu/.prise_en_charge_cac) et un séjour `hospit`
     (Hospitalisation — utilise ses propriétés "effectives", qui respectent
     le toggle assurance_principale_active/assurance2_active de CE séjour).
 
+    `pbr_cac_par_acte` (optionnel, voir charger_pbr_complementaires ci-
+    dessus) : {nom_acte: pbr} propre à la compagnie complémentaire du
+    patient — plafonne la base CAC de chaque article qui y figure, comme
+    l'AMU le fait déjà avec son propre PBR. Absent ou vide (par défaut) :
+    comportement inchangé (reste après AMU, non plafonné).
+
     Même formule que celle utilisée à la facturation finale
     (api_facturer_hospitalisation, app.py) — un seul endroit pour ce
     calcul, réutilisé aussi pour l'aperçu "en cours" affiché pendant le
     séjour, pour que les deux restent toujours cohérents."""
+    pbr_cac_par_acte = pbr_cac_par_acte or {}
     est_assure = hospit.est_assure_amu
     taux_assurance = hospit.taux_assurance_effectif
     a_cac = hospit.a_cac
@@ -207,10 +235,17 @@ def calculer_repartition_assurance(soins, hospit):
                 base_amu = min(prix, pbr) * quantite
                 prise_amu_article = (base_amu * taux_item) / 100
                 reste = total - prise_amu_article
-                if reste > 0:
-                    base_cac += reste
             else:
-                base_cac += total
+                reste = total
+            # ⭐ Plafond propre à la compagnie complémentaire du patient,
+            # comme l'AMU le fait déjà avec son PBR — voir
+            # charger_pbr_complementaires() ci-dessus. Rien à faire si
+            # cet acte n'a pas d'entrée pour cette compagnie (reste tel quel).
+            if s.nom in pbr_cac_par_acte:
+                plafond_cac = pbr_cac_par_acte[s.nom] * quantite
+                reste = min(reste, plafond_cac)
+            if reste > 0:
+                base_cac += reste
 
     part_cac = (base_cac * taux_assurance2) / 100 if (a_cac and base_cac > 0) else 0.0
     part_patient = max(sous_total - part_amu - part_cac, 0.0)

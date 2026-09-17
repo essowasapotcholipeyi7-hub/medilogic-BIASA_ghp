@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+
+{% block title %}PBR Complémentaires{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h4 class="mb-0"><i class="fas fa-shield-alt me-2"></i>PBR par compagnie complémentaire</h4>
+    <button class="btn btn-dark btn-sm" onclick="ouvrirModalPbr()">
+        <i class="fas fa-plus me-1"></i> Ajouter une entrée
+    </button>
+</div>
+
+<div class="alert alert-info">
+    <i class="fas fa-info-circle me-1"></i>
+    Contrairement à l'AMU (un seul PBR par acte), chaque compagnie complémentaire (SUNU, OLEA, GTA, FIDELIA...)
+    a sa <strong>propre</strong> base de remboursement — et pas forcément sur tous les actes/médicaments.
+    Un acte <strong>sans entrée ici</strong> pour une compagnie donnée continue de fonctionner comme avant
+    (la complémentaire prend tout le reste après l'AMU, sans plafond) : remplissez cette liste progressivement,
+    au fur et à mesure que vous connaissez les vraies bases négociées.
+</div>
+
+<div class="card">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <span><i class="fas fa-list me-1"></i> Entrées enregistrées</span>
+        <span id="pbrTotal" class="badge bg-light text-dark">0</span>
+    </div>
+    <div class="card-body p-0">
+        <div id="pbrParCompagnie">
+            <div class="text-center text-muted py-4">Chargement...</div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Ajouter une entrée -->
+<div class="modal fade" id="modalPbr" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-shield-alt me-2"></i>Nouvelle entrée PBR complémentaire</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-2">
+                    <label class="form-label mb-1">Type</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="pbrType" id="pbrTypeActe" value="acte" checked onchange="typePbrChange()">
+                        <label class="btn btn-outline-primary" for="pbrTypeActe">Acte</label>
+                        <input type="radio" class="btn-check" name="pbrType" id="pbrTypeProduit" value="produit" onchange="typePbrChange()">
+                        <label class="btn btn-outline-primary" for="pbrTypeProduit">Médicament</label>
+                    </div>
+                </div>
+                <div class="position-relative mb-2">
+                    <label class="form-label mb-1">Acte / médicament</label>
+                    <input type="text" class="form-control" id="pbrSearch" placeholder="Rechercher..." autocomplete="off">
+                    <div id="pbrResultats" class="list-group position-absolute w-100" style="z-index:1000; max-height:220px; overflow-y:auto; display:none;"></div>
+                </div>
+                <div id="pbrChoisiBloc" style="display:none;" class="mb-2 p-2 border rounded bg-light">
+                    <strong id="pbrChoisiNom"></strong>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label mb-1">Compagnie complémentaire</label>
+                    <input type="text" class="form-control" id="pbrCompagnie" list="pbrCompagniesConnues" placeholder="Ex. SUNU">
+                    <datalist id="pbrCompagniesConnues"></datalist>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label mb-1">PBR (FCFA)</label>
+                    <input type="number" class="form-control" id="pbrValeur" min="0" step="1">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="enregistrerPbr()">
+                    <i class="fas fa-check me-1"></i> Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let pbrTypeActuel = 'acte';
+let pbrChoisi = null;
+let debouncePbr = null;
+let toutesLesEntrees = [];
+
+function typePbrChange() {
+    pbrTypeActuel = document.querySelector('input[name="pbrType"]:checked').value;
+    viderPbrChoisi();
+}
+
+function ouvrirModalPbr() {
+    document.getElementById('pbrSearch').value = '';
+    document.getElementById('pbrCompagnie').value = '';
+    document.getElementById('pbrValeur').value = '';
+    viderPbrChoisi();
+    new bootstrap.Modal(document.getElementById('modalPbr')).show();
+}
+
+function viderPbrChoisi() {
+    pbrChoisi = null;
+    document.getElementById('pbrChoisiBloc').style.display = 'none';
+    document.getElementById('pbrResultats').style.display = 'none';
+}
+
+document.getElementById('pbrSearch').addEventListener('input', function() {
+    const q = this.value.trim();
+    clearTimeout(debouncePbr);
+    if (q.length < 2) { document.getElementById('pbrResultats').style.display = 'none'; return; }
+    debouncePbr = setTimeout(() => {
+        const url = pbrTypeActuel === 'acte'
+            ? '/api/actes?search=' + encodeURIComponent(q) + '&limit=20'
+            : '/api/produits/search?search=' + encodeURIComponent(q) + '&limit=20';
+        fetch(url).then(r => r.json()).then(data => {
+            const box = document.getElementById('pbrResultats');
+            const liste = data.data || [];
+            if (!liste.length) { box.style.display = 'none'; return; }
+            box.innerHTML = liste.map(a => `
+                <a href="#" class="list-group-item list-group-item-action" onclick='choisirPbrArticle(${JSON.stringify(a.nom).replace(/'/g, "&apos;")}); return false;'>
+                    ${a.nom}
+                </a>`).join('');
+            box.style.display = 'block';
+        });
+    }, 250);
+});
+
+function choisirPbrArticle(nom) {
+    pbrChoisi = nom;
+    document.getElementById('pbrChoisiNom').textContent = nom;
+    document.getElementById('pbrChoisiBloc').style.display = '';
+    document.getElementById('pbrResultats').style.display = 'none';
+    document.getElementById('pbrSearch').value = nom;
+}
+
+function enregistrerPbr() {
+    const compagnie = document.getElementById('pbrCompagnie').value.trim();
+    const pbr = parseFloat(document.getElementById('pbrValeur').value);
+    if (!pbrChoisi) { alert('Choisissez un acte ou un médicament dans la liste.'); return; }
+    if (!compagnie) { alert('Indiquez la compagnie complémentaire.'); return; }
+    if (isNaN(pbr) || pbr < 0) { alert('PBR invalide.'); return; }
+
+    fetch('/api/pbr-complementaires', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: pbrTypeActuel, nom_acte: pbrChoisi, compagnie: compagnie, pbr: pbr })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('modalPbr')).hide();
+            chargerPbrComplementaires();
+        } else {
+            alert('Erreur : ' + (data.error || 'inconnue'));
+        }
+    })
+    .catch(e => alert('Erreur : ' + e));
+}
+
+function supprimerPbr(id) {
+    if (!confirm('Supprimer cette entrée ?')) return;
+    fetch('/api/pbr-complementaires/' + id, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) chargerPbrComplementaires();
+            else alert('Erreur : ' + (data.error || 'inconnue'));
+        });
+}
+
+function chargerPbrComplementaires() {
+    fetch('/api/pbr-complementaires')
+        .then(r => r.json())
+        .then(lignes => {
+            toutesLesEntrees = lignes;
+            document.getElementById('pbrTotal').textContent = lignes.length;
+
+            const datalist = document.getElementById('pbrCompagniesConnues');
+            const compagnies = [...new Set(lignes.map(l => l.compagnie))].sort();
+            datalist.innerHTML = compagnies.map(c => `<option value="${c}">`).join('');
+
+            const conteneur = document.getElementById('pbrParCompagnie');
+            if (!lignes.length) {
+                conteneur.innerHTML = '<div class="text-center text-muted py-4">Aucune entrée pour le moment.</div>';
+                return;
+            }
+            const groupes = {};
+            lignes.forEach(l => { (groupes[l.compagnie] = groupes[l.compagnie] || []).push(l); });
+
+            conteneur.innerHTML = Object.keys(groupes).sort().map(compagnie => `
+                <div class="border-bottom">
+                    <div class="px-3 py-2 bg-light fw-bold"><i class="fas fa-building me-1"></i> ${compagnie}
+                        <span class="badge bg-secondary ms-1">${groupes[compagnie].length}</span>
+                    </div>
+                    <table class="table table-sm mb-0">
+                        <tbody>
+                            ${groupes[compagnie].map(l => `
+                                <tr>
+                                    <td><span class="badge ${l.type === 'acte' ? 'bg-primary' : 'bg-success'}">${l.type === 'acte' ? 'Acte' : 'Médicament'}</span></td>
+                                    <td>${l.nom_acte}</td>
+                                    <td class="text-end fw-bold">${Math.round(l.pbr).toLocaleString('fr-FR')} FCFA</td>
+                                    <td style="width:40px;">
+                                        <button class="btn btn-sm btn-outline-danger" onclick="supprimerPbr(${l.id})" title="Supprimer">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `).join('');
+        });
+}
+
+document.addEventListener('click', function(e) {
+    const box = document.getElementById('pbrResultats');
+    if (box && !e.target.closest('#pbrSearch') && !e.target.closest('#pbrResultats')) box.style.display = 'none';
+});
+
+chargerPbrComplementaires();
+</script>
+
+{% endblock %}

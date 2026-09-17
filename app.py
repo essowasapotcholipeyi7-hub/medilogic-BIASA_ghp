@@ -14,11 +14,11 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, PbrComplementaire
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
-from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance
+from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires
 
 # ⭐ Numéro WhatsApp de l'éditeur (Togo, +228) pour l'envoi du reçu
 # d'abonnement — voir admin_finances.html.
@@ -8582,6 +8582,97 @@ def api_actes_liste_admin():
         return jsonify([]), 500
 
 
+@app.route('/pbr-complementaires')
+@login_required
+def page_pbr_complementaires():
+    """Page d'administration du PBR propre à chaque compagnie complémentaire
+    (SUNU, OLEA, GTA, FIDELIA...) — voir PbrComplementaire (models.py) et
+    charger_pbr_complementaires() (services/hospitalisation_service.py).
+    Liste chargée en JS (même esprit que gestion_stock.html) pour un
+    premier affichage instantané."""
+    return render_template('pbr_complementaires.html')
+
+
+@app.route('/api/pbr-complementaires', methods=['GET'])
+@login_required
+def api_lister_pbr_complementaires():
+    """Sans `compagnie` : toutes les entrées de la structure (pour la page
+    d'admin). Avec `compagnie` : {nom_acte: pbr} pour cette compagnie
+    précisément (pour les 3 miroirs JS qui calculent la part CAC en
+    direct — proformas.html/actes_vente.html/pharma_vente.html)."""
+    structure_id = session.get('structure_id')
+    compagnie = request.args.get('compagnie', '').strip()
+    q = PbrComplementaire.query.filter_by(structure_id=structure_id)
+    if compagnie:
+        lignes = q.filter_by(compagnie=compagnie).all()
+        return jsonify({l.nom_acte: float(l.pbr or 0) for l in lignes})
+    lignes = q.order_by(PbrComplementaire.compagnie, PbrComplementaire.nom_acte).all()
+    return jsonify([{
+        'id': l.id, 'type': l.type, 'nom_acte': l.nom_acte,
+        'compagnie': l.compagnie, 'pbr': float(l.pbr or 0),
+    } for l in lignes])
+
+
+@app.route('/api/pbr-complementaires', methods=['POST'])
+@login_required
+def api_creer_pbr_complementaire():
+    """Crée une entrée, ou met à jour le PBR si (acte, compagnie) existe
+    déjà pour cette structure — évite les doublons silencieux plutôt que
+    de laisser deux lignes concurrentes fausser charger_pbr_complementaires()."""
+    try:
+        structure_id = session.get('structure_id')
+        user_name = session.get('user_name', 'System')
+        data = request.json or {}
+        type_ = data.get('type', 'acte')
+        nom_acte = (data.get('nom_acte') or '').strip()
+        compagnie = (data.get('compagnie') or '').strip()
+        pbr = data.get('pbr')
+
+        if not nom_acte or not compagnie:
+            return jsonify({'success': False, 'error': "Acte et compagnie requis"}), 400
+        try:
+            pbr = float(pbr)
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': "PBR invalide"}), 400
+        if pbr < 0:
+            return jsonify({'success': False, 'error': "PBR invalide"}), 400
+
+        existante = PbrComplementaire.query.filter_by(
+            structure_id=structure_id, type=type_, nom_acte=nom_acte, compagnie=compagnie
+        ).first()
+        if existante:
+            existante.pbr = pbr
+            db.session.commit()
+            return jsonify({'success': True, 'id': existante.id, 'mis_a_jour': True})
+
+        ligne = PbrComplementaire(
+            structure_id=structure_id, type=type_, nom_acte=nom_acte,
+            compagnie=compagnie, pbr=pbr, created_by=user_name,
+        )
+        db.session.add(ligne)
+        db.session.commit()
+        return jsonify({'success': True, 'id': ligne.id, 'mis_a_jour': False})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/pbr-complementaires/<int:ligne_id>', methods=['DELETE'])
+@login_required
+def api_supprimer_pbr_complementaire(ligne_id):
+    try:
+        structure_id = session.get('structure_id')
+        ligne = PbrComplementaire.query.filter_by(id=ligne_id, structure_id=structure_id).first()
+        if not ligne:
+            return jsonify({'success': False, 'error': 'Introuvable'}), 404
+        db.session.delete(ligne)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/actes')
 @login_required
 def api_get_actes():
@@ -11426,6 +11517,15 @@ def api_convertir_proforma():
         assurance2_nom = proforma.get('assurance2_nom', '') if assurance2_active else ''
         taux_assurance2 = float(data.get('taux_assurance2', proforma.get('taux_assurance2', 0)) or 0) if assurance2_active else 0
 
+        # ⭐ Même compagnie, même acte : un PBR complémentaire peut exister
+        # pour CE patient (son contrat) et pas pour un autre assuré de la
+        # même compagnie — voir PbrComplementaire (models.py). Coché par
+        # défaut (comportement le plus courant), décochable au moment de
+        # la conversion (même mécanique que assurance2_active ci-dessus).
+        applique_pbr_cac = data.get('applique_pbr_cac')
+        if applique_pbr_cac is None:
+            applique_pbr_cac = proforma.get('applique_pbr_cac', True)
+
         # 🔥 Société souscriptrice de l'assurance complémentaire : la proforma
         # ne porte pas ce champ (créée avant son existence éventuelle), on la
         # relit donc depuis la fiche patient au moment de la conversion.
@@ -11450,6 +11550,13 @@ def api_convertir_proforma():
         # côté reçu/vente d'actes/bordereau/création de proforma (voir
         # taux_amu_pour_article()).
         prise_en_charge_par_article = 0
+
+        # ⭐ PBR propre à LA compagnie complémentaire de ce patient (SUNU,
+        # OLEA...) — voir charger_pbr_complementaires(). Chargé une seule
+        # fois ici, appliqué par article dans la boucle ci-dessous ; vide
+        # tant qu'aucune entrée n'a été saisie pour cette compagnie ->
+        # comportement inchangé (reste après AMU, non plafonné).
+        pbr_cac_par_acte = charger_pbr_complementaires(structure_id, assurance2_nom) if (assurance2_nom and applique_pbr_cac) else {}
 
         articles_transformes = []
         for a in articles:
@@ -11504,10 +11611,14 @@ def api_convertir_proforma():
                     base_amu = min(prix, pbr) * quantite
                     prise_amu_article = (base_amu * taux_item) / 100
                     reste = total - prise_amu_article
-                    if reste > 0:
-                        base_cac += reste
                 else:
-                    base_cac += total
+                    reste = total
+                # ⭐ Plafond propre à la compagnie complémentaire, comme
+                # l'AMU le fait déjà avec son PBR (voir plus haut).
+                if a.get('nom') in pbr_cac_par_acte:
+                    reste = min(reste, pbr_cac_par_acte[a.get('nom')] * quantite)
+                if reste > 0:
+                    base_cac += reste
 
             articles_transformes.append(article)
         
@@ -12245,7 +12356,8 @@ def page_hospitalisation_suivi(hospit_id):
             ))
 
     soins_pour_repartition = soins_en_cours + lignes_chambre_projetees
-    repartition = calculer_repartition_assurance(soins_pour_repartition, hospit) if soins_pour_repartition else None
+    pbr_cac_par_acte = charger_pbr_complementaires(structure_id, hospit.assurance2_nom) if (hospit.a_cac and hospit.applique_pbr_cac) else {}
+    repartition = calculer_repartition_assurance(soins_pour_repartition, hospit, pbr_cac_par_acte) if soins_pour_repartition else None
 
     return render_template('hospitalisation_suivi.html', hospit=hospit, soins=soins, solde_en_cours=solde_en_cours,
                             patient_a_amu=patient_a_amu, patient_a_cac=patient_a_cac, patient_amu_ep=patient_amu_ep,
@@ -12276,12 +12388,15 @@ def api_toggle_assurance_hospitalisation(hospit_id):
             hospit.assurance_principale_active = bool(data.get('assurance_principale_active'))
         if 'assurance2_active' in data:
             hospit.assurance2_active = bool(data.get('assurance2_active'))
+        if 'applique_pbr_cac' in data:
+            hospit.applique_pbr_cac = bool(data.get('applique_pbr_cac'))
         db.session.commit()
 
         return jsonify({
             'success': True,
             'assurance_principale_active': hospit.assurance_principale_active,
             'assurance2_active': hospit.assurance2_active,
+            'applique_pbr_cac': hospit.applique_pbr_cac,
         })
     except Exception as e:
         db.session.rollback()
@@ -12808,7 +12923,8 @@ def hospitalisation_releve(hospit_id):
     # global et le toggle d'assurance de ce séjour). Absente jusqu'ici : le
     # relevé affichait le montant "prix × quantité" brut comme si le
     # patient payait tout cash, même quand il est assuré (signalé).
-    repartition = calculer_repartition_assurance(soins, hospit) if soins else None
+    pbr_cac_par_acte = charger_pbr_complementaires(structure_id, hospit.assurance2_nom) if (hospit.a_cac and hospit.applique_pbr_cac) else {}
+    repartition = calculer_repartition_assurance(soins, hospit, pbr_cac_par_acte) if soins else None
 
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})

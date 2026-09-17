@@ -578,6 +578,11 @@ let produitSearchTimeout = null;
 let assurance2Active = false;
 let assurance2Nom = '';
 let assurance2TauxOriginal = 0;
+// ⭐ {nom_acte: pbr} propre à LA compagnie complémentaire du patient en
+// cours de conversion (voir /api/pbr-complementaires, PbrComplementaire
+// dans models.py) — chargé une fois dans afficherModalConversion(),
+// utilisé par partCACArticleConversion() pour plafonner la base CAC.
+let pbrCacConversionMap = {};
 let assurance2TauxApplique = 0;
 let tauxModifie = false;
 
@@ -1900,6 +1905,18 @@ function convertirEnVente(proformaId) {
 function afficherModalConversion(data) {
     document.getElementById('convertProformaNumero').textContent = data.numero_proforma || data.id;
 
+    // ⭐ Charge le PBR complémentaire propre à CETTE compagnie (voir
+    // pbrCacConversionMap plus haut) — arrive après le premier calcul
+    // (mettreAJourTotauxConversion() ci-dessous), donc un second appel une
+    // fois la map reçue pour refléter le plafond dès que possible.
+    pbrCacConversionMap = {};
+    if (data.assurance2_nom) {
+        fetch('/api/pbr-complementaires?compagnie=' + encodeURIComponent(data.assurance2_nom))
+            .then(r => r.json())
+            .then(map => { pbrCacConversionMap = map || {}; mettreAJourTotauxConversion(); })
+            .catch(() => {});
+    }
+
     // ⭐ "Voir part assurance" (bouton + détail par article ci-dessous) :
     // uniquement utile pour remplir les feuilles AMU/CAC d'un patient
     // réellement assuré — masqué sinon.
@@ -2104,6 +2121,24 @@ function afficherModalConversion(data) {
                                    onchange="toggleAssurance2Conversion()">
                             <label class="form-check-label fw-semibold" for="convertAssurance2Active">
                                 <i class="fas fa-plus-circle text-info"></i> Assurance secondaire active (${data.assurance2_nom})
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <!-- ⭐ Même compagnie, même acte : un PBR peut exister pour CE
+                     patient (son contrat) et pas pour un autre assuré de la
+                     même compagnie (remboursé directement sur le prix
+                     clinique) — voir PbrComplementaire (models.py). Coché
+                     par défaut, décochable au moment de la conversion. -->
+                <div class="row mb-2">
+                    <div class="col-md-12">
+                        <div class="form-check form-switch d-flex align-items-center gap-2">
+                            <input class="form-check-input" type="checkbox" id="convertAppliquePbrCac"
+                                   style="width: 38px; height: 20px; cursor: pointer;"
+                                   ${data.applique_pbr_cac !== false ? 'checked' : ''}
+                                   onchange="mettreAJourTotauxConversion()">
+                            <label class="form-check-label small" for="convertAppliquePbrCac">
+                                Appliquer le PBR ${data.assurance2_nom} de ce patient (si connu) — sinon reste après AMU non plafonné
                             </label>
                         </div>
                     </div>
@@ -2321,6 +2356,16 @@ function partCACArticleConversion(item, taux2) {
         baseCAC = reste > 0 ? reste : 0;
     } else {
         baseCAC = total;
+    }
+    // ⭐ Plafond propre à la compagnie complémentaire de CE patient (voir
+    // pbrCacConversionMap) — seulement si le toggle "Appliquer le PBR..."
+    // est coché (par défaut) ET qu'une entrée existe pour cet acte ; même
+    // compagnie, même acte, un autre assuré peut ne pas en avoir (décoché
+    // -> reste tel quel, sur le prix clinique).
+    const toggleApplique = document.getElementById('convertAppliquePbrCac');
+    const appliquePbrCac = toggleApplique ? toggleApplique.checked : true;
+    if (appliquePbrCac && pbrCacConversionMap[item.nom] !== undefined) {
+        baseCAC = Math.min(baseCAC, pbrCacConversionMap[item.nom] * quantite);
     }
     return (baseCAC * taux2) / 100;
 }
@@ -2729,6 +2774,7 @@ function finaliserConversionVente() {
         assurance2_nom: assurance2Active_ ? (proformaConversionData.assurance2_nom || '') : '',
         taux_assurance2: tauxAssurance2Actuel,
         assurance2_active: assurance2Active_,
+        applique_pbr_cac: (() => { const t = document.getElementById('convertAppliquePbrCac'); return t ? t.checked : true; })(),
         assurance_principale_active: assurancePrincipaleActive,
         montant_donne: montantDonne,
         type_document: typeDocument,

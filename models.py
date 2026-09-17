@@ -2061,6 +2061,15 @@ class Proforma(db.Model):
     taux_assurance2 = db.Column(db.Numeric, default=0)
     numero_assure2 = db.Column(db.String(255), default='')
     assurance2_active = db.Column(db.Boolean, default=False)
+    # ⭐ Même compagnie complémentaire, même acte : un PBR peut exister pour
+    # CE patient précis (son contrat/sa police) et pas pour un autre assuré
+    # chez la même compagnie (contrat différent, remboursé directement sur
+    # le prix clinique) — voir PbrComplementaire (plus bas dans ce fichier)
+    # et charger_pbr_complementaires() (services/hospitalisation_service.py).
+    # True par défaut = comportement le plus courant (appliquer le plafond
+    # quand une entrée existe) ; décoché ici, le calcul retombe sur le
+    # reste après AMU non plafonné même si une entrée existe pour l'acte.
+    applique_pbr_cac = db.Column(db.Boolean, default=True)
     taux_modifie = db.Column(db.Boolean, default=False)
     taux_original = db.Column(db.Numeric, default=0)
     prise_en_charge2 = db.Column(db.Numeric, default=0)
@@ -2140,6 +2149,13 @@ class Hospitalisation(db.Model):
     # (assurance_principale_active/assurance2_active), par cohérence.
     assurance_principale_active = db.Column(db.Boolean, default=True)
     assurance2_active = db.Column(db.Boolean, default=True)
+    # ⭐ Même compagnie complémentaire, même acte : un PBR peut exister pour
+    # CE patient précis (son contrat) et pas pour un autre assuré de la
+    # même compagnie (remboursé directement sur le prix clinique) — voir
+    # PbrComplementaire plus bas et charger_pbr_complementaires()
+    # (services/hospitalisation_service.py). Décoché, le calcul retombe
+    # sur le reste après AMU non plafonné même si une entrée existe.
+    applique_pbr_cac = db.Column(db.Boolean, default=True)
     statut = db.Column(db.String(50), default='en_cours')  # en_cours/sortie/facturee
     proforma_id = db.Column(db.Integer)
     vente_id = db.Column(db.Integer)
@@ -2221,6 +2237,31 @@ class SoinHospitalisation(db.Model):
     @property
     def total(self):
         return float(self.prix or 0) * int(self.quantite or 0)
+
+
+# ============================================================
+# PBR COMPLÉMENTAIRE (CAC) — plafond propre à chaque compagnie
+# ============================================================
+# Contrairement à l'AMU (un seul PBR partagé par acte/produit, colonne
+# `pbr` du catalogue Google Sheets), chaque compagnie complémentaire
+# (SUNU, OLEA, GTA, FIDELIA...) a sa PROPRE base de remboursement sur un
+# même acte — et pas sur tous les actes. D'où une vraie table de
+# correspondance (acte/produit x compagnie) plutôt qu'une colonne de plus
+# dans le catalogue. Voir calculer_repartition_assurance()
+# (services/hospitalisation_service.py) et api_convertir_proforma()
+# (app.py) pour son utilisation : absence d'entrée pour un (acte,
+# compagnie) donné = comportement inchangé (reste après AMU, non
+# plafonné), donc zéro régression tant que la table n'est pas remplie.
+class PbrComplementaire(db.Model):
+    __tablename__ = 'pbr_complementaires'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    type = db.Column(db.String(20), nullable=False)  # 'acte' | 'produit'
+    nom_acte = db.Column(db.String(255), nullable=False)
+    compagnie = db.Column(db.String(150), nullable=False)  # = Patient.assurance2_nom
+    pbr = db.Column(db.Numeric, nullable=False)
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 # ============================================================
