@@ -1999,7 +1999,7 @@ function afficherModalConversion(data) {
                                 <th id="convertPriseEnCharge" class="text-end text-success">${Math.round(calculePriseEnChargeConversion()).toLocaleString('fr-FR')} F</th>
                                 <th></th>
                             </tr>
-                            ${data.assurance2_active && data.assurance2_nom ? `
+                            ${data.assurance2_nom ? `
                             <tr>
                                 <th colspan="4" class="text-end text-info">Prise en charge ${data.assurance2_nom} :</th>
                                 <th id="convertPriseEnCharge2" class="text-end text-info">${Math.round(calculePriseEnCharge2Conversion()).toLocaleString('fr-FR')} F</th>
@@ -2039,7 +2039,7 @@ function afficherModalConversion(data) {
                                 <th class="text-end">Prix</th>
                                 <th class="text-end">PBR</th>
                                 <th class="text-end text-success">Part AMU</th>
-                                ${data.assurance2_active && data.assurance2_nom ? '<th class="text-end text-info">Part ' + data.assurance2_nom + '</th>' : ''}
+                                ${data.assurance2_nom ? '<th class="text-end text-info">Part ' + data.assurance2_nom + '</th>' : ''}
                             </tr>
                         </thead>
                         <tbody id="convertPartAssuranceBody"></tbody>
@@ -2077,6 +2077,27 @@ function afficherModalConversion(data) {
                         </div>
                     </div>
                 </div>
+                ${data.assurance2_nom ? `
+                <!-- ⭐ Même désactivation possible pour l'assurance SECONDAIRE
+                     (CAC) — jusqu'ici seule la principale l'était ici, la
+                     secondaire restait figée à la valeur de la proforma
+                     d'origine, impossible à couper/réactiver au moment de
+                     la conversion (signalé). Même mécanique exactement que
+                     le toggle principal juste au-dessus. -->
+                <div class="row mb-2">
+                    <div class="col-md-12">
+                        <div class="form-check form-switch d-flex align-items-center gap-2">
+                            <input class="form-check-input" type="checkbox" id="convertAssurance2Active"
+                                   style="width: 44px; height: 22px; cursor: pointer;"
+                                   ${data.assurance2_active !== false ? 'checked' : ''}
+                                   onchange="toggleAssurance2Conversion()">
+                            <label class="form-check-label fw-semibold" for="convertAssurance2Active">
+                                <i class="fas fa-plus-circle text-info"></i> Assurance secondaire active (${data.assurance2_nom})
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                ` : ''}
                 <div class="row">
                     <div class="col-md-4">
                         <label class="form-label">Taux assurance principale (%)</label>
@@ -2085,6 +2106,15 @@ function afficherModalConversion(data) {
                                ${data.assurance_principale_active === false ? 'disabled' : ''}
                                onchange="mettreAJourTotauxConversion()">
                     </div>
+                    ${data.assurance2_nom ? `
+                    <div class="col-md-4">
+                        <label class="form-label">Taux ${data.assurance2_nom} (%)</label>
+                        <input type="number" class="form-control" id="convertTauxAssurance2"
+                               value="${data.taux_assurance2 || 0}" min="0" max="100"
+                               ${data.assurance2_active === false ? 'disabled' : ''}
+                               onchange="mettreAJourTotauxConversion()">
+                    </div>
+                    ` : ''}
                     <div class="col-md-4">
                         <label class="form-label text-warning">
                             <i class="fas fa-hand-holding-heart"></i> Aide hospitalière
@@ -2213,13 +2243,27 @@ function partAMUArticleConversion(item, tauxDefaut) {
     return (base * tauxLigne) / 100;
 }
 
+// ⭐ Assurance secondaire (CAC) active/désactivable dans CE modal, comme la
+// principale (voir toggleAssurance2Conversion) — lit le toggle une fois
+// inséré dans le DOM, se replie sur la proforma d'origine avant cet instant
+// (même motif que tauxAssurancePrincipaleConversionActuel ci-dessus).
+function assurance2ConversionActive() {
+    const toggle = document.getElementById('convertAssurance2Active');
+    if (toggle) return toggle.checked;
+    return !!(proformaConversionData && proformaConversionData.assurance2_active);
+}
+
+function tauxAssurance2ConversionActuel() {
+    const el = document.getElementById('convertTauxAssurance2');
+    if (el) return parseFloat(el.value) || 0;
+    return proformaConversionData ? (proformaConversionData.taux_assurance2 || 0) : 0;
+}
+
 // 🔥🔥🔥 CORRECTION : CAC article par article 🔥🔥🔥
 function calculePriseEnCharge2Conversion() {
-    const taux2 = proformaConversionData && proformaConversionData.assurance2_active ?
-                  proformaConversionData.taux_assurance2 || 0 : 0;
-    if (!proformaConversionData || !proformaConversionData.assurance2_active || taux2 <= 0) {
-        return 0;
-    }
+    if (!proformaConversionData || !assurance2ConversionActive()) return 0;
+    const taux2 = tauxAssurance2ConversionActuel();
+    if (taux2 <= 0) return 0;
     let total = 0;
     for (const item of panierConversion) {
         total += partCACArticleConversion(item, taux2);
@@ -2304,6 +2348,26 @@ function toggleAssurancePrincipaleConversion() {
     mettreAJourTotauxConversion();
 }
 
+// ⭐ Désactive/réactive l'assurance SECONDAIRE (CAC) au moment de la
+// conversion — même mécanique que toggleAssurancePrincipaleConversion
+// ci-dessus, absente jusqu'ici pour la secondaire (signalé).
+let convertTauxAssurance2Sauvegarde = 0;
+function toggleAssurance2Conversion() {
+    const toggle = document.getElementById('convertAssurance2Active');
+    const tauxInput = document.getElementById('convertTauxAssurance2');
+    if (!toggle || !tauxInput) return;
+
+    if (toggle.checked) {
+        tauxInput.disabled = false;
+        tauxInput.value = convertTauxAssurance2Sauvegarde || (proformaConversionData ? proformaConversionData.taux_assurance2 : 0) || 0;
+    } else {
+        convertTauxAssurance2Sauvegarde = parseFloat(tauxInput.value) || 0;
+        tauxInput.value = 0;
+        tauxInput.disabled = true;
+    }
+    mettreAJourTotauxConversion();
+}
+
 // ⭐ Bascule %/montant pour l'aide hospitalière (voir même fonction dans
 // pharma_vente.html/actes_vente.html/proformas.html création).
 function onChangeTypeAideConversion() {
@@ -2346,9 +2410,8 @@ function rafraichirPartAssurance() {
     if (!bloc || !body || bloc.style.display === 'none') return;
 
     const tauxAMU = tauxAssurancePrincipaleConversionActuel();
-    const taux2 = proformaConversionData && proformaConversionData.assurance2_active ?
-                  (proformaConversionData.taux_assurance2 || 0) : 0;
-    const avecCAC = proformaConversionData && proformaConversionData.assurance2_active && proformaConversionData.assurance2_nom;
+    const taux2 = assurance2ConversionActive() ? tauxAssurance2ConversionActuel() : 0;
+    const avecCAC = !!(proformaConversionData && proformaConversionData.assurance2_nom && assurance2ConversionActive());
 
     if (panierConversion.length === 0) {
         body.innerHTML = `<tr><td colspan="${avecCAC ? 5 : 4}" class="text-center text-muted">Aucun article</td></tr>`;
@@ -2598,13 +2661,18 @@ function finaliserConversionVente() {
     const priseEnCharge = calculePriseEnChargeConversion();
     const priseEnCharge2 = calculePriseEnCharge2Conversion();
 
-    // ⭐ Assurance principale et aide hospitalière : valeurs LIVE saisies
-    // dans le modal de conversion (le caissier a pu désactiver l'assurance
-    // ou ajuster le taux/l'aide juste avant de finaliser), pas les valeurs
-    // figées de la proforma d'origine — sinon le toggle/les champs ajoutés
-    // ci-dessus seraient purement décoratifs.
+    // ⭐ Assurance principale, secondaire (CAC) et aide hospitalière :
+    // valeurs LIVE saisies dans le modal de conversion (le caissier a pu
+    // désactiver l'une ou l'autre assurance, ou ajuster un taux/l'aide
+    // juste avant de finaliser), pas les valeurs figées de la proforma
+    // d'origine — sinon les toggles/champs ajoutés ci-dessus seraient
+    // purement décoratifs. La secondaire suivait encore la proforma
+    // d'origine sans passer par le toggle jusqu'ici (signalé) : même
+    // traitement que la principale désormais.
     const assurancePrincipaleActive = document.getElementById('convertAssurancePrincipaleActive').checked;
     const tauxAssuranceActuel = assurancePrincipaleActive ? tauxAssurancePrincipaleConversionActuel() : 0;
+    const assurance2Active_ = assurance2ConversionActive();
+    const tauxAssurance2Actuel = assurance2Active_ ? tauxAssurance2ConversionActuel() : 0;
     const typeAideActuel = document.getElementById('convertTypeAide').value;
     const tauxAideActuel = parseFloat(document.getElementById('convertTauxAide').value) || 0;
     const aideHospitaliereActuelle = calculeAideHospitaliereConversion();
@@ -2621,9 +2689,9 @@ function finaliserConversionVente() {
         net_a_payer: netAPayer,
         mode_paiement: modePaiement,
         taux_assurance: tauxAssuranceActuel,
-        assurance2_nom: proformaConversionData.assurance2_active ? proformaConversionData.assurance2_nom : '',
-        taux_assurance2: proformaConversionData.assurance2_active ? proformaConversionData.taux_assurance2 || 0 : 0,
-        assurance2_active: proformaConversionData.assurance2_active || false,
+        assurance2_nom: assurance2Active_ ? (proformaConversionData.assurance2_nom || '') : '',
+        taux_assurance2: tauxAssurance2Actuel,
+        assurance2_active: assurance2Active_,
         assurance_principale_active: assurancePrincipaleActive,
         montant_donne: montantDonne,
         type_document: typeDocument,
