@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+
+{% block title %}Ristournes{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h4 class="mb-0"><i class="fas fa-hand-holding-usd me-2"></i>Ristournes des prescripteurs</h4>
+    <a href="{{ url_for('page_patients_externes') }}" class="btn btn-outline-dark btn-sm">
+        <i class="fas fa-user-md me-1"></i> Prescripteurs &amp; patients externes
+    </a>
+</div>
+
+<div class="alert alert-info">
+    <i class="fas fa-info-circle me-1"></i>
+    Circuit : <strong>calcul</strong> (secrétaire/caissière) → <strong>validation</strong> (admin) →
+    <strong>paiement</strong> (Mobile Money avec référence, ou espèces) → <strong>reçu</strong> envoyable par WhatsApp.
+</div>
+
+<div class="card mb-4">
+    <div class="card-header bg-warning text-dark"><i class="fas fa-clock me-1"></i> En attente de clôture</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr><th>Prescripteur</th><th class="text-end">Actes réglés</th><th class="text-end">Base</th><th class="text-end">Taux</th><th class="text-end">Montant estimé</th><th></th></tr>
+                </thead>
+                <tbody id="corpsEnAttente"><tr><td colspan="6" class="text-center text-muted py-4">Chargement...</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-dark text-white">Historique des clôtures</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm mb-0 align-middle">
+                <thead class="table-light">
+                    <tr><th>Prescripteur</th><th>Période</th><th class="text-end">Montant</th><th>Statut</th><th>Détail paiement</th><th></th></tr>
+                </thead>
+                <tbody id="corpsHistorique"><tr><td colspan="6" class="text-center text-muted py-4">Chargement...</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal clôturer -->
+<div class="modal fade" id="modalCloturer" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-stopwatch me-2"></i>Clôturer la période — <span id="clotPrescripteurNom"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="clotPrescripteurId">
+                <div class="row">
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label mb-1">Du</label>
+                        <input type="date" class="form-control" id="clotDateDebut">
+                    </div>
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label mb-1">Au</label>
+                        <input type="date" class="form-control" id="clotDateFin">
+                    </div>
+                </div>
+                <div class="alert alert-light border small" id="clotApercu"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-warning" onclick="confirmerCloture()">
+                    <i class="fas fa-check me-1"></i> Calculer la clôture
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal paiement -->
+<div class="modal fade" id="modalPaiement" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-money-check me-2"></i>Enregistrer le paiement</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="paieId">
+                <div class="mb-2">
+                    <label class="form-label mb-1">Mode de paiement</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="paieMode" id="paieEspeces" value="especes" checked onchange="toggleModePaiement()">
+                        <label class="btn btn-outline-success" for="paieEspeces"><i class="fas fa-money-bill me-1"></i>Espèces</label>
+                        <input type="radio" class="btn-check" name="paieMode" id="paieMobile" value="mobile_money" onchange="toggleModePaiement()">
+                        <label class="btn btn-outline-primary" for="paieMobile"><i class="fas fa-mobile-alt me-1"></i>Mobile Money</label>
+                    </div>
+                </div>
+                <div id="blocMobileMoney" style="display:none;">
+                    <div class="mb-2">
+                        <label class="form-label mb-1">Opérateur <span class="text-danger">*</span></label>
+                        <select class="form-select" id="paieOperateur">
+                            <option value="Tmoney">TMoney</option>
+                            <option value="Moov_money">Moov Money / FLOOZ</option>
+                            <option value="Mixx_By_Yas">MIXX By YAS</option>
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label mb-1">Référence de transaction <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="paieReference" placeholder="Ex. TM250917.1234">
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label mb-1">Date du paiement <span class="text-danger">*</span></label>
+                    <input type="date" class="form-control" id="paieDate">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-success" onclick="confirmerPaiement()">
+                    <i class="fas fa-check me-1"></i> Valider le paiement
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let enAttenteCache = [];
+
+function ouvrirModalCloturer(prescripteurId, prescripteurNom, dateAncienne, dateRecente) {
+    document.getElementById('clotPrescripteurId').value = prescripteurId;
+    document.getElementById('clotPrescripteurNom').textContent = prescripteurNom;
+    document.getElementById('clotDateDebut').value = dateAncienne;
+    document.getElementById('clotDateFin').value = dateRecente;
+    const ligne = enAttenteCache.find(l => l.prescripteur_id === prescripteurId);
+    document.getElementById('clotApercu').textContent = ligne
+        ? `${ligne.nb_actes} acte(s), base ${Math.round(ligne.base_calcul).toLocaleString('fr-FR')} F, taux ${ligne.taux}% → estimé ${Math.round(ligne.montant_estime).toLocaleString('fr-FR')} F`
+        : '';
+    new bootstrap.Modal(document.getElementById('modalCloturer')).show();
+}
+
+function confirmerCloture() {
+    const payload = {
+        prescripteur_id: parseInt(document.getElementById('clotPrescripteurId').value),
+        date_debut: document.getElementById('clotDateDebut').value,
+        date_fin: document.getElementById('clotDateFin').value,
+    };
+    fetch('/api/ristournes/calculer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('modalCloturer')).hide();
+                alert('Clôture calculée : ' + Math.round(data.montant_ristourne).toLocaleString('fr-FR') + ' FCFA. À faire valider par l\'admin.');
+                chargerTout();
+            } else {
+                alert('Erreur : ' + (data.error || 'inconnue'));
+            }
+        })
+        .catch(e => alert('Erreur : ' + e));
+}
+
+function validerRistourne(id) {
+    if (!confirm('Valider cette clôture ?')) return;
+    fetch('/api/ristournes/' + id + '/valider', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => { if (data.success) chargerHistorique(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+}
+
+function toggleModePaiement() {
+    document.getElementById('blocMobileMoney').style.display =
+        document.getElementById('paieMobile').checked ? 'block' : 'none';
+}
+
+function ouvrirModalPaiement(id) {
+    document.getElementById('paieId').value = id;
+    document.getElementById('paieEspeces').checked = true;
+    document.getElementById('paieOperateur').value = 'Tmoney';
+    document.getElementById('paieReference').value = '';
+    document.getElementById('paieDate').value = new Date().toISOString().slice(0, 10);
+    toggleModePaiement();
+    new bootstrap.Modal(document.getElementById('modalPaiement')).show();
+}
+
+function confirmerPaiement() {
+    const mode = document.querySelector('input[name="paieMode"]:checked').value;
+    const payload = {
+        mode_paiement: mode,
+        date_paiement: document.getElementById('paieDate').value,
+    };
+    if (!payload.date_paiement) { alert('La date de paiement est obligatoire.'); return; }
+    if (mode === 'mobile_money') {
+        payload.operateur_mobile = document.getElementById('paieOperateur').value;
+        payload.reference_paiement = document.getElementById('paieReference').value.trim();
+        if (!payload.reference_paiement) { alert('La référence de transaction est obligatoire.'); return; }
+    }
+    fetch('/api/ristournes/' + document.getElementById('paieId').value + '/payer', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('modalPaiement')).hide();
+            chargerHistorique();
+        } else {
+            alert('Erreur : ' + (data.error || 'inconnue'));
+        }
+    })
+    .catch(e => alert('Erreur : ' + e));
+}
+
+function chargerEnAttente() {
+    fetch('/api/ristournes/en-attente').then(r => r.json()).then(lignes => {
+        enAttenteCache = lignes;
+        const corps = document.getElementById('corpsEnAttente');
+        if (!lignes.length) {
+            corps.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Rien en attente de clôture.</td></tr>';
+            return;
+        }
+        corps.innerHTML = lignes.map(l => `
+            <tr>
+                <td><strong>${l.prescripteur_nom}</strong></td>
+                <td class="text-end">${l.nb_actes}</td>
+                <td class="text-end">${Math.round(l.base_calcul).toLocaleString('fr-FR')} F</td>
+                <td class="text-end">${l.taux} %</td>
+                <td class="text-end fw-bold">${Math.round(l.montant_estime).toLocaleString('fr-FR')} F</td>
+                <td class="text-end">
+                    <button class="btn btn-sm btn-warning" onclick="ouvrirModalCloturer(${l.prescripteur_id}, ${JSON.stringify(l.prescripteur_nom)}, ${JSON.stringify(l.date_plus_ancienne)}, ${JSON.stringify(l.date_plus_recente)})">
+                        <i class="fas fa-stopwatch"></i> Clôturer
+                    </button>
+                </td>
+            </tr>`).join('');
+    });
+}
+
+function chargerHistorique() {
+    fetch('/api/ristournes').then(r => r.json()).then(lignes => {
+        const corps = document.getElementById('corpsHistorique');
+        if (!lignes.length) {
+            corps.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Aucune clôture pour le moment.</td></tr>';
+            return;
+        }
+        const badgeStatut = (s) => ({
+            calculee: '<span class="badge bg-secondary">Calculée</span>',
+            validee: '<span class="badge bg-info">Validée</span>',
+            payee: '<span class="badge bg-success">Payée</span>',
+        }[s] || s);
+        corps.innerHTML = lignes.map(l => {
+            let actions = '';
+            if (l.statut === 'calculee') actions = `<button class="btn btn-sm btn-info" onclick="validerRistourne(${l.id})"><i class="fas fa-check"></i> Valider</button>`;
+            else if (l.statut === 'validee') actions = `<button class="btn btn-sm btn-success" onclick="ouvrirModalPaiement(${l.id})"><i class="fas fa-money-check"></i> Payer</button>`;
+            else if (l.statut === 'payee') actions = `<a href="/ristournes/${l.id}/recu" target="_blank" class="btn btn-sm btn-outline-primary"><i class="fas fa-receipt"></i> Reçu</a>`;
+            const detailPaiement = l.statut === 'payee'
+                ? (l.mode_paiement === 'especes' ? `Espèces — ${l.date_paiement}` : `${l.operateur_mobile} — Réf. ${l.reference_paiement} — ${l.date_paiement}`)
+                : '-';
+            return `
+                <tr>
+                    <td>${l.prescripteur_nom}</td>
+                    <td>${l.date_debut} → ${l.date_fin}</td>
+                    <td class="text-end fw-bold">${Math.round(l.montant_ristourne).toLocaleString('fr-FR')} F</td>
+                    <td>${badgeStatut(l.statut)}</td>
+                    <td class="small text-muted">${detailPaiement}</td>
+                    <td class="text-end">${actions}</td>
+                </tr>`;
+        }).join('');
+    });
+}
+
+function chargerTout() { chargerEnAttente(); chargerHistorique(); }
+chargerTout();
+</script>
+
+{% endblock %}

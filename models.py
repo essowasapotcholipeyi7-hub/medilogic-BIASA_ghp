@@ -2389,6 +2389,12 @@ class DemandeExamen(db.Model):
     prix = db.Column(db.Numeric, default=0)
     vente_id = db.Column(db.Integer)  # traçabilité — vente d'origine
     patient_externe_id = db.Column(db.Integer)  # NULL = patient interne, pas de ristourne
+    # ⭐ Renseigné dès que cette ligne a été incluse dans une clôture de
+    # ristourne (voir PeriodeRistourne) — évite qu'une même DemandeExamen
+    # soit comptée deux fois si on clôture le même prescripteur plusieurs
+    # fois. NULL = pas encore clôturée, entre dans le calcul de la
+    # prochaine clôture pour ce prescripteur.
+    periode_ristourne_id = db.Column(db.Integer)
     # ⭐ Statut du RÈGLEMENT de cet acte précis, au moment de la création
     # de la demande — pas rafraîchi ensuite (un paiement complété plus
     # tard nécessite de le rouvrir/le resservir, pas de le recalculer en
@@ -2454,6 +2460,45 @@ class AccesPortailPatient(db.Model):
     patient_id = db.Column(db.Integer, nullable=False)
     code_acces = db.Column(db.String(20), nullable=False, unique=True)
     created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# ⭐ Une clôture de ristourne pour UN prescripteur externe sur UNE
+# période — circuit à 3 étapes demandé par le patron :
+#   1. 'calculee'  : secrétaire/caissière calcule (taux × prix des actes
+#      DemandeExamen non encore clôturées de ce prescripteur).
+#   2. 'validee'   : admin vérifie et valide.
+#   3. 'payee'     : le paiement est réellement enregistré (Mobile Money
+#      avec référence+date obligatoires, ou espèces avec date) — un reçu
+#      devient alors imprimable et envoyable par WhatsApp au médecin.
+# taux_applique/base_calcul sont un INSTANTANÉ au moment du calcul (le
+# taux du prescripteur peut changer plus tard sans jamais modifier une
+# clôture déjà calculée).
+class PeriodeRistourne(db.Model):
+    __tablename__ = 'periodes_ristournes'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    prescripteur_id = db.Column(db.Integer, nullable=False)
+    date_debut = db.Column(db.Date, nullable=False)
+    date_fin = db.Column(db.Date, nullable=False)
+    taux_applique = db.Column(db.Numeric, nullable=False)
+    base_calcul = db.Column(db.Numeric, default=0)       # somme des prix des actes inclus
+    montant_ristourne = db.Column(db.Numeric, default=0)  # base_calcul * taux_applique / 100
+    nb_actes = db.Column(db.Integer, default=0)
+    statut = db.Column(db.String(20), default='calculee')  # 'calculee' | 'validee' | 'payee'
+    calculee_par = db.Column(db.String(255))
+    calculee_le = db.Column(db.DateTime, default=datetime.utcnow)
+    validee_par = db.Column(db.String(255))
+    validee_le = db.Column(db.DateTime)
+    # ⭐ 'especes' | 'mobile_money' — si mobile_money, operateur (Tmoney,
+    # Moov_money...) et reference obligatoires ; si especes, seule la
+    # date compte (voir garde-fou api_payer_ristourne, app.py).
+    mode_paiement = db.Column(db.String(20))
+    operateur_mobile = db.Column(db.String(50))
+    reference_paiement = db.Column(db.String(100))
+    date_paiement = db.Column(db.Date)
+    payee_par = db.Column(db.String(255))
+    payee_le = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 

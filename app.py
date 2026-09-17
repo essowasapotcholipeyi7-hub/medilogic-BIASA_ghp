@@ -14,12 +14,12 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
 from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur
-from services.laboratoire_service import charger_classification_actes, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces
+from services.laboratoire_service import charger_classification_actes, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne
 
 # ⭐ Numéro WhatsApp de l'éditeur (Togo, +228) pour l'envoi du reçu
 # d'abonnement — voir admin_finances.html.
@@ -9575,6 +9575,205 @@ def portail_patient_deconnexion():
     session.pop('portail_patient_id', None)
     session.pop('portail_structure_id', None)
     return redirect(url_for('page_portail_patient'))
+
+
+# ============================================================
+# RISTOURNES — clôture, validation, paiement, reçu
+# ============================================================
+# ⭐ Circuit à 3 étapes demandé par le patron : secrétaire/caissière
+# calcule → admin valide → paiement enregistré (Mobile Money avec
+# référence+date obligatoires, ou espèces avec date) → reçu imprimable et
+# envoyable par WhatsApp au médecin (un reçu de paiement classique n'est
+# PAS une donnée médicale — WhatsApp reste adapté ici, contrairement aux
+# résultats d'analyses).
+@app.route('/ristournes')
+@login_required
+def page_ristournes():
+    if session.get('role') not in ('admin', 'secretaire', 'caissier') and not a_acces('patients_externes'):
+        flash('Accès non autorisé pour votre rôle.', 'danger')
+        return redirect(url_for('dashboard'))
+    return render_template('ristournes.html')
+
+
+@app.route('/api/ristournes/en-attente', methods=['GET'])
+@login_required
+def api_ristournes_en_attente():
+    """Pour chaque prescripteur actif : nombre d'actes réglés pas encore
+    clôturés + montant ESTIMÉ au taux actuel (rien n'est figé tant que la
+    clôture n'a pas été calculée pour de vrai)."""
+    structure_id = session.get('structure_id')
+    prescripteurs = PrescripteurExterne.query.filter_by(structure_id=structure_id, actif=True).order_by(PrescripteurExterne.nom).all()
+    resultat = []
+    for p in prescripteurs:
+        demandes = demandes_ristourne_en_attente(structure_id, p.id)
+        if not demandes:
+            continue
+        base = sum(float(d.prix or 0) * int(d.quantite or 1) for d in demandes)
+        taux = float(p.taux_ristourne or 0)
+        resultat.append({
+            'prescripteur_id': p.id, 'prescripteur_nom': p.nom,
+            'nb_actes': len(demandes), 'base_calcul': base,
+            'taux': taux, 'montant_estime': round(base * taux / 100, 2),
+            'date_plus_ancienne': min(d.created_at.date() for d in demandes).strftime('%Y-%m-%d'),
+            'date_plus_recente': max(d.created_at.date() for d in demandes).strftime('%Y-%m-%d'),
+        })
+    return jsonify(resultat)
+
+
+@app.route('/api/ristournes/calculer', methods=['POST'])
+@login_required
+def api_calculer_ristourne():
+    """Clôture — secrétaire/caissière/admin. Fige le taux et le montant :
+    un changement de taux du prescripteur APRÈS coup ne modifie jamais
+    une clôture déjà calculée."""
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        prescripteur_id = data.get('prescripteur_id')
+        date_debut = datetime.strptime(data.get('date_debut'), '%Y-%m-%d').date()
+        date_fin = datetime.strptime(data.get('date_fin'), '%Y-%m-%d').date()
+
+        periode = calculer_ristourne(structure_id, prescripteur_id, date_debut, date_fin, session.get('user_name', 'System'))
+        return jsonify({'success': True, 'id': periode.id, 'montant_ristourne': float(periode.montant_ristourne)})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ristournes', methods=['GET'])
+@login_required
+def api_lister_ristournes():
+    structure_id = session.get('structure_id')
+    lignes = PeriodeRistourne.query.filter_by(structure_id=structure_id).order_by(PeriodeRistourne.created_at.desc()).all()
+    resultat = []
+    for l in lignes:
+        presc = PrescripteurExterne.query.get(l.prescripteur_id)
+        resultat.append({
+            'id': l.id, 'prescripteur_nom': presc.nom if presc else '—',
+            'prescripteur_telephone': presc.telephone if presc else None,
+            'date_debut': l.date_debut.strftime('%d/%m/%Y'), 'date_fin': l.date_fin.strftime('%d/%m/%Y'),
+            'taux_applique': float(l.taux_applique), 'base_calcul': float(l.base_calcul or 0),
+            'montant_ristourne': float(l.montant_ristourne or 0), 'nb_actes': l.nb_actes,
+            'statut': l.statut, 'calculee_par': l.calculee_par,
+            'validee_par': l.validee_par, 'mode_paiement': l.mode_paiement,
+            'operateur_mobile': l.operateur_mobile, 'reference_paiement': l.reference_paiement,
+            'date_paiement': l.date_paiement.strftime('%d/%m/%Y') if l.date_paiement else None,
+        })
+    return jsonify(resultat)
+
+
+@app.route('/api/ristournes/<int:periode_id>/valider', methods=['POST'])
+@admin_required
+def api_valider_ristourne(periode_id):
+    try:
+        structure_id = session.get('structure_id')
+        periode = PeriodeRistourne.query.filter_by(id=periode_id, structure_id=structure_id).first()
+        if not periode:
+            return jsonify({'success': False, 'error': 'Introuvable'}), 404
+        if periode.statut != 'calculee':
+            return jsonify({'success': False, 'error': "Seule une ristourne 'calculée' peut être validée"}), 400
+
+        periode.statut = 'validee'
+        periode.validee_par = session.get('user_name', 'System')
+        periode.validee_le = datetime.utcnow()
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ristournes/<int:periode_id>/payer', methods=['POST'])
+@login_required
+def api_payer_ristourne(periode_id):
+    """Enregistrement du paiement — accessible une fois la ristourne
+    VALIDÉE par l'admin. Référence obligatoire pour un mode Mobile Money
+    (Tmoney, Moov_money...), simple date pour des espèces — patron :
+    'si c'est par Tmoney ou Moov money etc pour enregistrer la paie on
+    met les références obligatoire ref date / si c'est en espèce on met
+    la date'."""
+    try:
+        structure_id = session.get('structure_id')
+        periode = PeriodeRistourne.query.filter_by(id=periode_id, structure_id=structure_id).first()
+        if not periode:
+            return jsonify({'success': False, 'error': 'Introuvable'}), 404
+        if periode.statut != 'validee':
+            return jsonify({'success': False, 'error': "Seule une ristourne 'validée' peut être payée"}), 400
+
+        data = request.json or {}
+        mode_paiement = data.get('mode_paiement')
+        date_paiement_str = data.get('date_paiement')
+        if not date_paiement_str:
+            return jsonify({'success': False, 'error': 'Date de paiement requise'}), 400
+        date_paiement = datetime.strptime(date_paiement_str, '%Y-%m-%d').date()
+
+        if mode_paiement == 'especes':
+            operateur_mobile = None
+            reference_paiement = None
+        elif mode_paiement == 'mobile_money':
+            operateur_mobile = data.get('operateur_mobile')
+            reference_paiement = (data.get('reference_paiement') or '').strip()
+            if not operateur_mobile:
+                return jsonify({'success': False, 'error': "L'opérateur (Tmoney, Moov Money...) est requis"}), 400
+            if not reference_paiement:
+                return jsonify({'success': False, 'error': 'La référence de transaction est obligatoire pour un paiement Mobile Money'}), 400
+        else:
+            return jsonify({'success': False, 'error': "mode_paiement doit être 'especes' ou 'mobile_money'"}), 400
+
+        periode.statut = 'payee'
+        periode.mode_paiement = mode_paiement
+        periode.operateur_mobile = operateur_mobile
+        periode.reference_paiement = reference_paiement
+        periode.date_paiement = date_paiement
+        periode.payee_par = session.get('user_name', 'System')
+        periode.payee_le = datetime.utcnow()
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/ristournes/<int:periode_id>/recu')
+@login_required
+def page_recu_ristourne(periode_id):
+    structure_id = session.get('structure_id')
+    periode = PeriodeRistourne.query.filter_by(id=periode_id, structure_id=structure_id).first()
+    if not periode:
+        flash('Ristourne introuvable', 'danger')
+        return redirect(url_for('page_ristournes'))
+    if periode.statut != 'payee':
+        flash("Le reçu n'est disponible qu'une fois le paiement enregistré.", 'warning')
+        return redirect(url_for('page_ristournes'))
+
+    prescripteur = PrescripteurExterne.query.get(periode.prescripteur_id)
+    demandes = DemandeExamen.query.filter_by(periode_ristourne_id=periode.id).order_by(DemandeExamen.created_at.asc()).all()
+
+    structures = sheets_helper.get_all_records('structures', use_prefix=False)
+    structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
+    structure_info['adresse'] = sheets_helper.format_adresse(structure_info.get('adresse', ''))
+
+    # ⭐ Lien WhatsApp pré-rempli (wa.me n'accepte pas de pièce jointe,
+    # seulement un texte) — c'est un reçu de PAIEMENT, pas une donnée
+    # médicale, WhatsApp est adapté ici (contrairement aux résultats).
+    whatsapp_lien = None
+    if prescripteur and prescripteur.telephone:
+        numero = ''.join(c for c in prescripteur.telephone if c.isdigit())
+        message = (
+            f"Bonjour {prescripteur.nom}, votre ristourne du "
+            f"{periode.date_debut.strftime('%d/%m/%Y')} au {periode.date_fin.strftime('%d/%m/%Y')} "
+            f"a été payée : {int(periode.montant_ristourne)} FCFA "
+            f"({'espèces' if periode.mode_paiement == 'especes' else periode.operateur_mobile}"
+            f"{', réf. ' + periode.reference_paiement if periode.reference_paiement else ''}) — "
+            f"{structure_info.get('nom', 'SSoftOne v10')}."
+        )
+        from urllib.parse import quote
+        whatsapp_lien = f"https://wa.me/{numero}?text={quote(message)}"
+
+    return render_template('recu_ristourne.html', periode=periode, prescripteur=prescripteur,
+                            demandes=demandes, structure=structure_info, whatsapp_lien=whatsapp_lien)
 
 
 @app.route('/api/actes')

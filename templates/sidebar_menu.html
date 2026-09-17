@@ -178,6 +178,12 @@
                 </a>
                 {% endif %}
 
+                {% if session.role in ['admin', 'secretaire', 'caissier'] and not _bloq %}
+                <a class="nav-link {% if request.endpoint == 'page_ristournes' %}active{% endif %}" href="{{ url_for('page_ristournes') }}">
+                    <span class="menu-text"><i class="fas fa-hand-holding-usd me-1"></i> Ristournes</span>
+                </a>
+                {% endif %}
+
                 {% if session.is_admin and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'page_classification_actes' %}active{% endif %}" href="{{ url_for('page_classification_actes') }}">
                     <span class="menu-text">Classification Labo/Radio</span>

@@ -11,7 +11,7 @@ directe (actes) et la conversion de proforma, plutôt que dupliquée.
 """
 import secrets
 import string
-from models import db, ClassificationActe, PatientExterne, DemandeExamen, AccesPortailPatient
+from models import db, ClassificationActe, PatientExterne, DemandeExamen, AccesPortailPatient, PeriodeRistourne, PrescripteurExterne
 
 
 def charger_classification_actes(structure_id):
@@ -129,3 +129,57 @@ def regenerer_code_acces(structure_id, patient_id, user_name):
     AccesPortailPatient.query.filter_by(structure_id=structure_id, patient_id=patient_id).delete()
     db.session.commit()
     return obtenir_ou_creer_code_acces(structure_id, patient_id, user_name)
+
+
+def demandes_ristourne_en_attente(structure_id, prescripteur_id):
+    """DemandeExamen déjà réglées, liées à ce prescripteur (via
+    PatientExterne), pas encore incluses dans une clôture — c'est ce
+    total qui s'affiche sur /ristournes avant de clôturer, et c'est
+    exactement ce que calculer_ristourne() ci-dessous va figer."""
+    fiches_ids = [f.id for f in PatientExterne.query.filter_by(structure_id=structure_id, prescripteur_id=prescripteur_id).all()]
+    if not fiches_ids:
+        return []
+    return DemandeExamen.query.filter(
+        DemandeExamen.structure_id == structure_id,
+        DemandeExamen.patient_externe_id.in_(fiches_ids),
+        DemandeExamen.periode_ristourne_id.is_(None),
+    ).order_by(DemandeExamen.created_at.asc()).all()
+
+
+def calculer_ristourne(structure_id, prescripteur_id, date_debut, date_fin, user_name):
+    """Clôture une période pour CE prescripteur : fige son taux actuel,
+    somme le prix des actes non encore clôturés dans [date_debut,
+    date_fin], crée la PeriodeRistourne (statut 'calculee') et marque ces
+    DemandeExamen comme inclus (periode_ristourne_id) pour qu'ils ne
+    comptent plus dans une prochaine clôture — patron : 'à une date donnée
+    on arrête, on calcule sa ristourne selon le taux appliqué et en
+    fonction du prix de l'acte enregistré'."""
+    prescripteur = PrescripteurExterne.query.filter_by(id=prescripteur_id, structure_id=structure_id).first()
+    if not prescripteur:
+        raise ValueError('Prescripteur introuvable')
+    taux = float(prescripteur.taux_ristourne or 0)
+
+    demandes = [
+        d for d in demandes_ristourne_en_attente(structure_id, prescripteur_id)
+        if date_debut <= d.created_at.date() <= date_fin
+    ]
+    if not demandes:
+        raise ValueError('Aucun acte réglé pour ce prescripteur sur cette période')
+
+    base_calcul = sum(float(d.prix or 0) * int(d.quantite or 1) for d in demandes)
+    montant = round(base_calcul * taux / 100, 2)
+
+    periode = PeriodeRistourne(
+        structure_id=structure_id, prescripteur_id=prescripteur_id,
+        date_debut=date_debut, date_fin=date_fin, taux_applique=taux,
+        base_calcul=base_calcul, montant_ristourne=montant, nb_actes=len(demandes),
+        statut='calculee', calculee_par=user_name,
+    )
+    db.session.add(periode)
+    db.session.flush()  # obtenir periode.id avant de l'assigner aux demandes
+
+    for d in demandes:
+        d.periode_ristourne_id = periode.id
+
+    db.session.commit()
+    return periode
