@@ -11601,6 +11601,18 @@ def proforma_print(proforma_id):
     # à taux_amu_pour_article ci-dessous)
     taux_assurance = float(proforma.get('taux_assurance') or 0)
 
+    # 🔥 Vérifier si l'assurance principale est active — déplacé AVANT la
+    # boucle (était calculé après jusqu'ici) : sans ça, la boucle créditait
+    # une prise en charge AMU même pour un patient NON ASSURÉ, dès qu'un
+    # article contenait "P160" — taux_amu_pour_article() renvoie 90% pour
+    # P160 SANS regarder taux_assurance (voir sa docstring), donc un séjour
+    # non assuré avec une ligne de chambre P160 se voyait déduire à tort
+    # 90% de cette ligne (ex. 91 000 FCFA de chambre → 58 500 FCFA "pris en
+    # charge" par une AMU qui n'existe pas), faussant net à payer sur la
+    # proforma imprimée — signalé par le patron ("je ne comprends rien").
+    assurance_nom = proforma.get('assurance_nom', 'Non assuré')
+    est_assure = assurance_nom and assurance_nom != 'Non assuré' and taux_assurance > 0
+
     for a in articles:
         prix = float(a.get('prix_unitaire', a.get('prix', 0)))
         pbr = float(a.get('pbr', prix))
@@ -11610,9 +11622,10 @@ def proforma_print(proforma_id):
         sous_total += total
         pbr_total += min(prix, pbr) * quantite
 
-        # 🔥 Si l'article est pris en charge par AMU
+        # 🔥 Si l'article est pris en charge par AMU — ET que le patient a
+        # réellement une assurance AMU active sur cette proforma.
         prise_amu = a.get('prise_en_charge_amu', True)
-        if prise_amu:
+        if prise_amu and est_assure:
             sous_total_amu += total
             base_item = min(prix, pbr) * quantite
             pbr_total_amu += base_item
@@ -11625,11 +11638,7 @@ def proforma_print(proforma_id):
 
     # 🔥 Prise en charge AMU (par article, voir la boucle ci-dessus)
     prise_en_charge = prise_en_charge_par_article if base_remboursement > 0 else 0
-    
-    # 🔥 Vérifier si l'assurance principale est active
-    assurance_nom = proforma.get('assurance_nom', 'Non assuré')
-    est_assure = assurance_nom and assurance_nom != 'Non assuré' and taux_assurance > 0
-    
+
     print(f"📄 Impression proforma #{proforma_id}")
     print(f"   Patient: {proforma.get('patient_nom')}")
     print(f"   Sous-total: {sous_total} FCFA")
