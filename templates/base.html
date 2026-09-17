@@ -1776,12 +1776,21 @@
 <!-- ============================================
      NAVBAR - CONSERVÉE
      ============================================ -->
+{# ⭐ cacher_navigation masque aussi CETTE barre (pas seulement le
+   top-nav plus bas) : sur une page publique comme le portail patient,
+   le logo pointait vers index() (page de connexion du personnel) dès
+   qu'aucune session n'était ouverte — un patient anonyme pouvait donc
+   atterrir en un clic sur l'écran de connexion interne de la clinique.
+   Patron : "avec ce lien le patient revient facilement dans la page de
+   connexion normale ce n'est pas bon". Ces pages n'ont besoin d'aucune
+   barre d'app au-dessus de leur contenu. #}
+{% if not (cacher_navigation is defined and cacher_navigation) %}
 <nav class="navbar navbar-expand-lg">
     <div class="container">
         <a class="navbar-brand" href="{{ url_for('dashboard' if session.user_id else 'index') }}">
             <span style="color: #0E9D67;"> GED BIASA</span>
         </a>
-        
+
         <!-- NOM DE LA STRUCTURE AVEC LOGO -->
         {% if session.user_id and session.structure_nom %}
         <div class="structure-container mx-auto">
@@ -1885,6 +1894,7 @@
         {% endif %}
     </div>
 </nav>
+{% endif %}
 
 <!-- ============================================
      TOP NAV - CONSERVÉE
