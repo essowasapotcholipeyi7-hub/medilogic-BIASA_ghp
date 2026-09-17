@@ -74,6 +74,9 @@
                             <a href="{{ url_for('hospitalisation_billet', hospit_id=h.id) }}" target="_blank" class="btn btn-sm btn-outline-dark">
                                 <i class="fas fa-file-medical"></i> Billet
                             </a>
+                            <a href="{{ url_for('hospitalisation_releve', hospit_id=h.id) }}?type=global" target="_blank" class="btn btn-sm btn-outline-secondary">
+                                <i class="fas fa-print"></i> Relevé
+                            </a>
                         </td>
                     </tr>
                     {% else %}

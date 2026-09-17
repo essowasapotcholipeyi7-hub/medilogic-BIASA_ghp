@@ -2112,6 +2112,13 @@ class Hospitalisation(db.Model):
     assurance2_nom = db.Column(db.String(255))
     taux_assurance2 = db.Column(db.Numeric, default=0)
     societe_assurance2 = db.Column(db.String(255))
+    # ⭐ Activable/désactivable pour CE séjour précisément (ex. le patient
+    # n'a pas apporté sa carte d'assurance aujourd'hui, ou n'est plus
+    # assuré) — sans effacer assurance_nom/assurance2_nom, réactivable à
+    # tout moment. Même paire de champs que Vente/Proforma
+    # (assurance_principale_active/assurance2_active), par cohérence.
+    assurance_principale_active = db.Column(db.Boolean, default=True)
+    assurance2_active = db.Column(db.Boolean, default=True)
     statut = db.Column(db.String(50), default='en_cours')  # en_cours/sortie/facturee
     proforma_id = db.Column(db.Integer)
     vente_id = db.Column(db.Integer)
@@ -2137,6 +2144,31 @@ class Hospitalisation(db.Model):
         if not self.date_entree or self.nombre_jours <= 0:
             return None
         return self.date_entree + timedelta(days=self.nombre_jours - 1)
+
+    # ⭐ Valeurs "effectives" — respectent le toggle actif/inactif de CE
+    # séjour (assurance_principale_active/assurance2_active), sans jamais
+    # effacer assurance_nom/assurance2_nom eux-mêmes (réactivable). Point de
+    # vérité unique utilisé par le calcul de répartition, la détection du
+    # groupe de paliers et le rappel EP — pour que les trois restent
+    # toujours cohérents entre eux quand le caissier bascule un toggle.
+    @property
+    def est_assure_amu(self):
+        if not self.assurance_principale_active:
+            return False
+        return bool(self.assurance_nom) and self.assurance_nom not in ('non_assure', 'Non assuré') \
+            and float(self.taux_assurance or 0) > 0
+
+    @property
+    def taux_assurance_effectif(self):
+        return float(self.taux_assurance or 0) if self.est_assure_amu else 0
+
+    @property
+    def a_cac(self):
+        return self.assurance2_active and bool(self.assurance2_nom) and float(self.taux_assurance2 or 0) > 0
+
+    @property
+    def taux_assurance2_effectif(self):
+        return float(self.taux_assurance2 or 0) if self.a_cac else 0
 
 
 class SoinHospitalisation(db.Model):

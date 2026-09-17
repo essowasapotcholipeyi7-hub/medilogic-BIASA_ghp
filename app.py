@@ -17,7 +17,7 @@ from models import db, StructureMapping, Patient, Utilisateur, Structure, Employ
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
-from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre
+from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance
 
 # ⭐ Numéro WhatsApp de l'éditeur (Togo, +228) pour l'envoi du reçu
 # d'abonnement — voir admin_finances.html.
@@ -11918,18 +11918,63 @@ def page_hospitalisation_suivi(hospit_id):
     soins = SoinHospitalisation.query.filter_by(hospitalisation_id=hospit_id)\
         .order_by(SoinHospitalisation.date_prestation, SoinHospitalisation.heure_prestation).all()
     solde_en_cours = sum(float(s.prix or 0) * int(s.quantite or 0) for s in soins if s.statut == 'en_cours')
-    # ⭐ Ce que le patient a RÉELLEMENT comme assurance — distinct de
-    # "cet acte est éligible AMU/CAC dans le catalogue" (prise_en_charge_amu/
-    # cac, vrai par défaut sur presque tous les actes) : sans cette
-    # distinction, les badges Assur. affichaient AMU ET CAC sur chaque ligne
-    # même pour un patient sans assurance complémentaire, ce qui n'a pas de
-    # sens (signalé par le patron).
-    patient_a_amu = bool(hospit.assurance_nom) and hospit.assurance_nom not in ('non_assure', 'Non assuré') \
-        and float(hospit.taux_assurance or 0) > 0
-    patient_a_cac = bool(hospit.assurance2_nom)
+    # ⭐ Ce que le patient a RÉELLEMENT comme assurance ACTIVE pour ce séjour
+    # (respecte le toggle assurance_principale_active/assurance2_active,
+    # voir /api/hospitalisation/<id>/assurance) — distinct de "cet acte est
+    # éligible AMU/CAC dans le catalogue" (prise_en_charge_amu/cac, vrai par
+    # défaut sur presque tous les actes) : sans cette distinction, les
+    # badges Assur. affichaient AMU ET CAC sur chaque ligne même pour un
+    # patient sans assurance complémentaire, ce qui n'a pas de sens
+    # (signalé par le patron).
+    patient_a_amu = hospit.est_assure_amu
+    patient_a_cac = hospit.a_cac
     patient_amu_ep = patient_a_amu and str(hospit.assurance_nom).lower().startswith('amu')
+
+    # ⭐ Aperçu "part patient / part assurance" pendant le séjour (avant même
+    # la clôture) — même calcul que la facturation finale
+    # (calculer_repartition_assurance), sur les soins en_cours uniquement.
+    soins_en_cours = [s for s in soins if s.statut == 'en_cours']
+    repartition = calculer_repartition_assurance(soins_en_cours, hospit) if soins_en_cours else None
+
     return render_template('hospitalisation_suivi.html', hospit=hospit, soins=soins, solde_en_cours=solde_en_cours,
-                            patient_a_amu=patient_a_amu, patient_a_cac=patient_a_cac, patient_amu_ep=patient_amu_ep)
+                            patient_a_amu=patient_a_amu, patient_a_cac=patient_a_cac, patient_amu_ep=patient_amu_ep,
+                            repartition=repartition)
+
+
+@app.route('/api/hospitalisation/<int:hospit_id>/assurance', methods=['POST'])
+@login_required
+def api_toggle_assurance_hospitalisation(hospit_id):
+    """Active/désactive l'assurance principale (AMU) et/ou complémentaire
+    (CAC) pour CE séjour précisément — ex. le patient n'a pas apporté sa
+    carte d'assurance aujourd'hui, ou n'est plus assuré. N'efface jamais
+    assurance_nom/assurance2_nom (réactivable à tout moment) ; toute la
+    logique du séjour (badges, répartition part patient/assurance, palier
+    chambre à la clôture, rappel EP, facturation) lit ensuite les
+    propriétés "effectives" du modèle (est_assure_amu, a_cac, ...), donc un
+    seul endroit à changer pour que tout reste cohérent."""
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        hospit = Hospitalisation.query.filter_by(id=hospit_id, structure_id=structure_id).first()
+        if not hospit:
+            return jsonify({'success': False, 'error': 'Séjour introuvable'}), 404
+        if hospit.statut == 'facturee':
+            return jsonify({'success': False, 'error': 'Séjour déjà facturé'}), 400
+
+        if 'assurance_principale_active' in data:
+            hospit.assurance_principale_active = bool(data.get('assurance_principale_active'))
+        if 'assurance2_active' in data:
+            hospit.assurance2_active = bool(data.get('assurance2_active'))
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'assurance_principale_active': hospit.assurance_principale_active,
+            'assurance2_active': hospit.assurance2_active,
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/hospitalisation/<int:hospit_id>/soins', methods=['POST'])
@@ -12073,8 +12118,11 @@ def api_sortie_hospitalisation(hospit_id):
         if date_sortie < hospit.date_entree:
             return jsonify({'success': False, 'error': "La date de sortie ne peut pas précéder la date d'entrée"}), 400
 
-        patient_assure = bool(hospit.assurance_nom) and hospit.assurance_nom not in ('non_assure', 'Non assuré') \
-            and float(hospit.taux_assurance or 0) > 0
+        # ⭐ Valeur EFFECTIVE (respecte le toggle actif/inactif de ce séjour,
+        # voir /api/hospitalisation/<id>/assurance) — patient débranché de
+        # l'AMU aujourd'hui (carte non présentée, plus assuré) -> ni
+        # répartition par palier ni rappel EP.
+        patient_assure = hospit.est_assure_amu
 
         # ⭐ Entente Préalable (EP) : une hospitalisation sur un patient
         # assuré AMU (amu_cnss/amu_inam/amu_tns) nécessite l'accord préalable
@@ -12152,13 +12200,18 @@ def api_facturer_hospitalisation(hospit_id):
         if not soins:
             return jsonify({'success': False, 'error': 'Aucun soin à facturer'}), 400
 
-        assurance_nom = hospit.assurance_nom or 'Non assuré'
-        taux_assurance = float(hospit.taux_assurance or 0)
-        est_assure = bool(assurance_nom) and assurance_nom not in ('non_assure', 'Non assuré') and taux_assurance > 0
+        # ⭐ Valeurs EFFECTIVES (respectent le toggle actif/inactif de ce
+        # séjour — ex. carte d'assurance non présentée aujourd'hui, voir
+        # /api/hospitalisation/<id>/assurance) et non les champs bruts —
+        # sinon désactiver l'assurance à la clôture n'aurait aucun effet
+        # sur la facturation réelle.
+        est_assure = hospit.est_assure_amu
+        assurance_nom = hospit.assurance_nom if est_assure else 'Non assuré'
+        taux_assurance = hospit.taux_assurance_effectif
 
-        assurance2_active = bool(hospit.assurance2_nom)
-        assurance2_nom = hospit.assurance2_nom or ''
-        taux_assurance2 = float(hospit.taux_assurance2 or 0) if assurance2_active else 0
+        assurance2_active = hospit.a_cac
+        assurance2_nom = hospit.assurance2_nom if assurance2_active else ''
+        taux_assurance2 = hospit.taux_assurance2_effectif
 
         sous_total = 0
         pbr_total_amu = 0
@@ -12287,13 +12340,11 @@ def hospitalisation_billet(hospit_id):
         return redirect(url_for('page_hospitalisation'))
 
     soins = SoinHospitalisation.query.filter_by(hospitalisation_id=hospit_id).all()
-    # ⭐ Le patient doit RÉELLEMENT avoir l'assurance, pas juste que l'acte y
-    # soit éligible dans le catalogue (voir page_hospitalisation_suivi).
-    patient_a_amu = bool(hospit.assurance_nom) and hospit.assurance_nom not in ('non_assure', 'Non assuré') \
-        and float(hospit.taux_assurance or 0) > 0
-    patient_a_cac = bool(hospit.assurance2_nom)
-    a_amu = patient_a_amu and any(s.prise_en_charge_amu for s in soins)
-    a_cac = patient_a_cac and any(s.prise_en_charge_cac for s in soins)
+    # ⭐ Le patient doit RÉELLEMENT avoir l'assurance ACTIVE pour ce séjour
+    # (respecte le toggle), pas juste que l'acte y soit éligible dans le
+    # catalogue (voir page_hospitalisation_suivi).
+    a_amu = hospit.est_assure_amu and any(s.prise_en_charge_amu for s in soins)
+    a_cac = hospit.a_cac and any(s.prise_en_charge_cac for s in soins)
 
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
@@ -12313,8 +12364,13 @@ def hospitalisation_releve(hospit_id):
         flash('Séjour introuvable', 'danger')
         return redirect(url_for('page_hospitalisation'))
 
+    # ⭐ Pas de filtre sur `statut` ici : une fois le séjour facturé, toutes
+    # ses lignes passent à 'facture' — les exclure rendait le relevé
+    # définitivement vide dès la clôture, impossible à réimprimer après
+    # coup si on avait oublié de le faire avant (signalé). Le relevé est un
+    # document de consultation/réimpression, pas un aperçu "en cours".
     type_filtre = request.args.get('type', 'global')
-    q = SoinHospitalisation.query.filter_by(hospitalisation_id=hospit_id, statut='en_cours')
+    q = SoinHospitalisation.query.filter_by(hospitalisation_id=hospit_id)
     if type_filtre == 'actes':
         q = q.filter_by(type='acte')
     elif type_filtre == 'medicaments':

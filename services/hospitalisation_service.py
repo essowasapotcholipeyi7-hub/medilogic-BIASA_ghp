@@ -11,6 +11,7 @@ identique sur les 3 lignes (le prix clinique ne baisse pas), pbr dégressif
 (la base de remboursement assurance, elle, baisse). Ce module ne modifie
 rien au catalogue : il détecte le groupe par le nom, à la volée.
 """
+import re
 import unicodedata
 from datetime import timedelta
 
@@ -74,6 +75,23 @@ def detecter_groupe_palier(nom_acte, tous_les_actes):
     return groupe
 
 
+def nom_sans_palier(nom):
+    """Retire un suffixe de palier hebdomadaire (ex. "Premiere Semaine") du
+    nom d'un acte chambre — utilisé quand aucune répartition par palier ne
+    s'applique réellement (patient non assuré AMU) : garder ce suffixe sur
+    la facture/le reçu d'un patient qui paie cash n'a pas de sens et prête à
+    confusion (signalé). Les suffixes connus sont en ASCII pur (aucun
+    n'utilise d'accent), donc une simple recherche insensible à la casse
+    suffit — pas besoin de _normaliser()/repositionnement d'index."""
+    if not nom:
+        return nom
+    for suffixe in _SUFFIXES_TRIES:
+        motif = re.compile(re.escape(suffixe) + r'\s*$', re.IGNORECASE)
+        if motif.search(nom):
+            return motif.sub('', nom).strip(' -').strip()
+    return nom
+
+
 def repartir_jours(nb_jours):
     """16 jours -> [(1, 7), (2, 7), (3, 2)]. Tranches à 0 jour omises."""
     nb_jours = max(int(nb_jours or 0), 0)
@@ -99,8 +117,17 @@ def construire_lignes_chambre(acte_choisi, nb_jours, date_entree, tous_les_actes
     )
 
     if not groupe:
+        # ⭐ Pas de répartition réelle par palier ici : si le patient n'est
+        # pas assuré AMU, un nom d'acte se terminant par "Premiere Semaine"
+        # (ou une autre variante) induirait en erreur sur un reçu qui n'a
+        # rien à voir avec l'assurance — on le retire. Gardé tel quel pour
+        # un patient assuré sur un court séjour (<=7 jours) : la mention
+        # reste exacte et utile pour son propre bordereau d'assurance.
+        nom_ligne = acte_choisi.get('nom')
+        if not patient_assure:
+            nom_ligne = nom_sans_palier(nom_ligne)
         return [{
-            'nom': acte_choisi.get('nom'),
+            'nom': nom_ligne,
             'reference_id': acte_choisi.get('id') or acte_choisi.get('ID'),
             'prix': float(acte_choisi.get('prix') or 0),
             'pbr': float(acte_choisi.get('pbr') or acte_choisi.get('prix') or 0),
@@ -125,3 +152,74 @@ def construire_lignes_chambre(acte_choisi, nb_jours, date_entree, tous_les_actes
         curseur = curseur + timedelta(days=jours)
 
     return lignes
+
+
+def _taux_amu_article(nom, taux_defaut):
+    """Même règle que taux_amu_pour_article() (app.py) et
+    tauxAMUPourArticle() (JS, actes_vente.html/pharma_vente.html/
+    proformas.html) — dupliquée ici plutôt qu'importée d'app.py pour éviter
+    un import circulaire (app.py importe déjà ce module)."""
+    return 90 if (nom and 'P160' in nom) else taux_defaut
+
+
+def calculer_repartition_assurance(soins, hospit):
+    """Part AMU / part CAC / part patient pour une liste de soins (objets
+    SoinHospitalisation ou équivalents avec .nom/.prix/.pbr/.quantite/
+    .prise_en_charge_amu/.prise_en_charge_cac) et un séjour `hospit`
+    (Hospitalisation — utilise ses propriétés "effectives", qui respectent
+    le toggle assurance_principale_active/assurance2_active de CE séjour).
+
+    Même formule que celle utilisée à la facturation finale
+    (api_facturer_hospitalisation, app.py) — un seul endroit pour ce
+    calcul, réutilisé aussi pour l'aperçu "en cours" affiché pendant le
+    séjour, pour que les deux restent toujours cohérents."""
+    est_assure = hospit.est_assure_amu
+    taux_assurance = hospit.taux_assurance_effectif
+    a_cac = hospit.a_cac
+    taux_assurance2 = hospit.taux_assurance2_effectif
+
+    sous_total = 0.0
+    pbr_total_amu = 0.0
+    sous_total_amu = 0.0
+    base_cac = 0.0
+    part_amu = 0.0
+
+    for s in soins:
+        prix = float(s.prix or 0)
+        pbr = float(s.pbr or prix)
+        quantite = int(s.quantite or 0)
+        total = prix * quantite
+        sous_total += total
+
+        prise_amu = bool(s.prise_en_charge_amu)
+        prise_cac = bool(s.prise_en_charge_cac)
+        taux_item = _taux_amu_article(s.nom, taux_assurance) if est_assure else 0
+
+        if est_assure and prise_amu and pbr > 0:
+            sous_total_amu += total
+            base_amu = min(prix, pbr) * quantite
+            pbr_total_amu += base_amu
+            if taux_item > 0:
+                part_amu += (base_amu * taux_item) / 100
+
+        if prise_cac and a_cac:
+            if est_assure and prise_amu and pbr > 0:
+                base_amu = min(prix, pbr) * quantite
+                prise_amu_article = (base_amu * taux_item) / 100
+                reste = total - prise_amu_article
+                if reste > 0:
+                    base_cac += reste
+            else:
+                base_cac += total
+
+    part_cac = (base_cac * taux_assurance2) / 100 if (a_cac and base_cac > 0) else 0.0
+    part_patient = max(sous_total - part_amu - part_cac, 0.0)
+
+    return {
+        'sous_total': sous_total,
+        'part_amu': part_amu,
+        'part_cac': part_cac,
+        'part_patient': part_patient,
+        'est_assure_amu': est_assure,
+        'a_cac': a_cac,
+    }
