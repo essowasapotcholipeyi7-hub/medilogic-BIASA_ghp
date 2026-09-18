@@ -230,16 +230,21 @@ function changerSignatureSelectionnee() {
     }
 }
 
+// ⭐ N'envoie plus rien nous-mêmes (SMTP peu fiable selon la structure,
+// patron : "les mails ne passent toujours pas") — ouvre le client mail
+// du poste, déjà connecté à un vrai compte, pré-rempli ; le personnel
+// clique Envoyer lui-même. Même principe que les boutons WhatsApp
+// (wa.me) déjà dans l'appli.
 function envoyerResultatEmail(resultatId, patientNom) {
     const email = prompt(`Envoyer le résultat de ${patientNom} par email — adresse (laissez tel quel si déjà enregistrée) :`, '');
     if (email === null) return;
-    fetch(`/api/resultats-analyses/${resultatId}/envoyer-email`, {
+    fetch(`/api/resultats-analyses/${resultatId}/preparer-email`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim() })
     })
     .then(r => r.json())
     .then(data => {
-        if (data.success) alert('Envoyé à ' + data.email + '.');
+        if (data.success) window.open(data.mailto_url, '_blank');
         else alert('Erreur : ' + (data.error || 'inconnue'));
     })
     .catch(e => alert('Erreur : ' + e));

@@ -9852,81 +9852,34 @@ def page_imprimer_resultat(resultat_id):
     return render_template('resultat_imprimer.html', resultat=resultat, demande=demande, structure=structure_info, patient_email=patient_email)
 
 
-def _envoyer_email_resultat(email, patient_nom, structure_nom, acte_nom, nom_interprete,
-                             titre_interprete, type_prestation, contenu_html,
-                             signature_bytes, signature_mime, fichier_bytes, fichier_nom, fichier_mime):
-    """Envoie le résultat par email — arrière-plan, même principe que
-    _envoyer_email_verrouillage(). Le corps reprend la mise en page de
-    resultat_imprimer.html (en-tête, contenu, signature) ; si le résultat
-    est un fichier importé, il est joint en pièce jointe plutôt que
-    recopié dans le corps."""
-    def _send():
-        # ⭐ app.app_context() indispensable dans un thread séparé — voir le
-        # commentaire équivalent dans _envoyer_email_verrouillage (plus haut
-        # dans ce fichier). Sans ça, Message()/mail.send() levaient "Working
-        # outside of application context", avalé silencieusement par le
-        # except ci-dessous : aucun email en arrière-plan ne partait jamais,
-        # découvert en testant en direct suite au signalement du patron
-        # "la configuration de mail ne marche pas".
-        with app.app_context():
-            try:
-                label_signataire = 'Le Laboratoire' if type_prestation == 'analyse' else 'Le Radiologue'
-                titre_ligne = f'{titre_interprete} — {nom_interprete}' if titre_interprete else nom_interprete
-                corps_resultat = contenu_html if contenu_html else (
-                    '<p style="color:#666;">Votre résultat est joint à cet email en pièce jointe.</p>'
-                )
-                signature_html = '<img src="cid:signature_resultat" style="max-height:60px;max-width:160px;">' if signature_bytes else ''
-
-                html = f"""
-                <html><body style="font-family:Arial,sans-serif; color:#333; max-width:650px; margin:0 auto;">
-                    <div style="background:linear-gradient(135deg,#1d6fa5 0%,#0f4c75 100%); color:white; padding:16px; border-radius:8px 8px 0 0;">
-                        <h3 style="margin:0;">{structure_nom}</h3>
-                        <p style="margin:4px 0 0 0; font-size:13px; opacity:0.9;">
-                            {"RÉSULTAT D'ANALYSE" if type_prestation == 'analyse' else "RÉSULTAT D'EXAMEN"}
-                        </p>
-                    </div>
-                    <div style="padding:16px; border:1px solid #dee2e6; border-top:none;">
-                        <p>Bonjour {patient_nom},</p>
-                        <p>Votre résultat pour <strong>{acte_nom}</strong> est disponible :</p>
-                        <div style="margin:12px 0; padding:12px; background:#f8f9fa; border-radius:6px;">
-                            {corps_resultat}
-                        </div>
-                        <div style="text-align:right; font-size:13px; margin-top:16px;">
-                            <strong>{label_signataire}</strong><br>
-                            {signature_html}
-                            <div>{titre_ligne}</div>
-                        </div>
-                        <hr>
-                        <p style="color:#888; font-size:12px;">
-                            Document confidentiel — {structure_nom}. Si vous n'êtes pas le destinataire prévu,
-                            merci de supprimer cet email et de ne pas le transmettre.
-                        </p>
-                    </div>
-                </body></html>
-                """
-
-                msg = Message(f"Votre résultat — {structure_nom}", recipients=[email], html=html)
-                if signature_bytes:
-                    msg.attach('signature.png', signature_mime or 'image/png', signature_bytes, 'inline', headers={'Content-ID': '<signature_resultat>'})
-                if fichier_bytes:
-                    msg.attach(fichier_nom or 'resultat.pdf', fichier_mime or 'application/octet-stream', fichier_bytes)
-                mail.send(msg)
-                print(f"✅ Résultat envoyé par email à {email}")
-            except Exception as e:
-                print(f"⚠️ Email résultat non envoyé: {e}")
-    thread = threading.Thread(target=_send)
-    thread.daemon = True
-    thread.start()
+def _preparer_lien_email_resultat_body(patient_nom, acte_nom, structure_nom, lien_portail):
+    lignes = [
+        f"Bonjour {patient_nom},",
+        "",
+        f"Votre résultat pour {acte_nom} est disponible.",
+        "",
+        "Consultez-le et imprimez-le depuis votre espace patient :",
+        lien_portail,
+        "(connectez-vous avec votre code d'accès patient)",
+        "",
+        "Cordialement,",
+        structure_nom,
+    ]
+    return "\n".join(lignes)
 
 
-@app.route('/api/resultats-analyses/<int:resultat_id>/envoyer-email', methods=['POST'])
+@app.route('/api/resultats-analyses/<int:resultat_id>/preparer-email', methods=['POST'])
 @login_required
-def api_envoyer_resultat_email(resultat_id):
-    """Envoie le résultat par email au patient — patron : "dans les
-    résultats qu'on puisse envoyer résultat par mail au patient". Si le
-    patient n'a pas encore d'email enregistré, on l'accepte dans le corps
-    de la requête et on le mémorise sur sa fiche (voir /api/patients/<id>/email
-    — même geste, un seul appel côté front)."""
+def api_preparer_email_resultat(resultat_id):
+    """Prepare un lien mailto: pre-rempli pour ce resultat, au lieu de
+    l'envoyer nous-memes par SMTP — patron : "les mails ne passent
+    toujours pas... on dirige vers la page mail meme... comme ca marche
+    actuellement avec whatsapp". Le client mail du poste (deja connecte a
+    un vrai compte) s'ouvre pre-rempli, et c'est le personnel qui clique
+    Envoyer — meme principe que les liens wa.me deja utilises ailleurs
+    dans l'appli (rendez_vous.html, patients.html...), qui ne dependent
+    d'aucun identifiant serveur et fonctionnent donc de facon fiable pour
+    chaque structure, quel que soit son propre compte email."""
     try:
         structure_id = session.get('structure_id')
         resultat = ResultatExamen.query.filter_by(id=resultat_id, structure_id=structure_id).first()
@@ -9947,20 +9900,24 @@ def api_envoyer_resultat_email(resultat_id):
         if email_saisi and email_saisi != email_patient:
             db.execute_query("UPDATE patients SET email = %s WHERE id = %s AND structure_id = %s", (email_saisi, demande.patient_id, structure_id))
 
+        # ⭐ Le patient doit pouvoir se connecter au lien envoyé — garantit
+        # qu'un code d'accès existe déjà (même geste que la saisie du
+        # résultat, voir api_enregistrer_resultat), jamais destructif.
+        obtenir_ou_creer_code_acces(structure_id, demande.patient_id, session.get('user_name', 'System'))
+
         structures = sheets_helper.get_all_records('structures', use_prefix=False)
         structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
+        structure_nom = structure_info.get('nom') or 'SSoftOne v10'
 
-        _envoyer_email_resultat(
-            email=email, patient_nom=demande.patient_nom, structure_nom=structure_info.get('nom') or 'SSoftOne v10',
-            acte_nom=demande.acte_nom, nom_interprete=resultat.nom_interprete, titre_interprete=resultat.titre_interprete,
-            type_prestation=demande.type_prestation, contenu_html=resultat.contenu_html,
-            signature_bytes=resultat.signature_data, signature_mime=resultat.signature_mime,
-            fichier_bytes=resultat.fichier_data, fichier_nom=resultat.fichier_nom, fichier_mime=resultat.fichier_mime,
-        )
-        return jsonify({'success': True, 'email': email})
+        from urllib.parse import quote
+        lien_portail = url_for('page_portail_patient', _external=True)
+        sujet = f"Votre résultat — {structure_nom}"
+        corps = _preparer_lien_email_resultat_body(demande.patient_nom, demande.acte_nom, structure_nom, lien_portail)
+        mailto_url = f"mailto:{email}?subject={quote(sujet)}&body={quote(corps)}"
+
+        return jsonify({'success': True, 'mailto_url': mailto_url, 'email': email})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
-
 
 @app.route('/api/patients/<int:patient_id>/generer-code-portail', methods=['POST'])
 @login_required

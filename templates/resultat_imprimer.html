@@ -155,6 +155,9 @@ if (window.JsBarcode) {
 })();
 {% endif %}
 
+// ⭐ N'envoie plus rien nous-mêmes (SMTP peu fiable selon la structure) —
+// ouvre le client mail du poste, pré-rempli ; le personnel clique
+// Envoyer lui-même. Même principe que les boutons WhatsApp (wa.me).
 function envoyerParEmail() {
     const msg = document.getElementById('emailResultatMsg');
     let email = "{{ patient_email }}";
@@ -163,16 +166,17 @@ function envoyerParEmail() {
         if (!email) return;
     }
     msg.className = 'text-center mt-2 small no-print text-muted';
-    msg.textContent = 'Envoi en cours...';
-    fetch("{{ url_for('api_envoyer_resultat_email', resultat_id=resultat.id) }}", {
+    msg.textContent = 'Préparation...';
+    fetch("{{ url_for('api_preparer_email_resultat', resultat_id=resultat.id) }}", {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email })
     })
     .then(r => r.json())
     .then(data => {
         if (data.success) {
+            window.open(data.mailto_url, '_blank');
             msg.className = 'text-center mt-2 small no-print text-success';
-            msg.textContent = 'Envoyé à ' + data.email + '.';
+            msg.textContent = 'Votre client mail s\'est ouvert, pré-rempli pour ' + data.email + '.';
         } else {
             msg.className = 'text-center mt-2 small no-print text-danger';
             msg.textContent = 'Erreur : ' + (data.error || 'inconnue');
