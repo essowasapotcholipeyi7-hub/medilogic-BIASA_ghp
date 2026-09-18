@@ -333,15 +333,33 @@
         /* ============================================
            TOP NAV - CONSERVÉE
            ============================================ */
+        /* ⭐ Défilement horizontal à TOUTES les tailles d'écran (plus
+           seulement ≤992px) — patron : "mon écran d'ordinateur n'est pas
+           large donc l'onglet paramètre est caché dans le coin". Sans
+           overflow-x, les onglets en trop débordaient hors du viewport,
+           inaccessibles, dès qu'un écran (pas seulement mobile) n'était
+           pas assez large pour tous les contenir (9 onglets aujourd'hui,
+           plus au fil des ajouts). N'affiche une barre de défilement que
+           quand ça déborde vraiment — aucun changement visuel sur un
+           écran assez large. backdrop-filter désactivé en permanence
+           (pas seulement sur mobile) : il fait de CET élément le
+           "containing block" de ses descendants position:fixed (voir le
+           .mega-menu plus bas, lui aussi rendu fixed en permanence pour
+           la même raison), et cassait leur positionnement en JS — perdu
+           l'effet de flou, gagné un menu qui s'affiche correctement à
+           toutes les largeurs. */
         .top-nav {
             background: rgba(255, 255, 255, 0.98);
-            backdrop-filter: blur(10px);
+            backdrop-filter: none;
             border-bottom: 1px solid rgba(0, 0, 0, 0.06);
             padding: 0 20px;
             position: sticky;
             top: 72px;
             z-index: 999;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: thin;
         }
 
         .top-nav .nav-group {
@@ -352,6 +370,9 @@
             margin: 0;
             padding: 0;
             height: 50px;
+            flex-wrap: nowrap;
+            width: max-content;
+            min-width: 100%;
         }
 
         .top-nav .nav-item {
@@ -400,10 +421,21 @@
             transform: rotate(180deg);
         }
 
+        /* ⭐ position:fixed en permanence (plus seulement ≤992px) : la
+           spec CSS force overflow-y à se comporter comme overflow-x dès
+           que l'un des deux n'est pas "visible" — impossible d'avoir un
+           axe qui défile (notre overflow-x:auto ci-dessus) et l'autre
+           qui déborde librement sur le MÊME élément. Un .mega-menu resté
+           position:absolute serait donc rogné, invisible, dès que
+           .top-nav défile — vécu en test (voir plus bas "TOP NAV -
+           GESTION DES MENUS" : top/left recalculés en JS à l'ouverture
+           d'après la position réelle du lien cliqué, à toutes les
+           tailles d'écran désormais). */
         .top-nav .mega-menu {
-            position: absolute;
-            top: 100%;
-            left: 0;
+            position: fixed;
+            max-width: 92vw;
+            max-height: 70vh;
+            overflow-y: auto;
             min-width: 220px;
             background: rgba(255, 255, 255, 0.98);
             backdrop-filter: blur(10px);
@@ -480,18 +512,13 @@
         }
 
         @media (max-width: 992px) {
-            /* 🔥 Restait complètement invisible en dessous de 992px
-               (display:none ici + classes Bootstrap d-none d-lg-block dans
-               le HTML) — demandé explicitement par le patron : affiché en
-               défilement horizontal (tactile) sur mobile/tablette plutôt
-               que masqué, puisque le clic sur chaque item ouvre déjà son
-               mega-menu en JS (pas seulement au survol souris — voir plus
-               bas "TOP NAV - GESTION DES MENUS").*/
+            /* Le défilement horizontal lui-même, position:fixed du
+               .mega-menu, etc. sont maintenant définis plus haut sans
+               media query (s'appliquent à toutes les tailles d'écran —
+               voir le commentaire sur .top-nav). Ce qui reste ICI est
+               réellement spécifique aux petits écrans : */
             .top-nav {
                 display: block;
-                overflow-x: auto;
-                -webkit-overflow-scrolling: touch;
-                scrollbar-width: none;
                 /* .navbar peut faire 1 ou 2 lignes de haut sur mobile
                    (badge de structure ou non) — un top:72px fixe (pensé
                    pour le desktop, toujours 1 ligne) ferait chevaucher
@@ -505,47 +532,16 @@
                    et les fait repasser DERRIÈRE le contenu de la page,
                    invisibles bien qu'ouverts — vécu en test. */
                 top: var(--navbar-height, 72px);
-                /* 🔥 backdrop-filter (comme transform/filter/perspective)
-                   fait de CET élément le "containing block" de ses
-                   descendants position:fixed — un .mega-menu fixed reste
-                   alors contenu par .top-nav (et donc SOUMIS à son
-                   overflow-x:auto, qui clippe aussi l'axe Y, voir plus
-                   bas) au lieu d'échapper jusqu'au viewport comme prévu.
-                   Coordonnées JS recalculées en conséquence tant que
-                   backdrop-filter restait actif ne suffisaient pas — le
-                   clip lui-même persistait. Désactivé sur mobile
-                   uniquement (l'effet de flou en arrière-plan de la barre
-                   ne change rien à l'usage tactile). */
-                backdrop-filter: none;
+                /* Barre de défilement invisible sur mobile (le défilement
+                   tactile n'en a pas besoin) — gardée visible et fine sur
+                   desktop (règle de base, non dupliquée ici) comme
+                   indice qu'on peut faire défiler pour voir les onglets
+                   en trop. */
+                scrollbar-width: none;
             }
 
             .top-nav::-webkit-scrollbar {
                 display: none;
-            }
-
-            .top-nav .nav-group {
-                flex-wrap: nowrap;
-                width: max-content;
-                min-width: 100%;
-            }
-
-            /* ⚠️ .top-nav a overflow-x:auto (barre défilante) — sur CET
-               axe X seulement en apparence : la spec CSS force overflow-y
-               à se comporter comme l'axe X dès qu'un seul des deux n'est
-               pas "visible" (impossible d'avoir un axe qui défile et
-               l'autre qui déborde librement sur le MÊME élément). Un
-               .mega-menu resté position:absolute (donc contenu par ce
-               conteneur) se retrouvait donc invisible — rogné hors de la
-               zone visible malgré opacity:1/visibility:visible — vécu en
-               test. position:fixed l'en fait sortir complètement (plus
-               contenu par .top-nav du tout) ; top/left recalculés en JS à
-               l'ouverture (voir "TOP NAV - GESTION DES MENUS") d'après la
-               position réelle de l'item cliqué à l'écran. */
-            .top-nav .mega-menu {
-                position: fixed;
-                max-width: 92vw;
-                max-height: 70vh;
-                overflow-y: auto;
             }
         }
 
@@ -2730,46 +2726,61 @@ setInterval(actualiserBadgeValidations, 30000);
 // ============================================
 // TOP NAV - GESTION DES MENUS
 // ============================================
+// ⭐ .top-nav défile désormais horizontalement à TOUTES les tailles
+// d'écran (voir CSS .top-nav/.mega-menu) — .mega-menu est donc
+// position:fixed en permanence (plus seulement ≤992px), et sa position
+// doit être recalculée d'après l'emplacement réel du lien à l'écran à
+// CHAQUE ouverture, souris (survol) comme tactile (clic) : sur un
+// .top-nav qui a défilé, la position "naturelle" (top:100%/left:0)
+// n'existe plus une fois fixed, donc plus aucun repli possible sans ce
+// calcul — patron : "mon écran n'est pas large donc l'onglet paramètre
+// est caché dans le coin".
 document.addEventListener('DOMContentLoaded', function() {
     const navItems = document.querySelectorAll('.top-nav .nav-item');
-    
+
+    function positionnerMegaMenu(item) {
+        const link = item.querySelector('.nav-link-top');
+        const menu = item.querySelector('.mega-menu');
+        if (!link || !menu) return;
+        const rect = link.getBoundingClientRect();
+        const menuWidth = Math.min(menu.offsetWidth || 220, window.innerWidth * 0.92);
+        let left = rect.left + rect.width / 2 - menuWidth / 2;
+        left = Math.max(8, Math.min(left, window.innerWidth - menuWidth - 8));
+        menu.style.top = rect.bottom + 'px';
+        menu.style.left = left + 'px';
+    }
+
     navItems.forEach(function(item) {
         const link = item.querySelector('.nav-link-top');
         const menu = item.querySelector('.mega-menu');
-        
-        if (menu && link) {
-            link.addEventListener('click', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                
-                const isOpen = item.classList.contains('open');
-                
-                document.querySelectorAll('.top-nav .nav-item.open').forEach(function(el) {
-                    if (el !== item) el.classList.remove('open');
-                });
-                
-                if (isOpen) {
-                    item.classList.remove('open');
-                } else {
-                    item.classList.add('open');
-                    // 🔥 Sur mobile/tablette, .mega-menu est position:fixed
-                    // (voir CSS — échappe au clip vertical de la barre
-                    // défilante .top-nav) : plus positionné par rapport à
-                    // .nav-item, donc calculé ici d'après la position
-                    // réelle du lien à l'écran à l'instant du clic.
-                    if (window.innerWidth <= 992 && menu) {
-                        const rect = link.getBoundingClientRect();
-                        const menuWidth = Math.min(menu.offsetWidth || 220, window.innerWidth * 0.92);
-                        let left = rect.left + rect.width / 2 - menuWidth / 2;
-                        left = Math.max(8, Math.min(left, window.innerWidth - menuWidth - 8));
-                        menu.style.top = rect.bottom + 'px';
-                        menu.style.left = left + 'px';
-                    }
-                }
+        if (!menu || !link) return;
+
+        // Souris : la CSS ouvre déjà au survol (:hover), on ne fait que
+        // positionner AVANT que ça devienne visible.
+        item.addEventListener('mouseenter', function() {
+            positionnerMegaMenu(item);
+        });
+
+        // Tactile/clic : bascule ouverte/fermée via la classe .open.
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const isOpen = item.classList.contains('open');
+
+            document.querySelectorAll('.top-nav .nav-item.open').forEach(function(el) {
+                if (el !== item) el.classList.remove('open');
             });
-        }
+
+            if (isOpen) {
+                item.classList.remove('open');
+            } else {
+                positionnerMegaMenu(item);
+                item.classList.add('open');
+            }
+        });
     });
-    
+
     document.addEventListener('click', function(e) {
         if (!e.target.closest('.top-nav .nav-item')) {
             document.querySelectorAll('.top-nav .nav-item.open').forEach(function(el) {
