@@ -1734,6 +1734,20 @@
     .navbar .container {
         padding-left: 50px;
     }
+
+    /* ⭐ Sur mobile, l'horloge + le bouton plein écran + la cloche + le
+       menu du compte (qui contient "Déconnexion") ne tenaient pas sur une
+       seule ligne et débordaient hors de l'écran sans jamais passer à la
+       ligne — le bouton du compte devenait alors invisible et impossible
+       à toucher (patron : "je clique sur le nom de l'hôpital... mais ça
+       ne clique pas", en réalité le vrai bouton était caché hors-écran).
+       flex-wrap laisse ce groupe se replier sur une deuxième ligne au
+       lieu de déborder. */
+    .navbar .ms-auto {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        row-gap: 8px;
+    }
 }
 
 /* ⭐ Cloche de notification (demandes en attente) — petite secousse
