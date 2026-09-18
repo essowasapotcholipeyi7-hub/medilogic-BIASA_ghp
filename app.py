@@ -1931,9 +1931,9 @@ def api_add_patient():
                 date_naissance, type_assurance, taux_prise_charge, numero_assure,
                 assurance2_nom, taux_assurance2, numero_assure2, societe_assurance2,
                 personne_a_prevenir_nom, personne_a_prevenir_telephone, personne_a_prevenir_relation,
-                numero_local, created_at
+                numero_local, email, created_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             RETURNING id
         """, (
             structure_id,
@@ -1952,7 +1952,8 @@ def api_add_patient():
             data.get('personne_a_prevenir_nom'),
             data.get('personne_a_prevenir_telephone'),
             data.get('personne_a_prevenir_relation'),
-            numero_local
+            numero_local,
+            (data.get('email') or '').strip() or None
         ))
 
         if result and len(result) > 0:
@@ -6890,6 +6891,28 @@ def api_update_patient(patient_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@app.route('/api/patients/<int:patient_id>/email', methods=['PUT'])
+@login_required
+def api_definir_email_patient(patient_id):
+    """Met à jour UNIQUEMENT l'email du patient — endpoint dédié et minimal
+    (contrairement à api_update_patient qui réécrit toute la fiche) pour
+    pouvoir capturer l'email à la volée depuis le bouton "Envoyer par
+    email" d'un résultat sans risquer d'écraser le reste de la fiche."""
+    try:
+        structure_id = session.get('structure_id')
+        email = (request.json.get('email') or '').strip()
+        if not email or '@' not in email:
+            return jsonify({'success': False, 'error': 'Email invalide'}), 400
+        db.execute_query(
+            "UPDATE patients SET email = %s WHERE id = %s AND structure_id = %s",
+            (email, patient_id, structure_id)
+        )
+        return jsonify({'success': True, 'email': email})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/produits', methods=['POST'])
 @login_required
 def api_add_produit():
@@ -9291,11 +9314,28 @@ def page_modeles_resultats():
 @login_required
 def api_lister_modeles_resultats():
     structure_id = session.get('structure_id')
-    lignes = ModeleResultat.query.filter_by(structure_id=structure_id).order_by(ModeleResultat.type_prestation, ModeleResultat.nom).all()
+    q = ModeleResultat.query.filter_by(structure_id=structure_id)
+    type_prestation = request.args.get('type_prestation')
+    if type_prestation:
+        q = q.filter_by(type_prestation=type_prestation)
+    lignes = q.order_by(ModeleResultat.type_prestation, ModeleResultat.nom).all()
     return jsonify([{
         'id': l.id, 'nom': l.nom, 'type_prestation': l.type_prestation,
-        'fichier_nom': l.fichier_nom, 'created_at': l.created_at.strftime('%d/%m/%Y') if l.created_at else '',
+        'fichier_nom': l.fichier_nom, 'a_contenu_html': bool(l.contenu_html),
+        'created_at': l.created_at.strftime('%d/%m/%Y') if l.created_at else '',
     } for l in lignes])
+
+
+@app.route('/api/modeles-resultats/<int:modele_id>/contenu', methods=['GET'])
+@login_required
+def api_contenu_modele_resultat(modele_id):
+    """Contenu HTML d'un modèle rédigé en ligne — pour préremplir l'éditeur
+    lors de la saisie d'un résultat (voir resultats_analyses.html)."""
+    structure_id = session.get('structure_id')
+    modele = ModeleResultat.query.filter_by(id=modele_id, structure_id=structure_id).first()
+    if not modele:
+        return jsonify({'success': False, 'error': 'Introuvable'}), 404
+    return jsonify({'success': True, 'contenu_html': modele.contenu_html or ''})
 
 
 @app.route('/api/modeles-resultats', methods=['POST'])
@@ -9306,16 +9346,22 @@ def api_creer_modele_resultat():
         nom = (request.form.get('nom') or '').strip()
         type_prestation = request.form.get('type_prestation')
         fichier = request.files.get('fichier')
+        # ⭐ Alternative au fichier importé : rédigé directement dans
+        # l'éditeur en ligne (voir modeles_resultats.html).
+        contenu_html = (request.form.get('contenu_html') or '').strip()
 
-        if not nom or not fichier:
-            return jsonify({'success': False, 'error': 'Nom et fichier requis'}), 400
+        if not nom or not (fichier or contenu_html):
+            return jsonify({'success': False, 'error': 'Nom et (fichier ou contenu) requis'}), 400
         if type_prestation not in ('analyse', 'examen'):
             return jsonify({'success': False, 'error': "type_prestation doit être 'analyse' ou 'examen'"}), 400
 
         modele = ModeleResultat(
             structure_id=structure_id, type_prestation=type_prestation, nom=nom,
-            fichier_nom=fichier.filename, fichier_mime=fichier.mimetype,
-            fichier_data=fichier.read(), created_by=session.get('user_name', 'System'),
+            fichier_nom=fichier.filename if fichier else None,
+            fichier_mime=fichier.mimetype if fichier else None,
+            fichier_data=fichier.read() if fichier else None,
+            contenu_html=contenu_html or None,
+            created_by=session.get('user_name', 'System'),
         )
         db.session.add(modele)
         db.session.commit()
@@ -9332,6 +9378,8 @@ def api_telecharger_modele_resultat(modele_id):
     modele = ModeleResultat.query.filter_by(id=modele_id, structure_id=structure_id).first()
     if not modele:
         return "Modèle introuvable", 404
+    if not modele.fichier_data:
+        return "Ce modèle est rédigé en ligne, pas de fichier à télécharger.", 404
     from flask import Response
     return Response(
         modele.fichier_data, mimetype=modele.fichier_mime or 'application/octet-stream',
@@ -9547,6 +9595,7 @@ def api_lister_resultats_analyses():
             'resultat_id': r.id if r else None,
             'nom_interprete': r.nom_interprete if r else None,
             'fichier_nom': r.fichier_nom if r else None,
+            'a_fichier': bool(r.fichier_data) if r else False,
             'date_resultat': r.created_at.strftime('%d/%m/%Y %H:%M') if r and r.created_at else None,
         })
     return jsonify(resultat)
@@ -9573,6 +9622,10 @@ def api_enregistrer_resultat(demande_id):
         nom_interprete = (request.form.get('nom_interprete') or '').strip()
         signature_id = request.form.get('signature_id')
         fichier = request.files.get('fichier')
+        # ⭐ Alternative au fichier importé : résultat rédigé directement
+        # dans l'éditeur en ligne (voir resultats_analyses.html) — évite le
+        # détour par Word/Excel + conversion PDF manuelle.
+        contenu_html = (request.form.get('contenu_html') or '').strip()
         modele_id = request.form.get('modele_utilise_id')
 
         # ⭐ Signature pré-enregistrée sélectionnée : sa signature s'appose
@@ -9596,12 +9649,15 @@ def api_enregistrer_resultat(demande_id):
 
         if not nom_interprete:
             return jsonify({'success': False, 'error': f"Nom du {'biologiste' if demande.type_prestation == 'analyse' else 'radiologue/interprète'} requis"}), 400
-        if not fichier:
-            return jsonify({'success': False, 'error': 'Fichier de résultat requis'}), 400
+        if not fichier and not contenu_html:
+            return jsonify({'success': False, 'error': 'Fichier ou contenu rédigé requis'}), 400
 
         resultat = ResultatExamen(
             structure_id=structure_id, demande_id=demande_id,
-            fichier_nom=fichier.filename, fichier_mime=fichier.mimetype, fichier_data=fichier.read(),
+            fichier_nom=fichier.filename if fichier else None,
+            fichier_mime=fichier.mimetype if fichier else None,
+            fichier_data=fichier.read() if fichier else None,
+            contenu_html=contenu_html or None,
             modele_utilise_id=int(modele_id) if modele_id else None,
             nom_interprete=nom_interprete, created_by=session.get('user_name', 'System'),
             signature_intervenant_id=int(signature_id) if signature_id else None,
@@ -9628,6 +9684,8 @@ def api_telecharger_resultat(resultat_id):
     resultat = ResultatExamen.query.filter_by(id=resultat_id, structure_id=structure_id).first()
     if not resultat:
         return "Résultat introuvable", 404
+    if not resultat.fichier_data:
+        return "Ce résultat a été rédigé en ligne, pas de fichier joint — voir /resultats-analyses/<id>/imprimer.", 404
     from flask import Response
     return Response(
         resultat.fichier_data, mimetype=resultat.fichier_mime or 'application/octet-stream',
@@ -9667,7 +9725,112 @@ def page_imprimer_resultat(resultat_id):
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
     structure_info['adresse'] = sheets_helper.format_adresse(structure_info.get('adresse', ''))
 
-    return render_template('resultat_imprimer.html', resultat=resultat, demande=demande, structure=structure_info)
+    patient_row = db.execute_query("SELECT email FROM patients WHERE id = %s AND structure_id = %s", (demande.patient_id, structure_id))
+    patient_email = (patient_row[0].get('email') if patient_row else None) or ''
+
+    return render_template('resultat_imprimer.html', resultat=resultat, demande=demande, structure=structure_info, patient_email=patient_email)
+
+
+def _envoyer_email_resultat(email, patient_nom, structure_nom, acte_nom, nom_interprete,
+                             titre_interprete, type_prestation, contenu_html,
+                             signature_bytes, signature_mime, fichier_bytes, fichier_nom, fichier_mime):
+    """Envoie le résultat par email — arrière-plan, même principe que
+    _envoyer_email_verrouillage(). Le corps reprend la mise en page de
+    resultat_imprimer.html (en-tête, contenu, signature) ; si le résultat
+    est un fichier importé, il est joint en pièce jointe plutôt que
+    recopié dans le corps."""
+    def _send():
+        try:
+            label_signataire = 'Le Laboratoire' if type_prestation == 'analyse' else 'Le Radiologue'
+            titre_ligne = f'{titre_interprete} — {nom_interprete}' if titre_interprete else nom_interprete
+            corps_resultat = contenu_html if contenu_html else (
+                '<p style="color:#666;">Votre résultat est joint à cet email en pièce jointe.</p>'
+            )
+            signature_html = '<img src="cid:signature_resultat" style="max-height:60px;max-width:160px;">' if signature_bytes else ''
+
+            html = f"""
+            <html><body style="font-family:Arial,sans-serif; color:#333; max-width:650px; margin:0 auto;">
+                <div style="background:linear-gradient(135deg,#1d6fa5 0%,#0f4c75 100%); color:white; padding:16px; border-radius:8px 8px 0 0;">
+                    <h3 style="margin:0;">{structure_nom}</h3>
+                    <p style="margin:4px 0 0 0; font-size:13px; opacity:0.9;">
+                        {"RÉSULTAT D'ANALYSE" if type_prestation == 'analyse' else "RÉSULTAT D'EXAMEN"}
+                    </p>
+                </div>
+                <div style="padding:16px; border:1px solid #dee2e6; border-top:none;">
+                    <p>Bonjour {patient_nom},</p>
+                    <p>Votre résultat pour <strong>{acte_nom}</strong> est disponible :</p>
+                    <div style="margin:12px 0; padding:12px; background:#f8f9fa; border-radius:6px;">
+                        {corps_resultat}
+                    </div>
+                    <div style="text-align:right; font-size:13px; margin-top:16px;">
+                        <strong>{label_signataire}</strong><br>
+                        {signature_html}
+                        <div>{titre_ligne}</div>
+                    </div>
+                    <hr>
+                    <p style="color:#888; font-size:12px;">
+                        Document confidentiel — {structure_nom}. Si vous n'êtes pas le destinataire prévu,
+                        merci de supprimer cet email et de ne pas le transmettre.
+                    </p>
+                </div>
+            </body></html>
+            """
+
+            msg = Message(f"Votre résultat — {structure_nom}", recipients=[email], html=html)
+            if signature_bytes:
+                msg.attach('signature.png', signature_mime or 'image/png', signature_bytes, 'inline', headers={'Content-ID': '<signature_resultat>'})
+            if fichier_bytes:
+                msg.attach(fichier_nom or 'resultat.pdf', fichier_mime or 'application/octet-stream', fichier_bytes)
+            mail.send(msg)
+            print(f"✅ Résultat envoyé par email à {email}")
+        except Exception as e:
+            print(f"⚠️ Email résultat non envoyé: {e}")
+    thread = threading.Thread(target=_send)
+    thread.daemon = True
+    thread.start()
+
+
+@app.route('/api/resultats-analyses/<int:resultat_id>/envoyer-email', methods=['POST'])
+@login_required
+def api_envoyer_resultat_email(resultat_id):
+    """Envoie le résultat par email au patient — patron : "dans les
+    résultats qu'on puisse envoyer résultat par mail au patient". Si le
+    patient n'a pas encore d'email enregistré, on l'accepte dans le corps
+    de la requête et on le mémorise sur sa fiche (voir /api/patients/<id>/email
+    — même geste, un seul appel côté front)."""
+    try:
+        structure_id = session.get('structure_id')
+        resultat = ResultatExamen.query.filter_by(id=resultat_id, structure_id=structure_id).first()
+        if not resultat:
+            return jsonify({'success': False, 'error': 'Résultat introuvable'}), 404
+        demande = DemandeExamen.query.get(resultat.demande_id)
+        if not demande:
+            return jsonify({'success': False, 'error': 'Demande introuvable'}), 404
+
+        email_saisi = (request.json.get('email') or '').strip() if request.is_json else ''
+        patient_row = db.execute_query("SELECT email FROM patients WHERE id = %s AND structure_id = %s", (demande.patient_id, structure_id))
+        email_patient = (patient_row[0].get('email') if patient_row else None) or None
+
+        email = email_saisi or email_patient
+        if not email or '@' not in email:
+            return jsonify({'success': False, 'error': 'Aucun email pour ce patient — saisissez-en un.'}), 400
+
+        if email_saisi and email_saisi != email_patient:
+            db.execute_query("UPDATE patients SET email = %s WHERE id = %s AND structure_id = %s", (email_saisi, demande.patient_id, structure_id))
+
+        structures = sheets_helper.get_all_records('structures', use_prefix=False)
+        structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
+
+        _envoyer_email_resultat(
+            email=email, patient_nom=demande.patient_nom, structure_nom=structure_info.get('nom') or 'SSoftOne v10',
+            acte_nom=demande.acte_nom, nom_interprete=resultat.nom_interprete, titre_interprete=resultat.titre_interprete,
+            type_prestation=demande.type_prestation, contenu_html=resultat.contenu_html,
+            signature_bytes=resultat.signature_data, signature_mime=resultat.signature_mime,
+            fichier_bytes=resultat.fichier_data, fichier_nom=resultat.fichier_nom, fichier_mime=resultat.fichier_mime,
+        )
+        return jsonify({'success': True, 'email': email})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/patients/<int:patient_id>/generer-code-portail', methods=['POST'])

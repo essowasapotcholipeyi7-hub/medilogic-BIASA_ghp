@@ -5,11 +5,15 @@
 
 {% block extra_css %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
     @media print {
         @page { size: A4; margin: 12mm; }
         .no-print { display: none !important; }
     }
+    .pdf-page-canvas { width: 100%; height: auto; display: block; margin-bottom: 10px; border: 1px solid #dee2e6; border-radius: 6px; break-inside: avoid; page-break-inside: avoid; }
+    .resultat-contenu-html { font-size: 13px; }
+    .resultat-contenu-html img { max-width: 100%; }
 </style>
 {% endblock %}
 
@@ -47,9 +51,26 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                     <strong>Acte :</strong> {{ demande.acte_nom }}
                 </div>
 
-                <!-- FICHIER DU RÉSULTAT -->
-                {% if resultat.fichier_mime and 'pdf' in resultat.fichier_mime %}
-                <iframe src="{{ url_for('api_telecharger_resultat', resultat_id=resultat.id) }}" style="width:100%; height:600px; border:1px solid #dee2e6; border-radius:6px;"></iframe>
+                <!-- CONTENU DU RÉSULTAT -->
+                {% if resultat.contenu_html %}
+                <!-- ⭐ Rédigé directement dans l'éditeur en ligne — rendu en
+                     flux normal (pas de cadre isolé), donc la pagination à
+                     l'impression fonctionne nativement, comme partout
+                     ailleurs dans l'appli. -->
+                <div class="resultat-contenu-html">{{ resultat.contenu_html | safe }}</div>
+                {% elif resultat.fichier_mime and 'pdf' in resultat.fichier_mime %}
+                <!-- ⭐ Fichier PDF importé — rendu page par page avec PDF.js
+                     directement dans le flux de la page (pas dans un
+                     <iframe>). Un <iframe src="...pdf"> n'imprime que ce qui
+                     est visuellement affiché à l'instant du clic sur
+                     Imprimer (limite connue des navigateurs) : un PDF de
+                     plusieurs pages n'était donc jamais entièrement
+                     imprimé. En rendant chaque page comme une image dans le
+                     flux normal du document, l'impression du navigateur les
+                     pagine correctement, toutes les pages y compris. -->
+                <div id="pdfPagesContainer">
+                    <div class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin me-1"></i> Chargement du document...</div>
+                </div>
                 {% else %}
                 <div class="alert alert-light border text-center">
                     <i class="fas fa-file fa-2x text-muted mb-2 d-block"></i>
@@ -84,8 +105,10 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
 
         <div class="text-center mt-3 no-print">
             <button onclick="window.print()" class="btn btn-primary btn-sm"><i class="fas fa-print"></i> Imprimer</button>
+            <button onclick="envoyerParEmail()" class="btn btn-success btn-sm"><i class="fas fa-envelope"></i> Envoyer par email</button>
             <a href="{{ url_for('page_resultats_analyses') }}" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</a>
         </div>
+        <div id="emailResultatMsg" class="text-center mt-2 small no-print"></div>
     </div>
 </div>
 <script>
@@ -93,6 +116,59 @@ if (window.JsBarcode) {
     JsBarcode("#codeBarreResultat", "RES-{{ resultat.id }}-{{ demande.id }}", {
         format: "CODE128", width: 1.4, height: 36, fontSize: 11, margin: 4,
     });
+}
+
+// ⭐ Rendu page par page du PDF importé — voir le commentaire au-dessus de
+// #pdfPagesContainer plus haut dans ce fichier pour la raison.
+{% if not resultat.contenu_html and resultat.fichier_mime and 'pdf' in resultat.fichier_mime %}
+(async function() {
+    const urlFichierResultat = "{{ url_for('api_telecharger_resultat', resultat_id=resultat.id) }}";
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    const conteneur = document.getElementById('pdfPagesContainer');
+    try {
+        const pdf = await pdfjsLib.getDocument(urlFichierResultat).promise;
+        conteneur.innerHTML = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const viewport = page.getViewport({ scale: 1.5 });
+            const canvas = document.createElement('canvas');
+            canvas.className = 'pdf-page-canvas';
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+            conteneur.appendChild(canvas);
+        }
+    } catch (e) {
+        conteneur.innerHTML = '<div class="alert alert-warning">Impossible d\'afficher l\'aperçu du document ' +
+            '(<a href="' + urlFichierResultat + '" target="_blank">l\'ouvrir directement</a>).</div>';
+    }
+})();
+{% endif %}
+
+function envoyerParEmail() {
+    const msg = document.getElementById('emailResultatMsg');
+    let email = "{{ patient_email }}";
+    if (!email) {
+        email = prompt("Aucun email enregistré pour ce patient — saisissez-en un :");
+        if (!email) return;
+    }
+    msg.className = 'text-center mt-2 small no-print text-muted';
+    msg.textContent = 'Envoi en cours...';
+    fetch("{{ url_for('api_envoyer_resultat_email', resultat_id=resultat.id) }}", {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            msg.className = 'text-center mt-2 small no-print text-success';
+            msg.textContent = 'Envoyé à ' + data.email + '.';
+        } else {
+            msg.className = 'text-center mt-2 small no-print text-danger';
+            msg.textContent = 'Erreur : ' + (data.error || 'inconnue');
+        }
+    })
+    .catch(e => { msg.className = 'text-center mt-2 small no-print text-danger'; msg.textContent = 'Erreur : ' + e; });
 }
 </script>
 {% endblock %}

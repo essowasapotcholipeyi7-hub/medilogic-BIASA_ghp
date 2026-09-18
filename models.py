@@ -89,6 +89,11 @@ class Patient(db.Model):
     personne_a_prevenir_nom = db.Column(db.String(100))
     personne_a_prevenir_telephone = db.Column(db.String(50))
     personne_a_prevenir_relation = db.Column(db.String(50))
+    # ⭐ Pour l'envoi des résultats par email — patron : "dans les résultats
+    # qu'on puisse envoyer résultat par mail au patient". Facultatif,
+    # capturé à la volée depuis le bouton d'envoi si absent (voir
+    # PUT /api/patients/<id>/email, app.py).
+    email = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -2423,6 +2428,12 @@ class ModeleResultat(db.Model):
     fichier_nom = db.Column(db.String(255))
     fichier_mime = db.Column(db.String(100))
     fichier_data = db.Column(db.LargeBinary)
+    # ⭐ Contenu rédigeable directement dans l'appli (éditeur en ligne) —
+    # alternative au fichier Word/Excel importé. patron : "est-ce possible
+    # que les modèles... qu'on puisse directement les ouvrir dans la base,
+    # les modifier et enregistrer en PDF ? Tout se fera dans la base". NULL
+    # pour un modèle resté fichier (jamais retapé) — repli explicite.
+    contenu_html = db.Column(db.Text)
     created_by = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -2440,7 +2451,18 @@ class ResultatExamen(db.Model):
     demande_id = db.Column(db.Integer, nullable=False)
     fichier_nom = db.Column(db.String(255))
     fichier_mime = db.Column(db.String(100))
-    fichier_data = db.Column(db.LargeBinary, nullable=False)
+    # ⭐ NULL désormais possible : un résultat peut être rédigé directement
+    # dans l'éditeur en ligne (voir contenu_html ci-dessous) au lieu d'être
+    # importé — dans ce cas fichier_data/nom/mime restent NULL. L'un des
+    # deux (fichier_data OU contenu_html) est toujours présent, vérifié
+    # côté route (api_enregistrer_resultat, app.py), jamais les deux vides.
+    fichier_data = db.Column(db.LargeBinary)
+    # ⭐ Résultat rédigé directement dans l'appli (éditeur en ligne) —
+    # remplace le détour actuel par Word/Excel + conversion PDF manuelle.
+    # Imprimé en flux normal (resultat_imprimer.html), jamais dans un
+    # cadre <iframe> isolé — ce qui garantit une pagination correcte à
+    # l'impression, contrairement à un PDF importé affiché dans un iframe.
+    contenu_html = db.Column(db.Text)
     modele_utilise_id = db.Column(db.Integer)  # traçabilité — modèle de départ, si utilisé
     nom_interprete = db.Column(db.String(200), nullable=False)  # biologiste (analyse) / radiologue (examen)
     # ⭐ Signature électronique — patron : "on met Le Laboratoire et on met
