@@ -9338,6 +9338,115 @@ def api_contenu_modele_resultat(modele_id):
     return jsonify({'success': True, 'contenu_html': modele.contenu_html or ''})
 
 
+def _aplatir_tableaux_html(html):
+    """Remplace chaque <table> par un paragraphe par ligne — l'éditeur en
+    ligne (Quill) n'a pas de module tableau et aplatit silencieusement tout
+    <table> en un seul bloc de texte collé sans espaces ni sauts de ligne
+    (constaté en test live sur un modèle Excel). Un modèle Word contenant
+    un vrai tableau Word aurait le même problème une fois passé par
+    mammoth — même traitement ici pour les deux."""
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, 'html.parser')
+    for table in soup.find_all('table'):
+        remplacement = soup.new_tag('div')
+        for tr in table.find_all('tr'):
+            valeurs = [c.get_text(strip=True) for c in tr.find_all(['td', 'th'])]
+            valeurs = [v for v in valeurs if v]
+            if valeurs:
+                p = soup.new_tag('p')
+                p.string = ' — '.join(valeurs)
+                remplacement.append(p)
+        table.replace_with(remplacement)
+    return str(soup)
+
+
+def _convertir_fichier_en_html(fichier_data, fichier_nom, fichier_mime):
+    """Convertit un modèle Word (.docx) ou Excel (.xlsx) importé en HTML
+    éditable — patron : "je veux que le modèle... qu'on a importé s'ouvre
+    facilement dans cet éditeur pour qu'on modifie les parties à
+    modifier". Mammoth lit directement le XML du .docx (aucune dépendance
+    système, contrairement à une conversion via LibreOffice) ; openpyxl
+    (déjà utilisé ailleurs dans l'appli) pour les .xlsx. Les anciens
+    formats binaires .doc/.xls (pré-2007) ne sont pas lisibles ainsi —
+    message clair invitant à réenregistrer en .docx/.xlsx, ou à retaper."""
+    nom = (fichier_nom or '').lower()
+    mime = (fichier_mime or '').lower()
+
+    if nom.endswith('.docx') or 'wordprocessingml' in mime:
+        import mammoth
+        from io import BytesIO
+        resultat = mammoth.convert_to_html(BytesIO(fichier_data))
+        return _aplatir_tableaux_html(resultat.value), None
+
+    if nom.endswith('.xlsx') or 'spreadsheetml' in mime:
+        import openpyxl
+        from io import BytesIO
+        from markupsafe import escape
+        # ⭐ PAS de <table> : l'éditeur (Quill) n'a pas de module tableau et
+        # aplatit silencieusement tout <table> en texte collé sans espaces
+        # (constaté en test live — "ParametreResultatGlycemie___"). Une
+        # ligne par ligne de la feuille, cellules séparées par un tiret,
+        # reste lisible ET reste un texte normal que Quill édite sans
+        # perte.
+        wb = openpyxl.load_workbook(BytesIO(fichier_data), data_only=True)
+        ws = wb.active
+        lignes_html = []
+        for row in ws.iter_rows():
+            valeurs = [str(c.value) for c in row if c.value is not None and str(c.value).strip()]
+            if valeurs:
+                lignes_html.append(f'<p>{escape(" — ".join(valeurs))}</p>')
+        html = ''.join(lignes_html) or '<p></p>'
+        return html, None
+
+    return None, "Conversion non prise en charge pour ce type de fichier (.doc/.xls ancien format, PDF...) — réenregistrez-le en .docx/.xlsx depuis Word/Excel, ou retapez le contenu directement."
+
+
+@app.route('/api/modeles-resultats/<int:modele_id>/convertir-html', methods=['GET'])
+@login_required
+def api_convertir_modele_html(modele_id):
+    """Conversion à la demande d'un modèle fichier en HTML éditable — ne
+    modifie rien en base tant que l'utilisateur n'enregistre pas
+    explicitement (voir api_definir_contenu_modele ci-dessous)."""
+    structure_id = session.get('structure_id')
+    modele = ModeleResultat.query.filter_by(id=modele_id, structure_id=structure_id).first()
+    if not modele:
+        return jsonify({'success': False, 'error': 'Introuvable'}), 404
+    if modele.contenu_html:
+        return jsonify({'success': True, 'contenu_html': modele.contenu_html})
+    if not modele.fichier_data:
+        return jsonify({'success': False, 'error': 'Aucun fichier à convertir'}), 400
+    try:
+        html, erreur = _convertir_fichier_en_html(modele.fichier_data, modele.fichier_nom, modele.fichier_mime)
+        if erreur:
+            return jsonify({'success': False, 'error': erreur}), 400
+        return jsonify({'success': True, 'contenu_html': html})
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Échec de la conversion : {e}'}), 500
+
+
+@app.route('/api/modeles-resultats/<int:modele_id>/contenu', methods=['PUT'])
+@login_required
+def api_definir_contenu_modele(modele_id):
+    """Enregistre le contenu (converti puis ajusté, ou rédigé) comme
+    contenu permanent du modèle — celui-ci devient alors utilisable
+    partout comme un modèle 'en ligne' natif, fichier d'origine conservé
+    en repli."""
+    try:
+        structure_id = session.get('structure_id')
+        modele = ModeleResultat.query.filter_by(id=modele_id, structure_id=structure_id).first()
+        if not modele:
+            return jsonify({'success': False, 'error': 'Introuvable'}), 404
+        contenu_html = (request.json.get('contenu_html') or '').strip()
+        if not contenu_html:
+            return jsonify({'success': False, 'error': 'Contenu vide'}), 400
+        modele.contenu_html = contenu_html
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/modeles-resultats', methods=['POST'])
 @login_required
 def api_creer_modele_resultat():

@@ -147,8 +147,26 @@ function choisirModeResultat(mode) {
 function chargerModeleDansEditeur() {
     const modeleId = document.getElementById('resultatModeleSelect').value;
     if (!modeleId || !quillEditeurResultat) return;
-    fetch(`/api/modeles-resultats/${modeleId}/contenu`).then(r => r.json()).then(data => {
-        if (data.success) quillEditeurResultat.root.innerHTML = data.contenu_html || '';
+    quillEditeurResultat.setText('Chargement du modèle...');
+    // ⭐ Fonctionne aussi pour un modèle Word/Excel jamais retapé — converti
+    // à la volée (voir api_convertir_modele_html, app.py) — patron : "je
+    // veux que le modèle qu'on a importé s'ouvre facilement dans cet
+    // éditeur pour qu'on modifie les parties à modifier".
+    fetch(`/api/modeles-resultats/${modeleId}/convertir-html`).then(r => r.json()).then(data => {
+        // ⭐ Garde-fou contre une course : ignore une réponse qui ne
+        // correspond plus au modèle sélectionné (sélection changée entre
+        // temps) — même raison que ouvrirModeleDansEditeur (modeles_resultats.html).
+        if (document.getElementById('resultatModeleSelect').value !== modeleId) return;
+        if (data.success) {
+            // ⭐ PAS quill.root.innerHTML = ... : voir le commentaire
+            // équivalent dans modeles_resultats.html (Quill annule toute
+            // écriture DOM directe qui ne passe pas par son API).
+            quillEditeurResultat.setText('');
+            quillEditeurResultat.clipboard.dangerouslyPasteHTML(data.contenu_html || '');
+        } else {
+            quillEditeurResultat.setText('');
+            alert('Erreur : ' + (data.error || 'conversion impossible'));
+        }
     });
 }
 
@@ -171,13 +189,14 @@ function ouvrirModalResultat(demandeId, patientNom, acteNom, typePrestation) {
         ? 'Le Laboratoire <span class="text-danger">*</span>'
         : 'Le Radiologue <span class="text-danger">*</span>';
     choisirModeResultat('fichier');
-    if (quillEditeurResultat) quillEditeurResultat.root.innerHTML = '';
+    if (quillEditeurResultat) quillEditeurResultat.setText('');
 
     const selectModele = document.getElementById('resultatModeleSelect');
     selectModele.innerHTML = '<option value="">-- Partir d\'une page vierge --</option>';
     fetch(`/api/modeles-resultats?type_prestation=${typePrestation}`).then(r => r.json()).then(lignes => {
-        lignes.filter(m => m.a_contenu_html).forEach(m => {
-            selectModele.innerHTML += `<option value="${m.id}">${m.nom}</option>`;
+        lignes.forEach(m => {
+            const label = m.a_contenu_html ? m.nom : `${m.nom} (Word/Excel — converti à l'ouverture)`;
+            selectModele.innerHTML += `<option value="${m.id}">${label}</option>`;
         });
     });
 

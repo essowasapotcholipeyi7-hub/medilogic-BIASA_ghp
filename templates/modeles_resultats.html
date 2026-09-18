@@ -87,9 +87,11 @@
 <script>
 let modeModeleActuel = 'fichier';
 let quillEditeurModele = null;
+let modeleEnConversionId = null;
 
 function ouvrirModalModele(mode) {
     modeModeleActuel = mode;
+    modeleEnConversionId = null;
     document.getElementById('modeleNom').value = '';
     document.getElementById('modeleFichier').value = '';
     document.getElementById('modeleAnalyse').checked = true;
@@ -100,14 +102,77 @@ function ouvrirModalModele(mode) {
         : '<i class="fas fa-keyboard me-2"></i>Rédiger un modèle en ligne';
     if (mode === 'editeur') {
         if (!quillEditeurModele) quillEditeurModele = new Quill('#editeurModele', { theme: 'snow' });
-        quillEditeurModele.root.innerHTML = '';
+        quillEditeurModele.setText('');
     }
     new bootstrap.Modal(document.getElementById('modalModele')).show();
+}
+
+// ⭐ Ouvre un modèle Word/Excel déjà importé directement dans l'éditeur —
+// patron : "je veux que le modèle... qu'on a importé s'ouvre facilement
+// dans cet éditeur pour qu'on modifie les parties à modifier". Converti à
+// la volée (voir api_convertir_modele_html, app.py) ; "Enregistrer"
+// remplace alors le fichier par ce contenu éditable, une fois pour toutes.
+function ouvrirModeleDansEditeur(id, nom, typePrestation) {
+    modeModeleActuel = 'editeur';
+    modeleEnConversionId = id;
+    document.getElementById('modeleNom').value = nom;
+    document.getElementById('modeleFichier').value = '';
+    document.getElementById(typePrestation === 'analyse' ? 'modeleAnalyse' : 'modeleExamen').checked = true;
+    document.getElementById('modeleZoneFichier').style.display = 'none';
+    document.getElementById('modeleZoneEditeur').style.display = 'block';
+    document.getElementById('modalModeleTitre').innerHTML = '<i class="fas fa-keyboard me-2"></i>Modifier dans l\'éditeur';
+    if (!quillEditeurModele) quillEditeurModele = new Quill('#editeurModele', { theme: 'snow' });
+    quillEditeurModele.setText('Conversion en cours...');
+    new bootstrap.Modal(document.getElementById('modalModele')).show();
+
+    fetch(`/api/modeles-resultats/${id}/convertir-html`).then(r => r.json()).then(data => {
+        // ⭐ Garde-fou contre une course : si un autre modèle a été ouvert
+        // entre-temps (double-clic, ou ouverture d'un second modèle avant
+        // la fin de la conversion du premier), on n'écrase pas son contenu
+        // avec une réponse qui ne le concerne plus.
+        if (modeleEnConversionId !== id) return;
+        if (data.success) {
+            // ⭐ PAS quill.root.innerHTML = ... : Quill garde son propre
+            // modèle interne (Delta) et son MutationObserver annule toute
+            // modification directe du DOM qui ne passe pas par son API —
+            // le contenu semblait s'appliquer un instant puis redevenait
+            // vide. dangerouslyPasteHTML est la voie correcte pour injecter
+            // du HTML tout en gardant Quill et le DOM synchronisés.
+            quillEditeurModele.setText('');
+            quillEditeurModele.clipboard.dangerouslyPasteHTML(data.contenu_html || '');
+        } else {
+            quillEditeurModele.setText('');
+            alert('Erreur : ' + (data.error || 'conversion impossible'));
+        }
+    });
 }
 
 function enregistrerModele() {
     const nom = document.getElementById('modeleNom').value.trim();
     if (!nom) { alert('Le nom est obligatoire.'); return; }
+
+    // ⭐ Conversion permanente d'un modèle fichier existant — met à jour
+    // CE modèle au lieu d'en créer un nouveau (voir ouvrirModeleDansEditeur).
+    if (modeleEnConversionId) {
+        if (!quillEditeurModele || quillEditeurModele.getText().trim().length === 0) {
+            alert('Le contenu ne peut pas être vide.'); return;
+        }
+        fetch(`/api/modeles-resultats/${modeleEnConversionId}/contenu`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contenu_html: quillEditeurModele.root.innerHTML })
+        })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('modalModele')).hide();
+                    chargerModeles();
+                } else {
+                    alert('Erreur : ' + (data.error || 'inconnue'));
+                }
+            })
+            .catch(e => alert('Erreur : ' + e));
+        return;
+    }
 
     const fd = new FormData();
     fd.append('nom', nom);
@@ -154,7 +219,10 @@ function chargerModeles() {
                         <div class="text-muted small">${m.a_contenu_html ? 'Prêt à charger dans l\'éditeur' : m.fichier_nom} — ${m.created_at}</div>
                     </div>
                     <div>
-                        ${m.a_contenu_html ? '' : `<a href="/api/modeles-resultats/${m.id}/fichier" target="_blank" class="btn btn-sm btn-outline-primary" title="Télécharger"><i class="fas fa-download"></i></a>`}
+                        ${m.a_contenu_html ? '' : `
+                            <button class="btn btn-sm btn-outline-success" onclick='ouvrirModeleDansEditeur(${m.id}, ${JSON.stringify(m.nom)}, ${JSON.stringify(m.type_prestation)})' title="Ouvrir dans l'éditeur"><i class="fas fa-keyboard"></i></button>
+                            <a href="/api/modeles-resultats/${m.id}/fichier" target="_blank" class="btn btn-sm btn-outline-primary" title="Télécharger"><i class="fas fa-download"></i></a>
+                        `}
                         <button class="btn btn-sm btn-outline-danger" onclick="supprimerModele(${m.id})" title="Supprimer"><i class="fas fa-trash"></i></button>
                     </div>
                 </div>`).join('') + '</div>'
