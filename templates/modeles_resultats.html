@@ -119,7 +119,7 @@ function chargerModeles() {
                         <div class="text-muted small">${m.fichier_nom} — ${m.created_at}</div>
                     </div>
                     <div>
-                        <a href="/api/modeles-resultats/${m.id}/fichier" class="btn btn-sm btn-outline-primary" title="Télécharger"><i class="fas fa-download"></i></a>
+                        <a href="/api/modeles-resultats/${m.id}/fichier" target="_blank" class="btn btn-sm btn-outline-primary" title="Télécharger"><i class="fas fa-download"></i></a>
                         <button class="btn btn-sm btn-outline-danger" onclick="supprimerModele(${m.id})" title="Supprimer"><i class="fas fa-trash"></i></button>
                     </div>
                 </div>`).join('') + '</div>'

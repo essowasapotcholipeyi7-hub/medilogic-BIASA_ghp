@@ -9276,7 +9276,12 @@ def api_toggle_patient_externe(fiche_id):
 @app.route('/modeles-resultats')
 @login_required
 def page_modeles_resultats():
-    if session.get('role') not in ('laborantin', 'radiologue') and not a_acces('demandes_laboratoire') and not a_acces('demandes_radiologie'):
+    # ⭐ Secrétaire ajoutée : "sous la supervision du radiologue donc il
+    # n'y a aucun souci à ce qu'elle y accède" — patron. Mêmes modèles
+    # que le labo/radio utilise pour saisir les résultats (voir
+    # resultats_analyses.html, peutSaisir), pas de contenu médical propre
+    # à cette page (juste des fichiers Word/Excel vierges).
+    if session.get('role') not in ('laborantin', 'radiologue', 'secretaire') and not a_acces('demandes_laboratoire') and not a_acces('demandes_radiologie'):
         flash('Accès non autorisé pour votre rôle.', 'danger')
         return redirect(url_for('dashboard'))
     return render_template('modeles_resultats.html')

@@ -190,7 +190,7 @@
                 </a>
                 {% endif %}
 
-                {% if session.role in ['laborantin', 'radiologue'] and not _bloq %}
+                {% if session.role in ['laborantin', 'radiologue', 'secretaire'] and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'page_modeles_resultats' %}active{% endif %}" href="{{ url_for('page_modeles_resultats') }}">
                     <span class="menu-text">Modèles de résultats</span>
                 </a>
