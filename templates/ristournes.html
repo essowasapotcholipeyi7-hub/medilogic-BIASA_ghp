@@ -231,7 +231,7 @@ function chargerEnAttente() {
                 <td class="text-end">${l.taux} %</td>
                 <td class="text-end fw-bold">${Math.round(l.montant_estime).toLocaleString('fr-FR')} F</td>
                 <td class="text-end">
-                    <button class="btn btn-sm btn-warning" onclick="ouvrirModalCloturer(${l.prescripteur_id}, ${JSON.stringify(l.prescripteur_nom)}, ${JSON.stringify(l.date_plus_ancienne)}, ${JSON.stringify(l.date_plus_recente)})">
+                    <button class="btn btn-sm btn-warning" onclick='ouvrirModalCloturer(${l.prescripteur_id}, ${JSON.stringify(l.prescripteur_nom).replace(/'/g, "&apos;")}, ${JSON.stringify(l.date_plus_ancienne)}, ${JSON.stringify(l.date_plus_recente)})'>
                         <i class="fas fa-stopwatch"></i> Clôturer
                     </button>
                 </td>

@@ -152,9 +152,9 @@ function filtrerResultats() {
                 actions = `
                     <a href="/resultats-analyses/${l.resultat_id}/imprimer" target="_blank" class="btn btn-sm btn-outline-primary" title="Imprimer"><i class="fas fa-print"></i></a>
                     <a href="/api/resultats-analyses/${l.resultat_id}/fichier" target="_blank" class="btn btn-sm btn-outline-secondary" title="Voir le fichier"><i class="fas fa-eye"></i></a>
-                    <button class="btn btn-sm btn-outline-dark" onclick="afficherCodePortail(${l.patient_id}, ${JSON.stringify(l.patient_nom)})" title="Code d'accès portail patient"><i class="fas fa-key"></i></button>`;
+                    <button class="btn btn-sm btn-outline-dark" onclick='afficherCodePortail(${l.patient_id}, ${JSON.stringify(l.patient_nom).replace(/'/g, "&apos;")})' title="Code d'accès portail patient"><i class="fas fa-key"></i></button>`;
             } else if (peutSaisir) {
-                actions = `<button class="btn btn-sm btn-success" onclick='ouvrirModalResultat(${l.demande_id}, ${JSON.stringify(l.patient_nom)}, ${JSON.stringify(l.acte_nom)}, ${JSON.stringify(l.type_prestation)})'>
+                actions = `<button class="btn btn-sm btn-success" onclick='ouvrirModalResultat(${l.demande_id}, ${JSON.stringify(l.patient_nom).replace(/'/g, "&apos;")}, ${JSON.stringify(l.acte_nom).replace(/'/g, "&apos;")}, ${JSON.stringify(l.type_prestation)})'>
                     <i class="fas fa-file-upload"></i> Saisir</button>`;
             } else {
                 actions = '<span class="text-muted small">En attente de saisie</span>';
