@@ -1269,6 +1269,17 @@
         max-width: 100%;
     }
 
+    /* ⭐ .main-content a overflow-y:auto + max-height:100vh en écran normal
+       (pour que la barre latérale/topnav restent fixes pendant qu'on
+       scrolle le contenu) — jamais réinitialisé ici, donc tout contenu
+       imprimé plus haut qu'un écran était tronqué à l'impression (constaté
+       en direct sur un résultat rédigé en ligne assez long). Concerne
+       toute page imprimée de l'appli, pas seulement les résultats. */
+    .main-content {
+        overflow: visible !important;
+        max-height: none !important;
+    }
+
     @page {
         margin: 1.5cm;
         size: A4;
