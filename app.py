@@ -9389,6 +9389,27 @@ def api_accepter_deontologie_resultats():
     return jsonify({'success': True})
 
 
+@app.route('/api/resultats-analyses/interpretes', methods=['GET'])
+@login_required
+def api_lister_interpretes_resultats():
+    """Noms déjà saisis comme biologiste/radiologue (nom_interprete) —
+    patron : "si on saisit le nom du radiologue ou du biologiste que ça
+    se propose les prochaines fois, qu'on n'ait plus besoin de
+    ressaisir". Même logique de mémorisation que le taux de ristourne
+    d'un prescripteur. Regroupés par filière (analyse/examen) via la
+    demande liée, pour ne proposer que les noms pertinents dans chaque
+    modal."""
+    structure_id = session.get('structure_id')
+    lignes = db.execute_query("""
+        SELECT DISTINCT ON (r.nom_interprete, d.type_prestation) r.nom_interprete, d.type_prestation
+        FROM public.resultats_examens r
+        JOIN public.demandes_examens d ON d.id = r.demande_id
+        WHERE r.structure_id = %s AND r.nom_interprete IS NOT NULL AND r.nom_interprete != ''
+        ORDER BY r.nom_interprete, d.type_prestation, r.created_at DESC
+    """, (structure_id,))
+    return jsonify(lignes or [])
+
+
 @app.route('/api/resultats-analyses', methods=['GET'])
 @login_required
 def api_lister_resultats_analyses():

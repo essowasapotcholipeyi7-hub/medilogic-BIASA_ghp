@@ -60,7 +60,8 @@
                 </div>
                 <div class="mb-2">
                     <label class="form-label mb-1" id="labelInterprete">Nom du biologiste <span class="text-danger">*</span></label>
-                    <input type="text" class="form-control" id="resultatNomInterprete" placeholder="Sera imprimé sur le résultat">
+                    <input type="text" class="form-control" id="resultatNomInterprete" placeholder="Sera imprimé sur le résultat" list="listeInterpretes" autocomplete="off">
+                    <datalist id="listeInterpretes"></datalist>
                 </div>
                 <div class="mb-2">
                     <label class="form-label mb-1">Fichier du résultat (PDF de préférence) <span class="text-danger">*</span></label>
@@ -82,6 +83,14 @@
 const ROLE = "{{ session.role }}";
 let demandeChoisie = null;
 
+// ⭐ Mémorisation du nom du biologiste/radiologue — patron : "si on
+// saisit le nom... que ça se propose les prochaines fois, qu'on n'ait
+// plus besoin de ressaisir". Chargé une fois, filtré par filière à
+// l'ouverture du modal (un biologiste ne doit pas polluer la liste des
+// radiologues et inversement).
+let INTERPRETES = [];
+fetch('/api/resultats-analyses/interpretes').then(r => r.json()).then(d => { INTERPRETES = d; });
+
 function ouvrirModalResultat(demandeId, patientNom, acteNom, typePrestation) {
     demandeChoisie = demandeId;
     document.getElementById('resultatDemandeId').value = demandeId;
@@ -91,6 +100,9 @@ function ouvrirModalResultat(demandeId, patientNom, acteNom, typePrestation) {
     document.getElementById('labelInterprete').innerHTML = typePrestation === 'analyse'
         ? 'Nom du biologiste <span class="text-danger">*</span>'
         : 'Nom du radiologue / interprète <span class="text-danger">*</span>';
+    document.getElementById('listeInterpretes').innerHTML = INTERPRETES
+        .filter(i => i.type_prestation === typePrestation)
+        .map(i => `<option value="${i.nom_interprete.replace(/"/g, '&quot;')}">`).join('');
     new bootstrap.Modal(document.getElementById('modalResultat')).show();
 }
 
