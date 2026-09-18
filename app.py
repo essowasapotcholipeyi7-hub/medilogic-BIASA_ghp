@@ -431,31 +431,40 @@ def _envoyer_email_verrouillage(email, nom):
     """Notifie le titulaire du compte par email — envoi en arrière-plan,
     même principe que envoyer_email_async() ci-dessous."""
     def _send():
-        try:
-            msg = Message(
-                "🔒 Compte temporairement bloqué - Medilogic",
-                recipients=[email],
-                html=f"""
-                <html><body style="font-family:Arial,sans-serif; color:#333;">
-                    <h2>🔒 Compte temporairement bloqué</h2>
-                    <p>Bonjour {nom or ''},</p>
-                    <p>Votre compte Medilogic (<strong>{email}</strong>) vient d'être
-                    bloqué pendant <strong>10 minutes</strong> suite à
-                    <strong>4 tentatives de connexion avec un mot de passe incorrect</strong>.</p>
-                    <p>Si c'est vous qui avez oublié votre mot de passe : patientez
-                    10 minutes puis réessayez, ou utilisez « Mot de passe oublié ? »
-                    sur la page de connexion.</p>
-                    <p>Si ce n'est pas vous : quelqu'un a peut-être essayé d'accéder à
-                    votre compte — pensez à changer votre mot de passe dès que possible.</p>
-                    <hr>
-                    <p style="color:#888; font-size:12px;">Medilogic — sécurité des comptes</p>
-                </body></html>
-                """
-            )
-            mail.send(msg)
-            print(f"✅ Email de verrouillage envoyé à {email}")
-        except Exception as e:
-            print(f"⚠️ Email de verrouillage non envoyé: {e}")
+        # ⭐ app.app_context() indispensable ici : ce code tourne dans un
+        # thread séparé, qui n'hérite PAS du contexte applicatif Flask du
+        # thread principal (contrairement à ce qu'on pourrait croire). Sans
+        # ça, Message()/mail.send() lèvent "Working outside of application
+        # context" — bug silencieux (avalé par le except ci-dessous, jamais
+        # visible ailleurs que dans les logs serveur) qui empêchait TOUT
+        # email envoyé en arrière-plan de partir, découvert en testant en
+        # direct suite au signalement "la config de mail ne marche pas".
+        with app.app_context():
+            try:
+                msg = Message(
+                    "🔒 Compte temporairement bloqué - Medilogic",
+                    recipients=[email],
+                    html=f"""
+                    <html><body style="font-family:Arial,sans-serif; color:#333;">
+                        <h2>🔒 Compte temporairement bloqué</h2>
+                        <p>Bonjour {nom or ''},</p>
+                        <p>Votre compte Medilogic (<strong>{email}</strong>) vient d'être
+                        bloqué pendant <strong>10 minutes</strong> suite à
+                        <strong>4 tentatives de connexion avec un mot de passe incorrect</strong>.</p>
+                        <p>Si c'est vous qui avez oublié votre mot de passe : patientez
+                        10 minutes puis réessayez, ou utilisez « Mot de passe oublié ? »
+                        sur la page de connexion.</p>
+                        <p>Si ce n'est pas vous : quelqu'un a peut-être essayé d'accéder à
+                        votre compte — pensez à changer votre mot de passe dès que possible.</p>
+                        <hr>
+                        <p style="color:#888; font-size:12px;">Medilogic — sécurité des comptes</p>
+                    </body></html>
+                    """
+                )
+                mail.send(msg)
+                print(f"✅ Email de verrouillage envoyé à {email}")
+            except Exception as e:
+                print(f"⚠️ Email de verrouillage non envoyé: {e}")
     thread = threading.Thread(target=_send)
     thread.daemon = True
     thread.start()
@@ -464,64 +473,67 @@ def _envoyer_email_verrouillage(email, nom):
 def envoyer_email_async(structure_nom, structure_email, structure_id, proprietaire):
     """Envoie l'email dans un thread séparé - ne bloque pas l'inscription"""
     def _send():
-        try:
-            sujet = f"🏥 Nouvelle inscription - {structure_nom}"
-            
-            lien_activation = f"{BASE_URL}/admin/activate/{structure_id}"
-            lien_admin = f"{BASE_URL}/admin_global"
-            
-            corps = f"""
-            <html>
-            <head>
-                <style>
-                    body {{ font-family: Arial, sans-serif; }}
-                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                    .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }}
-                    .content {{ background: #f8f9fa; padding: 20px; border-radius: 0 0 10px 10px; }}
-                    .info {{ background: white; padding: 15px; border-radius: 8px; margin: 15px 0; }}
-                    .btn {{ display: inline-block; background: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; }}
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <div class="header">
-                        <h2>🏥 Nouvelle inscription</h2>
-                        <p>Medilogic-GHP</p>
-                    </div>
-                    <div class="content">
-                        <h3>Une nouvelle structure s'est inscrite !</h3>
-                        <div class="info">
-                            <p><strong>🏥 Structure :</strong> {structure_nom}</p>
-                            <p><strong>👤 Propriétaire :</strong> {proprietaire}</p>
-                            <p><strong>📧 Email :</strong> {structure_email}</p>
-                            <p><strong>📅 Date :</strong> {datetime.now().strftime('%d/%m/%Y à %H:%M')}</p>
+        # ⭐ app.app_context() indispensable dans un thread séparé — voir le
+        # commentaire équivalent dans _envoyer_email_verrouillage ci-dessus.
+        with app.app_context():
+            try:
+                sujet = f"🏥 Nouvelle inscription - {structure_nom}"
+
+                lien_activation = f"{BASE_URL}/admin/activate/{structure_id}"
+                lien_admin = f"{BASE_URL}/admin_global"
+
+                corps = f"""
+                <html>
+                <head>
+                    <style>
+                        body {{ font-family: Arial, sans-serif; }}
+                        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }}
+                        .content {{ background: #f8f9fa; padding: 20px; border-radius: 0 0 10px 10px; }}
+                        .info {{ background: white; padding: 15px; border-radius: 8px; margin: 15px 0; }}
+                        .btn {{ display: inline-block; background: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; }}
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <div class="header">
+                            <h2>🏥 Nouvelle inscription</h2>
+                            <p>Medilogic-GHP</p>
                         </div>
-                        <div style="text-align: center;">
-                            <a href="{lien_activation}" class="btn" style="color: white; background: #28a745;">✅ Activer la structure</a>
-                            <br><br>
-                            <a href="{lien_admin}" style="color: #667eea;">📊 Aller à l'admin global</a>
+                        <div class="content">
+                            <h3>Une nouvelle structure s'est inscrite !</h3>
+                            <div class="info">
+                                <p><strong>🏥 Structure :</strong> {structure_nom}</p>
+                                <p><strong>👤 Propriétaire :</strong> {proprietaire}</p>
+                                <p><strong>📧 Email :</strong> {structure_email}</p>
+                                <p><strong>📅 Date :</strong> {datetime.now().strftime('%d/%m/%Y à %H:%M')}</p>
+                            </div>
+                            <div style="text-align: center;">
+                                <a href="{lien_activation}" class="btn" style="color: white; background: #28a745;">✅ Activer la structure</a>
+                                <br><br>
+                                <a href="{lien_admin}" style="color: #667eea;">📊 Aller à l'admin global</a>
+                            </div>
+                        </div>
+                        <div class="footer">
+                            <p>Medilogic-GHP - Application de gestion hospitalière</p>
                         </div>
                     </div>
-                    <div class="footer">
-                        <p>Medilogic-GHP - Application de gestion hospitalière</p>
-                    </div>
-                </div>
-            </body>
-            </html>
-            """
-            
-            msg = Message(
-                subject=sujet,
-                recipients=[Config.ADMIN_EMAIL],
-                html=corps
-            )
-            
-            mail.send(msg)
-            print(f"✅ Email d'activation envoyé à {Config.ADMIN_EMAIL}")
-            
-        except Exception as e:
-            print(f"⚠️ Email non envoyé: {e}")
-    
+                </body>
+                </html>
+                """
+
+                msg = Message(
+                    subject=sujet,
+                    recipients=[Config.ADMIN_EMAIL],
+                    html=corps
+                )
+
+                mail.send(msg)
+                print(f"✅ Email d'activation envoyé à {Config.ADMIN_EMAIL}")
+
+            except Exception as e:
+                print(f"⚠️ Email non envoyé: {e}")
+
     thread = threading.Thread(target=_send)
     thread.daemon = True
     thread.start()
@@ -9849,51 +9861,59 @@ def _envoyer_email_resultat(email, patient_nom, structure_nom, acte_nom, nom_int
     est un fichier importé, il est joint en pièce jointe plutôt que
     recopié dans le corps."""
     def _send():
-        try:
-            label_signataire = 'Le Laboratoire' if type_prestation == 'analyse' else 'Le Radiologue'
-            titre_ligne = f'{titre_interprete} — {nom_interprete}' if titre_interprete else nom_interprete
-            corps_resultat = contenu_html if contenu_html else (
-                '<p style="color:#666;">Votre résultat est joint à cet email en pièce jointe.</p>'
-            )
-            signature_html = '<img src="cid:signature_resultat" style="max-height:60px;max-width:160px;">' if signature_bytes else ''
+        # ⭐ app.app_context() indispensable dans un thread séparé — voir le
+        # commentaire équivalent dans _envoyer_email_verrouillage (plus haut
+        # dans ce fichier). Sans ça, Message()/mail.send() levaient "Working
+        # outside of application context", avalé silencieusement par le
+        # except ci-dessous : aucun email en arrière-plan ne partait jamais,
+        # découvert en testant en direct suite au signalement du patron
+        # "la configuration de mail ne marche pas".
+        with app.app_context():
+            try:
+                label_signataire = 'Le Laboratoire' if type_prestation == 'analyse' else 'Le Radiologue'
+                titre_ligne = f'{titre_interprete} — {nom_interprete}' if titre_interprete else nom_interprete
+                corps_resultat = contenu_html if contenu_html else (
+                    '<p style="color:#666;">Votre résultat est joint à cet email en pièce jointe.</p>'
+                )
+                signature_html = '<img src="cid:signature_resultat" style="max-height:60px;max-width:160px;">' if signature_bytes else ''
 
-            html = f"""
-            <html><body style="font-family:Arial,sans-serif; color:#333; max-width:650px; margin:0 auto;">
-                <div style="background:linear-gradient(135deg,#1d6fa5 0%,#0f4c75 100%); color:white; padding:16px; border-radius:8px 8px 0 0;">
-                    <h3 style="margin:0;">{structure_nom}</h3>
-                    <p style="margin:4px 0 0 0; font-size:13px; opacity:0.9;">
-                        {"RÉSULTAT D'ANALYSE" if type_prestation == 'analyse' else "RÉSULTAT D'EXAMEN"}
-                    </p>
-                </div>
-                <div style="padding:16px; border:1px solid #dee2e6; border-top:none;">
-                    <p>Bonjour {patient_nom},</p>
-                    <p>Votre résultat pour <strong>{acte_nom}</strong> est disponible :</p>
-                    <div style="margin:12px 0; padding:12px; background:#f8f9fa; border-radius:6px;">
-                        {corps_resultat}
+                html = f"""
+                <html><body style="font-family:Arial,sans-serif; color:#333; max-width:650px; margin:0 auto;">
+                    <div style="background:linear-gradient(135deg,#1d6fa5 0%,#0f4c75 100%); color:white; padding:16px; border-radius:8px 8px 0 0;">
+                        <h3 style="margin:0;">{structure_nom}</h3>
+                        <p style="margin:4px 0 0 0; font-size:13px; opacity:0.9;">
+                            {"RÉSULTAT D'ANALYSE" if type_prestation == 'analyse' else "RÉSULTAT D'EXAMEN"}
+                        </p>
                     </div>
-                    <div style="text-align:right; font-size:13px; margin-top:16px;">
-                        <strong>{label_signataire}</strong><br>
-                        {signature_html}
-                        <div>{titre_ligne}</div>
+                    <div style="padding:16px; border:1px solid #dee2e6; border-top:none;">
+                        <p>Bonjour {patient_nom},</p>
+                        <p>Votre résultat pour <strong>{acte_nom}</strong> est disponible :</p>
+                        <div style="margin:12px 0; padding:12px; background:#f8f9fa; border-radius:6px;">
+                            {corps_resultat}
+                        </div>
+                        <div style="text-align:right; font-size:13px; margin-top:16px;">
+                            <strong>{label_signataire}</strong><br>
+                            {signature_html}
+                            <div>{titre_ligne}</div>
+                        </div>
+                        <hr>
+                        <p style="color:#888; font-size:12px;">
+                            Document confidentiel — {structure_nom}. Si vous n'êtes pas le destinataire prévu,
+                            merci de supprimer cet email et de ne pas le transmettre.
+                        </p>
                     </div>
-                    <hr>
-                    <p style="color:#888; font-size:12px;">
-                        Document confidentiel — {structure_nom}. Si vous n'êtes pas le destinataire prévu,
-                        merci de supprimer cet email et de ne pas le transmettre.
-                    </p>
-                </div>
-            </body></html>
-            """
+                </body></html>
+                """
 
-            msg = Message(f"Votre résultat — {structure_nom}", recipients=[email], html=html)
-            if signature_bytes:
-                msg.attach('signature.png', signature_mime or 'image/png', signature_bytes, 'inline', headers={'Content-ID': '<signature_resultat>'})
-            if fichier_bytes:
-                msg.attach(fichier_nom or 'resultat.pdf', fichier_mime or 'application/octet-stream', fichier_bytes)
-            mail.send(msg)
-            print(f"✅ Résultat envoyé par email à {email}")
-        except Exception as e:
-            print(f"⚠️ Email résultat non envoyé: {e}")
+                msg = Message(f"Votre résultat — {structure_nom}", recipients=[email], html=html)
+                if signature_bytes:
+                    msg.attach('signature.png', signature_mime or 'image/png', signature_bytes, 'inline', headers={'Content-ID': '<signature_resultat>'})
+                if fichier_bytes:
+                    msg.attach(fichier_nom or 'resultat.pdf', fichier_mime or 'application/octet-stream', fichier_bytes)
+                mail.send(msg)
+                print(f"✅ Résultat envoyé par email à {email}")
+            except Exception as e:
+                print(f"⚠️ Email résultat non envoyé: {e}")
     thread = threading.Thread(target=_send)
     thread.daemon = True
     thread.start()
