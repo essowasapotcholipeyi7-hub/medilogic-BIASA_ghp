@@ -176,7 +176,7 @@
                      au lieu de flotter par-dessus) — aucun risque de
                      découpe, lisible partout, y compris sur mobile. ===== -->
                 {% if not onglet_cache('laboratoire_radiologie') and not _bloq %}
-                {% set _labo_radio_actif = request.endpoint in ['page_laboratoire', 'page_radiologie', 'page_resultats_analyses', 'page_modeles_resultats', 'page_patients_externes', 'page_ristournes', 'page_classification_actes'] %}
+                {% set _labo_radio_actif = request.endpoint in ['page_laboratoire', 'page_radiologie', 'page_resultats_analyses', 'page_modeles_resultats', 'page_signatures_intervenants', 'page_patients_externes', 'page_ristournes', 'page_classification_actes'] %}
                 <a class="nav-link d-flex justify-content-between align-items-center {% if _labo_radio_actif %}active{% endif %}" href="#" data-bs-toggle="collapse" data-bs-target="#laboRadioCollapse" role="button" aria-expanded="{{ 'true' if _labo_radio_actif else 'false' }}" aria-controls="laboRadioCollapse">
                     <span class="menu-text"><i class="fas fa-vial me-1"></i> Laboratoire &amp; Radiologie</span>
                     <i class="fas fa-chevron-down" style="font-size: 11px; opacity: 0.6;"></i>
@@ -196,6 +196,7 @@
 
                     {% if session.role in ['laborantin', 'radiologue', 'secretaire'] %}
                     <a class="nav-link {% if request.endpoint == 'page_modeles_resultats' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_modeles_resultats') }}"><i class="fas fa-file-word me-2"></i>Modèles de résultats</a>
+                    <a class="nav-link {% if request.endpoint == 'page_signatures_intervenants' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_signatures_intervenants') }}"><i class="fas fa-signature me-2"></i>Signatures électroniques</a>
                     {% endif %}
 
                     {% if a_acces('patients_externes') %}
@@ -282,7 +283,7 @@
                      supplémentaire qui les rassemble. -->
                 {% set _parametres_visible = (session.role in ['admin', 'gestionnaire']) or (session.role in ['admin', 'comptable', 'gestionnaire']) or (session.role in ['laborantin', 'radiologue', 'secretaire']) or session.is_admin %}
                 {% if _parametres_visible %}
-                {% set _parametres_actif = request.endpoint in ['admin_structure', 'page_classification_actes', 'page_pbr_complementaires', 'sync_gestion_patients_config', 'page_modeles_resultats'] %}
+                {% set _parametres_actif = request.endpoint in ['admin_structure', 'page_classification_actes', 'page_pbr_complementaires', 'sync_gestion_patients_config', 'page_modeles_resultats', 'page_signatures_intervenants'] %}
                 <a class="nav-link d-flex justify-content-between align-items-center {% if _parametres_actif %}active{% endif %}" href="#" data-bs-toggle="collapse" data-bs-target="#parametresCollapse" role="button" aria-expanded="{{ 'true' if _parametres_actif else 'false' }}" aria-controls="parametresCollapse">
                     <span class="menu-text"><i class="fas fa-sliders-h me-1"></i> Paramètres</span>
                     <i class="fas fa-chevron-down" style="font-size: 11px; opacity: 0.6;"></i>
@@ -299,6 +300,7 @@
                     {% endif %}
                     {% if session.role in ['laborantin', 'radiologue', 'secretaire'] %}
                     <a class="nav-link {% if request.endpoint == 'page_modeles_resultats' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_modeles_resultats') }}"><i class="fas fa-file-word me-2"></i>Modèles de résultats</a>
+                    <a class="nav-link {% if request.endpoint == 'page_signatures_intervenants' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_signatures_intervenants') }}"><i class="fas fa-signature me-2"></i>Signatures électroniques</a>
                     {% endif %}
                     {% if session.is_admin %}
                     <a class="nav-link {% if request.endpoint == 'sync_gestion_patients_config' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('sync_gestion_patients_config') }}"><i class="fas fa-sync me-2"></i>Synchronisation gestion_patients</a>

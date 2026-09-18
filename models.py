@@ -2443,6 +2443,46 @@ class ResultatExamen(db.Model):
     fichier_data = db.Column(db.LargeBinary, nullable=False)
     modele_utilise_id = db.Column(db.Integer)  # traçabilité — modèle de départ, si utilisé
     nom_interprete = db.Column(db.String(200), nullable=False)  # biologiste (analyse) / radiologue (examen)
+    # ⭐ Signature électronique — patron : "on met Le Laboratoire et on met
+    # le titre de celui qui signe avec son nom" / "on met Le Radiologue...
+    # dès qu'on sélectionne son nom sa signature s'appose s'il y en a".
+    # titre_interprete et signature_data/mime sont une COPIE figée
+    # (snapshot) de SignatureIntervenant au moment de la saisie — jamais
+    # une clé étrangère vive : si la signature enregistrée de la personne
+    # change plus tard (nouvelle photo, titre corrigé...), les résultats
+    # déjà imprimés/signés dans le passé ne doivent JAMAIS changer
+    # rétroactivement (même principe que PeriodeRistourne.taux_applique
+    # figé au calcul). NULL si saisie libre (nom tapé à la main, aucune
+    # signature dans le registre pour cette personne) — repli explicite,
+    # zéro régression pour un nom non encore enregistré.
+    signature_intervenant_id = db.Column(db.Integer)  # traçabilité seulement, jamais relu pour l'affichage
+    titre_interprete = db.Column(db.String(100))
+    signature_data = db.Column(db.LargeBinary)
+    signature_mime = db.Column(db.String(100))
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# ⭐ Registre des signatures électroniques pré-enregistrées — patron :
+# "chaque intervenant préenregistre sa ou ses signatures dans
+# paramétrage... parce que les résultats, les saisir directement on ne
+# peut pas imprimer signer avant de scanner et envoyer". Une signature
+# saisie UNE fois (photo/scan d'une vraie signature sur papier blanc)
+# s'appose ensuite automatiquement sur chaque document — voir
+# ResultatExamen.signature_data pour comment elle est figée à l'usage.
+# 'filiere' distingue les registres (analyse=biologistes, examen=
+# radiologues) ; conçu pour rester extensible à d'autres contextes plus
+# tard (ex. 'facture') sans changement de schéma.
+class SignatureIntervenant(db.Model):
+    __tablename__ = 'signatures_intervenants'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    filiere = db.Column(db.String(20), nullable=False)  # 'analyse' | 'examen'
+    nom = db.Column(db.String(200), nullable=False)
+    titre = db.Column(db.String(100))  # un des 4 titres labo ; vide/« Radiologue » pour la radio
+    signature_data = db.Column(db.LargeBinary, nullable=False)
+    signature_mime = db.Column(db.String(100))
+    actif = db.Column(db.Boolean, default=True)
     created_by = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

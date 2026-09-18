@@ -287,8 +287,22 @@
                 <div class="text-center mt-2 small">
                     Document généré le {{ date_actuelle }}
                 </div>
+                {% if format != '80mm' %}
+                <div class="text-center mt-2">
+                    <svg id="codeBarreRecu"></svg>
+                </div>
+                {% endif %}
             </div>
         </div>
+
+        {% if format != '80mm' %}
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+        <script>
+        if (window.JsBarcode) {
+            JsBarcode("#codeBarreRecu", "RECU-{{ vente_id }}", { format: "CODE128", width: 1.2, height: 30, fontSize: 10, margin: 4 });
+        }
+        </script>
+        {% endif %}
 
         <div class="text-center mt-3 no-print">
             <button onclick="window.print()" class="btn btn-primary btn-sm">Imprimer</button>

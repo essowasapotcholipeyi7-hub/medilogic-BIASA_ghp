@@ -59,9 +59,18 @@
                     <strong id="resultatPatientActe"></strong>
                 </div>
                 <div class="mb-2">
-                    <label class="form-label mb-1" id="labelInterprete">Nom du biologiste <span class="text-danger">*</span></label>
-                    <input type="text" class="form-control" id="resultatNomInterprete" placeholder="Sera imprimé sur le résultat" list="listeInterpretes" autocomplete="off">
-                    <datalist id="listeInterpretes"></datalist>
+                    <label class="form-label mb-1" id="labelInterprete">Biologiste <span class="text-danger">*</span></label>
+                    <select class="form-select" id="resultatSignatureSelect" onchange="changerSignatureSelectionnee()">
+                        <option value="">-- Sélectionner --</option>
+                    </select>
+                    <div class="text-center mt-2" id="apercuSignatureResultatZone" style="display:none;">
+                        <img id="apercuSignatureResultat" style="max-height:60px; border:1px solid #dee2e6; border-radius:6px; padding:4px; background:#fff;">
+                        <div class="text-muted small mt-1"><i class="fas fa-check-circle text-success me-1"></i>Signature électronique appliquée</div>
+                    </div>
+                    <input type="text" class="form-control mt-2" id="resultatNomInterprete" placeholder="Nom (saisie libre, aucune signature ne sera apposée)" style="display:none;">
+                    <small class="text-muted d-block mt-1">
+                        Personne pas dans la liste ? <a href="{{ url_for('page_signatures_intervenants') }}" target="_blank">Enregistrez sa signature ici</a>.
+                    </small>
                 </div>
                 <div class="mb-2">
                     <label class="form-label mb-1">Fichier du résultat (PDF de préférence) <span class="text-danger">*</span></label>
@@ -82,38 +91,71 @@
 <script>
 const ROLE = "{{ session.role }}";
 let demandeChoisie = null;
+let typePrestationChoisie = null;
 
-// ⭐ Mémorisation du nom du biologiste/radiologue — patron : "si on
-// saisit le nom... que ça se propose les prochaines fois, qu'on n'ait
-// plus besoin de ressaisir". Chargé une fois, filtré par filière à
-// l'ouverture du modal (un biologiste ne doit pas polluer la liste des
-// radiologues et inversement).
-let INTERPRETES = [];
-fetch('/api/resultats-analyses/interpretes').then(r => r.json()).then(d => { INTERPRETES = d; });
-
+// ⭐ Signature électronique pré-enregistrée — patron : "on met Le
+// Laboratoire et on met le titre de celui qui signe avec son nom" /
+// "on met Le Radiologue... dès qu'on sélectionne son nom sa signature
+// s'appose s'il y en a". Liste rechargée à chaque ouverture (filtrée
+// par filière) plutôt qu'une seule fois : une signature tout juste
+// ajoutée depuis /signatures-intervenants doit apparaître immédiatement.
 function ouvrirModalResultat(demandeId, patientNom, acteNom, typePrestation) {
     demandeChoisie = demandeId;
+    typePrestationChoisie = typePrestation;
     document.getElementById('resultatDemandeId').value = demandeId;
     document.getElementById('resultatPatientActe').textContent = patientNom + ' — ' + acteNom;
     document.getElementById('resultatNomInterprete').value = '';
+    document.getElementById('resultatNomInterprete').style.display = 'none';
+    document.getElementById('apercuSignatureResultatZone').style.display = 'none';
     document.getElementById('resultatFichier').value = '';
     document.getElementById('labelInterprete').innerHTML = typePrestation === 'analyse'
-        ? 'Nom du biologiste <span class="text-danger">*</span>'
-        : 'Nom du radiologue / interprète <span class="text-danger">*</span>';
-    document.getElementById('listeInterpretes').innerHTML = INTERPRETES
-        .filter(i => i.type_prestation === typePrestation)
-        .map(i => `<option value="${i.nom_interprete.replace(/"/g, '&quot;')}">`).join('');
+        ? 'Le Laboratoire <span class="text-danger">*</span>'
+        : 'Le Radiologue <span class="text-danger">*</span>';
+
+    const select = document.getElementById('resultatSignatureSelect');
+    select.innerHTML = '<option value="">Chargement...</option>';
+    fetch(`/api/signatures-intervenants?filiere=${typePrestation}&actif_seulement=1`)
+        .then(r => r.json())
+        .then(lignes => {
+            select.innerHTML = '<option value="">-- Sélectionner --</option>' +
+                lignes.map(s => `<option value="${s.id}">${typePrestation === 'analyse' ? (s.titre + ' — ' + s.nom) : s.nom}</option>`).join('') +
+                '<option value="__autre__">Autre (saisie libre, sans signature)</option>';
+        });
+
     new bootstrap.Modal(document.getElementById('modalResultat')).show();
 }
 
+function changerSignatureSelectionnee() {
+    const val = document.getElementById('resultatSignatureSelect').value;
+    const apercuZone = document.getElementById('apercuSignatureResultatZone');
+    const texteLibre = document.getElementById('resultatNomInterprete');
+    if (val === '__autre__') {
+        apercuZone.style.display = 'none';
+        texteLibre.style.display = 'block';
+    } else if (val) {
+        texteLibre.style.display = 'none';
+        document.getElementById('apercuSignatureResultat').src = '/api/signatures-intervenants/' + val + '/image';
+        apercuZone.style.display = 'block';
+    } else {
+        apercuZone.style.display = 'none';
+        texteLibre.style.display = 'none';
+    }
+}
+
 function enregistrerResultat() {
-    const nom = document.getElementById('resultatNomInterprete').value.trim();
+    const val = document.getElementById('resultatSignatureSelect').value;
     const fichier = document.getElementById('resultatFichier').files[0];
-    if (!nom) { alert('Le nom de l\'interprète est obligatoire.'); return; }
+    if (!val) { alert('Choisissez qui signe.'); return; }
     if (!fichier) { alert('Choisissez le fichier du résultat.'); return; }
 
     const fd = new FormData();
-    fd.append('nom_interprete', nom);
+    if (val === '__autre__') {
+        const nom = document.getElementById('resultatNomInterprete').value.trim();
+        if (!nom) { alert('Le nom est obligatoire.'); return; }
+        fd.append('nom_interprete', nom);
+    } else {
+        fd.append('signature_id', val);
+    }
     fd.append('fichier', fichier);
 
     fetch('/api/resultats-analyses/' + demandeChoisie, { method: 'POST', body: fd })

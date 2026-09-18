@@ -282,6 +282,11 @@
                 <div class="text-center mt-4 small">
                     Document archivé le {{ date_actuelle }} - Conservation 10 ans
                 </div>
+                {% if format != '80mm' %}
+                <div class="text-center mt-2">
+                    <svg id="codeBarreFacture"></svg>
+                </div>
+                {% endif %}
             </div>
         </div>
 
@@ -290,6 +295,14 @@
             <button onclick="telechargerPDF()" class="btn btn-success">PDF</button>
             <button onclick="fermerOuRediriger()" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</button>
         </div>
+        {% if format != '80mm' %}
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+        <script>
+        if (window.JsBarcode) {
+            JsBarcode("#codeBarreFacture", "FACT-{{ vente_id }}", { format: "CODE128", width: 1.4, height: 36, fontSize: 11, margin: 4 });
+        }
+        </script>
+        {% endif %}
     </div>
 </div>
 

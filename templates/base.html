@@ -2070,6 +2070,9 @@
                 <a class="menu-item" href="{{ url_for('page_modeles_resultats') }}">
                     Modèles de résultats
                 </a>
+                <a class="menu-item" href="{{ url_for('page_signatures_intervenants') }}">
+                    Signatures électroniques
+                </a>
                 {% endif %}
                 {% if a_acces('patients_externes') %}
                 <a class="menu-item" href="{{ url_for('page_patients_externes') }}">
@@ -2168,6 +2171,9 @@
                 {% if session.role in ['laborantin', 'radiologue', 'secretaire'] %}
                 <a class="menu-item" href="{{ url_for('page_modeles_resultats') }}">
                     Modèles de résultats
+                </a>
+                <a class="menu-item" href="{{ url_for('page_signatures_intervenants') }}">
+                    Signatures électroniques
                 </a>
                 {% endif %}
                 {% if session.is_admin %}

@@ -4,6 +4,7 @@
 {% block title %}Résultat — {{ demande.patient_nom }}{% endblock %}
 
 {% block extra_css %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
 <style>
     @media print {
         @page { size: A4; margin: 12mm; }
@@ -59,14 +60,25 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                 </div>
                 {% endif %}
 
-                <!-- INTERPRÈTE -->
+                <!-- SIGNATURE — patron : "on met Le Laboratoire et on met le
+                     titre de celui qui signe avec son nom" / "on met Le
+                     Radiologue... dès qu'on sélectionne son nom sa
+                     signature s'appose s'il y en a". -->
                 <div class="mt-4 text-end" style="font-size: 13px;">
-                    <strong>{% if demande.type_prestation == 'analyse' %}Biologiste{% else %}Radiologue / Interprète{% endif %} :</strong>
-                    {{ resultat.nom_interprete }}
+                    <strong>{% if demande.type_prestation == 'analyse' %}Le Laboratoire{% else %}Le Radiologue{% endif %}</strong>
+                    {% if resultat.signature_data %}
+                    <div class="mt-1"><img src="{{ url_for('api_image_signature_resultat', resultat_id=resultat.id) }}" style="max-height:60px; max-width:160px;" alt="Signature"></div>
+                    {% endif %}
+                    <div>
+                        {% if resultat.titre_interprete %}{{ resultat.titre_interprete }} — {% endif %}{{ resultat.nom_interprete }}
+                    </div>
                 </div>
 
                 <hr>
                 <div class="text-center text-muted small">Document confidentiel — {{ structure.nom or "SSoftOne v10" }}</div>
+                <div class="text-center mt-2">
+                    <svg id="codeBarreResultat"></svg>
+                </div>
             </div>
         </div>
 
@@ -76,4 +88,11 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
         </div>
     </div>
 </div>
+<script>
+if (window.JsBarcode) {
+    JsBarcode("#codeBarreResultat", "RES-{{ resultat.id }}-{{ demande.id }}", {
+        format: "CODE128", width: 1.4, height: 36, fontSize: 11, margin: 4,
+    });
+}
+</script>
 {% endblock %}

@@ -14,12 +14,12 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
 from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur
-from services.laboratoire_service import charger_classification_actes, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes
+from services.laboratoire_service import charger_classification_actes, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
 
 # ⭐ Numéro WhatsApp de l'éditeur (Togo, +228) pour l'envoi du reçu
 # d'abonnement — voir admin_finances.html.
@@ -9356,6 +9356,118 @@ def api_supprimer_modele_resultat(modele_id):
 
 
 # ============================================================
+# LABORATOIRE / RADIOLOGIE — signatures électroniques pré-enregistrées
+# ============================================================
+# ⭐ Patron : "chaque intervenant préenregistre sa ou ses signatures dans
+# paramétrage... les résultats, les saisir directement on ne peut pas
+# imprimer signer avant de scanner et envoyer" — une signature (photo ou
+# scan d'une vraie signature sur papier blanc) enregistrée UNE fois
+# s'appose ensuite automatiquement (voir api_enregistrer_resultat plus
+# bas, et resultat_imprimer.html). Même garde d'accès que
+# /modeles-resultats (page de configuration du même module).
+@app.route('/signatures-intervenants')
+@login_required
+def page_signatures_intervenants():
+    if session.get('role') not in ('laborantin', 'radiologue', 'secretaire') and not a_acces('demandes_laboratoire') and not a_acces('demandes_radiologie'):
+        flash('Accès non autorisé pour votre rôle.', 'danger')
+        return redirect(url_for('dashboard'))
+    return render_template('signatures_intervenants.html', titres_laboratoire=TITRES_LABORATOIRE)
+
+
+@app.route('/api/signatures-intervenants', methods=['GET'])
+@login_required
+def api_lister_signatures_intervenants():
+    structure_id = session.get('structure_id')
+    q = SignatureIntervenant.query.filter_by(structure_id=structure_id)
+    filiere = request.args.get('filiere')
+    if filiere:
+        q = q.filter_by(filiere=filiere)
+    if request.args.get('actif_seulement'):
+        q = q.filter_by(actif=True)
+    lignes = q.order_by(SignatureIntervenant.filiere, SignatureIntervenant.nom).all()
+    return jsonify([{
+        'id': l.id, 'filiere': l.filiere, 'nom': l.nom, 'titre': l.titre,
+        'actif': l.actif, 'created_at': l.created_at.strftime('%d/%m/%Y') if l.created_at else '',
+    } for l in lignes])
+
+
+@app.route('/api/signatures-intervenants', methods=['POST'])
+@login_required
+def api_creer_signature_intervenant():
+    try:
+        structure_id = session.get('structure_id')
+        filiere = request.form.get('filiere')
+        nom = (request.form.get('nom') or '').strip()
+        titre = (request.form.get('titre') or '').strip()
+        fichier = request.files.get('fichier')
+
+        if filiere not in ('analyse', 'examen'):
+            return jsonify({'success': False, 'error': "filiere doit être 'analyse' ou 'examen'"}), 400
+        if not nom:
+            return jsonify({'success': False, 'error': 'Le nom est obligatoire'}), 400
+        if filiere == 'analyse' and titre not in TITRES_LABORATOIRE:
+            return jsonify({'success': False, 'error': 'Titre invalide pour un biologiste'}), 400
+        if not fichier:
+            return jsonify({'success': False, 'error': 'Image de signature requise'}), 400
+
+        signature = SignatureIntervenant(
+            structure_id=structure_id, filiere=filiere, nom=nom,
+            titre=titre if filiere == 'analyse' else None,
+            signature_data=fichier.read(), signature_mime=fichier.mimetype,
+            created_by=session.get('user_name', 'System'),
+        )
+        db.session.add(signature)
+        db.session.commit()
+        return jsonify({'success': True, 'id': signature.id})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/signatures-intervenants/<int:signature_id>/image', methods=['GET'])
+@login_required
+def api_image_signature_intervenant(signature_id):
+    structure_id = session.get('structure_id')
+    signature = SignatureIntervenant.query.filter_by(id=signature_id, structure_id=structure_id).first()
+    if not signature:
+        return "Introuvable", 404
+    from flask import Response
+    return Response(signature.signature_data, mimetype=signature.signature_mime or 'image/png')
+
+
+@app.route('/api/signatures-intervenants/<int:signature_id>/toggle', methods=['POST'])
+@login_required
+def api_toggle_signature_intervenant(signature_id):
+    try:
+        structure_id = session.get('structure_id')
+        signature = SignatureIntervenant.query.filter_by(id=signature_id, structure_id=structure_id).first()
+        if not signature:
+            return jsonify({'success': False, 'error': 'Introuvable'}), 404
+        signature.actif = not signature.actif
+        db.session.commit()
+        return jsonify({'success': True, 'actif': signature.actif})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/signatures-intervenants/<int:signature_id>', methods=['DELETE'])
+@login_required
+def api_supprimer_signature_intervenant(signature_id):
+    try:
+        structure_id = session.get('structure_id')
+        signature = SignatureIntervenant.query.filter_by(id=signature_id, structure_id=structure_id).first()
+        if not signature:
+            return jsonify({'success': False, 'error': 'Introuvable'}), 404
+        db.session.delete(signature)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================
 # LABORATOIRE / RADIOLOGIE — onglet Résultats d'analyses
 # ============================================================
 @app.route('/resultats-analyses')
@@ -9459,8 +9571,28 @@ def api_enregistrer_resultat(demande_id):
             return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
 
         nom_interprete = (request.form.get('nom_interprete') or '').strip()
+        signature_id = request.form.get('signature_id')
         fichier = request.files.get('fichier')
         modele_id = request.form.get('modele_utilise_id')
+
+        # ⭐ Signature pré-enregistrée sélectionnée : sa signature s'appose
+        # automatiquement — patron : "dès qu'on sélectionne son nom sa
+        # signature s'appose s'il y en a". COPIÉE (jamais relue plus
+        # tard) dans le résultat lui-même — voir le commentaire sur
+        # ResultatExamen.signature_data (models.py).
+        titre_interprete = None
+        signature_data = None
+        signature_mime = None
+        if signature_id:
+            signature = SignatureIntervenant.query.filter_by(
+                id=signature_id, structure_id=structure_id, filiere=demande.type_prestation, actif=True,
+            ).first()
+            if not signature:
+                return jsonify({'success': False, 'error': 'Signature introuvable'}), 404
+            nom_interprete = signature.nom
+            titre_interprete = signature.titre
+            signature_data = signature.signature_data
+            signature_mime = signature.signature_mime
 
         if not nom_interprete:
             return jsonify({'success': False, 'error': f"Nom du {'biologiste' if demande.type_prestation == 'analyse' else 'radiologue/interprète'} requis"}), 400
@@ -9472,6 +9604,8 @@ def api_enregistrer_resultat(demande_id):
             fichier_nom=fichier.filename, fichier_mime=fichier.mimetype, fichier_data=fichier.read(),
             modele_utilise_id=int(modele_id) if modele_id else None,
             nom_interprete=nom_interprete, created_by=session.get('user_name', 'System'),
+            signature_intervenant_id=int(signature_id) if signature_id else None,
+            titre_interprete=titre_interprete, signature_data=signature_data, signature_mime=signature_mime,
         )
         db.session.add(resultat)
 
@@ -9499,6 +9633,20 @@ def api_telecharger_resultat(resultat_id):
         resultat.fichier_data, mimetype=resultat.fichier_mime or 'application/octet-stream',
         headers={'Content-Disposition': f'inline; filename="{resultat.fichier_nom or "resultat"}"'}
     )
+
+
+@app.route('/api/resultats-analyses/<int:resultat_id>/signature-image', methods=['GET'])
+@login_required
+def api_image_signature_resultat(resultat_id):
+    """Sert l'image de signature FIGÉE sur ce résultat précis (jamais la
+    signature actuelle du registre — voir le commentaire sur
+    ResultatExamen.signature_data, models.py)."""
+    structure_id = session.get('structure_id')
+    resultat = ResultatExamen.query.filter_by(id=resultat_id, structure_id=structure_id).first()
+    if not resultat or not resultat.signature_data:
+        return "Introuvable", 404
+    from flask import Response
+    return Response(resultat.signature_data, mimetype=resultat.signature_mime or 'image/png')
 
 
 @app.route('/resultats-analyses/<int:resultat_id>/imprimer')

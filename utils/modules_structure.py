@@ -61,6 +61,6 @@ MODULES_STRUCTURE = {
     # verrou serveur sur ces 2 routes précises).
     'laboratoire_radiologie': {'label': 'Laboratoire & Radiologie', 'endpoints': [
         'page_resultats_analyses', 'page_modeles_resultats', 'page_patients_externes',
-        'page_ristournes', 'page_classification_actes',
+        'page_ristournes', 'page_classification_actes', 'page_signatures_intervenants',
     ]},
 }

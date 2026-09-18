@@ -291,6 +291,11 @@
                     Merci de votre confiance ! Règlement à réception de facture.<br>
                     {{ structure_nom or "Medilogic-GHP" }}
                 </div>
+                {% if format != '80mm' %}
+                <div class="text-center mt-2">
+                    <svg id="codeBarreFacture"></svg>
+                </div>
+                {% endif %}
             </div>
         </div>
 
@@ -302,6 +307,14 @@
     </div>
 </div>
 
+{% if format != '80mm' %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+<script>
+if (window.JsBarcode) {
+    JsBarcode("#codeBarreFacture", "FACT-{{ vente_id }}", { format: "CODE128", width: 1.4, height: 36, fontSize: 11, margin: 4 });
+}
+</script>
+{% endif %}
 <script>
 function telechargerPDF() {
     const element = document.getElementById('factureContenu');

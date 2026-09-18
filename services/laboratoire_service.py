@@ -14,6 +14,19 @@ import string
 from models import db, ClassificationActe, PatientExterne, DemandeExamen, AccesPortailPatient, PeriodeRistourne, PrescripteurExterne
 from utils.categorisation import categoriser_acte
 
+# ⭐ Les 4 titres possibles pour signer un résultat de BIOLOGIE — patron :
+# "on a 4 titres... donc pour la signature sur les résultats on met Le
+# Laboratoire et on met le titre de celui qui signe avec son nom". Pas
+# de liste équivalente pour la radiologie : un seul intitulé fixe,
+# "Le Radiologue" (voir SignatureIntervenant.titre, laissé vide pour ce
+# cas — le nom seul suffit à l'impression).
+TITRES_LABORATOIRE = [
+    'Ingénieur de laboratoire',
+    'Technicien supérieur de laboratoire',
+    'Biologiste',
+    'Médecin Biologiste',
+]
+
 # Catégorisation déjà utilisée pour la comptabilité (utils/categorisation.py,
 # COMPTE_PAR_CATEGORIE) réutilisée telle quelle ici comme classement AUTOMATIQUE
 # labo/radio — demande explicite : "il y a un fichier qui catégorise déjà les
