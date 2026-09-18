@@ -319,6 +319,17 @@
             color: white;
         }
 
+        /* ⭐ Chevron du menu "Laboratoire & Radiologie" (sidebar_menu.html)
+           — .collapse plutôt qu'un dropdown, voir le commentaire là-bas
+           (clipping par .sidebar { overflow:hidden }). Rotation au clic,
+           même transition que .top-nav .arrow. */
+        .sidebar .nav-link[aria-expanded="true"] .fa-chevron-down {
+            transform: rotate(180deg);
+        }
+        .sidebar .nav-link .fa-chevron-down {
+            transition: transform 0.2s ease;
+        }
+
         /* ============================================
            TOP NAV - CONSERVÉE
            ============================================ */
@@ -2035,6 +2046,53 @@
             </a>
         </li>
         {% endif %}
+        <!-- ⭐ Même groupe que sidebar_menu.html (dropdown "Laboratoire &
+             Radiologie") — patron : "je veux aussi que tu affiches ce menu
+             dans le menu horizontal en haut". -->
+        {% if not onglet_cache('laboratoire_radiologie') and not _bloq %}
+        <li class="nav-item nav-item-labo-radio">
+            <span class="nav-link-top">
+                Laboratoire &amp; Radiologie <i class="fas fa-chevron-down arrow"></i>
+            </span>
+            <div class="mega-menu">
+                {% if session.role == 'laborantin' or a_acces('demandes_laboratoire') %}
+                <a class="menu-item" href="{{ url_for('page_laboratoire') }}">
+                    <i class="fas fa-vial"></i> Laboratoire
+                </a>
+                {% endif %}
+                {% if session.role == 'radiologue' or a_acces('demandes_radiologie') %}
+                <a class="menu-item" href="{{ url_for('page_radiologie') }}">
+                    <i class="fas fa-x-ray"></i> Radiologie
+                </a>
+                {% endif %}
+                {% if session.role in ['admin', 'medecin', 'laborantin', 'radiologue', 'secretaire'] %}
+                <a class="menu-item" href="{{ url_for('page_resultats_analyses') }}">
+                    Résultats d'analyses
+                </a>
+                {% endif %}
+                {% if session.role in ['laborantin', 'radiologue', 'secretaire'] %}
+                <a class="menu-item" href="{{ url_for('page_modeles_resultats') }}">
+                    Modèles de résultats
+                </a>
+                {% endif %}
+                {% if a_acces('patients_externes') %}
+                <a class="menu-item" href="{{ url_for('page_patients_externes') }}">
+                    Patients externes &amp; prescripteurs
+                </a>
+                {% endif %}
+                {% if session.role in ['admin', 'secretaire', 'caissier'] %}
+                <a class="menu-item" href="{{ url_for('page_ristournes') }}">
+                    Ristournes
+                </a>
+                {% endif %}
+                {% if session.is_admin %}
+                <a class="menu-item" href="{{ url_for('page_classification_actes') }}">
+                    Classification Labo/Radio
+                </a>
+                {% endif %}
+            </div>
+        </li>
+        {% endif %}
         {% if not _bloq %}
         <li class="nav-item nav-item-referentiels">
             <span class="nav-link-top">
@@ -2075,6 +2133,45 @@
                 {% if a_acces('annulations') and not onglet_cache('annulations') and not _bloq %}
                 <a class="menu-item" href="{{ url_for('historique_annulations') }}">
                     Historique Annulations
+                </a>
+                {% endif %}
+                {% if session.is_admin %}
+                <a class="menu-item" href="{{ url_for('sync_gestion_patients_config') }}">
+                    Synchronisation gestion_patients
+                </a>
+                {% endif %}
+            </div>
+        </li>
+        {% endif %}
+
+        <!-- ⭐ Même répertoire que sidebar_menu.html ("Paramètres") — rien
+             de déplacé, chaque lien existe déjà ailleurs, juste un accès
+             rapide de plus. -->
+        {% set _parametres_visible_top = (session.role in ['admin', 'gestionnaire']) or (session.role in ['admin', 'comptable', 'gestionnaire']) or (session.role in ['laborantin', 'radiologue', 'secretaire']) or session.is_admin %}
+        {% if _parametres_visible_top and not _bloq %}
+        <li class="nav-item nav-item-parametres">
+            <span class="nav-link-top">
+                <i class="fas fa-sliders-h"></i> Paramètres <i class="fas fa-chevron-down arrow"></i>
+            </span>
+            <div class="mega-menu">
+                {% if session.role in ['admin', 'gestionnaire'] %}
+                <a class="menu-item" href="{{ url_for('admin_structure') }}">
+                    <i class="fas fa-cog"></i> Administration générale
+                </a>
+                {% endif %}
+                {% if session.is_admin %}
+                <a class="menu-item" href="{{ url_for('page_classification_actes') }}">
+                    Classification Labo/Radio
+                </a>
+                {% endif %}
+                {% if session.role in ['admin', 'comptable', 'gestionnaire'] %}
+                <a class="menu-item" href="{{ url_for('page_pbr_complementaires') }}">
+                    PBR Complémentaires
+                </a>
+                {% endif %}
+                {% if session.role in ['laborantin', 'radiologue', 'secretaire'] %}
+                <a class="menu-item" href="{{ url_for('page_modeles_resultats') }}">
+                    Modèles de résultats
                 </a>
                 {% endif %}
                 {% if session.is_admin %}

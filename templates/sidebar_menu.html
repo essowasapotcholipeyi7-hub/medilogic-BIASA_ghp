@@ -153,51 +153,62 @@
                 {% endif %} {# fin restriction laborantin/radiologue (ouverte près de "Tableau de bord") #}
 
                 <!-- ===== LABORATOIRE & RADIOLOGIE (regroupe en un seul
-                     menu déroulant ce qui vivait avant en 7 liens séparés —
-                     patron : "un seul onglet avec un nom spécifique qui
-                     regroupe...". Masquable en bloc depuis l'espace
-                     super-admin (voir utils/modules_structure.py, clé
+                     onglet ce qui vivait avant en 7 liens séparés — patron :
+                     "un seul onglet avec un nom spécifique qui regroupe...".
+                     Masquable en bloc depuis l'espace super-admin (voir
+                     utils/modules_structure.py, clé
                      'laboratoire_radiologie') ; chaque lien garde en plus
                      sa propre restriction de rôle. Laboratoire/Radiologie
                      restent TOUJOURS accessibles au laborantin/radiologue
                      lui-même (c'est son tableau de bord — voir dashboard())
                      même si ce module est masqué pour le reste du
                      personnel : seul le lien sidebar disparaît pour eux,
-                     jamais le verrou serveur sur ces 2 routes précises. ===== -->
+                     jamais le verrou serveur sur ces 2 routes précises.
+
+                     ⭐ Repli demandé ("il faut faire autrement") : un
+                     Bootstrap dropdown (position:absolute) se faisait
+                     couper/superposer par le .sidebar { overflow:hidden }
+                     du conteneur (texte illisible mélangé aux liens
+                     voisins, surtout avec des libellés longs comme
+                     "Patients externes & prescripteurs"). Remplacé par un
+                     .collapse : les sous-liens s'ouvrent DANS le flux
+                     normal de la page (ils poussent le contenu en dessous
+                     au lieu de flotter par-dessus) — aucun risque de
+                     découpe, lisible partout, y compris sur mobile. ===== -->
                 {% if not onglet_cache('laboratoire_radiologie') and not _bloq %}
-                <div class="dropdown">
-                    <a class="nav-link dropdown-toggle {% if request.endpoint in ['page_laboratoire', 'page_radiologie', 'page_resultats_analyses', 'page_modeles_resultats', 'page_patients_externes', 'page_ristournes', 'page_classification_actes'] %}active{% endif %}" href="#" id="laboRadioDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                        <span class="menu-text"><i class="fas fa-vial me-1"></i> Laboratoire &amp; Radiologie</span>
-                    </a>
-                    <ul class="dropdown-menu" aria-labelledby="laboRadioDropdown">
-                        {% if session.role == 'laborantin' or a_acces('demandes_laboratoire') %}
-                        <li><a class="dropdown-item {% if request.endpoint == 'page_laboratoire' %}active{% endif %}" href="{{ url_for('page_laboratoire') }}"><i class="fas fa-vial me-2"></i>Laboratoire</a></li>
-                        {% endif %}
+                {% set _labo_radio_actif = request.endpoint in ['page_laboratoire', 'page_radiologie', 'page_resultats_analyses', 'page_modeles_resultats', 'page_patients_externes', 'page_ristournes', 'page_classification_actes'] %}
+                <a class="nav-link d-flex justify-content-between align-items-center {% if _labo_radio_actif %}active{% endif %}" href="#" data-bs-toggle="collapse" data-bs-target="#laboRadioCollapse" role="button" aria-expanded="{{ 'true' if _labo_radio_actif else 'false' }}" aria-controls="laboRadioCollapse">
+                    <span class="menu-text"><i class="fas fa-vial me-1"></i> Laboratoire &amp; Radiologie</span>
+                    <i class="fas fa-chevron-down" style="font-size: 11px; opacity: 0.6;"></i>
+                </a>
+                <div class="collapse {% if _labo_radio_actif %}show{% endif %}" id="laboRadioCollapse">
+                    {% if session.role == 'laborantin' or a_acces('demandes_laboratoire') %}
+                    <a class="nav-link {% if request.endpoint == 'page_laboratoire' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_laboratoire') }}"><i class="fas fa-vial me-2"></i>Laboratoire</a>
+                    {% endif %}
 
-                        {% if session.role == 'radiologue' or a_acces('demandes_radiologie') %}
-                        <li><a class="dropdown-item {% if request.endpoint == 'page_radiologie' %}active{% endif %}" href="{{ url_for('page_radiologie') }}"><i class="fas fa-x-ray me-2"></i>Radiologie</a></li>
-                        {% endif %}
+                    {% if session.role == 'radiologue' or a_acces('demandes_radiologie') %}
+                    <a class="nav-link {% if request.endpoint == 'page_radiologie' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_radiologie') }}"><i class="fas fa-x-ray me-2"></i>Radiologie</a>
+                    {% endif %}
 
-                        {% if session.role in ['admin', 'medecin', 'laborantin', 'radiologue', 'secretaire'] %}
-                        <li><a class="dropdown-item {% if request.endpoint == 'page_resultats_analyses' %}active{% endif %}" href="{{ url_for('page_resultats_analyses') }}"><i class="fas fa-file-medical me-2"></i>Résultats d'analyses</a></li>
-                        {% endif %}
+                    {% if session.role in ['admin', 'medecin', 'laborantin', 'radiologue', 'secretaire'] %}
+                    <a class="nav-link {% if request.endpoint == 'page_resultats_analyses' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_resultats_analyses') }}"><i class="fas fa-file-medical me-2"></i>Résultats d'analyses</a>
+                    {% endif %}
 
-                        {% if session.role in ['laborantin', 'radiologue', 'secretaire'] %}
-                        <li><a class="dropdown-item {% if request.endpoint == 'page_modeles_resultats' %}active{% endif %}" href="{{ url_for('page_modeles_resultats') }}"><i class="fas fa-file-word me-2"></i>Modèles de résultats</a></li>
-                        {% endif %}
+                    {% if session.role in ['laborantin', 'radiologue', 'secretaire'] %}
+                    <a class="nav-link {% if request.endpoint == 'page_modeles_resultats' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_modeles_resultats') }}"><i class="fas fa-file-word me-2"></i>Modèles de résultats</a>
+                    {% endif %}
 
-                        {% if a_acces('patients_externes') %}
-                        <li><a class="dropdown-item {% if request.endpoint == 'page_patients_externes' %}active{% endif %}" href="{{ url_for('page_patients_externes') }}"><i class="fas fa-user-md me-2"></i>Patients externes &amp; prescripteurs</a></li>
-                        {% endif %}
+                    {% if a_acces('patients_externes') %}
+                    <a class="nav-link {% if request.endpoint == 'page_patients_externes' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_patients_externes') }}"><i class="fas fa-user-md me-2"></i>Patients externes &amp; prescripteurs</a>
+                    {% endif %}
 
-                        {% if session.role in ['admin', 'secretaire', 'caissier'] %}
-                        <li><a class="dropdown-item {% if request.endpoint == 'page_ristournes' %}active{% endif %}" href="{{ url_for('page_ristournes') }}"><i class="fas fa-hand-holding-usd me-2"></i>Ristournes</a></li>
-                        {% endif %}
+                    {% if session.role in ['admin', 'secretaire', 'caissier'] %}
+                    <a class="nav-link {% if request.endpoint == 'page_ristournes' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_ristournes') }}"><i class="fas fa-hand-holding-usd me-2"></i>Ristournes</a>
+                    {% endif %}
 
-                        {% if session.is_admin %}
-                        <li><a class="dropdown-item {% if request.endpoint == 'page_classification_actes' %}active{% endif %}" href="{{ url_for('page_classification_actes') }}"><i class="fas fa-tags me-2"></i>Classification Labo/Radio</a></li>
-                        {% endif %}
-                    </ul>
+                    {% if session.is_admin %}
+                    <a class="nav-link {% if request.endpoint == 'page_classification_actes' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_classification_actes') }}"><i class="fas fa-tags me-2"></i>Classification Labo/Radio</a>
+                    {% endif %}
                 </div>
                 {% endif %}
 
@@ -256,6 +267,43 @@
                 <a class="nav-link {% if request.endpoint == 'admin_structure' %}active{% endif %}" href="{{ url_for('admin_structure') }}">
                     <span class="menu-text">Administration générale</span>
                 </a>
+                {% endif %}
+
+                <!-- ===== PARAMÈTRES (répertoire des pages de réglage,
+                     pour un accès rapide en un seul endroit) — patron :
+                     "il faut répertorier tout ce qui est réglage à faire,
+                     tu mets ça dans un onglet paramètre, tout en laissant
+                     à leur habituels là ses réglages étaient, c'est pour
+                     un accès rapide". Chaque lien ci-dessous EXISTE DÉJÀ
+                     ailleurs (Administration générale juste au-dessus,
+                     Classification/PBR/Modèles dans Laboratoire &
+                     Radiologie...) : rien n'est déplacé ni retiré de sa
+                     place habituelle, ceci n'est qu'un raccourci
+                     supplémentaire qui les rassemble. -->
+                {% set _parametres_visible = (session.role in ['admin', 'gestionnaire']) or (session.role in ['admin', 'comptable', 'gestionnaire']) or (session.role in ['laborantin', 'radiologue', 'secretaire']) or session.is_admin %}
+                {% if _parametres_visible %}
+                {% set _parametres_actif = request.endpoint in ['admin_structure', 'page_classification_actes', 'page_pbr_complementaires', 'sync_gestion_patients_config', 'page_modeles_resultats'] %}
+                <a class="nav-link d-flex justify-content-between align-items-center {% if _parametres_actif %}active{% endif %}" href="#" data-bs-toggle="collapse" data-bs-target="#parametresCollapse" role="button" aria-expanded="{{ 'true' if _parametres_actif else 'false' }}" aria-controls="parametresCollapse">
+                    <span class="menu-text"><i class="fas fa-sliders-h me-1"></i> Paramètres</span>
+                    <i class="fas fa-chevron-down" style="font-size: 11px; opacity: 0.6;"></i>
+                </a>
+                <div class="collapse {% if _parametres_actif %}show{% endif %}" id="parametresCollapse">
+                    {% if session.role in ['admin', 'gestionnaire'] %}
+                    <a class="nav-link {% if request.endpoint == 'admin_structure' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('admin_structure') }}"><i class="fas fa-cog me-2"></i>Administration générale</a>
+                    {% endif %}
+                    {% if session.is_admin %}
+                    <a class="nav-link {% if request.endpoint == 'page_classification_actes' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_classification_actes') }}"><i class="fas fa-tags me-2"></i>Classification Labo/Radio</a>
+                    {% endif %}
+                    {% if session.role in ['admin', 'comptable', 'gestionnaire'] %}
+                    <a class="nav-link {% if request.endpoint == 'page_pbr_complementaires' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_pbr_complementaires') }}"><i class="fas fa-percentage me-2"></i>PBR Complémentaires</a>
+                    {% endif %}
+                    {% if session.role in ['laborantin', 'radiologue', 'secretaire'] %}
+                    <a class="nav-link {% if request.endpoint == 'page_modeles_resultats' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_modeles_resultats') }}"><i class="fas fa-file-word me-2"></i>Modèles de résultats</a>
+                    {% endif %}
+                    {% if session.is_admin %}
+                    <a class="nav-link {% if request.endpoint == 'sync_gestion_patients_config' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('sync_gestion_patients_config') }}"><i class="fas fa-sync me-2"></i>Synchronisation gestion_patients</a>
+                    {% endif %}
+                </div>
                 {% endif %}
 
                 {% endif %} {# fin 2e restriction laborantin/radiologue (section ADMINISTRATION) #}
