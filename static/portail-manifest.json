@@ -3,7 +3,7 @@
     "short_name": "Résultats",
     "description": "Portail patient : résultats et prochain rendez-vous",
     "start_url": "/portail-patient/resultats",
-    "scope": "/portail-patient",
+    "scope": "/portail-patient/",
     "display": "standalone",
     "background_color": "#0f4c75",
     "theme_color": "#1d6fa5",
