@@ -46,4 +46,21 @@ MODULES_STRUCTURE = {
     'comptabilite':          {'label': 'Comptabilité',                    'endpoints': ['comptabilite.index']},
     'rh':                    {'label': 'Ressources humaines',             'endpoints': ['rh.gestion_rh']},
     'hospitalisation':       {'label': 'Hospitalisation (suivi de séjour)','endpoints': ['page_hospitalisation']},
+    # ⭐ Regroupe en un seul onglet masquable (sidebar_menu.html : un seul
+    # dropdown "Laboratoire & Radiologie") ce qui vivait avant en 7 liens
+    # séparés — patron : "un seul onglet avec un nom spécifique qui
+    # regroupe... et n'oublie pas de les ajouter à contrôler depuis
+    # l'espace super admin". page_laboratoire/page_radiologie sont
+    # DÉLIBÉRÉMENT absents de cette liste d'endpoints (même raison que
+    # dashboard/page_validations plus haut) : ce sont le tableau de bord
+    # du laborantin/radiologue lui-même (dashboard() les y redirige
+    # inconditionnellement) — les y inclure créerait une boucle de
+    # redirection infinie si jamais ce module était désactivé pour une
+    # structure qui a pourtant du personnel labo/radio actif. Le lien
+    # sidebar reste malgré tout masquable normalement (juste pas le
+    # verrou serveur sur ces 2 routes précises).
+    'laboratoire_radiologie': {'label': 'Laboratoire & Radiologie', 'endpoints': [
+        'page_resultats_analyses', 'page_modeles_resultats', 'page_patients_externes',
+        'page_ristournes', 'page_classification_actes',
+    ]},
 }
