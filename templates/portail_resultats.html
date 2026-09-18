@@ -7,6 +7,7 @@
 <link rel="manifest" href="{{ url_for('static', filename='portail-manifest.json') }}">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/portail-icon-192.png') }}">
 <meta name="theme-color" content="#1d6fa5">
+<script src="https://cdn.jsdelivr.net/npm/@simplewebauthn/browser@10.0.0/dist/bundle/index.umd.min.js"></script>
 {% endblock %}
 
 {% block content %}
@@ -45,9 +46,18 @@
             </div>
             <div class="card-body">
                 <p class="text-muted small mb-2">
-                    Définissez un code à 4-6 chiffres pour ne plus ressaisir le code d'accès la prochaine fois.
-                    Si votre téléphone propose de le mémoriser, il pourra ensuite vous laisser revenir avec votre
-                    empreinte ou Face ID au lieu de le taper.
+                    Utilisez le mot de passe ou l'empreinte/Face ID de <strong>cet appareil</strong> — le plus
+                    simple et le plus sûr : la vérification se fait directement sur votre téléphone ou ordinateur,
+                    rien n'est transmis à la clinique.
+                </p>
+                <button type="button" id="ppBtnActiverWebauthn" hidden onclick="activerWebauthn()" class="btn btn-primary w-100 mb-2">
+                    <i class="fas fa-fingerprint me-1"></i> Activer sur cet appareil
+                </button>
+                <div id="ppWebauthnActiverMsg" class="small mb-2"></div>
+
+                <hr>
+                <p class="text-muted small mb-2">
+                    Ou, si votre appareil ne le permet pas, un code à 4-6 chiffres à saisir vous-même :
                 </p>
                 <form id="ppFormDefinirPin" autocomplete="on" onsubmit="event.preventDefault(); definirPin();" class="row g-2 align-items-end">
                     <div class="col-8 col-sm-6">
@@ -55,7 +65,7 @@
                         <input type="password" inputmode="numeric" class="form-control" id="ppNouveauPin" placeholder="4 à 6 chiffres" maxlength="6" autocomplete="new-password">
                     </div>
                     <div class="col-4 col-sm-6">
-                        <button type="submit" class="btn btn-success w-100"><i class="fas fa-check me-1"></i> Enregistrer</button>
+                        <button type="submit" class="btn btn-outline-success w-100"><i class="fas fa-check me-1"></i> Enregistrer</button>
                     </div>
                 </form>
                 <div id="ppPinMsg" class="small mt-2"></div>
@@ -75,15 +85,15 @@
             </div>
             <div class="modal-body">
                 <p>
-                    Avant de quitter l'hôpital, définissez un code rapide (4-6 chiffres) : vous n'aurez plus
-                    besoin de ressaisir le code d'accès complet la prochaine fois, et votre téléphone pourra
-                    vous laisser revenir avec votre empreinte ou Face ID.
+                    Avant de quitter l'hôpital, activez l'empreinte/Face ID de votre appareil (ou, à défaut, un
+                    code rapide à 4-6 chiffres) : vous n'aurez plus besoin de ressaisir le code d'accès complet
+                    la prochaine fois.
                 </p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Plus tard</button>
                 <button type="button" class="btn btn-primary btn-sm" onclick="allerDefinirPin()">
-                    <i class="fas fa-key me-1"></i> Définir mon code maintenant
+                    <i class="fas fa-key me-1"></i> Sécuriser mon accès maintenant
                 </button>
             </div>
         </div>
@@ -124,6 +134,53 @@ function allerDefinirPin() {
     modal.hide();
     document.getElementById('ppCartePin').scrollIntoView({ behavior: 'smooth', block: 'center' });
     setTimeout(() => document.getElementById('ppNouveauPin').focus(), 350);
+}
+
+// ⭐ Vrai mot de passe/biométrie DE L'APPAREIL (Face ID/Windows
+// Hello/empreinte) — patron : "que le patient utilise son mot de passe
+// du téléphone ou d'ordinateur pour accéder aux résultats actuellement
+// ça ne marche pas". Même mécanisme WebAuthn que le personnel
+// (services/webauthn_login_service.py) : la clé privée ne quitte jamais
+// l'appareil, rien n'est transmis à la clinique.
+document.addEventListener('DOMContentLoaded', function() {
+    if (window.SimpleWebAuthnBrowser && SimpleWebAuthnBrowser.browserSupportsWebAuthn()) {
+        document.getElementById('ppBtnActiverWebauthn').hidden = false;
+    }
+});
+
+async function activerWebauthn() {
+    const msg = document.getElementById('ppWebauthnActiverMsg');
+    msg.className = 'small mb-2 text-muted';
+    msg.textContent = 'Suivez les instructions de votre appareil (Face ID, Windows Hello, empreinte...)...';
+    try {
+        const rOpt = await fetch('/api/portail-patient/webauthn/inscription/options', { method: 'POST' });
+        const dOpt = await rOpt.json();
+        if (!dOpt.success) { msg.className = 'small mb-2 text-danger'; msg.textContent = dOpt.error; return; }
+
+        const credential = await SimpleWebAuthnBrowser.startRegistration(dOpt.options);
+
+        const rVer = await fetch('/api/portail-patient/webauthn/inscription/verifier', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ credential, libelle_appareil: navigator.platform || 'Mon appareil' }),
+        });
+        const dVer = await rVer.json();
+        if (dVer.success) {
+            msg.className = 'small mb-2 text-success';
+            msg.textContent = 'Activé ! La prochaine fois, connectez-vous directement avec ce bouton depuis la page de connexion.';
+            const modalEl = document.getElementById('modalPinObligatoire');
+            const instance = bootstrap.Modal.getInstance(modalEl);
+            if (instance) instance.hide();
+        } else {
+            msg.className = 'small mb-2 text-danger';
+            msg.textContent = dVer.error;
+        }
+    } catch (err) {
+        if (err.name === 'NotAllowedError') { msg.textContent = ''; return; } // annulé
+        msg.className = 'small mb-2 text-danger';
+        msg.textContent = (err.name === 'InvalidStateError')
+            ? 'Cet appareil est déjà activé.'
+            : 'Échec : ' + (err.message || err);
+    }
 }
 
 // ⭐ Raccourci sur l'écran d'accueil — patron : "quand il scanne ce code

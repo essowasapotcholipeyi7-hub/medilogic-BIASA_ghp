@@ -7,6 +7,7 @@
 <link rel="manifest" href="{{ url_for('static', filename='portail-manifest.json') }}">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/portail-icon-192.png') }}">
 <meta name="theme-color" content="#1d6fa5">
+<script src="https://cdn.jsdelivr.net/npm/@simplewebauthn/browser@10.0.0/dist/bundle/index.umd.min.js"></script>
 {% endblock %}
 
 {% block content %}
@@ -17,6 +18,12 @@
                 <i class="fas fa-file-medical me-2"></i><strong>Accéder à mes résultats</strong>
             </div>
             <div class="card-body">
+                <button type="button" id="ppBtnWebauthn" hidden onclick="connexionWebauthn()"
+                        class="btn btn-outline-primary w-100 mb-3">
+                    <i class="fas fa-fingerprint me-1"></i> Face ID / empreinte / Windows Hello
+                </button>
+                <div id="ppWebauthnMsg" class="small text-center mb-2"></div>
+
                 <ul class="nav nav-pills nav-fill mb-3" id="ppModeTabs">
                     <li class="nav-item">
                         <button type="button" class="nav-link active" id="ppOngletCode" onclick="basculerMode('code')">
@@ -163,5 +170,46 @@ document.getElementById('ppPin').addEventListener('keyup', function(e) {
         document.getElementById('ppTelephone').focus();
     }
 })();
+
+// ⭐ Vrai mot de passe/biométrie DE L'APPAREIL (Face ID/Windows
+// Hello/empreinte) — patron : "que le patient utilise son mot de passe
+// du téléphone ou d'ordinateur pour accéder aux résultats". Bouton
+// affiché seulement si le navigateur sait le faire ; le patient doit
+// avoir déjà activé cet appareil une fois depuis la page de ses
+// résultats (voir portail_resultats.html).
+document.addEventListener('DOMContentLoaded', function() {
+    if (window.SimpleWebAuthnBrowser && SimpleWebAuthnBrowser.browserSupportsWebAuthn()) {
+        document.getElementById('ppBtnWebauthn').hidden = false;
+    }
+});
+
+async function connexionWebauthn() {
+    const msg = document.getElementById('ppWebauthnMsg');
+    msg.className = 'small text-center mb-2 text-muted';
+    msg.textContent = '';
+    try {
+        const rOpt = await fetch('/api/portail-patient/webauthn/login/options', { method: 'POST' });
+        const dOpt = await rOpt.json();
+        if (!dOpt.success) { msg.className = 'small text-center mb-2 text-danger'; msg.textContent = dOpt.error; return; }
+
+        const assertion = await SimpleWebAuthnBrowser.startAuthentication(dOpt.options);
+
+        const rVer = await fetch('/api/portail-patient/webauthn/login/verifier', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ credential: assertion }),
+        });
+        const dVer = await rVer.json();
+        if (dVer.success) {
+            window.location.href = "{{ url_for('page_portail_resultats') }}";
+        } else {
+            msg.className = 'small text-center mb-2 text-danger';
+            msg.textContent = dVer.error || 'Connexion refusée';
+        }
+    } catch (err) {
+        if (err.name === 'NotAllowedError') return; // annulé par le patient
+        msg.className = 'small text-center mb-2 text-danger';
+        msg.textContent = 'Échec : ' + (err.message || err);
+    }
+}
 </script>
 {% endblock %}

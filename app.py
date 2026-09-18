@@ -9661,6 +9661,102 @@ def api_definir_pin_portail_patient():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+# ⭐ Le patient utilise le mot de passe/biométrie de SON PROPRE téléphone
+# ou ordinateur (Face ID/Windows Hello/empreinte) — même mécanisme
+# WebAuthn que le personnel (services/webauthn_login_service.py,
+# models.IdentifiantWebauthn), avec type_compte='patient' et
+# utilisateur_id=patient_id. C'est la vraie biométrie de l'appareil (clé
+# privée jamais sortie de la puce sécurisée) — pas le "code rapide"
+# mémorisable par le trousseau du navigateur, qui restait indirect et pas
+# fiable partout. Patron : "que le patient utilise son mot de passe du
+# téléphone ou d'ordinateur pour accéder aux résultats actuellement ça ne
+# marche pas".
+@app.route('/api/portail-patient/webauthn/inscription/options', methods=['POST'])
+def api_portail_webauthn_inscription_options():
+    patient_id = session.get('portail_patient_id')
+    structure_id = session.get('portail_structure_id')
+    if not patient_id:
+        return jsonify({'success': False, 'error': 'Non authentifié'}), 401
+    from services.webauthn_login_service import options_inscription
+
+    patient_row = db.execute_query("SELECT nom, prenom FROM patients WHERE id = %s AND structure_id = %s", (patient_id, structure_id))
+    patient_nom = f"{patient_row[0].get('nom', '')} {patient_row[0].get('prenom', '')}".strip() if patient_row else f"Patient {patient_id}"
+
+    options_json, challenge = options_inscription(request, structure_id, patient_id, 'patient', patient_nom)
+    session['portail_webauthn_challenge'] = challenge
+    return jsonify({'success': True, 'options': json.loads(options_json)})
+
+
+@app.route('/api/portail-patient/webauthn/inscription/verifier', methods=['POST'])
+def api_portail_webauthn_inscription_verifier():
+    patient_id = session.get('portail_patient_id')
+    structure_id = session.get('portail_structure_id')
+    if not patient_id:
+        return jsonify({'success': False, 'error': 'Non authentifié'}), 401
+    from services.webauthn_login_service import verifier_inscription
+
+    data = request.json or {}
+    challenge = session.pop('portail_webauthn_challenge', None)
+    if not challenge:
+        return jsonify({'success': False, 'error': 'Session expirée, recommencez.'}), 400
+
+    patient_row = db.execute_query("SELECT nom, prenom FROM patients WHERE id = %s AND structure_id = %s", (patient_id, structure_id))
+    patient_nom = f"{patient_row[0].get('nom', '')} {patient_row[0].get('prenom', '')}".strip() if patient_row else f"Patient {patient_id}"
+
+    try:
+        verifier_inscription(
+            request, structure_id, patient_id, 'patient', patient_nom,
+            data.get('credential'), challenge,
+            libelle_appareil=data.get('libelle_appareil'),
+        )
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': f"Échec de l'enregistrement : {e}"}), 400
+
+
+@app.route('/api/portail-patient/webauthn/login/options', methods=['POST'])
+def api_portail_webauthn_login_options():
+    """Public — page de connexion, personne n'est encore authentifié."""
+    from services.webauthn_login_service import options_connexion
+
+    options_json, challenge = options_connexion(request)
+    session['portail_webauthn_login_challenge'] = challenge
+    return jsonify({'success': True, 'options': json.loads(options_json)})
+
+
+@app.route('/api/portail-patient/webauthn/login/verifier', methods=['POST'])
+def api_portail_webauthn_login_verifier():
+    """Public. Identifie le patient à partir de la clé biométrique
+    elle-même (clé résidente) — aucun téléphone/code à ressaisir."""
+    from services.webauthn_login_service import verifier_connexion
+
+    data = request.json or {}
+    challenge = session.pop('portail_webauthn_login_challenge', None)
+    if not challenge:
+        return jsonify({'success': False, 'error': 'Session expirée, recommencez.'}), 400
+
+    try:
+        identifiant = verifier_connexion(request, data.get('credential'), challenge)
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 401
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': f'Échec de la vérification : {e}'}), 400
+
+    # ⭐ Un même rp_id (domaine) sert le personnel ET le portail patient —
+    # cette clé pourrait en théorie appartenir à un compte staff si
+    # quelqu'un s'était trompé de page pour l'enregistrer. On refuse
+    # simplement plutôt que d'ouvrir la mauvaise session.
+    if identifiant.type_compte != 'patient':
+        return jsonify({'success': False, 'error': 'Cet appareil est enregistré pour un autre usage.'}), 403
+
+    session['portail_patient_id'] = identifiant.utilisateur_id
+    session['portail_structure_id'] = identifiant.structure_id
+    return jsonify({'success': True})
+
+
 @app.route('/portail-patient/resultats')
 def page_portail_resultats():
     if not session.get('portail_patient_id'):
@@ -9817,6 +9913,64 @@ def api_lister_ristournes():
             'date_paiement': l.date_paiement.strftime('%d/%m/%Y') if l.date_paiement else None,
         })
     return jsonify(resultat)
+
+
+@app.route('/api/ristournes/<int:periode_id>/modifier', methods=['POST'])
+@admin_required
+def api_modifier_ristourne(periode_id):
+    """Avant validation seulement : l'admin corrige le taux si une erreur
+    est détectée — patron : "l'admin valide, mais il doit avoir la main
+    de modifier l'enregistrement s'il y a une erreur avant de valider
+    sinon ça n'a pas de sens". Le montant est toujours RECALCULÉ depuis
+    base_calcul (jamais saisi à la main directement) pour garder le lien
+    entre le taux affiché et le montant payé."""
+    try:
+        structure_id = session.get('structure_id')
+        periode = PeriodeRistourne.query.filter_by(id=periode_id, structure_id=structure_id).first()
+        if not periode:
+            return jsonify({'success': False, 'error': 'Introuvable'}), 404
+        if periode.statut != 'calculee':
+            return jsonify({'success': False, 'error': "Seule une clôture pas encore validée peut être modifiée."}), 400
+
+        data = request.json or {}
+        nouveau_taux = data.get('taux_applique')
+        if nouveau_taux is None:
+            return jsonify({'success': False, 'error': 'Taux requis'}), 400
+        nouveau_taux = float(nouveau_taux)
+        if nouveau_taux < 0 or nouveau_taux > 100:
+            return jsonify({'success': False, 'error': 'Le taux doit être entre 0 et 100 %'}), 400
+
+        periode.taux_applique = nouveau_taux
+        periode.montant_ristourne = round(float(periode.base_calcul) * nouveau_taux / 100, 2)
+        db.session.commit()
+        return jsonify({'success': True, 'montant_ristourne': float(periode.montant_ristourne)})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ristournes/<int:periode_id>/annuler', methods=['POST'])
+@admin_required
+def api_annuler_ristourne(periode_id):
+    """Annule une clôture pas encore validée : les actes redeviennent
+    disponibles pour une prochaine clôture (ex. mauvaise période, mauvais
+    prescripteur, acte qui n'aurait pas dû être inclus) — l'alternative à
+    /modifier quand l'erreur va au-delà du simple taux."""
+    try:
+        structure_id = session.get('structure_id')
+        periode = PeriodeRistourne.query.filter_by(id=periode_id, structure_id=structure_id).first()
+        if not periode:
+            return jsonify({'success': False, 'error': 'Introuvable'}), 404
+        if periode.statut != 'calculee':
+            return jsonify({'success': False, 'error': "Seule une clôture pas encore validée peut être annulée."}), 400
+
+        DemandeExamen.query.filter_by(periode_ristourne_id=periode.id).update({'periode_ristourne_id': None})
+        db.session.delete(periode)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/ristournes/<int:periode_id>/valider', methods=['POST'])

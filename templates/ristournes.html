@@ -83,6 +83,37 @@
     </div>
 </div>
 
+<!-- Modal modifier (avant validation uniquement) -->
+<div class="modal fade" id="modalModifierRistourne" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-edit me-2"></i>Corriger avant validation</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="modifPeriodeId">
+                <p class="text-muted small">
+                    Base figée au calcul : <strong id="modifBaseCalcul"></strong>. Corrigez le taux si une erreur
+                    a été détectée — le montant est recalculé automatiquement. Si l'erreur va au-delà du taux
+                    (mauvaise période, mauvais prescripteur...), annulez plutôt la clôture depuis la liste.
+                </p>
+                <div class="mb-2">
+                    <label class="form-label mb-1">Taux (%)</label>
+                    <input type="number" class="form-control" id="modifTaux" min="0" max="100" step="0.5">
+                </div>
+                <div class="alert alert-light border small" id="modifApercu"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="confirmerModifierRistourne()">
+                    <i class="fas fa-check me-1"></i> Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Modal paiement -->
 <div class="modal fade" id="modalPaiement" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
@@ -132,6 +163,7 @@
 </div>
 
 <script>
+const EST_ADMIN = {{ 'true' if session.is_admin else 'false' }};
 let enAttenteCache = [];
 
 function ouvrirModalCloturer(prescripteurId, prescripteurNom, dateAncienne, dateRecente) {
@@ -162,6 +194,51 @@ function confirmerCloture() {
             } else {
                 alert('Erreur : ' + (data.error || 'inconnue'));
             }
+        })
+        .catch(e => alert('Erreur : ' + e));
+}
+
+function ouvrirModalModifierRistourne(id, tauxActuel, baseCalcul) {
+    document.getElementById('modifPeriodeId').value = id;
+    document.getElementById('modifTaux').value = tauxActuel;
+    document.getElementById('modifBaseCalcul').textContent = Math.round(baseCalcul).toLocaleString('fr-FR') + ' F';
+    majApercuModif();
+    new bootstrap.Modal(document.getElementById('modalModifierRistourne')).show();
+}
+
+document.getElementById('modifTaux').addEventListener('input', majApercuModif);
+function majApercuModif() {
+    const base = parseFloat(document.getElementById('modifBaseCalcul').textContent.replace(/\D/g, '')) || 0;
+    const taux = parseFloat(document.getElementById('modifTaux').value) || 0;
+    document.getElementById('modifApercu').textContent = `Nouveau montant : ${Math.round(base * taux / 100).toLocaleString('fr-FR')} F`;
+}
+
+function confirmerModifierRistourne() {
+    const id = document.getElementById('modifPeriodeId').value;
+    const taux = parseFloat(document.getElementById('modifTaux').value);
+    if (isNaN(taux) || taux < 0 || taux > 100) { alert('Taux invalide.'); return; }
+    fetch('/api/ristournes/' + id + '/modifier', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ taux_applique: taux })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('modalModifierRistourne')).hide();
+            chargerHistorique();
+        } else {
+            alert('Erreur : ' + (data.error || 'inconnue'));
+        }
+    })
+    .catch(e => alert('Erreur : ' + e));
+}
+
+function annulerRistourne(id) {
+    if (!confirm("Annuler cette clôture ? Les actes concernés redeviendront disponibles pour une prochaine clôture.")) return;
+    fetch('/api/ristournes/' + id + '/annuler', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) { chargerTout(); }
+            else alert('Erreur : ' + (data.error || 'inconnue'));
         })
         .catch(e => alert('Erreur : ' + e));
 }
@@ -264,7 +341,11 @@ function filtrerHistorique() {
         }[s] || s);
         corps.innerHTML = lignes.map(l => {
             let actions = '';
-            if (l.statut === 'calculee') actions = `<button class="btn btn-sm btn-info" onclick="validerRistourne(${l.id})"><i class="fas fa-check"></i> Valider</button>`;
+            if (l.statut === 'calculee') actions = EST_ADMIN ? `
+                <button class="btn btn-sm btn-outline-secondary" onclick="ouvrirModalModifierRistourne(${l.id}, ${l.taux_applique}, ${l.base_calcul})" title="Corriger le taux"><i class="fas fa-edit"></i></button>
+                <button class="btn btn-sm btn-outline-danger" onclick="annulerRistourne(${l.id})" title="Annuler la clôture"><i class="fas fa-undo"></i></button>
+                <button class="btn btn-sm btn-info" onclick="validerRistourne(${l.id})"><i class="fas fa-check"></i> Valider</button>`
+                : '<span class="text-muted small">En attente de validation admin</span>';
             else if (l.statut === 'validee') actions = `<button class="btn btn-sm btn-success" onclick="ouvrirModalPaiement(${l.id})"><i class="fas fa-money-check"></i> Payer</button>`;
             else if (l.statut === 'payee') actions = `<a href="/ristournes/${l.id}/recu" target="_blank" class="btn btn-sm btn-outline-primary"><i class="fas fa-receipt"></i> Reçu</a>`;
             const detailPaiement = l.statut === 'payee'
