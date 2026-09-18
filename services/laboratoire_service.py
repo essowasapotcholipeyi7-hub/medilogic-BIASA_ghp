@@ -161,18 +161,70 @@ def regenerer_code_acces(structure_id, patient_id, user_name):
 
 
 def demandes_ristourne_en_attente(structure_id, prescripteur_id):
-    """DemandeExamen déjà réglées, liées à ce prescripteur (via
-    PatientExterne), pas encore incluses dans une clôture — c'est ce
-    total qui s'affiche sur /ristournes avant de clôturer, et c'est
-    exactement ce que calculer_ristourne() ci-dessous va figer."""
-    fiches_ids = [f.id for f in PatientExterne.query.filter_by(structure_id=structure_id, prescripteur_id=prescripteur_id).all()]
+    """DemandeExamen déjà réglées (au moins partiellement), liées à ce
+    prescripteur (via PatientExterne actif), pas encore incluses dans une
+    clôture — c'est ce total qui s'affiche sur /ristournes avant de
+    clôturer, et c'est exactement ce que calculer_ristourne() ci-dessous
+    va figer. 'impaye' exclu : une ristourne sur un acte jamais payé n'a
+    pas de sens. Une fiche désactivée (patient repassé interne, voir
+    delier_demandes_ouvertes) ne compte plus non plus."""
+    fiches_ids = [f.id for f in PatientExterne.query.filter_by(
+        structure_id=structure_id, prescripteur_id=prescripteur_id, actif=True
+    ).all()]
     if not fiches_ids:
         return []
     return DemandeExamen.query.filter(
         DemandeExamen.structure_id == structure_id,
         DemandeExamen.patient_externe_id.in_(fiches_ids),
         DemandeExamen.periode_ristourne_id.is_(None),
+        DemandeExamen.statut_paiement != 'impaye',
     ).order_by(DemandeExamen.created_at.asc()).all()
+
+
+def relier_demandes_existantes(structure_id, fiche):
+    """Rattache rétroactivement à CETTE fiche externe les demandes déjà
+    créées pour ce patient (vente faite AVANT qu'on pense à cocher
+    'externe' — sinon 'le patient passe en interne' définitivement,
+    signalé par le patron) et pas encore clôturées dans une ristourne.
+    Appelée à la création d'une fiche, à sa mise à jour, et à sa
+    réactivation (toggle) — jamais à la clôture ou au paiement, qui eux
+    ne bougent plus."""
+    types = []
+    if fiche.biologie:
+        types.append('analyse')
+    if fiche.imagerie:
+        types.append('examen')
+    if not types:
+        return 0
+    demandes = DemandeExamen.query.filter(
+        DemandeExamen.structure_id == structure_id,
+        DemandeExamen.patient_id == fiche.patient_id,
+        DemandeExamen.type_prestation.in_(types),
+        DemandeExamen.periode_ristourne_id.is_(None),
+        DemandeExamen.patient_externe_id.is_(None),
+    ).all()
+    for d in demandes:
+        d.patient_externe_id = fiche.id
+    if demandes:
+        db.session.commit()
+    return len(demandes)
+
+
+def delier_demandes_ouvertes(fiche_id):
+    """Inverse de relier_demandes_existantes() : un patient repassé
+    interne (fiche désactivée) ne doit plus compter pour une PROCHAINE
+    clôture. Ne touche jamais une demande déjà incluse dans une
+    PeriodeRistourne (periode_ristourne_id renseigné) — l'historique déjà
+    clôturé/payé ne bouge jamais, quoi qu'il arrive à la fiche après."""
+    demandes = DemandeExamen.query.filter(
+        DemandeExamen.patient_externe_id == fiche_id,
+        DemandeExamen.periode_ristourne_id.is_(None),
+    ).all()
+    for d in demandes:
+        d.patient_externe_id = None
+    if demandes:
+        db.session.commit()
+    return len(demandes)
 
 
 def calculer_ristourne(structure_id, prescripteur_id, date_debut, date_fin, user_name):

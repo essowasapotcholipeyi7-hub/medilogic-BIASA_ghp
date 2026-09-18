@@ -1,0 +1,14 @@
+{
+    "name": "Mes résultats",
+    "short_name": "Résultats",
+    "description": "Portail patient : résultats et prochain rendez-vous",
+    "start_url": "/portail-patient/resultats",
+    "scope": "/portail-patient",
+    "display": "standalone",
+    "background_color": "#0f4c75",
+    "theme_color": "#1d6fa5",
+    "icons": [
+        { "src": "/static/images/portail-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+        { "src": "/static/images/portail-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    ]
+}

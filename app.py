@@ -19,7 +19,7 @@ from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
 from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur
-from services.laboratoire_service import charger_classification_actes, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne
+from services.laboratoire_service import charger_classification_actes, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes
 
 # ⭐ Numéro WhatsApp de l'éditeur (Togo, +228) pour l'envoi du reçu
 # d'abonnement — voir admin_finances.html.
@@ -9210,14 +9210,37 @@ def api_creer_patient_externe():
             return jsonify({'success': False, 'error': 'Patient introuvable'}), 404
         patient_nom = f"{patient_row[0].get('nom', '')} {patient_row[0].get('prenom', '')}".strip()
 
-        fiche = PatientExterne(
-            structure_id=structure_id, patient_id=patient_id, patient_nom=patient_nom,
-            prescripteur_id=prescripteur_id, biologie=biologie, imagerie=imagerie,
-            created_by=session.get('user_name', 'System'),
-        )
-        db.session.add(fiche)
+        # ⭐ Upsert (comme les prescripteurs) : un patient qui a DÉJÀ une
+        # fiche — active ou pas, ex. redevenu externe après être repassé
+        # interne — est mis à jour, jamais dupliqué. Patron : "on va faire
+        # que le patient puisse changer de statut interne en externe quand
+        # on veut".
+        fiche = PatientExterne.query.filter_by(
+            structure_id=structure_id, patient_id=patient_id
+        ).order_by(PatientExterne.id.desc()).first()
+        if fiche:
+            fiche.prescripteur_id = prescripteur_id
+            fiche.biologie = biologie
+            fiche.imagerie = imagerie
+            fiche.actif = True
+        else:
+            fiche = PatientExterne(
+                structure_id=structure_id, patient_id=patient_id, patient_nom=patient_nom,
+                prescripteur_id=prescripteur_id, biologie=biologie, imagerie=imagerie,
+                created_by=session.get('user_name', 'System'),
+            )
+            db.session.add(fiche)
         db.session.commit()
-        return jsonify({'success': True, 'id': fiche.id})
+
+        # ⭐ Rattache rétroactivement les actes déjà réglés AVANT qu'on
+        # pense à cocher ce patient externe — patron : "tel que c'est
+        # conçu actuellement il faut qu'on sélectionne le patient externe
+        # avant de faire la vente... si entre-temps on oublie c'est fini
+        # le patient passe en interne". Ça ne change plus rien pour une
+        # demande déjà clôturée/payée.
+        nb_rattachees = relier_demandes_existantes(structure_id, fiche)
+
+        return jsonify({'success': True, 'id': fiche.id, 'demandes_rattachees': nb_rattachees})
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -9233,6 +9256,14 @@ def api_toggle_patient_externe(fiche_id):
             return jsonify({'success': False, 'error': 'Introuvable'}), 404
         fiche.actif = not fiche.actif
         db.session.commit()
+        # ⭐ Réactivé : rattrape les actes réglés entre-temps. Désactivé
+        # (repassé interne) : ne doit plus compter pour une PROCHAINE
+        # clôture — l'historique déjà clôturé/payé, lui, ne bouge jamais
+        # (voir relier/delier_demandes_ouvertes, services/laboratoire_service.py).
+        if fiche.actif:
+            relier_demandes_existantes(structure_id, fiche)
+        else:
+            delier_demandes_ouvertes(fiche.id)
         return jsonify({'success': True, 'actif': fiche.actif})
     except Exception as e:
         db.session.rollback()
@@ -9668,7 +9699,12 @@ def api_portail_resultats():
             'medecin_nom': medecin.nom if medecin else '', 'motif': rdv.motif,
         }
 
-    return jsonify({'success': True, 'resultats': resultats, 'prochain_rdv': prochain_rdv})
+    # ⭐ Sert à afficher — une seule fois, tant que non fait — l'invite
+    # "définissez votre code rapide avant de quitter" (portail_resultats.html).
+    acces = AccesPortailPatient.query.filter_by(structure_id=structure_id, patient_id=patient_id).first()
+    pin_defini = bool(acces and acces.pin_hash)
+
+    return jsonify({'success': True, 'resultats': resultats, 'prochain_rdv': prochain_rdv, 'pin_defini': pin_defini})
 
 
 @app.route('/api/portail-patient/resultats/<int:resultat_id>/telecharger', methods=['GET'])

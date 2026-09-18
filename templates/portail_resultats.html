@@ -3,6 +3,12 @@
 
 {% block title %}Mes résultats{% endblock %}
 
+{% block extra_css %}
+<link rel="manifest" href="{{ url_for('static', filename='portail-manifest.json') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='images/portail-icon-192.png') }}">
+<meta name="theme-color" content="#1d6fa5">
+{% endblock %}
+
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-7">
@@ -11,6 +17,14 @@
             <a href="{{ url_for('portail_patient_deconnexion') }}" class="btn btn-sm btn-outline-secondary">
                 <i class="fas fa-sign-out-alt me-1"></i> Fermer
             </a>
+        </div>
+
+        <div id="ppBanniereInstall" style="display:none;" class="alert alert-primary d-flex justify-content-between align-items-center py-2">
+            <span><i class="fas fa-mobile-alt me-1"></i> <span id="ppBanniereInstallTexte">Ajoutez cette page à votre écran d'accueil pour y revenir en un geste.</span></span>
+            <div>
+                <button class="btn btn-sm btn-light" id="ppBtnInstall" onclick="installerRaccourci()">Ajouter</button>
+                <button class="btn btn-sm btn-link text-white" onclick="document.getElementById('ppBanniereInstall').style.display='none';">×</button>
+            </div>
         </div>
 
         <div id="ppProchainRdv" style="display:none;" class="alert alert-info">
@@ -50,6 +64,32 @@
     </div>
 </div>
 
+<!-- Invite (une seule fois, tant qu'aucun code rapide n'est défini) à le
+     faire avant de quitter l'hôpital — patron : "séance tenante le
+     patient change ce mot de passe avant de quitter l'hôpital". -->
+<div class="modal fade" id="modalPinObligatoire" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header" style="background: linear-gradient(135deg, #1d6fa5 0%, #0f4c75 100%); color:white;">
+                <h5 class="modal-title"><i class="fas fa-shield-alt me-2"></i>Sécurisez votre accès</h5>
+            </div>
+            <div class="modal-body">
+                <p>
+                    Avant de quitter l'hôpital, définissez un code rapide (4-6 chiffres) : vous n'aurez plus
+                    besoin de ressaisir le code d'accès complet la prochaine fois, et votre téléphone pourra
+                    vous laisser revenir avec votre empreinte ou Face ID.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Plus tard</button>
+                <button type="button" class="btn btn-primary btn-sm" onclick="allerDefinirPin()">
+                    <i class="fas fa-key me-1"></i> Définir mon code maintenant
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 function definirPin() {
     const pin = document.getElementById('ppNouveauPin').value.trim();
@@ -78,6 +118,46 @@ function definirPin() {
     .catch(() => { msg.textContent = 'Erreur de connexion, réessayez.'; msg.classList.add('text-danger'); });
 }
 
+function allerDefinirPin() {
+    const modalEl = document.getElementById('modalPinObligatoire');
+    const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+    modal.hide();
+    document.getElementById('ppCartePin').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => document.getElementById('ppNouveauPin').focus(), 350);
+}
+
+// ⭐ Raccourci sur l'écran d'accueil — patron : "quand il scanne ce code
+// pour ouvrir, que ça crée un raccourci direct sur son téléphone... il
+// n'aura pas à souffrir pour rentrer dedans". Android/Chrome : bannière
+// native via beforeinstallprompt. iPhone/Safari ne propose aucune
+// installation programmable — on affiche juste le geste à faire.
+let ppDeferredInstall = null;
+window.addEventListener('beforeinstallprompt', function(e) {
+    e.preventDefault();
+    ppDeferredInstall = e;
+    document.getElementById('ppBanniereInstall').style.display = 'flex';
+});
+
+function installerRaccourci() {
+    if (!ppDeferredInstall) return;
+    ppDeferredInstall.prompt();
+    ppDeferredInstall.userChoice.finally(() => {
+        ppDeferredInstall = null;
+        document.getElementById('ppBanniereInstall').style.display = 'none';
+    });
+}
+
+(function() {
+    const estIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const dejaInstalle = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    if (estIOS && !dejaInstalle) {
+        document.getElementById('ppBanniereInstallTexte').textContent =
+            "Pour un accès plus rapide : appuyez sur Partager (⬆), puis « Sur l'écran d'accueil ».";
+        document.getElementById('ppBtnInstall').style.display = 'none';
+        document.getElementById('ppBanniereInstall').style.display = 'flex';
+    }
+})();
+
 fetch('/api/portail-patient/resultats').then(r => r.json()).then(data => {
     if (!data.success) { window.location.href = "{{ url_for('page_portail_patient') }}"; return; }
 
@@ -87,6 +167,10 @@ fetch('/api/portail-patient/resultats').then(r => r.json()).then(data => {
             (data.prochain_rdv.medecin_nom ? ` avec Dr. ${data.prochain_rdv.medecin_nom}` : '') +
             (data.prochain_rdv.motif ? ` — ${data.prochain_rdv.motif}` : '');
         document.getElementById('ppProchainRdv').style.display = 'block';
+    }
+
+    if (!data.pin_defini) {
+        new bootstrap.Modal(document.getElementById('modalPinObligatoire')).show();
     }
 
     const conteneur = document.getElementById('ppListeResultats');

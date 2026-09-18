@@ -3,6 +3,12 @@
 
 {% block title %}Mes résultats{% endblock %}
 
+{% block extra_css %}
+<link rel="manifest" href="{{ url_for('static', filename='portail-manifest.json') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='images/portail-icon-192.png') }}">
+<meta name="theme-color" content="#1d6fa5">
+{% endblock %}
+
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-5">
