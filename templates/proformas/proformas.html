@@ -2247,6 +2247,15 @@ function afficherModalConversion(data) {
             </div>
         </div>
 
+        ${(data.avance_recue > 0) ? `
+        <div class="row mt-2">
+            <div class="col-md-12">
+                <div class="alert alert-info py-2 mb-0">
+                    <i class="fas fa-hand-holding-usd"></i>
+                    Prédépôt déjà versé (soins ambulatoires) : <strong>${Math.round(data.avance_recue).toLocaleString('fr-FR')} F</strong> — pré-rempli ci-dessous dans "Montant donné".
+                </div>
+            </div>
+        </div>` : ''}
         <div class="row mt-3">
             <div class="col-md-4">
                 <label class="form-label fw-bold">Mode de paiement</label>
@@ -2260,7 +2269,7 @@ function afficherModalConversion(data) {
             </div>
             <div class="col-md-3">
                 <label class="form-label fw-bold" style="color:#dc3545;">Montant donné</label>
-                <input type="number" class="form-control" id="convertMontantDonne" value="0" min="0" step="100"
+                <input type="number" class="form-control" id="convertMontantDonne" value="${data.avance_recue > 0 ? Math.round(data.avance_recue) : 0}" min="0" step="100"
                        oninput="calculerRenduConversion()" style="border-color:#dc3545;">
             </div>
             <div class="col-md-3">

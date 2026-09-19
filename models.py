@@ -2619,6 +2619,98 @@ class LitHospitalisation(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+# ⭐ Soins ambulatoires : mirroir de Hospitalisation (mêmes propriétés
+# "effectives" d'assurance, mêmes noms) mais SANS chambre/lit — un patient
+# suit des soins sur plusieurs jours (ex. pansement) sans être hospitalisé,
+# avec un prédépôt versé le 1er jour. calculer_repartition_assurance() et
+# charger_pbr_complementaires() (services/hospitalisation_service.py)
+# s'utilisent tels quels grâce à ces propriétés identiques — aucun fork du
+# service partagé.
+class SoinsAmbulatoires(db.Model):
+    __tablename__ = 'soins_ambulatoires'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    numero_local = db.Column(db.Integer)
+    patient_id = db.Column(db.Integer, nullable=False)
+    patient_nom = db.Column(db.String(255))
+    motif = db.Column(db.String(255))
+    mise_en_observation = db.Column(db.Boolean, default=False)
+    date_debut = db.Column(db.DateTime, nullable=False)
+    date_fin = db.Column(db.DateTime)
+    predepot_montant = db.Column(db.Numeric, default=0)
+    predepot_mode_paiement = db.Column(db.String(50))
+    predepot_note = db.Column(db.Text)
+    assurance_nom = db.Column(db.String(255))
+    taux_assurance = db.Column(db.Numeric, default=0)
+    assurance2_nom = db.Column(db.String(255))
+    taux_assurance2 = db.Column(db.Numeric, default=0)
+    societe_assurance2 = db.Column(db.String(255))
+    assurance_principale_active = db.Column(db.Boolean, default=True)
+    assurance2_active = db.Column(db.Boolean, default=True)
+    applique_pbr_cac = db.Column(db.Boolean, default=True)
+    pbr_cac_variante = db.Column(db.String(20), default='defaut')
+    applique_tva = db.Column(db.Boolean, default=False)
+    statut = db.Column(db.String(20), default='en_cours')  # en_cours / termine / facturee
+    proforma_id = db.Column(db.Integer)
+    vente_id = db.Column(db.Integer)
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # ⭐ Mêmes propriétés "effectives", mot pour mot, que Hospitalisation
+    # (models.py) — y compris le garde-fou taux > 0, sans quoi un patient
+    # avec assurance_nom renseigné mais taux_assurance=0 serait compté
+    # "assuré" à tort par calculer_repartition_assurance().
+    @property
+    def est_assure_amu(self):
+        if not self.assurance_principale_active:
+            return False
+        return bool(self.assurance_nom) and self.assurance_nom not in ('non_assure', 'Non assuré') \
+            and float(self.taux_assurance or 0) > 0
+
+    @property
+    def taux_assurance_effectif(self):
+        return float(self.taux_assurance or 0) if self.est_assure_amu else 0
+
+    @property
+    def a_cac(self):
+        return bool(self.assurance2_active) and bool(self.assurance2_nom) and float(self.taux_assurance2 or 0) > 0
+
+    @property
+    def taux_assurance2_effectif(self):
+        return float(self.taux_assurance2 or 0) if self.a_cac else 0
+
+    @property
+    def nombre_jours(self):
+        fin = self.date_fin or datetime.utcnow()
+        jours = (fin.date() - self.date_debut.date()).days + 1
+        return max(jours, 1)
+
+
+class LigneSoinAmbulatoire(db.Model):
+    __tablename__ = 'lignes_soins_ambulatoires'
+    id = db.Column(db.Integer, primary_key=True)
+    soins_ambulatoires_id = db.Column(db.Integer, nullable=False)
+    structure_id = db.Column(db.Integer, nullable=False)
+    type = db.Column(db.String(20))  # 'acte' | 'medicament'
+    reference_id = db.Column(db.Integer)
+    nom = db.Column(db.String(255))
+    prix = db.Column(db.Numeric, default=0)
+    pbr = db.Column(db.Numeric, default=0)
+    quantite = db.Column(db.Integer, default=1)
+    prise_en_charge_amu = db.Column(db.Boolean, default=True)
+    prise_en_charge_cac = db.Column(db.Boolean, default=True)
+    date_prestation = db.Column(db.Date, nullable=False)
+    heure_prestation = db.Column(db.Time)
+    note = db.Column(db.Text)
+    enregistre_par = db.Column(db.String(255))
+    date_enregistrement = db.Column(db.DateTime, default=datetime.utcnow)
+    statut = db.Column(db.String(20), default='en_cours')  # en_cours / facture
+
+    @property
+    def total(self):
+        return float(self.prix or 0) * int(self.quantite or 0)
+
+
 class ProformaLunette(db.Model):
     __tablename__ = 'proformas_lunettes'
     id = db.Column(db.Integer, primary_key=True)

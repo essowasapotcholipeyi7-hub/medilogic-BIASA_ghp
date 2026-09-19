@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+
+{% block title %}Soins ambulatoires{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h4 class="mb-0"><i class="fas fa-user-clock me-2"></i>Soins ambulatoires</h4>
+    <button class="btn btn-dark" onclick="ouvrirNouvelEpisode()">
+        <i class="fas fa-plus me-1"></i> Nouvel épisode
+    </button>
+</div>
+
+<div class="alert alert-info" id="patientPreselectionne" style="display:none;">
+    <i class="fas fa-user-check me-1"></i>
+    Patient sélectionné : <strong id="ppNom"></strong>
+    — <a href="#" onclick="ouvrirNouvelEpisode(); return false;">créer son épisode</a>
+</div>
+
+<style>
+#filtreTabs .nav-link { color: rgba(255,255,255,0.65); border-color: transparent; }
+#filtreTabs .nav-link:hover { color: #fff; }
+#filtreTabs .nav-link.active { background-color: #fff; color: #1a1a2e; border-color: #fff #fff transparent; font-weight: 600; }
+</style>
+<div class="card">
+    <div class="card-header bg-dark text-white">
+        <ul class="nav nav-tabs card-header-tabs" id="filtreTabs">
+            <li class="nav-item">
+                <a class="nav-link active" href="#" data-filtre="en_cours" onclick="filtrer(this)">En cours</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#" data-filtre="termine" onclick="filtrer(this)">Terminés (à facturer)</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#" data-filtre="facturee" onclick="filtrer(this)">Facturés</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#" data-filtre="tous" onclick="filtrer(this)">Tous</a>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>N°</th>
+                        <th>Patient</th>
+                        <th>Motif</th>
+                        <th>Début</th>
+                        <th>Fin</th>
+                        <th>Jours</th>
+                        <th>Prédépôt</th>
+                        <th>Statut</th>
+                        <th class="text-end">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for e in episodes %}
+                    <tr class="ligne-episode" data-statut="{{ e.statut }}">
+                        <td>#{{ e.numero_local or e.id }}</td>
+                        <td>{{ e.patient_nom }}</td>
+                        <td>{{ e.motif or '-' }}{% if e.mise_en_observation %} <span class="badge bg-info text-dark">Mise en observation</span>{% endif %}</td>
+                        <td>{{ e.date_debut.strftime('%d/%m/%Y') if e.date_debut else '-' }}</td>
+                        <td>{{ e.date_fin.strftime('%d/%m/%Y') if e.date_fin else '-' }}</td>
+                        <td>{{ e.nombre_jours }}</td>
+                        <td>{{ '{:,.0f}'.format(e.predepot_montant).replace(',', ' ') if e.predepot_montant else '0' }} F</td>
+                        <td>
+                            {% if e.statut == 'en_cours' %}
+                                <span class="badge bg-success">En cours</span>
+                            {% elif e.statut == 'termine' %}
+                                <span class="badge bg-warning text-dark">Terminé — à facturer</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Facturé</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <a href="{{ url_for('page_soins_ambulatoires_suivi', episode_id=e.id) }}" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-clipboard-list"></i> Suivi
+                            </a>
+                            <a href="{{ url_for('soins_ambulatoires_releve', episode_id=e.id) }}?type=global" target="_blank" class="btn btn-sm btn-outline-secondary">
+                                <i class="fas fa-print"></i> Relevé
+                            </a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="9" class="text-center text-muted py-4">Aucun épisode enregistré</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Nouvel épisode -->
+<div class="modal fade" id="modalNouvelEpisode" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title"><i class="fas fa-user-clock me-2"></i>Nouvel épisode de soins ambulatoires</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3" id="blocPatientChoisi" style="display:none;">
+                    <label class="form-label">Patient</label>
+                    <input type="text" class="form-control" id="nePatientNomAffiche" disabled>
+                </div>
+                <div class="mb-3" id="blocPatientManquant">
+                    <div class="alert alert-warning mb-0">
+                        Aucun patient sélectionné. Retournez sur
+                        <a href="{{ url_for('patients') }}">la liste des patients</a> et choisissez
+                        « Soins ambulatoires » depuis sa fiche.
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Motif</label>
+                    <input type="text" class="form-control" id="neMotif" placeholder="Ex. Pansement">
+                </div>
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="neMiseEnObservation">
+                    <label class="form-check-label" for="neMiseEnObservation">Mise en observation</label>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Date de début</label>
+                    <input type="date" class="form-control" id="neDateDebut">
+                </div>
+                <hr>
+                <div class="mb-2 fw-bold"><i class="fas fa-hand-holding-usd me-1"></i> Prédépôt</div>
+                <div class="row g-2">
+                    <div class="col-md-6">
+                        <label class="form-label small">Montant (FCFA)</label>
+                        <input type="number" class="form-control" id="nePredepotMontant" min="0" step="100" value="0">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">Mode de paiement</label>
+                        <select class="form-select" id="nePredepotMode">
+                            <option value="especes">Espèces</option>
+                            <option value="carte">Carte bancaire</option>
+                            <option value="Moov_money">FLOOZ</option>
+                            <option value="Mixx_By_Yas">MIXX By YAS</option>
+                            <option value="cheque">Chèque</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-text mb-2">
+                    Le prédépôt n'est enregistré en caisse qu'à la facturation finale — il sert à réduire
+                    automatiquement le montant restant dû à ce moment-là.
+                </div>
+                <input type="text" class="form-control form-control-sm" id="nePredepotNote" placeholder="Note (optionnel)">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-dark" id="btnCreerEpisode" onclick="creerEpisode()">
+                    <i class="fas fa-check me-1"></i> Créer l'épisode
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function filtrer(el) {
+    document.querySelectorAll('#filtreTabs .nav-link').forEach(a => a.classList.remove('active'));
+    el.classList.add('active');
+    const f = el.getAttribute('data-filtre');
+    document.querySelectorAll('.ligne-episode').forEach(tr => {
+        tr.style.display = (f === 'tous' || tr.getAttribute('data-statut') === f) ? '' : 'none';
+    });
+}
+
+let nePatientId = null;
+
+function ouvrirNouvelEpisode() {
+    nePatientId = sessionStorage.getItem('selectedPatientId') || localStorage.getItem('selectedPatientId');
+    const nom = sessionStorage.getItem('selectedPatientName') || localStorage.getItem('selectedPatientName');
+    const blocChoisi = document.getElementById('blocPatientChoisi');
+    const blocManquant = document.getElementById('blocPatientManquant');
+    if (nePatientId && nom) {
+        blocChoisi.style.display = '';
+        blocManquant.style.display = 'none';
+        document.getElementById('nePatientNomAffiche').value = nom;
+        document.getElementById('btnCreerEpisode').disabled = false;
+    } else {
+        blocChoisi.style.display = 'none';
+        blocManquant.style.display = '';
+        document.getElementById('btnCreerEpisode').disabled = true;
+    }
+    document.getElementById('neDateDebut').value = new Date().toISOString().slice(0, 10);
+    new bootstrap.Modal(document.getElementById('modalNouvelEpisode')).show();
+}
+
+function creerEpisode() {
+    if (!nePatientId) return;
+    const btn = document.getElementById('btnCreerEpisode');
+    btn.disabled = true;
+    const payload = {
+        patient_id: nePatientId,
+        motif: document.getElementById('neMotif').value,
+        mise_en_observation: document.getElementById('neMiseEnObservation').checked,
+        date_debut: document.getElementById('neDateDebut').value,
+        predepot_montant: document.getElementById('nePredepotMontant').value,
+        predepot_mode_paiement: document.getElementById('nePredepotMode').value,
+        predepot_note: document.getElementById('nePredepotNote').value,
+    };
+    fetch('/api/soins-ambulatoires', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            window.location.href = '/soins-ambulatoires/' + data.soins_ambulatoires_id;
+        } else {
+            alert('Erreur : ' + (data.error || 'inconnue'));
+            btn.disabled = false;
+        }
+    })
+    .catch(e => { alert('Erreur : ' + e); btn.disabled = false; });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    filtrer(document.querySelector('#filtreTabs .nav-link.active'));
+
+    const params = new URLSearchParams(window.location.search);
+    const nom = sessionStorage.getItem('selectedPatientName') || localStorage.getItem('selectedPatientName');
+    if (nom) {
+        document.getElementById('ppNom').textContent = nom;
+        document.getElementById('patientPreselectionne').style.display = '';
+    }
+    if (params.get('nouveau') === '1') {
+        ouvrirNouvelEpisode();
+    }
+});
+</script>
+
+{% endblock %}

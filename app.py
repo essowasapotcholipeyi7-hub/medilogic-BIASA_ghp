@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
@@ -14880,6 +14880,506 @@ def hospitalisation_releve(hospit_id):
     return render_template('hospitalisation_releve.html', hospit=hospit, jours=jours, total_general=total_general,
                             type_filtre=type_filtre, structure_nom=structure_info.get('nom', 'SSoftOneV10'),
                             repartition=repartition)
+
+
+# ============================================================
+# SOINS AMBULATOIRES — mirroir de l'Hospitalisation, sans chambre/lit,
+# avec un prédépôt versé le 1er jour (voir SoinsAmbulatoires/
+# LigneSoinAmbulatoire, models.py). calculer_repartition_assurance() et
+# charger_pbr_complementaires() (services/hospitalisation_service.py) sont
+# réutilisées telles quelles grâce aux propriétés "effectives" identiques
+# portées par SoinsAmbulatoires.
+# ============================================================
+
+@app.route('/soins-ambulatoires')
+@login_required
+def page_soins_ambulatoires():
+    structure_id = session.get('structure_id')
+    episodes = SoinsAmbulatoires.query.filter_by(structure_id=structure_id)\
+        .order_by(SoinsAmbulatoires.created_at.desc()).all()
+    return render_template('soins_ambulatoires_liste.html', episodes=episodes)
+
+
+@app.route('/api/soins-ambulatoires', methods=['POST'])
+@login_required
+def api_creer_soins_ambulatoires():
+    try:
+        data = request.json or {}
+        structure_id = session.get('structure_id')
+        user_name = session.get('user_name', 'System')
+
+        patient_id = data.get('patient_id')
+        if not patient_id:
+            return jsonify({'success': False, 'error': 'Patient requis'}), 400
+
+        patient = Patient.query.get(patient_id)
+        if not patient or str(patient.structure_id) != str(structure_id):
+            return jsonify({'success': False, 'error': 'Patient introuvable'}), 404
+
+        date_debut_str = data.get('date_debut')
+        try:
+            date_debut = datetime.strptime(date_debut_str, '%Y-%m-%d').date() if date_debut_str else date.today()
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Date de début invalide'}), 400
+
+        numero_local = prochain_numero_local('soins_ambulatoires', structure_id)
+
+        episode = SoinsAmbulatoires(
+            structure_id=structure_id,
+            numero_local=numero_local,
+            patient_id=patient.id,
+            patient_nom=f"{patient.prenom} {patient.nom}".strip(),
+            motif=data.get('motif', ''),
+            mise_en_observation=bool(data.get('mise_en_observation')),
+            date_debut=date_debut,
+            predepot_montant=float(data.get('predepot_montant') or 0),
+            predepot_mode_paiement=data.get('predepot_mode_paiement') or 'especes',
+            predepot_note=data.get('predepot_note', ''),
+            assurance_nom=patient.type_assurance,
+            taux_assurance=patient.taux_prise_charge or 0,
+            assurance2_nom=patient.assurance2_nom,
+            taux_assurance2=patient.taux_assurance2 or 0,
+            societe_assurance2=patient.societe_assurance2,
+            statut='en_cours',
+            created_by=user_name,
+        )
+        db.session.add(episode)
+        db.session.commit()
+
+        return jsonify({'success': True, 'soins_ambulatoires_id': episode.id, 'numero_local': numero_local})
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Erreur création soins ambulatoires: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/soins-ambulatoires/<int:episode_id>')
+@login_required
+def page_soins_ambulatoires_suivi(episode_id):
+    structure_id = session.get('structure_id')
+    episode = SoinsAmbulatoires.query.filter_by(id=episode_id, structure_id=structure_id).first()
+    if not episode:
+        flash('Épisode introuvable', 'danger')
+        return redirect(url_for('page_soins_ambulatoires'))
+
+    lignes = LigneSoinAmbulatoire.query.filter_by(soins_ambulatoires_id=episode_id)\
+        .order_by(LigneSoinAmbulatoire.date_prestation, LigneSoinAmbulatoire.id).all()
+    solde_en_cours = sum(float(l.prix or 0) * int(l.quantite or 0) for l in lignes if l.statut == 'en_cours')
+
+    patient_a_amu = episode.est_assure_amu
+    patient_a_cac = episode.a_cac
+
+    lignes_en_cours = [l for l in lignes if l.statut == 'en_cours']
+    pbr_cac_par_acte = charger_pbr_complementaires(structure_id, episode.assurance2_nom) if (episode.a_cac and episode.applique_pbr_cac) else {}
+    repartition = calculer_repartition_assurance(lignes_en_cours, episode, pbr_cac_par_acte, episode.pbr_cac_variante) if lignes_en_cours else None
+
+    montant_pbr_defaut = montant_pbr_alternatif = None
+    if lignes_en_cours and pbr_cac_par_acte:
+        montant_pbr_defaut = calculer_repartition_assurance(lignes_en_cours, episode, pbr_cac_par_acte, 'defaut')['part_cac']
+        montant_pbr_alternatif = calculer_repartition_assurance(lignes_en_cours, episode, pbr_cac_par_acte, 'alternatif')['part_cac']
+
+    taux_tva = float(ParametrageTva.get_ou_creer(structure_id).taux or 0)
+
+    return render_template('soins_ambulatoires_suivi.html', episode=episode, lignes=lignes, solde_en_cours=solde_en_cours,
+                            patient_a_amu=patient_a_amu, patient_a_cac=patient_a_cac,
+                            repartition=repartition, montant_pbr_defaut=montant_pbr_defaut,
+                            montant_pbr_alternatif=montant_pbr_alternatif, taux_tva=taux_tva)
+
+
+@app.route('/api/soins-ambulatoires/<int:episode_id>/assurance', methods=['POST'])
+@login_required
+def api_toggle_assurance_soins_ambulatoires(episode_id):
+    """Mirroir exact de api_toggle_assurance_hospitalisation (app.py)."""
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        episode = SoinsAmbulatoires.query.filter_by(id=episode_id, structure_id=structure_id).first()
+        if not episode:
+            return jsonify({'success': False, 'error': 'Épisode introuvable'}), 404
+        if episode.statut == 'facturee':
+            return jsonify({'success': False, 'error': 'Épisode déjà facturé'}), 400
+
+        if 'assurance_principale_active' in data:
+            episode.assurance_principale_active = bool(data.get('assurance_principale_active'))
+        if 'assurance2_active' in data:
+            episode.assurance2_active = bool(data.get('assurance2_active'))
+        if 'applique_pbr_cac' in data:
+            episode.applique_pbr_cac = bool(data.get('applique_pbr_cac'))
+        if 'pbr_cac_variante' in data and data.get('pbr_cac_variante') in ('defaut', 'alternatif'):
+            episode.pbr_cac_variante = data.get('pbr_cac_variante')
+        if 'applique_tva' in data:
+            episode.applique_tva = bool(data.get('applique_tva'))
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'assurance_principale_active': episode.assurance_principale_active,
+            'assurance2_active': episode.assurance2_active,
+            'applique_pbr_cac': episode.applique_pbr_cac,
+            'pbr_cac_variante': episode.pbr_cac_variante,
+            'applique_tva': episode.applique_tva,
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/soins-ambulatoires/<int:episode_id>/predepot', methods=['POST'])
+@login_required
+def api_modifier_predepot_soins_ambulatoires(episode_id):
+    """Corrige le prédépôt (montant/mode/note) tant que l'épisode n'est pas
+    facturé — il n'entre en caisse qu'à la conversion en vente finale (voir
+    api_facturer_soins_ambulatoires et le pré-remplissage du "montant
+    donné" dans proformas.html), donc le corriger ici avant facturation ne
+    touche à aucune recette déjà enregistrée."""
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        episode = SoinsAmbulatoires.query.filter_by(id=episode_id, structure_id=structure_id).first()
+        if not episode:
+            return jsonify({'success': False, 'error': 'Épisode introuvable'}), 404
+        if episode.statut == 'facturee':
+            return jsonify({'success': False, 'error': 'Épisode déjà facturé'}), 400
+
+        if 'predepot_montant' in data:
+            episode.predepot_montant = float(data.get('predepot_montant') or 0)
+        if 'predepot_mode_paiement' in data:
+            episode.predepot_mode_paiement = data.get('predepot_mode_paiement') or 'especes'
+        if 'predepot_note' in data:
+            episode.predepot_note = data.get('predepot_note', '')
+        db.session.commit()
+        return jsonify({'success': True, 'predepot_montant': float(episode.predepot_montant or 0)})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/soins-ambulatoires/<int:episode_id>/lignes', methods=['POST'])
+@login_required
+def api_ajouter_ligne_soin_ambulatoire(episode_id):
+    try:
+        data = request.json or {}
+        structure_id = session.get('structure_id')
+        user_name = session.get('user_name', 'System')
+
+        episode = SoinsAmbulatoires.query.filter_by(id=episode_id, structure_id=structure_id).first()
+        if not episode:
+            return jsonify({'success': False, 'error': 'Épisode introuvable'}), 404
+        if episode.statut == 'facturee':
+            return jsonify({'success': False, 'error': 'Cet épisode est déjà facturé'}), 400
+
+        type_ligne = data.get('type')
+        if type_ligne not in ('acte', 'medicament'):
+            return jsonify({'success': False, 'error': 'Type de soin invalide'}), 400
+
+        nom = data.get('nom')
+        prix = float(data.get('prix') or 0)
+        pbr = float(data.get('pbr') or prix)
+        quantite = int(data.get('quantite') or 1)
+        reference_id = data.get('reference_id')
+        prise_amu = bool(data.get('prise_en_charge_amu', True))
+        prise_cac = bool(data.get('prise_en_charge_cac', True))
+        note = data.get('note', '')
+
+        if not nom or quantite <= 0:
+            return jsonify({'success': False, 'error': 'Nom et quantité requis'}), 400
+
+        date_prestation_str = data.get('date_prestation')
+        if not date_prestation_str:
+            return jsonify({'success': False, 'error': 'Date de prestation requise'}), 400
+        try:
+            date_prestation = datetime.strptime(date_prestation_str, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Date invalide'}), 400
+
+        if episode.date_debut and date_prestation < episode.date_debut.date():
+            return jsonify({'success': False, 'error': "La date du soin ne peut pas précéder la date de début de l'épisode."}), 400
+
+        heure_prestation = None
+        heure_str = data.get('heure_prestation')
+        if heure_str:
+            try:
+                heure_prestation = datetime.strptime(heure_str, '%H:%M').time()
+            except ValueError:
+                heure_prestation = None
+        if heure_prestation is None:
+            heure_prestation = datetime.now().time().replace(microsecond=0)
+
+        doublon = False
+        if reference_id and not data.get('confirmer_doublon'):
+            doublon = LigneSoinAmbulatoire.query.filter_by(
+                soins_ambulatoires_id=episode_id, reference_id=reference_id,
+                date_prestation=date_prestation, statut='en_cours'
+            ).first() is not None
+
+        if doublon:
+            return jsonify({
+                'success': False, 'doublon': True,
+                'error': f"« {nom} » a déjà été enregistré ce jour pour cet épisode. Confirmer quand même ?"
+            }), 409
+
+        ligne = LigneSoinAmbulatoire(
+            soins_ambulatoires_id=episode_id, structure_id=structure_id, type=type_ligne,
+            reference_id=reference_id, nom=nom, prix=prix, pbr=pbr, quantite=quantite,
+            prise_en_charge_amu=prise_amu, prise_en_charge_cac=prise_cac,
+            date_prestation=date_prestation, heure_prestation=heure_prestation, note=note,
+            enregistre_par=user_name, statut='en_cours',
+        )
+        db.session.add(ligne)
+        db.session.commit()
+        return jsonify({'success': True, 'ligne_id': ligne.id})
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Erreur ajout ligne soins ambulatoires: {e}")
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/soins-ambulatoires/<int:episode_id>/lignes/<int:ligne_id>', methods=['DELETE'])
+@login_required
+def api_supprimer_ligne_soin_ambulatoire(episode_id, ligne_id):
+    try:
+        structure_id = session.get('structure_id')
+        ligne = LigneSoinAmbulatoire.query.filter_by(id=ligne_id, soins_ambulatoires_id=episode_id, structure_id=structure_id).first()
+        if not ligne:
+            return jsonify({'success': False, 'error': 'Ligne introuvable'}), 404
+        if ligne.statut != 'en_cours':
+            return jsonify({'success': False, 'error': 'Cette ligne est déjà facturée'}), 400
+        db.session.delete(ligne)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/soins-ambulatoires/<int:episode_id>/cloturer', methods=['POST'])
+@login_required
+def api_cloturer_soins_ambulatoires(episode_id):
+    """Clôture l'épisode — pas d'Entente Préalable ici (spécifique aux
+    séjours hospitaliers) ni de lit à libérer : juste la date de fin."""
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        episode = SoinsAmbulatoires.query.filter_by(id=episode_id, structure_id=structure_id).first()
+        if not episode:
+            return jsonify({'success': False, 'error': 'Épisode introuvable'}), 404
+        if episode.statut == 'facturee':
+            return jsonify({'success': False, 'error': 'Épisode déjà facturé'}), 400
+
+        date_fin_str = data.get('date_fin')
+        try:
+            date_fin = datetime.strptime(date_fin_str, '%Y-%m-%d').date() if date_fin_str else date.today()
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Date invalide'}), 400
+
+        if date_fin < episode.date_debut.date():
+            return jsonify({'success': False, 'error': "La date de fin ne peut pas précéder la date de début"}), 400
+
+        episode.date_fin = date_fin
+        episode.statut = 'termine'
+        db.session.commit()
+        return jsonify({'success': True, 'nombre_jours': episode.nombre_jours})
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Erreur clôture soins ambulatoires: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/soins-ambulatoires/<int:episode_id>/facturer', methods=['POST'])
+@login_required
+def api_facturer_soins_ambulatoires(episode_id):
+    """Mirroir de api_facturer_hospitalisation (app.py) : construit une
+    Proforma à partir des lignes 'en_cours' de l'épisode, avec
+    soins_ambulatoires_id renseigné et avance_recue = predepot_montant —
+    reprend ensuite exactement le même pipeline de conversion en vente
+    (POST /api/proformas/convertir), sans aucun code financier dupliqué.
+    Le prédépôt n'entre en recette qu'à cette conversion (voir
+    afficherModalConversion() dans proformas.html, qui pré-remplit le
+    "montant donné" avec avance_recue)."""
+    try:
+        structure_id = session.get('structure_id')
+        user_name = session.get('user_name', 'System')
+
+        episode = SoinsAmbulatoires.query.filter_by(id=episode_id, structure_id=structure_id).first()
+        if not episode:
+            return jsonify({'success': False, 'error': 'Épisode introuvable'}), 404
+        if episode.statut == 'facturee':
+            return jsonify({'success': False, 'error': 'Épisode déjà facturé'}), 400
+        if not episode.date_fin:
+            return jsonify({'success': False, 'error': "Clôturez d'abord l'épisode (date de fin)"}), 400
+
+        lignes = LigneSoinAmbulatoire.query.filter_by(soins_ambulatoires_id=episode_id, statut='en_cours').all()
+        if not lignes:
+            return jsonify({'success': False, 'error': 'Aucun soin à facturer'}), 400
+
+        est_assure = episode.est_assure_amu
+        assurance_nom = episode.assurance_nom if est_assure else 'Non assuré'
+        taux_assurance = episode.taux_assurance_effectif
+
+        assurance2_active = episode.a_cac
+        assurance2_nom = episode.assurance2_nom if assurance2_active else ''
+        taux_assurance2 = episode.taux_assurance2_effectif
+
+        pbr_cac_par_acte = charger_pbr_complementaires(structure_id, assurance2_nom) if (assurance2_active and episode.applique_pbr_cac) else {}
+
+        sous_total = 0
+        pbr_total_amu = 0
+        sous_total_amu = 0
+        base_cac_articles = 0
+        prise_en_charge_par_article = 0
+        articles = []
+
+        for l in lignes:
+            prix = float(l.prix or 0)
+            pbr = float(l.pbr or prix)
+            quantite = int(l.quantite or 0)
+            total = prix * quantite
+            sous_total += total
+
+            prise_amu = bool(l.prise_en_charge_amu)
+            prise_cac = bool(l.prise_en_charge_cac)
+            taux_item = taux_amu_pour_article(l.nom, taux_assurance) if est_assure else 0
+
+            if est_assure and prise_amu and pbr > 0:
+                sous_total_amu += total
+                base_amu_ligne = min(prix, pbr) * quantite
+                pbr_total_amu += base_amu_ligne
+                if taux_item > 0:
+                    prise_en_charge_par_article += (base_amu_ligne * taux_item) / 100
+
+            if prise_cac:
+                if est_assure and prise_amu and pbr > 0 and taux_assurance > 0:
+                    base_amu_ligne = min(prix, pbr) * quantite
+                    prise_amu_ligne = (base_amu_ligne * taux_item) / 100
+                    reste = total - prise_amu_ligne
+                else:
+                    reste = total
+                if l.nom in pbr_cac_par_acte:
+                    reste = min(reste, pbr_cac_variante_valeur(pbr_cac_par_acte[l.nom], episode.pbr_cac_variante) * quantite)
+                if reste > 0:
+                    base_cac_articles += reste
+
+            articles.append({
+                'id': l.reference_id, 'nom': l.nom, 'prix': prix, 'prix_unitaire': prix, 'pbr': pbr,
+                'quantite': quantite, 'total': total,
+                'prise_en_charge_amu': prise_amu, 'prise_en_charge_cac': prise_cac,
+                'type': 'produit' if l.type == 'medicament' else 'acte',
+                'date_prestation': l.date_prestation.isoformat() if l.date_prestation else None,
+            })
+
+        prise_en_charge = 0
+        base_remboursement = 0
+        if est_assure:
+            base_remboursement = min(sous_total_amu, pbr_total_amu)
+            if base_remboursement > 0:
+                prise_en_charge = prise_en_charge_par_article
+
+        prise_en_charge2 = 0
+        if assurance2_active and taux_assurance2 > 0 and base_cac_articles > 0:
+            prise_en_charge2 = base_cac_articles * (taux_assurance2 / 100)
+
+        net_a_payer = sous_total - prise_en_charge - prise_en_charge2
+        if net_a_payer < 0:
+            net_a_payer = 0
+
+        types_presents = set(a['type'] for a in articles)
+        type_proforma = 'mixte' if len(types_presents) > 1 else ('pharmacie' if 'produit' in types_presents else 'actes')
+
+        expires_at = datetime.now() + timedelta(days=7)
+        next_numero = db.execute_query("""
+            SELECT COALESCE(MAX(numero_proforma), 0) + 1 as next_num FROM proformas WHERE structure_id = %s
+        """, (structure_id,))
+        prochain_numero = next_numero[0]['next_num'] if next_numero else 1
+
+        assurances_data = {
+            'principale': {'nom': assurance_nom, 'taux': taux_assurance,
+                           'montant_prise_en_charge': prise_en_charge, 'base_remboursement': base_remboursement},
+            'complementaire': {'nom': assurance2_nom, 'taux': taux_assurance2,
+                                'montant_prise_en_charge': prise_en_charge2, 'active': assurance2_active}
+                              if assurance2_active else None,
+        }
+
+        avance_recue = float(episode.predepot_montant or 0)
+
+        result = db.execute_query("""
+            INSERT INTO proformas (
+                structure_id, patient_id, patient_nom, patient_telephone,
+                assurance_nom, taux_assurance, assurance2_nom, taux_assurance2,
+                assurance2_active, type, articles, sous_total, prise_en_charge,
+                prise_en_charge2, net_a_payer, base_remboursement, notes,
+                created_by, expires_at, numero_proforma, assurances_data,
+                base_cac, assurance_principale_active, soins_ambulatoires_id,
+                avance_recue, statut, created_at, applique_pbr_cac, pbr_cac_variante, applique_tva
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, NOW(), %s, %s, %s)
+            RETURNING id
+        """, (
+            structure_id, episode.patient_id, episode.patient_nom, '',
+            assurance_nom, taux_assurance, assurance2_nom, taux_assurance2,
+            assurance2_active, type_proforma, json.dumps(articles, ensure_ascii=False), sous_total, prise_en_charge,
+            prise_en_charge2, net_a_payer, base_remboursement,
+            f"Soins ambulatoires #{episode.numero_local or episode.id} — {episode.patient_nom} — "
+            f"du {episode.date_debut.strftime('%d/%m/%Y')} au {episode.date_fin.strftime('%d/%m/%Y')}",
+            user_name, expires_at, prochain_numero, json.dumps(assurances_data, ensure_ascii=False),
+            base_cac_articles, True, episode.id,
+            avance_recue, 'en_attente', episode.applique_pbr_cac, episode.pbr_cac_variante, episode.applique_tva,
+        ))
+
+        if not result:
+            return jsonify({'success': False, 'error': 'Erreur création proforma'}), 500
+        proforma_id = result[0]['id']
+
+        LigneSoinAmbulatoire.query.filter_by(soins_ambulatoires_id=episode_id, statut='en_cours').update({'statut': 'facture'})
+        episode.statut = 'facturee'
+        episode.proforma_id = proforma_id
+        db.session.commit()
+
+        return jsonify({'success': True, 'proforma_id': proforma_id})
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Erreur facturation soins ambulatoires: {e}")
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/soins-ambulatoires/<int:episode_id>/releve')
+@login_required
+def soins_ambulatoires_releve(episode_id):
+    structure_id = session.get('structure_id')
+    episode = SoinsAmbulatoires.query.filter_by(id=episode_id, structure_id=structure_id).first()
+    if not episode:
+        flash('Épisode introuvable', 'danger')
+        return redirect(url_for('page_soins_ambulatoires'))
+
+    type_filtre = request.args.get('type', 'global')
+    q = LigneSoinAmbulatoire.query.filter_by(soins_ambulatoires_id=episode_id)
+    if type_filtre == 'actes':
+        q = q.filter_by(type='acte')
+    elif type_filtre == 'medicaments':
+        q = q.filter_by(type='medicament')
+    lignes = q.order_by(LigneSoinAmbulatoire.date_prestation).all()
+
+    groupes = {}
+    for l in lignes:
+        groupes.setdefault(l.date_prestation, []).append(l)
+    jours = [{'date': d, 'lignes': groupes[d], 'total': sum(x.total for x in groupes[d])} for d in sorted(groupes.keys())]
+    total_general = sum(j['total'] for j in jours)
+
+    pbr_cac_par_acte = charger_pbr_complementaires(structure_id, episode.assurance2_nom) if (episode.a_cac and episode.applique_pbr_cac) else {}
+    repartition = calculer_repartition_assurance(lignes, episode, pbr_cac_par_acte, episode.pbr_cac_variante) if lignes else None
+
+    predepot = float(episode.predepot_montant or 0)
+    reste_du_apres_predepot = None
+    if repartition:
+        reste_du_apres_predepot = max(float(repartition.get('part_patient') or 0) - predepot, 0)
+
+    structures = sheets_helper.get_all_records('structures', use_prefix=False)
+    structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
+
+    return render_template('soins_ambulatoires_releve.html', episode=episode, jours=jours, total_general=total_general,
+                            type_filtre=type_filtre, structure_nom=structure_info.get('nom', 'SSoftOneV10'),
+                            repartition=repartition, predepot=predepot, reste_du_apres_predepot=reste_du_apres_predepot)
 
 
 @app.route('/api/proformas/count')

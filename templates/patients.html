@@ -760,6 +760,17 @@
                             <small class="text-muted">Nouveau séjour / suivi</small>
                         </button>
                     </div>
+                    <div class="col-md-6">
+                        <button class="btn btn-outline-info w-100 py-4 destination-btn"
+                                style="border-radius: 15px; border-width: 2px; transition: all 0.3s;"
+                                onmouseover="this.style.transform='scale(1.03)'"
+                                onmouseout="this.style.transform='scale(1)'"
+                                onclick="redirigerVers('soins_ambulatoires')">
+                            <span style="font-size: 18px; font-weight: 600;">Soins ambulatoires</span>
+                            <br>
+                            <small class="text-muted">Nouvel épisode / suivi</small>
+                        </button>
+                    </div>
                 </div>
 
                 <hr>
@@ -2256,10 +2267,21 @@ function showPatientDestinationModal(id, nom, assurance, taux, assurance2, taux2
                                     <small class="text-muted">Nouveau séjour / suivi</small>
                                 </button>
                             </div>
+                            <div class="col-md-6">
+                                <button class="btn btn-outline-info w-100 py-4 destination-btn"
+                                        style="border-radius: 15px; border-width: 2px; transition: all 0.3s;"
+                                        onmouseover="this.style.transform='scale(1.03)'"
+                                        onmouseout="this.style.transform='scale(1)'"
+                                        onclick="redirigerVers('soins_ambulatoires')">
+                                    <span style="font-size: 18px; font-weight: 600;">Soins ambulatoires</span>
+                                    <br>
+                                    <small class="text-muted">Nouvel épisode / suivi</small>
+                                </button>
+                            </div>
                         </div>
-                        
+
                         <hr>
-                        
+
                         <div class="text-center">
                             <button class="btn btn-outline-secondary btn-sm" onclick="fermerModalDestination()">
                                 <i class="fas fa-times me-1"></i> Annuler
@@ -2294,6 +2316,9 @@ function redirigerVers(destination) {
             break;
         case 'hospitalisation':
             window.location.href = '/hospitalisation?nouveau=1';
+            break;
+        case 'soins_ambulatoires':
+            window.location.href = '/soins-ambulatoires?nouveau=1';
             break;
         default:
             window.location.href = '/dashboard';
