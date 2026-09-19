@@ -14,14 +14,15 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
 from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur
 from services.laboratoire_service import charger_classification_actes, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
-from services.facturation_amu_service import generer_lignes_facture_amu_cnss, charger_classification_amu_cnss
+from services.facturation_amu_service import generer_lignes_facture_amu_cnss, charger_classification_amu_cnss, generer_lignes_facture_amu
 from utils.categories_amu_cnss import CATEGORIES_AMU_CNSS, CATEGORIES_AMU_CNSS_DICT
+from utils.categories_amu_inam import CATEGORIES_AMU_INAM, CATEGORIES_AMU_INAM_PLATES, CATEGORIES_AMU_INAM_DICT, REGIMES_AMU_INAM
 from utils.nombres_lettres import montant_en_lettres_fcfa
 
 # ⭐ Numéro WhatsApp de l'éditeur (Togo, +228) pour l'envoi du reçu
@@ -15870,12 +15871,12 @@ def api_classer_acte_amu_cnss():
         if not nom_acte or categorie not in CATEGORIES_AMU_CNSS_DICT:
             return jsonify({'success': False, 'error': 'Acte ou catégorie invalide'}), 400
 
-        entree = ClassificationAmuCnss.query.filter_by(structure_id=structure_id, nom_acte=nom_acte).first()
+        entree = ClassificationAmuCnss.query.filter_by(structure_id=structure_id, nom_acte=nom_acte, type_amu='cnss').first()
         if entree:
             entree.categorie = categorie
         else:
             entree = ClassificationAmuCnss(structure_id=structure_id, nom_acte=nom_acte, categorie=categorie,
-                                            created_by=user_name)
+                                            type_amu='cnss', created_by=user_name)
             db.session.add(entree)
         db.session.commit()
         return jsonify({'success': True})
@@ -15904,6 +15905,239 @@ def page_parametrage_amu_cnss():
         return redirect(url_for('page_parametrage_amu_cnss'))
 
     return render_template('assurance_parametrage_amu_cnss.html', parametrage=parametrage)
+
+
+# ============================================================
+# FACTURE AMU MENSUELLE — INAM (« FACTURE MENSUELLE », 6 sections avec
+# sous-totaux) — mirroir de la Facture AMU CNSS ci-dessus, voir
+# generer_lignes_facture_amu(type_amu='inam') et
+# utils/categories_amu_inam.py pour la structure en sections.
+# ============================================================
+
+def _lignes_dict_vers_liste_inam(lignes_dict):
+    return [
+        {'categorie': cle, 'nombre_feuilles': int(lignes_dict.get(cle, {}).get('nombre_feuilles', 0) or 0),
+         'montant': float(lignes_dict.get(cle, {}).get('montant', 0) or 0)}
+        for cle, _ in CATEGORIES_AMU_INAM_PLATES
+    ]
+
+
+def _lignes_liste_vers_dict_inam(lignes_liste):
+    d = {cle: {'nombre_feuilles': 0, 'montant': 0.0} for cle, _ in CATEGORIES_AMU_INAM_PLATES}
+    for l in (lignes_liste or []):
+        cle = l.get('categorie')
+        if cle in d:
+            d[cle] = {'nombre_feuilles': int(l.get('nombre_feuilles', 0) or 0), 'montant': float(l.get('montant', 0) or 0)}
+    return d
+
+
+def _construire_sections_inam(lignes_dict):
+    """Regroupe les 21 lignes par section (avec son propre sous-total),
+    dans l'ordre exact du formulaire INAM — utilisé par l'écran de
+    vérification ET l'impression."""
+    sections = []
+    for cle_section, libelle_section, libelle_sous_total, lignes_def in CATEGORIES_AMU_INAM:
+        lignes_section = [
+            {'categorie': cle, 'libelle': libelle,
+             'nombre_feuilles': lignes_dict.get(cle, {}).get('nombre_feuilles', 0),
+             'montant': lignes_dict.get(cle, {}).get('montant', 0)}
+            for cle, libelle in lignes_def
+        ]
+        sous_total = sum(l['montant'] for l in lignes_section)
+        sections.append({'cle': cle_section, 'libelle': libelle_section, 'libelle_sous_total': libelle_sous_total,
+                          'lignes': lignes_section, 'sous_total': sous_total})
+    return sections
+
+
+@app.route('/assurance/facture-amu-inam')
+@login_required
+def page_facture_amu_inam():
+    structure_id = session.get('structure_id')
+    try:
+        annee = int(request.args.get('annee') or date.today().year)
+        mois = int(request.args.get('mois') or date.today().month)
+    except ValueError:
+        annee, mois = date.today().year, date.today().month
+
+    brouillon = FactureAmuMensuelle.query.filter_by(
+        structure_id=structure_id, type_amu='inam', annee=annee, mois=mois
+    ).first()
+
+    resultat = generer_lignes_facture_amu(structure_id, annee, mois, 'inam')
+
+    if brouillon and brouillon.lignes:
+        lignes_affichees = _lignes_liste_vers_dict_inam(brouillon.lignes)
+    else:
+        lignes_affichees = resultat['lignes']
+
+    sections = _construire_sections_inam(lignes_affichees)
+    total_general = sum(s['sous_total'] for s in sections)
+
+    return render_template('assurance_facture_amu_inam.html',
+                            annee=annee, mois=mois, sections=sections, total_general=total_general,
+                            non_classes=resultat['non_classes'], brouillon=brouillon,
+                            categories=CATEGORIES_AMU_INAM_PLATES)
+
+
+@app.route('/api/assurance/facture-amu-inam/generer', methods=['POST'])
+@login_required
+def api_generer_facture_amu_inam():
+    try:
+        structure_id = session.get('structure_id')
+        user_name = session.get('user_name', 'System')
+        data = request.json or {}
+        annee = int(data.get('annee'))
+        mois = int(data.get('mois'))
+
+        resultat = generer_lignes_facture_amu(structure_id, annee, mois, 'inam')
+        lignes_liste = _lignes_dict_vers_liste_inam(resultat['lignes'])
+
+        brouillon = FactureAmuMensuelle.query.filter_by(
+            structure_id=structure_id, type_amu='inam', annee=annee, mois=mois
+        ).first()
+        if not brouillon:
+            brouillon = FactureAmuMensuelle(structure_id=structure_id, type_amu='inam', annee=annee, mois=mois,
+                                             numero_local=prochain_numero_local('factures_amu_mensuelles', structure_id),
+                                             created_by=user_name)
+            db.session.add(brouillon)
+        brouillon.lignes = lignes_liste
+        db.session.commit()
+
+        sections = _construire_sections_inam(_lignes_liste_vers_dict_inam(lignes_liste))
+        total_general = sum(s['sous_total'] for s in sections)
+        return jsonify({'success': True, 'lignes': lignes_liste, 'non_classes': resultat['non_classes'],
+                         'facture_id': brouillon.id, 'total_general': total_general})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/assurance/facture-amu-inam/enregistrer', methods=['POST'])
+@login_required
+def api_enregistrer_facture_amu_inam():
+    try:
+        structure_id = session.get('structure_id')
+        user_name = session.get('user_name', 'System')
+        data = request.json or {}
+        annee = int(data.get('annee'))
+        mois = int(data.get('mois'))
+        lignes_liste = data.get('lignes') or []
+
+        brouillon = FactureAmuMensuelle.query.filter_by(
+            structure_id=structure_id, type_amu='inam', annee=annee, mois=mois
+        ).first()
+        if not brouillon:
+            brouillon = FactureAmuMensuelle(structure_id=structure_id, type_amu='inam', annee=annee, mois=mois,
+                                             numero_local=prochain_numero_local('factures_amu_mensuelles', structure_id),
+                                             created_by=user_name)
+            db.session.add(brouillon)
+        propre = []
+        for l in lignes_liste:
+            cle = l.get('categorie')
+            if cle not in CATEGORIES_AMU_INAM_DICT:
+                continue
+            propre.append({
+                'categorie': cle,
+                'nombre_feuilles': max(int(l.get('nombre_feuilles') or 0), 0),
+                'montant': max(float(l.get('montant') or 0), 0),
+            })
+        brouillon.lignes = propre
+        db.session.commit()
+        return jsonify({'success': True, 'facture_id': brouillon.id})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/assurance/facture-amu-inam/<int:facture_id>/deposer', methods=['POST'])
+@login_required
+def api_deposer_facture_amu_inam(facture_id):
+    try:
+        structure_id = session.get('structure_id')
+        brouillon = FactureAmuMensuelle.query.filter_by(id=facture_id, structure_id=structure_id).first()
+        if not brouillon:
+            return jsonify({'success': False, 'error': 'Facture introuvable'}), 404
+        brouillon.statut = 'deposee'
+        brouillon.date_depot = datetime.now()
+        db.session.commit()
+        return jsonify({'success': True, 'date_depot': brouillon.date_depot.isoformat()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/assurance/facture-amu-inam/<int:facture_id>/imprimer')
+@login_required
+def imprimer_facture_amu_inam(facture_id):
+    structure_id = session.get('structure_id')
+    brouillon = FactureAmuMensuelle.query.filter_by(id=facture_id, structure_id=structure_id).first()
+    if not brouillon:
+        flash('Facture introuvable', 'danger')
+        return redirect(url_for('page_facture_amu_inam'))
+
+    lignes_dict = _lignes_liste_vers_dict_inam(brouillon.lignes)
+    sections = _construire_sections_inam(lignes_dict)
+    total_general = sum(s['sous_total'] for s in sections)
+
+    parametrage_cnss = ParametrageAmuCnss.get_ou_creer(structure_id)
+    parametrage_inam = ParametrageAmuInam.get_ou_creer(structure_id)
+    structures = sheets_helper.get_all_records('structures', use_prefix=False)
+    structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
+
+    noms_mois = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août',
+                 'Septembre', 'Octobre', 'Novembre', 'Décembre']
+    periode_libelle = f"{noms_mois[brouillon.mois]} {brouillon.annee}"
+
+    return render_template('assurance_facture_amu_inam_imprimer.html',
+                            brouillon=brouillon, sections=sections, total_general=total_general,
+                            montant_lettres=montant_en_lettres_fcfa(total_general),
+                            parametrage=parametrage_cnss, parametrage_inam=parametrage_inam,
+                            structure=structure_info, periode_libelle=periode_libelle, now=datetime.now())
+
+
+@app.route('/api/assurance/classification-amu-inam', methods=['POST'])
+@login_required
+def api_classer_acte_amu_inam():
+    try:
+        structure_id = session.get('structure_id')
+        user_name = session.get('user_name', 'System')
+        data = request.json or {}
+        nom_acte = (data.get('nom_acte') or '').strip()
+        categorie = data.get('categorie')
+        if not nom_acte or categorie not in CATEGORIES_AMU_INAM_DICT:
+            return jsonify({'success': False, 'error': 'Acte ou catégorie invalide'}), 400
+
+        entree = ClassificationAmuCnss.query.filter_by(structure_id=structure_id, nom_acte=nom_acte, type_amu='inam').first()
+        if entree:
+            entree.categorie = categorie
+        else:
+            entree = ClassificationAmuCnss(structure_id=structure_id, nom_acte=nom_acte, categorie=categorie,
+                                            type_amu='inam', created_by=user_name)
+            db.session.add(entree)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/assurance/parametrage-amu-inam', methods=['GET', 'POST'])
+@login_required
+def page_parametrage_amu_inam():
+    structure_id = session.get('structure_id')
+    parametrage = ParametrageAmuInam.get_ou_creer(structure_id)
+    parametrage_cnss = ParametrageAmuCnss.get_ou_creer(structure_id)
+
+    if request.method == 'POST':
+        regime = request.form.get('regime', '')
+        parametrage.regime = regime if regime in ('ramo', 'school_amu', 'wezou', 'autres') else None
+        parametrage.type_etablissement = request.form.get('type_etablissement', '').strip()
+        db.session.commit()
+        flash('Paramètres AMU-INAM enregistrés', 'success')
+        return redirect(url_for('page_parametrage_amu_inam'))
+
+    return render_template('assurance_parametrage_amu_inam.html', parametrage=parametrage,
+                            parametrage_cnss=parametrage_cnss, regimes=REGIMES_AMU_INAM)
 
 
 @app.route('/facture/detail/<int:facture_id>')

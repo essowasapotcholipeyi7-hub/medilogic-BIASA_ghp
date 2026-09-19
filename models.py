@@ -2328,7 +2328,12 @@ class ClassificationAmuCnss(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     structure_id = db.Column(db.Integer, nullable=False)
     nom_acte = db.Column(db.String(255), nullable=False)
-    categorie = db.Column(db.String(40), nullable=False)  # clé CATEGORIES_AMU_CNSS
+    categorie = db.Column(db.String(40), nullable=False)  # clé CATEGORIES_AMU_CNSS ou _INAM
+    # ⭐ Une même structure peut vouloir classer un acte différemment selon
+    # l'assureur (les 21 catégories CNSS et INAM ne se recouvrent pas
+    # forcément) — 'cnss' par défaut pour rester compatible avec les
+    # entrées déjà saisies avant l'ajout de l'AMU-INAM.
+    type_amu = db.Column(db.String(20), nullable=False, default='cnss')  # 'cnss' | 'inam'
     created_by = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -2358,11 +2363,33 @@ class ParametrageAmuCnss(db.Model):
         return param
 
 
+# ⭐ Champs propres au formulaire INAM ("Régime", "Type") — les champs déjà
+# communs aux deux assureurs (code prestataire, statut, banque, compte)
+# restent sur ParametrageAmuCnss et sont réutilisés tels quels côté INAM,
+# pas de ressaisie. Même motif get_ou_creer() que les autres paramétrages.
+class ParametrageAmuInam(db.Model):
+    __tablename__ = 'parametrage_amu_inam'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False, unique=True)
+    regime = db.Column(db.String(20))  # 'ramo' | 'school_amu' | 'wezou' | 'autres'
+    type_etablissement = db.Column(db.String(100))
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @classmethod
+    def get_ou_creer(cls, structure_id):
+        param = cls.query.filter_by(structure_id=structure_id).first()
+        if not param:
+            param = cls(structure_id=structure_id)
+            db.session.add(param)
+            db.session.commit()
+        return param
+
+
 # ⭐ Un brouillon éditable par (structure, type d'AMU, mois) — régénérable
 # depuis les ventes à tout moment (écrase les lignes), ou corrigé à la
 # main et enregistré tel quel. "deposee" est un simple marqueur de
-# traçabilité (date de dépôt physique à la CNSS), pas un verrou : on peut
-# toujours rouvrir/réimprimer après coup.
+# traçabilité (date de dépôt physique à la CNSS/l'INAM), pas un verrou :
+# on peut toujours rouvrir/réimprimer après coup.
 class FactureAmuMensuelle(db.Model):
     __tablename__ = 'factures_amu_mensuelles'
     id = db.Column(db.Integer, primary_key=True)
@@ -2370,6 +2397,7 @@ class FactureAmuMensuelle(db.Model):
     type_amu = db.Column(db.String(20), nullable=False, default='cnss')  # 'cnss' | 'inam'
     annee = db.Column(db.Integer, nullable=False)
     mois = db.Column(db.Integer, nullable=False)  # 1-12
+    numero_local = db.Column(db.Integer)  # numérotation locale — voir prochain_numero_local() ; "N° facture" côté INAM
     lignes = db.Column(db.JSON)  # [{categorie, nombre_feuilles, montant}, ...]
     statut = db.Column(db.String(20), default='brouillon')  # 'brouillon' | 'deposee'
     date_depot = db.Column(db.DateTime)

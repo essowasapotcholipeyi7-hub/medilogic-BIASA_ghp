@@ -1,8 +1,9 @@
 # services/facturation_amu_service.py
 # ============================================================
-# Génération du brouillon de la FACTURE AMU mensuelle (bordereau CNSS,
-# puis INAM plus tard) — voir utils/categories_amu_cnss.py pour les 21
-# catégories et models.py pour ClassificationAmuCnss/FactureAmuMensuelle.
+# Génération du brouillon de la FACTURE AMU mensuelle (bordereau CNSS et
+# INAM) — voir utils/categories_amu_cnss.py / utils/categories_amu_inam.py
+# pour les catégories et models.py pour
+# ClassificationAmuCnss/FactureAmuMensuelle.
 # ============================================================
 
 import json
@@ -12,9 +13,37 @@ from sqlalchemy import or_
 
 from models import db, Vente, Patient, ClassificationAmuCnss
 from utils.categories_amu_cnss import (
-    CATEGORIES_AMU_CNSS, CATEGORIE_HOSPITALISATION, CATEGORIE_PHARMACIE,
+    CATEGORIES_AMU_CNSS, CATEGORIE_HOSPITALISATION as CATEGORIE_HOSPITALISATION_CNSS,
+    CATEGORIE_PHARMACIE as CATEGORIE_PHARMACIE_CNSS,
 )
-from utils.nomenclature_amu_cnss import deviner_categorie_par_code
+from utils.categories_amu_inam import (
+    CATEGORIES_AMU_INAM_PLATES, CATEGORIE_HOSPITALISATION as CATEGORIE_HOSPITALISATION_INAM,
+    CATEGORIE_PHARMACIE as CATEGORIE_PHARMACIE_INAM,
+)
+from utils.nomenclature_amu_cnss import deviner_categorie_par_code as deviner_categorie_cnss
+from utils.nomenclature_amu_inam import deviner_categorie_par_code as deviner_categorie_inam
+
+# ⭐ Un seul endroit qui sait, pour un type d'AMU donné : le filtre
+# Patient.type_assurance, la liste (plate) des catégories, les catégories
+# auto-déduites (chambre/pharmacie), et la fonction de proposition
+# automatique par code — tout le reste de generer_lignes_facture_amu()
+# est identique pour les deux assureurs.
+_CONFIG_PAR_TYPE = {
+    'cnss': {
+        'type_assurance': 'amu_cnss',
+        'categories_plates': CATEGORIES_AMU_CNSS,
+        'categorie_hospitalisation': CATEGORIE_HOSPITALISATION_CNSS,
+        'categorie_pharmacie': CATEGORIE_PHARMACIE_CNSS,
+        'deviner_categorie': deviner_categorie_cnss,
+    },
+    'inam': {
+        'type_assurance': 'amu_inam',
+        'categories_plates': CATEGORIES_AMU_INAM_PLATES,
+        'categorie_hospitalisation': CATEGORIE_HOSPITALISATION_INAM,
+        'categorie_pharmacie': CATEGORIE_PHARMACIE_INAM,
+        'deviner_categorie': deviner_categorie_inam,
+    },
+}
 
 
 def _taux_amu_pour_article(nom_article, taux_defaut):
@@ -39,23 +68,32 @@ def _part_amu_ligne(item, taux_defaut):
     return pbr * taux_item / 100
 
 
-def charger_classification_amu_cnss(structure_id):
-    """{nom_acte: categorie} pour cette structure — vide tant qu'aucun
-    acte n'a été classé (tout atterrit alors dans "non_classes")."""
-    entrees = ClassificationAmuCnss.query.filter_by(structure_id=structure_id).all()
+def charger_classification_amu(structure_id, type_amu):
+    """{nom_acte: categorie} pour cette structure ET ce type d'AMU précis
+    (les 21 catégories CNSS et INAM ne se recouvrent pas) — vide tant
+    qu'aucun acte n'a été classé (tout atterrit alors dans "non_classes")."""
+    entrees = ClassificationAmuCnss.query.filter_by(structure_id=structure_id, type_amu=type_amu).all()
     return {e.nom_acte: e.categorie for e in entrees}
 
 
-def generer_lignes_facture_amu_cnss(structure_id, annee, mois):
-    """Parcourt les ventes AMU-CNSS validées du mois (année/mois donnés),
-    ligne par ligne (actes + produits), et retourne :
+def charger_classification_amu_cnss(structure_id):
+    """Compat ascendante — équivaut à charger_classification_amu(structure_id, 'cnss')."""
+    return charger_classification_amu(structure_id, 'cnss')
+
+
+def generer_lignes_facture_amu(structure_id, annee, mois, type_amu='cnss'):
+    """Parcourt les ventes AMU (CNSS ou INAM selon type_amu) validées du
+    mois (année/mois donnés), ligne par ligne (actes + produits), et
+    retourne :
       {
         'lignes': {categorie_key: {'nombre_feuilles': int, 'montant': float}, ...},
         'non_classes': [{'nom_acte': str, 'occurrences': int}, ...],
       }
-    Même filtre (patient AMU-CNSS, vente non annulée, période) que
+    Même filtre (patient AMU, vente non annulée, période) que
     bordereau_assurance() (routes/statistiques.py) ; même formule de part
     AMU par ligne (_part_amu_ligne ci-dessus)."""
+    config = _CONFIG_PAR_TYPE[type_amu]
+
     debut = datetime(annee, mois, 1)
     fin = (datetime(annee + 1, 1, 1) if mois == 12 else datetime(annee, mois + 1, 1)) - timedelta(seconds=1)
 
@@ -66,12 +104,15 @@ def generer_lignes_facture_amu_cnss(structure_id, annee, mois):
         Vente.date_vente >= debut,
         Vente.date_vente <= fin,
         or_(Vente.statut == 'validee', Vente.statut.is_(None)),
-        db.func.lower(Patient.type_assurance) == 'amu_cnss',
+        db.func.lower(Patient.type_assurance) == config['type_assurance'],
     ).all()
 
-    classification = charger_classification_amu_cnss(structure_id)
+    classification = charger_classification_amu(structure_id, type_amu)
+    deviner_categorie = config['deviner_categorie']
+    categorie_hospitalisation = config['categorie_hospitalisation']
+    categorie_pharmacie = config['categorie_pharmacie']
 
-    lignes = {cle: {'nombre_feuilles': 0, 'montant': 0.0} for cle, _ in CATEGORIES_AMU_CNSS}
+    lignes = {cle: {'nombre_feuilles': 0, 'montant': 0.0} for cle, _ in config['categories_plates']}
     non_classes = {}  # nom_acte -> occurrences
 
     for v in ventes:
@@ -89,16 +130,16 @@ def generer_lignes_facture_amu_cnss(structure_id, annee, mois):
             montant = _part_amu_ligne(item, taux_defaut)
             nom = item.get('nom') or 'Acte'
             if item.get('date_fin_prestation'):
-                categorie = CATEGORIE_HOSPITALISATION
+                categorie = categorie_hospitalisation
             else:
                 # ⭐ Priorité à la classification explicite de la structure
-                # (ClassificationAmuCnss) ; à défaut, proposition automatique
-                # via le code de l'acte dans la nomenclature officielle
-                # (utils/nomenclature_amu_cnss.py) — reste corrigeable via
-                # une classification explicite qui la surclassera toujours,
-                # et le montant/nombre par catégorie reste de toute façon
+                # (ClassificationAmuCnss, filtrée par type_amu) ; à défaut,
+                # proposition automatique via le code de l'acte dans la
+                # nomenclature officielle — reste corrigeable via une
+                # classification explicite qui la surclassera toujours, et
+                # le montant/nombre par catégorie reste de toute façon
                 # modifiable à la main avant impression.
-                categorie = classification.get(nom) or deviner_categorie_par_code(nom)
+                categorie = classification.get(nom) or deviner_categorie(nom)
             if not categorie:
                 non_classes[nom] = non_classes.get(nom, 0) + 1
                 continue
@@ -115,9 +156,14 @@ def generer_lignes_facture_amu_cnss(structure_id, annee, mois):
             if not isinstance(item, dict) or not item.get('prise_en_charge_amu'):
                 continue
             montant = _part_amu_ligne(item, taux_defaut)
-            lignes[CATEGORIE_PHARMACIE]['nombre_feuilles'] += 1
-            lignes[CATEGORIE_PHARMACIE]['montant'] += montant
+            lignes[categorie_pharmacie]['nombre_feuilles'] += 1
+            lignes[categorie_pharmacie]['montant'] += montant
 
     non_classes_liste = [{'nom_acte': nom, 'occurrences': n} for nom, n in sorted(non_classes.items())]
 
     return {'lignes': lignes, 'non_classes': non_classes_liste}
+
+
+def generer_lignes_facture_amu_cnss(structure_id, annee, mois):
+    """Compat ascendante — équivaut à generer_lignes_facture_amu(structure_id, annee, mois, 'cnss')."""
+    return generer_lignes_facture_amu(structure_id, annee, mois, 'cnss')

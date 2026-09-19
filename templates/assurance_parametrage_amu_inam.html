@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Paramètres AMU INAM{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="fas fa-cog me-2"></i>Paramètres AMU INAM</h4>
+    <a href="{{ url_for('page_facture_amu_inam') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i> Retour
+    </a>
+</div>
+
+<div class="card" style="max-width:600px;">
+    <div class="card-body">
+        <p class="text-muted small">
+            Code prestataire, statut, banque et n° de compte sont communs avec la Facture AMU CNSS —
+            <a href="{{ url_for('page_parametrage_amu_cnss') }}">à modifier ici si besoin</a>.
+            Cette page ne couvre que les 2 champs propres au formulaire INAM.
+        </p>
+        <form method="POST">
+            <div class="mb-3">
+                <label class="form-label">Régime</label>
+                <select class="form-select" name="regime">
+                    <option value="" {% if not parametrage.regime %}selected{% endif %}>-- Choisir --</option>
+                    {% for cle, libelle in regimes %}
+                    <option value="{{ cle }}" {% if parametrage.regime == cle %}selected{% endif %}>{{ libelle }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Type</label>
+                <input type="text" class="form-control" name="type_etablissement" value="{{ parametrage.type_etablissement or '' }}">
+            </div>
+            <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i> Enregistrer</button>
+        </form>
+
+        <hr>
+        <div class="small text-muted">
+            Aperçu des champs partagés (CNSS) actuellement enregistrés :
+            <ul class="mb-0">
+                <li>Code prestataire : {{ parametrage_cnss.code_prestataire or '—' }}</li>
+                <li>Statut : {{ {'public': 'Public', 'prive': 'Privé', 'confessionnel': 'Confessionnel'}.get(parametrage_cnss.statut_structure, '—') }}</li>
+                <li>Banque : {{ parametrage_cnss.nom_banque or '—' }}</li>
+                <li>N° de compte : {{ parametrage_cnss.numero_compte or '—' }}</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

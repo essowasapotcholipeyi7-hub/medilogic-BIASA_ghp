@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facture AMU INAM — {{ periode_libelle }}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Times New Roman', Times, serif; background: #f0f2f5; padding: 12px; }
+        .container { max-width: 780px; margin: 0 auto; background: white; padding: 14px 20px; border-radius: 6px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); font-size: 10.5px; line-height: 1.22; }
+        h1 { text-align: center; font-size: 15px; margin: 4px 0 8px; }
+        .entete-inam { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #ccc; padding-bottom: 6px; margin-bottom: 5px; }
+        .entete-inam img { height: 40px; width: auto; }
+        .champ { margin-bottom: 4px; display: flex; align-items: baseline; gap: 5px; }
+        .champ .label { font-weight: bold; white-space: nowrap; }
+        .champ .valeur { border-bottom: 1px dotted #333; flex: 1; padding: 0 4px; min-height: 12px; }
+        .ligne-double { display: flex; gap: 16px; flex-wrap: wrap; }
+        .ligne-double .champ { flex: 1; min-width: 170px; }
+        .regime { margin-bottom: 4px; }
+        .regime .label { font-weight: bold; margin-right: 8px; }
+        .regime span.opt { margin-right: 14px; }
+        table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 6px; font-size: 8.7px; }
+        table th, table td { border: 1px solid #333; padding: 2.2px 4px; word-wrap: break-word; vertical-align: middle; }
+        table th { background: #f1f1f1; text-align: center; font-size: 7.8px; line-height: 1.1; }
+        table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+        table col.col-feuille { width: 19%; }
+        table col.col-type { width: 27%; }
+        table col.col-lots { width: 15%; }
+        table col.col-reste { width: 15%; }
+        table col.col-montant { width: 24%; }
+        tr.sous-total td { font-weight: bold; background: #f1f1f1; }
+        tr.total-general td { font-weight: bold; background: #333; color: #fff; }
+        .arrete { margin-top: 8px; }
+        .arrete .ligne { border-bottom: 1px dotted #333; min-height: 13px; margin-top: 3px; }
+        .dates-case { margin-top: 10px; display: flex; justify-content: space-between; gap: 16px; }
+        .dates-case .dates .champ { margin-bottom: 3px; }
+        .dates-case .case-inam { border: 1px solid #333; padding: 6px; min-width: 220px; font-size: 9.5px; }
+        .dates-case .case-inam .titre { font-weight: bold; text-align: center; margin-bottom: 4px; }
+        .dates-case .case-inam .ligne-case { display: flex; justify-content: space-between; border-bottom: 1px dotted #333; padding: 2px 0; }
+        .signature { margin-top: 10px; }
+        .signature .cadre { border: 1px solid #333; padding: 8px; min-height: 44px; font-size: 10px; max-width: 340px; }
+        .no-print { margin-top: 20px; text-align: center; }
+        .no-print button { border: none; padding: 10px 18px; margin: 4px; border-radius: 6px; font-size: 13px; cursor: pointer; color: white; }
+        .btn-print { background: #1a1a2e; }
+        .btn-pdf { background: #dc3545; }
+        .btn-back { background: #6c757d; }
+        @media print {
+            @page { size: A4; margin: 10mm; }
+            body { background: white; padding: 0; }
+            .container { box-shadow: none; max-width: 100%; padding: 0; }
+            .no-print { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="factureContenu">
+        <div class="entete-inam">
+            <img src="{{ url_for('static', filename='images/inam_logo.png') }}" alt="INAM">
+        </div>
+        <h1>FACTURE MENSUELLE</h1>
+
+        <div class="champ"><span class="label">Dénomination de la structure :</span><span class="valeur">{{ structure.nom or '' }}</span></div>
+        <div class="ligne-double">
+            <div class="champ" style="flex:2;"><span class="label">Adresse :</span><span class="valeur">{{ structure.adresse or '' }}</span></div>
+            <div class="champ"><span class="label">Téléphone :</span><span class="valeur">{{ structure.telephone or '' }}</span></div>
+        </div>
+        <div class="champ"><span class="label">Mail :</span><span class="valeur">{{ structure.email or '' }}</span></div>
+        <div class="ligne-double">
+            <div class="champ"><span class="label">Code Prestataire :</span><span class="valeur">{{ parametrage.code_prestataire or '' }}</span></div>
+            <div class="champ"><span class="label">N° facture :</span><span class="valeur">{{ brouillon.numero_local or '' }}</span></div>
+        </div>
+        <div class="ligne-double">
+            <div class="champ"><span class="label">Année de facturation :</span><span class="valeur">{{ brouillon.annee }}</span></div>
+            <div class="champ"><span class="label">Mois de facturation :</span><span class="valeur">{{ periode_libelle }}</span></div>
+        </div>
+        <div class="regime">
+            <span class="label">Régime :</span>
+            {% for cle, libelle in [('ramo','RAMO'), ('school_amu','SCHOOL AMU'), ('wezou','WEZOU'), ('autres','AUTRES')] %}
+            <span class="opt">{{ libelle }} {{ '☑' if parametrage_inam.regime == cle else '☐' }}</span>
+            {% endfor %}
+        </div>
+        <div class="ligne-double">
+            <div class="champ"><span class="label">Banque :</span><span class="valeur">{{ parametrage.nom_banque or '' }}</span></div>
+            <div class="champ"><span class="label">N° de compte :</span><span class="valeur">{{ parametrage.numero_compte or '' }}</span></div>
+        </div>
+        <div class="ligne-double">
+            <div class="champ"><span class="label">Statut :</span><span class="valeur">{{ {'public': 'Public', 'prive': 'Privé', 'confessionnel': 'Confessionnel'}.get(parametrage.statut_structure, '') }}</span></div>
+            <div class="champ"><span class="label">Type :</span><span class="valeur">{{ parametrage_inam.type_etablissement or '' }}</span></div>
+        </div>
+
+        <table>
+            <colgroup>
+                <col class="col-feuille"><col class="col-type"><col class="col-lots"><col class="col-reste"><col class="col-montant">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th>Type de feuille de prestations</th>
+                    <th>Type de prestations</th>
+                    <th>Nbre de lots de dix(10) feuilles agrafées</th>
+                    <th>Nbre restant de feuilles agrafées (1 à 9)</th>
+                    <th>Montant total (FCFA)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in sections %}
+                {% for l in s.lignes %}
+                <tr>
+                    {% if loop.first %}
+                    <td rowspan="{{ s.lignes|length }}">{{ s.libelle }}</td>
+                    {% endif %}
+                    <td>{{ l.libelle }}</td>
+                    <td class="num">{{ l.nombre_feuilles // 10 }}</td>
+                    <td class="num">{{ l.nombre_feuilles % 10 }}</td>
+                    <td class="num">{{ '{:,}'.format(l.montant|round(0)|int).replace(',', ' ') }}</td>
+                </tr>
+                {% endfor %}
+                <tr class="sous-total">
+                    <td colspan="2">{{ s.libelle_sous_total }}</td>
+                    <td></td><td></td>
+                    <td class="num">{{ '{:,}'.format(s.sous_total|round(0)|int).replace(',', ' ') }}</td>
+                </tr>
+                {% endfor %}
+                <tr class="total-general">
+                    <td colspan="2">TOTAL (Sous-total 1+2+3+4+5+6)</td>
+                    <td></td><td></td>
+                    <td class="num">{{ '{:,}'.format(total_general|round(0)|int).replace(',', ' ') }}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="arrete">
+            <div class="champ"><span class="label">Arrêté la présente facture à la somme de :</span></div>
+            <div class="ligne">{{ montant_lettres }}</div>
+        </div>
+
+        <div class="dates-case">
+            <div class="dates">
+                <div class="champ"><span class="label">Date de facturation :</span><span class="valeur">{{ '%02d'|format(now.day) }}/{{ '%02d'|format(now.month) }}/{{ now.year }}</span></div>
+                <div class="champ"><span class="label">Date de dépôt :</span><span class="valeur"></span></div>
+                <div class="champ"><span class="label">Date d'enregistrement :</span><span class="valeur"></span></div>
+            </div>
+            <div class="case-inam">
+                <div class="titre">Case réservée à l'INAM</div>
+                <div class="ligne-case"><span>Montant du prépaiement Théorique</span></div>
+                <div class="ligne-case"><span>Montant à payer</span></div>
+            </div>
+        </div>
+
+        <div class="signature">
+            <div class="cadre">Cachet et signature du responsable de la structure</div>
+        </div>
+    </div>
+
+    <div class="no-print">
+        <button class="btn-print" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
+        <button class="btn-pdf" onclick="telechargerPDF()"><i class="fas fa-file-pdf"></i> PDF</button>
+        <button class="btn-back" onclick="window.close()"><i class="fas fa-times"></i> Fermer</button>
+    </div>
+
+    <script>
+    function telechargerPDF() {
+        const element = document.getElementById('factureContenu');
+        const opt = {
+            margin: [0.4, 0.4, 0.4, 0.4],
+            filename: 'facture_amu_inam_{{ brouillon.annee }}_{{ '%02d'|format(brouillon.mois) }}.pdf',
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, useCORS: true, logging: false },
+            jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' },
+            pagebreak: { mode: ['css', 'legacy'] }
+        };
+        html2pdf().set(opt).from(element).save();
+    }
+    </script>
+</body>
+</html>
