@@ -169,11 +169,37 @@
                             <option value="sans_aide">Sans aide</option>
                         </select>
                     </div>
+                    <!-- ⭐ NOUVEAU : filtrer selon l'assurance (AMU ou CAC) et/ou la
+                         société souscriptrice — patron : "filtrer selon les
+                         assurances et ou société". Les options CAC/Société sont
+                         remplies dynamiquement (peuplerFiltresAssuranceSociete())
+                         à partir des ventes chargées : ce ne sont pas des listes
+                         fixes (compagnies/sociétés libres, propres à chaque
+                         structure). -->
+                    <div class="col-md-2">
+                        <label class="form-label small">Assurance</label>
+                        <select id="filtreAssurance" class="form-control form-control-sm" onchange="filtrerHistorique()">
+                            <option value="">Toutes</option>
+                            <optgroup label="AMU">
+                                <option value="non_assure">Non assuré</option>
+                                <option value="amu_cnss">AMU-CNSS</option>
+                                <option value="amu_inam">AMU-INAM</option>
+                                <option value="amu_tns">AMU-TNS</option>
+                            </optgroup>
+                            <optgroup label="CAC (complémentaire)" id="filtreAssuranceCacGroup"></optgroup>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small">Société (CAC)</label>
+                        <select id="filtreSociete" class="form-control form-control-sm" onchange="filtrerHistorique()">
+                            <option value="">Toutes</option>
+                        </select>
+                    </div>
                     <div class="col-md-2">
                         <label class="form-label small">Recherche</label>
                         <div class="input-group input-group-sm">
-                            <input type="text" id="searchGlobal" class="form-control" 
-                                   placeholder="Patient..." 
+                            <input type="text" id="searchGlobal" class="form-control"
+                                   placeholder="Patient..."
                                    onkeyup="filtrerHistorique()">
                             <button class="btn btn-outline-secondary" onclick="clearSearch()" type="button">
                                 <i class="fas fa-times"></i>
@@ -200,9 +226,28 @@
 
         <!-- LISTE DES VENTES AVEC PAGINATION -->
         <div class="card">
-            <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
-                <h5><i class="fas fa-history"></i> Liste des ventes</h5>
-                <div>
+            <div class="card-header bg-info text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h5 class="mb-0"><i class="fas fa-history"></i> Liste des ventes</h5>
+                <div class="d-flex align-items-center flex-wrap gap-2">
+                    <!-- ⭐ NOUVEAU : ordre de classement de l'état/liste — patron :
+                         "pour faire l'état qu'on puisse avoir la possibilité de
+                         classer selon un ordre donné". S'applique à
+                         ventesFiltrees (filtrerHistorique() → trierVentesFiltrees()),
+                         donc à la fois à la liste affichée à l'écran et au
+                         rapport imprimé (imprimerHistorique() parcourt le même
+                         tableau, déjà trié) — l'état imprimé reflète exactement
+                         ce que le caissier voit avant d'imprimer.
+                    -->
+                    <label class="mb-0 small text-white">Trier par</label>
+                    <select id="triEtat" class="form-control form-control-sm" style="width:auto;" onchange="filtrerHistorique()">
+                        <option value="date_desc">Date (récent → ancien)</option>
+                        <option value="date_asc">Date (ancien → récent)</option>
+                        <option value="patient">Patient (A → Z)</option>
+                        <option value="assurance">Assurance / CAC</option>
+                        <option value="societe">Société (CAC)</option>
+                        <option value="montant_desc">Montant (décroissant)</option>
+                        <option value="montant_asc">Montant (croissant)</option>
+                    </select>
                     <button class="btn btn-light btn-sm me-1" onclick="imprimerHistorique()">
                         <i class="fas fa-print"></i> Imprimer
                     </button>
@@ -371,16 +416,98 @@ function chargerHistorique() {
         .then(function(ventes) {
             toutesLesVentes = ventes || [];
             console.log('Ventes chargées:', toutesLesVentes.length);
+            peuplerFiltresAssuranceSociete();
             filtrerHistorique();
             changerPeriodeStats('tous');
             hideLoader();
         })
         .catch(function(error) {
             console.error('❌ Erreur:', error);
-            document.getElementById('ventesList').innerHTML = 
+            document.getElementById('ventesList').innerHTML =
                 '<tr><td colspan="10" class="text-center text-danger">❌ Erreur de chargement</td></tr>';
             hideLoader();
         });
+}
+
+// ⭐ NOUVEAU : libellé AMU partagé (colonne "Assuré" du rapport imprimé,
+// tri "Assurance / CAC") — mêmes libellés que patients.html.
+function libelleAssuranceAmu(v) {
+    var ta = v.type_assurance || v.assurance_nom || 'non_assure';
+    if (ta === 'amu_cnss') return 'AMU-CNSS';
+    if (ta === 'amu_inam') return 'AMU-INAM';
+    if (ta === 'amu_tns') return 'AMU-TNS';
+    return 'Non assuré';
+}
+
+// ⭐ NOUVEAU : remplit les options "CAC (complémentaire)" (filtreAssurance)
+// et "Société (CAC)" (filtreSociete) à partir des ventes réellement
+// chargées — patron : "filtrer selon les assurances et ou société". Pas de
+// liste fixe : chaque structure a ses propres compagnies complémentaires
+// (SUNU, OLEA, GTA, FIDELIA...) et sociétés souscriptrices (SOTOCO,
+// TOGOCEL...), en texte libre (voir patients.html). Préfixe "cac:" sur la
+// value pour distinguer sans ambiguïté un choix CAC d'un code AMU dans
+// filtrerHistorique() (au cas improbable où une compagnie porterait le
+// même nom qu'un code AMU).
+function peuplerFiltresAssuranceSociete() {
+    var cacNoms = {};
+    var societes = {};
+    toutesLesVentes.forEach(function(v) {
+        if (v.assurance2_nom) cacNoms[v.assurance2_nom] = true;
+        if (v.societe_assurance2) societes[v.societe_assurance2] = true;
+    });
+
+    var groupeCac = document.getElementById('filtreAssuranceCacGroup');
+    var selectAssurance = document.getElementById('filtreAssurance');
+    var valeurCouranteAssurance = selectAssurance.value;
+    groupeCac.innerHTML = '';
+    Object.keys(cacNoms).sort(function(a, b) { return a.localeCompare(b, 'fr'); }).forEach(function(nom) {
+        var opt = document.createElement('option');
+        opt.value = 'cac:' + nom;
+        opt.textContent = nom;
+        groupeCac.appendChild(opt);
+    });
+    selectAssurance.value = valeurCouranteAssurance;  // conserve la sélection si toujours valide
+
+    var selectSociete = document.getElementById('filtreSociete');
+    var valeurCouranteSociete = selectSociete.value;
+    selectSociete.innerHTML = '<option value="">Toutes</option>';
+    Object.keys(societes).sort(function(a, b) { return a.localeCompare(b, 'fr'); }).forEach(function(nom) {
+        var opt = document.createElement('option');
+        opt.value = nom;
+        opt.textContent = nom;
+        selectSociete.appendChild(opt);
+    });
+    selectSociete.value = valeurCouranteSociete;
+}
+
+// ⭐ NOUVEAU : classe ventesFiltrees selon l'ordre choisi (#triEtat) — même
+// tableau utilisé par la liste à l'écran ET par imprimerHistorique(), donc
+// l'état imprimé respecte toujours l'ordre visible avant impression. Un tri
+// de groupement (assurance/société) garde le plus récent en premier au sein
+// de chaque groupe (tri secondaire par date).
+function trierVentesFiltrees(cle) {
+    var parDateDesc = function(a, b) { return new Date(b.date_vente || 0) - new Date(a.date_vente || 0); };
+    if (cle === 'date_asc') {
+        ventesFiltrees.sort(function(a, b) { return new Date(a.date_vente || 0) - new Date(b.date_vente || 0); });
+    } else if (cle === 'patient') {
+        ventesFiltrees.sort(function(a, b) { return (a.patient_nom || '').localeCompare(b.patient_nom || '', 'fr'); });
+    } else if (cle === 'assurance') {
+        ventesFiltrees.sort(function(a, b) {
+            return libelleAssuranceAmu(a).localeCompare(libelleAssuranceAmu(b), 'fr')
+                || (a.assurance2_nom || '').localeCompare(b.assurance2_nom || '', 'fr')
+                || parDateDesc(a, b);
+        });
+    } else if (cle === 'societe') {
+        ventesFiltrees.sort(function(a, b) {
+            return (a.societe_assurance2 || '').localeCompare(b.societe_assurance2 || '', 'fr') || parDateDesc(a, b);
+        });
+    } else if (cle === 'montant_desc') {
+        ventesFiltrees.sort(function(a, b) { return (b.net_a_payer || 0) - (a.net_a_payer || 0); });
+    } else if (cle === 'montant_asc') {
+        ventesFiltrees.sort(function(a, b) { return (a.net_a_payer || 0) - (b.net_a_payer || 0); });
+    } else {
+        ventesFiltrees.sort(parDateDesc);  // 'date_desc' — ordre par défaut
+    }
 }
 
 // ============================================
@@ -405,7 +532,11 @@ function filtrerHistorique() {
     var filtreStatutPaiement = document.getElementById('filtreStatutPaiement').value;
     // 🔥 NOUVEAU FILTRE AIDE
     var filtreAide = document.getElementById('filtreAide').value;
-    
+    // ⭐ NOUVEAU : assurance (AMU ou "cac:<compagnie>") et société souscriptrice
+    var filtreAssurance = document.getElementById('filtreAssurance').value;
+    var filtreSociete = document.getElementById('filtreSociete').value;
+    var triEtat = document.getElementById('triEtat').value;
+
     ventesFiltrees = [];
     
     for (var i = 0; i < toutesLesVentes.length; i++) {
@@ -498,12 +629,32 @@ function filtrerHistorique() {
             if (filtreAide === 'avec_aide' && !aAide) visible = false;
             if (filtreAide === 'sans_aide' && aAide) visible = false;
         }
-        
+
+        // ⭐ NOUVEAU FILTRE ASSURANCE (AMU ou CAC) — patron : "filtrer selon
+        // les assurances et ou société".
+        if (visible && filtreAssurance) {
+            if (filtreAssurance.indexOf('cac:') === 0) {
+                if ((v.assurance2_nom || '') !== filtreAssurance.substring(4)) visible = false;
+            } else {
+                var taVente = v.type_assurance || v.assurance_nom || 'non_assure';
+                if (taVente !== filtreAssurance) visible = false;
+            }
+        }
+
+        // ⭐ NOUVEAU FILTRE SOCIÉTÉ (société souscriptrice du CAC)
+        if (visible && filtreSociete) {
+            if ((v.societe_assurance2 || '') !== filtreSociete) visible = false;
+        }
+
         if (visible) {
             ventesFiltrees.push(v);
         }
     }
-    
+
+    // ⭐ NOUVEAU : classement de l'état selon l'ordre choisi — s'applique
+    // avant l'affichage écran ET avant impression (même tableau).
+    trierVentesFiltrees(triEtat);
+
     document.getElementById('resultCount').innerText = ventesFiltrees.length;
     currentPage = 1;
     updatePagination();
@@ -928,6 +1079,9 @@ function resetFiltres() {
     document.getElementById('filtreDateFin').value = '';
     document.getElementById('filtreStatutPaiement').value = '';
     document.getElementById('filtreAide').value = '';  // 🔥 NOUVEAU
+    document.getElementById('filtreAssurance').value = '';  // ⭐ NOUVEAU
+    document.getElementById('filtreSociete').value = '';  // ⭐ NOUVEAU
+    document.getElementById('triEtat').value = 'date_desc';  // ⭐ NOUVEAU
     document.getElementById('dateDebutGroup').style.display = 'none';
     document.getElementById('dateFinGroup').style.display = 'none';
     filtrerHistorique();
@@ -1055,7 +1209,19 @@ function imprimerHistorique() {
     html += '</div>';
     
     html += '<div class="header">Généré le ' + new Date().toLocaleString('fr-FR') + '</div>';
-    
+
+    // ⭐ NOUVEAU : l'état rappelle les filtres/tri appliqués — utile quand ce
+    // rapport est destiné à une assurance ou une société précise (patron :
+    // "filtrer selon les assurances et ou société ... pour faire l'état").
+    var selAssurance = document.getElementById('filtreAssurance');
+    var selSociete = document.getElementById('filtreSociete');
+    var selTri = document.getElementById('triEtat');
+    var mentions = [];
+    if (selAssurance.value) mentions.push('Assurance : ' + selAssurance.options[selAssurance.selectedIndex].text);
+    if (selSociete.value) mentions.push('Société : ' + selSociete.value);
+    mentions.push('Trié par : ' + selTri.options[selTri.selectedIndex].text);
+    html += '<div class="header">' + mentions.join(' — ') + '</div>';
+
     var totalCA = ventesFiltrees.reduce(function(sum, v) {
         var caEffectif = (v.montant_donne || 0) - (v.rendu || 0);
         return sum + (caEffectif > 0 ? caEffectif : 0);
@@ -1158,35 +1324,21 @@ function imprimerHistorique() {
             statutPaiement = 'Total';
         }
 
-        // ⭐ NOUVEAU : libellé assuré/non assuré — mêmes libellés que
-        // patients.html (assuranceBadge) pour rester cohérent dans toute
-        // l'appli.
-        var typeAssuranceVente = v.type_assurance || v.assurance_nom || 'non_assure';
-        var assureLabel = '';
-        var assureBadgeClass = '';
-        if (typeAssuranceVente === 'amu_cnss') {
-            assureLabel = 'AMU-CNSS';
-            assureBadgeClass = 'badge-assure';
-        } else if (typeAssuranceVente === 'amu_inam') {
-            assureLabel = 'AMU-INAM';
-            assureBadgeClass = 'badge-assure';
-        } else if (typeAssuranceVente === 'amu_tns') {
-            assureLabel = 'AMU-TNS';
-            assureBadgeClass = 'badge-assure';
-        } else {
-            assureLabel = 'Non assuré';
-            assureBadgeClass = 'badge-non-assure';
-        }
+        // ⭐ libellé AMU — fonction partagée avec le filtre/tri (libelleAssuranceAmu).
+        var assureLabel = libelleAssuranceAmu(v);
+        var assureBadgeClass = assureLabel === 'Non assuré' ? 'badge-non-assure' : 'badge-assure';
 
-        // ⭐ FIX : la colonne ne montrait que l'AMU principale — patron :
-        // "est ce que tu as tenu compte des cac?" — non, oubli corrigé.
-        // v.assurance2_nom n'est renseigné en base QUE si le CAC était
-        // réellement actif sur cette vente (mis à '' sinon dès la création,
-        // voir app.py assurance2_active), donc sa seule présence suffit —
-        // même logique que la fenêtre de détail (v.assurance2_nom ? ...).
+        // ⭐ CAC — v.assurance2_nom n'est renseigné en base QUE si le CAC
+        // était réellement actif sur cette vente (mis à '' sinon dès la
+        // création, voir app.py assurance2_active), donc sa seule présence
+        // suffit — même logique que la fenêtre de détail. Société
+        // souscriptrice ajoutée entre parenthèses quand connue — utile pour
+        // un état filtré/trié par société (patron : "filtrer selon les
+        // assurances et ou société").
         var cacHtml = '';
         if (v.assurance2_nom) {
-            cacHtml = '<br><span class="badge-assure" style="background:#20c997;">+ CAC ' + v.assurance2_nom + '</span>';
+            cacHtml = '<br><span class="badge-assure" style="background:#20c997;">+ CAC ' + v.assurance2_nom +
+                (v.societe_assurance2 ? ' (' + v.societe_assurance2 + ')' : '') + '</span>';
         }
 
         html += '<tr>';
