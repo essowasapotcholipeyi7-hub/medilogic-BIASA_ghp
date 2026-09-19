@@ -2313,6 +2313,72 @@ class CompagnieComplementaire(db.Model):
 
 
 # ============================================================
+# FACTURE AMU MENSUELLE (bordereau CNSS/INAM) — voir
+# services/facturation_amu_service.py et utils/categories_amu_cnss.py.
+# ============================================================
+
+# ⭐ Quelle catégorie CNSS (une des 21 du formulaire officiel) relève un
+# acte du catalogue — table Postgres dédiée (même motif que
+# ClassificationActe/PbrComplementaire plus haut) : un acte non encore
+# classé n'est PAS silencieusement rangé dans "Autres", il apparaît dans
+# la section "Non classés" de l'écran de vérification tant qu'il n'a pas
+# reçu une catégorie explicite ici.
+class ClassificationAmuCnss(db.Model):
+    __tablename__ = 'classification_amu_cnss'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    nom_acte = db.Column(db.String(255), nullable=False)
+    categorie = db.Column(db.String(40), nullable=False)  # clé CATEGORIES_AMU_CNSS
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# ⭐ En-tête de la FACTURE AMU (N° CNSS, code prestataire...) — saisi une
+# fois par structure, réutilisé à chaque impression mensuelle. Même motif
+# que ParametrageTva (une ligne par structure_id, get_ou_creer()).
+class ParametrageAmuCnss(db.Model):
+    __tablename__ = 'parametrage_amu_cnss'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False, unique=True)
+    numero_cnss = db.Column(db.String(50))
+    code_prestataire = db.Column(db.String(50))
+    statut_structure = db.Column(db.String(20))  # 'public' | 'prive' | 'confessionnel'
+    niveau_soins = db.Column(db.String(5))  # '1' | '2' | '3'
+    nom_banque = db.Column(db.String(150))
+    numero_compte = db.Column(db.String(50))
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @classmethod
+    def get_ou_creer(cls, structure_id):
+        param = cls.query.filter_by(structure_id=structure_id).first()
+        if not param:
+            param = cls(structure_id=structure_id)
+            db.session.add(param)
+            db.session.commit()
+        return param
+
+
+# ⭐ Un brouillon éditable par (structure, type d'AMU, mois) — régénérable
+# depuis les ventes à tout moment (écrase les lignes), ou corrigé à la
+# main et enregistré tel quel. "deposee" est un simple marqueur de
+# traçabilité (date de dépôt physique à la CNSS), pas un verrou : on peut
+# toujours rouvrir/réimprimer après coup.
+class FactureAmuMensuelle(db.Model):
+    __tablename__ = 'factures_amu_mensuelles'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    type_amu = db.Column(db.String(20), nullable=False, default='cnss')  # 'cnss' | 'inam'
+    annee = db.Column(db.Integer, nullable=False)
+    mois = db.Column(db.Integer, nullable=False)  # 1-12
+    lignes = db.Column(db.JSON)  # [{categorie, nombre_feuilles, montant}, ...]
+    statut = db.Column(db.String(20), default='brouillon')  # 'brouillon' | 'deposee'
+    date_depot = db.Column(db.DateTime)
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ============================================================
 # LABORATOIRE / RADIOLOGIE — circuit de demandes + ristournes
 # ============================================================
 # ⭐ Quel acte du catalogue relève de la biologie (laborantin) ou de

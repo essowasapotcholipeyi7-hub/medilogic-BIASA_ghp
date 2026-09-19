@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Paramètres AMU CNSS{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="fas fa-cog me-2"></i>Paramètres AMU CNSS</h4>
+    <a href="{{ url_for('page_facture_amu_cnss') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i> Retour
+    </a>
+</div>
+
+<div class="card" style="max-width:600px;">
+    <div class="card-body">
+        <p class="text-muted small">
+            Ces informations remplissent automatiquement l'en-tête de la Facture AMU CNSS imprimée
+            chaque mois — à renseigner une fois.
+        </p>
+        <form method="POST">
+            <div class="mb-3">
+                <label class="form-label">N° CNSS</label>
+                <input type="text" class="form-control" name="numero_cnss" value="{{ parametrage.numero_cnss or '' }}">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Code prestataire</label>
+                <input type="text" class="form-control" name="code_prestataire" value="{{ parametrage.code_prestataire or '' }}">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Statut de la structure</label>
+                <select class="form-select" name="statut_structure">
+                    <option value="" {% if not parametrage.statut_structure %}selected{% endif %}>-- Choisir --</option>
+                    <option value="public" {% if parametrage.statut_structure == 'public' %}selected{% endif %}>Public</option>
+                    <option value="prive" {% if parametrage.statut_structure == 'prive' %}selected{% endif %}>Privé</option>
+                    <option value="confessionnel" {% if parametrage.statut_structure == 'confessionnel' %}selected{% endif %}>Confessionnel</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Niveau de soins</label>
+                <select class="form-select" name="niveau_soins">
+                    <option value="" {% if not parametrage.niveau_soins %}selected{% endif %}>-- Choisir --</option>
+                    <option value="1" {% if parametrage.niveau_soins == '1' %}selected{% endif %}>1</option>
+                    <option value="2" {% if parametrage.niveau_soins == '2' %}selected{% endif %}>2</option>
+                    <option value="3" {% if parametrage.niveau_soins == '3' %}selected{% endif %}>3</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Nom de la banque</label>
+                <input type="text" class="form-control" name="nom_banque" value="{{ parametrage.nom_banque or '' }}">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">N° de compte</label>
+                <input type="text" class="form-control" name="numero_compte" value="{{ parametrage.numero_compte or '' }}">
+            </div>
+            <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i> Enregistrer</button>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
