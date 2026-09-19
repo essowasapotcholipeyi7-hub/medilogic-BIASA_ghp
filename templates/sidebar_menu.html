@@ -99,17 +99,6 @@
                                 <i class="fas fa-external-link-alt me-2"></i> AMU-INAM
                             </a>
                         </li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li>
-                            <a class="dropdown-item" href="{{ url_for('page_facture_amu_cnss') }}">
-                                <i class="fas fa-file-invoice me-2"></i> Facture AMU CNSS (mensuelle)
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{{ url_for('page_facture_amu_inam') }}">
-                                <i class="fas fa-file-invoice me-2"></i> Facture AMU INAM (mensuelle)
-                            </a>
-                        </li>
                     </ul>
                 </div>
                 {% endif %}
@@ -157,13 +146,6 @@
                 {% if session.role in ['admin', 'comptable', 'gestionnaire', 'pharmacien'] and not onglet_cache('pharmacie') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'gestion_stock' %}active{% endif %}" href="{{ url_for('gestion_stock') }}">
                     <span class="menu-text">Gestion des stocks</span>
-                </a>
-                {% endif %}
-
-                <!-- ===== PBR COMPLÉMENTAIRES ===== -->
-                {% if session.role in ['admin', 'comptable', 'gestionnaire'] and not _bloq %}
-                <a class="nav-link {% if request.endpoint == 'page_pbr_complementaires' %}active{% endif %}" href="{{ url_for('page_pbr_complementaires') }}">
-                    <span class="menu-text">PBR Complémentaires</span>
                 </a>
                 {% endif %}
 

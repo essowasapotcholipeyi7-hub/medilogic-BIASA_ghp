@@ -247,6 +247,7 @@ COMPTE_PAR_MOTIF_DEPENSE = {
     'impot': '63100000', 'impôt': '63100000', 'taxe': '63100000',
     'medicament': '60100000', 'médicament': '60100000', 'pharmacie': '60100000',
     'materiel': '60400000', 'matériel': '60400000', 'equipement': '60400000', 'équipement': '60400000',
+    'ristourne': '69100000',
 }
 
 

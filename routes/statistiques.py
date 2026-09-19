@@ -333,28 +333,40 @@ def calculer_montants_vente(vente):
         if isinstance(acte, dict):
             prix = float(acte.get('prix', 0))
             pbr = float(acte.get('pbr', 0))
+            # ⭐ FIX : quantité et plafonnement min(prix, pbr) manquants —
+            # une ligne à quantité 2+ voyait sa part AMU (et même son prix
+            # dans le sous-total) sous-évaluée d'autant, ici alignée sur la
+            # formule CANONIQUE utilisée à la création de la vente
+            # (api_convertir_proforma/api_facturer_hospitalisation, app.py :
+            # min(prix, pbr) × quantité × taux / 100) — constaté sur une
+            # vente réelle (2× P160... pardon, 2× S100 à 3500F : part AMU
+            # stockée 5 600F, 2 800F calculée ici avant ce correctif).
+            quantite = int(acte.get('quantite', 1) or 1)
             prise_amu = acte.get('prise_en_charge_amu', False)
 
-            total_prix += prix
+            total_prix += prix * quantite
 
-            if prise_amu:
-                total_pbr_amu += pbr
+            if prise_amu and pbr > 0:
+                base_amu = min(prix, pbr) * quantite
+                total_pbr_amu += base_amu
                 taux_item = taux_amu_pour_article(acte.get('nom'), taux_amu_defaut)
-                part_amu += pbr * taux_item / 100
+                part_amu += base_amu * taux_item / 100
 
     # ⭐ Parcourir les produits
     for produit in produits:
         if isinstance(produit, dict):
             prix = float(produit.get('prix_reel', produit.get('prix', 0)))
             pbr = float(produit.get('pbr', 0))
+            quantite = int(produit.get('quantite', 1) or 1)
             prise_amu = produit.get('prise_en_charge_amu', False)
 
-            total_prix += prix
+            total_prix += prix * quantite
 
-            if prise_amu:
-                total_pbr_amu += pbr
+            if prise_amu and pbr > 0:
+                base_amu = min(prix, pbr) * quantite
+                total_pbr_amu += base_amu
                 taux_item = taux_amu_pour_article(produit.get('nom'), taux_amu_defaut)
-                part_amu += pbr * taux_item / 100
+                part_amu += base_amu * taux_item / 100
     
     # ⭐ Reste après AMU = Prix total - Part AMU
     reste_apres_amu = total_prix - part_amu

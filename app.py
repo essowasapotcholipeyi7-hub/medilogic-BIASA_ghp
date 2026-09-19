@@ -10458,15 +10458,87 @@ def api_payer_ristourne(periode_id):
         else:
             return jsonify({'success': False, 'error': "mode_paiement doit être 'especes' ou 'mobile_money'"}), 400
 
+        # ⭐ Le paiement d'une ristourne est une vraie sortie d'argent — sans
+        # ce qui suit, marquer une ristourne "payée" ne bougeait ni la
+        # caisse ni la comptabilité (le solde affiché restait surestimé du
+        # montant versé au prescripteur, et aucune écriture n'en gardait
+        # trace) — signalé par le patron. Même mécanique que
+        # _executer_ajout_depense (dépense + mise à jour caisse + écriture
+        # SYSCOHADA), reprise ici directement pour garder une catégorie de
+        # journal d'activité propre ("ristourne_payee") plutôt que la
+        # catégorie générique "Dépense enregistrée".
+        user_name = session.get('user_name', 'System')
+        prescripteur = PrescripteurExterne.query.get(periode.prescripteur_id)
+        nom_prescripteur = prescripteur.nom if prescripteur else 'Prescripteur externe'
+        motif = f"Ristourne — {nom_prescripteur}"
+        montant_ristourne = float(periode.montant_ristourne or 0)
+        description = (f"Ristourne {periode.date_debut.strftime('%d/%m/%Y')} au "
+                        f"{periode.date_fin.strftime('%d/%m/%Y')} — {nom_prescripteur} "
+                        f"({periode.nb_actes} acte(s), taux {periode.taux_applique}%)")
+
+        recettes_total = db.execute_query("""
+            SELECT COALESCE(SUM(montant), 0) as total FROM recettes
+            WHERE structure_id = %s AND (est_annulation IS NULL OR est_annulation = FALSE)
+        """, (structure_id,))
+        depenses_total = db.execute_query("""
+            SELECT COALESCE(SUM(montant), 0) as total FROM depenses WHERE structure_id = %s
+        """, (structure_id,))
+        solde = (recettes_total[0]['total'] if recettes_total else 0) - (depenses_total[0]['total'] if depenses_total else 0)
+        if montant_ristourne > solde:
+            return jsonify({'success': False, 'error': f'Solde de caisse insuffisant. Solde actuel : {int(solde):,} FCFA'.replace(',', ' ')}), 400
+
+        result = db.execute_query("""
+            INSERT INTO depenses (structure_id, montant, motif, motif_personnalise, description, created_by_nom,
+                                   moyen_paiement, reference_paiement, date_paiement)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (
+            structure_id, montant_ristourne, motif, None, description, user_name,
+            mode_paiement, reference_paiement, date_paiement,
+        ))
+        depense_id = result[0]['id']
+
+        db.execute_query("""
+            INSERT INTO caisse (structure_id, solde_actuel, date_mise_a_jour)
+            VALUES (%s,
+                (SELECT COALESCE(SUM(montant), 0) FROM recettes WHERE structure_id = %s AND (est_annulation IS NULL OR est_annulation = FALSE)) -
+                (SELECT COALESCE(SUM(montant), 0) FROM depenses WHERE structure_id = %s),
+                NOW())
+            ON CONFLICT (structure_id) DO UPDATE SET
+                solde_actuel = EXCLUDED.solde_actuel,
+                date_mise_a_jour = NOW()
+        """, (structure_id, structure_id, structure_id))
+
+        try:
+            from services.comptabilite_service import generer_ecriture_depense
+            depense_orm = Depense.query.get(depense_id)
+            if depense_orm:
+                ecriture_dep = generer_ecriture_depense(depense_orm, user_nom=user_name)
+                if ecriture_dep:
+                    print(f"🧾 Écriture comptable #{ecriture_dep.id} générée pour la ristourne #{periode_id} (dépense #{depense_id})")
+        except Exception as e:
+            print(f"⚠️ Erreur génération écriture comptable (ristourne #{periode_id}, dépense #{depense_id} conservée): {e}")
+
+        try:
+            from services.journal_service import JournalService
+            JournalService.creer_mouvement(
+                structure_id=structure_id, categorie='ristourne_payee',
+                description=motif, montant=montant_ristourne, type_montant='debit',
+                reference_type='ristourne', reference_id=periode_id,
+                utilisateur_nom=user_name,
+            )
+        except Exception as e:
+            print(f"⚠️ Erreur journal d'activité (ristourne #{periode_id}): {e}")
+
         periode.statut = 'payee'
         periode.mode_paiement = mode_paiement
         periode.operateur_mobile = operateur_mobile
         periode.reference_paiement = reference_paiement
         periode.date_paiement = date_paiement
-        periode.payee_par = session.get('user_name', 'System')
+        periode.payee_par = user_name
         periode.payee_le = datetime.utcnow()
         db.session.commit()
-        return jsonify({'success': True})
+        return jsonify({'success': True, 'depense_id': depense_id})
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500

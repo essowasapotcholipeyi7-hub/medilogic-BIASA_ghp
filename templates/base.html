@@ -2196,11 +2196,6 @@
                     Classification Labo/Radio
                 </a>
                 {% endif %}
-                {% if session.role in ['admin', 'comptable', 'gestionnaire'] %}
-                <a class="menu-item" href="{{ url_for('page_pbr_complementaires') }}">
-                    PBR Complémentaires
-                </a>
-                {% endif %}
                 {% if session.role in ['laborantin', 'radiologue', 'secretaire'] %}
                 <a class="menu-item" href="{{ url_for('page_modeles_resultats') }}">
                     Modèles de résultats

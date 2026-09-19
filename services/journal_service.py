@@ -21,6 +21,7 @@ class JournalService:
         {'id': 'avoir_emis', 'nom': 'Avoir émis'},
         {'id': 'recette_encaisee', 'nom': 'Recette encaissée'},
         {'id': 'depense_enregistree', 'nom': 'Dépense enregistrée'},
+        {'id': 'ristourne_payee', 'nom': 'Ristourne payée'},
         {'id': 'proforma_cree', 'nom': 'Proforma créé'},
         {'id': 'rendez_vous_pris', 'nom': 'Rendez-vous pris'},
         {'id': 'consultation_terminee', 'nom': 'Consultation terminée'},

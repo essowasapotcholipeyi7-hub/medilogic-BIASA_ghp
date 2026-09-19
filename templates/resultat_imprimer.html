@@ -30,6 +30,13 @@
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-8">
+        {% if resultat.fichier_data %}
+        <div class="text-end mb-2 no-print">
+            <a href="{{ url_for('api_telecharger_resultat', resultat_id=resultat.id) }}" target="_blank" class="btn btn-outline-primary btn-sm">
+                <i class="fas fa-print me-1"></i> Imprimer le fichier original
+            </a>
+        </div>
+        {% endif %}
         <div class="card" id="resultatContenu">
             <div class="card-body" style="font-family: 'Segoe UI', Arial, sans-serif;">
 

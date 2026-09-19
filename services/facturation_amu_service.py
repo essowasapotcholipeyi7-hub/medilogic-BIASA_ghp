@@ -56,16 +56,31 @@ def _taux_amu_pour_article(nom_article, taux_defaut):
 
 
 def _part_amu_ligne(item, taux_defaut):
-    """Part AMU d'UNE ligne (acte ou produit) — réplique exactement
-    l'addend utilisé par calculer_montants_vente()
-    (routes/statistiques.py), pour que la somme des lignes d'une vente,
-    catégorie par catégorie, redonne le même total que le bordereau
-    assurance déjà existant sur la même vente."""
+    """Part AMU d'UNE ligne (acte ou produit) — réplique la formule
+    CANONIQUE utilisée à la création de la vente
+    (api_convertir_proforma/api_facturer_hospitalisation, app.py) :
+    min(prix, pbr) × quantité × taux / 100. ⭐ FIX : la version précédente
+    (et calculer_montants_vente() dans routes/statistiques.py, dont
+    celle-ci reprenait le calcul) oubliait à la fois la quantité et le
+    plafonnement à min(prix, pbr) — une ligne à quantité 2 ou plus voyait
+    sa part AMU sous-évaluée de moitié (ou plus), constaté sur des ventes
+    réelles (ex. vente #1098 : 2× "S100 Consultation medecine generale" à
+    3500F, part AMU stockée 5 600F, mais 2 800F recalculée ici avant ce
+    correctif — le patron a demandé de vérifier que la Facture AMU CNSS/
+    INAM concorde avec les montants réellement facturés)."""
     if not isinstance(item, dict) or not item.get('prise_en_charge_amu'):
         return 0.0
     pbr = float(item.get('pbr', 0) or 0)
+    if pbr <= 0:
+        return 0.0
+    # ⭐ Un produit (médicament) porte son prix réellement vendu dans
+    # `prix_reel` (peut différer du prix catalogue `prix`) — même priorité
+    # que calculer_montants_vente() ; absent sur un acte, repli sur
+    # prix/prix_unitaire comme avant.
+    prix = float(item.get('prix_reel', item.get('prix', item.get('prix_unitaire', 0))) or 0)
+    quantite = int(item.get('quantite', 1) or 1)
     taux_item = _taux_amu_pour_article(item.get('nom'), taux_defaut)
-    return pbr * taux_item / 100
+    return min(prix, pbr) * quantite * taux_item / 100
 
 
 def charger_classification_amu(structure_id, type_amu):
