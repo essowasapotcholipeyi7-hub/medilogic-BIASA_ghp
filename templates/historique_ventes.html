@@ -1074,14 +1074,21 @@ function imprimerHistorique() {
     }).length;
     var nonAssuresCount = ventesFiltrees.length - assuresCount;
 
+    // ⭐ NOUVEAU : compte CAC (assurance complémentaire) — même logique de
+    // présence que la colonne (v.assurance2_nom non vide = CAC actif sur
+    // cette vente), indépendant de l'AMU (un patient peut avoir CAC sans
+    // AMU, ou les deux).
+    var cacCount = ventesFiltrees.filter(function(v) { return !!v.assurance2_nom; }).length;
+
     html += '<div class="summary">';
     html += '<div class="summary-item"><strong>Total ventes</strong><br>' + ventesFiltrees.length + '</div>';
     html += '<div class="summary-item"><strong>CA (espèces)</strong><br>' + Math.round(totalCA).toLocaleString('fr-FR') + ' F</div>';
     html += '<div class="summary-item"><strong>Actes</strong><br>' + actesCount + '</div>';
     html += '<div class="summary-item"><strong>Pharmacie</strong><br>' + pharmaCount + '</div>';
     html += '<div class="summary-item"><strong style="color:#8b5cf6;">Mixte</strong><br>' + mixteCount + '</div>';  // 🔥 NOUVEAU
-    html += '<div class="summary-item"><strong style="color:#28a745;">Assurés</strong><br>' + assuresCount + '</div>';
+    html += '<div class="summary-item"><strong style="color:#28a745;">Assurés (AMU)</strong><br>' + assuresCount + '</div>';
     html += '<div class="summary-item"><strong style="color:#6c757d;">Non assurés</strong><br>' + nonAssuresCount + '</div>';
+    html += '<div class="summary-item"><strong style="color:#20c997;">Avec CAC</strong><br>' + cacCount + '</div>';
     html += '</div>';
     
     html += '<table>';
@@ -1171,11 +1178,22 @@ function imprimerHistorique() {
             assureBadgeClass = 'badge-non-assure';
         }
 
+        // ⭐ FIX : la colonne ne montrait que l'AMU principale — patron :
+        // "est ce que tu as tenu compte des cac?" — non, oubli corrigé.
+        // v.assurance2_nom n'est renseigné en base QUE si le CAC était
+        // réellement actif sur cette vente (mis à '' sinon dès la création,
+        // voir app.py assurance2_active), donc sa seule présence suffit —
+        // même logique que la fenêtre de détail (v.assurance2_nom ? ...).
+        var cacHtml = '';
+        if (v.assurance2_nom) {
+            cacHtml = '<br><span class="badge-assure" style="background:#20c997;">+ CAC ' + v.assurance2_nom + '</span>';
+        }
+
         html += '<tr>';
         html += '<td>#' + (v.numero_local || v.ID || (i + 1)) + '</td>';
         html += '<td>' + dateStr + '</td>';
         html += '<td>' + (v.patient_nom || 'Patient') + '</td>';
-        html += '<td><span class="' + assureBadgeClass + '">' + assureLabel + '</span></td>';
+        html += '<td><span class="' + assureBadgeClass + '">' + assureLabel + '</span>' + cacHtml + '</td>';
         html += '<td><span class="' + badgeClass + '">' + typeLabel + '</span></td>';
         html += '<td class="detail-cell">' + details + '</td>';
         html += '<td class="text-end">' + Math.round(netAPayer).toLocaleString('fr-FR') + ' F</td>';
