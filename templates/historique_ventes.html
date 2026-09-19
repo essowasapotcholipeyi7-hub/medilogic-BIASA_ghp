@@ -1033,6 +1033,8 @@ function imprimerHistorique() {
     html += '.badge-actes{background:#007bff;color:white;padding:2px 6px;border-radius:3px;}';
     html += '.badge-pharma{background:#28a745;color:white;padding:2px 6px;border-radius:3px;}';
     html += '.badge-mixte{background:#8b5cf6;color:white;padding:2px 6px;border-radius:3px;}';  // 🔥 NOUVEAU
+    html += '.badge-assure{background:#28a745;color:white;padding:2px 6px;border-radius:3px;}';
+    html += '.badge-non-assure{background:#6c757d;color:white;padding:2px 6px;border-radius:3px;}';
     html += '.text-success{color:#28a745;}';
     html += '.text-danger{color:#dc3545;}';
     html += '.detail-cell{font-size:10px;color:#555;max-width:200px;}';
@@ -1062,13 +1064,24 @@ function imprimerHistorique() {
     var actesCount = ventesFiltrees.filter(function(v) { return v.type === 'actes'; }).length;
     var pharmaCount = ventesFiltrees.filter(function(v) { return v.type === 'pharmacie' || v.type === 'pharma'; }).length;
     var mixteCount = ventesFiltrees.filter(function(v) { return v.type === 'mixte'; }).length;  // 🔥 NOUVEAU
-    
+
+    // ⭐ NOUVEAU : compte assurés/non assurés — patron : "il faut ajouter xa
+    // pour que le compte rendu soit claire" (pas moyen jusqu'ici de voir
+    // dans ce rapport quel patient est assuré ou pas).
+    var assuresCount = ventesFiltrees.filter(function(v) {
+        var ta = v.type_assurance || v.assurance_nom || 'non_assure';
+        return ta !== 'non_assure';
+    }).length;
+    var nonAssuresCount = ventesFiltrees.length - assuresCount;
+
     html += '<div class="summary">';
     html += '<div class="summary-item"><strong>Total ventes</strong><br>' + ventesFiltrees.length + '</div>';
     html += '<div class="summary-item"><strong>CA (espèces)</strong><br>' + Math.round(totalCA).toLocaleString('fr-FR') + ' F</div>';
     html += '<div class="summary-item"><strong>Actes</strong><br>' + actesCount + '</div>';
     html += '<div class="summary-item"><strong>Pharmacie</strong><br>' + pharmaCount + '</div>';
     html += '<div class="summary-item"><strong style="color:#8b5cf6;">Mixte</strong><br>' + mixteCount + '</div>';  // 🔥 NOUVEAU
+    html += '<div class="summary-item"><strong style="color:#28a745;">Assurés</strong><br>' + assuresCount + '</div>';
+    html += '<div class="summary-item"><strong style="color:#6c757d;">Non assurés</strong><br>' + nonAssuresCount + '</div>';
     html += '</div>';
     
     html += '<table>';
@@ -1076,6 +1089,7 @@ function imprimerHistorique() {
     html += '<th>N°</th>';
     html += '<th>Date</th>';
     html += '<th>Patient</th>';
+    html += '<th>Assuré</th>';
     html += '<th>Type</th>';
     html += '<th>Détails des articles</th>';
     html += '<th class="text-end">Montant</th>';
@@ -1127,7 +1141,7 @@ function imprimerHistorique() {
         var netAPayer = v.net_a_payer || 0;
         var montantDonne = v.montant_donne || 0;
         var resteAPayer = v.reste_a_payer || 0;
-        
+
         var statutPaiement = '';
         if (resteAPayer > 0 && montantDonne === 0) {
             statutPaiement = 'Impayé';
@@ -1136,11 +1150,32 @@ function imprimerHistorique() {
         } else {
             statutPaiement = 'Total';
         }
-        
+
+        // ⭐ NOUVEAU : libellé assuré/non assuré — mêmes libellés que
+        // patients.html (assuranceBadge) pour rester cohérent dans toute
+        // l'appli.
+        var typeAssuranceVente = v.type_assurance || v.assurance_nom || 'non_assure';
+        var assureLabel = '';
+        var assureBadgeClass = '';
+        if (typeAssuranceVente === 'amu_cnss') {
+            assureLabel = 'AMU-CNSS';
+            assureBadgeClass = 'badge-assure';
+        } else if (typeAssuranceVente === 'amu_inam') {
+            assureLabel = 'AMU-INAM';
+            assureBadgeClass = 'badge-assure';
+        } else if (typeAssuranceVente === 'amu_tns') {
+            assureLabel = 'AMU-TNS';
+            assureBadgeClass = 'badge-assure';
+        } else {
+            assureLabel = 'Non assuré';
+            assureBadgeClass = 'badge-non-assure';
+        }
+
         html += '<tr>';
         html += '<td>#' + (v.numero_local || v.ID || (i + 1)) + '</td>';
         html += '<td>' + dateStr + '</td>';
         html += '<td>' + (v.patient_nom || 'Patient') + '</td>';
+        html += '<td><span class="' + assureBadgeClass + '">' + assureLabel + '</span></td>';
         html += '<td><span class="' + badgeClass + '">' + typeLabel + '</span></td>';
         html += '<td class="detail-cell">' + details + '</td>';
         html += '<td class="text-end">' + Math.round(netAPayer).toLocaleString('fr-FR') + ' F</td>';
