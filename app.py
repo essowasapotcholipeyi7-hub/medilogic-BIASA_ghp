@@ -556,6 +556,7 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+
 # ========== ADMIN REQUIRED DECORATOR ==========
 def admin_required(f):
     from functools import wraps
@@ -9991,6 +9992,31 @@ def page_carte_portail_patient(patient_id):
 
 # ============================================================
 # PORTAIL PATIENT — accès public sécurisé (téléphone + code d'accès)
+# ⭐ Servi avec le type MIME correct (application/manifest+json) — le
+# handler statique par défaut de Flask renvoie application/json pour un
+# .json, ce que la plupart des navigateurs tolèrent mais qui n'est pas la
+# valeur attendue par la spec (voir aussi sw.js ci-dessous, condition
+# technique manquante jusqu'ici pour que Chrome/Android propose
+# l'installation du raccourci — patron : "ça ne s'installe pas sur
+# certains téléphones").
+@app.route('/portail-manifest.json')
+def portail_manifest():
+    from flask import send_from_directory
+    return send_from_directory('static', 'portail-manifest.json', mimetype='application/manifest+json')
+
+
+# ⭐ Servi à cette URL précise (pas sous /static/) pour que sa PORTÉE
+# ("scope") couvre nativement tout /portail-patient/* sans avoir besoin
+# de l'en-tête HTTP Service-Worker-Allowed — un service worker ne peut
+# contrôler par défaut que les chemins sous son propre dossier de
+# service. Voir static/sw.js pour la stratégie de cache (jamais de
+# résultat médical périmé affiché).
+@app.route('/portail-patient/sw.js')
+def portail_service_worker():
+    from flask import send_from_directory
+    return send_from_directory('static', 'sw.js', mimetype='application/javascript')
+
+
 # ============================================================
 # ⭐ AUCUN login_required ici volontairement : c'est le patient, chez lui,
 # qui y accède — sécurité posée par la vérification téléphone+code

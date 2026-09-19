@@ -4,7 +4,7 @@
 {% block title %}Mes résultats{% endblock %}
 
 {% block extra_css %}
-<link rel="manifest" href="{{ url_for('static', filename='portail-manifest.json') }}">
+<link rel="manifest" href="{{ url_for('portail_manifest') }}">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/portail-icon-192.png') }}">
 <meta name="theme-color" content="#1d6fa5">
 <!-- ⭐ Sans ces 2 balises, iOS ouvre le raccourci comme un simple onglet
@@ -94,6 +94,14 @@
 </div>
 
 <script>
+// ⭐ Condition technique manquante jusqu'ici pour que Chrome/Android
+// propose l'installation du raccourci (beforeinstallprompt) — un
+// manifest seul ne suffit pas. Voir static/sw.js et
+// portail_resultats.html (même enregistrement).
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register("{{ url_for('portail_service_worker') }}", { scope: '/portail-patient' }).catch(() => {});
+}
+
 function basculerMode(mode) {
     document.getElementById('ppOngletCode').classList.toggle('active', mode === 'code');
     document.getElementById('ppOngletPin').classList.toggle('active', mode === 'pin');

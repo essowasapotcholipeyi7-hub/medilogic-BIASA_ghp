@@ -4,7 +4,7 @@
 {% block title %}Mes résultats{% endblock %}
 
 {% block extra_css %}
-<link rel="manifest" href="{{ url_for('static', filename='portail-manifest.json') }}">
+<link rel="manifest" href="{{ url_for('portail_manifest') }}">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/portail-icon-192.png') }}">
 <meta name="theme-color" content="#1d6fa5">
 <!-- ⭐ Voir portail_patient.html — même correctif, même raison. -->
@@ -106,6 +106,13 @@
 </div>
 
 <script>
+// ⭐ Condition technique manquante jusqu'ici pour que Chrome/Android
+// propose l'installation du raccourci (beforeinstallprompt, voir plus bas)
+// — un manifest seul ne suffit pas. Voir static/sw.js.
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register("{{ url_for('portail_service_worker') }}", { scope: '/portail-patient' }).catch(() => {});
+}
+
 function definirPin() {
     const pin = document.getElementById('ppNouveauPin').value.trim();
     const msg = document.getElementById('ppPinMsg');
