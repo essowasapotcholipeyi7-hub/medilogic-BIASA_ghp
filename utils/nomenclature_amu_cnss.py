@@ -1487,6 +1487,7 @@ CODE_VERS_CATEGORIE_CNSS = {
     'P157': 'soins_infirmiers',
     'P158': 'soins_infirmiers',
     'P159': 'soins_infirmiers',
+    'P160': 'hospitalisation',
     'P800': 'accouchement',
     'P801': 'accouchement',
     'P802': 'accouchement',
