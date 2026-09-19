@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% set cacher_navigation = True %}
+
+{% block title %}Résultat — {{ demande.patient_nom }}{% endblock %}
+
+{% block extra_css %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+    @media print {
+        @page { size: A4; margin: 12mm; }
+        .no-print { display: none !important; }
+        body, .card, * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+        }
+    }
+    .pdf-page-canvas { width: 100%; height: auto; display: block; margin-bottom: 10px; border: 1px solid #dee2e6; border-radius: 6px; break-inside: avoid; page-break-inside: avoid; }
+    .resultat-contenu-html { font-size: 13px; }
+    .resultat-contenu-html img { max-width: 100%; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        {% if resultat.fichier_data %}
+        <div class="text-end mb-2 no-print">
+            <a href="{{ url_for('api_portail_telecharger_resultat', resultat_id=resultat.id) }}" target="_blank" class="btn btn-outline-primary btn-sm">
+                <i class="fas fa-print me-1"></i> Imprimer le fichier original
+            </a>
+        </div>
+        {% endif %}
+        <div class="card" id="resultatContenu">
+            <div class="card-body" style="font-family: 'Segoe UI', Arial, sans-serif;">
+
+                <!-- EN-TÊTE CLINIQUE -->
+                <div class="row" style="background: linear-gradient(135deg, #1d6fa5 0%, #0f4c75 100%); color: white; margin: -20px -20px 20px -20px; padding: 18px; border-radius: 10px 10px 0 0;">
+                    <div class="col-8">
+                        <div class="d-flex align-items-center gap-3">
+                            {% if structure.logo_url %}
+                            <img src="{{ structure.logo_url }}" alt="Logo" style="max-height: 55px; max-width: 110px; background: white; padding: 4px; border-radius: 6px;">
+                            {% endif %}
+                            <div>
+                                <h5 style="margin: 0;">{{ structure.nom or "SSoftOne v10" }}</h5>
+                                <p style="margin: 3px 0 0 0; font-size: 11px; opacity: 0.9; white-space: pre-line;">{{ structure.adresse or "" }}
+Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-4 text-end">
+                        <h6 style="margin: 0;">
+                            {% if demande.type_prestation == 'analyse' %}RÉSULTAT D'ANALYSE{% else %}RÉSULTAT D'EXAMEN{% endif %}
+                        </h6>
+                        <p style="margin: 2px 0 0 0; font-size: 11px;">{{ resultat.created_at.strftime('%d/%m/%Y') if resultat.created_at else '' }}</p>
+                    </div>
+                </div>
+
+                <!-- PATIENT -->
+                <div style="font-size: 13px; margin-bottom: 14px; padding: 8px 12px; background: #f8f9fa; border-radius: 6px;">
+                    <strong>Patient :</strong> {{ demande.patient_nom }}<br>
+                    <strong>Acte :</strong> {{ demande.acte_nom }}
+                </div>
+
+                <!-- CONTENU DU RÉSULTAT -->
+                {% if resultat.contenu_html %}
+                <!-- ⭐ Rédigé directement dans l'éditeur en ligne — rendu en
+                     flux normal (pas de cadre isolé), donc la pagination à
+                     l'impression fonctionne nativement. C'est précisément le
+                     cas qui échouait avant : l'ancien bouton "Télécharger"
+                     pointait vers un fichier qui n'existait pas pour ces
+                     résultats-là. -->
+                <div class="resultat-contenu-html">{{ resultat.contenu_html | safe }}</div>
+                {% elif resultat.fichier_mime and 'pdf' in resultat.fichier_mime %}
+                <!-- ⭐ Fichier PDF importé — rendu page par page avec PDF.js
+                     directement dans le flux de la page (voir
+                     resultat_imprimer.html pour la raison détaillée : un
+                     <iframe src="...pdf"> ne pagine pas correctement à
+                     l'impression). -->
+                <div id="pdfPagesContainer">
+                    <div class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin me-1"></i> Chargement du document...</div>
+                </div>
+                {% else %}
+                <div class="alert alert-light border text-center">
+                    <i class="fas fa-file fa-2x text-muted mb-2 d-block"></i>
+                    Fichier joint : {{ resultat.fichier_nom }}<br>
+                    <a href="{{ url_for('api_portail_telecharger_resultat', resultat_id=resultat.id) }}" class="btn btn-sm btn-primary mt-2" target="_blank">
+                        <i class="fas fa-download me-1"></i> Ouvrir le fichier
+                    </a>
+                </div>
+                {% endif %}
+
+                <!-- SIGNATURE -->
+                <div class="mt-4 text-end" style="font-size: 13px;">
+                    <strong>{% if demande.type_prestation == 'analyse' %}Le Laboratoire{% else %}Le Radiologue{% endif %}</strong>
+                    {% if resultat.signature_data %}
+                    <div class="mt-1"><img src="{{ url_for('api_portail_image_signature_resultat', resultat_id=resultat.id) }}" style="max-height:60px; max-width:160px;" alt="Signature"></div>
+                    {% endif %}
+                    <div>
+                        {% if resultat.titre_interprete %}{{ resultat.titre_interprete }} — {% endif %}{{ resultat.nom_interprete }}
+                    </div>
+                </div>
+
+                <hr>
+                <div class="text-center text-muted small">Document confidentiel — {{ structure.nom or "SSoftOne v10" }}</div>
+                <div class="text-center mt-2">
+                    <svg id="codeBarreResultat"></svg>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-3 no-print">
+            <button onclick="window.print()" class="btn btn-primary btn-sm"><i class="fas fa-print"></i> Imprimer / Enregistrer en PDF</button>
+            <a href="{{ url_for('page_portail_resultats') }}" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</a>
+        </div>
+    </div>
+</div>
+<script>
+if (window.JsBarcode) {
+    JsBarcode("#codeBarreResultat", "RES-{{ resultat.id }}-{{ demande.id }}", {
+        format: "CODE128", width: 1.4, height: 36, fontSize: 11, margin: 4,
+    });
+}
+
+{% if not resultat.contenu_html and resultat.fichier_mime and 'pdf' in resultat.fichier_mime %}
+(async function() {
+    const urlFichierResultat = "{{ url_for('api_portail_telecharger_resultat', resultat_id=resultat.id) }}";
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    const conteneur = document.getElementById('pdfPagesContainer');
+    try {
+        const pdf = await pdfjsLib.getDocument(urlFichierResultat).promise;
+        conteneur.innerHTML = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const viewport = page.getViewport({ scale: 1.5 });
+            const canvas = document.createElement('canvas');
+            canvas.className = 'pdf-page-canvas';
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+            conteneur.appendChild(canvas);
+        }
+    } catch (e) {
+        conteneur.innerHTML = '<div class="alert alert-warning">Impossible d\'afficher l\'aperçu du document ' +
+            '(<a href="' + urlFichierResultat + '" target="_blank">l\'ouvrir directement</a>).</div>';
+    }
+})();
+{% endif %}
+</script>
+{% endblock %}

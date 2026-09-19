@@ -253,7 +253,7 @@ fetch('/api/portail-patient/resultats').then(r => r.json()).then(data => {
                 <div class="fw-bold">${r.acte_nom}</div>
                 <div class="text-muted small">Disponible depuis le ${r.date_resultat}</div>
             </div>
-            <a href="/api/portail-patient/resultats/${r.resultat_id}/telecharger" target="_blank" class="btn btn-sm btn-primary">
+            <a href="/portail-patient/resultats/${r.resultat_id}/imprimer" target="_blank" class="btn btn-sm btn-primary">
                 <i class="fas fa-download me-1"></i> Télécharger / Imprimer
             </a>
         </div>

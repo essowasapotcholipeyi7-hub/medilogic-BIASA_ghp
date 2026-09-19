@@ -10267,11 +10267,70 @@ def api_portail_telecharger_resultat(resultat_id):
     demande = DemandeExamen.query.get(resultat.demande_id)
     if not demande or demande.patient_id != patient_id:
         return "Accès non autorisé", 403
+    # ⭐ FIX : un résultat peut être rédigé directement dans l'éditeur en
+    # ligne (contenu_html) SANS fichier joint (fichier_data NULL) — voir
+    # ResultatExamen (models.py). Cette route servait alors un corps VIDE
+    # avec un code 200, que le téléphone du patient affichait comme un
+    # "échec de téléchargement" silencieux (rien à ouvrir) — patron :
+    # "le patient n'arrive pas à télécharger le résultat ... sur plusieurs
+    # appareils". Voir page_portail_imprimer_resultat ci-dessous : la page
+    # "Télécharger / Imprimer" pointe maintenant vers elle, qui gère
+    # correctement les deux cas (contenu_html affiché en clair, fichier
+    # PDF rendu page par page, autre fichier proposé via cette route-ci en
+    # dernier recours) — même garde que api_telecharger_resultat (staff).
+    if not resultat.fichier_data:
+        return "Ce résultat a été rédigé en ligne, pas de fichier joint.", 404
     from flask import Response
     return Response(
         resultat.fichier_data, mimetype=resultat.fichier_mime or 'application/octet-stream',
         headers={'Content-Disposition': f'inline; filename="{resultat.fichier_nom or "resultat"}"'}
     )
+
+
+@app.route('/api/portail-patient/resultats/<int:resultat_id>/signature-image', methods=['GET'])
+def api_portail_image_signature_resultat(resultat_id):
+    """Équivalent patient-portail de api_image_signature_resultat (staff) —
+    même garde d'accès (patient propriétaire) que les autres routes
+    portail-patient ci-dessus, pour que la signature s'affiche aussi sur
+    portail_resultat_imprimer.html."""
+    patient_id = session.get('portail_patient_id')
+    if not patient_id:
+        return "Non authentifié", 401
+    resultat = ResultatExamen.query.get(resultat_id)
+    if not resultat or not resultat.signature_data:
+        return "Introuvable", 404
+    demande = DemandeExamen.query.get(resultat.demande_id)
+    if not demande or demande.patient_id != patient_id:
+        return "Accès non autorisé", 403
+    from flask import Response
+    return Response(resultat.signature_data, mimetype=resultat.signature_mime or 'image/png')
+
+
+@app.route('/portail-patient/resultats/<int:resultat_id>/imprimer')
+def page_portail_imprimer_resultat(resultat_id):
+    """Page d'impression/téléchargement CÔTÉ PATIENT — mirroir de
+    page_imprimer_resultat (staff) mais authentifiée via la session du
+    portail patient (portail_patient_id) au lieu de la session personnel.
+    Corrige l'échec de téléchargement signalé sur plusieurs téléphones :
+    l'ancien bouton pointait directement vers le fichier brut, vide pour un
+    résultat rédigé en ligne (voir api_portail_telecharger_resultat
+    ci-dessus)."""
+    patient_id = session.get('portail_patient_id')
+    structure_id = session.get('portail_structure_id')
+    if not patient_id:
+        return redirect(url_for('page_portail_patient'))
+    resultat = ResultatExamen.query.get(resultat_id)
+    if not resultat:
+        return "Résultat introuvable", 404
+    demande = DemandeExamen.query.get(resultat.demande_id)
+    if not demande or demande.patient_id != patient_id:
+        return "Accès non autorisé", 403
+
+    structures = sheets_helper.get_all_records('structures', use_prefix=False)
+    structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
+    structure_info['adresse'] = sheets_helper.format_adresse(structure_info.get('adresse', ''))
+
+    return render_template('portail_resultat_imprimer.html', resultat=resultat, demande=demande, structure=structure_info)
 
 
 @app.route('/portail-patient/deconnexion')
