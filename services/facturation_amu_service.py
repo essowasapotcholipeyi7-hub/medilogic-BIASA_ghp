@@ -67,8 +67,15 @@ def _part_amu_ligne(item, taux_defaut):
     réelles (ex. vente #1098 : 2× "S100 Consultation medecine generale" à
     3500F, part AMU stockée 5 600F, mais 2 800F recalculée ici avant ce
     correctif — le patron a demandé de vérifier que la Facture AMU CNSS/
-    INAM concorde avec les montants réellement facturés)."""
-    if not isinstance(item, dict) or not item.get('prise_en_charge_amu'):
+    INAM concorde avec les montants réellement facturés).
+
+    ⭐ FIX (2) : `prise_en_charge_amu` absent (pas juste False) est traité
+    comme COUVERT par défaut — patron : "couvertes par défaut". Beaucoup de
+    lignes plus anciennes (ventes directes hors circuit proforma) n'ont
+    jamais eu ce champ écrit du tout, alors que leur part AMU avait bien
+    été comptée à la création de la vente ; seule une valeur explicitement
+    False (case décochée par le caissier) exclut désormais la ligne."""
+    if not isinstance(item, dict) or not item.get('prise_en_charge_amu', True):
         return 0.0
     pbr = float(item.get('pbr', 0) or 0)
     if pbr <= 0:
@@ -118,7 +125,12 @@ def generer_lignes_facture_amu(structure_id, annee, mois, type_amu='cnss'):
         Vente.structure_id == structure_id,
         Vente.date_vente >= debut,
         Vente.date_vente <= fin,
-        or_(Vente.statut == 'validee', Vente.statut.is_(None)),
+        # ⭐ FIX (2) : "validee OU NULL" excluait à tort toute vente au
+        # statut 'partielle' (réglée en partie mais réelle, non annulée —
+        # ~19% des ventes) — même bug trouvé et corrigé dans
+        # routes/statistiques.py (bordereau_assurance/_ventes_filtrees) ;
+        # seule une vente explicitement annulée doit être exclue.
+        or_(Vente.statut != 'annulee', Vente.statut.is_(None)),
         db.func.lower(Patient.type_assurance) == config['type_assurance'],
     ).all()
 
@@ -140,7 +152,7 @@ def generer_lignes_facture_amu(structure_id, annee, mois, type_amu='cnss'):
             except Exception:
                 actes = []
         for item in actes:
-            if not isinstance(item, dict) or not item.get('prise_en_charge_amu'):
+            if not isinstance(item, dict) or not item.get('prise_en_charge_amu', True):
                 continue
             montant = _part_amu_ligne(item, taux_defaut)
             nom = item.get('nom') or 'Acte'
@@ -168,7 +180,7 @@ def generer_lignes_facture_amu(structure_id, annee, mois, type_amu='cnss'):
             except Exception:
                 produits = []
         for item in produits:
-            if not isinstance(item, dict) or not item.get('prise_en_charge_amu'):
+            if not isinstance(item, dict) or not item.get('prise_en_charge_amu', True):
                 continue
             montant = _part_amu_ligne(item, taux_defaut)
             lignes[categorie_pharmacie]['nombre_feuilles'] += 1

@@ -178,11 +178,15 @@ def api_assurances_liste():
             Vente.structure_id == structure_id,
             Vente.date_vente >= debut,
             Vente.date_vente <= fin,
-            # ⭐ statut NULL = vente active, comme partout ailleurs dans le
-            # code (ex: "statut IS NULL OR statut != 'annulee'") —
-            # l'INSERT de /api/ventes/actes ne renseigne pas cette colonne,
-            # donc une vente d'actes valide a très souvent statut=NULL.
-            or_(Vente.statut == 'validee', Vente.statut.is_(None)),
+            # ⭐ FIX : "validee OU NULL" excluait à tort tout statut
+            # 'partielle' (vente réelle, non annulée, juste partiellement
+            # réglée — 86 ventes sur cette seule structure) des
+            # statistiques/bordereaux assurance, alors que l'intention
+            # documentée ici même était "statut NULL = vente active,
+            # IS NULL OR != 'annulee'" — la condition ne correspondait pas
+            # au commentaire. Seule une vente explicitement annulée doit
+            # être exclue.
+            or_(Vente.statut != 'annulee', Vente.statut.is_(None)),
         ]
 
         result_list = []
@@ -342,7 +346,11 @@ def calculer_montants_vente(vente):
             # vente réelle (2× P160... pardon, 2× S100 à 3500F : part AMU
             # stockée 5 600F, 2 800F calculée ici avant ce correctif).
             quantite = int(acte.get('quantite', 1) or 1)
-            prise_amu = acte.get('prise_en_charge_amu', False)
+            # ⭐ FIX (2) : absent (jamais écrit, ventes directes anciennes
+            # hors circuit proforma) = couvert par défaut — patron :
+            # "couvertes par défaut" ; seule une valeur explicitement False
+            # exclut la ligne.
+            prise_amu = acte.get('prise_en_charge_amu', True)
 
             total_prix += prix * quantite
 
@@ -358,7 +366,7 @@ def calculer_montants_vente(vente):
             prix = float(produit.get('prix_reel', produit.get('prix', 0)))
             pbr = float(produit.get('pbr', 0))
             quantite = int(produit.get('quantite', 1) or 1)
-            prise_amu = produit.get('prise_en_charge_amu', False)
+            prise_amu = produit.get('prise_en_charge_amu', True)
 
             total_prix += prix * quantite
 
@@ -421,9 +429,9 @@ def _ventes_filtrees(structure_id, periode, date_debut_str, date_fin_str,
         Vente.structure_id == structure_id,
         Vente.date_vente >= debut,
         Vente.date_vente <= fin,
-        # ⭐ FIX : statut NULL = vente active (même convention que le reste
-        # du code) — voir le commentaire détaillé plus haut.
-        or_(Vente.statut == 'validee', Vente.statut.is_(None))
+        # ⭐ FIX : "validee OU NULL" excluait à tort les ventes 'partielle'
+        # (réelles, non annulées) — voir le commentaire détaillé plus haut.
+        or_(Vente.statut != 'annulee', Vente.statut.is_(None))
     )
 
     # Filtrer par catégorie d'actes
@@ -1245,14 +1253,13 @@ def bordereau_assurance():
         Vente.structure_id == structure_id,
         Vente.date_vente >= debut,
         Vente.date_vente <= fin,
-        # ⭐ FIX : statut NULL = vente active (même convention que le reste
-        # du code, ex: "statut IS NULL OR statut != 'annulee'") — l'INSERT
-        # de /api/ventes/actes ne renseignait pas cette colonne, donc une
-        # vente d'actes valide se retrouvait souvent avec statut=NULL. Une
-        # égalité stricte à 'validee' excluait ces ventes, ce qui donnait
-        # "Aucune vente pour cette compagnie" sur le bordereau alors que de
-        # vraies ventes existaient bien pour la période.
-        or_(Vente.statut == 'validee', Vente.statut.is_(None)),
+        # ⭐ FIX (2) : "validee OU NULL" excluait encore à tort toute vente
+        # au statut 'partielle' (réglée en partie mais bien réelle, non
+        # annulée — ~19% des ventes de cette structure) du bordereau,
+        # malgré l'intention documentée juste au-dessus ("statut IS NULL
+        # OR statut != 'annulee'") — la condition elle-même ne
+        # correspondait pas au commentaire.
+        or_(Vente.statut != 'annulee', Vente.statut.is_(None)),
     )
     if est_principale:
         query = query.filter(db.func.lower(Patient.type_assurance) == nom_assurance.lower())
