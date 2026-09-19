@@ -9,26 +9,30 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Times New Roman', Times, serif; background: #f0f2f5; padding: 14px; }
-        .container { max-width: 780px; margin: 0 auto; background: white; padding: 14px 18px; border-radius: 6px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); font-size: 10.5px; line-height: 1.25; }
-        h1 { text-align: center; font-size: 15px; margin: 3px 0 8px; text-decoration: underline; }
-        .entete-cnss { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-bottom: 3px; }
-        .entete-cnss img { height: 38px; width: auto; }
-        .entete-cnss .texte { font-size: 9.5px; line-height: 1.2; }
-        .entete-cnss .texte strong { font-size: 10.5px; }
-        .champ { margin-bottom: 3px; display: flex; align-items: baseline; gap: 5px; }
+        .container { max-width: 780px; margin: 0 auto; background: white; padding: 18px 24px; border-radius: 6px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); font-size: 12px; line-height: 1.3; }
+        h1 { text-align: center; font-size: 18px; margin: 6px 0 12px; text-decoration: underline; }
+        .entete-cnss { display: flex; align-items: center; gap: 14px; border-bottom: 1px solid #ccc; padding-bottom: 9px; margin-bottom: 7px; }
+        .entete-cnss img { height: 48px; width: auto; }
+        .entete-cnss .texte { font-size: 11px; line-height: 1.3; }
+        .entete-cnss .texte strong { font-size: 12px; }
+        .champ { margin-bottom: 5px; display: flex; align-items: baseline; gap: 6px; }
         .champ .label { font-weight: bold; white-space: nowrap; }
-        .champ .valeur { border-bottom: 1px dotted #333; flex: 1; padding: 0 4px; min-height: 12px; }
-        .ligne-double { display: flex; gap: 18px; flex-wrap: wrap; }
-        .ligne-double .champ { flex: 1; min-width: 200px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 9.5px; }
-        table th, table td { border: 1px solid #333; padding: 2.5px 5px; }
-        table th { background: #f1f1f1; text-align: center; font-size: 8.5px; line-height: 1.15; }
+        .champ .valeur { border-bottom: 1px dotted #333; flex: 1; padding: 0 4px; min-height: 14px; }
+        .ligne-double { display: flex; gap: 20px; flex-wrap: wrap; }
+        .ligne-double .champ { flex: 1; min-width: 190px; }
+        .titre-tableau { font-weight: bold; margin-top: 10px; font-size: 13px; }
+        table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 6px; font-size: 10.5px; }
+        table th:first-child, table td:first-child { width: 44%; text-align: left; }
+        table th, table td { border: 1px solid #333; padding: 3.5px 6px; word-wrap: break-word; }
+        table th { background: #f1f1f1; text-align: center; font-size: 9px; line-height: 1.15; }
         table td.num { text-align: right; font-variant-numeric: tabular-nums; }
         tfoot td { font-weight: bold; background: #f1f1f1; }
-        .arrete { margin-top: 8px; }
-        .arrete .ligne { border-bottom: 1px dotted #333; min-height: 14px; margin-top: 3px; }
-        .signature { margin-top: 18px; display: flex; justify-content: space-between; align-items: flex-end; }
-        .signature .cadre { border: 1px solid #333; padding: 6px; min-width: 200px; min-height: 45px; font-size: 10px; }
+        .arrete { margin-top: 12px; }
+        .arrete .ligne { border-bottom: 1px dotted #333; min-height: 16px; margin-top: 4px; }
+        .date-facture { margin-top: 16px; }
+        .signature { margin-top: 12px; display: flex; justify-content: space-between; gap: 20px; }
+        .signature .cadre { border: 1px solid #333; padding: 9px; flex: 1; min-height: 56px; font-size: 12px; }
+        .montant-a-payer { margin-top: 16px; font-weight: bold; }
         .no-print { margin-top: 20px; text-align: center; }
         .no-print button { border: none; padding: 10px 18px; margin: 4px; border-radius: 6px; font-size: 13px; cursor: pointer; color: white; }
         .btn-print { background: #1a1a2e; }
@@ -56,15 +60,15 @@
         <h1>FACTURE AMU</h1>
 
         <div class="ligne-double">
-            <div class="champ"><span class="label">Raison sociale :</span><span class="valeur">{{ structure.nom or '' }}</span></div>
+            <div class="champ" style="flex:2;"><span class="label">Raison sociale :</span><span class="valeur">{{ structure.nom or '' }}</span></div>
             <div class="champ"><span class="label">N° CNSS :</span><span class="valeur">{{ parametrage.numero_cnss or '' }}</span></div>
             <div class="champ"><span class="label">Tel :</span><span class="valeur">{{ structure.telephone or '' }}</span></div>
         </div>
         <div class="ligne-double">
             <div class="champ" style="flex:2;"><span class="label">Adresse :</span><span class="valeur">{{ structure.adresse or '' }}</span></div>
             <div class="champ" style="flex:2;"><span class="label">Email :</span><span class="valeur">{{ structure.email or '' }}</span></div>
+            <div class="champ"><span class="label">Code prestataire :</span><span class="valeur">{{ parametrage.code_prestataire or '' }}</span></div>
         </div>
-        <div class="champ"><span class="label">Code prestataire :</span><span class="valeur">{{ parametrage.code_prestataire or '' }}</span></div>
 
         <div class="ligne-double" style="margin-top:8px;">
             <div class="champ">
@@ -90,6 +94,7 @@
             <div class="champ"><span class="label">N° de compte :</span><span class="valeur">{{ parametrage.numero_compte or '' }}</span></div>
         </div>
 
+        <div class="titre-tableau">Tableau récapitulatif</div>
         <table>
             <thead>
                 <tr>
@@ -123,9 +128,13 @@
             <div class="ligne">{{ montant_lettres }}</div>
         </div>
 
+        <div class="date-facture">Date : {{ '%02d'|format(now.day) }} / {{ '%02d'|format(now.month) }} / {{ now.year }}</div>
         <div class="signature">
-            <div>Date : {{ '%02d'|format(now.day) }} / {{ '%02d'|format(now.month) }} / {{ now.year }}</div>
             <div class="cadre">Cachet et signature du responsable de la structure</div>
+            <div class="cadre">
+                Case réservée à l'AMU
+                <div class="montant-a-payer">Montant à payer :</div>
+            </div>
         </div>
     </div>
 
