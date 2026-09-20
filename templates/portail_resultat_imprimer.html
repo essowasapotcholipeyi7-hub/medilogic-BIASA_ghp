@@ -63,6 +63,18 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                     <strong>Acte :</strong> {{ demande.acte_nom }}
                 </div>
 
+                <!-- ⭐ Code-barres/mention confidentielle avant le contenu —
+                     voir resultat_imprimer.html pour la raison détaillée
+                     (un PDF importé peut contenir une grande zone blanche
+                     sous son texte, envoyant ces éléments très loin en bas
+                     s'ils sont placés après). -->
+                <hr>
+                <div class="text-center text-muted small">Document confidentiel — {{ structure.nom or "SSoftOne v10" }}</div>
+                <div class="text-center mt-2 mb-3">
+                    <svg id="codeBarreResultat"></svg>
+                </div>
+                <hr>
+
                 <!-- CONTENU DU RÉSULTAT -->
                 {% if resultat.contenu_html %}
                 <!-- ⭐ Rédigé directement dans l'éditeur en ligne — rendu en
@@ -91,7 +103,9 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                 </div>
                 {% endif %}
 
-                <!-- SIGNATURE -->
+                <!-- SIGNATURE — masquée pour un PDF importé (déjà signé sur
+                     le document lui-même, voir resultat_imprimer.html). -->
+                {% if not (resultat.fichier_mime and 'pdf' in resultat.fichier_mime) %}
                 <div class="mt-4 text-end" style="font-size: 13px;">
                     <strong>{% if demande.type_prestation == 'analyse' %}Le Laboratoire{% else %}Le Radiologue{% endif %}</strong>
                     {% if resultat.signature_data %}
@@ -101,12 +115,7 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                         {% if resultat.titre_interprete %}{{ resultat.titre_interprete }} — {% endif %}{{ resultat.nom_interprete }}
                     </div>
                 </div>
-
-                <hr>
-                <div class="text-center text-muted small">Document confidentiel — {{ structure.nom or "SSoftOne v10" }}</div>
-                <div class="text-center mt-2">
-                    <svg id="codeBarreResultat"></svg>
-                </div>
+                {% endif %}
             </div>
         </div>
 

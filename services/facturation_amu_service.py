@@ -43,6 +43,21 @@ _CONFIG_PAR_TYPE = {
         'categorie_pharmacie': CATEGORIE_PHARMACIE_INAM,
         'deviner_categorie': deviner_categorie_inam,
     },
+    # ⭐ AMU-TNS (Travailleurs Non-Salariés) — même caisse (CNSS), même
+    # formulaire officiel, mêmes catégories/nomenclature que AMU-CNSS ;
+    # seul le filtre Patient.type_assurance change (patron : "xa va etre
+    # meme chose comme amu cnss"). classification_type_amu='cnss' réutilise
+    # directement les classifications d'actes déjà faites pour AMU-CNSS
+    # (même nomenclature) au lieu d'obliger la structure à reclasser une
+    # deuxième fois les mêmes actes.
+    'tns': {
+        'type_assurance': 'amu_tns',
+        'categories_plates': CATEGORIES_AMU_CNSS,
+        'categorie_hospitalisation': CATEGORIE_HOSPITALISATION_CNSS,
+        'categorie_pharmacie': CATEGORIE_PHARMACIE_CNSS,
+        'deviner_categorie': deviner_categorie_cnss,
+        'classification_type_amu': 'cnss',
+    },
 }
 
 
@@ -134,7 +149,7 @@ def generer_lignes_facture_amu(structure_id, annee, mois, type_amu='cnss'):
         db.func.lower(Patient.type_assurance) == config['type_assurance'],
     ).all()
 
-    classification = charger_classification_amu(structure_id, type_amu)
+    classification = charger_classification_amu(structure_id, config.get('classification_type_amu', type_amu))
     deviner_categorie = config['deviner_categorie']
     categorie_hospitalisation = config['categorie_hospitalisation']
     categorie_pharmacie = config['categorie_pharmacie']

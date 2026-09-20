@@ -68,6 +68,24 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                     <strong>Acte :</strong> {{ demande.acte_nom }}
                 </div>
 
+                <!-- ⭐ Code-barres/mention confidentielle placés ICI, avant le
+                     contenu, plutôt qu'à la toute fin — patron : "le code
+                     barre reste en bas alors que la page est blanche au
+                     milieu". Constaté en direct sur un résultat PDF importé
+                     (SALVE REGINA, 17/09) : le fichier PDF lui-même contient
+                     une grande zone blanche sous son texte (mise en page du
+                     document d'origine, pas quelque chose que l'appli peut
+                     corriger) — les placer après le contenu les envoyait
+                     très loin en bas, après tout cet espace vide. Ici, leur
+                     position ne dépend plus de la longueur/mise en page du
+                     contenu qui suit. -->
+                <hr>
+                <div class="text-center text-muted small">Document confidentiel — {{ structure.nom or "SSoftOne v10" }}</div>
+                <div class="text-center mt-2 mb-3">
+                    <svg id="codeBarreResultat"></svg>
+                </div>
+                <hr>
+
                 <!-- CONTENU DU RÉSULTAT -->
                 {% if resultat.contenu_html %}
                 <!-- ⭐ Rédigé directement dans l'éditeur en ligne — rendu en
@@ -101,7 +119,12 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                 <!-- SIGNATURE — patron : "on met Le Laboratoire et on met le
                      titre de celui qui signe avec son nom" / "on met Le
                      Radiologue... dès qu'on sélectionne son nom sa
-                     signature s'appose s'il y en a". -->
+                     signature s'appose s'il y en a". ⭐ Masquée pour un PDF
+                     importé affiché ci-dessus : ce document contient déjà sa
+                     propre signature/mention du radiologue (constaté en
+                     direct) — la répéter ici ne faisait qu'ajouter une
+                     redite après la zone blanche du PDF. -->
+                {% if not (resultat.fichier_mime and 'pdf' in resultat.fichier_mime) %}
                 <div class="mt-4 text-end" style="font-size: 13px;">
                     <strong>{% if demande.type_prestation == 'analyse' %}Le Laboratoire{% else %}Le Radiologue{% endif %}</strong>
                     {% if resultat.signature_data %}
@@ -111,12 +134,7 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                         {% if resultat.titre_interprete %}{{ resultat.titre_interprete }} — {% endif %}{{ resultat.nom_interprete }}
                     </div>
                 </div>
-
-                <hr>
-                <div class="text-center text-muted small">Document confidentiel — {{ structure.nom or "SSoftOne v10" }}</div>
-                <div class="text-center mt-2">
-                    <svg id="codeBarreResultat"></svg>
-                </div>
+                {% endif %}
             </div>
         </div>
 
@@ -162,9 +180,9 @@ if (window.JsBarcode) {
 })();
 {% endif %}
 
-// ⭐ N'envoie plus rien nous-mêmes (SMTP peu fiable selon la structure) —
-// ouvre le client mail du poste, pré-rempli ; le personnel clique
-// Envoyer lui-même. Même principe que les boutons WhatsApp (wa.me).
+// ⭐ Envoie réellement le mail via le serveur (SMTP central, déjà vérifié
+// fonctionnel en production) ; si l'envoi échoue, repli sur le client mail
+// du poste (mailto:) comme avant — voir api_preparer_email_resultat.
 function envoyerParEmail() {
     const msg = document.getElementById('emailResultatMsg');
     let email = "{{ patient_email }}";
@@ -173,17 +191,20 @@ function envoyerParEmail() {
         if (!email) return;
     }
     msg.className = 'text-center mt-2 small no-print text-muted';
-    msg.textContent = 'Préparation...';
+    msg.textContent = 'Envoi en cours...';
     fetch("{{ url_for('api_preparer_email_resultat', resultat_id=resultat.id) }}", {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email })
     })
     .then(r => r.json())
     .then(data => {
-        if (data.success) {
-            window.open(data.mailto_url, '_blank');
+        if (data.success && data.envoye) {
             msg.className = 'text-center mt-2 small no-print text-success';
-            msg.textContent = 'Votre client mail s\'est ouvert, pré-rempli pour ' + data.email + '.';
+            msg.textContent = 'Email envoyé à ' + data.email + '.';
+        } else if (data.success && data.mailto_url) {
+            window.open(data.mailto_url, '_blank');
+            msg.className = 'text-center mt-2 small no-print text-warning';
+            msg.textContent = 'Envoi automatique indisponible — votre client mail s\'est ouvert, pré-rempli pour ' + data.email + '.';
         } else {
             msg.className = 'text-center mt-2 small no-print text-danger';
             msg.textContent = 'Erreur : ' + (data.error || 'inconnue');

@@ -9882,15 +9882,18 @@ def _preparer_lien_email_resultat_body(patient_nom, acte_nom, structure_nom, lie
 @app.route('/api/resultats-analyses/<int:resultat_id>/preparer-email', methods=['POST'])
 @login_required
 def api_preparer_email_resultat(resultat_id):
-    """Prepare un lien mailto: pre-rempli pour ce resultat, au lieu de
-    l'envoyer nous-memes par SMTP — patron : "les mails ne passent
-    toujours pas... on dirige vers la page mail meme... comme ca marche
-    actuellement avec whatsapp". Le client mail du poste (deja connecte a
-    un vrai compte) s'ouvre pre-rempli, et c'est le personnel qui clique
-    Envoyer — meme principe que les liens wa.me deja utilises ailleurs
-    dans l'appli (rendez_vous.html, patients.html...), qui ne dependent
-    d'aucun identifiant serveur et fonctionnent donc de facon fiable pour
-    chaque structure, quel que soit son propre compte email."""
+    """Envoie le résultat par email au patient via le SMTP central de
+    l'appli (même compte déjà utilisé — et vérifié fonctionnel en
+    production — pour les mails de verrouillage/inscription). Repli sur un
+    lien mailto: (comme avant) UNIQUEMENT si l'envoi SMTP échoue vraiment,
+    pour que le personnel puisse quand même l'envoyer à la main depuis son
+    propre client mail. ⭐ Avant ce correctif, la route ne préparait QUE le
+    mailto:, jamais d'envoi réel — supposé plus fiable ("les mails ne
+    passent toujours pas... comme ça marche actuellement avec whatsapp"),
+    mais ça dépend que le poste ait un client mail par défaut configuré,
+    ce qui n'est pas le cas partout : patron a re-signalé "on ne peut pas
+    envoyer par mail" pour ce bouton précis — d'où le retour à un envoi
+    serveur réel, désormais avec repli au lieu d'être la seule option."""
     try:
         structure_id = session.get('structure_id')
         resultat = ResultatExamen.query.filter_by(id=resultat_id, structure_id=structure_id).first()
@@ -9920,13 +9923,33 @@ def api_preparer_email_resultat(resultat_id):
         structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
         structure_nom = structure_info.get('nom') or 'SSoftOne v10'
 
-        from urllib.parse import quote
         lien_portail = url_for('page_portail_patient', _external=True)
         sujet = f"Votre résultat — {structure_nom}"
-        corps = _preparer_lien_email_resultat_body(demande.patient_nom, demande.acte_nom, structure_nom, lien_portail)
-        mailto_url = f"mailto:{email}?subject={quote(sujet)}&body={quote(corps)}"
+        corps_texte = _preparer_lien_email_resultat_body(demande.patient_nom, demande.acte_nom, structure_nom, lien_portail)
 
-        return jsonify({'success': True, 'mailto_url': mailto_url, 'email': email})
+        try:
+            msg = Message(
+                subject=sujet,
+                recipients=[email],
+                html=f"""
+                <html><body style="font-family:Arial,sans-serif; color:#333;">
+                    <p>Bonjour {demande.patient_nom},</p>
+                    <p>Votre résultat pour <strong>{demande.acte_nom}</strong> est disponible.</p>
+                    <p>Consultez-le et imprimez-le depuis votre espace patient :</p>
+                    <p><a href="{lien_portail}" style="display:inline-block; background:#1d6fa5; color:white; padding:10px 20px; text-decoration:none; border-radius:5px;">Accéder à mes résultats</a></p>
+                    <p style="color:#888; font-size:12px;">(connectez-vous avec votre code d'accès patient)</p>
+                    <hr>
+                    <p style="color:#888; font-size:12px;">{structure_nom}</p>
+                </body></html>
+                """
+            )
+            mail.send(msg)
+            return jsonify({'success': True, 'envoye': True, 'email': email})
+        except Exception as e_smtp:
+            # Repli : le personnel envoie lui-même depuis son propre client mail.
+            from urllib.parse import quote
+            mailto_url = f"mailto:{email}?subject={quote(sujet)}&body={quote(corps_texte)}"
+            return jsonify({'success': True, 'envoye': False, 'mailto_url': mailto_url, 'email': email, 'erreur_smtp': str(e_smtp)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -15873,6 +15896,13 @@ def _lignes_liste_vers_dict(lignes_liste):
 @login_required
 def page_facture_amu_cnss():
     structure_id = session.get('structure_id')
+    # ⭐ AMU-TNS ajouté sur cette même page (même formulaire/catégories que
+    # AMU-CNSS, patron : "au moment de chargement on choisi ce qu'on veut
+    # AMU CNSS OU AMU TNS") — un simple paramètre type_amu, jamais une
+    # page séparée comme pour l'INAM (dont les catégories diffèrent).
+    type_amu = request.args.get('type_amu', 'cnss')
+    if type_amu not in ('cnss', 'tns'):
+        type_amu = 'cnss'
     try:
         annee = int(request.args.get('annee') or date.today().year)
         mois = int(request.args.get('mois') or date.today().month)
@@ -15880,10 +15910,10 @@ def page_facture_amu_cnss():
         annee, mois = date.today().year, date.today().month
 
     brouillon = FactureAmuMensuelle.query.filter_by(
-        structure_id=structure_id, type_amu='cnss', annee=annee, mois=mois
+        structure_id=structure_id, type_amu=type_amu, annee=annee, mois=mois
     ).first()
 
-    resultat = generer_lignes_facture_amu_cnss(structure_id, annee, mois)
+    resultat = generer_lignes_facture_amu(structure_id, annee, mois, type_amu)
 
     if brouillon and brouillon.lignes:
         lignes_affichees = _lignes_liste_vers_dict(brouillon.lignes)
@@ -15899,7 +15929,7 @@ def page_facture_amu_cnss():
     total_general = sum(l['montant'] for l in lignes_table)
 
     return render_template('assurance_facture_amu_cnss.html',
-                            annee=annee, mois=mois, lignes=lignes_table, total_general=total_general,
+                            annee=annee, mois=mois, type_amu=type_amu, lignes=lignes_table, total_general=total_general,
                             non_classes=resultat['non_classes'], brouillon=brouillon,
                             categories=CATEGORIES_AMU_CNSS)
 
@@ -15913,15 +15943,18 @@ def api_generer_facture_amu_cnss():
         data = request.json or {}
         annee = int(data.get('annee'))
         mois = int(data.get('mois'))
+        type_amu = data.get('type_amu', 'cnss')
+        if type_amu not in ('cnss', 'tns'):
+            type_amu = 'cnss'
 
-        resultat = generer_lignes_facture_amu_cnss(structure_id, annee, mois)
+        resultat = generer_lignes_facture_amu(structure_id, annee, mois, type_amu)
         lignes_liste = _lignes_dict_vers_liste(resultat['lignes'])
 
         brouillon = FactureAmuMensuelle.query.filter_by(
-            structure_id=structure_id, type_amu='cnss', annee=annee, mois=mois
+            structure_id=structure_id, type_amu=type_amu, annee=annee, mois=mois
         ).first()
         if not brouillon:
-            brouillon = FactureAmuMensuelle(structure_id=structure_id, type_amu='cnss', annee=annee, mois=mois,
+            brouillon = FactureAmuMensuelle(structure_id=structure_id, type_amu=type_amu, annee=annee, mois=mois,
                                              created_by=user_name)
             db.session.add(brouillon)
         brouillon.lignes = lignes_liste
@@ -15943,13 +15976,16 @@ def api_enregistrer_facture_amu_cnss():
         data = request.json or {}
         annee = int(data.get('annee'))
         mois = int(data.get('mois'))
+        type_amu = data.get('type_amu', 'cnss')
+        if type_amu not in ('cnss', 'tns'):
+            type_amu = 'cnss'
         lignes_liste = data.get('lignes') or []
 
         brouillon = FactureAmuMensuelle.query.filter_by(
-            structure_id=structure_id, type_amu='cnss', annee=annee, mois=mois
+            structure_id=structure_id, type_amu=type_amu, annee=annee, mois=mois
         ).first()
         if not brouillon:
-            brouillon = FactureAmuMensuelle(structure_id=structure_id, type_amu='cnss', annee=annee, mois=mois,
+            brouillon = FactureAmuMensuelle(structure_id=structure_id, type_amu=type_amu, annee=annee, mois=mois,
                                              created_by=user_name)
             db.session.add(brouillon)
         # ⭐ Validation minimale : ne garder que les catégories connues, avec
