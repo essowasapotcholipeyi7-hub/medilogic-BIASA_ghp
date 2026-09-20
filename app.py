@@ -52,7 +52,13 @@ from services.rappels_service import RappelsService
 IS_PRODUCTION = os.environ.get('RENDER') == 'true' or os.environ.get('PRODUCTION') == 'true'
 
 if IS_PRODUCTION:
-    BASE_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://medilogic-biasa-ghp.onrender.com')
+    # ⭐ APP_BASE_URL (variable d'env Render à ajouter soi-même, PAS
+    # réservée par Render contrairement à RENDER_EXTERNAL_URL qui reste
+    # toujours l'URL onrender.com même une fois un domaine perso branché)
+    # — dès qu'elle est posée, tous les liens générés par l'appli (mail
+    # d'activation, SMS/lien du portail patient...) utilisent le domaine
+    # perso au lieu de onrender.com.
+    BASE_URL = os.environ.get('APP_BASE_URL') or os.environ.get('RENDER_EXTERNAL_URL', 'https://medilogic-biasa-ghp.onrender.com')
 else:
     BASE_URL = 'http://127.0.0.1:5000'
 
