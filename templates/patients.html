@@ -8,8 +8,15 @@
      veut finaliser la vente pour un patient donné il faudrait que le
      patient sélectionné corresponde en même temps... rendre le travail
      facile". Affiché seulement quand on arrive depuis Ventes en attente
-     (voir allerFinaliser() dans ventes_en_attente.html). -->
-<div class="alert alert-warning d-flex align-items-center justify-content-between flex-wrap gap-2" id="banniereFinalisationAttente" style="display:none;">
+     (voir allerFinaliser() dans ventes_en_attente.html).
+     ⭐ d-none plutôt que style="display:none" — patron : "il y a toujours
+     mention de finalisation... même s'il n'y a pas de vente en attente".
+     Bootstrap définit .d-flex avec !important, qui l'emportait TOUJOURS
+     sur le style inline (peu importe ce que faisait le JS plus bas) : le
+     bandeau était donc visible en permanence. d-none utilise aussi
+     !important, au même niveau de spécificité — le JS bascule entre les
+     deux classes plutôt que de se battre contre !important via style.*. -->
+<div class="alert alert-warning d-none align-items-center justify-content-between flex-wrap gap-2" id="banniereFinalisationAttente">
     <div>
         <i class="fas fa-clock me-1"></i>
         <strong>Finalisation d'une vente en attente</strong> — sélectionnez le patient concerné pour continuer.
@@ -2422,7 +2429,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // ⭐ Voir FINALISER_ATTENTE_* plus haut — préremplit la recherche avec le
     // nom saisi à l'admission pour retrouver le patient en un clin d'œil.
     if (FINALISER_ATTENTE_ID) {
-        document.getElementById('banniereFinalisationAttente').style.display = '';
+        const banniereFinalisation = document.getElementById('banniereFinalisationAttente');
+        banniereFinalisation.classList.remove('d-none');
+        banniereFinalisation.classList.add('d-flex');
         if (FINALISER_ATTENTE_RECHERCHE) {
             document.getElementById('searchInput').value = FINALISER_ATTENTE_RECHERCHE;
             filterPatients();
