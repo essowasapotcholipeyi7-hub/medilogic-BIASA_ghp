@@ -78,21 +78,23 @@
                 <div class="card-body py-2">
                     <a href="#presentation"><i class="fas fa-circle-info me-1"></i> Présentation</a>
                     <a href="#tableau-de-bord"><i class="fas fa-gauge me-1"></i> Tableau de bord</a>
-                    <a href="#patients"><i class="fas fa-users me-1"></i> Patients</a>
-                    <a href="#rendez-vous"><i class="fas fa-calendar-days me-1"></i> Rendez-vous</a>
-                    <a href="#consultation"><i class="fas fa-stethoscope me-1"></i> Consultation</a>
-                    <a href="#actes-ventes"><i class="fas fa-notes-medical me-1"></i> Actes &amp; Ventes</a>
-                    <a href="#pharmacie"><i class="fas fa-pills me-1"></i> Pharmacie &amp; Stock</a>
-                    <a href="#factures"><i class="fas fa-file-invoice me-1"></i> Factures &amp; Créances</a>
-                    <a href="#proformas"><i class="fas fa-file-signature me-1"></i> Factures Proforma</a>
-                    <a href="#historique"><i class="fas fa-clock-rotate-left me-1"></i> Historique des ventes</a>
-                    <a href="#statistiques"><i class="fas fa-chart-line me-1"></i> Statistiques</a>
+                    {% if guide_section_visible('patients') %}<a href="#patients"><i class="fas fa-users me-1"></i> Patients</a>{% endif %}
+                    {% if guide_section_visible('rendez-vous') %}<a href="#rendez-vous"><i class="fas fa-calendar-days me-1"></i> Rendez-vous</a>{% endif %}
+                    {% if guide_section_visible('consultation') %}<a href="#consultation"><i class="fas fa-stethoscope me-1"></i> Consultation</a>{% endif %}
+                    {% if guide_section_visible('actes-ventes') %}<a href="#actes-ventes"><i class="fas fa-notes-medical me-1"></i> Actes &amp; Ventes</a>{% endif %}
+                    {% if guide_section_visible('pharmacie') %}<a href="#pharmacie"><i class="fas fa-pills me-1"></i> Pharmacie &amp; Stock</a>{% endif %}
+                    {% if guide_section_visible('factures') %}<a href="#factures"><i class="fas fa-file-invoice me-1"></i> Factures &amp; Créances</a>{% endif %}
+                    {% if guide_section_visible('proformas') %}<a href="#proformas"><i class="fas fa-file-signature me-1"></i> Factures Proforma</a>{% endif %}
+                    {% if guide_section_visible('historique') %}<a href="#historique"><i class="fas fa-clock-rotate-left me-1"></i> Historique des ventes</a>{% endif %}
+                    {% if guide_section_visible('statistiques') %}<a href="#statistiques"><i class="fas fa-chart-line me-1"></i> Statistiques</a>{% endif %}
+                    {% if guide_section_visible('rh') %}
                     <a href="#rh"><i class="fas fa-people-group me-1"></i> Ressources humaines</a>
                     <span class="toc-sub">→ Personnel, congés, paie</span>
                     <span class="toc-sub">→ Pointage empreinte / visage</span>
-                    <a href="#comptabilite"><i class="fas fa-calculator me-1"></i> Comptabilité</a>
-                    <a href="#journal"><i class="fas fa-list-check me-1"></i> Journal des mouvements</a>
-                    <a href="#administration"><i class="fas fa-gear me-1"></i> Administration</a>
+                    {% endif %}
+                    {% if guide_section_visible('comptabilite') %}<a href="#comptabilite"><i class="fas fa-calculator me-1"></i> Comptabilité</a>{% endif %}
+                    {% if guide_section_visible('journal') %}<a href="#journal"><i class="fas fa-list-check me-1"></i> Journal des mouvements</a>{% endif %}
+                    {% if guide_section_visible('administration') %}<a href="#administration"><i class="fas fa-gear me-1"></i> Administration</a>{% endif %}
                     <a href="#astuces"><i class="fas fa-lightbulb me-1"></i> Astuces générales</a>
                 </div>
             </div>
@@ -102,13 +104,20 @@
         <div class="col-lg-9">
             <div class="guide-hero">
                 <h4><i class="fas fa-hospital me-2"></i>{{ session.get('structure_nom') or 'Medilogic' }}</h4>
+                {% if session.is_admin %}
                 <p>
                     Ce guide explique, section par section, ce que fait chaque partie de l'application et
                     comment l'utiliser au quotidien. Il ne remplace pas une formation, mais permet de
-                    retrouver rapidement la marche à suivre pour une tâche précise. Certaines sections
-                    (repérées <span class="badge bg-warning text-dark badge-role">Admin</span>) ne sont
-                    visibles que par les comptes administrateur.
+                    retrouver rapidement la marche à suivre pour une tâche précise. En tant qu'administrateur,
+                    vous voyez ici le <strong>guide complet</strong>, toutes sections confondues.
                 </p>
+                {% else %}
+                <p>
+                    Ce guide explique, section par section, ce que fait chaque partie de l'application et
+                    comment l'utiliser au quotidien. Vous voyez ici la version adaptée à votre rôle
+                    (<strong>{{ guide_role_label }}</strong>) : uniquement les sections qui concernent vos tâches.
+                </p>
+                {% endif %}
             </div>
 
             <!-- PRÉSENTATION -->
@@ -143,6 +152,7 @@
             </div>
 
             <!-- PATIENTS -->
+            {% if guide_section_visible('patients') %}
             <div class="card border-0 shadow-sm guide-section" id="patients">
                 <div class="card-header"><i class="fas fa-users"></i> Patients</div>
                 <div class="card-body">
@@ -163,8 +173,10 @@
                     </div>
                 </div>
             </div>
+            {% endif %}
 
             <!-- RENDEZ-VOUS -->
+            {% if guide_section_visible('rendez-vous') %}
             <div class="card border-0 shadow-sm guide-section" id="rendez-vous">
                 <div class="card-header"><i class="fas fa-calendar-days"></i> Rendez-vous</div>
                 <div class="card-body">
@@ -172,8 +184,10 @@
                     <p class="mb-0">Le menu <strong>Rappels des rendez-vous</strong> liste les rendez-vous à venir pour relancer les patients (par téléphone) avant leur venue.</p>
                 </div>
             </div>
+            {% endif %}
 
             <!-- CONSULTATION -->
+            {% if guide_section_visible('consultation') %}
             <div class="card border-0 shadow-sm guide-section" id="consultation">
                 <div class="card-header"><i class="fas fa-stethoscope"></i> Consultation
                     <span class="badge bg-warning text-dark badge-role ms-2">Médecin / Paramédical</span>
@@ -186,8 +200,10 @@
                     </p>
                 </div>
             </div>
+            {% endif %}
 
             <!-- ACTES & VENTES -->
+            {% if guide_section_visible('actes-ventes') %}
             <div class="card border-0 shadow-sm guide-section" id="actes-ventes">
                 <div class="card-header"><i class="fas fa-notes-medical"></i> Actes &amp; Ventes (Labo / Radio / Hospitalisation)</div>
                 <div class="card-body">
@@ -203,8 +219,10 @@
                     <p class="mb-0">Un reçu est généré et peut être imprimé immédiatement.</p>
                 </div>
             </div>
+            {% endif %}
 
             <!-- PHARMACIE -->
+            {% if guide_section_visible('pharmacie') %}
             <div class="card border-0 shadow-sm guide-section" id="pharmacie">
                 <div class="card-header"><i class="fas fa-pills"></i> Pharmacie &amp; Stock</div>
                 <div class="card-body">
@@ -214,8 +232,10 @@
                     <p class="mb-0">Menu <strong>Gestion des stocks</strong> : ajouter de nouveaux produits, ajuster les quantités (réception de commande, inventaire), suivre les seuils d'alerte et les péremptions.</p>
                 </div>
             </div>
+            {% endif %}
 
             <!-- FACTURES -->
+            {% if guide_section_visible('factures') %}
             <div class="card border-0 shadow-sm guide-section" id="factures">
                 <div class="card-header"><i class="fas fa-file-invoice"></i> Factures clients &amp; Créances</div>
                 <div class="card-body">
@@ -231,8 +251,10 @@
                     <p class="mb-0">Les remboursements par les assureurs/AMU se suivent de la même manière, avec leur propre échéancier.</p>
                 </div>
             </div>
+            {% endif %}
 
             <!-- PROFORMAS -->
+            {% if guide_section_visible('proformas') %}
             <div class="card border-0 shadow-sm guide-section" id="proformas">
                 <div class="card-header"><i class="fas fa-file-signature"></i> Factures Proforma</div>
                 <div class="card-body mb-0">
@@ -244,8 +266,10 @@
                     </p>
                 </div>
             </div>
+            {% endif %}
 
             <!-- HISTORIQUE -->
+            {% if guide_section_visible('historique') %}
             <div class="card border-0 shadow-sm guide-section" id="historique">
                 <div class="card-header"><i class="fas fa-clock-rotate-left"></i> Historique des ventes</div>
                 <div class="card-body mb-0">
@@ -253,8 +277,10 @@
                     <p class="mb-0">En cas d'erreur de saisie, c'est également depuis cet écran (ou <strong>Historiques Annulations</strong>) qu'une vente peut être annulée — l'annulation reste tracée, elle ne fait pas disparaître l'opération sans laisser de trace.</p>
                 </div>
             </div>
+            {% endif %}
 
             <!-- STATISTIQUES -->
+            {% if guide_section_visible('statistiques') %}
             <div class="card border-0 shadow-sm guide-section" id="statistiques">
                 <div class="card-header"><i class="fas fa-chart-line"></i> Statistiques des ventes</div>
                 <div class="card-body mb-0">
@@ -265,8 +291,10 @@
                     </p>
                 </div>
             </div>
+            {% endif %}
 
             <!-- RH -->
+            {% if guide_section_visible('rh') %}
             <div class="card border-0 shadow-sm guide-section" id="rh">
                 <div class="card-header"><i class="fas fa-people-group"></i> Ressources humaines
                     <span class="badge bg-warning text-dark badge-role ms-2">Admin</span>
@@ -302,8 +330,10 @@
                     </div>
                 </div>
             </div>
+            {% endif %}
 
             <!-- COMPTABILITÉ -->
+            {% if guide_section_visible('comptabilite') %}
             <div class="card border-0 shadow-sm guide-section" id="comptabilite">
                 <div class="card-header"><i class="fas fa-calculator"></i> Comptabilité
                     <span class="badge bg-warning text-dark badge-role ms-2">Admin / Comptable</span>
@@ -322,8 +352,10 @@
                     </ul>
                 </div>
             </div>
+            {% endif %}
 
             <!-- JOURNAL -->
+            {% if guide_section_visible('journal') %}
             <div class="card border-0 shadow-sm guide-section" id="journal">
                 <div class="card-header"><i class="fas fa-list-check"></i> Journal des mouvements</div>
                 <div class="card-body mb-0">
@@ -334,8 +366,10 @@
                     </p>
                 </div>
             </div>
+            {% endif %}
 
             <!-- ADMINISTRATION -->
+            {% if guide_section_visible('administration') %}
             <div class="card border-0 shadow-sm guide-section" id="administration">
                 <div class="card-header"><i class="fas fa-gear"></i> Administration
                     <span class="badge bg-warning text-dark badge-role ms-2">Admin</span>
@@ -348,6 +382,7 @@
                     </p>
                 </div>
             </div>
+            {% endif %}
 
             <!-- ASTUCES -->
             <div class="card border-0 shadow-sm guide-section" id="astuces">

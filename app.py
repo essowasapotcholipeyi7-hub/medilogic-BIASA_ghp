@@ -6616,6 +6616,55 @@ def injecter_acronyme_structure():
     return {'structure_acronyme': acronyme}
 
 
+# Guide d'utilisation filtré par rôle : l'admin (et les comptes propriétaires,
+# toujours role='admin') voient le guide complet ; les autres rôles ne voient
+# que les sections qui les concernent. None = section commune, visible par tous.
+GUIDE_ACCES_SECTIONS = {
+    'presentation': None,
+    'tableau-de-bord': None,
+    'patients': ['caissier', 'secretaire', 'medecin', 'paramedical', 'pharmacien', 'laborantin', 'radiologue', 'gestionnaire'],
+    'rendez-vous': ['caissier', 'secretaire', 'medecin', 'paramedical', 'laborantin', 'radiologue', 'gestionnaire'],
+    'consultation': ['medecin', 'paramedical'],
+    'actes-ventes': ['caissier', 'secretaire', 'medecin', 'paramedical', 'laborantin', 'radiologue', 'gestionnaire'],
+    'pharmacie': ['caissier', 'pharmacien', 'gestionnaire'],
+    'factures': ['caissier', 'secretaire', 'gestionnaire', 'sous_comptable', 'comptable'],
+    'proformas': ['caissier', 'secretaire', 'gestionnaire'],
+    'historique': ['caissier', 'pharmacien', 'gestionnaire', 'sous_comptable', 'comptable'],
+    'statistiques': ['gestionnaire', 'sous_comptable', 'comptable'],
+    'rh': [],
+    'comptabilite': ['sous_comptable', 'comptable'],
+    'journal': ['gestionnaire', 'sous_comptable', 'comptable'],
+    'administration': [],
+    'astuces': None,
+}
+
+GUIDE_ROLES_LABELS = {
+    'caissier': 'Caissier', 'secretaire': 'Secrétaire', 'medecin': 'Médecin',
+    'paramedical': 'Paramédical', 'pharmacien': 'Pharmacien', 'laborantin': 'Laborantin',
+    'radiologue': 'Radiologue', 'gestionnaire': 'Gestionnaire',
+    'sous_comptable': 'Sous-comptable', 'comptable': 'Comptable', 'admin': 'Administrateur',
+}
+
+
+def _guide_section_visible(section_id):
+    if session.get('is_admin'):
+        return True
+    roles_autorises = GUIDE_ACCES_SECTIONS.get(section_id)
+    if roles_autorises is None:
+        return True
+    return session.get('role') in roles_autorises
+
+
+@app.context_processor
+def injecter_guide_visible():
+    """Expose aux templates guide_section_visible() (filtrage du guide
+    d'utilisation par rôle) et le libellé du rôle courant."""
+    return {
+        'guide_section_visible': _guide_section_visible,
+        'guide_role_label': GUIDE_ROLES_LABELS.get(session.get('role'), session.get('role')),
+    }
+
+
 @app.route('/api/structure/acronyme', methods=['GET', 'POST'])
 @login_required
 def api_acronyme_structure():
