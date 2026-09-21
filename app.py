@@ -3,6 +3,7 @@ from flask_mail import Mail, Message
 from config import Config
 from sheets_helper import sheets_helper
 import hashlib
+import re
 import secrets
 from datetime import datetime
 from datetime import date
@@ -14,7 +15,7 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
@@ -6575,6 +6576,74 @@ def api_structure_infos():
         'rib': structure_info.get('rib', ''),  # 🔥 Colonne N
         'numero_affiliation': structure_info.get('numero_affiliation', '')  # 🔥 Colonne O
     })
+
+
+# ============================================================
+# ACRONYME AFFICHÉ "SI <ACRONYME>" — patron : "on enlève SSoftOneV10...
+# on remplace par SI HCL... pour chaque structure on met SI suivi de son
+# acronyme, qu'on donne la possibilité à une structure de cliquer dessus
+# et modifier si ce n'est pas ça qu'elle utilise". Table dédiée (voir
+# ParametrageAffichageStructure, models.py) — pas de dépendance à la
+# table Postgres `structures` ni à la feuille Google Sheets du même nom,
+# qui ne couvrent pas forcément toutes les structures.
+# ============================================================
+def deriver_acronyme_structure(nom):
+    """Acronyme par défaut tant qu'aucun n'a été choisi manuellement —
+    initiales des mots significatifs (articles/prépositions ignorés)."""
+    mots_ignores = {'de', 'du', 'des', 'la', 'le', 'les', 'et', 'a', 'au', 'aux', "d'"}
+    mots = [m for m in re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ']+", nom or '') if m.lower() not in mots_ignores]
+    acronyme = ''.join(m[0].upper() for m in mots[:5])
+    return acronyme or (nom or 'SI')[:3].upper()
+
+
+@app.context_processor
+def injecter_acronyme_structure():
+    """Rend `structure_acronyme` disponible dans TOUS les templates (base.html
+    l'affiche dans le coin en haut à gauche) sans avoir à modifier chacune
+    des très nombreuses vues qui étendent base.html."""
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return {}
+    acronyme = None
+    try:
+        param = ParametrageAffichageStructure.query.filter_by(structure_id=structure_id).first()
+        if param and param.acronyme:
+            acronyme = param.acronyme
+    except Exception:
+        acronyme = None
+    if not acronyme:
+        acronyme = deriver_acronyme_structure(session.get('structure_nom', ''))
+    return {'structure_acronyme': acronyme}
+
+
+@app.route('/api/structure/acronyme', methods=['GET', 'POST'])
+@login_required
+def api_acronyme_structure():
+    structure_id = session.get('structure_id')
+    if request.method == 'GET':
+        param = ParametrageAffichageStructure.query.filter_by(structure_id=structure_id).first()
+        acronyme = (param.acronyme if param and param.acronyme else None) or deriver_acronyme_structure(session.get('structure_nom', ''))
+        return jsonify({'acronyme': acronyme})
+
+    if not session.get('is_admin'):
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    data = request.json or {}
+    acronyme = (data.get('acronyme') or '').strip().upper()[:10]
+    if not acronyme:
+        return jsonify({'success': False, 'error': 'Acronyme requis'}), 400
+    try:
+        param = ParametrageAffichageStructure.query.filter_by(structure_id=structure_id).first()
+        if not param:
+            param = ParametrageAffichageStructure(structure_id=structure_id)
+            db.session.add(param)
+        param.acronyme = acronyme
+        db.session.commit()
+        return jsonify({'success': True, 'acronyme': acronyme})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 # ========== RAPPELS AUTOMATIQUES RENDEZ-VOUS ==========
 import threading
 import time

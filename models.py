@@ -3556,3 +3556,19 @@ class VisageEmploye(db.Model):
     derniere_utilisation = db.Column(db.DateTime)
 
     employe = db.relationship('Employe', backref='visages')
+
+
+class ParametrageAffichageStructure(db.Model):
+    """Personnalisation d'affichage propre à une structure — pour l'instant
+    juste l'acronyme montré dans le coin "SI <acronyme>" en haut à gauche
+    (voir injecter_acronyme_structure(), app.py). Table dédiée plutôt que
+    d'ajouter une colonne à `structures` : ce nom vient de Google Sheets
+    (sheets_helper), pas de la table Postgres du même nom — voir
+    api_structure_nom()/api_structure_infos() — donc une structure peut ne
+    pas y avoir de ligne du tout."""
+    __tablename__ = 'parametrage_affichage_structure'
+
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False, unique=True)
+    acronyme = db.Column(db.String(10))
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

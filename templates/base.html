@@ -92,10 +92,8 @@
         .structure-container {
             display: flex;
             align-items: center;
-            justify-content: center;
-            flex: 1;
-            max-width: 400px;
-            margin: 0 auto;
+            justify-content: flex-start;
+            margin-left: 16px;
         }
         
         .structure-brand {
@@ -1295,7 +1293,12 @@
            #rechercheGlobaleInput dans le HTML pour le contexte. */
         .global-search-wrapper {
             position: relative;
-            width: 260px;
+            /* ⭐ Élargie — patron : "notre barre de recherche est peu
+               visible... notre barre de recherche s'élargit" — la place
+               libérée par le retour du logo/nom de structure à gauche
+               (au lieu du centre) lui profite directement. */
+            width: 420px;
+            max-width: 32vw;
         }
         .global-search-results {
             position: absolute;
@@ -1877,13 +1880,16 @@
 {% if not (cacher_navigation is defined and cacher_navigation) %}
 <nav class="navbar navbar-expand-lg">
     <div class="container">
+        <!-- ⭐ Patron : "pour BIASA ne change pas, laisse GED BIASA mais
+             enlève le bouton plein écran" — contrairement à GHP, la marque
+             reste fixe ici (pas de "SI <acronyme>" par structure). -->
         <a class="navbar-brand" href="{{ url_for('dashboard' if session.user_id else 'index') }}">
             <span style="color: #0E9D67;"> GED BIASA</span>
         </a>
 
         <!-- NOM DE LA STRUCTURE AVEC LOGO -->
         {% if session.user_id and session.structure_nom %}
-        <div class="structure-container mx-auto">
+        <div class="structure-container">
             <div class="structure-brand">
                 {% if session.structure_logo and session.structure_logo|trim != '' %}
                 <img src="{{ session.structure_logo }}" alt="Logo" class="structure-logo" 
@@ -1942,25 +1948,14 @@
                 </div>
             </div>
 
-            <!-- BOUTON PLEIN ÉCRAN -->
-            <div class="d-none d-md-block">
-                <button id="fullscreenBtn" class="btn btn-light rounded-pill d-flex align-items-center gap-2" 
-                        style="padding: 8px 16px; border: none; background: rgba(255,255,255,0.8); box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: all 0.3s ease;"
-                        onclick="toggleFullScreen()" title="Plein écran (F11)">
-                    <i class="fas fa-expand" id="fullscreenIcon"></i>
-                    <span id="fullscreenText" style="font-size: 12px; font-weight: 500; color: #4a5568;">Plein écran</span>
-                </button>
-            </div>
+            <!-- ⭐ Bouton "Plein écran" retiré — patron : "enlève complètement
+                 le bouton plein écran qui est visible dans la navbar pour
+                 qu'on ait l'espace". Le raccourci F11 et l'option "Mode
+                 plein écran" du menu utilisateur restent fonctionnels
+                 (updateFullscreenUI() garde ses vérifications
+                 document.getElementById(...) au cas où ces éléments
+                 n'existent plus). -->
 
-            <div class="d-md-none">
-                <button id="fullscreenBtnMobile" class="btn btn-light rounded-pill d-flex align-items-center gap-1" 
-                        style="padding: 5px 12px; border: none; background: rgba(255,255,255,0.8);"
-                        onclick="toggleFullScreen()" title="Plein écran">
-                    <i class="fas fa-expand" id="fullscreenIconMobile" style="font-size: 14px;"></i>
-                    <span id="fullscreenTextMobile" style="font-size: 10px; font-weight: 500; color: #4a5568;">Plein</span>
-                </button>
-            </div>
-            
             {% if session.is_admin or session.role == 'gestionnaire' %}
             <!-- ⭐ Cloche de notification : demandes en attente de validation
                  (annulation vente, dépense, encaissement assurance). Compteur
@@ -2000,6 +1995,28 @@
         {% endif %}
     </div>
 </nav>
+
+<!-- ⭐ MODAL ÉDITION ACRONYME — voir ouvrirEditionAcronyme() plus bas. -->
+{% if session.user_id and session.is_admin %}
+<div class="modal fade" id="modalAcronymeStructure" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title">Acronyme affiché</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label small text-muted">Remplace "SI ..." dans le coin en haut à gauche, pour tous les utilisateurs de la structure.</label>
+                <input type="text" id="inputAcronymeStructure" class="form-control text-uppercase" maxlength="10" placeholder="Ex: HCL">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-primary btn-sm" onclick="enregistrerAcronymeStructure()">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% endif %}
 
 <!-- ============================================
@@ -3072,6 +3089,36 @@ function chargerVenteAttenteBadge() {
             });
         })
         .catch(() => {});
+}
+
+// ============================================================
+// ACRONYME AFFICHÉ "SI <acronyme>" — voir #modalAcronymeStructure plus
+// haut et /api/structure/acronyme (app.py) pour le contexte complet.
+// ============================================================
+function ouvrirEditionAcronyme() {
+    const texteActuel = document.getElementById('siAcronymeTexte').textContent.trim();
+    document.getElementById('inputAcronymeStructure').value = texteActuel;
+    new bootstrap.Modal(document.getElementById('modalAcronymeStructure')).show();
+}
+
+function enregistrerAcronymeStructure() {
+    const valeur = document.getElementById('inputAcronymeStructure').value.trim();
+    if (!valeur) return;
+    fetch('/api/structure/acronyme', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ acronyme: valeur })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById('siAcronymeTexte').textContent = data.acronyme;
+            bootstrap.Modal.getInstance(document.getElementById('modalAcronymeStructure')).hide();
+        } else {
+            alert('Erreur : ' + (data.error || 'inconnue'));
+        }
+    })
+    .catch(() => alert('Erreur réseau'));
 }
 
 // ============================================================
