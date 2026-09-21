@@ -2497,6 +2497,28 @@
 
 <script>
 // ============================================
+// FIX GLOBAL : flèche retour du navigateur "charge sans finir"
+// ============================================
+// ⭐ Patron : "on est dans un onglet donné, en haut on clique sur la
+// flèche retour, ça charge sans finir". Reproduit uniquement avec le
+// VRAI bouton retour du navigateur (jamais avec un lien "Retour" de
+// l'app, ni avec une navigation programmatique — testé sans succès sur
+// les deux) : Chrome/Edge/Firefox restaurent la page depuis le
+// back-forward cache (bfcache) au lieu de la recharger. Toute requête
+// fetch() encore en vol au moment de quitter la page est interrompue et
+// ne se termine jamais après restauration — un spinner ou un tableau en
+// cours de chargement (ex: Ventes en attente, Hospitalisation, Actes &
+// Vente) reste alors figé indéfiniment, MÊME SI la page a l'air normale
+// par ailleurs. Le correctif standard : forcer un rechargement complet
+// quand la page revient du bfcache (event.persisted), pour repartir
+// d'un état propre plutôt que d'un instantané potentiellement figé.
+window.addEventListener('pageshow', function(event) {
+    if (event.persisted) {
+        window.location.reload();
+    }
+});
+
+// ============================================
 // FIX GLOBAL : modales Bootstrap ouvertes derrière la navbar
 // ============================================
 // ⭐ .main-content (le conteneur du bloc "content" de chaque page) a un
