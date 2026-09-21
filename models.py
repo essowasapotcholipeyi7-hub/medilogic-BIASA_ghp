@@ -2407,6 +2407,34 @@ class FactureAmuMensuelle(db.Model):
 
 
 # ============================================================
+# VENTE EN ATTENTE — service admission sépare de la caisse (patron :
+# "il ya dans certaines structures des services séparés le patient se
+# fait enregistrer au service admission... il part à la caisse... la
+# caisse fait sortir le reçu"). L'admission constitue le panier SANS
+# choisir de patient (contrairement à Proforma, qui en exige un dès la
+# création) ; la caisse choisit le patient au moment de finaliser —
+# voir api_creer_vente_en_attente/api_finaliser_vente_en_attente (app.py).
+# ============================================================
+class VenteEnAttente(db.Model):
+    __tablename__ = 'ventes_en_attente'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    numero_local = db.Column(db.Integer)  # code communiqué au patient — voir prochain_numero_local()
+    type = db.Column(db.String(20), nullable=False)  # 'actes' | 'pharmacie'
+    articles = db.Column(db.JSON)  # panier tel que soumis par l'admission (nom/prix/pbr/quantite/prise_en_charge_amu/cac)
+    sous_total = db.Column(db.Numeric, default=0)  # informatif seulement — le vrai calcul se refait à la finalisation
+    statut = db.Column(db.String(20), default='en_attente')  # 'en_attente' | 'finalisee' | 'annulee'
+    vente_id = db.Column(db.Integer)  # rempli une fois finalisée — lien vers la Vente réellement créée
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    finalise_par = db.Column(db.String(255))
+    finalise_at = db.Column(db.DateTime)
+    annule_par = db.Column(db.String(255))
+    annule_at = db.Column(db.DateTime)
+    motif_annulation = db.Column(db.Text)
+
+
+# ============================================================
 # LABORATOIRE / RADIOLOGIE — circuit de demandes + ristournes
 # ============================================================
 # ⭐ Quel acte du catalogue relève de la biologie (laborantin) ou de

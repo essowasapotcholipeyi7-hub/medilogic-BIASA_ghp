@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
@@ -2523,14 +2523,26 @@ def actes_vente():
                 db.session.rollback()
     
     print(f"📦 articles_auto (actes): {len(articles_auto)}")
-    
+
     patient_taux = session.get('patient_taux', 0)
-    
-    return render_template('actes_vente.html', 
-                          actes=actes_filtres, 
+
+    # ⭐ VENTE EN ATTENTE — mode finalisation caisse : ?finaliser_attente=<id>
+    # précharge le panier soumis par l'admission, patient jamais choisi à ce
+    # stade (voir VenteEnAttente, models.py) — la caisse le choisit ici,
+    # sur cet écran normal, exactement comme une vente classique.
+    vente_attente = None
+    vente_attente_id = request.args.get('finaliser_attente', type=int)
+    if vente_attente_id:
+        va = VenteEnAttente.query.filter_by(id=vente_attente_id, structure_id=structure_id, type='actes', statut='en_attente').first()
+        if va:
+            vente_attente = {'id': va.id, 'numero_local': va.numero_local, 'articles': va.articles or []}
+
+    return render_template('actes_vente.html',
+                          actes=actes_filtres,
                           patients=patients,
                           articles_auto=articles_auto,
-                          patientTaux=patient_taux)
+                          patientTaux=patient_taux,
+                          vente_attente=vente_attente)
 
 
 @app.route('/pharma_vente')
@@ -2672,12 +2684,22 @@ def pharma_vente():
 
     patient_taux = session.get('patient_taux', 0)
 
+    # ⭐ VENTE EN ATTENTE — même principe que actes_vente(), voir son
+    # commentaire équivalent.
+    vente_attente = None
+    vente_attente_id = request.args.get('finaliser_attente', type=int)
+    if vente_attente_id:
+        va = VenteEnAttente.query.filter_by(id=vente_attente_id, structure_id=structure_id, type='pharmacie', statut='en_attente').first()
+        if va:
+            vente_attente = {'id': va.id, 'numero_local': va.numero_local, 'articles': va.articles or []}
+
     # ⭐ FIX PERF : `produits`/`patients` ne sont pas référencés dans
     # pharma_vente.html (le catalogue affiché au patient est chargé côté
     # JS via /api/produits) — on ne les envoie plus au template.
     return render_template('pharma_vente.html',
                           articles_auto=articles_auto,
-                          patientTaux=patient_taux)
+                          patientTaux=patient_taux,
+                          vente_attente=vente_attente)
 
 
 @app.route('/facture/<int:vente_id>/<string:type>')
@@ -8199,6 +8221,149 @@ def api_activites_recentes():
         import traceback
         traceback.print_exc()
         return jsonify([]), 500
+
+
+# ============================================================
+# VENTE EN ATTENTE — service admission séparé de la caisse (voir
+# VenteEnAttente, models.py, pour le contexte complet). Rôles autorisés à
+# finaliser/annuler : admin/caissier/secretaire, comme le reste de la
+# facturation — n'importe quel utilisateur connecté ayant accès à
+# Actes&Vente/Pharmacie peut en revanche EN CRÉER une (l'admission n'est
+# pas forcément caissier/secretaire).
+# ============================================================
+_ROLES_FINALISATION_VENTE_ATTENTE = ('admin', 'caissier', 'secretaire')
+
+
+@app.route('/api/ventes-en-attente/creer', methods=['POST'])
+@login_required
+def api_creer_vente_en_attente():
+    try:
+        structure_id = session.get('structure_id')
+        user_name = session.get('user_name', 'System')
+        data = request.json or {}
+        type_vente = data.get('type')
+        if type_vente not in ('actes', 'pharmacie'):
+            return jsonify({'success': False, 'error': 'Type invalide'}), 400
+        articles = data.get('articles') or []
+        if not articles:
+            return jsonify({'success': False, 'error': 'Le panier est vide'}), 400
+
+        numero_local = prochain_numero_local('ventes_en_attente', structure_id)
+        vea = VenteEnAttente(
+            structure_id=structure_id, numero_local=numero_local, type=type_vente,
+            articles=articles, sous_total=float(data.get('sous_total') or 0),
+            statut='en_attente', created_by=user_name,
+        )
+        db.session.add(vea)
+        db.session.commit()
+        return jsonify({'success': True, 'id': vea.id, 'numero_local': numero_local})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ventes-en-attente/count', methods=['GET'])
+@login_required
+def api_compter_ventes_en_attente():
+    structure_id = session.get('structure_id')
+    count = VenteEnAttente.query.filter_by(structure_id=structure_id, statut='en_attente').count()
+    return jsonify({'count': count})
+
+
+@app.route('/api/ventes-en-attente/liste', methods=['GET'])
+@login_required
+def api_liste_ventes_en_attente():
+    structure_id = session.get('structure_id')
+    statut = request.args.get('statut', 'en_attente')
+    q = (request.args.get('q') or '').strip().lower()
+
+    query = VenteEnAttente.query.filter_by(structure_id=structure_id)
+    if statut == 'historique':
+        query = query.filter(VenteEnAttente.statut.in_(['finalisee', 'annulee']))
+    else:
+        query = query.filter_by(statut='en_attente')
+    ventes = query.order_by(VenteEnAttente.created_at.desc()).all()
+
+    resultat = []
+    for v in ventes:
+        articles = v.articles or []
+        noms = ', '.join((a.get('nom') or '') for a in articles[:3])
+        if len(articles) > 3:
+            noms += f" (+{len(articles) - 3})"
+        # ⭐ Recherche libre : code, détail des articles, créateur — pas de
+        # nom de patient possible (jamais choisi à ce stade).
+        haystack = f"{v.numero_local} {noms} {v.created_by or ''}".lower()
+        if q and q not in haystack:
+            continue
+        resultat.append({
+            'id': v.id, 'numero_local': v.numero_local, 'type': v.type,
+            'nb_articles': len(articles), 'detail': noms or '—',
+            'sous_total': float(v.sous_total or 0), 'statut': v.statut,
+            'created_by': v.created_by, 'created_at': v.created_at.strftime('%d/%m/%Y %H:%M') if v.created_at else '',
+            'finalise_par': v.finalise_par,
+            'finalise_at': v.finalise_at.strftime('%d/%m/%Y %H:%M') if v.finalise_at else None,
+            'annule_par': v.annule_par, 'motif_annulation': v.motif_annulation,
+            'vente_id': v.vente_id,
+        })
+    return jsonify(resultat)
+
+
+@app.route('/api/ventes-en-attente/<int:vea_id>/annuler', methods=['POST'])
+@login_required
+def api_annuler_vente_en_attente(vea_id):
+    if session.get('role') not in _ROLES_FINALISATION_VENTE_ATTENTE:
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    try:
+        structure_id = session.get('structure_id')
+        vea = VenteEnAttente.query.filter_by(id=vea_id, structure_id=structure_id, statut='en_attente').first()
+        if not vea:
+            return jsonify({'success': False, 'error': 'Vente en attente introuvable'}), 404
+        data = request.json or {}
+        vea.statut = 'annulee'
+        vea.annule_par = session.get('user_name', 'System')
+        vea.annule_at = datetime.now()
+        vea.motif_annulation = (data.get('motif') or '').strip()
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ventes-en-attente/<int:vea_id>/finaliser', methods=['POST'])
+@login_required
+def api_finaliser_vente_en_attente(vea_id):
+    """Appelée côté client juste APRÈS la création réussie de la vraie
+    Vente (voir finaliserVente() dans actes_vente.html/pharma_vente.html)
+    — même principe que le marquage des prescriptions comme facturées
+    après une vente, déjà utilisé ailleurs sur ces mêmes pages."""
+    if session.get('role') not in _ROLES_FINALISATION_VENTE_ATTENTE:
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    try:
+        structure_id = session.get('structure_id')
+        vea = VenteEnAttente.query.filter_by(id=vea_id, structure_id=structure_id, statut='en_attente').first()
+        if not vea:
+            return jsonify({'success': False, 'error': 'Vente en attente introuvable'}), 404
+        data = request.json or {}
+        vea.statut = 'finalisee'
+        vea.vente_id = data.get('vente_id')
+        vea.finalise_par = session.get('user_name', 'System')
+        vea.finalise_at = datetime.now()
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/ventes-en-attente')
+@login_required
+def page_ventes_en_attente():
+    if session.get('role') not in _ROLES_FINALISATION_VENTE_ATTENTE:
+        flash('Accès non autorisé', 'danger')
+        return redirect(url_for('dashboard'))
+    return render_template('ventes_en_attente.html')
+
 
 @app.route('/api/ventes/actes', methods=['POST'])
 @login_required

@@ -2049,6 +2049,14 @@
                     Factures assurances
                 </a>
                 {% endif %}
+                <!-- ⭐ Ventes en attente — même accès que ci-dessus + admin
+                     (voir _ROLES_FINALISATION_VENTE_ATTENTE, app.py). -->
+                {% if session.role in ['admin', 'caissier', 'secretaire'] and not _bloq %}
+                <a class="menu-item" href="{{ url_for('page_ventes_en_attente') }}">
+                    <i class="fas fa-clock"></i> Ventes en attente
+                    <span class="badge bg-danger ms-1 vente-attente-badge" style="display:none;">0</span>
+                </a>
+                {% endif %}
                 {% if not _bloq %}
                 <a class="menu-item" href="{{ url_for('page_facture_amu_cnss') }}">
                     Facture AMU CNSS (mensuelle)
@@ -2944,15 +2952,40 @@ function chargerProformaBadge() {
 }
 
 // ============================================================
+// BADGE VENTES EN ATTENTE — même principe que le badge Proforma ci-dessus.
+// ============================================================
+
+function chargerVenteAttenteBadge() {
+    fetch('/api/ventes-en-attente/count')
+        .then(response => response.json())
+        .then(data => {
+            // ⭐ Deux badges (menu latéral + méga-menu Finances) à tenir à
+            // jour ensemble — contrairement au badge Proforma, qui n'existe
+            // que dans le menu latéral.
+            document.querySelectorAll('.vente-attente-badge').forEach(function(badge) {
+                if (data.count > 0) {
+                    badge.textContent = data.count;
+                    badge.style.display = 'inline-block';
+                } else {
+                    badge.style.display = 'none';
+                }
+            });
+        })
+        .catch(() => {});
+}
+
+// ============================================================
 // INITIALISATION
 // ============================================================
 
 document.addEventListener('DOMContentLoaded', function() {
     restoreSidebarState();
     chargerProformaBadge();
-    
-    // Rafraîchir le badge toutes les 60 secondes
+    chargerVenteAttenteBadge();
+
+    // Rafraîchir les badges toutes les 60 secondes
     setInterval(chargerProformaBadge, 60000);
+    setInterval(chargerVenteAttenteBadge, 60000);
 });
 
 // ============================================

@@ -81,6 +81,17 @@
                 </a>
                 {% endif %}
 
+                <!-- ===== VENTES EN ATTENTE ===== — patron : "on va ajouter un
+                     onglet vente en attentes avec un compteur de vente en
+                     attente". Même rôles que la finalisation (voir
+                     _ROLES_FINALISATION_VENTE_ATTENTE, app.py). -->
+                {% if session.role in ['admin', 'caissier', 'secretaire'] and not _bloq %}
+                <a class="nav-link {% if request.endpoint == 'page_ventes_en_attente' %}active{% endif %}" href="{{ url_for('page_ventes_en_attente') }}">
+                    <span class="menu-text">Ventes en attente</span>
+                    <span class="badge bg-danger float-end vente-attente-badge" style="display:none;">0</span>
+                </a>
+                {% endif %}
+
 
                 <!-- ===== RÉFÉRENTIELS AMU ===== -->
                 {% if not _bloq %}

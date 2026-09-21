@@ -105,6 +105,19 @@
 
                 <hr>
 
+                <!-- ⭐ Bandeau de finalisation d'une vente en attente — voir
+                     actes_vente.html pour le même correctif. -->
+                {% if vente_attente %}
+                <div class="alert alert-warning d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="fas fa-clock me-1"></i>
+                        Finalisation de la vente en attente <strong>#{{ vente_attente.numero_local }}</strong> —
+                        sélectionnez le patient puis finalisez normalement.
+                    </div>
+                    <a href="{{ url_for('page_ventes_en_attente') }}" class="btn btn-sm btn-outline-dark">Annuler / retour</a>
+                </div>
+                {% endif %}
+
                 <div class="row mb-2">
                     <div class="col-md-6">
                         <h6><i class="fas fa-shopping-cart"></i> Panier des produits</h6>
@@ -395,16 +408,17 @@
 </div>
 
                     <div class="col-md-12 mt-2 d-grid gap-2">
-                        <!-- ⭐ Rendu clairement distinct du bouton Proforma (plus
-                             grand, vert = action principale qui conclut la vente)
-                             — signalé trop semblable au bouton Proforma juste
-                             à côté (même style, même poids visuel). -->
+                        <!-- ⭐ Rendu clairement distinct du bouton "vente en
+                             attente" (plus grand, vert = action principale
+                             qui conclut la vente). -->
                         <button class="btn btn-success btn-lg fw-bold" onclick="finaliserVente()" id="finaliserBtn" disabled
                                 style="box-shadow: 0 3px 8px rgba(25,135,84,0.35); letter-spacing: 0.3px;">
                             <i class="fas fa-check-circle"></i> Finaliser la vente
                         </button>
-                        <button class="btn btn-outline-warning" onclick="creerProforma()" id="proformaBtn" disabled>
-                            <i class="fas fa-file-invoice"></i> Proforma
+                        <!-- ⭐ Remplace l'ancien bouton "Proforma" — voir
+                             actes_vente.html pour le même correctif. -->
+                        <button class="btn btn-outline-warning" onclick="soumettreVenteEnAttente()" id="venteAttenteBtn" disabled>
+                            <i class="fas fa-clock"></i> Soumettre (vente en attente)
                         </button>
                     </div>
                 </div>
@@ -1304,7 +1318,7 @@ function afficherPanier() {
     if (panier.length === 0) {
         tbody.innerHTML = '<tr><td colspan="9" class="text-center">Aucun produit dans le panier</td></tr>';
         document.getElementById('finaliserBtn').disabled = true;
-        document.getElementById('proformaBtn').disabled = true;
+        document.getElementById('venteAttenteBtn').disabled = true;
         document.getElementById('sousTotal').innerHTML = '0 FCFA';
         document.getElementById('baseRemboursement').innerHTML = '0 FCFA';
         document.getElementById('priseEnCharge').innerHTML = '0 FCFA';
@@ -1447,7 +1461,7 @@ function afficherPanier() {
 
     document.getElementById('baseRemboursement').innerHTML = Math.round(pbrTotal).toLocaleString('fr-FR') + ' FCFA';
     document.getElementById('finaliserBtn').disabled = false;
-    document.getElementById('proformaBtn').disabled = false;
+    document.getElementById('venteAttenteBtn').disabled = false;
     calculerTotal();
     updatePanierBadge();
     calculerRendu();
@@ -1729,7 +1743,7 @@ function calculerTotal() {
     document.getElementById('netAPayer').innerHTML = Math.round(netAPayer).toLocaleString('fr-FR') + ' FCFA';
     
     document.getElementById('finaliserBtn').disabled = (panier.length === 0);
-    document.getElementById('proformaBtn').disabled = (panier.length === 0);
+    document.getElementById('venteAttenteBtn').disabled = (panier.length === 0);
     
     window._calculs = {
         sousTotal: sousTotal,
@@ -2255,6 +2269,15 @@ function finaliserVente() {
             });
         }
 
+        // ⭐ Même principe : si cette vente finalise une "vente en attente",
+        // la marquer finalisée et la lier à la vraie vente créée.
+        if (VENTE_ATTENTE) {
+            fetch(`/api/ventes-en-attente/${VENTE_ATTENTE.id}/finaliser`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ vente_id: data.vente_id })
+            }).catch(() => {});
+        }
+
         if (resteAPayer > 0) {
             console.log(`📋 Création d'une facture pour le reste à payer: ${resteAPayer} FCFA`);
             
@@ -2353,80 +2376,58 @@ function redirigerApresVente(venteId) {
 }
 
 // ============================================
-// CRÉER PROFORMA
+// VENTE EN ATTENTE — voir actes_vente.html pour le contexte complet.
+// Remplace l'ancien bouton Proforma ici aussi.
 // ============================================
-function creerProforma() {
+function soumettreVenteEnAttente() {
     if (panier.length === 0) {
         alert('Le panier est vide');
         return;
     }
-    
-    const patientId = sessionStorage.getItem('selectedPatientId') || localStorage.getItem('selectedPatientId');
-    const patientNom = sessionStorage.getItem('selectedPatientName') || localStorage.getItem('selectedPatientName');
-    
-    if (!patientId || patientId === 'null') {
-        alert('Veuillez sélectionner un patient');
-        return;
-    }
-    
-    const produitsDetails = panier.map(item => ({
-        nom: item.nom,
-        type: 'produit',
-        quantite: item.quantite,
-        prix_unitaire: item.prix,
-        total: item.total,
-        pbr: item.pbr || item.prix
-    }));
-    
-    const { sousTotal, netAPayer, aideHospitaliere, tauxAide, typeAide } = window._calculs || { sousTotal: 0, netAPayer: 0, aideHospitaliere: 0, tauxAide: 0, typeAide: 'pourcentage' };
 
-    const proformaData = {
-        patient_id: parseInt(patientId),
-        patient_nom: patientNom,
-        assurance_nom: patientAssurance || 'Non assuré',
-        taux_assurance: patientTaux,
-        assurance2_nom: assurance2Active ? (patientAssurance2 || '') : '',
-        taux_assurance2: assurance2Active ? (tauxTempModifie ? tauxTempValeur : patientTaux2) : 0,
-        articles: produitsDetails,
-        type: 'mixte',
-        notes: document.getElementById('avecOrdonnance').checked ? 'Avec ordonnance' : '',
-        assurance_principale_active: assurancePrincipaleActive,  // 🔥 NOUVEAU
-        taux_aide: tauxAide,
-        aide_hospitaliere: aideHospitaliere,
-        type_aide: typeAide
-    };
-    
-    console.log('📦 Données proforma:', JSON.stringify(proformaData, null, 2));
-    
-    showProgress('Création de la proforma', 'Enregistrement en cours...');
-    
-    fetch('/api/proformas', {
+    const btn = document.getElementById('venteAttenteBtn');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Envoi en cours...';
+
+    let sousTotal = 0;
+    const articles = panier.map(item => {
+        const prix = item.prix || 0;
+        sousTotal += prix * item.quantite;
+        return {
+            nom: item.nom,
+            prix: prix,
+            pbr: item.pbr || prix,
+            quantite: item.quantite,
+            prise_en_charge_amu: item.prise_en_charge_amu !== false,
+            prise_en_charge_cac: item.prise_en_charge_cac !== false,
+        };
+    });
+
+    fetch('/api/ventes-en-attente/creer', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(proformaData)
+        body: JSON.stringify({ type: 'pharmacie', articles: articles, sous_total: sousTotal })
     })
-    .then(response => response.json())
+    .then(r => r.json())
     .then(data => {
-        hideProgress();
-        
+        btn.innerHTML = originalText;
         if (data.success) {
-            alert(`✅ Proforma #${data.numero} créée !\nNet à payer: ${Math.round(data.net_a_payer).toLocaleString('fr-FR')} FCFA`);
-            
-            if (confirm('Imprimer la proforma ?')) {
-                window.open(`/proforma/${data.id}/print`, '_blank');
-            }
-            
+            alert(`✅ Vente en attente soumise !\n\n` +
+                  `Code à communiquer au patient : #${data.numero_local}\n\n` +
+                  `Le patient doit se présenter à la caisse avec ce code pour finaliser le paiement.`);
             panier = [];
             afficherPanier();
-            chargerProformaBadge();
-            
+            if (typeof chargerVenteAttenteBadge === 'function') chargerVenteAttenteBadge();
         } else {
-            alert('❌ Erreur: ' + (data.error || 'Erreur inconnue'));
+            btn.disabled = false;
+            alert('Erreur : ' + (data.error || 'inconnue'));
         }
     })
     .catch(error => {
-        hideProgress();
-        alert('❌ Erreur: ' + error);
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        alert('Erreur : ' + error);
     });
 }
 
@@ -2448,11 +2449,29 @@ function chargerProformaBadge() {
 }
 
 // ============================================
+// FINALISATION D'UNE VENTE EN ATTENTE — voir actes_vente.html.
+// ============================================
+const VENTE_ATTENTE = {{ vente_attente|tojson|safe }};
+if (VENTE_ATTENTE) {
+    panier = VENTE_ATTENTE.articles.map(a => ({
+        nom: a.nom, prix: a.prix, pbr: a.pbr, quantite: a.quantite,
+        prise_en_charge_amu: a.prise_en_charge_amu !== false,
+        prise_en_charge_cac: a.prise_en_charge_cac !== false,
+    }));
+    const btnVenteAttente = document.getElementById('venteAttenteBtn');
+    if (btnVenteAttente) btnVenteAttente.style.display = 'none';
+}
+
+// ============================================
 // CHARGEMENT AUTOMATIQUE DES PRESCRIPTIONS (PHARMA)
 // ============================================
 document.addEventListener('DOMContentLoaded', function() {
     console.log('=== CHARGEMENT AUTOMATIQUE PHARMA ===');
-    
+
+    if (VENTE_ATTENTE) {
+        afficherPanier();
+    }
+
     const articlesAuto = {{ articles_auto|tojson|safe }};
     console.log('📦 Articles reçus du backend:', articlesAuto);
     console.log('📦 Nombre d\'articles:', articlesAuto ? articlesAuto.length : 0);

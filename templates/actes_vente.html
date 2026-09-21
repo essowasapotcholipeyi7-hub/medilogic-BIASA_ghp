@@ -99,6 +99,20 @@
                 
                 <hr>
 
+                <!-- ⭐ Bandeau de finalisation d'une vente en attente — visible
+                     uniquement quand on arrive ici via /actes_vente?finaliser_attente=<id>
+                     (lien "Finaliser" depuis Ventes en attente). -->
+                {% if vente_attente %}
+                <div class="alert alert-warning d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="fas fa-clock me-1"></i>
+                        Finalisation de la vente en attente <strong>#{{ vente_attente.numero_local }}</strong> —
+                        sélectionnez le patient puis finalisez normalement.
+                    </div>
+                    <a href="{{ url_for('page_ventes_en_attente') }}" class="btn btn-sm btn-outline-dark">Annuler / retour</a>
+                </div>
+                {% endif %}
+
                 <h6>Panier des actes</h6>
                 <div class="table-responsive">
                     <table class="table table-bordered" id="panierTable">
@@ -404,16 +418,21 @@
 </div>
 
                     <div class="col-md-12 mt-2 d-grid gap-2">
-                        <!-- ⭐ Rendu clairement distinct du bouton Proforma (plus
-                             grand, vert = action principale qui conclut la vente)
-                             — signalé trop semblable au bouton Proforma juste
-                             à côté (même style, même poids visuel). -->
+                        <!-- ⭐ Rendu clairement distinct du bouton "vente en
+                             attente" (plus grand, vert = action principale
+                             qui conclut la vente). -->
                         <button class="btn btn-success btn-lg fw-bold" onclick="finaliserVente()" id="finaliserBtn" disabled
                                 style="box-shadow: 0 3px 8px rgba(25,135,84,0.35); letter-spacing: 0.3px;">
                             <i class="fas fa-check-circle"></i> Finaliser la vente
                         </button>
-                        <button class="btn btn-outline-warning" onclick="creerProforma()" id="proformaBtn" disabled>
-                            <i class="fas fa-file-invoice"></i> Proforma
+                        <!-- ⭐ Remplace l'ancien bouton "Proforma" — patron : "le
+                             bouton proforma qui s'y trouve qu'on le transforme
+                             en vente soumise en attente de finalisation pour la
+                             caisse". Masqué en mode finalisation (VENTE_ATTENTE
+                             actif) : on ne resoumet pas une vente en attente
+                             déjà en train d'être finalisée. -->
+                        <button class="btn btn-outline-warning" onclick="soumettreVenteEnAttente()" id="venteAttenteBtn" disabled>
+                            <i class="fas fa-clock"></i> Soumettre (vente en attente)
                         </button>
                     </div>
                 </div>
@@ -1051,7 +1070,7 @@ function afficherPanier() {
     if (panier.length === 0) {
         tbody.innerHTML = '<tr><td colspan="10" class="text-center">Aucun acte dans le panier</td></tr>';
         document.getElementById('finaliserBtn').disabled = true;
-        document.getElementById('proformaBtn').disabled = true;
+        document.getElementById('venteAttenteBtn').disabled = true;
         document.getElementById('sousTotal').innerHTML = '0 FCFA';
         document.getElementById('baseRemboursement').innerHTML = '0 FCFA';
         document.getElementById('priseEnCharge').innerHTML = '0 FCFA';
@@ -1491,7 +1510,7 @@ function calculerTotal() {
     
     // Activer/désactiver les boutons
     document.getElementById('finaliserBtn').disabled = (panier.length === 0);
-    document.getElementById('proformaBtn').disabled = (panier.length === 0);
+    document.getElementById('venteAttenteBtn').disabled = (panier.length === 0);
     
     // Sauvegarder les valeurs pour finaliserVente
     window._calculs = {
@@ -2330,6 +2349,16 @@ function finaliserVente() {
                 });
             }
 
+            // ⭐ Même principe : si cette vente finalise une "vente en
+            // attente" (voir VENTE_ATTENTE plus haut), la marquer comme
+            // finalisée et la lier à la vraie vente qui vient d'être créée.
+            if (VENTE_ATTENTE) {
+                fetch(`/api/ventes-en-attente/${VENTE_ATTENTE.id}/finaliser`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ vente_id: data.vente_id })
+                }).catch(() => {});
+            }
+
             if (resteAPayer > 0) {
                 const dateEcheance = new Date();
                 dateEcheance.setDate(dateEcheance.getDate() + 7);
@@ -2438,142 +2467,64 @@ function afficherRecapVente() {
 }
 
 // ============================================
-// CRÉER PROFORMA
+// VENTE EN ATTENTE — service admission séparé de la caisse (voir
+// VenteEnAttente, models.py). Remplace l'ancien bouton Proforma ici :
+// AUCUN patient à choisir à ce stade, contrairement à l'ancienne
+// creerProforma() — patron : "le patient... on lui donne le prix... il
+// part à la caisse... la caisse sélectionne le patient concerné".
 // ============================================
-function creerProforma() {
+function soumettreVenteEnAttente() {
     if (panier.length === 0) {
         alert('Le panier est vide');
         return;
     }
-    
-    let patientId = sessionStorage.getItem('selectedPatientId') || localStorage.getItem('selectedPatientId');
-    let patientNom = sessionStorage.getItem('selectedPatientName') || localStorage.getItem('selectedPatientName');
-    let patientAssurance = sessionStorage.getItem('selectedPatientAssurance') || localStorage.getItem('selectedPatientAssurance');
-    let patientTaux = parseFloat(sessionStorage.getItem('selectedPatientTaux') || localStorage.getItem('selectedPatientTaux') || 0);
-    let patientAssurance2 = sessionStorage.getItem('selectedPatientAssurance2') || localStorage.getItem('selectedPatientAssurance2') || '';
-    let patientTaux2 = parseFloat(sessionStorage.getItem('selectedPatientTaux2') || localStorage.getItem('selectedPatientTaux2') || 0);
-    
-    if (tauxTempModifie) {
-        patientTaux2 = tauxTempValeur;
-    }
-    
-    if (!patientId || patientId === 'null') {
-        alert('Veuillez sélectionner un patient');
-        return;
-    }
-    
-    showProgress('Création de la proforma...', 'Récupération des infos patient...');
-    
-    fetch(`/api/patients/${patientId}`)
-        .then(response => response.json())
-        .then(patient => {
-            hideProgress();
-            let patientTelephone = patient.telephone || '';
-            creerProformaSuite(patientId, patientNom, patientAssurance, patientTaux, patientAssurance2, patientTaux2, patientTelephone);
-        })
-        .catch(error => {
-            hideProgress();
-            creerProformaSuite(patientId, patientNom, patientAssurance, patientTaux, patientAssurance2, patientTaux2, '');
-        });
-}
 
-function creerProformaSuite(patientId, patientNom, patientAssurance, patientTaux, patientAssurance2, patientTaux2, patientTelephone) {
-    let tauxPrincipal = parseFloat(document.getElementById('tauxVente').value);
-    if (isNaN(tauxPrincipal)) {
-        tauxPrincipal = patientTaux;
-    }
-    
-    if (!assurancePrincipaleActive) {
-        tauxPrincipal = 0;
-    }
-
-    // ⭐ Reporter l'aide hospitalière saisie sur la vente vers la proforma
-    // (jusqu'ici jamais transmise : la conversion en vente ignorait donc
-    // systématiquement l'aide hospitalière).
-    const { aideHospitaliere: aideHospProforma, tauxAide: tauxAideProforma, typeAide: typeAideProforma } =
-        window._calculs || { aideHospitaliere: 0, tauxAide: 0, typeAide: 'pourcentage' };
+    // ⭐ Anti double-clic pendant la soumission — patron : "bouton soumettre
+    // se désactive quand on soumet pour éviter un deuxième clique encours
+    // de soumissions".
+    const btn = document.getElementById('venteAttenteBtn');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Envoi en cours...';
 
     let sousTotal = 0;
-    const articles = [];
-    
-    for (const item of panier) {
+    const articles = panier.map(item => {
         const prix = item.prix || 0;
-        const total = prix * item.quantite;
-        sousTotal += total;
-        
-        articles.push({
+        sousTotal += prix * item.quantite;
+        return {
             nom: item.nom,
-            type: 'acte',
-            quantite: item.quantite,
-            prix_unitaire: prix,
+            prix: prix,
             pbr: item.pbr || prix,
-            total: total
-        });
-    }
-    
-    const proformaData = {
-        patient_id: parseInt(patientId),
-        patient_nom: patientNom,
-        patient_telephone: patientTelephone || '',
-        assurance_nom: patientAssurance && patientAssurance !== 'non_assure' ? patientAssurance : 'Non assuré',
-        taux_assurance: tauxPrincipal,
-        numero_assure: localStorage.getItem('selectedPatientNumero') || '',
-        assurance2_nom: patientAssurance2 || '',
-        taux_assurance2: patientTaux2 || 0,
-        numero_assure2: localStorage.getItem('selectedPatientNumero2') || '',
-        articles: articles,
-        type: 'actes',
-        notes: '',
-        assurance_principale_active: assurancePrincipaleActive,  // 🔥 NOUVEAU
-        taux_aide: tauxAideProforma,
-        aide_hospitaliere: aideHospProforma,
-        type_aide: typeAideProforma
-    };
-    
-    console.log('Données proforma:', proformaData);
-    
-    let msg = '📋 NOUVELLE PROFORMA\n\n';
-    msg += `👤 Patient: ${patientNom}\n`;
-    msg += `📱 Téléphone: ${patientTelephone || 'Non renseigné'}\n`;
-    msg += `🏥 Assurance principale: ${proformaData.assurance_nom} (${tauxPrincipal}%) - ${assurancePrincipaleActive ? '✅ Active' : '❌ Désactivée'}\n`;
-    if (patientAssurance2 && patientTaux2 > 0) {
-        const tauxAffiche = tauxTempModifie ? `${patientTaux2}% (modifié)` : `${patientTaux2}%`;
-        msg += `🏥 Assurance complémentaire: ${patientAssurance2} (${tauxAffiche})\n`;
-        if (tauxTempModifie) {
-            msg += `   (taux habituel: ${patientTaux2Original}%)\n`;
-        }
-    }
-    msg += `\n📦 ${articles.length} acte(s)\n`;
-    msg += `💰 Total: ${Math.round(sousTotal).toLocaleString('fr-FR')} FCFA\n\n`;
-    msg += `Confirmer ?`;
-    
-    if (!confirm(msg)) return;
-    
-    showProgress('Création de la proforma...', 'Enregistrement en cours...');
-    
-    fetch('/api/proformas', {
+            quantite: item.quantite,
+            prise_en_charge_amu: item.prise_en_charge_amu !== false,
+            prise_en_charge_cac: item.prise_en_charge_cac !== false,
+        };
+    });
+
+    fetch('/api/ventes-en-attente/creer', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(proformaData)
+        body: JSON.stringify({ type: 'actes', articles: articles, sous_total: sousTotal })
     })
     .then(r => r.json())
     .then(data => {
-        hideProgress();
+        btn.innerHTML = originalText;
         if (data.success) {
-            alert(`✅ Proforma #${data.numero} créée !\nNet à payer: ${Math.round(data.net_a_payer).toLocaleString('fr-FR')} FCFA`);
-            if (confirm('Imprimer la proforma ?')) {
-                window.open(`/proforma/${data.id}/print`, '_blank');
-            }
+            alert(`✅ Vente en attente soumise !\n\n` +
+                  `Code à communiquer au patient : #${data.numero_local}\n\n` +
+                  `Le patient doit se présenter à la caisse avec ce code pour finaliser le paiement.`);
             panier = [];
-            afficherPanier();
-            chargerProformaBadge();
+            afficherPanier();  // remet aussi venteAttenteBtn.disabled à jour (panier vide)
+            if (typeof chargerVenteAttenteBadge === 'function') chargerVenteAttenteBadge();
         } else {
-            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+            btn.disabled = false;
+            alert('Erreur : ' + (data.error || 'inconnue'));
         }
     })
     .catch(error => {
-        hideProgress();
-        alert('Erreur: ' + error);
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        alert('Erreur : ' + error);
     });
 }
 
@@ -2595,11 +2546,36 @@ function chargerProformaBadge() {
 }
 
 // ============================================
+// FINALISATION D'UNE VENTE EN ATTENTE
+// ============================================
+// ⭐ Panier repris TEL QUEL (nom/prix/pbr/quantite/prise_en_charge_amu/cac)
+// depuis ce qui a été soumis par l'admission — pas besoin de re-chercher
+// dans le catalogue (contrairement au chargement des prescriptions
+// ci-dessous, qui ne porte que des noms de médicaments) : ces articles
+// ont déjà toutes leurs infos de tarification.
+const VENTE_ATTENTE = {{ vente_attente|tojson|safe }};
+if (VENTE_ATTENTE) {
+    panier = VENTE_ATTENTE.articles.map(a => ({
+        nom: a.nom, prix: a.prix, pbr: a.pbr, quantite: a.quantite,
+        prise_en_charge_amu: a.prise_en_charge_amu !== false,
+        prise_en_charge_cac: a.prise_en_charge_cac !== false,
+    }));
+    // ⭐ Pas de resoumission possible d'une vente déjà en cours de
+    // finalisation — seul "Finaliser la vente" a un sens ici.
+    const btnVenteAttente = document.getElementById('venteAttenteBtn');
+    if (btnVenteAttente) btnVenteAttente.style.display = 'none';
+}
+
+// ============================================
 // CHARGEMENT AUTOMATIQUE DES PRESCRIPTIONS (ACTES)
 // ============================================
 document.addEventListener('DOMContentLoaded', function() {
     console.log('=== CHARGEMENT AUTOMATIQUE ACTES ===');
-    
+
+    if (VENTE_ATTENTE) {
+        afficherPanier();
+    }
+
     const articlesAuto = {{ articles_auto|tojson|safe }};
     console.log('📦 Articles reçus du backend:', articlesAuto);
     console.log('📦 Nombre d\'articles:', articlesAuto ? articlesAuto.length : 0);

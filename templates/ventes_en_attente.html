@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+
+{% block title %}Ventes en attente{% endblock %}
+
+{% block content %}
+        <div class="card">
+            <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h5 class="mb-0">
+                    <i class="fas fa-clock"></i> Ventes en attente
+                    <span class="badge bg-danger ms-1" id="compteurEnAttente">0</span>
+                </h5>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-dark btn-sm" id="btnToggleHistorique" onclick="basculerVue()">
+                        <i class="fas fa-history"></i> Voir l'historique
+                    </button>
+                    <button class="btn btn-light btn-sm" onclick="chargerListe()">
+                        <i class="fas fa-sync-alt"></i> Actualiser
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info small mb-3">
+                    <i class="fas fa-info-circle"></i>
+                    Une vente en attente est soumise depuis <strong>Actes&amp;Vente</strong> ou <strong>Pharmacie&amp;Vente</strong>
+                    sans patient choisi (service admission). Cliquez sur <strong>Finaliser</strong> pour sélectionner le patient
+                    et encaisser — l'écran est identique à une vente normale.
+                </div>
+
+                <!-- ⭐ Barre de recherche — patron : "il faut bare de recherche
+                     n'oublie pas". -->
+                <div class="row g-2 mb-3">
+                    <div class="col-md-4">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text"><i class="fas fa-search"></i></span>
+                            <input type="text" class="form-control" id="rechercheInput" placeholder="Code, article, créé par..." oninput="chargerListe()">
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select form-select-sm" id="filtreType" onchange="chargerListe()">
+                            <option value="">Tous les types</option>
+                            <option value="actes">Actes</option>
+                            <option value="pharmacie">Pharmacie</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Code</th>
+                                <th>Type</th>
+                                <th>Détail</th>
+                                <th class="text-end">Montant estimé</th>
+                                <th>Créée par</th>
+                                <th>Date</th>
+                                <th id="colStatutFinalisation" style="display:none;">Finalisation / Annulation</th>
+                                <th class="text-end">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="listeBody">
+                            <tr><td colspan="8" class="text-center text-muted py-4">Chargement…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-3">
+            <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Retour au tableau de bord
+            </a>
+        </div>
+
+<!-- MODAL ANNULATION -->
+<div class="modal fade" id="annulerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">Annuler la vente en attente</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="annulerId">
+                <p>Code concerné : <strong id="annulerCode"></strong></p>
+                <div class="mb-3">
+                    <label class="form-label">Motif (optionnel)</label>
+                    <textarea class="form-control" id="annulerMotif" rows="2" placeholder="Ex: patient reparti sans payer, erreur d'articles..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Retour</button>
+                <button class="btn btn-danger" id="btnConfirmerAnnulation" onclick="confirmerAnnulation()">
+                    <i class="fas fa-times-circle"></i> Confirmer l'annulation
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let VUE_ACTUELLE = 'en_attente';
+
+document.addEventListener('DOMContentLoaded', function() {
+    chargerListe();
+    chargerCompteur();
+    setInterval(chargerCompteur, 30000);
+});
+
+function basculerVue() {
+    VUE_ACTUELLE = (VUE_ACTUELLE === 'en_attente') ? 'historique' : 'en_attente';
+    const btn = document.getElementById('btnToggleHistorique');
+    const colStatut = document.getElementById('colStatutFinalisation');
+    if (VUE_ACTUELLE === 'historique') {
+        btn.innerHTML = '<i class="fas fa-clock"></i> Voir les ventes en attente';
+        colStatut.style.display = '';
+    } else {
+        btn.innerHTML = '<i class="fas fa-history"></i> Voir l\'historique';
+        colStatut.style.display = 'none';
+    }
+    chargerListe();
+}
+
+function chargerCompteur() {
+    fetch('/api/ventes-en-attente/count')
+        .then(r => r.json())
+        .then(data => { document.getElementById('compteurEnAttente').textContent = data.count || 0; })
+        .catch(() => {});
+}
+
+function chargerListe() {
+    const q = document.getElementById('rechercheInput').value.trim();
+    const type = document.getElementById('filtreType').value;
+    let url = `/api/ventes-en-attente/liste?statut=${VUE_ACTUELLE}`;
+    if (q) url += `&q=${encodeURIComponent(q)}`;
+
+    fetch(url)
+        .then(r => r.json())
+        .then(liste => {
+            if (type) liste = liste.filter(v => v.type === type);
+            afficherListe(liste);
+        })
+        .catch(() => {
+            document.getElementById('listeBody').innerHTML =
+                '<tr><td colspan="8" class="text-center text-danger py-4">Erreur de chargement</td></tr>';
+        });
+}
+
+function afficherListe(liste) {
+    const tbody = document.getElementById('listeBody');
+    if (!liste || liste.length === 0) {
+        const texte = VUE_ACTUELLE === 'historique' ? 'Aucune vente en attente finalisée/annulée' : 'Aucune vente en attente pour le moment';
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">${texte}</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = liste.map(v => {
+        const typeLabel = v.type === 'actes' ? '<span class="badge bg-primary">Actes</span>' : '<span class="badge bg-success">Pharmacie</span>';
+        const routeFinalisation = v.type === 'actes' ? 'actes_vente' : 'pharma_vente';
+
+        let statutCell = '';
+        if (v.statut === 'finalisee') {
+            statutCell = `<span class="badge bg-success">Finalisée</span><br><small class="text-muted">par ${v.finalise_par || '-'} le ${v.finalise_at || ''}</small>`;
+        } else if (v.statut === 'annulee') {
+            statutCell = `<span class="badge bg-secondary">Annulée</span><br><small class="text-muted">par ${v.annule_par || '-'}${v.motif_annulation ? ' — ' + v.motif_annulation : ''}</small>`;
+        }
+
+        let action = '';
+        if (v.statut === 'en_attente') {
+            action = `
+                <a href="/${routeFinalisation}?finaliser_attente=${v.id}" class="btn btn-sm btn-success" title="Finaliser">
+                    <i class="fas fa-check-circle"></i> Finaliser
+                </a>
+                <button class="btn btn-sm btn-outline-danger" onclick="ouvrirAnnulation(${v.id}, '${v.numero_local}')" title="Annuler">
+                    <i class="fas fa-times"></i>
+                </button>`;
+        } else if (v.statut === 'finalisee' && v.vente_id) {
+            action = `<span class="text-muted small">Vente #${v.vente_id}</span>`;
+        } else {
+            action = '<span class="text-muted">—</span>';
+        }
+
+        return `<tr>
+            <td><strong>#${v.numero_local}</strong></td>
+            <td>${typeLabel}</td>
+            <td><small>${v.detail} (${v.nb_articles} article${v.nb_articles > 1 ? 's' : ''})</small></td>
+            <td class="text-end">${Math.round(v.sous_total).toLocaleString('fr-FR')} FCFA</td>
+            <td><small>${v.created_by || '-'}</small></td>
+            <td><small>${v.created_at}</small></td>
+            ${VUE_ACTUELLE === 'historique' ? `<td>${statutCell}</td>` : ''}
+            <td class="text-end">${action}</td>
+        </tr>`;
+    }).join('');
+}
+
+function ouvrirAnnulation(id, code) {
+    document.getElementById('annulerId').value = id;
+    document.getElementById('annulerCode').textContent = '#' + code;
+    document.getElementById('annulerMotif').value = '';
+    new bootstrap.Modal(document.getElementById('annulerModal')).show();
+}
+
+function confirmerAnnulation() {
+    const id = document.getElementById('annulerId').value;
+    const motif = document.getElementById('annulerMotif').value.trim();
+    const btn = document.getElementById('btnConfirmerAnnulation');
+    btn.disabled = true;
+
+    fetch(`/api/ventes-en-attente/${id}/annuler`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ motif: motif })
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('annulerModal')).hide();
+            chargerListe();
+            chargerCompteur();
+        } else {
+            alert('Erreur : ' + (data.error || 'inconnue'));
+        }
+    })
+    .catch(error => {
+        btn.disabled = false;
+        alert('Erreur : ' + error);
+    });
+}
+</script>
+{% endblock %}
