@@ -1315,15 +1315,48 @@
             max-width: 32vw;
         }
 
-        /* ⭐ Sur fenêtre desktop étroite (ex: 1100px, pas juste tablette/
+        /* ⭐ Sur fenêtre desktop courante (1280-1400px, pas juste tablette/
            mobile déjà exclues par d-none d-md-block), 420px + horloge +
-           cloche + compte dépassait de la navbar — repli plus modeste,
-           toujours plus large que les 260px d'origine. */
-        @media (max-width: 1200px) {
+           cloche + compte dépassait de la navbar, poussant le bouton du
+           compte hors de l'écran — patron : "le nom de l'utilisateur est
+           un peu caché sur mon desktop". Repli plus modeste, toujours
+           plus large que les 260px d'origine. Seuil aligné avec celui de
+           l'horloge ci-dessous : les deux replis arrivent ensemble. */
+        @media (max-width: 1400px) {
             .global-search-wrapper {
                 width: 280px;
             }
         }
+
+        /* ⭐ L'horloge affiche "Lundi 21 Septembre 2026" en entier — près de
+           240px à elle seule, la plus grosse responsable du débordement
+           de la navbar avec la barre de recherche élargie (voir plus
+           haut). Garder la date complète sur grand écran, ne montrer que
+           l'heure en dessous — c'est ce qui libère le plus de place d'un
+           coup pour que le reste (recherche, nom d'utilisateur) tienne. */
+        @media (max-width: 1400px) {
+            #dateActuelle {
+                display: none;
+            }
+        }
+
+        /* ⭐ Nom d'utilisateur toujours visible, jamais coupé hors de
+           l'écran — voir le commentaire sur le bouton du compte
+           (base.html) pour le contexte complet. */
+        .user-name-text {
+            display: inline-block;
+            max-width: 130px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            vertical-align: middle;
+        }
+        @media (max-width: 1400px) {
+            .user-name-text {
+                max-width: 90px;
+            }
+        }
+
         .global-search-results {
             position: absolute;
             top: calc(100% + 6px);
@@ -1996,14 +2029,20 @@
             {% endif %}
 
             <div class="dropdown">
-                <button class="btn btn-light rounded-pill dropdown-toggle d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown">
-                    <!-- ⭐ Indicateur "connecté" déplacé ici, devant le nom —
-                         patron : "le nom d'utilisateur bien dans le coin à
-                         droite et devant ce nom on devrait mettre le signal
-                         de connexion en violet là" (voir CSS
-                         .statut-connexion-dot et verifierEtatSynchro()). -->
+                <!-- ⭐ Patron : "le nom de l'utilisateur est un peu caché sur
+                     mon desktop, ça devrait tenir et être bien visible" —
+                     un session.user_name long (ex: le nom de la structure
+                     elle-même pour un compte admin/propriétaire, comme
+                     "HOPITAL CENTRAL DE LOME") faisait déborder ce bouton
+                     hors de l'écran (navbar en nowrap, rien ne le
+                     rétrécissait) au lieu de simplement s'afficher tronqué.
+                     .user-name-text le limite à une largeur fixe avec
+                     "..." — le bouton tient TOUJOURS dans la navbar, et le
+                     nom complet reste lisible via l'infobulle (title). -->
+                <button class="btn btn-light rounded-pill dropdown-toggle d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown" title="{{ session.user_name|default('Utilisateur') }}">
                     <span class="statut-connexion-dot" id="statutConnexionDot" title="Connecté au serveur principal"></span>
-                    <i class="fas fa-user-circle"></i> {{ session.user_name|default('Utilisateur') }}
+                    <i class="fas fa-user-circle"></i>
+                    <span class="user-name-text">{{ session.user_name|default('Utilisateur') }}</span>
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end">
                     <li><a class="dropdown-item" href="{{ url_for('dashboard') }}"><i class="fas fa-tachometer-alt"></i> Tableau de bord</a></li>
