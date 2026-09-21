@@ -1291,6 +1291,60 @@
         /* ============================================
            FULLSCREEN - CONSERVÉ
            ============================================ */
+        /* ⭐ RECHERCHE GLOBALE — voir le commentaire au-dessus de
+           #rechercheGlobaleInput dans le HTML pour le contexte. */
+        .global-search-wrapper {
+            position: relative;
+            width: 260px;
+        }
+        .global-search-results {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            right: 0;
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+            max-height: 420px;
+            overflow-y: auto;
+            z-index: 2000;
+            min-width: 320px;
+        }
+        .global-search-group-label {
+            padding: 6px 14px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #94a3b8;
+            font-weight: 700;
+            background: #f8fafc;
+        }
+        .global-search-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            color: #1e293b;
+            text-decoration: none;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .global-search-item:hover {
+            background: #f8fafc;
+        }
+        .global-search-item i {
+            color: #64748b;
+            width: 18px;
+            text-align: center;
+        }
+        .global-search-item-titre {
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .global-search-item-sous {
+            font-size: 11px;
+            color: #64748b;
+        }
+
         #fullscreenBtn {
             transition: all 0.3s ease;
         }
@@ -1850,6 +1904,22 @@
         
         {% if session.user_id %}
         <div class="ms-auto d-flex align-items-center gap-3">
+            <!-- ⭐ RECHERCHE GLOBALE — patron : "on recherche un truc, on ne
+                 sait plus c'est dans quel onglet, on tape ça et ça vient".
+                 Une seule barre, toujours visible dans le menu du haut,
+                 qui cherche à travers patients/ventes/proformas/
+                 hospitalisations/soins ambulatoires/rendez-vous/
+                 prescriptions (voir /api/recherche-globale, app.py). -->
+            <div class="global-search-wrapper d-none d-md-block">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-white border-end-0"><i class="fas fa-search text-muted"></i></span>
+                    <input type="text" id="rechercheGlobaleInput" class="form-control border-start-0"
+                           placeholder="Rechercher (patient, vente, RDV...)" autocomplete="off"
+                           oninput="rechercheGlobaleSaisie()" onfocus="rechercheGlobaleSaisie()">
+                </div>
+                <div id="rechercheGlobaleResultats" class="global-search-results" style="display:none;"></div>
+            </div>
+
             <!-- Horloge temps réel -->
             <div class="d-none d-md-block" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); padding: 8px 18px; border-radius: 40px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
                 <div id="horloge" class="d-flex align-items-center gap-2">
@@ -2981,6 +3051,93 @@ function chargerVenteAttenteBadge() {
         })
         .catch(() => {});
 }
+
+// ============================================================
+// RECHERCHE GLOBALE — voir #rechercheGlobaleInput plus haut et
+// /api/recherche-globale (app.py) pour le contexte complet.
+// ============================================================
+let rechercheGlobaleTimeout = null;
+
+function rechercheGlobaleSaisie() {
+    clearTimeout(rechercheGlobaleTimeout);
+    const q = document.getElementById('rechercheGlobaleInput').value.trim();
+    const panel = document.getElementById('rechercheGlobaleResultats');
+    if (q.length < 2) {
+        panel.style.display = 'none';
+        panel.innerHTML = '';
+        return;
+    }
+    rechercheGlobaleTimeout = setTimeout(() => {
+        fetch('/api/recherche-globale?q=' + encodeURIComponent(q))
+            .then(r => r.json())
+            .then(resultats => afficherResultatsRechercheGlobale(resultats, q))
+            .catch(() => { panel.style.display = 'none'; });
+    }, 300);
+}
+
+const ICONES_RECHERCHE_GLOBALE = {
+    patient: 'fa-user', vente: 'fa-cash-register', proforma: 'fa-file-invoice-dollar',
+    hospitalisation: 'fa-bed', soins_ambulatoire: 'fa-walking',
+    rendez_vous: 'fa-calendar-check', prescription: 'fa-prescription-bottle-alt',
+};
+const LABELS_RECHERCHE_GLOBALE = {
+    patient: 'Patients', vente: 'Ventes', proforma: 'Proformas',
+    hospitalisation: 'Hospitalisations', soins_ambulatoire: 'Soins ambulatoires',
+    rendez_vous: 'Rendez-vous', prescription: 'Prescriptions reçues',
+};
+
+function urlResultatRechercheGlobale(r) {
+    switch (r.categorie) {
+        case 'patient': return '/patients?rechercher=' + encodeURIComponent(r.nom_complet || r.titre || '');
+        case 'vente': return `/facture/${r.id}/${r.vente_type || 'actes'}`;
+        case 'proforma': return `/proforma/${r.id}/print`;
+        case 'hospitalisation': return `/hospitalisation/${r.id}`;
+        case 'soins_ambulatoire': return `/soins-ambulatoires/${r.id}`;
+        case 'rendez_vous': return '/rendez_vous';
+        case 'prescription': return '/prescriptions-recues';
+        default: return '#';
+    }
+}
+
+function echapperHtmlRechercheGlobale(texte) {
+    const div = document.createElement('div');
+    div.textContent = texte || '';
+    return div.innerHTML;
+}
+
+function afficherResultatsRechercheGlobale(resultats, q) {
+    const panel = document.getElementById('rechercheGlobaleResultats');
+    if (!resultats || resultats.length === 0) {
+        panel.innerHTML = `<div class="p-3 text-center text-muted small">Aucun résultat pour "${echapperHtmlRechercheGlobale(q)}"</div>`;
+        panel.style.display = 'block';
+        return;
+    }
+    const groupes = {};
+    resultats.forEach(r => { (groupes[r.categorie] = groupes[r.categorie] || []).push(r); });
+    let html = '';
+    Object.keys(groupes).forEach(cat => {
+        html += `<div class="global-search-group-label">${LABELS_RECHERCHE_GLOBALE[cat] || cat}</div>`;
+        groupes[cat].forEach(r => {
+            html += `<a class="global-search-item" href="${urlResultatRechercheGlobale(r)}">
+                <i class="fas ${ICONES_RECHERCHE_GLOBALE[cat] || 'fa-circle'}"></i>
+                <div>
+                    <div class="global-search-item-titre">${echapperHtmlRechercheGlobale(r.titre)}</div>
+                    ${r.sous_titre ? `<div class="global-search-item-sous">${echapperHtmlRechercheGlobale(r.sous_titre)}</div>` : ''}
+                </div>
+            </a>`;
+        });
+    });
+    panel.innerHTML = html;
+    panel.style.display = 'block';
+}
+
+document.addEventListener('click', function(e) {
+    const wrapper = document.querySelector('.global-search-wrapper');
+    const panel = document.getElementById('rechercheGlobaleResultats');
+    if (wrapper && panel && !wrapper.contains(e.target)) {
+        panel.style.display = 'none';
+    }
+});
 
 // ============================================================
 // INITIALISATION

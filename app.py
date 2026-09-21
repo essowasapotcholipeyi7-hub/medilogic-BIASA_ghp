@@ -1830,11 +1830,159 @@ def patients():
                     })
         
         return render_template('patients.html', patients=patients_list)
-        
+
     except Exception as e:
         print(f"❌ Erreur: {e}")
         flash(f'Erreur: {str(e)}', 'error')
         return render_template('patients.html', patients=[])
+
+
+# ============================================================
+# RECHERCHE GLOBALE — patron : "on recherche un truc, on ne sait plus
+# c'est dans quel onglet, on tape ça et ça vient". Une seule barre dans le
+# menu du haut qui cherche à travers patients/ventes/proformas/
+# hospitalisations/soins ambulatoires/rendez-vous/prescriptions, chacune
+# scopée à la structure comme partout ailleurs. Chaque table est
+# interrogée indépendamment (try/except) pour qu'une erreur sur l'une
+# n'empêche pas les résultats des autres.
+# ============================================================
+def _ligne_recherche(row, colonnes):
+    if isinstance(row, dict):
+        return row
+    return dict(zip(colonnes, row))
+
+
+@app.route('/api/recherche-globale', methods=['GET'])
+@login_required
+def api_recherche_globale():
+    structure_id = session.get('structure_id')
+    q = (request.args.get('q') or '').strip()
+    if len(q) < 2:
+        return jsonify([])
+    like = f"%{q}%"
+    resultats = []
+
+    try:
+        cols = ['id', 'nom', 'prenom', 'telephone']
+        rows = db.execute_query(f"""
+            SELECT {', '.join(cols)} FROM patients
+            WHERE structure_id = %s AND (nom ILIKE %s OR prenom ILIKE %s OR telephone ILIKE %s)
+            ORDER BY id DESC LIMIT 5
+        """, (structure_id, like, like, like)) or []
+        for r in rows:
+            r = _ligne_recherche(r, cols)
+            nom_complet = f"{r.get('nom') or ''} {r.get('prenom') or ''}".strip()
+            resultats.append({
+                'categorie': 'patient', 'id': r.get('id'), 'titre': nom_complet or 'Patient',
+                'sous_titre': r.get('telephone') or '', 'nom_complet': nom_complet,
+            })
+    except Exception as e:
+        print(f"❌ Recherche globale (patients): {e}")
+
+    try:
+        cols = ['id', 'patient_nom', 'type', 'net_a_payer', 'numero_local']
+        rows = db.execute_query(f"""
+            SELECT {', '.join(cols)} FROM ventes
+            WHERE structure_id = %s AND (patient_nom ILIKE %s OR CAST(numero_local AS TEXT) = %s)
+            ORDER BY id DESC LIMIT 5
+        """, (structure_id, like, q)) or []
+        for r in rows:
+            r = _ligne_recherche(r, cols)
+            resultats.append({
+                'categorie': 'vente', 'id': r.get('id'), 'vente_type': r.get('type'),
+                'titre': f"Vente #{r.get('numero_local') or r.get('id')} — {r.get('patient_nom') or ''}",
+                'sous_titre': f"{round(r.get('net_a_payer') or 0):,}".replace(',', ' ') + ' FCFA',
+            })
+    except Exception as e:
+        print(f"❌ Recherche globale (ventes): {e}")
+
+    try:
+        cols = ['id', 'patient_nom', 'numero_proforma', 'net_a_payer']
+        rows = db.execute_query(f"""
+            SELECT {', '.join(cols)} FROM proformas
+            WHERE structure_id = %s AND (patient_nom ILIKE %s OR CAST(numero_proforma AS TEXT) = %s)
+            ORDER BY id DESC LIMIT 5
+        """, (structure_id, like, q)) or []
+        for r in rows:
+            r = _ligne_recherche(r, cols)
+            resultats.append({
+                'categorie': 'proforma', 'id': r.get('id'),
+                'titre': f"Proforma #{r.get('numero_proforma') or r.get('id')} — {r.get('patient_nom') or ''}",
+                'sous_titre': f"{round(r.get('net_a_payer') or 0):,}".replace(',', ' ') + ' FCFA',
+            })
+    except Exception as e:
+        print(f"❌ Recherche globale (proformas): {e}")
+
+    try:
+        cols = ['id', 'patient_nom', 'numero_local', 'statut']
+        rows = db.execute_query(f"""
+            SELECT {', '.join(cols)} FROM hospitalisations
+            WHERE structure_id = %s AND (patient_nom ILIKE %s OR CAST(numero_local AS TEXT) = %s)
+            ORDER BY id DESC LIMIT 5
+        """, (structure_id, like, q)) or []
+        for r in rows:
+            r = _ligne_recherche(r, cols)
+            resultats.append({
+                'categorie': 'hospitalisation', 'id': r.get('id'),
+                'titre': f"Séjour #{r.get('numero_local') or r.get('id')} — {r.get('patient_nom') or ''}",
+                'sous_titre': r.get('statut') or '',
+            })
+    except Exception as e:
+        print(f"❌ Recherche globale (hospitalisations): {e}")
+
+    try:
+        cols = ['id', 'patient_nom', 'numero_local', 'motif']
+        rows = db.execute_query(f"""
+            SELECT {', '.join(cols)} FROM soins_ambulatoires
+            WHERE structure_id = %s AND (patient_nom ILIKE %s OR motif ILIKE %s OR CAST(numero_local AS TEXT) = %s)
+            ORDER BY id DESC LIMIT 5
+        """, (structure_id, like, like, q)) or []
+        for r in rows:
+            r = _ligne_recherche(r, cols)
+            resultats.append({
+                'categorie': 'soins_ambulatoire', 'id': r.get('id'),
+                'titre': f"Épisode #{r.get('numero_local') or r.get('id')} — {r.get('patient_nom') or ''}",
+                'sous_titre': r.get('motif') or '',
+            })
+    except Exception as e:
+        print(f"❌ Recherche globale (soins ambulatoires): {e}")
+
+    try:
+        cols = ['id', 'patient_nom', 'motif']
+        rows = db.execute_query(f"""
+            SELECT {', '.join(cols)} FROM rendez_vous
+            WHERE structure_id = %s AND (patient_nom ILIKE %s OR patient_telephone ILIKE %s OR motif ILIKE %s)
+            ORDER BY id DESC LIMIT 5
+        """, (structure_id, like, like, like)) or []
+        for r in rows:
+            r = _ligne_recherche(r, cols)
+            resultats.append({
+                'categorie': 'rendez_vous', 'id': r.get('id'),
+                'titre': f"Rendez-vous — {r.get('patient_nom') or ''}",
+                'sous_titre': r.get('motif') or '',
+            })
+    except Exception as e:
+        print(f"❌ Recherche globale (rendez-vous): {e}")
+
+    try:
+        cols = ['id', 'patient_nom', 'patient_prenom', 'medicament']
+        rows = db.execute_query(f"""
+            SELECT {', '.join(cols)} FROM prescriptions_recues
+            WHERE structure_id = %s AND (patient_nom ILIKE %s OR patient_prenom ILIKE %s OR medicament ILIKE %s)
+            ORDER BY id DESC LIMIT 5
+        """, (structure_id, like, like, like)) or []
+        for r in rows:
+            r = _ligne_recherche(r, cols)
+            resultats.append({
+                'categorie': 'prescription', 'id': r.get('id'),
+                'titre': f"Prescription — {r.get('patient_nom') or ''} {r.get('patient_prenom') or ''}".strip(),
+                'sous_titre': r.get('medicament') or '',
+            })
+    except Exception as e:
+        print(f"❌ Recherche globale (prescriptions): {e}")
+
+    return jsonify(resultats[:40])
+
 
 @app.route('/api/compagnies-complementaires', methods=['GET'])
 @login_required
