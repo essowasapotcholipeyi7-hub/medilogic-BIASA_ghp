@@ -7231,6 +7231,53 @@ def _log_mouvement_stock(structure_id, produit_id, produit_nom, type_mouvement,
         print(f"⚠️ Erreur journalisation mouvement stock ({type_mouvement}, produit {produit_id}): {e}")
 
 
+def _decrementer_stock_produit(worksheet, produit_id, quantite_vendue, produit_nom,
+                                structure_id, vente_id, user_nom):
+    """Décrémente le stock d'UN SEUL produit dans Google Sheets — patron :
+    "la valeur du stock devrait diminuer au fur et à mesure... la valeur
+    ne devrait pas être la même" après une vente. Isolé par produit :
+    avant ce correctif, les deux points d'appel enveloppaient TOUTE la
+    boucle du panier dans un seul try/except — l'échec d'UN SEUL produit
+    (ID introuvable, cellule stock vide/texte au lieu d'un nombre, quota
+    Google Sheets dépassé...) faisait sauter la mise à jour de TOUS les
+    autres produits du même panier ET le clear_cache() qui suit,
+    silencieusement (juste un print() jamais vu en production) alors que
+    la vente elle-même était déjà encaissée. Retourne (succès, message
+    d'erreur ou None)."""
+    try:
+        cell = worksheet.find(produit_id, in_column=1)
+        if not cell:
+            msg = f"produit ID {produit_id} ({produit_nom}) introuvable dans le stock"
+            print(f"   ❌ {msg}")
+            return False, msg
+
+        row_num = cell.row
+        current_row = worksheet.row_values(row_num)
+        valeur_brute = current_row[5] if len(current_row) > 5 else ''
+        try:
+            stock_actuel = int(valeur_brute) if str(valeur_brute).strip() != '' else 0
+        except (ValueError, TypeError):
+            print(f"   ⚠️ Valeur de stock illisible pour {produit_nom} (ligne {row_num}): {valeur_brute!r} — traitée comme 0")
+            stock_actuel = 0
+
+        nouveau_stock = stock_actuel - quantite_vendue
+        if nouveau_stock < 0:
+            print(f"   ⚠️ Stock négatif! {produit_nom}: {stock_actuel} - {quantite_vendue} = {nouveau_stock}")
+            nouveau_stock = 0
+
+        worksheet.update_cell(row_num, 6, nouveau_stock)  # Colonne F = index 6 (1-based)
+        print(f"   ✅ Stock Sheets mis à jour pour {produit_nom}: {stock_actuel} → {nouveau_stock}")
+        _log_mouvement_stock(structure_id, produit_id, produit_nom, 'vente',
+                              -quantite_vendue, nouveau_stock,
+                              reference_type='vente', reference_id=vente_id,
+                              user_nom=user_nom)
+        return True, None
+    except Exception as e:
+        msg = f"échec mise à jour stock pour {produit_nom} (ID {produit_id}): {e}"
+        print(f"   ❌ {msg}")
+        return False, msg
+
+
 def _peut_valider_demandes():
     """Vrai pour l'admin (propriétaire de la structure) ET pour le rôle
     'gestionnaire' — celui-ci peut désormais valider/refuser les demandes en
@@ -8132,43 +8179,32 @@ def api_vente_pharma():
         
         
         # ========== 4. METTRE À JOUR LE STOCK DANS GOOGLE SHEETS ==========
+        # ⭐ Chaque produit isolé via _decrementer_stock_produit() — patron :
+        # "la valeur du stock ne devrait pas être la même" après une vente.
+        # clear_cache() doit s'exécuter même si un produit du panier a
+        # échoué, sinon les AUTRES produits mis à jour restent invisibles
+        # jusqu'à expiration naturelle du cache (10s).
         try:
             sheet_name = f"struct_{structure_id}_produits"
             print(f"   📂 Accès à la feuille: {sheet_name}")
-            
+
             worksheet = sheets_helper.spreadsheet.worksheet(sheet_name)
-            
+            echecs_stock = []
+
             for produit in produits_data:
                 produit_id = str(produit.get('id'))
                 quantite_vendue = int(produit.get('quantite') or 0)
                 produit_nom = produit.get('nom', 'Inconnu')
-                
+
                 print(f"   🔍 Recherche du produit ID: {produit_id} - {produit_nom}")
-                
-                cell = worksheet.find(produit_id, in_column=1)
-                if cell:
-                    row_num = cell.row
-                    current_row = worksheet.row_values(row_num)
-                    # 🔥 Stock est en colonne F (index 5) car PBR est en colonne D (index 3)
-                    stock_actuel = int(current_row[5]) if len(current_row) > 5 else 0
-                    nouveau_stock = stock_actuel - quantite_vendue
-                    
-                    if nouveau_stock < 0:
-                        print(f"   ⚠️ Stock négatif! {produit_nom}: {stock_actuel} - {quantite_vendue} = {nouveau_stock}")
-                        nouveau_stock = 0
-                    
-                    print(f"   📊 Stock: {stock_actuel} → {nouveau_stock}")
-                    worksheet.update_cell(row_num, 6, nouveau_stock)  # 🔥 Colonne F = index 6 (1-based)
-                    print(f"   ✅ Stock Sheets mis à jour pour {produit_nom}")
-                    _log_mouvement_stock(structure_id, produit_id, produit_nom, 'vente',
-                                          -quantite_vendue, nouveau_stock,
-                                          reference_type='vente', reference_id=vente_id,
-                                          user_nom=vendeur)
-                else:
-                    print(f"   ❌ Produit ID {produit_id} non trouvé dans Sheets!")
-                    print(f"   📋 IDs disponibles: {worksheet.col_values(1)}")
+                ok, err = _decrementer_stock_produit(worksheet, produit_id, quantite_vendue,
+                                                      produit_nom, structure_id, vente_id, vendeur)
+                if not ok:
+                    echecs_stock.append(err)
 
             sheets_helper.clear_cache(sheet_name)
+            if echecs_stock:
+                print(f"   ⚠️ Échecs mise à jour stock: {'; '.join(echecs_stock)}")
 
         except Exception as e:
             print(f"   ❌ ERREUR mise à jour stock Sheets: {e}")
@@ -14452,49 +14488,36 @@ def api_convertir_proforma():
             print(f"📋 Facture créée pour le reste à payer: {reste_a_payer} FCFA")
         
         # ========== 🔥🔥🔥 METTRE À JOUR LE STOCK (UNIQUEMENT POUR LES PRODUITS) 🔥🔥🔥 ==========
+        # ⭐ Chaque produit isolé via _decrementer_stock_produit() — voir son
+        # commentaire (même correctif que api_vente_pharma pour la même
+        # raison : "la valeur du stock ne devrait pas être la même").
         try:
             sheet_name = f"struct_{structure_id}_produits"
             print(f"   📂 Accès à la feuille: {sheet_name}")
-            
+
             worksheet = sheets_helper.spreadsheet.worksheet(sheet_name)
-            
+
             # 🔥 Filtrer uniquement les produits
             produits_vendus = [a for a in articles_transformes if a.get('type') == 'produit' and a.get('id')]
-            
+
             if produits_vendus:
                 print(f"📦 {len(produits_vendus)} produit(s) à mettre à jour dans le stock")
-                
+                echecs_stock = []
+
                 for article in produits_vendus:
                     produit_id = str(article.get('id'))
                     quantite_vendue = int(article.get('quantite') or 0)
                     produit_nom = article.get('nom', 'Inconnu')
-                    
+
                     print(f"   🔍 Recherche du produit ID: {produit_id} - {produit_nom}")
-                    
-                    # Chercher le produit dans la feuille
-                    cell = worksheet.find(produit_id, in_column=1)
-                    if cell:
-                        row_num = cell.row
-                        current_row = worksheet.row_values(row_num)
-                        # Stock est en colonne F (index 5)
-                        stock_actuel = int(current_row[5]) if len(current_row) > 5 else 0
-                        nouveau_stock = stock_actuel - quantite_vendue
-                        
-                        if nouveau_stock < 0:
-                            print(f"   ⚠️ Stock négatif! {produit_nom}: {stock_actuel} - {quantite_vendue} = {nouveau_stock}")
-                            nouveau_stock = 0
-                        
-                        print(f"   📊 Stock: {stock_actuel} → {nouveau_stock}")
-                        worksheet.update_cell(row_num, 6, nouveau_stock)  # Colonne F = index 6
-                        print(f"   ✅ Stock Sheets mis à jour pour {produit_nom}")
-                        _log_mouvement_stock(structure_id, produit_id, produit_nom, 'vente',
-                                              -quantite_vendue, nouveau_stock,
-                                              reference_type='vente', reference_id=vente_id,
-                                              user_nom=user_name)
-                    else:
-                        print(f"   ❌ Produit ID {produit_id} non trouvé dans Sheets!")
+                    ok, err = _decrementer_stock_produit(worksheet, produit_id, quantite_vendue,
+                                                          produit_nom, structure_id, vente_id, user_name)
+                    if not ok:
+                        echecs_stock.append(err)
 
                 sheets_helper.clear_cache(sheet_name)
+                if echecs_stock:
+                    print(f"   ⚠️ Échecs mise à jour stock: {'; '.join(echecs_stock)}")
             else:
                 print("ℹ️ Aucun produit à mettre à jour (seulement des actes)")
 
