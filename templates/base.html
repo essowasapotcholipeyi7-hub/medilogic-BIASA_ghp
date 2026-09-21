@@ -1979,7 +1979,12 @@
             <a class="nav-link-top" href="#" onclick="return false;">
                 Soins&actes&vente <i class="fas fa-chevron-down arrow"></i>
             </a>
-            <div class="mega-menu large">
+            <!-- ⭐ "large" (grille 2 colonnes) retirée — seul ce menu
+                 l'utilisait, ce qui le désalignait visuellement de tous les
+                 autres (Finances, Pharmacie...), en simple colonne — patron :
+                 "il faut aligner les onglets... telle que c'est dans finance
+                 par exemple". -->
+            <div class="mega-menu">
                 {% if not onglet_cache('consultation') %}
                 <a class="menu-item" href="{{ url_for('consultation') }}">
                     Consultation

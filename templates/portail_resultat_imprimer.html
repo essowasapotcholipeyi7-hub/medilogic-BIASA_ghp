@@ -122,7 +122,10 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
         </div>
 
         <div class="text-center mt-3 no-print">
+            <!-- ⭐ Masqué pour un fichier importé, voir resultat_imprimer.html. -->
+            {% if not resultat.fichier_data %}
             <button onclick="window.print()" class="btn btn-primary btn-sm"><i class="fas fa-print"></i> Imprimer / Enregistrer en PDF</button>
+            {% endif %}
             <a href="{{ url_for('page_portail_resultats') }}" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</a>
         </div>
     </div>

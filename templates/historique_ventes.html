@@ -1189,6 +1189,7 @@ function imprimerHistorique() {
     html += '.badge-mixte{background:#8b5cf6;color:white;padding:2px 6px;border-radius:3px;}';  // 🔥 NOUVEAU
     html += '.badge-assure{background:#28a745;color:white;padding:2px 6px;border-radius:3px;}';
     html += '.badge-non-assure{background:#6c757d;color:white;padding:2px 6px;border-radius:3px;}';
+    html += '.badge-aide{background:#ffc107;color:#333;padding:2px 6px;border-radius:3px;}';
     html += '.text-success{color:#28a745;}';
     html += '.text-danger{color:#dc3545;}';
     html += '.detail-cell{font-size:10px;color:#555;max-width:200px;}';
@@ -1246,6 +1247,9 @@ function imprimerHistorique() {
     // AMU, ou les deux).
     var cacCount = ventesFiltrees.filter(function(v) { return !!v.assurance2_nom; }).length;
 
+    // ⭐ NOUVEAU : compte des ventes avec une aide hospitalière apportée.
+    var aideCount = ventesFiltrees.filter(function(v) { return (v.aide_hospitaliere || 0) > 0; }).length;
+
     html += '<div class="summary">';
     html += '<div class="summary-item"><strong>Total ventes</strong><br>' + ventesFiltrees.length + '</div>';
     html += '<div class="summary-item"><strong>CA (espèces)</strong><br>' + Math.round(totalCA).toLocaleString('fr-FR') + ' F</div>';
@@ -1255,6 +1259,7 @@ function imprimerHistorique() {
     html += '<div class="summary-item"><strong style="color:#28a745;">Assurés (AMU)</strong><br>' + assuresCount + '</div>';
     html += '<div class="summary-item"><strong style="color:#6c757d;">Non assurés</strong><br>' + nonAssuresCount + '</div>';
     html += '<div class="summary-item"><strong style="color:#20c997;">Avec CAC</strong><br>' + cacCount + '</div>';
+    html += '<div class="summary-item"><strong style="color:#e0a800;">Avec aide</strong><br>' + aideCount + '</div>';
     html += '</div>';
     
     html += '<table>';
@@ -1341,11 +1346,22 @@ function imprimerHistorique() {
                 (v.societe_assurance2 ? ' (' + v.societe_assurance2 + ')' : '') + '</span>';
         }
 
+        // ⭐ NOUVEAU : aide hospitalière apportée sur cette vente, si elle
+        // existe — patron : "je veux qu'on affiche sur l'impression l'aide
+        // apportée si on en a fait". Jusqu'ici seul le bouton séparé
+        // "Aides" (imprimerAides()) la montrait ; l'état principal ne la
+        // mentionnait nulle part.
+        var aideHtml = '';
+        if ((v.aide_hospitaliere || 0) > 0) {
+            aideHtml = '<br><span class="badge-aide">Aide ' + (v.taux_aide || 0) + '% : -' +
+                Math.round(v.aide_hospitaliere).toLocaleString('fr-FR') + ' F</span>';
+        }
+
         html += '<tr>';
         html += '<td>#' + (v.numero_local || v.ID || (i + 1)) + '</td>';
         html += '<td>' + dateStr + '</td>';
         html += '<td>' + (v.patient_nom || 'Patient') + '</td>';
-        html += '<td><span class="' + assureBadgeClass + '">' + assureLabel + '</span>' + cacHtml + '</td>';
+        html += '<td><span class="' + assureBadgeClass + '">' + assureLabel + '</span>' + cacHtml + aideHtml + '</td>';
         html += '<td><span class="' + badgeClass + '">' + typeLabel + '</span></td>';
         html += '<td class="detail-cell">' + details + '</td>';
         html += '<td class="text-end">' + Math.round(netAPayer).toLocaleString('fr-FR') + ' F</td>';

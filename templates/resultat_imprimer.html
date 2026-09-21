@@ -146,7 +146,17 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
         </div>
 
         <div class="text-center mt-3 no-print">
+            <!-- ⭐ Bouton "Imprimer" (window.print de CETTE page) masqué pour un
+                 fichier importé — patron : "pour l'impression d'un fichier
+                 importé c'est toujours le même problème... on enlève le
+                 bouton d'impression d'en bas... on laisse le bouton d'en
+                 haut c'est mieux pour imprimer le contenu". Le bouton du
+                 haut ("Imprimer le fichier original") imprime directement
+                 le fichier natif dans le visualiseur du navigateur — plus
+                 fiable qu'imprimer la page qui l'enrobe. -->
+            {% if not resultat.fichier_data %}
             <button onclick="window.print()" class="btn btn-primary btn-sm"><i class="fas fa-print"></i> Imprimer</button>
+            {% endif %}
             <button onclick="envoyerParEmail()" class="btn btn-success btn-sm"><i class="fas fa-envelope"></i> Envoyer par email</button>
             <a href="{{ url_for('page_resultats_analyses') }}" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</a>
         </div>
