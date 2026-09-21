@@ -115,6 +115,16 @@
                     <div class="col-md-3"><strong>Type :</strong> <span id="detailsType"></span></div>
                     <div class="col-md-3"><strong>Créée par :</strong> <span id="detailsCreePar"></span></div>
                 </div>
+                <!-- ⭐ Répartition AMU/CAC/Patient — patron : "ça doit suivre
+                     la logique de la page vente pour ne pas prêter à
+                     confusion" (avant : juste le sous-total clinique brut,
+                     sans tenir compte des assurances). Affiché seulement
+                     tant qu'aucun patient n'est encore rattaché, pour ne pas
+                     laisser croire que "0 F d'AMU/CAC" est déjà définitif. -->
+                <div class="alert alert-warning small py-2 mb-2" id="detailsAvertPatient" style="display:none;">
+                    <i class="fas fa-info-circle"></i> Patient pas encore rattaché : la répartition ci-dessous est à 0
+                    par défaut, elle sera calculée avec le vrai taux du patient à la finalisation.
+                </div>
                 <div class="table-responsive">
                     <table class="table table-sm table-bordered">
                         <thead class="table-light">
@@ -122,17 +132,20 @@
                                 <th>Article</th>
                                 <th class="text-end">Prix (FCFA)</th>
                                 <th class="text-end">Quantité</th>
-                                <th class="text-end">Sous-total (FCFA)</th>
-                                <th>AMU</th>
-                                <th>CAC</th>
+                                <th class="text-end">Total (FCFA)</th>
+                                <th class="text-end">Part AMU (FCFA)</th>
+                                <th class="text-end">Part CAC (FCFA)</th>
+                                <th class="text-end">Part Patient (FCFA)</th>
                             </tr>
                         </thead>
                         <tbody id="detailsArticlesBody"></tbody>
                         <tfoot>
                             <tr class="table-light">
-                                <th colspan="3" class="text-end">Total estimé</th>
+                                <th colspan="3" class="text-end">Total</th>
                                 <th class="text-end" id="detailsTotal"></th>
-                                <th colspan="2"></th>
+                                <th class="text-end" id="detailsTotalAmu"></th>
+                                <th class="text-end" id="detailsTotalCac"></th>
+                                <th class="text-end" id="detailsTotalPatient"></th>
                             </tr>
                         </tfoot>
                     </table>
@@ -304,25 +317,39 @@ function ouvrirDetails(id) {
     document.getElementById('detailsType').textContent = v.type === 'actes' ? 'Actes' : 'Pharmacie';
     document.getElementById('detailsCreePar').textContent = v.created_by || '-';
 
-    let total = 0;
+    // ⭐ La répartition (part_amu/part_cac/part_patient) vient déjà calculée
+    // du serveur (voir _repartition_ligne_vente_attente(), app.py) — même
+    // formule que le panier d'actes_vente.html/pharma_vente.html, pour ne
+    // pas prêter à confusion avec un simple sous-total clinique brut.
+    document.getElementById('detailsAvertPatient').style.display = v.patient_id ? 'none' : '';
+
+    let total = 0, totalAmu = 0, totalCac = 0, totalPatient = 0;
     const tbody = document.getElementById('detailsArticlesBody');
     tbody.innerHTML = (v.articles || []).map(a => {
         const prix = a.prix || 0;
         const quantite = a.quantite || 0;
-        const sousTotal = prix * quantite;
-        total += sousTotal;
-        const amu = a.prise_en_charge_amu !== false ? '<span class="text-success">Oui</span>' : '<span class="text-muted">Non</span>';
-        const cac = a.prise_en_charge_cac !== false ? '<span class="text-success">Oui</span>' : '<span class="text-muted">Non</span>';
+        const ligneTotal = a.total ?? (prix * quantite);
+        const partAmu = a.part_amu || 0;
+        const partCac = a.part_cac || 0;
+        const partPatient = a.part_patient ?? ligneTotal;
+        total += ligneTotal;
+        totalAmu += partAmu;
+        totalCac += partCac;
+        totalPatient += partPatient;
         return `<tr>
             <td>${escapeHtml(a.nom || '')}</td>
             <td class="text-end">${Math.round(prix).toLocaleString('fr-FR')}</td>
             <td class="text-end">${quantite}</td>
-            <td class="text-end">${Math.round(sousTotal).toLocaleString('fr-FR')}</td>
-            <td>${amu}</td>
-            <td>${cac}</td>
+            <td class="text-end">${Math.round(ligneTotal).toLocaleString('fr-FR')}</td>
+            <td class="text-end">${partAmu > 0 ? Math.round(partAmu).toLocaleString('fr-FR') : '-'}</td>
+            <td class="text-end">${partCac > 0 ? Math.round(partCac).toLocaleString('fr-FR') : '-'}</td>
+            <td class="text-end">${Math.round(partPatient).toLocaleString('fr-FR')}</td>
         </tr>`;
-    }).join('') || '<tr><td colspan="6" class="text-center text-muted">Aucun article</td></tr>';
-    document.getElementById('detailsTotal').textContent = Math.round(total).toLocaleString('fr-FR') + ' FCFA';
+    }).join('') || '<tr><td colspan="7" class="text-center text-muted">Aucun article</td></tr>';
+    document.getElementById('detailsTotal').textContent = Math.round(total).toLocaleString('fr-FR');
+    document.getElementById('detailsTotalAmu').textContent = Math.round(totalAmu).toLocaleString('fr-FR');
+    document.getElementById('detailsTotalCac').textContent = Math.round(totalCac).toLocaleString('fr-FR');
+    document.getElementById('detailsTotalPatient').textContent = Math.round(totalPatient).toLocaleString('fr-FR');
 
     const btnFinaliser = document.getElementById('btnFinaliserDepuisDetails');
     if (v.statut === 'en_attente') {

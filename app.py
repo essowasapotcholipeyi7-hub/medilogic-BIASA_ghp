@@ -8259,15 +8259,44 @@ def _charger_patient_pour_finalisation(patient_id, structure_id):
         return {
             'id': p.get('id'), 'nom': f"{p.get('nom', '')} {p.get('prenom', '')}".strip(),
             'assurance': p.get('type_assurance') or 'non_assure',
-            'taux': p.get('taux_prise_charge') or 0,
+            'taux': float(p.get('taux_prise_charge') or 0),
             'assurance2': p.get('assurance2_nom') or '',
-            'taux2': p.get('taux_assurance2') or 0,
+            'taux2': float(p.get('taux_assurance2') or 0),
             'societe_assurance2': p.get('societe_assurance2') or '',
         }
     return {
         'id': p[0], 'nom': f"{p[1] or ''} {p[2] or ''}".strip(),
-        'assurance': p[3] or 'non_assure', 'taux': p[4] or 0,
-        'assurance2': p[5] or '', 'taux2': p[6] or 0, 'societe_assurance2': p[7] or '',
+        'assurance': p[3] or 'non_assure', 'taux': float(p[4] or 0),
+        'assurance2': p[5] or '', 'taux2': float(p[6] or 0), 'societe_assurance2': p[7] or '',
+    }
+
+
+def _repartition_ligne_vente_attente(article, taux_amu, taux_cac):
+    """Estimation de la répartition AMU/CAC/Patient d'une ligne, même formule
+    que le panier d'actes_vente.html/pharma_vente.html (afficherPanier()) —
+    patron : "ça doit suivre la logique de la page vente pour ne pas prêter
+    à confusion" dans le détail d'une vente en attente. N'applique PAS le
+    plafond PBR-CAC par compagnie (pas connu à ce stade) : reste une
+    estimation, le calcul définitif se refait à la finalisation."""
+    prix = float(article.get('prix') or 0)
+    pbr = float(article.get('pbr') or prix)
+    quantite = float(article.get('quantite') or 0)
+    total = prix * quantite
+    taux_amu_ligne = 90 if 'P160' in (article.get('nom') or '') else taux_amu
+
+    part_amu = 0.0
+    if article.get('prise_en_charge_amu', True) and taux_amu_ligne > 0:
+        part_amu = min(prix, pbr) * quantite * taux_amu_ligne / 100
+
+    part_cac = 0.0
+    if article.get('prise_en_charge_cac', True) and taux_cac > 0:
+        base_cac = max(total - part_amu, 0) if part_amu > 0 else total
+        part_cac = base_cac * taux_cac / 100
+
+    part_patient = max(total - part_amu - part_cac, 0)
+    return {
+        'total': round(total), 'part_amu': round(part_amu),
+        'part_cac': round(part_cac), 'part_patient': round(part_patient),
     }
 
 
@@ -8349,15 +8378,28 @@ def api_liste_ventes_en_attente():
         haystack = f"{v.numero_local} {noms} {v.created_by or ''} {v.nom_patient or ''}".lower()
         if q and q not in haystack:
             continue
+
+        # ⭐ Répartition AMU/CAC/Patient par ligne — patron : "ça doit
+        # suivre la logique de la page vente pour ne pas prêter à
+        # confusion" (avant : sous-total clinique brut, sans tenir compte
+        # de l'assurance). Basée sur le taux réel du patient si déjà connu
+        # (patient_id) ; sinon 0/non-assuré, comme le montrerait la page de
+        # vente tant qu'aucun patient n'est sélectionné.
+        patient_info = _charger_patient_pour_finalisation(v.patient_id, structure_id) if v.patient_id else None
+        taux_amu = patient_info['taux'] if patient_info else 0
+        taux_cac = patient_info['taux2'] if patient_info else 0
+        articles_avec_repartition = [
+            {**a, **_repartition_ligne_vente_attente(a, taux_amu, taux_cac)} for a in articles
+        ]
+
         resultat.append({
             'id': v.id, 'numero_local': v.numero_local, 'type': v.type,
             'nom_patient': v.nom_patient, 'patient_id': v.patient_id,
             'nb_articles': len(articles), 'detail': noms or '—',
-            # ⭐ Liste complète des articles — patron : "donne la possibilité
-            # qu'on voit le détail de la vente depuis ventes en attente"
-            # avant de cliquer sur Finaliser (la caissière veut vérifier
-            # avant, pas juste voir un résumé tronqué à 3 articles).
-            'articles': articles,
+            # ⭐ Liste complète des articles (avec répartition) — patron :
+            # "donne la possibilité qu'on voit le détail de la vente depuis
+            # ventes en attente" avant de cliquer sur Finaliser.
+            'articles': articles_avec_repartition,
             'sous_total': float(v.sous_total or 0), 'statut': v.statut,
             'created_by': v.created_by, 'created_at': v.created_at.strftime('%d/%m/%Y %H:%M') if v.created_at else '',
             'finalise_par': v.finalise_par,
