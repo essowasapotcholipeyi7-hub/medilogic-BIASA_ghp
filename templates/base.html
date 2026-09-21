@@ -1995,6 +1995,16 @@
                     Labo/Radio/Hospi/Actes
                 </a>
                 {% endif %}
+                <!-- ⭐ Racourci "Ventes en attente" ici aussi — patron : "dans le
+                     menu horizontal dans l'onglet soins actes vente ajoute
+                     aussi le racourci de vente en attente la" (déjà présent
+                     dans Pharmacie). -->
+                {% if session.role in ['admin', 'caissier', 'secretaire'] and not _bloq %}
+                <a class="menu-item" href="{{ url_for('page_ventes_en_attente') }}">
+                    <i class="fas fa-clock"></i> Ventes en attente
+                    <span class="badge bg-danger ms-1 vente-attente-badge" style="display:none;">0</span>
+                </a>
+                {% endif %}
                 {% if not onglet_cache('hospitalisation') %}
                 <a class="menu-item" href="{{ url_for('page_hospitalisation') }}">
                     Hospitalisation (suivi de séjour)
