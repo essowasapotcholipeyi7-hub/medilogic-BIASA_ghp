@@ -323,7 +323,12 @@ function ouvrirDetails(id) {
     // pas prêter à confusion avec un simple sous-total clinique brut.
     document.getElementById('detailsAvertPatient').style.display = v.patient_id ? 'none' : '';
 
-    let total = 0, totalAmu = 0, totalCac = 0, totalPatient = 0;
+    // ⭐ Les totaux AMU/CAC/Patient viennent du serveur, arrondis une seule
+    // fois sur la somme brute (voir total_amu_estime/... dans app.py) —
+    // PAS en resommant les lignes déjà arrondies ci-dessous : patron a
+    // repéré un écart de 1 FCFA (262 vs 263) causé par cette différence
+    // d'ordre d'arrondi avec la vraie finalisation (calculerTotal()).
+    let total = 0;
     const tbody = document.getElementById('detailsArticlesBody');
     tbody.innerHTML = (v.articles || []).map(a => {
         const prix = a.prix || 0;
@@ -333,9 +338,6 @@ function ouvrirDetails(id) {
         const partCac = a.part_cac || 0;
         const partPatient = a.part_patient ?? ligneTotal;
         total += ligneTotal;
-        totalAmu += partAmu;
-        totalCac += partCac;
-        totalPatient += partPatient;
         return `<tr>
             <td>${escapeHtml(a.nom || '')}</td>
             <td class="text-end">${Math.round(prix).toLocaleString('fr-FR')}</td>
@@ -347,9 +349,9 @@ function ouvrirDetails(id) {
         </tr>`;
     }).join('') || '<tr><td colspan="7" class="text-center text-muted">Aucun article</td></tr>';
     document.getElementById('detailsTotal').textContent = Math.round(total).toLocaleString('fr-FR');
-    document.getElementById('detailsTotalAmu').textContent = Math.round(totalAmu).toLocaleString('fr-FR');
-    document.getElementById('detailsTotalCac').textContent = Math.round(totalCac).toLocaleString('fr-FR');
-    document.getElementById('detailsTotalPatient').textContent = Math.round(totalPatient).toLocaleString('fr-FR');
+    document.getElementById('detailsTotalAmu').textContent = Math.round(v.total_amu_estime || 0).toLocaleString('fr-FR');
+    document.getElementById('detailsTotalCac').textContent = Math.round(v.total_cac_estime || 0).toLocaleString('fr-FR');
+    document.getElementById('detailsTotalPatient').textContent = Math.round(v.total_patient_estime ?? total).toLocaleString('fr-FR');
 
     const btnFinaliser = document.getElementById('btnFinaliserDepuisDetails');
     if (v.statut === 'en_attente') {

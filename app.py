@@ -8277,7 +8277,14 @@ def _repartition_ligne_vente_attente(article, taux_amu, taux_cac):
     patron : "ça doit suivre la logique de la page vente pour ne pas prêter
     à confusion" dans le détail d'une vente en attente. N'applique PAS le
     plafond PBR-CAC par compagnie (pas connu à ce stade) : reste une
-    estimation, le calcul définitif se refait à la finalisation."""
+    estimation, le calcul définitif se refait à la finalisation.
+
+    ⭐ Valeurs retournées NON arrondies — patron a repéré un écart de 1 FCFA
+    entre ce détail et la vraie finalisation (262 vs 263) : calculerTotal()
+    (actes_vente.html) arrondit le TOTAL du panier une seule fois, après
+    avoir sommé les parts de chaque ligne, plutôt que de sommer des parts
+    déjà arrondies ligne par ligne — l'appelant doit reproduire cet ordre
+    (sommer les valeurs brutes ici, arrondir ensuite)."""
     prix = float(article.get('prix') or 0)
     pbr = float(article.get('pbr') or prix)
     quantite = float(article.get('quantite') or 0)
@@ -8294,10 +8301,7 @@ def _repartition_ligne_vente_attente(article, taux_amu, taux_cac):
         part_cac = base_cac * taux_cac / 100
 
     part_patient = max(total - part_amu - part_cac, 0)
-    return {
-        'total': round(total), 'part_amu': round(part_amu),
-        'part_cac': round(part_cac), 'part_patient': round(part_patient),
-    }
+    return {'total': total, 'part_amu': part_amu, 'part_cac': part_cac, 'part_patient': part_patient}
 
 
 @app.route('/api/ventes-en-attente/creer', methods=['POST'])
@@ -8388,8 +8392,23 @@ def api_liste_ventes_en_attente():
         patient_info = _charger_patient_pour_finalisation(v.patient_id, structure_id) if v.patient_id else None
         taux_amu = patient_info['taux'] if patient_info else 0
         taux_cac = patient_info['taux2'] if patient_info else 0
+        repartitions_brutes = [_repartition_ligne_vente_attente(a, taux_amu, taux_cac) for a in articles]
+
+        # ⭐ Les totaux s'arrondissent UNE SEULE FOIS sur la somme des valeurs
+        # brutes (pas la somme des lignes déjà arrondies) — même ordre que
+        # calculerTotal() (actes_vente.html) — voir le commentaire de
+        # _repartition_ligne_vente_attente() pour l'écart de 1 FCFA constaté.
+        total_brut = sum(r['total'] for r in repartitions_brutes)
+        total_amu_brut = sum(r['part_amu'] for r in repartitions_brutes)
+        total_cac_brut = sum(r['part_cac'] for r in repartitions_brutes)
+        total_patient_brut = max(total_brut - total_amu_brut - total_cac_brut, 0)
+
         articles_avec_repartition = [
-            {**a, **_repartition_ligne_vente_attente(a, taux_amu, taux_cac)} for a in articles
+            {
+                **a, 'total': round(r['total']), 'part_amu': round(r['part_amu']),
+                'part_cac': round(r['part_cac']), 'part_patient': round(r['part_patient']),
+            }
+            for a, r in zip(articles, repartitions_brutes)
         ]
 
         resultat.append({
@@ -8400,6 +8419,8 @@ def api_liste_ventes_en_attente():
             # "donne la possibilité qu'on voit le détail de la vente depuis
             # ventes en attente" avant de cliquer sur Finaliser.
             'articles': articles_avec_repartition,
+            'total_amu_estime': round(total_amu_brut), 'total_cac_estime': round(total_cac_brut),
+            'total_patient_estime': round(total_patient_brut),
             'sous_total': float(v.sous_total or 0), 'statut': v.statut,
             'created_by': v.created_by, 'created_at': v.created_at.strftime('%d/%m/%Y %H:%M') if v.created_at else '',
             'finalise_par': v.finalise_par,
