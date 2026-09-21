@@ -40,7 +40,16 @@
         <div class="card" id="resultatContenu">
             <div class="card-body" style="font-family: 'Segoe UI', Arial, sans-serif;">
 
-                <!-- EN-TÊTE CLINIQUE -->
+                <!-- ⭐ EN-TÊTE CLINIQUE — masquée pour un fichier importé
+                     (PDF/docx/...) : ce document a déjà son propre en-tête
+                     (constaté en direct : "HOPITAL CENTRAL DE LOME -
+                     Imagerie" écrit dans le PDF lui-même), la répéter ici
+                     ajoutait une grande section en plus qui poussait tout
+                     le reste sur une deuxième page avec une zone vide entre
+                     les deux — patron : "enleve l'entete lorsque c'est un
+                     fichier importé". Reste affichée pour un résultat rédigé
+                     en ligne (contenu_html), qui n'a pas d'en-tête propre. -->
+                {% if not resultat.fichier_data %}
                 <div class="row" style="background: linear-gradient(135deg, #1d6fa5 0%, #0f4c75 100%); color: white; margin: -20px -20px 20px -20px; padding: 18px; border-radius: 10px 10px 0 0;">
                     <div class="col-8">
                         <div class="d-flex align-items-center gap-3">
@@ -61,30 +70,13 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                         <p style="margin: 2px 0 0 0; font-size: 11px;">{{ resultat.created_at.strftime('%d/%m/%Y') if resultat.created_at else '' }}</p>
                     </div>
                 </div>
+                {% endif %}
 
                 <!-- PATIENT -->
                 <div style="font-size: 13px; margin-bottom: 14px; padding: 8px 12px; background: #f8f9fa; border-radius: 6px;">
                     <strong>Patient :</strong> {{ demande.patient_nom }}<br>
                     <strong>Acte :</strong> {{ demande.acte_nom }}
                 </div>
-
-                <!-- ⭐ Code-barres/mention confidentielle placés ICI, avant le
-                     contenu, plutôt qu'à la toute fin — patron : "le code
-                     barre reste en bas alors que la page est blanche au
-                     milieu". Constaté en direct sur un résultat PDF importé
-                     (SALVE REGINA, 17/09) : le fichier PDF lui-même contient
-                     une grande zone blanche sous son texte (mise en page du
-                     document d'origine, pas quelque chose que l'appli peut
-                     corriger) — les placer après le contenu les envoyait
-                     très loin en bas, après tout cet espace vide. Ici, leur
-                     position ne dépend plus de la longueur/mise en page du
-                     contenu qui suit. -->
-                <hr>
-                <div class="text-center text-muted small">Document confidentiel — {{ structure.nom or "SSoftOne v10" }}</div>
-                <div class="text-center mt-2 mb-3">
-                    <svg id="codeBarreResultat"></svg>
-                </div>
-                <hr>
 
                 <!-- CONTENU DU RÉSULTAT -->
                 {% if resultat.contenu_html %}
@@ -119,12 +111,11 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                 <!-- SIGNATURE — patron : "on met Le Laboratoire et on met le
                      titre de celui qui signe avec son nom" / "on met Le
                      Radiologue... dès qu'on sélectionne son nom sa
-                     signature s'appose s'il y en a". ⭐ Masquée pour un PDF
-                     importé affiché ci-dessus : ce document contient déjà sa
-                     propre signature/mention du radiologue (constaté en
-                     direct) — la répéter ici ne faisait qu'ajouter une
-                     redite après la zone blanche du PDF. -->
-                {% if not (resultat.fichier_mime and 'pdf' in resultat.fichier_mime) %}
+                     signature s'appose s'il y en a". ⭐ Masquée pour un
+                     fichier importé (même condition que l'en-tête
+                     ci-dessus) : ce document a déjà sa propre signature/
+                     mention du radiologue. -->
+                {% if not resultat.fichier_data %}
                 <div class="mt-4 text-end" style="font-size: 13px;">
                     <strong>{% if demande.type_prestation == 'analyse' %}Le Laboratoire{% else %}Le Radiologue{% endif %}</strong>
                     {% if resultat.signature_data %}
@@ -135,6 +126,22 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                     </div>
                 </div>
                 {% endif %}
+
+                <!-- ⭐ Code-barres/mention confidentielle revenus à la fin
+                     (patron : "met toujours le code bare en bas") — les
+                     placer avant le contenu, essayé précédemment, créait un
+                     autre problème : l'en-tête clinique + patient + code-
+                     barres dépassaient presque une page à eux seuls, ce qui
+                     poussait TOUT le contenu réel sur la page 2 avec un
+                     grand vide en bas de la page 1. Combiné au retrait de
+                     l'en-tête clinique pour un fichier importé ci-dessus,
+                     la page 1 a maintenant assez de place pour le contenu
+                     réel avant que le code-barres n'arrive en bas. -->
+                <hr>
+                <div class="text-center text-muted small">Document confidentiel — {{ structure.nom or "SSoftOne v10" }}</div>
+                <div class="text-center mt-2">
+                    <svg id="codeBarreResultat"></svg>
+                </div>
             </div>
         </div>
 

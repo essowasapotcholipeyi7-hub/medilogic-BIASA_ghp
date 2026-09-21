@@ -35,7 +35,11 @@
         <div class="card" id="resultatContenu">
             <div class="card-body" style="font-family: 'Segoe UI', Arial, sans-serif;">
 
-                <!-- EN-TÊTE CLINIQUE -->
+                <!-- ⭐ EN-TÊTE CLINIQUE — masquée pour un fichier importé, voir
+                     resultat_imprimer.html pour la raison détaillée (le
+                     document importé a déjà son propre en-tête, le répéter
+                     poussait tout le contenu réel sur une deuxième page). -->
+                {% if not resultat.fichier_data %}
                 <div class="row" style="background: linear-gradient(135deg, #1d6fa5 0%, #0f4c75 100%); color: white; margin: -20px -20px 20px -20px; padding: 18px; border-radius: 10px 10px 0 0;">
                     <div class="col-8">
                         <div class="d-flex align-items-center gap-3">
@@ -56,24 +60,13 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                         <p style="margin: 2px 0 0 0; font-size: 11px;">{{ resultat.created_at.strftime('%d/%m/%Y') if resultat.created_at else '' }}</p>
                     </div>
                 </div>
+                {% endif %}
 
                 <!-- PATIENT -->
                 <div style="font-size: 13px; margin-bottom: 14px; padding: 8px 12px; background: #f8f9fa; border-radius: 6px;">
                     <strong>Patient :</strong> {{ demande.patient_nom }}<br>
                     <strong>Acte :</strong> {{ demande.acte_nom }}
                 </div>
-
-                <!-- ⭐ Code-barres/mention confidentielle avant le contenu —
-                     voir resultat_imprimer.html pour la raison détaillée
-                     (un PDF importé peut contenir une grande zone blanche
-                     sous son texte, envoyant ces éléments très loin en bas
-                     s'ils sont placés après). -->
-                <hr>
-                <div class="text-center text-muted small">Document confidentiel — {{ structure.nom or "SSoftOne v10" }}</div>
-                <div class="text-center mt-2 mb-3">
-                    <svg id="codeBarreResultat"></svg>
-                </div>
-                <hr>
 
                 <!-- CONTENU DU RÉSULTAT -->
                 {% if resultat.contenu_html %}
@@ -103,9 +96,10 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                 </div>
                 {% endif %}
 
-                <!-- SIGNATURE — masquée pour un PDF importé (déjà signé sur
-                     le document lui-même, voir resultat_imprimer.html). -->
-                {% if not (resultat.fichier_mime and 'pdf' in resultat.fichier_mime) %}
+                <!-- SIGNATURE — masquée pour un fichier importé (même
+                     condition que l'en-tête ci-dessus), voir
+                     resultat_imprimer.html. -->
+                {% if not resultat.fichier_data %}
                 <div class="mt-4 text-end" style="font-size: 13px;">
                     <strong>{% if demande.type_prestation == 'analyse' %}Le Laboratoire{% else %}Le Radiologue{% endif %}</strong>
                     {% if resultat.signature_data %}
@@ -116,6 +110,14 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                     </div>
                 </div>
                 {% endif %}
+
+                <!-- ⭐ Code-barres/mention confidentielle à la fin, voir
+                     resultat_imprimer.html pour la raison détaillée. -->
+                <hr>
+                <div class="text-center text-muted small">Document confidentiel — {{ structure.nom or "SSoftOne v10" }}</div>
+                <div class="text-center mt-2">
+                    <svg id="codeBarreResultat"></svg>
+                </div>
             </div>
         </div>
 

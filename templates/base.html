@@ -1670,7 +1670,11 @@
     position: fixed;
     top: 80px;
     left: 10px;
-    z-index: 999;
+    /* ⭐ .navbar a z-index:1000 (voir plus haut) — à 999 ce bouton passait
+       derrière elle et restait à moitié caché/inaccessible, pas seulement
+       sur mobile (déjà corrigé à 1001 dans le @media ci-dessous) mais
+       aussi en desktop, jamais aligné jusqu'ici. */
+    z-index: 1001;
     width: 40px;
     height: 40px;
     border-radius: 10px;
@@ -2038,6 +2042,9 @@
                 <a class="menu-item" href="{{ url_for('page_facture_amu_cnss') }}">
                     Facture AMU CNSS (mensuelle)
                 </a>
+                <a class="menu-item" href="{{ url_for('page_facture_amu_cnss', type_amu='tns') }}">
+                    Facture AMU TNS (mensuelle)
+                </a>
                 <a class="menu-item" href="{{ url_for('page_facture_amu_inam') }}">
                     Facture AMU INAM (mensuelle)
                 </a>
@@ -2194,6 +2201,11 @@
                 {% if session.is_admin %}
                 <a class="menu-item" href="{{ url_for('page_classification_actes') }}">
                     Classification Labo/Radio
+                </a>
+                {% endif %}
+                {% if session.role in ['admin', 'comptable', 'gestionnaire'] %}
+                <a class="menu-item" href="{{ url_for('page_pbr_complementaires') }}">
+                    PBR Complémentaires
                 </a>
                 {% endif %}
                 {% if session.role in ['laborantin', 'radiologue', 'secretaire'] %}
