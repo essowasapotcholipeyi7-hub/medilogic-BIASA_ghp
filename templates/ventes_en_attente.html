@@ -170,7 +170,7 @@ function afficherListe(liste) {
         if (v.statut === 'en_attente') {
             action = `
                 <button class="btn btn-sm btn-success" title="Finaliser"
-                        data-vea-id="${v.id}" data-route="${routeFinalisation}" data-nom="${escapeHtml(v.nom_patient || '')}"
+                        data-vea-id="${v.id}" data-route="${routeFinalisation}" data-nom="${escapeHtml(v.nom_patient || '')}" data-patient-id="${v.patient_id || ''}"
                         onclick="allerFinaliserFromBtn(this)">
                     <i class="fas fa-check-circle"></i> Finaliser
                 </button>
@@ -185,7 +185,7 @@ function afficherListe(liste) {
 
         return `<tr>
             <td><strong>#${v.numero_local}</strong></td>
-            <td>${v.nom_patient ? escapeHtml(v.nom_patient) : '<span class="text-muted">Non renseigné</span>'}</td>
+            <td>${v.nom_patient ? escapeHtml(v.nom_patient) : '<span class="text-muted">Non renseigné</span>'}${v.patient_id ? ' <i class="fas fa-check-circle text-success" title="Patient confirmé — sélection déjà faite à l\'admission"></i>' : ''}</td>
             <td>${typeLabel}</td>
             <td><small>${v.detail} (${v.nb_articles} article${v.nb_articles > 1 ? 's' : ''})</small></td>
             <td class="text-end">${Math.round(v.sous_total).toLocaleString('fr-FR')} FCFA</td>
@@ -206,10 +206,17 @@ function escapeHtml(texte) {
 // ⭐ Sélection du patient avant finalisation — patron : "lorsqu'on veut
 // finaliser la vente pour un patient donné il faudrait que le patient
 // sélectionné corresponde en même temps... rendre le travail facile".
-// On passe par la page Patients (recherche préremplie avec le nom saisi
-// à l'admission) au lieu d'aller directement sur la vente : la caisse
-// choisit ainsi le VRAI dossier patient, sans ressaisir son nom.
-function allerFinaliser(id, routeFinalisation, nomPatient) {
+// Si un VRAI patient avait déjà été sélectionné à l'admission
+// (VenteEnAttente.patient_id), pas besoin de repasser par la liste des
+// patients — patron : "si on avait sélectionné le patient... plus besoin
+// de sélectionner le patient de nouveau". Sinon (nom libre ou rien), on
+// passe par la page Patients (recherche préremplie) comme avant.
+function allerFinaliser(id, routeFinalisation, nomPatient, patientId) {
+    const route = routeFinalisation === 'pharma_vente' ? '/pharma_vente' : '/actes_vente';
+    if (patientId) {
+        window.location.href = `${route}?finaliser_attente=${encodeURIComponent(id)}`;
+        return;
+    }
     const params = new URLSearchParams();
     params.set('finaliser_attente', id);
     params.set('finaliser_type', routeFinalisation === 'pharma_vente' ? 'pharmacie' : 'actes');
@@ -218,7 +225,7 @@ function allerFinaliser(id, routeFinalisation, nomPatient) {
 }
 
 function allerFinaliserFromBtn(btn) {
-    allerFinaliser(btn.dataset.veaId, btn.dataset.route, btn.dataset.nom);
+    allerFinaliser(btn.dataset.veaId, btn.dataset.route, btn.dataset.nom, btn.dataset.patientId);
 }
 
 function ouvrirAnnulation(id, code) {

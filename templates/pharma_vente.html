@@ -604,19 +604,34 @@ function checkSelectedPatient() {
         
         document.getElementById('patientInfo').style.display = 'block';
         document.getElementById('noPatientAlert').style.display = 'none';
-        
+
         const tauxVenteInput = document.getElementById('tauxVente');
         if (tauxVenteInput) {
             tauxVenteInput.value = patientTaux;
         }
-        
+
         checkAssuranceComplementaire();
         initAssurancePrincipale();
+
+        // ⭐ Patient déjà sélectionné — voir actes_vente.html pour le même
+        // correctif ("plus besoin de sélectionner le patient de nouveau").
+        if (!VENTE_ATTENTE) {
+            const inputNomPatientAttente = document.getElementById('nomPatientAttente');
+            if (inputNomPatientAttente) inputNomPatientAttente.style.display = 'none';
+        }
+
         console.log('Patient chargé:', { patientId, patientName, patientTaux, patientAssurance2, patientTaux2 });
     } else {
         document.getElementById('patientInfo').style.display = 'none';
         document.getElementById('noPatientAlert').style.display = 'block';
         document.getElementById('finaliserBtn').disabled = true;
+
+        // ⭐ Aucun patient — voir actes_vente.html pour le même correctif.
+        if (!VENTE_ATTENTE) {
+            const inputNomPatientAttente = document.getElementById('nomPatientAttente');
+            if (inputNomPatientAttente) inputNomPatientAttente.style.display = '';
+        }
+
         console.log('Aucun patient sélectionné');
     }
 }
@@ -2410,12 +2425,20 @@ function soumettreVenteEnAttente() {
         };
     });
 
-    const nomPatientAttente = (document.getElementById('nomPatientAttente')?.value || '').trim();
+    // ⭐ Voir actes_vente.html pour le contexte complet de ce correctif.
+    const patientDejaSelectionne = patientId && patientId !== 'null' && patientId !== 'undefined' && patientId !== '';
+    const corpsRequete = { type: 'pharmacie', articles: articles, sous_total: sousTotal };
+    if (patientDejaSelectionne) {
+        corpsRequete.patient_id = patientId;
+        corpsRequete.nom_patient = patientName;
+    } else {
+        corpsRequete.nom_patient = (document.getElementById('nomPatientAttente')?.value || '').trim();
+    }
 
     fetch('/api/ventes-en-attente/creer', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ type: 'pharmacie', articles: articles, sous_total: sousTotal, nom_patient: nomPatientAttente })
+        body: JSON.stringify(corpsRequete)
     })
     .then(r => r.json())
     .then(data => {
@@ -2471,6 +2494,18 @@ if (VENTE_ATTENTE) {
     if (btnVenteAttente) btnVenteAttente.style.display = 'none';
     const inputNomPatientAttente = document.getElementById('nomPatientAttente');
     if (inputNomPatientAttente) inputNomPatientAttente.style.display = 'none';
+
+    // ⭐ Voir actes_vente.html pour le contexte complet de ce correctif.
+    if (VENTE_ATTENTE.patient) {
+        const p = VENTE_ATTENTE.patient;
+        sessionStorage.setItem('selectedPatientId', String(p.id));
+        sessionStorage.setItem('selectedPatientName', p.nom);
+        sessionStorage.setItem('selectedPatientAssurance', p.assurance || 'non_assure');
+        sessionStorage.setItem('selectedPatientTaux', String(p.taux || 0));
+        sessionStorage.setItem('selectedPatientAssurance2', p.assurance2 || '');
+        sessionStorage.setItem('selectedPatientTaux2', String(p.taux2 || 0));
+        sessionStorage.setItem('selectedPatientSocieteAssurance2', p.societe_assurance2 || '');
+    }
 }
 
 // ============================================

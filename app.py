@@ -2536,6 +2536,8 @@ def actes_vente():
         va = VenteEnAttente.query.filter_by(id=vente_attente_id, structure_id=structure_id, type='actes', statut='en_attente').first()
         if va:
             vente_attente = {'id': va.id, 'numero_local': va.numero_local, 'articles': va.articles or []}
+            if va.patient_id:
+                vente_attente['patient'] = _charger_patient_pour_finalisation(va.patient_id, structure_id)
 
     return render_template('actes_vente.html',
                           actes=actes_filtres,
@@ -2692,6 +2694,8 @@ def pharma_vente():
         va = VenteEnAttente.query.filter_by(id=vente_attente_id, structure_id=structure_id, type='pharmacie', statut='en_attente').first()
         if va:
             vente_attente = {'id': va.id, 'numero_local': va.numero_local, 'articles': va.articles or []}
+            if va.patient_id:
+                vente_attente['patient'] = _charger_patient_pour_finalisation(va.patient_id, structure_id)
 
     # ⭐ FIX PERF : `produits`/`patients` ne sont pas référencés dans
     # pharma_vente.html (le catalogue affiché au patient est chargé côté
@@ -8234,6 +8238,39 @@ def api_activites_recentes():
 _ROLES_FINALISATION_VENTE_ATTENTE = ('admin', 'caissier', 'secretaire')
 
 
+def _charger_patient_pour_finalisation(patient_id, structure_id):
+    """Recharge les infos d'un patient déjà sélectionné à l'admission (voir
+    VenteEnAttente.patient_id) pour les réinjecter côté finalisation —
+    patron : "si on avait sélectionné le patient... plus besoin de le
+    sélectionner de nouveau". Mêmes champs que selectPatient() (patients.html)."""
+    try:
+        rows = db.execute_query(
+            """SELECT id, nom, prenom, type_assurance, taux_prise_charge,
+                      assurance2_nom, taux_assurance2, societe_assurance2
+               FROM patients WHERE id = %s AND structure_id = %s""",
+            (patient_id, structure_id)
+        )
+    except Exception:
+        return None
+    if not rows:
+        return None
+    p = rows[0]
+    if isinstance(p, dict):
+        return {
+            'id': p.get('id'), 'nom': f"{p.get('nom', '')} {p.get('prenom', '')}".strip(),
+            'assurance': p.get('type_assurance') or 'non_assure',
+            'taux': p.get('taux_prise_charge') or 0,
+            'assurance2': p.get('assurance2_nom') or '',
+            'taux2': p.get('taux_assurance2') or 0,
+            'societe_assurance2': p.get('societe_assurance2') or '',
+        }
+    return {
+        'id': p[0], 'nom': f"{p[1] or ''} {p[2] or ''}".strip(),
+        'assurance': p[3] or 'non_assure', 'taux': p[4] or 0,
+        'assurance2': p[5] or '', 'taux2': p[6] or 0, 'societe_assurance2': p[7] or '',
+    }
+
+
 @app.route('/api/ventes-en-attente/creer', methods=['POST'])
 @login_required
 def api_creer_vente_en_attente():
@@ -8248,9 +8285,23 @@ def api_creer_vente_en_attente():
         if not articles:
             return jsonify({'success': False, 'error': 'Le panier est vide'}), 400
 
+        # ⭐ Si un vrai patient avait déjà été sélectionné à l'admission
+        # (comme pour une vente normale), on le rattache directement —
+        # patron : "si on avait sélectionné le patient... plus besoin de
+        # sélectionner le patient de nouveau" à la finalisation. Sinon on
+        # ne garde que le nom libre saisi (voir nom_patient ci-dessous).
+        patient_id_brut = data.get('patient_id')
+        patient_id = None
+        if patient_id_brut not in (None, '', 'null', 'undefined'):
+            try:
+                patient_id = int(patient_id_brut)
+            except (TypeError, ValueError):
+                patient_id = None
+
         numero_local = prochain_numero_local('ventes_en_attente', structure_id)
         vea = VenteEnAttente(
             structure_id=structure_id, numero_local=numero_local, type=type_vente,
+            patient_id=patient_id,
             nom_patient=(data.get('nom_patient') or '').strip() or None,
             articles=articles, sous_total=float(data.get('sous_total') or 0),
             statut='en_attente', created_by=user_name,
@@ -8300,7 +8351,7 @@ def api_liste_ventes_en_attente():
             continue
         resultat.append({
             'id': v.id, 'numero_local': v.numero_local, 'type': v.type,
-            'nom_patient': v.nom_patient,
+            'nom_patient': v.nom_patient, 'patient_id': v.patient_id,
             'nb_articles': len(articles), 'detail': noms or '—',
             'sous_total': float(v.sous_total or 0), 'statut': v.statut,
             'created_by': v.created_by, 'created_at': v.created_at.strftime('%d/%m/%Y %H:%M') if v.created_at else '',

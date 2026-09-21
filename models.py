@@ -2422,6 +2422,7 @@ class VenteEnAttente(db.Model):
     numero_local = db.Column(db.Integer)  # code communiqué au patient — voir prochain_numero_local()
     type = db.Column(db.String(20), nullable=False)  # 'actes' | 'pharmacie'
     nom_patient = db.Column(db.String(255))  # saisi librement par l'admission (pas de sélection formelle) — patron : "doit contenir le nom du patient pour ne pas qu'on souffre"
+    patient_id = db.Column(db.Integer)  # rempli seulement si un vrai patient était déjà sélectionné à l'admission (comme avant) — permet de sauter la resélection à la finalisation
     articles = db.Column(db.JSON)  # panier tel que soumis par l'admission (nom/prix/pbr/quantite/prise_en_charge_amu/cac)
     sous_total = db.Column(db.Numeric, default=0)  # informatif seulement — le vrai calcul se refait à la finalisation
     statut = db.Column(db.String(20), default='en_attente')  # 'en_attente' | 'finalisee' | 'annulee'

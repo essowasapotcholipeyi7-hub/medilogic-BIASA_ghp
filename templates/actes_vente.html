@@ -618,12 +618,30 @@ function checkSelectedPatient() {
         
         document.getElementById('patientInfo').style.display = 'block';
         document.getElementById('noPatientAlert').style.display = 'none';
-        
+
+        // ⭐ Patient déjà sélectionné (comme avant) — patron : "si on avait
+        // sélectionné le patient... xa enregistre ce nom, plus besoin de
+        // sélectionner le patient de nouveau". Le champ libre devient
+        // inutile puisque le vrai patient sera rattaché directement.
+        if (!VENTE_ATTENTE) {
+            const inputNomPatientAttente = document.getElementById('nomPatientAttente');
+            if (inputNomPatientAttente) inputNomPatientAttente.style.display = 'none';
+        }
+
         console.log('Patient chargé:', { patientId, patientName, patientTaux, patientAssurance2, patientTaux2 });
     } else {
         document.getElementById('patientInfo').style.display = 'none';
         document.getElementById('noPatientAlert').style.display = 'block';
         document.getElementById('finaliserBtn').disabled = true;
+
+        // ⭐ Aucun patient sélectionné — on retombe sur le champ libre
+        // (patron : "s'il n'y avait pas de nom c'est en ce moment on fait
+        // comme actuellement").
+        if (!VENTE_ATTENTE) {
+            const inputNomPatientAttente = document.getElementById('nomPatientAttente');
+            if (inputNomPatientAttente) inputNomPatientAttente.style.display = '';
+        }
+
         console.log('Aucun patient sélectionné');
     }
 }
@@ -2509,12 +2527,25 @@ function soumettreVenteEnAttente() {
         };
     });
 
-    const nomPatientAttente = (document.getElementById('nomPatientAttente')?.value || '').trim();
+    // ⭐ Patron : "si on avait sélectionné le patient... xa enregistre ce
+    // nom... plus besoin de sélectionner le patient de nouveau" à la
+    // finalisation — mais "s'il n'y avait pas de nom on fait comme
+    // actuellement" (champ libre). `patientId` est déjà global (voir
+    // checkSelectedPatient()) : s'il est renseigné, un vrai patient a été
+    // choisi normalement avant de soumettre la vente en attente.
+    const patientDejaSelectionne = patientId && patientId !== 'null' && patientId !== 'undefined' && patientId !== '';
+    const corpsRequete = { type: 'actes', articles: articles, sous_total: sousTotal };
+    if (patientDejaSelectionne) {
+        corpsRequete.patient_id = patientId;
+        corpsRequete.nom_patient = patientName;
+    } else {
+        corpsRequete.nom_patient = (document.getElementById('nomPatientAttente')?.value || '').trim();
+    }
 
     fetch('/api/ventes-en-attente/creer', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ type: 'actes', articles: articles, sous_total: sousTotal, nom_patient: nomPatientAttente })
+        body: JSON.stringify(corpsRequete)
     })
     .then(r => r.json())
     .then(data => {
@@ -2577,6 +2608,23 @@ if (VENTE_ATTENTE) {
     if (btnVenteAttente) btnVenteAttente.style.display = 'none';
     const inputNomPatientAttente = document.getElementById('nomPatientAttente');
     if (inputNomPatientAttente) inputNomPatientAttente.style.display = 'none';
+
+    // ⭐ Patron : "si on avait sélectionné le patient... plus besoin de
+    // sélectionner le patient de nouveau". Le patient était déjà connu à
+    // l'admission (VenteEnAttente.patient_id) — on le réinjecte ici
+    // exactement comme le fait selectPatient() (patients.html), AVANT que
+    // checkSelectedPatient() ne s'exécute (DOMContentLoaded plus bas) : la
+    // caisse le retrouve déjà chargé, sans repasser par la liste patients.
+    if (VENTE_ATTENTE.patient) {
+        const p = VENTE_ATTENTE.patient;
+        sessionStorage.setItem('selectedPatientId', String(p.id));
+        sessionStorage.setItem('selectedPatientName', p.nom);
+        sessionStorage.setItem('selectedPatientAssurance', p.assurance || 'non_assure');
+        sessionStorage.setItem('selectedPatientTaux', String(p.taux || 0));
+        sessionStorage.setItem('selectedPatientAssurance2', p.assurance2 || '');
+        sessionStorage.setItem('selectedPatientTaux2', String(p.taux2 || 0));
+        sessionStorage.setItem('selectedPatientSocieteAssurance2', p.societe_assurance2 || '');
+    }
 }
 
 // ============================================
