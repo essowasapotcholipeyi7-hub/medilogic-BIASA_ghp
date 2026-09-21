@@ -99,8 +99,58 @@
     </div>
 </div>
 
+<!-- ⭐ MODAL DÉTAILS — patron : "normalement la caissière doit pouvoir
+     cliquer sur la vente en attente [pour] voir les détails avant de
+     cliquer sur finaliser". Lecture seule, sans quitter la liste. -->
+<div class="modal fade" id="detailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="fas fa-eye"></i> Détails de la vente <span id="detailsCode"></span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row mb-3">
+                    <div class="col-md-6"><strong>Patient :</strong> <span id="detailsPatient"></span></div>
+                    <div class="col-md-3"><strong>Type :</strong> <span id="detailsType"></span></div>
+                    <div class="col-md-3"><strong>Créée par :</strong> <span id="detailsCreePar"></span></div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Article</th>
+                                <th class="text-end">Prix (FCFA)</th>
+                                <th class="text-end">Quantité</th>
+                                <th class="text-end">Sous-total (FCFA)</th>
+                                <th>AMU</th>
+                                <th>CAC</th>
+                            </tr>
+                        </thead>
+                        <tbody id="detailsArticlesBody"></tbody>
+                        <tfoot>
+                            <tr class="table-light">
+                                <th colspan="3" class="text-end">Total estimé</th>
+                                <th class="text-end" id="detailsTotal"></th>
+                                <th colspan="2"></th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                <button class="btn btn-success" id="btnFinaliserDepuisDetails">
+                    <i class="fas fa-check-circle"></i> Finaliser cette vente
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 let VUE_ACTUELLE = 'en_attente';
+let DERNIERE_LISTE = {};
 
 document.addEventListener('DOMContentLoaded', function() {
     chargerListe();
@@ -149,6 +199,11 @@ function chargerListe() {
 
 function afficherListe(liste) {
     const tbody = document.getElementById('listeBody');
+    // ⭐ Gardé en mémoire pour ouvrirDetails() — évite un aller-retour
+    // réseau juste pour afficher ce qu'on a déjà reçu.
+    DERNIERE_LISTE = {};
+    (liste || []).forEach(v => { DERNIERE_LISTE[v.id] = v; });
+
     if (!liste || liste.length === 0) {
         const texte = VUE_ACTUELLE === 'historique' ? 'Aucune vente en attente finalisée/annulée' : 'Aucune vente en attente pour le moment';
         tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-4">${texte}</td></tr>`;
@@ -166,9 +221,17 @@ function afficherListe(liste) {
             statutCell = `<span class="badge bg-secondary">Annulée</span><br><small class="text-muted">par ${v.annule_par || '-'}${v.motif_annulation ? ' — ' + v.motif_annulation : ''}</small>`;
         }
 
+        // ⭐ Voir les détails avant de finaliser — patron : "la caissière
+        // doit pouvoir cliquer sur la vente en attente [pour] voir les
+        // détails avant de cliquer sur finaliser".
+        const boutonDetails = `
+                <button class="btn btn-sm btn-outline-info" onclick="ouvrirDetails(${v.id})" title="Voir le détail">
+                    <i class="fas fa-eye"></i>
+                </button>`;
+
         let action = '';
         if (v.statut === 'en_attente') {
-            action = `
+            action = boutonDetails + `
                 <button class="btn btn-sm btn-success" title="Finaliser"
                         data-vea-id="${v.id}" data-route="${routeFinalisation}" data-nom="${escapeHtml(v.nom_patient || '')}" data-patient-id="${v.patient_id || ''}"
                         onclick="allerFinaliserFromBtn(this)">
@@ -178,9 +241,9 @@ function afficherListe(liste) {
                     <i class="fas fa-times"></i>
                 </button>`;
         } else if (v.statut === 'finalisee' && v.vente_id) {
-            action = `<span class="text-muted small">Vente #${v.vente_id}</span>`;
+            action = boutonDetails + ` <span class="text-muted small">Vente #${v.vente_id}</span>`;
         } else {
-            action = '<span class="text-muted">—</span>';
+            action = boutonDetails + ' <span class="text-muted">—</span>';
         }
 
         return `<tr>
@@ -226,6 +289,50 @@ function allerFinaliser(id, routeFinalisation, nomPatient, patientId) {
 
 function allerFinaliserFromBtn(btn) {
     allerFinaliser(btn.dataset.veaId, btn.dataset.route, btn.dataset.nom, btn.dataset.patientId);
+}
+
+// ⭐ Détails avant finalisation — patron : "normalement la caissière [doit
+// pouvoir] cliquer sur la vente en attente voir les détails avant de
+// cliquer sur finaliser". Utilise la liste déjà en mémoire (DERNIERE_LISTE)
+// — pas d'aller-retour réseau supplémentaire.
+function ouvrirDetails(id) {
+    const v = DERNIERE_LISTE[id];
+    if (!v) return;
+
+    document.getElementById('detailsCode').textContent = '#' + v.numero_local;
+    document.getElementById('detailsPatient').textContent = v.nom_patient || 'Non renseigné';
+    document.getElementById('detailsType').textContent = v.type === 'actes' ? 'Actes' : 'Pharmacie';
+    document.getElementById('detailsCreePar').textContent = v.created_by || '-';
+
+    let total = 0;
+    const tbody = document.getElementById('detailsArticlesBody');
+    tbody.innerHTML = (v.articles || []).map(a => {
+        const prix = a.prix || 0;
+        const quantite = a.quantite || 0;
+        const sousTotal = prix * quantite;
+        total += sousTotal;
+        const amu = a.prise_en_charge_amu !== false ? '<span class="text-success">Oui</span>' : '<span class="text-muted">Non</span>';
+        const cac = a.prise_en_charge_cac !== false ? '<span class="text-success">Oui</span>' : '<span class="text-muted">Non</span>';
+        return `<tr>
+            <td>${escapeHtml(a.nom || '')}</td>
+            <td class="text-end">${Math.round(prix).toLocaleString('fr-FR')}</td>
+            <td class="text-end">${quantite}</td>
+            <td class="text-end">${Math.round(sousTotal).toLocaleString('fr-FR')}</td>
+            <td>${amu}</td>
+            <td>${cac}</td>
+        </tr>`;
+    }).join('') || '<tr><td colspan="6" class="text-center text-muted">Aucun article</td></tr>';
+    document.getElementById('detailsTotal').textContent = Math.round(total).toLocaleString('fr-FR') + ' FCFA';
+
+    const btnFinaliser = document.getElementById('btnFinaliserDepuisDetails');
+    if (v.statut === 'en_attente') {
+        btnFinaliser.style.display = '';
+        btnFinaliser.onclick = () => allerFinaliser(v.id, v.type === 'actes' ? 'actes_vente' : 'pharma_vente', v.nom_patient, v.patient_id);
+    } else {
+        btnFinaliser.style.display = 'none';
+    }
+
+    new bootstrap.Modal(document.getElementById('detailsModal')).show();
 }
 
 function ouvrirAnnulation(id, code) {

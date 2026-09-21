@@ -8353,6 +8353,11 @@ def api_liste_ventes_en_attente():
             'id': v.id, 'numero_local': v.numero_local, 'type': v.type,
             'nom_patient': v.nom_patient, 'patient_id': v.patient_id,
             'nb_articles': len(articles), 'detail': noms or '—',
+            # ⭐ Liste complète des articles — patron : "donne la possibilité
+            # qu'on voit le détail de la vente depuis ventes en attente"
+            # avant de cliquer sur Finaliser (la caissière veut vérifier
+            # avant, pas juste voir un résumé tronqué à 3 articles).
+            'articles': articles,
             'sous_total': float(v.sous_total or 0), 'statut': v.statut,
             'created_by': v.created_by, 'created_at': v.created_at.strftime('%d/%m/%Y %H:%M') if v.created_at else '',
             'finalise_par': v.finalise_par,
