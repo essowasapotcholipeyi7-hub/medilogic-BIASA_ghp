@@ -69,7 +69,19 @@
             top: 0;
             z-index: 1000;
         }
-        
+
+        /* ⭐ Le `.container` Bootstrap a un max-width qui le recentre sur
+           grand écran, laissant une marge morte des deux côtés — patron :
+           "SI acronyme met ça bien dans le coin à gauche et le nom
+           d'utilisateur bien dans le coin à droite". Étendu à toute la
+           largeur pour CETTE navbar seulement (pas .container en général,
+           réutilisé ailleurs dans le contenu des pages). */
+        .navbar > .container {
+            max-width: 100%;
+            padding-left: 20px;
+            padding-right: 20px;
+        }
+
         .navbar-brand {
             font-size: 1.6rem;
             font-weight: 800;
@@ -1300,6 +1312,16 @@
             width: 420px;
             max-width: 32vw;
         }
+
+        /* ⭐ Sur fenêtre desktop étroite (ex: 1100px, pas juste tablette/
+           mobile déjà exclues par d-none d-md-block), 420px + horloge +
+           cloche + compte dépassait de la navbar — repli plus modeste,
+           toujours plus large que les 260px d'origine. */
+        @media (max-width: 1200px) {
+            .global-search-wrapper {
+                width: 280px;
+            }
+        }
         .global-search-results {
             position: absolute;
             top: calc(100% + 6px);
@@ -1927,14 +1949,11 @@
             </div>
 
             <!-- Horloge temps réel -->
+            <!-- ⭐ Indicateur "connecté" retiré d'ici — patron : "enlève ça à
+                 côté de la date du jour" — déplacé devant le nom
+                 d'utilisateur (voir le dropdown plus bas). -->
             <div class="d-none d-md-block" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); padding: 8px 18px; border-radius: 40px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
                 <div id="horloge" class="d-flex align-items-center gap-2">
-                    <!-- ⭐ Petit indicateur "connecté" — pulse violet tant que la
-                         connexion au serveur principal est confirmée (branché sur
-                         verifierEtatSynchro(), déjà utilisé pour la bannière
-                         hors-ligne) ; passe gris/statique si le mode hors-ligne
-                         local prend le relais. Demandé comme touche "chic". -->
-                    <span class="statut-connexion-dot" id="statutConnexionDot" title="Connecté au serveur principal"></span>
                     <span id="dateActuelle" style="font-size: 13px; font-weight: 500; color: #4a5568;"></span>
                     <i class="fas fa-clock text-primary ms-1"></i>
                     <span id="heureActuelle" style="font-size: 13px; font-weight: 700; background: linear-gradient(135deg, #0E9D67, #0B7C52); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;"></span>
@@ -1943,7 +1962,6 @@
 
             <div class="d-md-none">
                 <div id="horlogeMobile" style="background: #f8f9fa; padding: 5px 12px; border-radius: 30px; display:flex; align-items:center; gap:7px;">
-                    <span class="statut-connexion-dot" id="statutConnexionDotMobile" title="Connecté au serveur principal"></span>
                     <span id="heureMobile" style="font-size: 12px; font-weight: 600; color: #0E9D67;"></span>
                 </div>
             </div>
@@ -1976,7 +1994,13 @@
             {% endif %}
 
             <div class="dropdown">
-                <button class="btn btn-light rounded-pill dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                <button class="btn btn-light rounded-pill dropdown-toggle d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown">
+                    <!-- ⭐ Indicateur "connecté" déplacé ici, devant le nom —
+                         patron : "le nom d'utilisateur bien dans le coin à
+                         droite et devant ce nom on devrait mettre le signal
+                         de connexion en violet là" (voir CSS
+                         .statut-connexion-dot et verifierEtatSynchro()). -->
+                    <span class="statut-connexion-dot" id="statutConnexionDot" title="Connecté au serveur principal"></span>
                     <i class="fas fa-user-circle"></i> {{ session.user_name|default('Utilisateur') }}
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end">
