@@ -116,6 +116,13 @@
                                      pour remplir directement la feuille de bordereau de
                                      l'assurance complémentaire sans recalculer à la main. -->
                                 <th>Part CAC (FCFA)</th>
+                                <!-- ⭐ Part Patient par ligne — reste à charge du patient
+                                     pour CET article (Total - Part AMU - Part CAC), même
+                                     principe que Part AMU/Part CAC — patron : "afficher la
+                                     part du patient... pour chaque ligne comme par
+                                     assurance qu'on a ajouté, pour faciliter le travail au
+                                     secretaire". -->
+                                <th>Part Patient (FCFA)</th>
                                 <th>Quantité</th>
                                 <th>Total (FCFA)</th>
                                 <th>Action</th>
@@ -1042,7 +1049,7 @@ function afficherPanier() {
     tbody.innerHTML = '';
     
     if (panier.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center">Aucun acte dans le panier</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center">Aucun acte dans le panier</td></tr>';
         document.getElementById('finaliserBtn').disabled = true;
         document.getElementById('proformaBtn').disabled = true;
         document.getElementById('sousTotal').innerHTML = '0 FCFA';
@@ -1153,7 +1160,14 @@ function afficherPanier() {
             ? '<span class="badge bg-info">' + Math.round(partCACLigne).toLocaleString('fr-FR') + ' F</span>'
             : '<span class="text-muted">-</span>';
 
-        let cellQuantite = row.insertCell(6);
+        // ⭐ Part Patient de cette ligne — reste après Part AMU et Part CAC
+        // (jamais négatif, au cas où un arrondi ferait dépasser le total).
+        let cellPartPatient = row.insertCell(6);
+        cellPartPatient.className = 'text-center';
+        let partPatientLigne = Math.max(item.total - partAMULigne - partCACLigne, 0);
+        cellPartPatient.innerHTML = '<span class="badge bg-warning text-dark">' + Math.round(partPatientLigne).toLocaleString('fr-FR') + ' F</span>';
+
+        let cellQuantite = row.insertCell(7);
         cellQuantite.className = 'text-center';
         cellQuantite.innerHTML = '<div class="input-group" style="width: 120px; margin: 0 auto;">' +
             '<button class="btn btn-sm btn-secondary" onclick="modifQuantite(' + index + ', -1)">-</button>' +
@@ -1161,11 +1175,11 @@ function afficherPanier() {
             '<button class="btn btn-sm btn-secondary" onclick="modifQuantite(' + index + ', 1)">+</button>' +
             '</div>';
 
-        let cellTotal = row.insertCell(7);
+        let cellTotal = row.insertCell(8);
         cellTotal.className = 'text-end';
         cellTotal.innerHTML = Math.round(item.total).toLocaleString('fr-FR') + ' FCFA';
 
-        let cellAction = row.insertCell(8);
+        let cellAction = row.insertCell(9);
         cellAction.className = 'text-center';
         cellAction.innerHTML = '<button class="btn btn-sm btn-danger" onclick="supprimerActe(' + index + ')"><i class="fas fa-trash"></i></button>';
     }

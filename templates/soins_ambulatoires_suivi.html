@@ -342,6 +342,9 @@
                         <th class="text-end">Prix</th>
                         <th class="text-end">Total</th>
                         <th>Assur.</th>
+                        <!-- ⭐ Part patient par ligne — voir hospitalisation_suivi.html
+                             pour le même correctif. -->
+                        <th class="text-end">Part Patient</th>
                         <th>Enregistré par</th>
                         <th>Statut</th>
                         <th></th>
@@ -362,6 +365,7 @@
                             {% if patient_a_cac and l.prise_en_charge_cac %}<span class="badge bg-info" title="CAC">CAC</span>{% endif %}
                             {% if not (patient_a_amu and l.prise_en_charge_amu) and not (patient_a_cac and l.prise_en_charge_cac) %}<span class="text-muted small">—</span>{% endif %}
                         </td>
+                        <td class="text-end"><span class="badge bg-warning text-dark">{{ '{:,}'.format(l.part_patient_ligne|round(0)|int).replace(',', ' ') }}</span></td>
                         <td><small>{{ l.enregistre_par or '-' }}</small></td>
                         <td>
                             {% if l.statut == 'en_cours' %}<span class="badge bg-warning text-dark">En cours</span>
@@ -376,7 +380,7 @@
                         </td>
                     </tr>
                     {% else %}
-                    <tr><td colspan="11" class="text-center text-muted py-4">Aucun soin enregistré pour cet épisode</td></tr>
+                    <tr><td colspan="12" class="text-center text-muted py-4">Aucun soin enregistré pour cet épisode</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

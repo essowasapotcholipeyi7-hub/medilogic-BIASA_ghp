@@ -14468,6 +14468,18 @@ def page_hospitalisation_suivi(hospit_id):
     pbr_cac_par_acte = charger_pbr_complementaires(structure_id, hospit.assurance2_nom) if (hospit.a_cac and hospit.applique_pbr_cac) else {}
     repartition = calculer_repartition_assurance(soins_pour_repartition, hospit, pbr_cac_par_acte, hospit.pbr_cac_variante) if soins_pour_repartition else None
 
+    # ⭐ Part patient PAR LIGNE (colonne "Historique des soins") — même
+    # formule que la répartition ci-dessus (calculer_repartition_assurance),
+    # appelée une ligne à la fois pour que chaque ligne du tableau (TOUTES
+    # les lignes, pas seulement en_cours) affiche son propre reste à charge
+    # — patron : "afficher la part du patient... pour chaque ligne comme
+    # par assurance qu'on a ajouté, pour faciliter le travail au
+    # secretaire". Aucune interaction entre lignes dans cette formule (le
+    # plafond PBR-CAC s'applique par ligne, pas cumulé) : la somme des
+    # parts par ligne redonne exactement le même total que l'agrégat.
+    for s in soins:
+        s.part_patient_ligne = calculer_repartition_assurance([s], hospit, pbr_cac_par_acte, hospit.pbr_cac_variante)['part_patient']
+
     # ⭐ Part CAC pour CHAQUE variante (habituel/alternatif), indépendamment
     # de celle actuellement sélectionnée — affichée directement dans le
     # sélecteur #selectPbrCacVariante (voir template) pour que le choix ne
@@ -15162,6 +15174,12 @@ def page_soins_ambulatoires_suivi(episode_id):
     lignes_en_cours = [l for l in lignes if l.statut == 'en_cours']
     pbr_cac_par_acte = charger_pbr_complementaires(structure_id, episode.assurance2_nom) if (episode.a_cac and episode.applique_pbr_cac) else {}
     repartition = calculer_repartition_assurance(lignes_en_cours, episode, pbr_cac_par_acte, episode.pbr_cac_variante) if lignes_en_cours else None
+
+    # ⭐ Part patient PAR LIGNE — même principe que hospitalisation_suivi
+    # (voir son commentaire équivalent) : patron : "afficher la part du
+    # patient... pour chaque ligne comme par assurance qu'on a ajouté".
+    for l in lignes:
+        l.part_patient_ligne = calculer_repartition_assurance([l], episode, pbr_cac_par_acte, episode.pbr_cac_variante)['part_patient']
 
     montant_pbr_defaut = montant_pbr_alternatif = None
     if lignes_en_cours and pbr_cac_par_acte:

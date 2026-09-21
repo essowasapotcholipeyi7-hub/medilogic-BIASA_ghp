@@ -131,6 +131,9 @@
                                      pour remplir directement la feuille de bordereau de
                                      l'assurance complémentaire sans recalculer à la main. -->
                                 <th style="width: 13%" class="text-center">Part CAC (FCFA)</th>
+                                <!-- ⭐ Part Patient par ligne — reste à charge du patient
+                                     pour CE produit (Total - Part AMU - Part CAC). -->
+                                <th style="width: 13%" class="text-center">Part Patient (FCFA)</th>
                                 <th style="width: 13%" class="text-center">Quantité</th>
                                 <th style="width: 13%" class="text-end">Total (FCFA)</th>
                                 <th style="width: 10%" class="text-center">Action</th>
@@ -1299,7 +1302,7 @@ function afficherPanier() {
     tbody.innerHTML = '';
 
     if (panier.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center">Aucun produit dans le panier</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center">Aucun produit dans le panier</td></tr>';
         document.getElementById('finaliserBtn').disabled = true;
         document.getElementById('proformaBtn').disabled = true;
         document.getElementById('sousTotal').innerHTML = '0 FCFA';
@@ -1407,7 +1410,14 @@ function afficherPanier() {
             ? `<span class="badge bg-info">${Math.round(partCACLigne).toLocaleString('fr-FR')} F</span>`
             : `<span class="text-muted">-</span>`;
 
-        const cellQte = row.insertCell(5);
+        // ⭐ Part Patient de cette ligne — reste après Part AMU et Part CAC.
+        const cellPartPatient = row.insertCell(5);
+        cellPartPatient.className = 'text-center';
+        cellPartPatient.style.verticalAlign = 'middle';
+        const partPatientLigne = Math.max(total - partAMULigne - partCACLigne, 0);
+        cellPartPatient.innerHTML = `<span class="badge bg-warning text-dark">${Math.round(partPatientLigne).toLocaleString('fr-FR')} F</span>`;
+
+        const cellQte = row.insertCell(6);
         cellQte.className = 'text-center';
         cellQte.style.verticalAlign = 'middle';
         cellQte.innerHTML = `
@@ -1420,12 +1430,12 @@ function afficherPanier() {
             </div>
         `;
 
-        const cellTotal = row.insertCell(6);
+        const cellTotal = row.insertCell(7);
         cellTotal.className = 'text-end fw-bold';
         cellTotal.style.verticalAlign = 'middle';
         cellTotal.innerHTML = `${Math.round(total).toLocaleString('fr-FR')} FCFA`;
 
-        const cellAction = row.insertCell(7);
+        const cellAction = row.insertCell(8);
         cellAction.className = 'text-center';
         cellAction.style.verticalAlign = 'middle';
         cellAction.innerHTML = `
