@@ -2033,7 +2033,13 @@
                     Factures Proforma
                 </a>
                 {% endif %}
-                {% if not session.is_admin and not _bloq %}
+                <!-- ⭐ FIX : ce lien était affiché pour tout non-admin, mais
+                     page_factures_assurances (app.py) est réservée à
+                     caissier/secretaire — un gestionnaire ou comptable non-
+                     admin tombait sur "Accès non autorisé" en cliquant.
+                     Même bug repéré et corrigé sur la flèche retour des
+                     pages Facture AMU CNSS/INAM. -->
+                {% if session.role in ['caissier', 'secretaire'] and not _bloq %}
                 <a class="menu-item" href="{{ url_for('page_factures_assurances') }}">
                     Factures assurances
                 </a>

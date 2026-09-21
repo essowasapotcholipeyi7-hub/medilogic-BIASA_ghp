@@ -10,9 +10,18 @@
         <a href="{{ url_for('page_parametrage_amu_inam') }}" class="btn btn-outline-secondary btn-sm">
             <i class="fas fa-cog me-1"></i> Paramètres INAM
         </a>
+        <!-- ⭐ Même correctif que assurance_facture_amu_cnss.html :
+             page_factures_assurances est réservée à caissier/secretaire,
+             renvoyait "Accès non autorisé" pour tout autre rôle. -->
+        {% if session.role in ['caissier', 'secretaire'] %}
         <a href="{{ url_for('page_factures_assurances') }}" class="btn btn-outline-secondary btn-sm">
             <i class="fas fa-arrow-left me-1"></i> Factures assurances
         </a>
+        {% else %}
+        <a href="{{ url_for('statistiques_ventes') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-arrow-left me-1"></i> Statistiques des ventes
+        </a>
+        {% endif %}
     </div>
 </div>
 

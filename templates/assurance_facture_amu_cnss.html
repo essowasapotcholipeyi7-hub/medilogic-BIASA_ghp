@@ -10,9 +10,23 @@
         <a href="{{ url_for('page_parametrage_amu_cnss') }}" class="btn btn-outline-secondary btn-sm">
             <i class="fas fa-cog me-1"></i> Paramètres CNSS
         </a>
+        <!-- ⭐ page_factures_assurances (app.py) est réservée aux rôles
+             caissier/secretaire — pour tout autre rôle (admin,
+             gestionnaire, comptable...) elle renvoyait "Accès non
+             autorisé" au clic sur cette flèche, alors que CETTE page-ci
+             (Facture AMU) est accessible à tout le monde. Renvoie ces
+             rôles vers Statistiques des ventes à la place (leur propre
+             équivalent, onglet Assurances), jamais vers une page qu'ils
+             ne peuvent pas ouvrir. -->
+        {% if session.role in ['caissier', 'secretaire'] %}
         <a href="{{ url_for('page_factures_assurances') }}" class="btn btn-outline-secondary btn-sm">
             <i class="fas fa-arrow-left me-1"></i> Factures assurances
         </a>
+        {% else %}
+        <a href="{{ url_for('statistiques_ventes') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-arrow-left me-1"></i> Statistiques des ventes
+        </a>
+        {% endif %}
     </div>
 </div>
 
