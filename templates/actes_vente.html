@@ -425,6 +425,14 @@
                                 style="box-shadow: 0 3px 8px rgba(25,135,84,0.35); letter-spacing: 0.3px;">
                             <i class="fas fa-check-circle"></i> Finaliser la vente
                         </button>
+                        <!-- ⭐ Nom du patient — patron : "la vente en attente doit
+                             contenir le nom du patient pour ne pas qu'on
+                             souffre". Simple champ libre (pas de recherche
+                             formelle) pour ne pas alourdir l'admission ; sert
+                             à préremplir la recherche patient à la caisse. -->
+                        <input type="text" class="form-control form-control-sm" id="nomPatientAttente"
+                               placeholder="Nom du patient (aide la caisse à le retrouver)"
+                               style="margin-bottom: -4px;">
                         <!-- ⭐ Remplace l'ancien bouton "Proforma" — patron : "le
                              bouton proforma qui s'y trouve qu'on le transforme
                              en vente soumise en attente de finalisation pour la
@@ -2501,10 +2509,12 @@ function soumettreVenteEnAttente() {
         };
     });
 
+    const nomPatientAttente = (document.getElementById('nomPatientAttente')?.value || '').trim();
+
     fetch('/api/ventes-en-attente/creer', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ type: 'actes', articles: articles, sous_total: sousTotal })
+        body: JSON.stringify({ type: 'actes', articles: articles, sous_total: sousTotal, nom_patient: nomPatientAttente })
     })
     .then(r => r.json())
     .then(data => {
@@ -2514,6 +2524,7 @@ function soumettreVenteEnAttente() {
                   `Code à communiquer au patient : #${data.numero_local}\n\n` +
                   `Le patient doit se présenter à la caisse avec ce code pour finaliser le paiement.`);
             panier = [];
+            document.getElementById('nomPatientAttente').value = '';
             afficherPanier();  // remet aussi venteAttenteBtn.disabled à jour (panier vide)
             if (typeof chargerVenteAttenteBadge === 'function') chargerVenteAttenteBadge();
         } else {
@@ -2564,6 +2575,8 @@ if (VENTE_ATTENTE) {
     // finalisation — seul "Finaliser la vente" a un sens ici.
     const btnVenteAttente = document.getElementById('venteAttenteBtn');
     if (btnVenteAttente) btnVenteAttente.style.display = 'none';
+    const inputNomPatientAttente = document.getElementById('nomPatientAttente');
+    if (inputNomPatientAttente) inputNomPatientAttente.style.display = 'none';
 }
 
 // ============================================

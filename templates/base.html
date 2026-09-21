@@ -2017,6 +2017,12 @@
                 <a class="menu-item" href="{{ url_for('pharma_vente') }}">
                     Vente pharmacie
                 </a>
+                {% if session.role in ['admin', 'caissier', 'secretaire'] and not _bloq %}
+                <a class="menu-item" href="{{ url_for('page_ventes_en_attente') }}">
+                    <i class="fas fa-clock"></i> Ventes en attente
+                    <span class="badge bg-danger ms-1 vente-attente-badge" style="display:none;">0</span>
+                </a>
+                {% endif %}
                 <a class="menu-item" href="{{ url_for('gestion_stock') }}">
                     Gestion des stocks
                 </a>
@@ -2047,14 +2053,6 @@
                 {% if session.role in ['caissier', 'secretaire'] and not _bloq %}
                 <a class="menu-item" href="{{ url_for('page_factures_assurances') }}">
                     Factures assurances
-                </a>
-                {% endif %}
-                <!-- ⭐ Ventes en attente — même accès que ci-dessus + admin
-                     (voir _ROLES_FINALISATION_VENTE_ATTENTE, app.py). -->
-                {% if session.role in ['admin', 'caissier', 'secretaire'] and not _bloq %}
-                <a class="menu-item" href="{{ url_for('page_ventes_en_attente') }}">
-                    <i class="fas fa-clock"></i> Ventes en attente
-                    <span class="badge bg-danger ms-1 vente-attente-badge" style="display:none;">0</span>
                 </a>
                 {% endif %}
                 {% if not _bloq %}

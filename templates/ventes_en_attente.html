@@ -32,7 +32,7 @@
                     <div class="col-md-4">
                         <div class="input-group input-group-sm">
                             <span class="input-group-text"><i class="fas fa-search"></i></span>
-                            <input type="text" class="form-control" id="rechercheInput" placeholder="Code, article, créé par..." oninput="chargerListe()">
+                            <input type="text" class="form-control" id="rechercheInput" placeholder="Code, patient, article, créé par..." oninput="chargerListe()">
                         </div>
                     </div>
                     <div class="col-md-3">
@@ -49,6 +49,7 @@
                         <thead class="table-light">
                             <tr>
                                 <th>Code</th>
+                                <th>Patient</th>
                                 <th>Type</th>
                                 <th>Détail</th>
                                 <th class="text-end">Montant estimé</th>
@@ -59,7 +60,7 @@
                             </tr>
                         </thead>
                         <tbody id="listeBody">
-                            <tr><td colspan="8" class="text-center text-muted py-4">Chargement…</td></tr>
+                            <tr><td colspan="9" class="text-center text-muted py-4">Chargement…</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -142,7 +143,7 @@ function chargerListe() {
         })
         .catch(() => {
             document.getElementById('listeBody').innerHTML =
-                '<tr><td colspan="8" class="text-center text-danger py-4">Erreur de chargement</td></tr>';
+                '<tr><td colspan="9" class="text-center text-danger py-4">Erreur de chargement</td></tr>';
         });
 }
 
@@ -150,7 +151,7 @@ function afficherListe(liste) {
     const tbody = document.getElementById('listeBody');
     if (!liste || liste.length === 0) {
         const texte = VUE_ACTUELLE === 'historique' ? 'Aucune vente en attente finalisée/annulée' : 'Aucune vente en attente pour le moment';
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">${texte}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-4">${texte}</td></tr>`;
         return;
     }
 
@@ -168,9 +169,11 @@ function afficherListe(liste) {
         let action = '';
         if (v.statut === 'en_attente') {
             action = `
-                <a href="/${routeFinalisation}?finaliser_attente=${v.id}" class="btn btn-sm btn-success" title="Finaliser">
+                <button class="btn btn-sm btn-success" title="Finaliser"
+                        data-vea-id="${v.id}" data-route="${routeFinalisation}" data-nom="${escapeHtml(v.nom_patient || '')}"
+                        onclick="allerFinaliserFromBtn(this)">
                     <i class="fas fa-check-circle"></i> Finaliser
-                </a>
+                </button>
                 <button class="btn btn-sm btn-outline-danger" onclick="ouvrirAnnulation(${v.id}, '${v.numero_local}')" title="Annuler">
                     <i class="fas fa-times"></i>
                 </button>`;
@@ -182,6 +185,7 @@ function afficherListe(liste) {
 
         return `<tr>
             <td><strong>#${v.numero_local}</strong></td>
+            <td>${v.nom_patient ? escapeHtml(v.nom_patient) : '<span class="text-muted">Non renseigné</span>'}</td>
             <td>${typeLabel}</td>
             <td><small>${v.detail} (${v.nb_articles} article${v.nb_articles > 1 ? 's' : ''})</small></td>
             <td class="text-end">${Math.round(v.sous_total).toLocaleString('fr-FR')} FCFA</td>
@@ -191,6 +195,30 @@ function afficherListe(liste) {
             <td class="text-end">${action}</td>
         </tr>`;
     }).join('');
+}
+
+function escapeHtml(texte) {
+    const div = document.createElement('div');
+    div.textContent = texte;
+    return div.innerHTML;
+}
+
+// ⭐ Sélection du patient avant finalisation — patron : "lorsqu'on veut
+// finaliser la vente pour un patient donné il faudrait que le patient
+// sélectionné corresponde en même temps... rendre le travail facile".
+// On passe par la page Patients (recherche préremplie avec le nom saisi
+// à l'admission) au lieu d'aller directement sur la vente : la caisse
+// choisit ainsi le VRAI dossier patient, sans ressaisir son nom.
+function allerFinaliser(id, routeFinalisation, nomPatient) {
+    const params = new URLSearchParams();
+    params.set('finaliser_attente', id);
+    params.set('finaliser_type', routeFinalisation === 'pharma_vente' ? 'pharmacie' : 'actes');
+    if (nomPatient) params.set('rechercher', nomPatient);
+    window.location.href = `/patients?${params.toString()}`;
+}
+
+function allerFinaliserFromBtn(btn) {
+    allerFinaliser(btn.dataset.veaId, btn.dataset.route, btn.dataset.nom);
 }
 
 function ouvrirAnnulation(id, code) {

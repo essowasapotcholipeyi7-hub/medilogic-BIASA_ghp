@@ -4,6 +4,21 @@
 
 {% block content %}
 
+<!-- ⭐ Bandeau de finalisation d'une vente en attente — patron : "lorsqu'on
+     veut finaliser la vente pour un patient donné il faudrait que le
+     patient sélectionné corresponde en même temps... rendre le travail
+     facile". Affiché seulement quand on arrive depuis Ventes en attente
+     (voir allerFinaliser() dans ventes_en_attente.html). -->
+<div class="alert alert-warning d-flex align-items-center justify-content-between flex-wrap gap-2" id="banniereFinalisationAttente" style="display:none;">
+    <div>
+        <i class="fas fa-clock me-1"></i>
+        <strong>Finalisation d'une vente en attente</strong> — sélectionnez le patient concerné pour continuer.
+    </div>
+    <a href="{{ url_for('page_ventes_en_attente') }}" class="btn btn-sm btn-outline-dark">
+        <i class="fas fa-times"></i> Annuler
+    </a>
+</div>
+
 <!-- ============================================================
      STATISTIQUES PATIENTS
      ============================================================ -->
@@ -797,6 +812,15 @@ let currentPage = 1;
 let rowsPerPage = 10;
 let currentFiltered = [];
 let detailPatientId = null;
+
+// ⭐ Finalisation d'une vente en attente (voir allerFinaliser() dans
+// ventes_en_attente.html) — quand ces paramètres sont présents, on saute
+// la modale "Où voulez-vous aller ?" et on file directement vers la
+// vente déjà en attente, patient sélectionné inclus.
+const FINALISER_ATTENTE_PARAMS = new URLSearchParams(window.location.search);
+const FINALISER_ATTENTE_ID = FINALISER_ATTENTE_PARAMS.get('finaliser_attente');
+const FINALISER_ATTENTE_TYPE = FINALISER_ATTENTE_PARAMS.get('finaliser_type');
+const FINALISER_ATTENTE_RECHERCHE = FINALISER_ATTENTE_PARAMS.get('rechercher') || '';
 
 // ============================================
 // FONCTIONS DE PROGRESSION
@@ -2147,6 +2171,12 @@ function selectPatient(id, nom, assurance, taux, assurance2, taux2, societeAssur
 
     console.log('✅ Patient sélectionné:', { id, nom, assurance, taux, assurance2, taux2, societeAssurance2 });
 
+    if (FINALISER_ATTENTE_ID) {
+        const route = FINALISER_ATTENTE_TYPE === 'pharmacie' ? '/pharma_vente' : '/actes_vente';
+        window.location.href = `${route}?finaliser_attente=${encodeURIComponent(FINALISER_ATTENTE_ID)}`;
+        return;
+    }
+
     showPatientDestinationModal(id, nom, assurance, taux, assurance2, taux2);
 }
 
@@ -2383,11 +2413,21 @@ document.addEventListener('DOMContentLoaded', function() {
     updateResultCount();
     updatePagination();
     displayPage(1);
-    
+
     chargerStatsPatients();
-    
+
     document.getElementById('date_naissance').addEventListener('change', updateAgeFromDate);
     document.getElementById('editDateNaissance').addEventListener('change', updateEditAge);
+
+    // ⭐ Voir FINALISER_ATTENTE_* plus haut — préremplit la recherche avec le
+    // nom saisi à l'admission pour retrouver le patient en un clin d'œil.
+    if (FINALISER_ATTENTE_ID) {
+        document.getElementById('banniereFinalisationAttente').style.display = '';
+        if (FINALISER_ATTENTE_RECHERCHE) {
+            document.getElementById('searchInput').value = FINALISER_ATTENTE_RECHERCHE;
+            filterPatients();
+        }
+    }
 });
 </script>
 

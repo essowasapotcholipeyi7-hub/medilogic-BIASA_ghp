@@ -8251,6 +8251,7 @@ def api_creer_vente_en_attente():
         numero_local = prochain_numero_local('ventes_en_attente', structure_id)
         vea = VenteEnAttente(
             structure_id=structure_id, numero_local=numero_local, type=type_vente,
+            nom_patient=(data.get('nom_patient') or '').strip() or None,
             articles=articles, sous_total=float(data.get('sous_total') or 0),
             statut='en_attente', created_by=user_name,
         )
@@ -8290,13 +8291,16 @@ def api_liste_ventes_en_attente():
         noms = ', '.join((a.get('nom') or '') for a in articles[:3])
         if len(articles) > 3:
             noms += f" (+{len(articles) - 3})"
-        # ⭐ Recherche libre : code, détail des articles, créateur — pas de
-        # nom de patient possible (jamais choisi à ce stade).
-        haystack = f"{v.numero_local} {noms} {v.created_by or ''}".lower()
+        # ⭐ Recherche libre : code, détail des articles, créateur, et
+        # maintenant le nom du patient (saisi librement à l'admission) —
+        # patron : "doit contenir le nom du patient pour ne pas qu'on
+        # souffre" en cherchant la bonne vente à la caisse.
+        haystack = f"{v.numero_local} {noms} {v.created_by or ''} {v.nom_patient or ''}".lower()
         if q and q not in haystack:
             continue
         resultat.append({
             'id': v.id, 'numero_local': v.numero_local, 'type': v.type,
+            'nom_patient': v.nom_patient,
             'nb_articles': len(articles), 'detail': noms or '—',
             'sous_total': float(v.sous_total or 0), 'statut': v.statut,
             'created_by': v.created_by, 'created_at': v.created_at.strftime('%d/%m/%Y %H:%M') if v.created_at else '',

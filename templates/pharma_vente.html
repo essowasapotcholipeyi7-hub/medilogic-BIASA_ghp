@@ -415,6 +415,12 @@
                                 style="box-shadow: 0 3px 8px rgba(25,135,84,0.35); letter-spacing: 0.3px;">
                             <i class="fas fa-check-circle"></i> Finaliser la vente
                         </button>
+                        <!-- ⭐ Nom du patient — voir actes_vente.html pour le
+                             même correctif ("doit contenir le nom du patient
+                             pour ne pas qu'on souffre"). -->
+                        <input type="text" class="form-control form-control-sm" id="nomPatientAttente"
+                               placeholder="Nom du patient (aide la caisse à le retrouver)"
+                               style="margin-bottom: -4px;">
                         <!-- ⭐ Remplace l'ancien bouton "Proforma" — voir
                              actes_vente.html pour le même correctif. -->
                         <button class="btn btn-outline-warning" onclick="soumettreVenteEnAttente()" id="venteAttenteBtn" disabled>
@@ -2404,10 +2410,12 @@ function soumettreVenteEnAttente() {
         };
     });
 
+    const nomPatientAttente = (document.getElementById('nomPatientAttente')?.value || '').trim();
+
     fetch('/api/ventes-en-attente/creer', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ type: 'pharmacie', articles: articles, sous_total: sousTotal })
+        body: JSON.stringify({ type: 'pharmacie', articles: articles, sous_total: sousTotal, nom_patient: nomPatientAttente })
     })
     .then(r => r.json())
     .then(data => {
@@ -2417,6 +2425,7 @@ function soumettreVenteEnAttente() {
                   `Code à communiquer au patient : #${data.numero_local}\n\n` +
                   `Le patient doit se présenter à la caisse avec ce code pour finaliser le paiement.`);
             panier = [];
+            document.getElementById('nomPatientAttente').value = '';
             afficherPanier();
             if (typeof chargerVenteAttenteBadge === 'function') chargerVenteAttenteBadge();
         } else {
@@ -2460,6 +2469,8 @@ if (VENTE_ATTENTE) {
     }));
     const btnVenteAttente = document.getElementById('venteAttenteBtn');
     if (btnVenteAttente) btnVenteAttente.style.display = 'none';
+    const inputNomPatientAttente = document.getElementById('nomPatientAttente');
+    if (inputNomPatientAttente) inputNomPatientAttente.style.display = 'none';
 }
 
 // ============================================
