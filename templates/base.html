@@ -2113,6 +2113,9 @@
                 <a class="menu-item" href="{{ url_for('patients') }}">
                     Liste des patients
                 </a>
+                <a class="menu-item" href="{{ url_for('page_accueil_qr') }}">
+                    Accueil patient (QR)
+                </a>
                 {% if a_acces('rendez_vous') and not onglet_cache('rendez_vous') %}
                 <a class="menu-item" href="{{ url_for('rendez_vous') }}">
                     Programmer Rendez-vous
