@@ -1,0 +1,14 @@
+{
+    "name": "SSoftOneV10",
+    "short_name": "SSoftOneV10",
+    "description": "Gestion hospitalière & pharmacie",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "background_color": "#0A3D5C",
+    "theme_color": "#0A3D5C",
+    "icons": [
+        { "src": "/static/images/app-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+        { "src": "/static/images/app-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    ]
+}

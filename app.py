@@ -10847,6 +10847,26 @@ def portail_service_worker():
     return send_from_directory('static', 'sw.js', mimetype='application/javascript')
 
 
+# ⭐ Application principale (personnel) installable sur PC/mobile — patron :
+# "est-ce que nous pouvons en faire une application installable sur pc et
+# téléphone mobile". Même raison d'être que les deux routes juste
+# au-dessus (type MIME correct + portée du service worker), mais pour
+# l'appli staff plutôt que le portail patient — voir static/app-manifest.json
+# et static/sw-app.js. Enregistré uniquement pour les pages avec session
+# (base.html), jamais sur les pages publiques (portail patient, accueil
+# patient QR), qui restent sur leur propre PWA séparée.
+@app.route('/app-manifest.json')
+def app_manifest():
+    from flask import send_from_directory
+    return send_from_directory('static', 'app-manifest.json', mimetype='application/manifest+json')
+
+
+@app.route('/sw-app.js')
+def app_service_worker():
+    from flask import send_from_directory
+    return send_from_directory('static', 'sw-app.js', mimetype='application/javascript')
+
+
 # ============================================================
 # ⭐ AUCUN login_required ici volontairement : c'est le patient, chez lui,
 # qui y accède — sécurité posée par la vérification téléphone+code
