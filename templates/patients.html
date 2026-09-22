@@ -1730,7 +1730,13 @@ function toggleEditTaux() {
 // aide au remplissage, reste modifiable. Comparaison insensible à la
 // casse (le nom vient maintenant d'un champ libre + datalist, plus d'un
 // <select> à valeurs figées).
-const TAUX_PAR_DEFAUT_ASSURANCE2 = { gta: 60, olea: 70, nsia: 65, sunu: 50, fidelia: 50 };
+// ⭐ 80% par défaut pour TOUTE compagnie d'assurance complémentaire,
+// connue ou non — patron : "j'ai choisi fidélia mais je vois encore 50%...
+// pourtant je te dis de mettre ça en 80%". Avant, seules les compagnies
+// absentes de cette liste tombaient sur 80% ; les compagnies déjà listées
+// gardaient leur ancien taux (60/70/65/50) — ce n'était pas ce qui était
+// demandé. Reste ajustable au cas par cas avant Enregistrer.
+const TAUX_PAR_DEFAUT_ASSURANCE2_CAC = 80;
 
 function toggleAssurance2() {
     const type = document.getElementById('assurance2_nom').value.trim();
@@ -1745,12 +1751,7 @@ function toggleAssurance2() {
     } else {
         tauxInput.readOnly = false;
         societeDiv.style.display = 'block';
-        // ⭐ 80% par défaut pour une compagnie qui n'est pas dans la liste des
-        // taux déjà connus — patron : "il faut mettre le taux des cac 80%
-        // par défaut aussi". GTA/OLEA/NSIA/SUNU/Fidelia gardent leur taux
-        // négocié spécifique, seule une compagnie inconnue tombe sur 80%.
-        const defaut = TAUX_PAR_DEFAUT_ASSURANCE2[type.toLowerCase()];
-        tauxInput.value = (defaut !== undefined) ? defaut : 80;
+        tauxInput.value = TAUX_PAR_DEFAUT_ASSURANCE2_CAC;
         chargerSocietesAssurance(type, 'societesAssuranceList');
     }
 }
@@ -1768,10 +1769,7 @@ function toggleEditAssurance2() {
     } else {
         tauxInput.readOnly = false;
         societeDiv.style.display = 'block';
-        // ⭐ Même défaut 80% que toggleAssurance2() ci-dessus, pour rester
-        // cohérent entre "Ajouter" et "Modifier" un patient.
-        const defaut = TAUX_PAR_DEFAUT_ASSURANCE2[type.toLowerCase()];
-        tauxInput.value = (defaut !== undefined) ? defaut : 80;
+        tauxInput.value = TAUX_PAR_DEFAUT_ASSURANCE2_CAC;
         chargerSocietesAssurance(type, 'editSocietesAssuranceList');
     }
 }
