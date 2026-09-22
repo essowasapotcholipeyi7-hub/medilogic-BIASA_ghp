@@ -10472,18 +10472,21 @@ def _preparer_lien_email_resultat_body(patient_nom, acte_nom, structure_nom, lie
 @app.route('/api/resultats-analyses/<int:resultat_id>/preparer-email', methods=['POST'])
 @login_required
 def api_preparer_email_resultat(resultat_id):
-    """Envoie le résultat par email au patient via le SMTP central de
-    l'appli (même compte déjà utilisé — et vérifié fonctionnel en
-    production — pour les mails de verrouillage/inscription). Repli sur un
-    lien mailto: (comme avant) UNIQUEMENT si l'envoi SMTP échoue vraiment,
-    pour que le personnel puisse quand même l'envoyer à la main depuis son
-    propre client mail. ⭐ Avant ce correctif, la route ne préparait QUE le
-    mailto:, jamais d'envoi réel — supposé plus fiable ("les mails ne
-    passent toujours pas... comme ça marche actuellement avec whatsapp"),
-    mais ça dépend que le poste ait un client mail par défaut configuré,
-    ce qui n'est pas le cas partout : patron a re-signalé "on ne peut pas
-    envoyer par mail" pour ce bouton précis — d'où le retour à un envoi
-    serveur réel, désormais avec repli au lieu d'être la seule option."""
+    """Prépare l'envoi du résultat par email au patient.
+
+    ⭐ Par défaut (via_serveur absent/false) : ne tente PLUS le SMTP
+    central de l'appli — retourne directement un lien mailto:, qui ouvre
+    le client mail DU POSTE, donc celui de la structure elle-même
+    (chaque structure garde son propre mail, pas celui, personnel, de
+    l'appli) — patron : "est ce possible qu'on fasse de sorte que xa passe
+    par le mail de chaque structure... chaque structure a un mail
+    fonctionnel". Le SMTP central (essowasainfo60@gmail.com) reste
+    disponible en repli MANUEL (via_serveur=true, bouton séparé côté
+    template) pour un poste sans client mail configuré — c'est ce
+    problème précis qui avait fait ajouter l'envoi serveur automatique la
+    fois précédente ("on ne peut pas envoyer par mail"), donc on ne le
+    retire pas, on le rend juste optionnel au lieu d'être tenté d'office.
+    """
     try:
         structure_id = session.get('structure_id')
         resultat = ResultatExamen.query.filter_by(id=resultat_id, structure_id=structure_id).first()
@@ -10493,7 +10496,9 @@ def api_preparer_email_resultat(resultat_id):
         if not demande:
             return jsonify({'success': False, 'error': 'Demande introuvable'}), 404
 
-        email_saisi = (request.json.get('email') or '').strip() if request.is_json else ''
+        donnees = request.json if request.is_json else {}
+        email_saisi = (donnees.get('email') or '').strip()
+        via_serveur = bool(donnees.get('via_serveur'))
         patient_row = db.execute_query("SELECT email FROM patients WHERE id = %s AND structure_id = %s", (demande.patient_id, structure_id))
         email_patient = (patient_row[0].get('email') if patient_row else None) or None
 
@@ -10501,6 +10506,9 @@ def api_preparer_email_resultat(resultat_id):
         if not email or '@' not in email:
             return jsonify({'success': False, 'error': 'Aucun email pour ce patient — saisissez-en un.'}), 400
 
+        # ⭐ "si on avait déjà envoyé le résultat avec le mail d'un patient,
+        # prochainement on ne redemandera plus par défaut" — persiste
+        # l'email saisi/modifié pour les prochains envois de CE patient.
         if email_saisi and email_saisi != email_patient:
             db.execute_query("UPDATE patients SET email = %s WHERE id = %s AND structure_id = %s", (email_saisi, demande.patient_id, structure_id))
 
@@ -10516,6 +10524,11 @@ def api_preparer_email_resultat(resultat_id):
         lien_portail = url_for('page_portail_patient', _external=True)
         sujet = f"Votre résultat — {structure_nom}"
         corps_texte = _preparer_lien_email_resultat_body(demande.patient_nom, demande.acte_nom, structure_nom, lien_portail)
+
+        if not via_serveur:
+            from urllib.parse import quote
+            mailto_url = f"mailto:{email}?subject={quote(sujet)}&body={quote(corps_texte)}"
+            return jsonify({'success': True, 'envoye': False, 'mailto_url': mailto_url, 'email': email})
 
         try:
             msg = Message(
@@ -10536,10 +10549,7 @@ def api_preparer_email_resultat(resultat_id):
             mail.send(msg)
             return jsonify({'success': True, 'envoye': True, 'email': email})
         except Exception as e_smtp:
-            # Repli : le personnel envoie lui-même depuis son propre client mail.
-            from urllib.parse import quote
-            mailto_url = f"mailto:{email}?subject={quote(sujet)}&body={quote(corps_texte)}"
-            return jsonify({'success': True, 'envoye': False, 'mailto_url': mailto_url, 'email': email, 'erreur_smtp': str(e_smtp)})
+            return jsonify({'success': False, 'error': f"Envoi depuis le serveur indisponible : {e_smtp}"})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

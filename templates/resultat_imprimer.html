@@ -157,8 +157,20 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
             {% if not resultat.fichier_data %}
             <button onclick="window.print()" class="btn btn-primary btn-sm"><i class="fas fa-print"></i> Imprimer</button>
             {% endif %}
-            <button onclick="envoyerParEmail()" class="btn btn-success btn-sm"><i class="fas fa-envelope"></i> Envoyer par email</button>
+            <!-- ⭐ Le mail du patient s'affiche en clair sur le bouton — patron :
+                 "possibilité de modifier si le patient change de mail" : le
+                 crayon à côté ouvre une saisie pré-remplie, éditable, sans
+                 jamais redemander par défaut si l'email n'a pas changé. -->
+            <button onclick="envoyerParEmail(false)" class="btn btn-success btn-sm"><i class="fas fa-envelope"></i> Envoyer par email{% if patient_email %} ({{ patient_email }}){% endif %}</button>
+            {% if patient_email %}
+            <button onclick="modifierEmailPatient()" class="btn btn-outline-secondary btn-sm" title="Modifier l'email du patient"><i class="fas fa-pen"></i></button>
+            {% endif %}
             <button onclick="fermerResultat()" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</button>
+        </div>
+        <div class="text-center no-print">
+            <!-- ⭐ Repli manuel si le client mail ne s'ouvre pas sur ce poste
+                 (voir api_preparer_email_resultat) — jamais tenté d'office. -->
+            <button onclick="envoyerParEmail(true)" class="btn btn-link btn-sm text-muted p-0" style="text-decoration:underline;">Le mail ne s'ouvre pas ? Envoyer depuis le serveur</button>
         </div>
         <div id="emailResultatMsg" class="text-center mt-2 small no-print"></div>
     </div>
@@ -209,31 +221,50 @@ function fermerResultat() {
 })();
 {% endif %}
 
-// ⭐ Envoie réellement le mail via le serveur (SMTP central, déjà vérifié
-// fonctionnel en production) ; si l'envoi échoue, repli sur le client mail
-// du poste (mailto:) comme avant — voir api_preparer_email_resultat.
-function envoyerParEmail() {
-    const msg = document.getElementById('emailResultatMsg');
-    let email = "{{ patient_email }}";
+// ⭐ Par défaut, ouvre le client mail DU POSTE (mailto:) — chaque
+// structure envoie ainsi depuis son propre mail, pas celui de l'appli
+// (patron : "que xa passe par le mail de chaque structure"). Le bouton
+// "Envoyer depuis le serveur" (via_serveur=true) reste disponible à la
+// main pour un poste sans client mail configuré. Voir
+// api_preparer_email_resultat pour le détail.
+let emailPatientActuel = {{ (patient_email or '') | tojson }};
+
+function envoyerParEmail(viaServeur) {
+    let email = emailPatientActuel;
     if (!email) {
-        email = prompt("Aucun email enregistré pour ce patient — saisissez-en un :");
+        email = prompt("Aucun email enregistré pour ce patient — saisissez-en un :", '');
         if (!email) return;
     }
+    envoyerVersEmail(email, viaServeur);
+}
+
+// ⭐ "possibilité de modifier si le patient change de mail" — pré-rempli
+// avec l'email actuel, modifiable avant l'envoi.
+function modifierEmailPatient() {
+    const nouveau = prompt("Email du patient :", emailPatientActuel || '');
+    if (!nouveau) return;
+    envoyerVersEmail(nouveau, false);
+}
+
+function envoyerVersEmail(email, viaServeur) {
+    const msg = document.getElementById('emailResultatMsg');
     msg.className = 'text-center mt-2 small no-print text-muted';
-    msg.textContent = 'Envoi en cours...';
+    msg.textContent = viaServeur ? 'Envoi depuis le serveur...' : 'Préparation...';
     fetch("{{ url_for('api_preparer_email_resultat', resultat_id=resultat.id) }}", {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email })
+        body: JSON.stringify({ email: email, via_serveur: !!viaServeur })
     })
     .then(r => r.json())
     .then(data => {
         if (data.success && data.envoye) {
+            emailPatientActuel = data.email;
             msg.className = 'text-center mt-2 small no-print text-success';
-            msg.textContent = 'Email envoyé à ' + data.email + '.';
+            msg.textContent = 'Email envoyé à ' + data.email + ' depuis le serveur.';
         } else if (data.success && data.mailto_url) {
+            emailPatientActuel = data.email;
             window.open(data.mailto_url, '_blank');
-            msg.className = 'text-center mt-2 small no-print text-warning';
-            msg.textContent = 'Envoi automatique indisponible — votre client mail s\'est ouvert, pré-rempli pour ' + data.email + '.';
+            msg.className = 'text-center mt-2 small no-print text-muted';
+            msg.textContent = 'Votre client mail s\'est ouvert, pré-rempli pour ' + data.email + '.';
         } else {
             msg.className = 'text-center mt-2 small no-print text-danger';
             msg.textContent = 'Erreur : ' + (data.error || 'inconnue');
