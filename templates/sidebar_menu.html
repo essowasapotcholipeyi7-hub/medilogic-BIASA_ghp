@@ -33,6 +33,12 @@
                 {% if not onglet_cache('patients') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'patients' %}active{% endif %}" href="{{ url_for('patients') }}">
                     <span class="menu-text">Liste Patients</span>
+                    {% if preinscriptions_en_attente_count %}
+                    <span class="badge bg-danger ms-1">{{ preinscriptions_en_attente_count }}</span>
+                    {% endif %}
+                </a>
+                <a class="nav-link {% if request.endpoint == 'page_accueil_qr' %}active{% endif %}" href="{{ url_for('page_accueil_qr') }}">
+                    <span class="menu-text">Accueil patient (QR)</span>
                 </a>
                 {% endif %}
 

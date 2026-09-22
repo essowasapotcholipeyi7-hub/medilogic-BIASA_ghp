@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Accueil patient — QR code{% endblock %}
+
+{% block extra_css %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+    @media print {
+        @page { size: A4; margin: 12mm; }
+        .no-print { display: none !important; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card" id="qrContenu">
+            <div class="card-body text-center" style="font-family: 'Segoe UI', Arial, sans-serif;">
+
+                <div class="row" style="background: linear-gradient(135deg, #1d6fa5 0%, #0f4c75 100%); color: white; margin: -20px -20px 20px -20px; padding: 18px; border-radius: 10px 10px 0 0;">
+                    <div class="col-12 d-flex align-items-center gap-3 text-start">
+                        {% if structure.logo_url %}
+                        <img src="{{ structure.logo_url }}" alt="Logo" style="max-height: 55px; max-width: 110px; background: white; padding: 4px; border-radius: 6px;">
+                        {% endif %}
+                        <div>
+                            <h5 style="margin: 0;">{{ structure.nom or "SSoftOne v10" }}</h5>
+                            <p style="margin: 3px 0 0 0; font-size: 11px; opacity: 0.9;">Préinscription à l'accueil</p>
+                        </div>
+                    </div>
+                </div>
+
+                <h5 class="mb-1">Scannez pour vous faire enregistrer</h5>
+                <p class="text-muted small mb-3">
+                    Scannez ce code avec l'appareil photo de votre téléphone, puis remplissez vos
+                    informations. Présentez-vous ensuite au guichet.
+                </p>
+
+                <div id="qrcode" class="d-flex justify-content-center mb-3"></div>
+
+                <p class="text-muted small mb-0">
+                    À imprimer et afficher à l'accueil.
+                </p>
+            </div>
+        </div>
+
+        <div class="card mt-3 no-print">
+            <div class="card-body">
+                <h6><i class="fas fa-tablet-alt me-1"></i> Mode tablette (sans QR)</h6>
+                <p class="text-muted small mb-2">
+                    Sur une tablette laissée au comptoir, ouvrez directement ce lien dans le
+                    navigateur — la page se réinitialise seule après chaque patient, pas besoin de
+                    scanner.
+                </p>
+                <div class="input-group">
+                    <input type="text" class="form-control form-control-sm" id="lienAccueil" value="{{ accueil_url }}" readonly>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="copierLien()"><i class="fas fa-copy"></i> Copier</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-3 no-print">
+            <button onclick="window.print()" class="btn btn-primary btn-sm"><i class="fas fa-print"></i> Imprimer</button>
+            <a href="{{ url_for('patients') }}" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</a>
+        </div>
+    </div>
+</div>
+
+<script>
+new QRCode(document.getElementById("qrcode"), {
+    text: {{ accueil_url|tojson }},
+    width: 200,
+    height: 200,
+    correctLevel: QRCode.CorrectLevel.M
+});
+
+function copierLien() {
+    const champ = document.getElementById('lienAccueil');
+    champ.select();
+    navigator.clipboard.writeText(champ.value).catch(() => document.execCommand('copy'));
+}
+</script>
+{% endblock %}

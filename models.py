@@ -98,6 +98,42 @@ class Patient(db.Model):
 
 
 # ============================================================
+# PRÉINSCRIPTIONS PATIENT — saisie par le patient lui-même (tablette à
+# l'accueil ou QR code scanné avec son téléphone), à valider par la
+# réception avant de devenir une vraie fiche patient. Jamais insérée
+# directement dans `patients` : le nom peut être mal orthographié, le
+# patient peut déjà exister, le numéro d'assuré doit être vérifiable —
+# un coup d'œil de la réception avant validation évite ça.
+# ============================================================
+class PreinscriptionPatient(db.Model):
+    __tablename__ = 'preinscriptions_patients'
+
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, db.ForeignKey('structures.id'), nullable=False)
+
+    nom = db.Column(db.String(100), nullable=False)
+    prenom = db.Column(db.String(100))
+    telephone = db.Column(db.String(50))
+    date_naissance = db.Column(db.Date)
+    adresse = db.Column(db.Text)
+
+    type_assurance = db.Column(db.String(50), default='non_assure')
+    numero_assure = db.Column(db.String(50))
+
+    personne_a_prevenir_nom = db.Column(db.String(100))
+    personne_a_prevenir_telephone = db.Column(db.String(50))
+
+    email = db.Column(db.String(255))
+
+    # 'en_attente' | 'validee' | 'rejetee'
+    statut = db.Column(db.String(20), nullable=False, default='en_attente')
+    # Rempli au moment de la validation, vers la fiche patient créée
+    patient_id = db.Column(db.Integer, db.ForeignKey('patients.id'))
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# ============================================================
 # SOCIÉTÉS SOUSCRIPTRICES D'ASSURANCE COMPLÉMENTAIRE
 # ============================================================
 # Une assurance complémentaire (GTA, SUNU, NSIA...) est en général souscrite

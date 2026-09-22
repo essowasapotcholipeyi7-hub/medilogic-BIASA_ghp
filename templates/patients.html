@@ -27,6 +27,52 @@
 </div>
 
 <!-- ============================================================
+     EN ATTENTE D'INSCRIPTION — patients qui se sont préinscrits eux-mêmes
+     (tablette d'accueil ou QR code, voir /patients/accueil-qr). Chaque
+     entrée ouvre le même modal "Ajouter un patient" ci-dessous, pré-rempli
+     : la réception vérifie/complète puis Enregistrer, exactement comme une
+     saisie normale.
+     ============================================================ -->
+{% if preinscriptions %}
+<div class="card border-warning mb-4" id="panneauPreinscriptions">
+    <div class="card-header bg-warning bg-opacity-25">
+        <i class="fas fa-user-clock me-1"></i>
+        <strong>En attente d'inscription</strong>
+        <span class="badge bg-warning text-dark ms-1">{{ preinscriptions|length }}</span>
+        <span class="text-muted small ms-2">saisi par le patient lui-même — à vérifier avant enregistrement</span>
+    </div>
+    <div class="list-group list-group-flush">
+        {% for p in preinscriptions %}
+        <div class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2" id="preinscriptionLigne{{ p.id }}">
+            <div>
+                <strong>{{ p.nom }} {{ p.prenom or '' }}</strong>
+                {% if p.telephone %}<span class="text-muted small ms-2"><i class="fas fa-phone-alt me-1"></i>{{ p.telephone }}</span>{% endif %}
+                {% if p.type_assurance and p.type_assurance != 'non_assure' %}<span class="badge bg-info ms-2">{{ p.type_assurance }}</span>{% endif %}
+                <span class="text-muted small ms-2">{{ p.created_at.strftime('%H:%M') if p.created_at else '' }}</span>
+            </div>
+            <div>
+                <button class="btn btn-sm btn-success" onclick='preRemplirDepuisPreinscription({{ {
+                    "id": p.id, "nom": p.nom, "prenom": p.prenom, "telephone": p.telephone,
+                    "adresse": p.adresse,
+                    "date_naissance": p.date_naissance.strftime('%Y-%m-%d') if p.date_naissance else "",
+                    "type_assurance": p.type_assurance, "numero_assure": p.numero_assure,
+                    "personne_a_prevenir_nom": p.personne_a_prevenir_nom,
+                    "personne_a_prevenir_telephone": p.personne_a_prevenir_telephone,
+                    "email": p.email
+                }|tojson }})'>
+                    <i class="fas fa-check me-1"></i> Compléter la fiche
+                </button>
+                <button class="btn btn-sm btn-outline-danger" onclick="rejeterPreinscription({{ p.id }})">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- ============================================================
      STATISTIQUES PATIENTS
      ============================================================ -->
 <div class="row mb-4 g-3">
@@ -1796,7 +1842,17 @@ function chargerSocietesAssurance(assuranceNom, datalistId) {
 // ============================================
 // AJOUT PATIENT
 // ============================================
+// ⭐ Rempli quand "Compléter la fiche" est cliqué depuis le panneau "En
+// attente d'inscription" (préinscription tablette/QR) — envoyé avec la
+// fiche au moment d'Enregistrer pour que la préinscription soit marquée
+// validée côté serveur (voir api_add_patient, app.py). null pour un ajout
+// normal, sans préinscription liée.
+let preinscriptionIdCourante = null;
+let preinscriptionEmailCourante = null;
+
 function showAddModal() {
+    preinscriptionIdCourante = null;
+    preinscriptionEmailCourante = null;
     document.getElementById('patientForm').reset();
     document.getElementById('taux_prise_charge').value = 0;
     document.getElementById('taux_prise_charge').readOnly = true;
@@ -1819,6 +1875,49 @@ function showAddModal() {
     // par le fix global sur 'show.bs.modal' dans base.html.
     new bootstrap.Modal(document.getElementById('patientModal')).show();
 }
+
+// ⭐ "Compléter la fiche" depuis le panneau "En attente d'inscription" :
+// réutilise le même modal/formulaire que l'ajout normal, juste pré-rempli
+// avec ce que le patient a saisi lui-même — la réception vérifie/complète
+// avant d'Enregistrer, rien n'est créé sans validation humaine.
+function preRemplirDepuisPreinscription(preinscription) {
+    showAddModal();
+    preinscriptionIdCourante = preinscription.id;
+    preinscriptionEmailCourante = preinscription.email || null;
+
+    document.getElementById('nom').value = preinscription.nom || '';
+    document.getElementById('prenom').value = preinscription.prenom || '';
+    document.getElementById('telephone').value = preinscription.telephone || '';
+    document.getElementById('adresse').value = preinscription.adresse || '';
+    if (preinscription.date_naissance) {
+        document.getElementById('date_naissance').value = preinscription.date_naissance;
+        updateAgeFromDate();
+    }
+    document.getElementById('personne_prevenir_nom').value = preinscription.personne_a_prevenir_nom || '';
+    document.getElementById('personne_prevenir_telephone').value = preinscription.personne_a_prevenir_telephone || '';
+
+    if (preinscription.type_assurance && preinscription.type_assurance !== 'non_assure') {
+        document.getElementById('type_assurance').value = preinscription.type_assurance;
+        toggleTaux();
+        document.getElementById('numero_assure').value = preinscription.numero_assure || '';
+    }
+}
+
+function rejeterPreinscription(id) {
+    if (!confirm('Écarter cette préinscription ? Le patient devra se réinscrire s\'il se présente plus tard.')) return;
+    fetch(`/api/patients/preinscriptions/${id}/rejeter`, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const ligne = document.getElementById(`preinscriptionLigne${id}`);
+                if (ligne) ligne.remove();
+            } else {
+                alert('❌ Erreur: ' + (data.error || 'Erreur inconnue'));
+            }
+        })
+        .catch(error => alert('❌ Erreur: ' + error));
+}
+
 function savePatient() {
     let typeAssurance = document.getElementById('type_assurance').value;
     let autreAssurance = document.getElementById('autre_assurance').value;
@@ -1872,7 +1971,9 @@ function savePatient() {
         societe_assurance2: societeAssurance2 || null,
         personne_a_prevenir_nom: personnePrevenirNom || null,
         personne_a_prevenir_telephone: personnePrevenirTelephone || null,
-        personne_a_prevenir_relation: personnePrevenirRelation || null
+        personne_a_prevenir_relation: personnePrevenirRelation || null,
+        preinscription_id: preinscriptionIdCourante,
+        email: preinscriptionEmailCourante
     };
 
     if (!patient.nom || !patient.telephone) {

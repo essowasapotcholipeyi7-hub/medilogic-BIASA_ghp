@@ -15,7 +15,7 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
@@ -1830,12 +1830,21 @@ def patients():
                         'personne_a_prevenir_relation': p[15] if len(p) > 15 else ''
                     })
         
-        return render_template('patients.html', patients=patients_list)
+        # ⭐ File d'attente des préinscriptions saisies par les patients
+        # eux-mêmes (tablette d'accueil ou QR code scanné) — voir
+        # PreinscriptionPatient, models.py. Affichée en tête de la page pour
+        # que la réception les complète en un clic (réutilise le même
+        # modal "Ajouter un patient" ci-dessous, pré-rempli).
+        preinscriptions = PreinscriptionPatient.query.filter_by(
+            structure_id=structure_id, statut='en_attente'
+        ).order_by(PreinscriptionPatient.created_at.asc()).all()
+
+        return render_template('patients.html', patients=patients_list, preinscriptions=preinscriptions)
 
     except Exception as e:
         print(f"❌ Erreur: {e}")
         flash(f'Erreur: {str(e)}', 'error')
-        return render_template('patients.html', patients=[])
+        return render_template('patients.html', patients=[], preinscriptions=[])
 
 
 # ============================================================
@@ -2131,12 +2140,45 @@ def api_add_patient():
         if result and len(result) > 0:
             upsert_societe_assurance(structure_id, data.get('assurance2_nom'), data.get('societe_assurance2'))
             upsert_compagnie_complementaire(structure_id, data.get('assurance2_nom'))
+
+            # ⭐ Patient créé à partir d'une préinscription (tablette d'accueil
+            # ou QR code) : on marque la préinscription validée plutôt que de
+            # la laisser traîner "en attente" indéfiniment — voir
+            # PreinscriptionPatient, models.py.
+            preinscription_id = data.get('preinscription_id')
+            if preinscription_id:
+                preinscription = PreinscriptionPatient.query.filter_by(
+                    id=preinscription_id, structure_id=structure_id, statut='en_attente'
+                ).first()
+                if preinscription:
+                    preinscription.statut = 'validee'
+                    preinscription.patient_id = result[0]['id']
+                    db.session.commit()
+
             return jsonify({'success': True, 'id': result[0]['id'], 'numero_local': numero_local})
         return jsonify({'success': False, 'error': 'Erreur insertion'}), 500
 
     except Exception as e:
         print(f"❌ Erreur: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/patients/preinscriptions/<int:preinscription_id>/rejeter', methods=['POST'])
+@login_required
+def api_rejeter_preinscription(preinscription_id):
+    """Écarte une préinscription (doublon, erreur de saisie, patient reparti
+    sans se présenter au guichet...) sans créer de fiche patient. Jamais
+    supprimée — juste sortie de la file d'attente, pour garder une trace."""
+    structure_id = session.get('structure_id')
+    preinscription = PreinscriptionPatient.query.filter_by(
+        id=preinscription_id, structure_id=structure_id, statut='en_attente'
+    ).first()
+    if not preinscription:
+        return jsonify({'success': False, 'error': 'Préinscription introuvable'}), 404
+    preinscription.statut = 'rejetee'
+    db.session.commit()
+    return jsonify({'success': True})
+
 
 @app.route('/api/patients/<int:id>', methods=['GET'])
 @login_required
@@ -6656,6 +6698,20 @@ def _guide_section_visible(section_id):
 
 
 @app.context_processor
+def injecter_preinscriptions_count():
+    """Nombre de préinscriptions patient en attente (tablette d'accueil /
+    QR code) — affiché en badge dans le menu, voir sidebar_menu.html."""
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return {'preinscriptions_en_attente_count': 0}
+    try:
+        count = PreinscriptionPatient.query.filter_by(structure_id=structure_id, statut='en_attente').count()
+    except Exception:
+        count = 0
+    return {'preinscriptions_en_attente_count': count}
+
+
+@app.context_processor
 def injecter_guide_visible():
     """Expose aux templates guide_section_visible() (filtrage du guide
     d'utilisation par rôle) et le libellé du rôle courant."""
@@ -10617,6 +10673,78 @@ def page_carte_portail_patient(patient_id):
 
     return render_template('carte_portail_patient.html', patient=patient_row[0], acces=acces,
                             structure=structure_info, portail_url=portail_url, qr_data=qr_data)
+
+
+# ============================================================
+# ACCUEIL PATIENT — préinscription en libre-service, à l'accueil : soit
+# une tablette laissée sur le comptoir avec cette page ouverte en continu,
+# soit un QR code (voir page_accueil_qr) que le patient scanne avec son
+# propre téléphone. Le patient saisit SES informations comme un
+# formulaire papier ; jamais créé directement en fiche patient — la
+# réception valide (voir PreinscriptionPatient, models.py, et le panneau
+# "En attente d'inscription" sur la page Patients).
+# ============================================================
+@app.route('/patients/accueil-qr')
+@login_required
+def page_accueil_qr():
+    """QR code + lien à imprimer/afficher pour la préinscription en
+    libre-service — soit collé à l'accueil pour que les patients scannent
+    avec leur téléphone, soit le lien ouvert directement sur une tablette
+    laissée au comptoir (mode kiosque, pas besoin de scanner)."""
+    structure_id = session.get('structure_id')
+    structures = sheets_helper.get_all_records('structures', use_prefix=False)
+    structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
+    accueil_url = f"{BASE_URL}{url_for('page_accueil_patient', structure_id=structure_id)}"
+    return render_template('accueil_qr.html', structure=structure_info, accueil_url=accueil_url)
+
+
+@app.route('/accueil-patient/<int:structure_id>')
+def page_accueil_patient(structure_id):
+    """Formulaire public de préinscription — aucune authentification
+    requise : n'importe qui peut remplir SES PROPRES informations, comme
+    un formulaire papier à l'accueil. Pensé pour rester ouvert en continu
+    sur une tablette (se réinitialise seul après l'envoi, voir le
+    template) ou pour être ouvert une fois via le QR code."""
+    structures = sheets_helper.get_all_records('structures', use_prefix=False)
+    structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), None)
+    if not structure_info or structure_info.get('statut') != 'active':
+        return "Structure introuvable ou inactive.", 404
+    return render_template('accueil_patient.html', structure=structure_info, structure_id=structure_id)
+
+
+@app.route('/api/accueil-patient/<int:structure_id>', methods=['POST'])
+def api_accueil_patient(structure_id):
+    structures = sheets_helper.get_all_records('structures', use_prefix=False)
+    structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), None)
+    if not structure_info or structure_info.get('statut') != 'active':
+        return jsonify({'success': False, 'error': 'Structure introuvable'}), 404
+
+    data = request.json or {}
+    nom = (data.get('nom') or '').strip()
+    if not nom:
+        return jsonify({'success': False, 'error': 'Le nom est obligatoire'}), 400
+
+    type_assurance = data.get('type_assurance') or 'non_assure'
+    numero_assure = (data.get('numero_assure') or '').strip()
+    if type_assurance != 'non_assure' and not numero_assure:
+        return jsonify({'success': False, 'error': "Le numéro d'assuré est obligatoire pour l'assurance sélectionnée."}), 400
+
+    preinscription = PreinscriptionPatient(
+        structure_id=structure_id,
+        nom=nom,
+        prenom=(data.get('prenom') or '').strip(),
+        telephone=(data.get('telephone') or '').strip(),
+        date_naissance=data.get('date_naissance') or None,
+        adresse=(data.get('adresse') or '').strip(),
+        type_assurance=type_assurance,
+        numero_assure=numero_assure,
+        personne_a_prevenir_nom=(data.get('personne_a_prevenir_nom') or '').strip(),
+        personne_a_prevenir_telephone=(data.get('personne_a_prevenir_telephone') or '').strip(),
+        email=(data.get('email') or '').strip() or None,
+    )
+    db.session.add(preinscription)
+    db.session.commit()
+    return jsonify({'success': True})
 
 
 # ============================================================
