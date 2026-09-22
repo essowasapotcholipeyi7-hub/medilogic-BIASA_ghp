@@ -4,15 +4,37 @@
 {% block title %}Ticket #{{ preinscription.numero_ordre }} — {{ structure.nom or "SSoftOne v10" }}{% endblock %}
 
 {% block extra_css %}
+{% if format == '80mm' %}
 <style>
     @media print {
-        @page { size: 80mm auto; margin: 4mm; }
-        .no-print { display: none !important; }
+        @page { size: 80mm auto; margin: 3mm; }
+        body { width: 80mm; }
+        * { color: black !important; }
     }
-    #ticketContenu { max-width: 320px; margin: 0 auto; }
-    #ticketContenu .numero-ordre {
-        font-size: 72px; font-weight: 700; color: #1d6fa5; line-height: 1;
+    #ticketContenu { max-width: 280px; margin: 0 auto; }
+    #ticketContenu .numero-ordre { font-size: 48px; }
+    #ticketContenu .card-body { padding: 8px !important; font-size: 11px; }
+</style>
+{% elif format == 'A5' %}
+<style>
+    @media print {
+        @page { size: A5; margin: 10mm; }
     }
+    #ticketContenu { max-width: 420px; margin: 0 auto; }
+    #ticketContenu .numero-ordre { font-size: 64px; }
+</style>
+{% else %}
+<style>
+    @media print {
+        @page { size: A4; margin: 20mm; }
+    }
+    #ticketContenu { max-width: 480px; margin: 0 auto; }
+    #ticketContenu .numero-ordre { font-size: 72px; }
+</style>
+{% endif %}
+<style>
+    @media print { .no-print { display: none !important; } }
+    #ticketContenu .numero-ordre { font-weight: 700; color: #1d6fa5; line-height: 1; }
 </style>
 {% endblock %}
 
@@ -43,6 +65,25 @@
         <div class="text-center mt-3 no-print">
             <button onclick="window.print()" class="btn btn-primary btn-sm"><i class="fas fa-print"></i> Imprimer</button>
         </div>
+
+        <!-- ⭐ Réimpression ponctuelle sur un autre format sans changer le
+             réglage de la structure — utile si un ticket doit exceptionnellement
+             sortir sur une autre imprimante que celle habituelle. -->
+        <div class="text-center mt-2 no-print">
+            <div class="btn-group btn-group-sm" role="group">
+                <a href="?format=80mm" class="btn btn-outline-secondary {% if format == '80mm' %}active{% endif %}">Ticket 80mm</a>
+                <a href="?format=A5" class="btn btn-outline-secondary {% if format == 'A5' %}active{% endif %}">A5</a>
+                <a href="?format=A4" class="btn btn-outline-secondary {% if format == 'A4' %}active{% endif %}">A4</a>
+            </div>
+        </div>
     </div>
 </div>
+
+<script>
+// ⭐ Impression automatique à l'ouverture — patron : "quand on clique ça
+// imprime en même temps, au lieu d'ouvrir encore le modal d'impression".
+// 'load' (pas DOMContentLoaded) pour laisser le temps au logo de charger
+// avant que la boîte de dialogue d'impression n'apparaisse.
+window.addEventListener('load', () => window.print());
+</script>
 {% endblock %}

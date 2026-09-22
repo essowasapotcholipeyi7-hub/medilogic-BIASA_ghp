@@ -59,6 +59,22 @@
             </div>
         </div>
 
+        <div class="card mt-3 no-print">
+            <div class="card-body">
+                <h6><i class="fas fa-print me-1"></i> Format du ticket de passage</h6>
+                <p class="text-muted small mb-2">
+                    Selon l'imprimante branchée à l'accueil — réglé une fois, s'applique à tous les
+                    tickets suivants.
+                </p>
+                <select class="form-select form-select-sm" id="formatTicketAccueil" onchange="enregistrerFormatTicket()">
+                    <option value="80mm" {% if format_ticket == '80mm' %}selected{% endif %}>Imprimante ticket (80mm)</option>
+                    <option value="A5" {% if format_ticket == 'A5' %}selected{% endif %}>Format A5</option>
+                    <option value="A4" {% if format_ticket == 'A4' %}selected{% endif %}>Format A4</option>
+                </select>
+                <div id="formatTicketMsg" class="small mt-1"></div>
+            </div>
+        </div>
+
         <div class="text-center mt-3 no-print">
             <button onclick="window.print()" class="btn btn-primary btn-sm"><i class="fas fa-print"></i> Imprimer</button>
             <a href="{{ url_for('patients') }}" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</a>
@@ -78,6 +94,23 @@ function copierLien() {
     const champ = document.getElementById('lienAccueil');
     champ.select();
     navigator.clipboard.writeText(champ.value).catch(() => document.execCommand('copy'));
+}
+
+function enregistrerFormatTicket() {
+    const format = document.getElementById('formatTicketAccueil').value;
+    const msg = document.getElementById('formatTicketMsg');
+    fetch("{{ url_for('api_format_ticket_accueil') }}", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format: format })
+    })
+        .then(r => r.json())
+        .then(data => {
+            msg.innerHTML = data.success
+                ? '<span class="text-success"><i class="fas fa-check"></i> Enregistré</span>'
+                : '<span class="text-danger">Erreur</span>';
+        })
+        .catch(() => { msg.innerHTML = '<span class="text-danger">Erreur</span>'; });
 }
 </script>
 {% endblock %}

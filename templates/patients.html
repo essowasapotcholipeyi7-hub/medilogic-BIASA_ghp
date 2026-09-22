@@ -1913,6 +1913,13 @@ function preRemplirDepuisPreinscription(preinscription) {
         toggleAssurance2();
         document.getElementById('numero_assure2').value = preinscription.numero_assure2 || '';
         document.getElementById('societe_assurance2').value = preinscription.societe_assurance2 || '';
+        // ⭐ Assurance tapée librement par le patient (orthographe différente
+        // de la liste canonique) : pas de correspondance dans
+        // TAUX_PAR_DEFAUT_ASSURANCE2 → 80% par défaut plutôt que 0%,
+        // ajustable par la réception avant Enregistrer.
+        if (!TAUX_PAR_DEFAUT_ASSURANCE2[preinscription.assurance2_nom.toLowerCase()]) {
+            document.getElementById('taux_assurance2').value = 80;
+        }
     }
 }
 

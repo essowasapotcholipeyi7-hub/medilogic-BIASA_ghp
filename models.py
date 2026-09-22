@@ -3626,4 +3626,9 @@ class ParametrageAffichageStructure(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     structure_id = db.Column(db.Integer, nullable=False, unique=True)
     acronyme = db.Column(db.String(10))
+    # Format papier par défaut pour le ticket de passage de la préinscription
+    # accueil — 'A4' | 'A5' | '80mm' (imprimante à ticket thermique). Réglé
+    # une fois pour la structure (le matériel d'impression à l'accueil ne
+    # change pas d'un patient à l'autre) — voir page_accueil_qr, app.py.
+    format_ticket_accueil = db.Column(db.String(10), default='80mm')
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -10700,7 +10700,29 @@ def page_accueil_qr():
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
     accueil_url = f"{BASE_URL}{url_for('page_accueil_patient', structure_id=structure_id)}"
-    return render_template('accueil_qr.html', structure=structure_info, accueil_url=accueil_url)
+    param = ParametrageAffichageStructure.query.filter_by(structure_id=structure_id).first()
+    format_ticket = (param.format_ticket_accueil if param and param.format_ticket_accueil else '80mm')
+    return render_template('accueil_qr.html', structure=structure_info, accueil_url=accueil_url,
+                            format_ticket=format_ticket)
+
+
+@app.route('/api/structure/format-ticket-accueil', methods=['POST'])
+@login_required
+def api_format_ticket_accueil():
+    """Format papier par défaut du ticket de passage — réglé une fois par
+    la structure selon son matériel d'impression (imprimante thermique à
+    ticket 80mm, ou une imprimante A4/A5 classique)."""
+    structure_id = session.get('structure_id')
+    format_choisi = (request.json or {}).get('format')
+    if format_choisi not in ('A4', 'A5', '80mm'):
+        return jsonify({'success': False, 'error': 'Format invalide'}), 400
+    param = ParametrageAffichageStructure.query.filter_by(structure_id=structure_id).first()
+    if not param:
+        param = ParametrageAffichageStructure(structure_id=structure_id)
+        db.session.add(param)
+    param.format_ticket_accueil = format_choisi
+    db.session.commit()
+    return jsonify({'success': True})
 
 
 @app.route('/accueil-patient/<int:structure_id>')
@@ -10784,7 +10806,18 @@ def page_ticket_accueil_patient(structure_id, preinscription_id):
         return "Ticket introuvable.", 404
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
-    return render_template('accueil_ticket.html', preinscription=preinscription, structure=structure_info)
+
+    # ⭐ Format papier : ?format= permet de forcer un réimpression ponctuelle
+    # sur un autre papier ; sinon le réglage de la structure (matériel
+    # d'impression à l'accueil — voir /patients/accueil-qr) ; sinon 80mm
+    # (le cas le plus courant pour ce type de ticket).
+    format_demande = request.args.get('format')
+    if format_demande not in ('A4', 'A5', '80mm'):
+        param = ParametrageAffichageStructure.query.filter_by(structure_id=structure_id).first()
+        format_demande = (param.format_ticket_accueil if param and param.format_ticket_accueil else '80mm')
+
+    return render_template('accueil_ticket.html', preinscription=preinscription, structure=structure_info,
+                            format=format_demande)
 
 
 # ============================================================
@@ -19829,6 +19862,7 @@ for _module_key, _module_def in MODULES_STRUCTURE.items():
             app.view_functions[_endpoint] = _verrou_module(app.view_functions[_endpoint], _module_key)
         else:
             print(f"⚠️ MODULES_STRUCTURE: endpoint '{_endpoint}' introuvable, verrou non posé")
+
 
 
 if __name__ == '__main__':
