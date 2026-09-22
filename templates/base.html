@@ -1292,6 +1292,18 @@
         max-height: none !important;
     }
 
+    /* ⭐ .app-wrapper (display:flex, min-height:100vh — toujours présent
+       dans le DOM même sur une page cacher_navigation, seuls les ÉLÉMENTS
+       de nav sont masqués) forçait .main-content (flex:1, étirement flex
+       par défaut) à occuper au moins une page pleine, même pour un
+       contenu court comme un ticket de caisse — ce blanc en trop débordait
+       sur une DEUXIÈME page à l'impression (patron : "il y a une longue
+       continuité du ticket en blanc... ça crée une deuxième page"). */
+    .app-wrapper {
+        min-height: 0 !important;
+        display: block !important;
+    }
+
     @page {
         margin: 1.5cm;
         size: A4;
