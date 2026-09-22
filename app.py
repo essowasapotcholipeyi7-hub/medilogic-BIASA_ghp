@@ -2155,6 +2155,11 @@ def api_add_patient():
                     preinscription.patient_id = result[0]['id']
                     db.session.commit()
 
+            # ⭐ flash() plutôt qu'un alert() JS bloquant côté client — patron :
+            # "il faut encore appuyer sur ok... on va optimiser pour que ça
+            # passe vite". S'affiche en bandeau non-bloquant au rechargement
+            # de la page (voir savePatient(), patients.html).
+            flash('Patient enregistré avec succès !', 'success')
             return jsonify({'success': True, 'id': result[0]['id'], 'numero_local': numero_local})
         return jsonify({'success': False, 'error': 'Erreur insertion'}), 500
 
@@ -10729,6 +10734,20 @@ def api_accueil_patient(structure_id):
     if type_assurance != 'non_assure' and not numero_assure:
         return jsonify({'success': False, 'error': "Le numéro d'assuré est obligatoire pour l'assurance sélectionnée."}), 400
 
+    motif_visite = (data.get('motif_visite') or '').strip()
+    if motif_visite == 'autre':
+        motif_visite = (data.get('motif_visite_autre') or '').strip()
+
+    # ⭐ Numéro de passage : compté parmi les préinscriptions déjà reçues
+    # AUJOURD'HUI pour cette structure — remis à zéro chaque jour, comme un
+    # vrai ticket de file d'attente physique. Imprimé sur le reçu remis au
+    # patient juste après (voir page_ticket_accueil_patient).
+    debut_journee = datetime.combine(date.today(), datetime.min.time())
+    numero_ordre = PreinscriptionPatient.query.filter(
+        PreinscriptionPatient.structure_id == structure_id,
+        PreinscriptionPatient.created_at >= debut_journee
+    ).count() + 1
+
     preinscription = PreinscriptionPatient(
         structure_id=structure_id,
         nom=nom,
@@ -10738,13 +10757,34 @@ def api_accueil_patient(structure_id):
         adresse=(data.get('adresse') or '').strip(),
         type_assurance=type_assurance,
         numero_assure=numero_assure,
+        assurance2_nom=(data.get('assurance2_nom') or '').strip() or None,
+        numero_assure2=(data.get('numero_assure2') or '').strip() or None,
+        societe_assurance2=(data.get('societe_assurance2') or '').strip() or None,
         personne_a_prevenir_nom=(data.get('personne_a_prevenir_nom') or '').strip(),
         personne_a_prevenir_telephone=(data.get('personne_a_prevenir_telephone') or '').strip(),
+        personne_a_prevenir_relation=(data.get('personne_a_prevenir_relation') or '').strip() or None,
         email=(data.get('email') or '').strip() or None,
+        motif_visite=motif_visite or None,
+        numero_ordre=numero_ordre,
     )
     db.session.add(preinscription)
     db.session.commit()
-    return jsonify({'success': True})
+    return jsonify({'success': True, 'preinscription_id': preinscription.id, 'numero_ordre': numero_ordre})
+
+
+@app.route('/accueil-patient/<int:structure_id>/ticket/<int:preinscription_id>')
+def page_ticket_accueil_patient(structure_id, preinscription_id):
+    """Reçu imprimable du numéro de passage — patron : 'un bouton qui lui
+    dit d'imprimer reçu d'ordre de passage'. Public comme le formulaire
+    lui-même : c'est le patient qui l'imprime, pas de session requise."""
+    preinscription = PreinscriptionPatient.query.filter_by(
+        id=preinscription_id, structure_id=structure_id
+    ).first()
+    if not preinscription:
+        return "Ticket introuvable.", 404
+    structures = sheets_helper.get_all_records('structures', use_prefix=False)
+    structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
+    return render_template('accueil_ticket.html', preinscription=preinscription, structure=structure_info)
 
 
 # ============================================================

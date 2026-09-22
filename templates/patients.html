@@ -45,9 +45,11 @@
         {% for p in preinscriptions %}
         <div class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2" id="preinscriptionLigne{{ p.id }}">
             <div>
+                <span class="badge bg-secondary me-1">N°{{ p.numero_ordre or '?' }}</span>
                 <strong>{{ p.nom }} {{ p.prenom or '' }}</strong>
                 {% if p.telephone %}<span class="text-muted small ms-2"><i class="fas fa-phone-alt me-1"></i>{{ p.telephone }}</span>{% endif %}
                 {% if p.type_assurance and p.type_assurance != 'non_assure' %}<span class="badge bg-info ms-2">{{ p.type_assurance }}</span>{% endif %}
+                {% if p.motif_visite %}<span class="badge bg-light text-dark border ms-2">{{ p.motif_visite }}</span>{% endif %}
                 <span class="text-muted small ms-2">{{ p.created_at.strftime('%H:%M') if p.created_at else '' }}</span>
             </div>
             <div>
@@ -56,8 +58,11 @@
                     "adresse": p.adresse,
                     "date_naissance": p.date_naissance.strftime('%Y-%m-%d') if p.date_naissance else "",
                     "type_assurance": p.type_assurance, "numero_assure": p.numero_assure,
+                    "assurance2_nom": p.assurance2_nom, "numero_assure2": p.numero_assure2,
+                    "societe_assurance2": p.societe_assurance2,
                     "personne_a_prevenir_nom": p.personne_a_prevenir_nom,
                     "personne_a_prevenir_telephone": p.personne_a_prevenir_telephone,
+                    "personne_a_prevenir_relation": p.personne_a_prevenir_relation,
                     "email": p.email
                 }|tojson }})'>
                     <i class="fas fa-check me-1"></i> Compléter la fiche
@@ -1895,11 +1900,19 @@ function preRemplirDepuisPreinscription(preinscription) {
     }
     document.getElementById('personne_prevenir_nom').value = preinscription.personne_a_prevenir_nom || '';
     document.getElementById('personne_prevenir_telephone').value = preinscription.personne_a_prevenir_telephone || '';
+    document.getElementById('personne_prevenir_relation').value = preinscription.personne_a_prevenir_relation || '';
 
     if (preinscription.type_assurance && preinscription.type_assurance !== 'non_assure') {
         document.getElementById('type_assurance').value = preinscription.type_assurance;
         toggleTaux();
         document.getElementById('numero_assure').value = preinscription.numero_assure || '';
+    }
+
+    if (preinscription.assurance2_nom) {
+        document.getElementById('assurance2_nom').value = preinscription.assurance2_nom;
+        toggleAssurance2();
+        document.getElementById('numero_assure2').value = preinscription.numero_assure2 || '';
+        document.getElementById('societe_assurance2').value = preinscription.societe_assurance2 || '';
     }
 }
 
@@ -2017,7 +2030,11 @@ function savePatient() {
     .then(data => {
         hideLoader();
         if(data.success) {
-            alert('Patient enregistré avec succès !');
+            // ⭐ Pas d'alert() bloquant ici — patron : "il faut encore
+            // appuyer sur ok... on va optimiser pour que ça passe vite".
+            // Le message de succès arrive via flash() côté serveur
+            // (api_add_patient) et s'affiche comme bandeau après le
+            // rechargement, sans bloquer l'enchaînement des saisies.
             location.reload();
         } else {
             alert('❌ Erreur: ' + (data.error || 'Erreur inconnue'));

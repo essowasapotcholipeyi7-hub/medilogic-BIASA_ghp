@@ -15,6 +15,9 @@
         font-size: 18px; padding: 14px; font-weight: 600;
     }
     #ecranMerci { display: none; }
+    #ecranMerci .numero-ordre {
+        font-size: 64px; font-weight: 700; color: #1d6fa5; line-height: 1;
+    }
 </style>
 {% endblock %}
 
@@ -63,28 +66,70 @@
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label">Assurance</label>
-                        <select class="form-select" id="paTypeAssurance" onchange="paToggleAssurance()">
-                            <option value="non_assure">Non assuré</option>
-                            <option value="amu_cnss">AMU-CNSS</option>
-                            <option value="amu_inam">AMU-INAM</option>
-                            <option value="amu_tns">AMU-TNS</option>
-                            <option value="autre">Autre assurance</option>
+                        <label class="form-label">Motif de la visite</label>
+                        <select class="form-select" id="paMotifVisite" onchange="paToggleMotifAutre()">
+                            <option value="consultation">Consultation</option>
+                            <option value="controle">Contrôle</option>
+                            <option value="resultat_analyse">Résultat d'analyse</option>
+                            <option value="realisation_examen">Réalisation d'examen</option>
+                            <option value="autre">Autre</option>
                         </select>
                     </div>
-                    <div class="mb-3" id="paNumeroAssureDiv" style="display:none;">
-                        <label class="form-label">N° Assuré</label>
-                        <input type="text" class="form-control" id="paNumeroAssure" placeholder="Numéro de carte">
+                    <div class="mb-3" id="paMotifAutreDiv" style="display:none;">
+                        <input type="text" class="form-control" id="paMotifAutre" placeholder="Précisez le motif">
+                    </div>
+
+                    <div class="card mb-3">
+                        <div class="card-header bg-light">
+                            <strong>Assurance principale</strong>
+                        </div>
+                        <div class="card-body">
+                            <select class="form-select mb-2" id="paTypeAssurance" onchange="paToggleAssurance()">
+                                <option value="non_assure">Non assuré</option>
+                                <option value="amu_cnss">AMU-CNSS</option>
+                                <option value="amu_inam">AMU-INAM</option>
+                                <option value="amu_tns">AMU-TNS</option>
+                                <option value="autre">Autre assurance</option>
+                            </select>
+                            <div id="paNumeroAssureDiv" style="display:none;">
+                                <input type="text" class="form-control" id="paNumeroAssure" placeholder="N° Assuré (numéro de carte)">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card mb-3">
+                        <div class="card-header bg-light">
+                            <strong>Assurance complémentaire</strong>
+                            <span class="badge bg-secondary ms-1">Facultatif</span>
+                        </div>
+                        <div class="card-body">
+                            <input type="text" class="form-control mb-2" id="paAssurance2Nom" placeholder="Nom de l'assurance (ex: GTA, SUNU, NSIA...)">
+                            <input type="text" class="form-control mb-2" id="paNumeroAssure2" placeholder="N° Assuré (carte CAC)">
+                            <input type="text" class="form-control" id="paSocieteAssurance2" placeholder="Société qui a souscrit (votre employeur)">
+                        </div>
                     </div>
 
                     <hr>
                     <p class="text-muted small mb-2">En cas d'urgence, personne à prévenir (facultatif)</p>
                     <div class="row">
-                        <div class="col-7 mb-3">
+                        <div class="col-5 mb-3">
                             <input type="text" class="form-control" id="paPersonneNom" placeholder="Nom">
                         </div>
-                        <div class="col-5 mb-3">
+                        <div class="col-4 mb-3">
                             <input type="tel" class="form-control" id="paPersonneTelephone" placeholder="Téléphone">
+                        </div>
+                        <div class="col-3 mb-3">
+                            <select class="form-select" id="paPersonneRelation">
+                                <option value="">Lien</option>
+                                <option value="Conjoint(e)">Conjoint(e)</option>
+                                <option value="Enfant">Enfant</option>
+                                <option value="Parent">Parent</option>
+                                <option value="Frère/Sœur">Frère/Sœur</option>
+                                <option value="Ami(e)">Ami(e)</option>
+                                <option value="Collègue">Collègue</option>
+                                <option value="Voisin(e)">Voisin(e)</option>
+                                <option value="Autre">Autre</option>
+                            </select>
                         </div>
                     </div>
 
@@ -101,11 +146,17 @@
         </div>
 
         <div id="ecranMerci" class="text-center mt-5">
-            <div class="mb-4">
-                <i class="fas fa-check-circle text-success" style="font-size: 72px;"></i>
+            <div class="mb-3">
+                <i class="fas fa-check-circle text-success" style="font-size: 56px;"></i>
             </div>
             <h3>Merci !</h3>
-            <p class="text-muted">Vos informations ont bien été transmises.<br>Présentez-vous au guichet.</p>
+            <p class="text-muted mb-3">Vos informations ont bien été transmises.</p>
+            <p class="text-muted small mb-1">Votre numéro de passage</p>
+            <div class="numero-ordre mb-3" id="merciNumeroOrdre">-</div>
+            <a href="#" target="_blank" class="btn btn-outline-primary" id="merciBtnImprimer">
+                <i class="fas fa-print me-1"></i> Imprimer mon ticket
+            </a>
+            <p class="text-muted small mt-4">Présentez-vous au guichet quand votre numéro est appelé.</p>
         </div>
 
     </div>
@@ -117,9 +168,15 @@ function paToggleAssurance() {
     document.getElementById('paNumeroAssureDiv').style.display = (type === 'non_assure') ? 'none' : 'block';
 }
 
+function paToggleMotifAutre() {
+    const motif = document.getElementById('paMotifVisite').value;
+    document.getElementById('paMotifAutreDiv').style.display = (motif === 'autre') ? 'block' : 'none';
+}
+
 function reinitialiserFormulaire() {
     document.getElementById('formAccueilPatient').reset();
     paToggleAssurance();
+    paToggleMotifAutre();
     document.getElementById('accueilMsg').innerHTML = '';
     document.getElementById('ecranMerci').style.display = 'none';
     document.getElementById('accueilCard').style.display = 'block';
@@ -156,10 +213,16 @@ async function envoyerPreinscription(evenement) {
                 telephone: document.getElementById('paTelephone').value.trim(),
                 date_naissance: document.getElementById('paDateNaissance').value,
                 adresse: document.getElementById('paAdresse').value.trim(),
+                motif_visite: document.getElementById('paMotifVisite').value,
+                motif_visite_autre: document.getElementById('paMotifAutre').value.trim(),
                 type_assurance: typeAssurance,
                 numero_assure: numeroAssure,
+                assurance2_nom: document.getElementById('paAssurance2Nom').value.trim(),
+                numero_assure2: document.getElementById('paNumeroAssure2').value.trim(),
+                societe_assurance2: document.getElementById('paSocieteAssurance2').value.trim(),
                 personne_a_prevenir_nom: document.getElementById('paPersonneNom').value.trim(),
                 personne_a_prevenir_telephone: document.getElementById('paPersonneTelephone').value.trim(),
+                personne_a_prevenir_relation: document.getElementById('paPersonneRelation').value,
                 email: document.getElementById('paEmail').value.trim()
             })
         });
@@ -167,12 +230,16 @@ async function envoyerPreinscription(evenement) {
         if (resultat.success) {
             document.getElementById('accueilCard').style.display = 'none';
             document.getElementById('ecranMerci').style.display = 'block';
-            // ⭐ Réinitialisation automatique après quelques secondes — pensé
-            // pour une tablette laissée en continu à l'accueil : le patient
-            // suivant retrouve un formulaire vide sans intervention du
-            // personnel. Sans effet gênant si c'est le téléphone du
+            document.getElementById('merciNumeroOrdre').textContent = 'N° ' + resultat.numero_ordre;
+            document.getElementById('merciBtnImprimer').href =
+                `{{ url_for('page_accueil_patient', structure_id=structure_id) }}/ticket/${resultat.preinscription_id}`;
+            // ⭐ Réinitialisation automatique — pensé pour une tablette
+            // laissée en continu à l'accueil : le patient suivant retrouve
+            // un formulaire vide sans intervention du personnel. Délai
+            // généreux pour laisser le temps d'imprimer le ticket avant
+            // que ça reparte. Sans effet gênant sur le téléphone du
             // patient (il aura simplement refermé l'onglet avant).
-            setTimeout(reinitialiserFormulaire, 6000);
+            setTimeout(reinitialiserFormulaire, 20000);
         } else {
             msg.innerHTML = `<div class="alert alert-danger">${resultat.error || 'Erreur lors de l\'envoi'}</div>`;
         }

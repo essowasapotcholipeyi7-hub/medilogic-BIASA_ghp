@@ -120,10 +120,29 @@ class PreinscriptionPatient(db.Model):
     type_assurance = db.Column(db.String(50), default='non_assure')
     numero_assure = db.Column(db.String(50))
 
+    # Assurance complémentaire (CAC) — pas de taux ici : un patient ne
+    # connaît pas son taux négocié, c'est la réception qui le complète à
+    # la validation (comme le taux de l'assurance principale, déjà absent
+    # de ce formulaire pour la même raison).
+    assurance2_nom = db.Column(db.String(100))
+    numero_assure2 = db.Column(db.String(50))
+    societe_assurance2 = db.Column(db.String(150))
+
     personne_a_prevenir_nom = db.Column(db.String(100))
     personne_a_prevenir_telephone = db.Column(db.String(50))
+    personne_a_prevenir_relation = db.Column(db.String(50))
 
     email = db.Column(db.String(255))
+
+    # Motif de la visite — 'consultation' | 'controle' | 'resultat_analyse' |
+    # 'realisation_examen' | texte libre (si "Autre" choisi côté formulaire)
+    motif_visite = db.Column(db.String(100))
+
+    # Numéro de passage dans la file d'attente du jour — imprimé sur le
+    # ticket remis au patient juste après l'enregistrement (voir
+    # api_accueil_patient, app.py). Remis à zéro chaque jour (compté parmi
+    # les préinscriptions du jour pour la structure).
+    numero_ordre = db.Column(db.Integer)
 
     # 'en_attente' | 'validee' | 'rejetee'
     statut = db.Column(db.String(20), nullable=False, default='en_attente')

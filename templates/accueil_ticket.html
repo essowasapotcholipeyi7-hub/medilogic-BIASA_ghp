@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% set cacher_navigation = True %}
+
+{% block title %}Ticket #{{ preinscription.numero_ordre }} — {{ structure.nom or "SSoftOne v10" }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    @media print {
+        @page { size: 80mm auto; margin: 4mm; }
+        .no-print { display: none !important; }
+    }
+    #ticketContenu { max-width: 320px; margin: 0 auto; }
+    #ticketContenu .numero-ordre {
+        font-size: 72px; font-weight: 700; color: #1d6fa5; line-height: 1;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <div class="card" id="ticketContenu">
+            <div class="card-body text-center" style="font-family: 'Segoe UI', Arial, sans-serif;">
+                {% if structure.logo_url %}
+                <img src="{{ structure.logo_url }}" alt="Logo" style="max-height: 50px; max-width: 100px;" class="mb-2">
+                {% endif %}
+                <h6 class="mb-0">{{ structure.nom or "SSoftOne v10" }}</h6>
+                <p class="text-muted small mb-3">Ticket de passage</p>
+                <hr>
+                <p class="text-muted small mb-1">Numéro</p>
+                <div class="numero-ordre mb-3">{{ preinscription.numero_ordre }}</div>
+                <hr>
+                <div class="text-start small">
+                    <strong>Patient :</strong> {{ preinscription.nom }} {{ preinscription.prenom or '' }}<br>
+                    {% if preinscription.motif_visite %}<strong>Motif :</strong> {{ preinscription.motif_visite }}<br>{% endif %}
+                    <strong>Date :</strong> {{ preinscription.created_at.strftime('%d/%m/%Y à %H:%M') if preinscription.created_at else '' }}
+                </div>
+                <hr>
+                <p class="text-muted small mb-0">Présentez-vous au guichet quand votre numéro est appelé.</p>
+            </div>
+        </div>
+
+        <div class="text-center mt-3 no-print">
+            <button onclick="window.print()" class="btn btn-primary btn-sm"><i class="fas fa-print"></i> Imprimer</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
