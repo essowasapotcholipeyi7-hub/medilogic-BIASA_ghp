@@ -126,7 +126,7 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
             {% if not resultat.fichier_data %}
             <button onclick="window.print()" class="btn btn-primary btn-sm"><i class="fas fa-print"></i> Imprimer / Enregistrer en PDF</button>
             {% endif %}
-            <a href="{{ url_for('page_portail_resultats') }}" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</a>
+            <button onclick="fermerResultat()" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</button>
         </div>
     </div>
 </div>
@@ -135,6 +135,14 @@ if (window.JsBarcode) {
     JsBarcode("#codeBarreResultat", "RES-{{ resultat.id }}-{{ demande.id }}", {
         format: "CODE128", width: 1.4, height: 36, fontSize: 11, margin: 4,
     });
+}
+
+// ⭐ FIX : voir resultat_imprimer.html — même correctif, "Fermer" doit
+// fermer cet onglet (ouvert via target="_blank" depuis
+// portail_resultats.html) au lieu de naviguer dedans.
+function fermerResultat() {
+    window.close();
+    window.location.href = "{{ url_for('page_portail_resultats') }}";
 }
 
 {% if not resultat.contenu_html and resultat.fichier_mime and 'pdf' in resultat.fichier_mime %}

@@ -158,7 +158,7 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
             <button onclick="window.print()" class="btn btn-primary btn-sm"><i class="fas fa-print"></i> Imprimer</button>
             {% endif %}
             <button onclick="envoyerParEmail()" class="btn btn-success btn-sm"><i class="fas fa-envelope"></i> Envoyer par email</button>
-            <a href="{{ url_for('page_resultats_analyses') }}" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</a>
+            <button onclick="fermerResultat()" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</button>
         </div>
         <div id="emailResultatMsg" class="text-center mt-2 small no-print"></div>
     </div>
@@ -168,6 +168,18 @@ if (window.JsBarcode) {
     JsBarcode("#codeBarreResultat", "RES-{{ resultat.id }}-{{ demande.id }}", {
         format: "CODE128", width: 1.4, height: 36, fontSize: 11, margin: 4,
     });
+}
+
+// ⭐ FIX : "Fermer" ouvrait la liste des résultats DANS ce même nouvel
+// onglet au lieu de le fermer et revenir sur l'onglet de départ — patron :
+// "xa s'ouvre dans nouvel onglet mais quand on ferme xa ne referme plus
+// l'onglet". Cette page est toujours ouverte via target="_blank" (voir
+// resultats_analyses.html), donc window.close() fonctionne normalement ;
+// le repli sur la liste ne joue que si le navigateur bloque la fermeture
+// (onglet ouvert autrement qu'en JS).
+function fermerResultat() {
+    window.close();
+    window.location.href = "{{ url_for('page_resultats_analyses') }}";
 }
 
 // ⭐ Rendu page par page du PDF importé — voir le commentaire au-dessus de
