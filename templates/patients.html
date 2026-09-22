@@ -1745,8 +1745,12 @@ function toggleAssurance2() {
     } else {
         tauxInput.readOnly = false;
         societeDiv.style.display = 'block';
+        // ⭐ 80% par défaut pour une compagnie qui n'est pas dans la liste des
+        // taux déjà connus — patron : "il faut mettre le taux des cac 80%
+        // par défaut aussi". GTA/OLEA/NSIA/SUNU/Fidelia gardent leur taux
+        // négocié spécifique, seule une compagnie inconnue tombe sur 80%.
         const defaut = TAUX_PAR_DEFAUT_ASSURANCE2[type.toLowerCase()];
-        if (defaut !== undefined) tauxInput.value = defaut;
+        tauxInput.value = (defaut !== undefined) ? defaut : 80;
         chargerSocietesAssurance(type, 'societesAssuranceList');
     }
 }
@@ -1764,8 +1768,10 @@ function toggleEditAssurance2() {
     } else {
         tauxInput.readOnly = false;
         societeDiv.style.display = 'block';
+        // ⭐ Même défaut 80% que toggleAssurance2() ci-dessus, pour rester
+        // cohérent entre "Ajouter" et "Modifier" un patient.
         const defaut = TAUX_PAR_DEFAUT_ASSURANCE2[type.toLowerCase()];
-        if (defaut !== undefined) tauxInput.value = defaut;
+        tauxInput.value = (defaut !== undefined) ? defaut : 80;
         chargerSocietesAssurance(type, 'editSocietesAssuranceList');
     }
 }
@@ -1910,16 +1916,11 @@ function preRemplirDepuisPreinscription(preinscription) {
 
     if (preinscription.assurance2_nom) {
         document.getElementById('assurance2_nom').value = preinscription.assurance2_nom;
+        // ⭐ toggleAssurance2() applique déjà le taux connu (GTA/OLEA/...) ou
+        // 80% par défaut sinon — voir sa définition plus haut.
         toggleAssurance2();
         document.getElementById('numero_assure2').value = preinscription.numero_assure2 || '';
         document.getElementById('societe_assurance2').value = preinscription.societe_assurance2 || '';
-        // ⭐ Assurance tapée librement par le patient (orthographe différente
-        // de la liste canonique) : pas de correspondance dans
-        // TAUX_PAR_DEFAUT_ASSURANCE2 → 80% par défaut plutôt que 0%,
-        // ajustable par la réception avant Enregistrer.
-        if (!TAUX_PAR_DEFAUT_ASSURANCE2[preinscription.assurance2_nom.toLowerCase()]) {
-            document.getElementById('taux_assurance2').value = 80;
-        }
     }
 }
 
