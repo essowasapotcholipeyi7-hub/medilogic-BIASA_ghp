@@ -19224,6 +19224,27 @@ def format_currency(value):
         return f"{int(value):,} FCFA".replace(',', ' ')
     except:
         return f"{value} FCFA"
+
+# ⭐ Filtre 'sans_code' — patron : "est ce que c'est possible que sur les
+# recu factures qu'on est pas le code de l'acte ou de médicament lorsque
+# le patient n'est pas assuré AMU" (ex. "Q435 Echodoppler cardiaque" →
+# "Echodoppler cardiaque"). Deux conventions de préfixe cohabitent dans le
+# catalogue (nom brut, pas de colonne code séparée) : un code acte AMU
+# (une lettre + 3-4 chiffres, ex. Q435, S100, R8100 — voir
+# utils/nomenclature_amu_cnss.py) et un code produit pharmacie (numérique,
+# ex. "0003909 Acupan Sol Inj 20mg/2ml"). Ni l'un ni l'autre n'a de sens
+# pour un patient non assuré sur son reçu/sa facture. Utilisé côté
+# template, conditionné à type_assurance (voir recu_client.html et les
+# autres reçus/factures patient) — jamais appliqué aux factures destinées
+# à l'assurance (templates/factures/*), où le code reste nécessaire.
+_CODE_ACTE_OU_PRODUIT_RE = re.compile(r'^(?:[A-Z]\d{3,4}|\d{4,})\s+')
+
+@app.template_filter('sans_code')
+def sans_code(nom):
+    """Retire un préfixe 'code acte/produit' (ex. 'Q435 ') du début d'un nom."""
+    if not nom:
+        return nom
+    return _CODE_ACTE_OU_PRODUIT_RE.sub('', nom, count=1)
 def generer_numero_ordonnance(structure_id):
     """
     Génère un numéro d'ordonnance unique pour une structure

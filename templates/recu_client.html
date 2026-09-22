@@ -272,7 +272,7 @@
         {% for article in articles %}
         <tr style="border-bottom:1px solid #eee;">
             <td style="padding:4px; font-weight:500; font-size:9px;">
-                {{ article.nom }}
+                {{ article.nom if patient_amu else article.nom|sans_code }}
             </td>
             {% if a_dates_prestation %}
             <td style="text-align:center; font-size:8.5px; white-space:nowrap;">{{ article.date_prestation_affichee or '-' }}</td>

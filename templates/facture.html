@@ -55,7 +55,7 @@
                     <tbody>
                         {% for article in articles %}
                         <tr>
-                            <td>{{ article.nom }}</td>
+                            <td>{{ article.nom if type_assurance in ['AMU-CNSS', 'AMU-INAM', 'AMU-TNS'] else article.nom|sans_code }}</td>
                             <td class="text-center">{{ article.quantite }}</td>
                             <td class="text-end">{{ article.prix_unitaire|default(0)|round(0)|int }} F</td>
                             <td class="text-end">{{ article.total|default(0)|round(0)|int }} F</td>
