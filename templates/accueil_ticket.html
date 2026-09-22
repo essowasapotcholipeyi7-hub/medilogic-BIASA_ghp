@@ -141,6 +141,7 @@ if (window.JsBarcode) {
 // imprime en même temps, au lieu d'ouvrir encore le modal d'impression".
 // 'load' (pas DOMContentLoaded) pour laisser le temps au logo de charger
 // avant que la boîte de dialogue d'impression n'apparaisse.
+const ouvertureTicketA = Date.now();
 window.addEventListener('load', () => window.print());
 
 function fermerTicket() {
@@ -158,6 +159,19 @@ function fermerTicket() {
 // le fermer redonne directement la main dessus, sans étape en plus. Le
 // bouton "Fermer" ci-dessus couvre le cas où on ne veut pas imprimer du
 // tout.
-window.addEventListener('afterprint', fermerTicket);
+//
+// ⭐ Délai minimum avant fermeture — patron : "des fois aussitôt ouvert
+// aussitôt fermé". Sur certains postes (imprimante par défaut déjà
+// choisie, impression silencieuse...) le navigateur referme le dialogue
+// d'impression quasi instantanément, et 'afterprint' partait donc avant
+// même que le ticket ait eu le temps de s'afficher à l'écran — l'onglet
+// semblait s'ouvrir et se refermer d'un coup. On garantit maintenant que
+// le ticket reste visible au moins 1,5s avant de se fermer, même quand
+// l'impression est instantanée.
+const DELAI_MIN_AVANT_FERMETURE_MS = 1500;
+window.addEventListener('afterprint', () => {
+    const ecoule = Date.now() - ouvertureTicketA;
+    setTimeout(fermerTicket, Math.max(0, DELAI_MIN_AVANT_FERMETURE_MS - ecoule));
+});
 </script>
 {% endblock %}
