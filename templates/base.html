@@ -1245,10 +1245,16 @@
 
 /* Styles impression */
 @media print {
+    /* ⭐ <body> a aussi min-height:100vh (voir le tout premier bloc <style>
+       en haut du <head>) — repéré après coup : corriger .app-wrapper seul
+       ne suffisait pas, <body> lui-même forçait déjà au moins une page
+       pleine avant même d'arriver à .app-wrapper. Patron, après le premier
+       correctif : "ça affiche toujours deux pages à imprimer". */
     body {
         background: white;
         margin: 0;
         padding: 0;
+        min-height: 0 !important;
     }
 
     /* ⭐ Cacher le watermark sur toutes les impressions */

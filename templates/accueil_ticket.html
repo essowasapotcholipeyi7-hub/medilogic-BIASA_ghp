@@ -4,6 +4,7 @@
 {% block title %}Ticket #{{ preinscription.numero_ordre }} — {{ structure.nom or "SSoftOne v10" }}{% endblock %}
 
 {% block extra_css %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
 {% if format == '80mm' %}
 <style>
     @media print {
@@ -12,8 +13,9 @@
         * { color: black !important; }
     }
     #ticketContenu { max-width: 280px; margin: 0 auto; }
-    #ticketContenu .numero-ordre { font-size: 48px; }
-    #ticketContenu .card-body { padding: 8px !important; font-size: 11px; }
+    #ticketContenu .numero-ordre { font-size: 46px; }
+    #ticketContenu .card-body { padding: 10px !important; font-size: 11px; }
+    #ticketContenu .ticket-header { margin: -10px -10px 10px -10px !important; padding: 10px !important; }
 </style>
 {% elif format == 'A5' %}
 <style>
@@ -21,7 +23,7 @@
         @page { size: A5; margin: 10mm; }
     }
     #ticketContenu { max-width: 420px; margin: 0 auto; }
-    #ticketContenu .numero-ordre { font-size: 64px; }
+    #ticketContenu .numero-ordre { font-size: 60px; }
 </style>
 {% else %}
 <style>
@@ -29,12 +31,46 @@
         @page { size: A4; margin: 20mm; }
     }
     #ticketContenu { max-width: 480px; margin: 0 auto; }
-    #ticketContenu .numero-ordre { font-size: 72px; }
+    #ticketContenu .numero-ordre { font-size: 68px; }
 </style>
 {% endif %}
 <style>
     @media print { .no-print { display: none !important; } }
+
+    #ticketContenu { font-family: 'Segoe UI', Arial, sans-serif; }
+    #ticketContenu .ticket-header {
+        background: linear-gradient(135deg, #1d6fa5 0%, #0f4c75 100%);
+        color: white;
+        margin: -1px -1px 0 -1px;
+        padding: 16px;
+        border-radius: 6px 6px 0 0;
+    }
+    #ticketContenu .ticket-header h6 { margin: 0; }
+    #ticketContenu .ticket-header .sous-titre { margin: 2px 0 0 0; font-size: 11px; opacity: 0.85; }
+
+    #ticketContenu .numero-box {
+        background: #f0f6fb;
+        border: 1px dashed #1d6fa5;
+        border-radius: 8px;
+        padding: 10px 0 6px 0;
+        margin: 14px 0;
+    }
     #ticketContenu .numero-ordre { font-weight: 700; color: #1d6fa5; line-height: 1; }
+
+    #ticketContenu .ticket-details {
+        text-align: left;
+        font-size: 12px;
+        border-top: 1px dashed #ccc;
+        border-bottom: 1px dashed #ccc;
+        padding: 10px 0;
+        margin: 10px 0;
+    }
+    #ticketContenu .ticket-details div + div { margin-top: 4px; }
+    #ticketContenu .ticket-details .libelle { color: #777; }
+
+    #ticketContenu .ticket-footer { font-size: 10px; color: #777; }
+    #ticketContenu .ticket-barcode { margin-top: 10px; }
+    #ticketContenu .ticket-barcode svg { max-width: 100%; }
 </style>
 {% endblock %}
 
@@ -42,28 +78,40 @@
 <div class="row justify-content-center">
     <div class="col-md-5">
         <div class="card" id="ticketContenu">
-            <div class="card-body text-center" style="font-family: 'Segoe UI', Arial, sans-serif;">
+            <div class="ticket-header text-center">
                 {% if structure.logo_url %}
-                <img src="{{ structure.logo_url }}" alt="Logo" style="max-height: 50px; max-width: 100px;" class="mb-2">
+                <img src="{{ structure.logo_url }}" alt="Logo" style="max-height: 44px; max-width: 90px; background: white; padding: 3px; border-radius: 5px;" class="mb-1">
                 {% endif %}
-                <h6 class="mb-0">{{ structure.nom or "SSoftOne v10" }}</h6>
-                <p class="text-muted small mb-3">Ticket de passage</p>
-                <hr>
-                <p class="text-muted small mb-1">Numéro</p>
-                <div class="numero-ordre mb-3">{{ preinscription.numero_ordre }}</div>
-                <hr>
-                <div class="text-start small">
-                    <strong>Patient :</strong> {{ preinscription.nom }} {{ preinscription.prenom or '' }}<br>
-                    {% if preinscription.motif_visite %}<strong>Motif :</strong> {{ preinscription.motif_visite }}<br>{% endif %}
-                    <strong>Date :</strong> {{ preinscription.created_at.strftime('%d/%m/%Y à %H:%M') if preinscription.created_at else '' }}
-                </div>
-                <hr>
-                <p class="text-muted small mb-0">Présentez-vous au guichet quand votre numéro est appelé.</p>
+                <h6>{{ structure.nom or "SSoftOne v10" }}</h6>
+                <p class="sous-titre">Ticket de passage</p>
             </div>
+            <div class="card-body text-center">
+                <p class="text-muted small mb-0">Votre numéro</p>
+                <div class="numero-box">
+                    <div class="numero-ordre">{{ preinscription.numero_ordre }}</div>
+                </div>
+
+                <div class="ticket-details">
+                    <div><span class="libelle">Patient :</span> <strong>{{ preinscription.nom }} {{ preinscription.prenom or '' }}</strong></div>
+                    {% if preinscription.motif_visite %}<div><span class="libelle">Motif :</span> {{ preinscription.motif_visite }}</div>{% endif %}
+                    <div><span class="libelle">Date :</span> {{ preinscription.created_at.strftime('%d/%m/%Y à %H:%M') if preinscription.created_at else '' }}</div>
+                </div>
+
+                <p class="ticket-footer mb-0">Présentez-vous au guichet quand votre numéro est appelé.</p>
+
+                <div class="ticket-barcode">
+                    <svg id="codeBarreTicket"></svg>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-3 no-print" id="fermetureMsg" style="display:none;">
+            <p class="text-muted small mb-0">Vous pouvez fermer cet onglet.</p>
         </div>
 
         <div class="text-center mt-3 no-print">
             <button onclick="window.print()" class="btn btn-primary btn-sm"><i class="fas fa-print"></i> Imprimer</button>
+            <button onclick="fermerTicket()" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</button>
         </div>
 
         <!-- ⭐ Réimpression ponctuelle sur un autre format sans changer le
@@ -80,10 +128,36 @@
 </div>
 
 <script>
+if (window.JsBarcode) {
+    // ⭐ Purement décoratif (patron : "à titre décoratif") — pas de scanner
+    // à ce numéro de passage côté guichet aujourd'hui, juste l'allure d'un
+    // vrai ticket de caisse.
+    JsBarcode("#codeBarreTicket", "T{{ preinscription.numero_ordre }}-{{ preinscription.id }}", {
+        format: "CODE128", width: 1.3, height: 32, fontSize: 10, margin: 0,
+    });
+}
+
 // ⭐ Impression automatique à l'ouverture — patron : "quand on clique ça
 // imprime en même temps, au lieu d'ouvrir encore le modal d'impression".
 // 'load' (pas DOMContentLoaded) pour laisser le temps au logo de charger
 // avant que la boîte de dialogue d'impression n'apparaisse.
 window.addEventListener('load', () => window.print());
+
+function fermerTicket() {
+    window.close();
+    const msg = document.getElementById('fermetureMsg');
+    if (msg) msg.style.display = 'block';
+}
+
+// ⭐ Fermeture automatique une fois l'impression faite (dialogue
+// d'impression refermé, imprimé ou annulé) — patron : "la page qui permet
+// une réimpression du ticket empêche un accès direct au formulaire de
+// remplissage pour le patient suivant... si on imprime que ça s'autoferme".
+// Cet onglet a été ouvert via target="_blank" depuis le formulaire
+// d'accueil (resté ouvert en arrière-plan, prêt pour le patient suivant) :
+// le fermer redonne directement la main dessus, sans étape en plus. Le
+// bouton "Fermer" ci-dessus couvre le cas où on ne veut pas imprimer du
+// tout.
+window.addEventListener('afterprint', fermerTicket);
 </script>
 {% endblock %}

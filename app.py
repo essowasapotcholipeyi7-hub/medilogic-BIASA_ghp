@@ -19864,7 +19864,6 @@ for _module_key, _module_def in MODULES_STRUCTURE.items():
             print(f"⚠️ MODULES_STRUCTURE: endpoint '{_endpoint}' introuvable, verrou non posé")
 
 
-
 if __name__ == '__main__':
     import os
     port = int(os.environ.get('PORT', 10000))
