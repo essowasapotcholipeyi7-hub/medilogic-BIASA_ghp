@@ -332,6 +332,12 @@
                     <span class="menu-text">Guide d'utilisation</span>
                 </a>
 
+                <!-- ===== FAQ (visible à tous les utilisateurs) ===== -->
+                <a class="nav-link {% if request.endpoint == 'page_faq' %}active{% endif %}" href="{{ url_for('page_faq') }}">
+                    <i class="fas fa-circle-question"></i>
+                    <span class="menu-text">FAQ</span>
+                </a>
+
 </div>
 
 <!-- ============================================================

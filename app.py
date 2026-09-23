@@ -15,7 +15,7 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient, FaqQuestion, FaqQuestionUtilisateur
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
@@ -703,6 +703,157 @@ def guide_utilisation_superadmin():
     return render_template('guide.html', guide_pdf_autorise=False,
                             guide_pdf_mot_de_passe_defini=False,
                             guide_niveau_detail='complet')
+
+
+# ============================================================
+# FAQ — commune à toutes les structures, préparée par le SUPERADMIN
+# (voir models.py : FaqQuestion, FaqQuestionUtilisateur). Même principe
+# de filtrage par rôle que le guide d'utilisation (guide_section_visible).
+# ============================================================
+FAQ_ROLES_LABELS = {
+    'caissier': 'Caissier', 'secretaire': 'Secrétaire', 'medecin': 'Médecin',
+    'paramedical': 'Paramédical', 'pharmacien': 'Pharmacien', 'laborantin': 'Laborantin',
+    'radiologue': 'Radiologue', 'gestionnaire': 'Gestionnaire',
+    'sous_comptable': 'Sous-comptable', 'comptable': 'Comptable',
+}
+
+
+def _faq_question_visible(faq):
+    if session.get('is_admin') or session.get('super_admin'):
+        return True
+    if not faq.roles_autorises:
+        return True
+    roles = [r.strip() for r in faq.roles_autorises.split(',') if r.strip()]
+    return session.get('role') in roles
+
+
+@app.route('/faq')
+@login_required
+def page_faq():
+    """FAQ consultée par une structure — questions préparées par le
+    superadmin, filtrées par rôle, plus l'historique des questions posées
+    librement par l'utilisateur courant (avec leur réponse si elle est
+    arrivée)."""
+    structure_id = session.get('structure_id')
+    toutes = FaqQuestion.query.order_by(FaqQuestion.ordre, FaqQuestion.id).all()
+    questions = [f for f in toutes if _faq_question_visible(f)]
+
+    mes_questions = FaqQuestionUtilisateur.query.filter_by(
+        structure_id=structure_id, user_id=session.get('user_id')
+    ).order_by(FaqQuestionUtilisateur.created_at.desc()).all()
+
+    return render_template('faq.html', questions=questions, mes_questions=mes_questions)
+
+
+@app.route('/api/faq/poser', methods=['POST'])
+@login_required
+def api_faq_poser_question():
+    """Une question qui n'a pas de réponse toute prête dans la FAQ — part
+    dans la file d'attente du superadmin (voir page_admin_faq)."""
+    data = request.json or {}
+    question = (data.get('question') or '').strip()
+    if not question:
+        return jsonify({'success': False, 'error': 'La question est obligatoire'}), 400
+
+    q = FaqQuestionUtilisateur(
+        structure_id=session.get('structure_id'),
+        structure_nom=session.get('structure_nom'),
+        user_id=session.get('user_id'),
+        user_name=session.get('user_name'),
+        role=session.get('role') or ('admin' if session.get('is_admin') else None),
+        question=question,
+        statut='en_attente',
+    )
+    db.session.add(q)
+    db.session.commit()
+    return jsonify({'success': True, 'id': q.id})
+
+
+@app.route('/admin_global/faq')
+def page_admin_faq():
+    """Gestion de la FAQ (superadmin uniquement) : préparer/éditer les
+    questions communes, et répondre aux questions librement posées par
+    les structures — regroupées par structure comme demandé (patron :
+    "pour chaque structure voir les questions posées et réponses eues")."""
+    if 'super_admin' not in session:
+        return redirect(url_for('admin_login'))
+
+    questions = FaqQuestion.query.order_by(FaqQuestion.ordre, FaqQuestion.id).all()
+    questions_utilisateurs = FaqQuestionUtilisateur.query.order_by(
+        FaqQuestionUtilisateur.structure_nom, FaqQuestionUtilisateur.created_at.desc()
+    ).all()
+    return render_template('admin_faq.html', questions=questions,
+                            questions_utilisateurs=questions_utilisateurs,
+                            roles_labels=FAQ_ROLES_LABELS)
+
+
+@app.route('/api/admin/faq/ajouter', methods=['POST'])
+def api_admin_faq_ajouter():
+    if 'super_admin' not in session:
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    data = request.json or {}
+    question = (data.get('question') or '').strip()
+    reponse = (data.get('reponse') or '').strip()
+    if not question or not reponse:
+        return jsonify({'success': False, 'error': 'Question et réponse obligatoires'}), 400
+    roles = data.get('roles') or []
+    roles_autorises = ','.join(roles) if roles else None
+    ordre = FaqQuestion.query.count()
+    faq = FaqQuestion(question=question, reponse=reponse, roles_autorises=roles_autorises, ordre=ordre)
+    db.session.add(faq)
+    db.session.commit()
+    return jsonify({'success': True, 'id': faq.id})
+
+
+@app.route('/api/admin/faq/<int:faq_id>/modifier', methods=['POST'])
+def api_admin_faq_modifier(faq_id):
+    if 'super_admin' not in session:
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    faq = FaqQuestion.query.get(faq_id)
+    if not faq:
+        return jsonify({'success': False, 'error': 'Question introuvable'}), 404
+    data = request.json or {}
+    question = (data.get('question') or '').strip()
+    reponse = (data.get('reponse') or '').strip()
+    if not question or not reponse:
+        return jsonify({'success': False, 'error': 'Question et réponse obligatoires'}), 400
+    faq.question = question
+    faq.reponse = reponse
+    roles = data.get('roles') or []
+    faq.roles_autorises = ','.join(roles) if roles else None
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+@app.route('/api/admin/faq/<int:faq_id>/supprimer', methods=['POST'])
+def api_admin_faq_supprimer(faq_id):
+    if 'super_admin' not in session:
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    faq = FaqQuestion.query.get(faq_id)
+    if faq:
+        db.session.delete(faq)
+        db.session.commit()
+    return jsonify({'success': True})
+
+
+@app.route('/api/admin/faq/utilisateur/<int:question_id>/repondre', methods=['POST'])
+def api_admin_faq_repondre(question_id):
+    """Répond (ou complète une réponse déjà donnée) à une question posée
+    par une structure — redevient visible pour son auteur sur /faq."""
+    if 'super_admin' not in session:
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    q = FaqQuestionUtilisateur.query.get(question_id)
+    if not q:
+        return jsonify({'success': False, 'error': 'Question introuvable'}), 404
+    data = request.json or {}
+    reponse = (data.get('reponse') or '').strip()
+    if not reponse:
+        return jsonify({'success': False, 'error': 'La réponse est obligatoire'}), 400
+    q.reponse = reponse
+    q.statut = 'repondue'
+    q.repondue_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'success': True})
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -3302,8 +3453,10 @@ def admin_global():
         p.structure_id: p.guide_pdf_autorise
         for p in ParametrageAffichageStructure.query.all()
     }
+    faq_en_attente_count = FaqQuestionUtilisateur.query.filter_by(statut='en_attente').count()
     return render_template('admin_global.html', structures=structures,
-                            guide_pdf_autorisations=guide_pdf_autorisations)
+                            guide_pdf_autorisations=guide_pdf_autorisations,
+                            faq_en_attente_count=faq_en_attente_count)
 
 @app.route('/admin/activate/<int:structure_id>')
 def activate_structure(structure_id):

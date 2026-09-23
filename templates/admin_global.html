@@ -11,6 +11,12 @@
         <a href="{{ url_for('guide_utilisation_superadmin') }}" class="btn btn-sm btn-light me-2" title="Guide d'utilisation complet, avec tous les détails techniques">
             <i class="fas fa-book-open"></i> Guide complet
         </a>
+        <a href="{{ url_for('page_admin_faq') }}" class="btn btn-sm btn-light me-2" title="Gérer la FAQ et répondre aux questions des structures">
+            <i class="fas fa-circle-question"></i> FAQ
+            {% if faq_en_attente_count %}
+            <span class="badge bg-danger ms-1">{{ faq_en_attente_count }}</span>
+            {% endif %}
+        </a>
         <a href="{{ url_for('admin_logout') }}" class="btn btn-sm btn-light">
             <i class="fas fa-sign-out-alt"></i> Déconnexion
         </a>

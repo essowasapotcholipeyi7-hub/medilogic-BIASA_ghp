@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+
+{% block title %}FAQ{% endblock %}
+
+{% block extra_css %}
+<style>
+    .faq-hero {
+        background: linear-gradient(135deg, #1a2a6c, #667eea);
+        color: white;
+        border-radius: 14px;
+        padding: 24px 28px;
+        margin-bottom: 22px;
+    }
+    .faq-hero h4 { font-weight: 700; margin-bottom: 4px; }
+    .faq-hero p { opacity: .9; margin-bottom: 0; }
+
+    .accordion-button:not(.collapsed) {
+        background-color: #eef1fb;
+        color: #1a2a6c;
+    }
+    .accordion-button:focus { box-shadow: none; border-color: rgba(0,0,0,.125); }
+    .faq-reponse { white-space: pre-line; }
+
+    .mq-item { border-left: 4px solid #dee2e6; padding: 10px 14px; margin-bottom: 10px; border-radius: 6px; background: #f8f9fa; }
+    .mq-item.repondue { border-left-color: #28a745; }
+    .mq-item.en-attente { border-left-color: #ffc107; }
+    .mq-question { font-weight: 600; }
+    .mq-reponse { margin-top: 6px; padding-top: 6px; border-top: 1px dashed #ccc; white-space: pre-line; }
+    .mq-statut { font-size: 11px; text-transform: uppercase; letter-spacing: .3px; font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    <div class="faq-hero">
+        <h4><i class="fas fa-circle-question me-2"></i>Foire aux questions</h4>
+        <p>Les réponses aux questions les plus fréquentes. Si vous ne trouvez pas la vôtre, posez-la en bas de page.</p>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-7">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-light"><i class="fas fa-list me-1"></i> Questions fréquentes</div>
+                <div class="card-body">
+                    {% if questions %}
+                    <div class="accordion" id="accordionFaq">
+                        {% for q in questions %}
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faqItem{{ q.id }}">
+                                    {{ q.question }}
+                                </button>
+                            </h2>
+                            <div id="faqItem{{ q.id }}" class="accordion-collapse collapse" data-bs-parent="#accordionFaq">
+                                <div class="accordion-body faq-reponse">{{ q.reponse }}</div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-muted mb-0">Aucune question disponible pour votre rôle pour le moment.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-light"><i class="fas fa-paper-plane me-1"></i> Poser une question</div>
+                <div class="card-body">
+                    <div id="faqPoserMsg"></div>
+                    <textarea class="form-control mb-2" id="faqPoserTexte" rows="3" placeholder="Votre question..."></textarea>
+                    <button class="btn btn-primary btn-sm" id="btnFaqPoser" onclick="poserQuestionFaq()">
+                        <i class="fas fa-paper-plane me-1"></i> Envoyer
+                    </button>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-light"><i class="fas fa-clock-rotate-left me-1"></i> Mes questions</div>
+                <div class="card-body">
+                    {% if mes_questions %}
+                        {% for mq in mes_questions %}
+                        <div class="mq-item {{ 'repondue' if mq.statut == 'repondue' else 'en-attente' }}">
+                            <div class="d-flex justify-content-between align-items-start gap-2">
+                                <span class="mq-question">{{ mq.question }}</span>
+                                {% if mq.statut == 'repondue' %}
+                                <span class="badge bg-success mq-statut">Répondue</span>
+                                {% else %}
+                                <span class="badge bg-warning text-dark mq-statut">En attente</span>
+                                {% endif %}
+                            </div>
+                            {% if mq.reponse %}
+                            <div class="mq-reponse">{{ mq.reponse }}</div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                    <p class="text-muted mb-0">Vous n'avez encore posé aucune question.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function poserQuestionFaq() {
+    const msg = document.getElementById('faqPoserMsg');
+    const texte = document.getElementById('faqPoserTexte');
+    const question = texte.value.trim();
+    msg.innerHTML = '';
+    if (!question) {
+        msg.innerHTML = '<div class="alert alert-danger py-2">Votre question est vide.</div>';
+        return;
+    }
+    const btn = document.getElementById('btnFaqPoser');
+    btn.disabled = true;
+    fetch('/api/faq/poser', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                msg.innerHTML = '<div class="alert alert-success py-2">Question envoyée — vous verrez la réponse ici dès qu\'elle sera disponible.</div>';
+                texte.value = '';
+                setTimeout(() => window.location.reload(), 1500);
+            } else {
+                msg.innerHTML = `<div class="alert alert-danger py-2">${data.error || 'Erreur lors de l\'envoi'}</div>`;
+            }
+        })
+        .catch(() => {
+            msg.innerHTML = '<div class="alert alert-danger py-2">Connexion impossible.</div>';
+        })
+        .finally(() => { btn.disabled = false; });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+
+{% block title %}FAQ — Administration{% endblock %}
+
+{% block extra_css %}
+<style>
+    .aq-item { border-left: 4px solid #dee2e6; padding: 10px 14px; margin-bottom: 10px; border-radius: 6px; background: #f8f9fa; }
+    .aq-item.en-attente { border-left-color: #ffc107; }
+    .aq-item.repondue { border-left-color: #28a745; }
+    .aq-meta { font-size: 12px; color: #6c757d; }
+    .aq-question { font-weight: 600; margin: 4px 0; white-space: pre-line; }
+    .aq-groupe-titre { font-weight: 700; color: #1a2a6c; margin: 18px 0 8px; font-size: 15px; }
+    .faq-liste-item { border-bottom: 1px solid #eee; padding: 10px 0; }
+    .faq-liste-item:last-child { border-bottom: none; }
+    .roles-chip { font-size: 10px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0"><i class="fas fa-circle-question me-2"></i>Gestion de la FAQ</h5>
+        <a href="{{ url_for('admin_global') }}" class="btn btn-sm btn-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Retour Admin Global
+        </a>
+    </div>
+
+    <div class="row g-4">
+        <!-- FAQ préparée -->
+        <div class="col-lg-6">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-list me-1"></i> FAQ préparée ({{ questions|length }})</span>
+                    <button class="btn btn-sm btn-primary" onclick="ouvrirModalFaq()">
+                        <i class="fas fa-plus me-1"></i> Ajouter
+                    </button>
+                </div>
+                <div class="card-body">
+                    {% if questions %}
+                        {% for q in questions %}
+                        <div class="faq-liste-item">
+                            <div class="d-flex justify-content-between align-items-start gap-2">
+                                <strong>{{ q.question }}</strong>
+                                <div class="text-nowrap">
+                                    <button class="btn btn-sm btn-outline-secondary" onclick='ouvrirModalFaq({{ {"id": q.id, "question": q.question, "reponse": q.reponse, "roles": (q.roles_autorises.split(",") if q.roles_autorises else [])}|tojson }})'>
+                                        <i class="fas fa-pen"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" onclick="supprimerFaq({{ q.id }})">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <p class="text-muted small mb-1" style="white-space:pre-line;">{{ q.reponse }}</p>
+                            {% if q.roles_autorises %}
+                                {% for r in q.roles_autorises.split(',') %}
+                                <span class="badge bg-secondary roles-chip">{{ roles_labels.get(r, r) }}</span>
+                                {% endfor %}
+                            {% else %}
+                                <span class="badge bg-info text-dark roles-chip">Tous les rôles</span>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                    <p class="text-muted mb-0">Aucune question préparée pour le moment.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Questions posées par les structures -->
+        <div class="col-lg-6">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-light">
+                    <i class="fas fa-comments me-1"></i> Questions posées par les structures ({{ questions_utilisateurs|length }})
+                </div>
+                <div class="card-body" style="max-height: 720px; overflow-y: auto;">
+                    {% if questions_utilisateurs %}
+                        {% set ns = namespace(structure_courante=None) %}
+                        {% for q in questions_utilisateurs %}
+                            {% if q.structure_nom != ns.structure_courante %}
+                                {% set ns.structure_courante = q.structure_nom %}
+                                <div class="aq-groupe-titre">{{ q.structure_nom or 'Structure ' ~ q.structure_id }} <span class="text-muted small fw-normal">(ID {{ q.structure_id }})</span></div>
+                            {% endif %}
+                            <div class="aq-item {{ 'repondue' if q.statut == 'repondue' else 'en-attente' }}" id="aqItem{{ q.id }}">
+                                <div class="aq-meta">{{ q.user_name or 'Utilisateur' }} — {{ roles_labels.get(q.role, q.role) if q.role else '' }} — {{ q.created_at.strftime('%d/%m/%Y %H:%M') if q.created_at else '' }}</div>
+                                <div class="aq-question">{{ q.question }}</div>
+                                <textarea class="form-control form-control-sm mb-2" id="aqReponse{{ q.id }}" rows="2" placeholder="Votre réponse...">{{ q.reponse or '' }}</textarea>
+                                <button class="btn btn-sm btn-primary" onclick="repondreQuestion({{ q.id }})">
+                                    <i class="fas fa-reply me-1"></i> {{ 'Compléter la réponse' if q.statut == 'repondue' else 'Répondre' }}
+                                </button>
+                                <span class="small ms-2" id="aqMsg{{ q.id }}"></span>
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                    <p class="text-muted mb-0">Aucune question posée par une structure pour le moment.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal ajout/édition FAQ -->
+<div class="modal fade" id="modalFaq" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title" id="modalFaqTitre"><i class="fas fa-circle-question me-1"></i> Ajouter une question</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="faqId">
+                <div class="mb-2">
+                    <label class="form-label">Question *</label>
+                    <input type="text" class="form-control" id="faqQuestion">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Réponse *</label>
+                    <textarea class="form-control" id="faqReponse" rows="4"></textarea>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Rôles autorisés à voir cette question</label>
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for role_id, role_label in roles_labels.items() %}
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input faq-role-checkbox" type="checkbox" value="{{ role_id }}" id="role_{{ role_id }}">
+                            <label class="form-check-label small" for="role_{{ role_id }}">{{ role_label }}</label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <small class="text-muted">Aucune case cochée = visible par tous les rôles (les admins voient toujours tout).</small>
+                </div>
+                <div id="msgModalFaq" class="small"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-light" data-bs-dismiss="modal">Fermer</button>
+                <button class="btn btn-primary" onclick="enregistrerFaq()">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function ouvrirModalFaq(faq) {
+    document.getElementById('msgModalFaq').textContent = '';
+    document.querySelectorAll('.faq-role-checkbox').forEach(cb => cb.checked = false);
+    if (faq) {
+        document.getElementById('modalFaqTitre').innerHTML = '<i class="fas fa-pen me-1"></i> Modifier la question';
+        document.getElementById('faqId').value = faq.id;
+        document.getElementById('faqQuestion').value = faq.question;
+        document.getElementById('faqReponse').value = faq.reponse;
+        (faq.roles || []).forEach(r => {
+            const cb = document.getElementById('role_' + r);
+            if (cb) cb.checked = true;
+        });
+    } else {
+        document.getElementById('modalFaqTitre').innerHTML = '<i class="fas fa-circle-question me-1"></i> Ajouter une question';
+        document.getElementById('faqId').value = '';
+        document.getElementById('faqQuestion').value = '';
+        document.getElementById('faqReponse').value = '';
+    }
+    new bootstrap.Modal(document.getElementById('modalFaq')).show();
+}
+
+function enregistrerFaq() {
+    const msg = document.getElementById('msgModalFaq');
+    const id = document.getElementById('faqId').value;
+    const question = document.getElementById('faqQuestion').value.trim();
+    const reponse = document.getElementById('faqReponse').value.trim();
+    if (!question || !reponse) {
+        msg.className = 'small text-danger';
+        msg.textContent = 'Question et réponse obligatoires.';
+        return;
+    }
+    const roles = Array.from(document.querySelectorAll('.faq-role-checkbox:checked')).map(cb => cb.value);
+    const url = id ? `/api/admin/faq/${id}/modifier` : '/api/admin/faq/ajouter';
+    fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, reponse, roles })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                window.location.reload();
+            } else {
+                msg.className = 'small text-danger';
+                msg.textContent = data.error || 'Erreur lors de l\'enregistrement.';
+            }
+        })
+        .catch(() => {
+            msg.className = 'small text-danger';
+            msg.textContent = 'Connexion impossible.';
+        });
+}
+
+function supprimerFaq(id) {
+    if (!confirm('Supprimer cette question de la FAQ ?')) return;
+    fetch(`/api/admin/faq/${id}/supprimer`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => { if (data.success) window.location.reload(); });
+}
+
+function repondreQuestion(id) {
+    const msg = document.getElementById('aqMsg' + id);
+    const reponse = document.getElementById('aqReponse' + id).value.trim();
+    if (!reponse) {
+        msg.className = 'small ms-2 text-danger';
+        msg.textContent = 'Réponse vide.';
+        return;
+    }
+    fetch(`/api/admin/faq/utilisateur/${id}/repondre`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reponse })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                msg.className = 'small ms-2 text-success';
+                msg.textContent = 'Enregistré.';
+                document.getElementById('aqItem' + id).classList.remove('en-attente');
+                document.getElementById('aqItem' + id).classList.add('repondue');
+            } else {
+                msg.className = 'small ms-2 text-danger';
+                msg.textContent = data.error || 'Erreur.';
+            }
+        })
+        .catch(() => {
+            msg.className = 'small ms-2 text-danger';
+            msg.textContent = 'Connexion impossible.';
+        });
+}
+</script>
+{% endblock %}

@@ -3643,3 +3643,49 @@ class ParametrageAffichageStructure(db.Model):
     # n'apparaît même pas tant que ce n'est pas activé ici.
     guide_pdf_autorise = db.Column(db.Boolean, nullable=False, default=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ============================================================
+# FAQ — commune à toutes les structures, préparée par le SUPERADMIN
+# ============================================================
+class FaqQuestion(db.Model):
+    """Une question/réponse de la FAQ, commune à toutes les structures —
+    gérée uniquement depuis /admin_global/faq (jamais par une structure).
+    Visibilité filtrée par rôle comme le guide d'utilisation
+    (guide_section_visible, app.py) : roles_autorises vide/NULL = visible
+    par tous les rôles."""
+    __tablename__ = 'faq_questions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    question = db.Column(db.Text, nullable=False)
+    reponse = db.Column(db.Text, nullable=False)
+    # CSV des rôles autorisés (ex: "caissier,secretaire") — vide/NULL = tous.
+    roles_autorises = db.Column(db.String(255))
+    ordre = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class FaqQuestionUtilisateur(db.Model):
+    """Question posée librement par un utilisateur d'une structure, en
+    complément de la FAQ préparée (patron : "les utilisateurs peuvent
+    aussi poser une nouvelle question") — en attente de réponse du
+    superadmin (/admin_global/faq), puis visible par son auteur sur la
+    page /faq de sa structure une fois répondue."""
+    __tablename__ = 'faq_questions_utilisateurs'
+
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    # Dénormalisé (comme patient_nom sur Hospitalisation) : le nom de la
+    # structure vit dans Google Sheets, pas dans cette table Postgres —
+    # capturé à la soumission pour que l'écran superadmin l'affiche sans
+    # aller-retour Sheets par ligne.
+    structure_nom = db.Column(db.String(200))
+    user_id = db.Column(db.Integer)
+    user_name = db.Column(db.String(150))
+    role = db.Column(db.String(50))
+    question = db.Column(db.Text, nullable=False)
+    reponse = db.Column(db.Text)
+    statut = db.Column(db.String(20), nullable=False, default='en_attente')  # 'en_attente' | 'repondue'
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    repondue_at = db.Column(db.DateTime)
