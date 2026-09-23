@@ -15,6 +15,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# ⭐ Garde-fou de taille pour le transport base64 — voir le commentaire
+# équivalent dans gestion_patients/tasks.py (même valeur des deux côtés).
+TAILLE_MAX_FICHIER_SYNC = 5 * 1024 * 1024  # 5 Mo
+
 
 def _type_prestation_vers_analyse(type_prestation):
     return 'examen' if type_prestation == 'examen' else 'analyse'
@@ -49,6 +53,11 @@ def sync_resultats_examens_to_gestion_patients():
                 ).all()
 
                 for r in resultats:
+                    if r.fichier_data and len(r.fichier_data) > TAILLE_MAX_FICHIER_SYNC:
+                        messages.append(f"structure {mapping.local_structure_id} resultat #{r.id}: fichier trop volumineux ({len(r.fichier_data) // 1024} Ko), non envoyé")
+                        logger.error(f"⚠️ Fichier trop volumineux pour la synchro (resultat #{r.id}, {len(r.fichier_data) // 1024} Ko) — non envoyé, à réduire ou transmettre autrement.")
+                        continue
+
                     demande = DemandeExamen.query.get(r.demande_id)
                     if not demande:
                         continue
@@ -99,6 +108,11 @@ def sync_resultats_examens_to_gestion_patients():
                 ).all()
 
                 for m in modeles:
+                    if m.fichier_data and len(m.fichier_data) > TAILLE_MAX_FICHIER_SYNC:
+                        messages.append(f"structure {mapping.local_structure_id} modele #{m.id}: fichier trop volumineux ({len(m.fichier_data) // 1024} Ko), non envoyé")
+                        logger.error(f"⚠️ Fichier trop volumineux pour la synchro (modele #{m.id}, {len(m.fichier_data) // 1024} Ko) — non envoyé, à réduire ou transmettre autrement.")
+                        continue
+
                     payload = {
                         'categorie': 'modele',
                         'source_app': 'ghp',

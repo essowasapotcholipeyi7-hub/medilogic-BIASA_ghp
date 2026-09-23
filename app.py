@@ -10260,6 +10260,7 @@ def api_lister_modeles_resultats():
         'id': l.id, 'nom': l.nom, 'type_prestation': l.type_prestation,
         'fichier_nom': l.fichier_nom, 'a_contenu_html': bool(l.contenu_html),
         'created_at': l.created_at.strftime('%d/%m/%Y') if l.created_at else '',
+        'source_app': l.source_app,  # ⭐ 'gestion_patients' si synchronisé depuis là-bas, sinon None (natif)
     } for l in lignes])
 
 
