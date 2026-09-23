@@ -19042,6 +19042,164 @@ def api_sync_protocole_externe():
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+def _resoudre_patient_sync_externe(structure_id, patient_source_id, patient_nom, patient_prenom):
+    """Retrouve le patient GHP correspondant à une ligne reçue de
+    gestion_patients — préfère patient_source_id (lien direct posé côté
+    gestion_patients dès qu'un patient est rattaché à GHP, voir
+    Patient.patient_source_id là-bas), repli sur nom/prénom sinon, même
+    logique que /api/prescriptions (api_receive_prescriptions) ci-dessus."""
+    if patient_source_id:
+        p = Patient.query.filter_by(id=patient_source_id, structure_id=structure_id).first()
+        if p:
+            return p
+    if patient_nom and patient_prenom:
+        return Patient.query.filter(
+            db.func.lower(Patient.nom) == patient_nom.strip().lower(),
+            db.func.lower(Patient.prenom) == patient_prenom.strip().lower(),
+            Patient.structure_id == structure_id,
+        ).first()
+    return None
+
+
+@app.route('/api/resultats-examens/sync-externe', methods=['POST'])
+def api_sync_resultat_examen_externe():
+    """
+    Reçoit, en miroir, un résultat d'analyse/examen (ou un modèle de
+    résultat) saisi côté gestion_patients — voir
+    _envoyer_resultats_examens_ghp_immediat()/tasks.sync_resultats_examens_to_ghp
+    dans gestion_patients/app.py|tasks.py. Même schéma que
+    /api/protocoles/sync-externe : token = StructureMapping.api_key, upsert
+    idempotent sur (structure_id, source_app, source_model, source_id).
+
+    categorie='modele' : upsert direct d'un ModeleResultat.
+    categorie='resultat' : une ligne AnalyseDemande côté gestion_patients
+    porte à la fois "la demande" et "le résultat" — upsert donc ICI, dans le
+    même appel, une DemandeExamen (marquée 'realisee' puisqu'un résultat
+    existe) PUIS le ResultatExamen qui s'y rattache, jamais l'un sans
+    l'autre (ResultatExamen.demande_id n'a de sens qu'avec sa demande).
+    """
+    token = request.args.get('token')
+    if not token:
+        return jsonify({'success': False, 'error': 'Token manquant'}), 401
+
+    mapping = StructureMapping.query.filter_by(api_key=token, actif=True).first()
+    if not mapping:
+        return jsonify({'success': False, 'error': 'Token invalide'}), 401
+
+    try:
+        import base64
+
+        data = request.json or {}
+        categorie = data.get('categorie')
+        if categorie not in ('resultat', 'modele'):
+            return jsonify({'success': False, 'error': 'Catégorie non synchronisable'}), 400
+
+        source_app = data.get('source_app') or 'gestion_patients'
+        source_model = data.get('source_model')
+        source_id = data.get('source_id')
+        if not source_model or not source_id:
+            return jsonify({'success': False, 'error': 'source_model/source_id manquants'}), 400
+
+        structure_id = mapping.local_structure_id
+        auteur_nom = data.get('auteur_nom') or 'Sync gestion_patients'
+
+        if categorie == 'modele':
+            modele = ModeleResultat.query.filter_by(
+                structure_id=structure_id, source_app=source_app,
+                source_model=source_model, source_id=source_id,
+            ).first()
+            fichier_data_b64 = data.get('fichier_data_b64')
+            if not modele:
+                modele = ModeleResultat(
+                    structure_id=structure_id, source_app=source_app,
+                    source_model=source_model, source_id=source_id,
+                )
+                db.session.add(modele)
+            modele.type_prestation = data.get('type_prestation') or 'analyse'
+            modele.nom = data.get('nom') or 'Sans titre'
+            modele.fichier_nom = data.get('fichier_nom')
+            modele.fichier_mime = data.get('fichier_mime')
+            modele.fichier_data = base64.b64decode(fichier_data_b64) if fichier_data_b64 else None
+            modele.contenu_html = data.get('contenu_html') or None
+            modele.created_by = auteur_nom
+            modele.source_synced_at = datetime.utcnow()
+            db.session.commit()
+            return jsonify({'success': True, 'modele_id': modele.id})
+
+        # categorie == 'resultat'
+        patient = _resoudre_patient_sync_externe(
+            structure_id, data.get('patient_source_id'),
+            data.get('patient_nom'), data.get('patient_prenom'),
+        )
+        if not patient:
+            return jsonify({'success': False, 'error': 'patient_introuvable'}), 404
+
+        demande = DemandeExamen.query.filter_by(
+            structure_id=structure_id, source_app=source_app,
+            source_model=source_model, source_id=source_id,
+        ).first()
+        if not demande:
+            demande = DemandeExamen(
+                structure_id=structure_id, patient_id=patient.id,
+                patient_nom=f"{patient.nom} {patient.prenom}",
+                type_prestation=data.get('type_prestation') or 'analyse',
+                acte_nom=data.get('acte_nom') or 'Examen',
+                quantite=1, prix=0, vente_id=None, patient_externe_id=None,
+                statut_paiement='paye', motif=data.get('motif') or '',
+                statut='realisee', created_by=auteur_nom,
+                source_app=source_app, source_model=source_model, source_id=source_id,
+                source_synced_at=datetime.utcnow(),
+            )
+            db.session.add(demande)
+            db.session.flush()
+        elif demande.statut != 'realisee':
+            demande.statut = 'realisee'
+
+        resultat = ResultatExamen.query.filter_by(
+            structure_id=structure_id, source_app=source_app,
+            source_model=source_model, source_id=source_id,
+        ).first()
+        if not resultat:
+            resultat = ResultatExamen(
+                structure_id=structure_id, demande_id=demande.id,
+                nom_interprete=data.get('nom_interprete') or auteur_nom,
+                source_app=source_app, source_model=source_model, source_id=source_id,
+            )
+            db.session.add(resultat)
+
+        fichier_data_b64 = data.get('fichier_data_b64')
+        signature_data_b64 = data.get('signature_data_b64')
+        resultat.fichier_nom = data.get('fichier_nom')
+        resultat.fichier_mime = data.get('fichier_mime')
+        resultat.fichier_data = base64.b64decode(fichier_data_b64) if fichier_data_b64 else None
+        # ⭐ Repli texte libre (resultats_texte) : gestion_patients permet
+        # toujours une saisie texte simple, sans contenu_html ni fichier —
+        # sans ce repli, rien n'arriverait côté GHP pour ces résultats-là.
+        resultat.contenu_html = data.get('contenu_html') or (
+            f"<p>{data['resultats_texte']}</p>" if data.get('resultats_texte') else None
+        )
+        resultat.modele_utilise_id = data.get('modele_utilise_id')
+        resultat.nom_interprete = data.get('nom_interprete') or auteur_nom
+        resultat.titre_interprete = data.get('titre_interprete')
+        resultat.signature_data = base64.b64decode(signature_data_b64) if signature_data_b64 else None
+        resultat.signature_mime = data.get('signature_mime')
+        resultat.created_by = auteur_nom
+        resultat.source_synced_at = datetime.utcnow()
+
+        obtenir_ou_creer_code_acces(structure_id, patient.id, auteur_nom)
+
+        db.session.commit()
+        return jsonify({'success': True, 'demande_id': demande.id, 'resultat_id': resultat.id})
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Erreur sync résultat examen: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 def _parse_quantite_prescription(raw, defaut=1):
     """Convertit la quantité (libre, saisie côté gestion_patients — ex.
     "1 boite", "2 comprimés", "1/2") en entier exploitable pour un calcul

@@ -2591,6 +2591,16 @@ class DemandeExamen(db.Model):
     created_by = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # ⭐ Origine miroir (synchronisation depuis gestion_patients — voir
+    # /api/resultats-examens/sync-externe) : NULL pour toute demande
+    # 100% native GHP. Même principe que ProtocoleMedical.source_app —
+    # index unique partiel sur (structure_id, source_app, source_model,
+    # source_id) pour qu'un retry du rattrapage ne crée jamais de doublon.
+    source_app = db.Column(db.String(30))       # 'gestion_patients'
+    source_model = db.Column(db.String(30))     # 'AnalyseDemande'
+    source_id = db.Column(db.Integer)
+    source_synced_at = db.Column(db.DateTime)
+
 
 # ⭐ Modèle de résultat (Word/Excel) réutilisable — le laborantin/radiologue
 # le télécharge, le complète sur son poste, puis renvoie le résultat final
@@ -2615,6 +2625,12 @@ class ModeleResultat(db.Model):
     contenu_html = db.Column(db.Text)
     created_by = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # ⭐ Origine miroir (voir DemandeExamen.source_app ci-dessus)
+    source_app = db.Column(db.String(30))
+    source_model = db.Column(db.String(30))
+    source_id = db.Column(db.Integer)
+    source_synced_at = db.Column(db.DateTime)
 
 
 # ⭐ Le résultat final d'une DemandeExamen réalisée — un fichier (PDF de
@@ -2662,6 +2678,12 @@ class ResultatExamen(db.Model):
     signature_mime = db.Column(db.String(100))
     created_by = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # ⭐ Origine miroir (voir DemandeExamen.source_app ci-dessus)
+    source_app = db.Column(db.String(30))
+    source_model = db.Column(db.String(30))
+    source_id = db.Column(db.Integer)
+    source_synced_at = db.Column(db.DateTime)
 
 
 # ⭐ Registre des signatures électroniques pré-enregistrées — patron :
