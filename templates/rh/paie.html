@@ -416,18 +416,25 @@ function ouvrirPayerPaie(paieId) {
     new bootstrap.Modal(document.getElementById('payerPaieModal')).show();
 }
 
-function confirmerPayerPaie() {
+function confirmerPayerPaie(force) {
     const paieId = document.getElementById('ppPaieId').value;
     fetch(`/rh/api/paie/${paieId}/payer`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ mode_paiement: document.getElementById('ppModePaiement').value })
+        body: JSON.stringify({ mode_paiement: document.getElementById('ppModePaiement').value, force: !!force })
     })
     .then(r => r.json())
     .then(result => {
         if (result.success) {
             bootstrap.Modal.getInstance(document.getElementById('payerPaieModal')).hide();
             chargerPaies();
+        } else if (result.solde_insuffisant) {
+            // ⭐ Caisse insuffisante : on prévient et on laisse le choix de
+            // payer quand même (ex: salaire réellement viré depuis la
+            // banque) plutôt qu'un blocage sec sans issue.
+            if (confirm(`⚠️ ${result.error}\n\nPayer quand même ?`)) {
+                confirmerPayerPaie(true);
+            }
         } else {
             alert('Erreur: ' + (result.error || 'Erreur inconnue'));
         }

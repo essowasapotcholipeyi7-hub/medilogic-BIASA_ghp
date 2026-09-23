@@ -1272,6 +1272,30 @@ def generer_ecriture_dotation_amortissement(immo, montant, annee, user_nom='SYST
 
 
 # ============================================================
+# SOLDE DE CAISSE SIMPLE (recettes − dépenses) — garde-fou commun
+# ============================================================
+# ⭐ Centralise un calcul auparavant dupliqué tel quel à une dizaine
+# d'endroits d'app.py (mise à jour du solde après chaque vente/paiement) —
+# ajouté ici pour que les opérations qui SORTENT de la caisse mais ne
+# passaient par aucun contrôle (règlement fournisseur, paiement de salaire)
+# puissent vérifier le solde disponible AVANT d'agir, comme le fait déjà
+# "Ajouter une dépense" (seul point de contrôle existant jusqu'ici — voir
+# api_add_depense dans app.py).
+
+def solde_caisse_disponible(structure_id):
+    """Solde de caisse simple (recettes non annulées − dépenses), toutes
+    périodes confondues — même formule que partout ailleurs dans l'appli."""
+    total_recettes = db.session.query(db.func.coalesce(db.func.sum(Recette.montant), 0)).filter(
+        Recette.structure_id == structure_id,
+        db.or_(Recette.est_annulation.is_(None), Recette.est_annulation.is_(False)),
+    ).scalar() or 0
+    total_depenses = db.session.query(db.func.coalesce(db.func.sum(Depense.montant), 0)).filter(
+        Depense.structure_id == structure_id,
+    ).scalar() or 0
+    return float(total_recettes) - float(total_depenses)
+
+
+# ============================================================
 # LES DEUX CAISSES (tableau de bord comptabilité)
 # ============================================================
 # ⭐ Le TAFIRE officiel OHADA (méthode CAFG + variation FR/BFR) vit

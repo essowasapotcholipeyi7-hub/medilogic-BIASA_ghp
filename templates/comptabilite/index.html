@@ -3108,7 +3108,7 @@ function ouvrirReglerAchat(achatId, fournisseurNom, resteAPayer) {
     new bootstrap.Modal(document.getElementById('reglementFournisseurModal')).show();
 }
 
-function enregistrerReglementAchat() {
+function enregistrerReglementAchat(force) {
     const montant = parseFloat(document.getElementById('reglementMontant').value) || 0;
     if (montant <= 0) { alert('Montant invalide'); return; }
 
@@ -3119,6 +3119,7 @@ function enregistrerReglementAchat() {
             mode_paiement: document.getElementById('reglementModePaiement').value,
             reference: document.getElementById('reglementReference').value,
             notes: document.getElementById('reglementNotes').value,
+            force: !!force,
         })
     })
     .then(r => r.json())
@@ -3126,6 +3127,13 @@ function enregistrerReglementAchat() {
         if (result.success) {
             bootstrap.Modal.getInstance(document.getElementById('reglementFournisseurModal')).hide();
             chargerFournisseurs();
+        } else if (result.solde_insuffisant) {
+            // ⭐ Caisse insuffisante : on prévient et on laisse le choix de
+            // régler quand même (ex: règlement en réalité fait depuis la
+            // banque) plutôt qu'un blocage sec sans issue.
+            if (confirm(`⚠️ Solde de caisse insuffisant (${Math.round(result.solde_actuel).toLocaleString('fr-FR')} FCFA disponible).\n\nRégler quand même ?`)) {
+                enregistrerReglementAchat(true);
+            }
         } else {
             alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
         }

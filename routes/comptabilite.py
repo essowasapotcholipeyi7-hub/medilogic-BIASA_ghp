@@ -3436,6 +3436,22 @@ def api_regler_achat_fournisseur(achat_id):
     if montant <= 0 or montant > reste + 0.5:
         return jsonify({'error': f'Montant invalide (reste à payer : {reste} FCFA)'}), 400
 
+    # ⭐ Garde-fou solde de caisse — jusqu'ici absent ici alors qu'il existe
+    # déjà sur "Ajouter une dépense" (api_add_depense) : un règlement
+    # fournisseur en espèces/caisse pouvait faire passer la caisse au
+    # négatif sans aucun avertissement. `force=true` permet de passer outre
+    # explicitement (ex: règlement par banque alors que la caisse espèces
+    # est le seul indicateur suivi ici) — voir bouton "Régler quand même".
+    if not data.get('force'):
+        from services.comptabilite_service import solde_caisse_disponible
+        solde = solde_caisse_disponible(structure_id)
+        if montant > solde:
+            return jsonify({
+                'error': f'Solde de caisse insuffisant (solde actuel : {int(solde)} FCFA). '
+                         f'Réglez depuis la banque ou confirmez quand même.',
+                'solde_insuffisant': True, 'solde_actuel': solde,
+            }), 400
+
     reglement = ReglementFournisseur(
         achat_id=achat.id, fournisseur_id=achat.fournisseur_id, montant=montant,
         mode_paiement=data.get('mode_paiement', 'especes'),

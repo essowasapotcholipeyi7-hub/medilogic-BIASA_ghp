@@ -245,12 +245,26 @@ def generer_ou_maj_paie(structure_id, employe_id, annee, mois, salaire_base=None
     return paie, None
 
 
-def marquer_paie_payee(paie, mode_paiement='especes', user_nom='System'):
+def marquer_paie_payee(paie, mode_paiement='especes', user_nom='System', force=False):
     """Marque une paie comme payée : crée la Dépense correspondante puis
     l'écriture comptable auto-validée (débit charges de personnel, crédit
-    trésorerie + organismes sociaux/fiscaux à reverser)."""
+    trésorerie + organismes sociaux/fiscaux à reverser).
+
+    ⭐ Garde-fou solde de caisse — jusqu'ici absent ici alors qu'il existe
+    déjà sur "Ajouter une dépense" (api_add_depense dans app.py) : payer un
+    salaire pouvait faire passer la caisse au négatif sans aucun
+    avertissement. `force=True` permet de passer outre explicitement (ex:
+    salaire réellement viré depuis la banque)."""
     if paie.statut == 'payee':
         return paie, None
+
+    if not force:
+        from services.comptabilite_service import solde_caisse_disponible
+        solde = solde_caisse_disponible(paie.structure_id)
+        montant_net = float(_d(paie.net_a_payer))
+        if montant_net > solde:
+            return paie, (f"Solde de caisse insuffisant (solde actuel : {int(solde)} FCFA). "
+                           f"Payez depuis la banque ou confirmez quand même.")
 
     employe = paie.employe
 

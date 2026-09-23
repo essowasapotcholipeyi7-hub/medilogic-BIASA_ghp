@@ -1681,10 +1681,14 @@ def api_payer_paie(structure_id, paie_id):
         data = request.json or {}
         paie, erreur = marquer_paie_payee(
             paie, mode_paiement=data.get('mode_paiement', 'especes'),
-            user_nom=session.get('user_name', 'Admin')
+            user_nom=session.get('user_name', 'Admin'),
+            force=bool(data.get('force')),
         )
         if erreur:
-            return jsonify({'success': False, 'error': erreur}), 400
+            return jsonify({
+                'success': False, 'error': erreur,
+                'solde_insuffisant': erreur.startswith('Solde de caisse insuffisant'),
+            }), 400
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
