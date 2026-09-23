@@ -679,7 +679,12 @@ def guide_utilisation():
     """Guide d'utilisation de l'application, à destination des utilisateurs
     (pas un manuel technique) — accessible à tout le monde, pas seulement
     aux admins."""
-    return render_template('guide.html')
+    structure_id = session.get('structure_id')
+    param = ParametrageAffichageStructure.query.filter_by(structure_id=structure_id).first()
+    guide_pdf_autorise = bool(param and param.guide_pdf_autorise)
+    guide_pdf_mot_de_passe_defini = bool(param and param.guide_pdf_mot_de_passe)
+    return render_template('guide.html', guide_pdf_autorise=guide_pdf_autorise,
+                            guide_pdf_mot_de_passe_defini=guide_pdf_mot_de_passe_defini)
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -3275,7 +3280,12 @@ def admin_global():
         return redirect(url_for('admin_login'))
     
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
-    return render_template('admin_global.html', structures=structures)
+    guide_pdf_autorisations = {
+        p.structure_id: p.guide_pdf_autorise
+        for p in ParametrageAffichageStructure.query.all()
+    }
+    return render_template('admin_global.html', structures=structures,
+                            guide_pdf_autorisations=guide_pdf_autorisations)
 
 @app.route('/admin/activate/<int:structure_id>')
 def activate_structure(structure_id):
@@ -3366,7 +3376,39 @@ def suspend_structure(structure_id):
             flash(f'Structure {structure_id} non trouvée', 'danger')
     except Exception as e:
         flash(f'Erreur: {str(e)}', 'danger')
-    
+
+    return redirect(url_for('admin_global'))
+
+@app.route('/admin/guide-pdf-autorisation/<int:structure_id>/toggle')
+def toggle_guide_pdf_autorisation(structure_id):
+    """Autorise/retire la possibilité de télécharger le guide en PDF pour
+    UNE structure précise — décision du SUPERADMIN uniquement, jamais de
+    la structure elle-même (voir api_guide_pdf_mot_de_passe, app.py).
+    Désactivé par défaut pour toute structure (guide_pdf_autorise=False) :
+    patron : "je veux pas qu'ils divulguent ce pdf... par défaut aucune
+    structure n'aura la main de télécharger"."""
+    if 'super_admin' not in session:
+        return redirect(url_for('admin_login'))
+    try:
+        param = ParametrageAffichageStructure.query.filter_by(structure_id=structure_id).first()
+        if not param:
+            param = ParametrageAffichageStructure(structure_id=structure_id)
+            db.session.add(param)
+        param.guide_pdf_autorise = not param.guide_pdf_autorise
+        # ⭐ Retirer l'autorisation efface aussi le mot de passe déjà réglé —
+        # si le superadmin la réaccorde plus tard, la structure doit en
+        # redéfinir un (jamais de mot de passe "orphelin" qui traînerait en
+        # base pendant que l'accès était coupé).
+        if not param.guide_pdf_autorise:
+            param.guide_pdf_mot_de_passe = None
+        db.session.commit()
+        flash(
+            f"Téléchargement du guide PDF {'autorisé' if param.guide_pdf_autorise else 'désactivé'} pour la structure {structure_id}",
+            'success'
+        )
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Erreur: {str(e)}', 'danger')
     return redirect(url_for('admin_global'))
 
 @app.route('/admin/delete/<int:structure_id>')
@@ -6762,25 +6804,41 @@ def api_guide_pdf_mot_de_passe():
     """Mot de passe appliqué au PDF du guide d'utilisation au moment du
     téléchargement (chiffrement fait côté navigateur, voir guide.html) —
     patron : "verrouiller notre pdf... qu'il ne puisse pas l'ouvrir sans
-    nous demander". Le GET est accessible à tout utilisateur connecté (son
-    propre téléchargement doit être protégé, quel que soit son rôle) ; seul
-    un admin peut voir la valeur en clair dans l'écran de réglage ou la
-    changer."""
+    nous demander". Téléchargement possible seulement si le SUPERADMIN a
+    autorisé cette structure (guide_pdf_autorise, /admin_global — jamais la
+    structure elle-même) ; le mot de passe devient alors OBLIGATOIRE, ce
+    n'est plus une option qu'on peut laisser vide (patron : "le mot de
+    passe ne soit pas une option pour eux, qu'ils mettent obligatoirement
+    un mot de passe"). Le GET est accessible à tout utilisateur connecté
+    (son propre téléchargement doit être protégé, quel que soit son rôle) ;
+    seul un admin peut voir la valeur en clair dans l'écran de réglage ou
+    la changer."""
     structure_id = session.get('structure_id')
     param = ParametrageAffichageStructure.query.filter_by(structure_id=structure_id).first()
+    autorise = bool(param and param.guide_pdf_autorise)
 
     if request.method == 'GET':
+        # ⭐ Vide si non autorisé par le superadmin, même si un mot de passe
+        # traînait en base d'une autorisation retirée depuis — le
+        # navigateur ne doit jamais recevoir de quoi chiffrer un PDF pour
+        # une structure qui n'a plus la main.
+        if not autorise:
+            return jsonify({'mot_de_passe': ''})
         return jsonify({'mot_de_passe': (param.guide_pdf_mot_de_passe if param else '') or ''})
 
     if not session.get('is_admin'):
         return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    if not autorise:
+        return jsonify({'success': False, 'error': "Le téléchargement du guide n'est pas autorisé pour votre structure — contactez l'administrateur général."}), 403
     data = request.json or {}
     mot_de_passe = (data.get('mot_de_passe') or '').strip()[:50]
+    if not mot_de_passe:
+        return jsonify({'success': False, 'error': 'Le mot de passe est obligatoire.'}), 400
     try:
         if not param:
             param = ParametrageAffichageStructure(structure_id=structure_id)
             db.session.add(param)
-        param.guide_pdf_mot_de_passe = mot_de_passe or None
+        param.guide_pdf_mot_de_passe = mot_de_passe
         db.session.commit()
         return jsonify({'success': True, 'mot_de_passe': mot_de_passe})
     except Exception as e:

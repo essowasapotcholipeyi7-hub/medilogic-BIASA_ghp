@@ -98,6 +98,16 @@
                                     <i class="fas fa-hand-holding-dollar"></i>
                                 </button>
 
+                                <!-- ⭐ Autorisation de téléchargement du guide PDF — désactivée par
+                                     défaut pour toute structure, décision du superadmin uniquement
+                                     (voir toggle_guide_pdf_autorisation, app.py). -->
+                                {% set pdf_autorise = guide_pdf_autorisations.get(structure.ID|int, False) %}
+                                <a href="{{ url_for('toggle_guide_pdf_autorisation', structure_id=structure.ID) }}"
+                                   class="btn btn-sm {{ 'btn-success' if pdf_autorise else 'btn-outline-secondary' }}"
+                                   title="{{ 'Téléchargement du guide PDF autorisé — cliquer pour désactiver' if pdf_autorise else 'Téléchargement du guide PDF désactivé — cliquer pour autoriser' }}">
+                                    <i class="fas fa-file-pdf"></i>{% if pdf_autorise %} <i class="fas fa-check"></i>{% endif %}
+                                </a>
+
                                 <a href="#" onclick="confirmDelete({{ structure.ID }})" class="btn btn-sm btn-danger" title="Supprimer">
                                     <i class="fas fa-trash"></i>
                                 </a>

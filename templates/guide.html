@@ -65,24 +65,36 @@
 
     <div class="d-flex justify-content-between align-items-center mb-3 no-print-guide">
         <h5 class="mb-0"><i class="fas fa-book-open me-2"></i>Guide d'utilisation</h5>
+        {% if guide_pdf_autorise %}
         <div class="d-flex align-items-center gap-2">
             {% if session.is_admin %}
             <button class="btn btn-outline-secondary btn-sm" onclick="ouvrirProtectionPdf()" title="Définir le mot de passe d'ouverture du PDF téléchargé">
                 <i class="fas fa-lock me-1"></i> Protection PDF
             </button>
             {% endif %}
+            {% if guide_pdf_mot_de_passe_defini %}
             <button class="btn btn-primary btn-sm" id="btnTelechargerGuide" onclick="telechargerGuidePDF()">
                 <i class="fas fa-file-pdf me-1"></i> Télécharger en PDF
             </button>
+            {% elif session.is_admin %}
+            <button class="btn btn-outline-primary btn-sm" onclick="ouvrirProtectionPdf()">
+                <i class="fas fa-triangle-exclamation me-1"></i> Définir un mot de passe pour activer le téléchargement
+            </button>
+            {% endif %}
         </div>
+        {% endif %}
     </div>
 
-    {% if session.is_admin %}
+    {% if guide_pdf_autorise and session.is_admin %}
     <!-- ⭐ Réglage admin-only du mot de passe d'ouverture du PDF — patron :
          "verrouiller notre pdf... qu'il ne puisse pas l'ouvrir sans nous
-         demander". Le mot de passe est appliqué en silence au PDF de TOUT
-         utilisateur qui clique "Télécharger en PDF" (voir telechargerGuidePDF()
-         plus bas) ; seul un admin voit/modifie sa valeur ici. -->
+         demander". Visible seulement si le SUPERADMIN a autorisé cette
+         structure à télécharger (guide_pdf_autorise, /admin_global) ; le
+         mot de passe est ensuite OBLIGATOIRE (plus d'option "laisser
+         vide" — patron : "qu'ils mettent obligatoirement un mot de
+         passe"), appliqué en silence au PDF de TOUT utilisateur qui
+         clique "Télécharger en PDF" (voir telechargerGuidePDF() plus
+         bas). -->
     <div class="modal fade" id="modalProtectionPdf" tabindex="-1">
         <div class="modal-dialog">
             <div class="modal-content">
@@ -92,11 +104,12 @@
                 </div>
                 <div class="modal-body">
                     <p class="text-muted small">
-                        Tant qu'un mot de passe est défini ici, chaque personne qui télécharge le guide en PDF
-                        devra le saisir pour pouvoir l'ouvrir. Laissez vide pour ne demander aucun mot de passe.
+                        Le téléchargement du guide a été autorisé pour votre structure. Un mot de passe est
+                        <strong>obligatoire</strong> : sans lui, personne ne peut télécharger le guide. Chaque
+                        personne qui le télécharge devra saisir ce mot de passe pour pouvoir l'ouvrir.
                     </p>
-                    <label class="form-label">Mot de passe</label>
-                    <input type="text" class="form-control" id="inputMotDePasseGuidePdf" placeholder="Aucun (PDF non protégé)">
+                    <label class="form-label">Mot de passe *</label>
+                    <input type="text" class="form-control" id="inputMotDePasseGuidePdf" placeholder="Obligatoire" required>
                     <div id="msgProtectionPdf" class="small mt-2"></div>
                 </div>
                 <div class="modal-footer">
@@ -653,7 +666,7 @@ async function telechargerGuidePDF() {
     });
 }
 
-{% if session.is_admin %}
+{% if guide_pdf_autorise and session.is_admin %}
 function ouvrirProtectionPdf() {
     const msg = document.getElementById('msgProtectionPdf');
     msg.textContent = '';
@@ -668,6 +681,11 @@ function ouvrirProtectionPdf() {
 function enregistrerMotDePasseGuidePdf() {
     const msg = document.getElementById('msgProtectionPdf');
     const mot_de_passe = document.getElementById('inputMotDePasseGuidePdf').value.trim();
+    if (!mot_de_passe) {
+        msg.className = 'small mt-2 text-danger';
+        msg.textContent = 'Le mot de passe est obligatoire.';
+        return;
+    }
     fetch('/api/guide/pdf-mot-de-passe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -677,9 +695,11 @@ function enregistrerMotDePasseGuidePdf() {
         .then(data => {
             if (data.success) {
                 msg.className = 'small mt-2 text-success';
-                msg.textContent = mot_de_passe
-                    ? 'Mot de passe enregistré — appliqué dès le prochain téléchargement.'
-                    : 'Protection retirée — le PDF ne sera plus protégé.';
+                msg.textContent = 'Mot de passe enregistré — la page va se rafraîchir...';
+                // ⭐ Rechargement : le bouton "Télécharger en PDF" n'apparaît
+                // (à la place de "Définir un mot de passe...") qu'au rendu
+                // serveur suivant, une fois guide_pdf_mot_de_passe_defini vrai.
+                setTimeout(() => window.location.reload(), 1200);
             } else {
                 msg.className = 'small mt-2 text-danger';
                 msg.textContent = data.error || 'Erreur lors de l\'enregistrement.';

@@ -3636,4 +3636,10 @@ class ParametrageAffichageStructure(db.Model):
     # pdf si quelqu'un le télécharge qu'il ne puisse pas l'ouvrir sans nous
     # demander". Vide = pas de protection (comportement d'origine).
     guide_pdf_mot_de_passe = db.Column(db.String(50))
+    # ⭐ Autorisation posée par le SUPERADMIN uniquement (/admin_global,
+    # jamais par la structure elle-même) — patron : "par défaut aucune
+    # structure n'aura la main de télécharger... je veux pas qu'ils
+    # divulguent ce pdf". Faux par défaut : le bouton "Télécharger en PDF"
+    # n'apparaît même pas tant que ce n'est pas activé ici.
+    guide_pdf_autorise = db.Column(db.Boolean, nullable=False, default=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
