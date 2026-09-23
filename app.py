@@ -10377,7 +10377,15 @@ def api_definir_contenu_modele(modele_id):
         if not contenu_html:
             return jsonify({'success': False, 'error': 'Contenu vide'}), 400
         modele.contenu_html = contenu_html
+        # ⭐ Modèle modifié : si déjà synchronisé vers gestion_patients, le
+        # rouvrir pour que la modification y soit répercutée au prochain push
+        # (uniquement pour un modèle natif GHP — source_app IS NULL — jamais
+        # un modèle reçu de gestion_patients, voir la règle anti-boucle).
+        if modele.source_app is None:
+            modele.source_synced_at = None
         db.session.commit()
+        if modele.source_app is None:
+            _pousser_modele_resultat_gestion_patients(modele.id)
         return jsonify({'success': True})
     except Exception as e:
         db.session.rollback()
@@ -10411,6 +10419,7 @@ def api_creer_modele_resultat():
         )
         db.session.add(modele)
         db.session.commit()
+        _pousser_modele_resultat_gestion_patients(modele.id)
         return jsonify({'success': True, 'id': modele.id})
     except Exception as e:
         db.session.rollback()
@@ -10647,6 +10656,30 @@ def api_lister_resultats_analyses():
     return jsonify(resultat)
 
 
+def _pousser_resultat_examen_gestion_patients(resultat_id):
+    """Pousse (best-effort) un ResultatExamen natif GHP vers gestion_patients
+    — voir /api/resultats-examens/sync-externe là-bas. Symétrique de
+    _pousser_protocole_ghp côté gestion_patients (app.py). Ne fait rien si
+    la structure n'a aucun mapping vers gestion_patients (`source_name`
+    ='gestion_patients' — distinct des mappings `source_name='ghp'` utilisés
+    pour authentifier les appels ENTRANTS depuis gestion_patients)."""
+    try:
+        from tasks import sync_resultats_examens_to_gestion_patients
+        sync_resultats_examens_to_gestion_patients()
+    except Exception as e:
+        print(f"⚠️ Push résultat gestion_patients échoué (rattrapage automatique par le scheduler) : {e}")
+
+
+def _pousser_modele_resultat_gestion_patients(modele_id):
+    """Même principe que _pousser_resultat_examen_gestion_patients, pour un
+    ModeleResultat natif GHP créé/modifié."""
+    try:
+        from tasks import sync_resultats_examens_to_gestion_patients
+        sync_resultats_examens_to_gestion_patients()
+    except Exception as e:
+        print(f"⚠️ Push modèle résultat gestion_patients échoué (rattrapage automatique par le scheduler) : {e}")
+
+
 @app.route('/api/resultats-analyses/<int:demande_id>', methods=['POST'])
 @login_required
 def api_enregistrer_resultat(demande_id):
@@ -10717,6 +10750,7 @@ def api_enregistrer_resultat(demande_id):
         obtenir_ou_creer_code_acces(structure_id, demande.patient_id, session.get('user_name', 'System'))
 
         db.session.commit()
+        _pousser_resultat_examen_gestion_patients(resultat.id)
         return jsonify({'success': True, 'id': resultat.id})
     except Exception as e:
         db.session.rollback()
@@ -20303,6 +20337,16 @@ for _module_key, _module_def in MODULES_STRUCTURE.items():
             app.view_functions[_endpoint] = _verrou_module(app.view_functions[_endpoint], _module_key)
         else:
             print(f"⚠️ MODULES_STRUCTURE: endpoint '{_endpoint}' introuvable, verrou non posé")
+
+
+# ⭐ Planificateur de rattrapage — résultats examens -> gestion_patients
+# (voir scheduler.py/tasks.py). Démarré au niveau module (pas seulement
+# dans __main__) pour tourner aussi sous gunicorn en production, même
+# principe que gestion_patients/app.py.
+import atexit
+from scheduler import start_scheduler, stop_scheduler
+start_scheduler()
+atexit.register(stop_scheduler)
 
 
 if __name__ == '__main__':
