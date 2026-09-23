@@ -3631,4 +3631,9 @@ class ParametrageAffichageStructure(db.Model):
     # une fois pour la structure (le matériel d'impression à l'accueil ne
     # change pas d'un patient à l'autre) — voir page_accueil_qr, app.py.
     format_ticket_accueil = db.Column(db.String(10), default='80mm')
+    # ⭐ Mot de passe appliqué au PDF du guide d'utilisation téléchargé
+    # (voir api_guide_pdf_mot_de_passe, app.py) — patron : "verrouiller notre
+    # pdf si quelqu'un le télécharge qu'il ne puisse pas l'ouvrir sans nous
+    # demander". Vide = pas de protection (comportement d'origine).
+    guide_pdf_mot_de_passe = db.Column(db.String(50))
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

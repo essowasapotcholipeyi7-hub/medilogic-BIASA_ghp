@@ -65,10 +65,48 @@
 
     <div class="d-flex justify-content-between align-items-center mb-3 no-print-guide">
         <h5 class="mb-0"><i class="fas fa-book-open me-2"></i>Guide d'utilisation</h5>
-        <button class="btn btn-primary btn-sm" id="btnTelechargerGuide" onclick="telechargerGuidePDF()">
-            <i class="fas fa-file-pdf me-1"></i> Télécharger en PDF
-        </button>
+        <div class="d-flex align-items-center gap-2">
+            {% if session.is_admin %}
+            <button class="btn btn-outline-secondary btn-sm" onclick="ouvrirProtectionPdf()" title="Définir le mot de passe d'ouverture du PDF téléchargé">
+                <i class="fas fa-lock me-1"></i> Protection PDF
+            </button>
+            {% endif %}
+            <button class="btn btn-primary btn-sm" id="btnTelechargerGuide" onclick="telechargerGuidePDF()">
+                <i class="fas fa-file-pdf me-1"></i> Télécharger en PDF
+            </button>
+        </div>
     </div>
+
+    {% if session.is_admin %}
+    <!-- ⭐ Réglage admin-only du mot de passe d'ouverture du PDF — patron :
+         "verrouiller notre pdf... qu'il ne puisse pas l'ouvrir sans nous
+         demander". Le mot de passe est appliqué en silence au PDF de TOUT
+         utilisateur qui clique "Télécharger en PDF" (voir telechargerGuidePDF()
+         plus bas) ; seul un admin voit/modifie sa valeur ici. -->
+    <div class="modal fade" id="modalProtectionPdf" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title"><i class="fas fa-lock me-1"></i> Protection du PDF téléchargé</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">
+                        Tant qu'un mot de passe est défini ici, chaque personne qui télécharge le guide en PDF
+                        devra le saisir pour pouvoir l'ouvrir. Laissez vide pour ne demander aucun mot de passe.
+                    </p>
+                    <label class="form-label">Mot de passe</label>
+                    <input type="text" class="form-control" id="inputMotDePasseGuidePdf" placeholder="Aucun (PDF non protégé)">
+                    <div id="msgProtectionPdf" class="small mt-2"></div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-light" data-bs-dismiss="modal">Fermer</button>
+                    <button class="btn btn-primary" onclick="enregistrerMotDePasseGuidePdf()">Enregistrer</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     <div class="row g-4" id="guideContenu">
         <!-- Sommaire (masqué à l'impression) -->
@@ -555,19 +593,42 @@ document.getElementById('dateGenerationGuide').textContent = new Date().toLocale
     day: 'numeric', month: 'long', year: 'numeric'
 });
 
-function telechargerGuidePDF() {
+async function telechargerGuidePDF() {
     const btn = document.getElementById('btnTelechargerGuide');
     const original = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Génération...';
 
     const element = document.getElementById('guideContenu');
+    const jsPDFOptions = { unit: 'in', format: 'a4', orientation: 'portrait' };
+
+    // ⭐ Mot de passe d'ouverture (voir /api/guide/pdf-mot-de-passe, réglé par
+    // un admin via "Protection PDF" ci-dessus) — appliqué en silence à CE
+    // téléchargement, quel que soit le rôle de qui clique. Chiffrement fait
+    // ici même, côté navigateur (jsPDF), avant que le fichier ne parte sur
+    // le disque de l'utilisateur — voir le commentaire de l'option
+    // "encryption" pour la limite de cette protection (mot de passe visible
+    // par quelqu'un qui inspecterait le code de la page pendant l'envoi).
+    try {
+        const reponseMdp = await fetch('/api/guide/pdf-mot-de-passe');
+        const dataMdp = await reponseMdp.json();
+        if (dataMdp.mot_de_passe) {
+            jsPDFOptions.encryption = {
+                userPassword: dataMdp.mot_de_passe,
+                ownerPassword: dataMdp.mot_de_passe,
+                userPermissions: ['print']
+            };
+        }
+    } catch (e) {
+        // Pas de mot de passe récupérable -> PDF non protégé, comme avant.
+    }
+
     const opt = {
         margin: [0.4, 0.3, 0.4, 0.3],
         filename: 'guide_utilisation_medilogic.pdf',
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' },
+        jsPDF: jsPDFOptions,
         pagebreak: { mode: ['css', 'legacy'], avoid: '.guide-section' }
     };
 
@@ -591,5 +652,44 @@ function telechargerGuidePDF() {
         btn.innerHTML = original;
     });
 }
+
+{% if session.is_admin %}
+function ouvrirProtectionPdf() {
+    const msg = document.getElementById('msgProtectionPdf');
+    msg.textContent = '';
+    fetch('/api/guide/pdf-mot-de-passe')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('inputMotDePasseGuidePdf').value = data.mot_de_passe || '';
+            new bootstrap.Modal(document.getElementById('modalProtectionPdf')).show();
+        });
+}
+
+function enregistrerMotDePasseGuidePdf() {
+    const msg = document.getElementById('msgProtectionPdf');
+    const mot_de_passe = document.getElementById('inputMotDePasseGuidePdf').value.trim();
+    fetch('/api/guide/pdf-mot-de-passe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mot_de_passe })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                msg.className = 'small mt-2 text-success';
+                msg.textContent = mot_de_passe
+                    ? 'Mot de passe enregistré — appliqué dès le prochain téléchargement.'
+                    : 'Protection retirée — le PDF ne sera plus protégé.';
+            } else {
+                msg.className = 'small mt-2 text-danger';
+                msg.textContent = data.error || 'Erreur lors de l\'enregistrement.';
+            }
+        })
+        .catch(() => {
+            msg.className = 'small mt-2 text-danger';
+            msg.textContent = 'Connexion impossible.';
+        });
+}
+{% endif %}
 </script>
 {% endblock %}

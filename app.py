@@ -6756,6 +6756,38 @@ def api_acronyme_structure():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/guide/pdf-mot-de-passe', methods=['GET', 'POST'])
+@login_required
+def api_guide_pdf_mot_de_passe():
+    """Mot de passe appliqué au PDF du guide d'utilisation au moment du
+    téléchargement (chiffrement fait côté navigateur, voir guide.html) —
+    patron : "verrouiller notre pdf... qu'il ne puisse pas l'ouvrir sans
+    nous demander". Le GET est accessible à tout utilisateur connecté (son
+    propre téléchargement doit être protégé, quel que soit son rôle) ; seul
+    un admin peut voir la valeur en clair dans l'écran de réglage ou la
+    changer."""
+    structure_id = session.get('structure_id')
+    param = ParametrageAffichageStructure.query.filter_by(structure_id=structure_id).first()
+
+    if request.method == 'GET':
+        return jsonify({'mot_de_passe': (param.guide_pdf_mot_de_passe if param else '') or ''})
+
+    if not session.get('is_admin'):
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    data = request.json or {}
+    mot_de_passe = (data.get('mot_de_passe') or '').strip()[:50]
+    try:
+        if not param:
+            param = ParametrageAffichageStructure(structure_id=structure_id)
+            db.session.add(param)
+        param.guide_pdf_mot_de_passe = mot_de_passe or None
+        db.session.commit()
+        return jsonify({'success': True, 'mot_de_passe': mot_de_passe})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 # ========== RAPPELS AUTOMATIQUES RENDEZ-VOUS ==========
 import threading
 import time
