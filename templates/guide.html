@@ -138,7 +138,7 @@
                     {% if guide_section_visible('pharmacie') %}<a href="#pharmacie"><i class="fas fa-pills me-1"></i> Pharmacie &amp; Stock</a>{% endif %}
                     {% if guide_section_visible('factures') %}
                     <a href="#factures"><i class="fas fa-file-invoice me-1"></i> Factures &amp; Créances</a>
-                    <span class="toc-sub">→ Génération &amp; composition</span>
+                    {% if guide_niveau_detail == 'complet' %}<span class="toc-sub">→ Génération &amp; composition</span>{% endif %}
                     {% endif %}
                     {% if guide_section_visible('proformas') %}<a href="#proformas"><i class="fas fa-file-signature me-1"></i> Factures Proforma</a>{% endif %}
                     {% if guide_section_visible('historique') %}<a href="#historique"><i class="fas fa-clock-rotate-left me-1"></i> Historique des ventes</a>{% endif %}
@@ -160,18 +160,23 @@
         <div class="col-lg-9">
             <div class="guide-hero">
                 <h4><i class="fas fa-hospital me-2"></i>{{ session.get('structure_nom') or 'Medilogic' }}</h4>
-                {% if session.is_admin %}
+                {% if guide_niveau_detail == 'complet' %}
                 <p>
                     Ce guide explique, section par section, ce que fait chaque partie de l'application et
-                    comment l'utiliser au quotidien. Il ne remplace pas une formation, mais permet de
-                    retrouver rapidement la marche à suivre pour une tâche précise. En tant qu'administrateur,
-                    vous voyez ici le <strong>guide complet</strong>, toutes sections confondues.
+                    comment l'utiliser au quotidien. <strong>Vue superadmin</strong> : guide complet avec tous
+                    les détails techniques, toutes sections confondues — jamais montré aux structures
+                    elles-mêmes, qui n'ont que les grandes lignes.
                 </p>
                 {% else %}
                 <p>
-                    Ce guide explique, section par section, ce que fait chaque partie de l'application et
-                    comment l'utiliser au quotidien. Vous voyez ici la version adaptée à votre rôle
-                    (<strong>{{ guide_role_label }}</strong>) : uniquement les sections qui concernent vos tâches.
+                    Ce guide donne les grandes lignes de chaque partie de l'application — de quoi savoir où
+                    aller et quoi faire au quotidien.
+                    {% if session.is_admin %}
+                    Le détail complet reste réservé à l'administration générale.
+                    {% else %}
+                    Vous voyez ici la version adaptée à votre rôle (<strong>{{ guide_role_label }}</strong>) :
+                    uniquement les sections qui concernent vos tâches.
+                    {% endif %}
                 </p>
                 {% endif %}
             </div>
@@ -212,6 +217,12 @@
             <div class="card border-0 shadow-sm guide-section" id="patients">
                 <div class="card-header"><i class="fas fa-users"></i> Patients</div>
                 <div class="card-body">
+                    <p class="mb-0">
+                        Menu <strong>Liste Patients</strong> : enregistrez un nouveau patient (bouton
+                        <strong>Enregistrer patient</strong>) et retrouvez-en un existant via la barre de
+                        recherche.
+                    </p>
+                    {% if guide_niveau_detail == 'complet' %}
                     <h6 class="sous-titre">Enregistrer un nouveau patient</h6>
                     <ol>
                         <li>Menu <strong>Liste Patients</strong>.</li>
@@ -227,6 +238,7 @@
                         reste actif pendant que vous naviguez entre les modules (vente, facture, rendez-vous...)
                         — pas besoin de le rechercher à nouveau à chaque écran.
                     </div>
+                    {% endif %}
                 </div>
             </div>
             {% endif %}
@@ -264,6 +276,11 @@
                 <div class="card-header"><i class="fas fa-notes-medical"></i> Actes &amp; Ventes (Labo / Radio)</div>
                 <div class="card-body">
                     <p class="text-muted small">Pour une prestation ponctuelle, payée immédiatement (consultation, analyse de labo, examen d'imagerie...). Pour un séjour ou un suivi qui s'étale sur plusieurs jours, voir <a href="#hospitalisation">Hospitalisation</a> ou <a href="#soins-ambulatoires">Soins ambulatoires</a> ci-dessous.</p>
+                    <p class="mb-0">
+                        Menu <strong>Labo/Radio/Hospi/Actes&amp;Vente</strong> : sélectionnez le patient,
+                        recherchez l'acte, indiquez la quantité et encaissez. La facture sort immédiatement.
+                    </p>
+                    {% if guide_niveau_detail == 'complet' %}
                     <h6 class="sous-titre">Vendre un acte</h6>
                     <ol>
                         <li>Sélectionner le patient (liste des patients, ou bandeau "Patient actuel" déjà actif).</li>
@@ -274,6 +291,7 @@
                         <li>Choisir le mode de paiement (espèces, carte, mobile money, virement...) et encaisser.</li>
                     </ol>
                     <p class="mb-0">La facture (et le reçu) sont générés immédiatement, dès l'encaissement — voir <a href="#factures">Factures &amp; Créances</a> pour le détail de ce que contient ce document.</p>
+                    {% endif %}
                 </div>
             </div>
             {% endif %}
@@ -283,13 +301,13 @@
             <div class="card border-0 shadow-sm guide-section" id="hospitalisation">
                 <div class="card-header"><i class="fas fa-bed"></i> Hospitalisation (suivi de séjour)</div>
                 <div class="card-body">
-                    <p>
-                        Contrairement à une vente d'acte classique (payée sur le champ), une hospitalisation
-                        s'étale sur plusieurs jours : on ouvre un <strong>séjour</strong>, on y ajoute les actes
-                        et médicaments consommés au fil de l'eau, puis on clôture et on facture le tout d'un
-                        coup à la sortie du patient.
+                    <p{% if guide_niveau_detail != 'complet' %} class="mb-0"{% endif %}>
+                        Pour un patient hospitalisé plusieurs jours : ouvrez un séjour (bouton
+                        <strong>Nouveau séjour</strong> — patient, date d'entrée, chambre), ajoutez les actes
+                        et médicaments au fil des jours, puis clôturez le séjour et facturez à la sortie. Menu
+                        <strong>Hospitalisation (suivi de séjour)</strong>.
                     </p>
-
+                    {% if guide_niveau_detail == 'complet' %}
                     <h6 class="sous-titre">1. Configuration des chambres (une seule fois)</h6>
                     <p>
                         Menu <strong>Hospitalisation → Configuration</strong> : créer les Services, puis dans
@@ -345,6 +363,7 @@
                         caisse, la comptabilité et la facturation mensuelle de l'assurance sont mises à jour
                         (voir <a href="#factures">Factures &amp; Créances</a>).
                     </p>
+                    {% endif %}
                 </div>
             </div>
             {% endif %}
@@ -354,12 +373,13 @@
             <div class="card border-0 shadow-sm guide-section" id="soins-ambulatoires">
                 <div class="card-header"><i class="fas fa-user-clock"></i> Soins ambulatoires</div>
                 <div class="card-body">
-                    <p>
-                        Même principe que l'hospitalisation (un suivi qui s'étale sur plusieurs jours, facturé
-                        d'un coup à la fin), mais pour un patient qui repart chaque jour — pas de chambre ni de
-                        lit à réserver.
+                    <p{% if guide_niveau_detail != 'complet' %} class="mb-0"{% endif %}>
+                        Pour un patient suivi sur plusieurs jours sans hospitalisation (pas de chambre ni de
+                        lit) : ouvrez un épisode (bouton <strong>Nouvel épisode</strong>), ajoutez les actes et
+                        médicaments au fil des jours, puis clôturez et facturez à la fin. Menu
+                        <strong>Soins ambulatoires</strong>.
                     </p>
-
+                    {% if guide_niveau_detail == 'complet' %}
                     <h6 class="sous-titre">1. Ouvrir un épisode</h6>
                     <ol>
                         <li>Menu <strong>Soins ambulatoires</strong> → bouton <strong>Nouvel épisode</strong>.</li>
@@ -382,6 +402,7 @@
                         <li>Bouton <strong>Facturer l'épisode</strong> : construit une Proforma à partir des soins en cours, avec le prédépôt déjà pré-rempli comme montant déjà donné par le patient.</li>
                         <li>Comme pour l'hospitalisation, cette proforma doit ensuite être convertie en vente réelle depuis <a href="#proformas">Factures Proforma</a> pour que tout (créance, caisse, comptabilité) soit mis à jour.</li>
                     </ol>
+                    {% endif %}
                 </div>
             </div>
             {% endif %}
@@ -404,6 +425,12 @@
             <div class="card border-0 shadow-sm guide-section" id="factures">
                 <div class="card-header"><i class="fas fa-file-invoice"></i> Factures clients &amp; Créances</div>
                 <div class="card-body">
+                    <p>
+                        Chaque vente génère automatiquement sa facture — directement pour un acte ou un
+                        médicament payé sur le champ, ou via un devis (Proforma) pour une hospitalisation, un
+                        épisode de soins ambulatoires ou une demande manuelle.
+                    </p>
+                    {% if guide_niveau_detail == 'complet' %}
                     <h6 class="sous-titre">Comment une facture est générée</h6>
                     <p>Il y a deux façons dont une facture peut naître dans l'application — jamais de saisie comptable séparée, tout part d'une vente :</p>
                     <ul>
@@ -434,6 +461,7 @@
                         <li>Le sous-total, puis le montant net réellement à la charge du patient.</li>
                         <li>Le mode de paiement et, si le patient n'a pas tout réglé, le solde restant dû (voir "Créances" ci-dessous).</li>
                     </ul>
+                    {% endif %}
 
                     <h6 class="sous-titre">Créances (montants restant dus)</h6>
                     <p>
@@ -497,8 +525,12 @@
                     <span class="badge bg-warning text-dark badge-role ms-2">Admin</span>
                 </div>
                 <div class="card-body">
-                    <p>Menu <strong>Ressources humaines</strong> — hub unique avec plusieurs onglets :</p>
-
+                    <p{% if guide_niveau_detail != 'complet' %} class="mb-0"{% endif %}>
+                        Menu <strong>Ressources humaines</strong> — hub unique avec plusieurs onglets :
+                        Personnel (fiches employés), Congés &amp; Permissions, Paie (génération mensuelle), et
+                        Pointage (empreinte/visage).
+                    </p>
+                    {% if guide_niveau_detail == 'complet' %}
                     <h6 class="sous-titre">Personnel</h6>
                     <p>Liste des employés, fiche individuelle (poste, service, salaire de base, secteur privé/public — qui détermine automatiquement le régime de retraite CNSS ou CRT).</p>
 
@@ -525,6 +557,7 @@
                         ou sur <code>http://localhost</code> — pas via une simple adresse IP locale (règle de
                         sécurité des navigateurs). Sur une tablette, ouvrez directement le site en ligne.
                     </div>
+                    {% endif %}
                 </div>
             </div>
             {% endif %}
@@ -536,10 +569,13 @@
                     <span class="badge bg-warning text-dark badge-role ms-2">Admin / Comptable</span>
                 </div>
                 <div class="card-body">
-                    <p>
+                    <p{% if guide_niveau_detail != 'complet' %} class="mb-0"{% endif %}>
                         Chaque vente, paiement, dépense et salaire génère automatiquement son écriture
-                        comptable, conforme au plan comptable SYSCOHADA (norme OHADA) — rien à saisir en double.
+                        comptable, conforme au plan comptable SYSCOHADA (norme OHADA) — rien à saisir en
+                        double. Menu <strong>Comptabilité</strong> : tableau de bord, écritures, rapports et
+                        rapprochement bancaire.
                     </p>
+                    {% if guide_niveau_detail == 'complet' %}
                     <ul>
                         <li><strong>Tableau de bord</strong> : deux indicateurs de caisse toujours visibles — la trésorerie réellement disponible (espèces + banque) et le chiffre d'affaires de la période (vendu, encaissé ou non).</li>
                         <li><strong>Écritures / Plan comptable</strong> : consultation détaillée, saisie manuelle si besoin (soumise à validation).</li>
@@ -547,6 +583,7 @@
                         <li><strong>Rapprochement bancaire</strong> : importer un relevé (CSV/Excel) et le faire correspondre automatiquement aux écritures.</li>
                         <li><strong>Plus</strong> : budget, exercice comptable, créances douteuses, immobilisations, TAFIRE.</li>
                     </ul>
+                    {% endif %}
                 </div>
             </div>
             {% endif %}

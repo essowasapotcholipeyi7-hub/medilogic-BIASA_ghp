@@ -8,6 +8,9 @@
     <h4><i class="fas fa-globe"></i> Administration Globale</h4>
     <div>
         <span class="badge bg-light text-dark me-2">{{ structures|length }} structures</span>
+        <a href="{{ url_for('guide_utilisation_superadmin') }}" class="btn btn-sm btn-light me-2" title="Guide d'utilisation complet, avec tous les détails techniques">
+            <i class="fas fa-book-open"></i> Guide complet
+        </a>
         <a href="{{ url_for('admin_logout') }}" class="btn btn-sm btn-light">
             <i class="fas fa-sign-out-alt"></i> Déconnexion
         </a>

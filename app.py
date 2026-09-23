@@ -678,13 +678,31 @@ def api_sync_forcer():
 def guide_utilisation():
     """Guide d'utilisation de l'application, à destination des utilisateurs
     (pas un manuel technique) — accessible à tout le monde, pas seulement
-    aux admins."""
+    aux admins. Version GRANDES LIGNES uniquement (guide_niveau_detail=
+    'resume') — patron : "on donne pas d'information détaillées dans les
+    guides des structures, justes des grandes lignes... de mon côté
+    superadmin on garde bien les détails". Le détail complet n'existe que
+    sur guide_utilisation_superadmin() ci-dessous."""
     structure_id = session.get('structure_id')
     param = ParametrageAffichageStructure.query.filter_by(structure_id=structure_id).first()
     guide_pdf_autorise = bool(param and param.guide_pdf_autorise)
     guide_pdf_mot_de_passe_defini = bool(param and param.guide_pdf_mot_de_passe)
     return render_template('guide.html', guide_pdf_autorise=guide_pdf_autorise,
-                            guide_pdf_mot_de_passe_defini=guide_pdf_mot_de_passe_defini)
+                            guide_pdf_mot_de_passe_defini=guide_pdf_mot_de_passe_defini,
+                            guide_niveau_detail='resume')
+
+
+@app.route('/admin_global/guide')
+def guide_utilisation_superadmin():
+    """Version COMPLÈTE du guide (tous les détails : Entente Préalable,
+    paliers de chambre, mécanique de facturation...), réservée au
+    superadmin — jamais exposée aux structures elles-mêmes, pour ne rien
+    divulguer d'exploitable par un tiers qui s'en inspirerait."""
+    if 'super_admin' not in session:
+        return redirect(url_for('admin_login'))
+    return render_template('guide.html', guide_pdf_autorise=False,
+                            guide_pdf_mot_de_passe_defini=False,
+                            guide_niveau_detail='complet')
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -6738,7 +6756,7 @@ GUIDE_ROLES_LABELS = {
 
 
 def _guide_section_visible(section_id):
-    if session.get('is_admin'):
+    if session.get('is_admin') or session.get('super_admin'):
         return True
     roles_autorises = GUIDE_ACCES_SECTIONS.get(section_id)
     if roles_autorises is None:
