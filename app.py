@@ -6673,6 +6673,8 @@ GUIDE_ACCES_SECTIONS = {
     'rendez-vous': ['caissier', 'secretaire', 'medecin', 'paramedical', 'laborantin', 'radiologue', 'gestionnaire'],
     'consultation': ['medecin', 'paramedical'],
     'actes-ventes': ['caissier', 'secretaire', 'medecin', 'paramedical', 'laborantin', 'radiologue', 'gestionnaire'],
+    'hospitalisation': ['caissier', 'secretaire', 'medecin', 'paramedical', 'laborantin', 'radiologue', 'gestionnaire'],
+    'soins-ambulatoires': ['caissier', 'secretaire', 'medecin', 'paramedical', 'laborantin', 'radiologue', 'gestionnaire'],
     'pharmacie': ['caissier', 'pharmacien', 'gestionnaire'],
     'factures': ['caissier', 'secretaire', 'gestionnaire', 'sous_comptable', 'comptable'],
     'proformas': ['caissier', 'secretaire', 'gestionnaire'],

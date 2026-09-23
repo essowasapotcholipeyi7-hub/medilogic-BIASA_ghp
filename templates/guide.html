@@ -82,8 +82,13 @@
                     {% if guide_section_visible('rendez-vous') %}<a href="#rendez-vous"><i class="fas fa-calendar-days me-1"></i> Rendez-vous</a>{% endif %}
                     {% if guide_section_visible('consultation') %}<a href="#consultation"><i class="fas fa-stethoscope me-1"></i> Consultation</a>{% endif %}
                     {% if guide_section_visible('actes-ventes') %}<a href="#actes-ventes"><i class="fas fa-notes-medical me-1"></i> Actes &amp; Ventes</a>{% endif %}
+                    {% if guide_section_visible('hospitalisation') %}<a href="#hospitalisation"><i class="fas fa-bed me-1"></i> Hospitalisation</a>{% endif %}
+                    {% if guide_section_visible('soins-ambulatoires') %}<a href="#soins-ambulatoires"><i class="fas fa-user-clock me-1"></i> Soins ambulatoires</a>{% endif %}
                     {% if guide_section_visible('pharmacie') %}<a href="#pharmacie"><i class="fas fa-pills me-1"></i> Pharmacie &amp; Stock</a>{% endif %}
-                    {% if guide_section_visible('factures') %}<a href="#factures"><i class="fas fa-file-invoice me-1"></i> Factures &amp; Créances</a>{% endif %}
+                    {% if guide_section_visible('factures') %}
+                    <a href="#factures"><i class="fas fa-file-invoice me-1"></i> Factures &amp; Créances</a>
+                    <span class="toc-sub">→ Génération &amp; composition</span>
+                    {% endif %}
                     {% if guide_section_visible('proformas') %}<a href="#proformas"><i class="fas fa-file-signature me-1"></i> Factures Proforma</a>{% endif %}
                     {% if guide_section_visible('historique') %}<a href="#historique"><i class="fas fa-clock-rotate-left me-1"></i> Historique des ventes</a>{% endif %}
                     {% if guide_section_visible('statistiques') %}<a href="#statistiques"><i class="fas fa-chart-line me-1"></i> Statistiques</a>{% endif %}
@@ -205,8 +210,9 @@
             <!-- ACTES & VENTES -->
             {% if guide_section_visible('actes-ventes') %}
             <div class="card border-0 shadow-sm guide-section" id="actes-ventes">
-                <div class="card-header"><i class="fas fa-notes-medical"></i> Actes &amp; Ventes (Labo / Radio / Hospitalisation)</div>
+                <div class="card-header"><i class="fas fa-notes-medical"></i> Actes &amp; Ventes (Labo / Radio)</div>
                 <div class="card-body">
+                    <p class="text-muted small">Pour une prestation ponctuelle, payée immédiatement (consultation, analyse de labo, examen d'imagerie...). Pour un séjour ou un suivi qui s'étale sur plusieurs jours, voir <a href="#hospitalisation">Hospitalisation</a> ou <a href="#soins-ambulatoires">Soins ambulatoires</a> ci-dessous.</p>
                     <h6 class="sous-titre">Vendre un acte</h6>
                     <ol>
                         <li>Sélectionner le patient (liste des patients, ou bandeau "Patient actuel" déjà actif).</li>
@@ -216,7 +222,115 @@
                         <li>Si le patient a une assurance/AMU enregistrée, la prise en charge est calculée automatiquement ; seul le reste à charge est demandé au patient.</li>
                         <li>Choisir le mode de paiement (espèces, carte, mobile money, virement...) et encaisser.</li>
                     </ol>
-                    <p class="mb-0">Un reçu est généré et peut être imprimé immédiatement.</p>
+                    <p class="mb-0">La facture (et le reçu) sont générés immédiatement, dès l'encaissement — voir <a href="#factures">Factures &amp; Créances</a> pour le détail de ce que contient ce document.</p>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- HOSPITALISATION -->
+            {% if guide_section_visible('hospitalisation') %}
+            <div class="card border-0 shadow-sm guide-section" id="hospitalisation">
+                <div class="card-header"><i class="fas fa-bed"></i> Hospitalisation (suivi de séjour)</div>
+                <div class="card-body">
+                    <p>
+                        Contrairement à une vente d'acte classique (payée sur le champ), une hospitalisation
+                        s'étale sur plusieurs jours : on ouvre un <strong>séjour</strong>, on y ajoute les actes
+                        et médicaments consommés au fil de l'eau, puis on clôture et on facture le tout d'un
+                        coup à la sortie du patient.
+                    </p>
+
+                    <h6 class="sous-titre">1. Configuration des chambres (une seule fois)</h6>
+                    <p>
+                        Menu <strong>Hospitalisation → Configuration</strong> : créer les Services, puis dans
+                        chaque service les Chambres, puis dans chaque chambre les Lits. Une fois fait,
+                        "Nouveau séjour" propose de choisir un lit <em>libre</em> dans une liste au lieu de
+                        taper un texte à la main. Cette étape est facultative — sans elle, un simple champ
+                        texte libre reste utilisable pour désigner la chambre/le service.
+                    </p>
+
+                    <h6 class="sous-titre">2. Ouvrir un séjour</h6>
+                    <ol>
+                        <li>Menu <strong>Hospitalisation (suivi de séjour)</strong> → bouton <strong>Nouveau séjour</strong>.</li>
+                        <li>Choisir le patient, la date d'entrée, et le lit (ou le texte libre si aucune configuration).</li>
+                        <li>Le lit choisi passe automatiquement en "Occupé" tant que le séjour est en cours.</li>
+                    </ol>
+
+                    <h6 class="sous-titre">3. Suivre le séjour au jour le jour</h6>
+                    <p>
+                        Sur la fiche du séjour : boutons <strong>Ajouter un acte</strong> / <strong>Ajouter un
+                        médicament</strong> à chaque prestation, chacun avec sa propre date (utile pour un acte
+                        répété plusieurs fois le même jour, ex. une prise de sang x2 — deux lignes distinctes
+                        sur la future facture, plutôt qu'une seule ligne qui inquiéterait l'assurance).
+                    </p>
+                    <p>
+                        L'assurance principale et l'assurance complémentaire (CAC) peuvent être désactivées
+                        ponctuellement <em>pour ce séjour précisément</em> (ex. le patient n'a pas apporté sa
+                        carte aujourd'hui) sans toucher à l'assurance enregistrée sur sa fiche patient —
+                        réactivable à tout moment tant que le séjour n'est pas facturé.
+                    </p>
+                    <div class="guide-astuce">
+                        <i class="fas fa-lightbulb me-1"></i>
+                        Le "Solde en cours" et la répartition part patient / part assurance se mettent à jour
+                        en direct pendant le séjour, y compris une estimation du tarif de la chambre (qui
+                        dégresse par palier au-delà d'une semaine pour un patient assuré) — pas besoin
+                        d'attendre la clôture pour avoir une idée du montant.
+                    </div>
+
+                    <h6 class="sous-titre">4. Clôturer le séjour (à la sortie du patient)</h6>
+                    <ol>
+                        <li>Bouton <strong>Clôturer le séjour</strong> : renseigner la date de sortie et, si applicable, la chambre à facturer.</li>
+                        <li>Le nombre de jours (et donc les lignes de chambre par palier) est calculé automatiquement à partir de la date d'entrée — rien à recompter à la main.</li>
+                        <li>Le lit occupé est libéré automatiquement et redevient disponible pour un autre patient.</li>
+                        <li>Pour un patient assuré AMU, une confirmation d'<strong>Entente Préalable</strong> (accord de l'assurance obtenu au préalable) est exigée avant de pouvoir clôturer.</li>
+                    </ol>
+
+                    <h6 class="sous-titre">5. Facturer le séjour</h6>
+                    <p class="mb-0">
+                        Une fois clôturé, bouton <strong>Facturer le séjour</strong> : construit automatiquement
+                        une <strong>Proforma</strong> reprenant tous les actes/médicaments du séjour, avec la
+                        répartition assurance/CAC déjà calculée. Rien n'est encore encaissé à cette étape — il
+                        faut ensuite ouvrir cette proforma depuis <a href="#proformas">Factures Proforma</a> et
+                        la convertir en vente réelle ; c'est seulement à cette conversion que la créance, la
+                        caisse, la comptabilité et la facturation mensuelle de l'assurance sont mises à jour
+                        (voir <a href="#factures">Factures &amp; Créances</a>).
+                    </p>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- SOINS AMBULATOIRES -->
+            {% if guide_section_visible('soins-ambulatoires') %}
+            <div class="card border-0 shadow-sm guide-section" id="soins-ambulatoires">
+                <div class="card-header"><i class="fas fa-user-clock"></i> Soins ambulatoires</div>
+                <div class="card-body">
+                    <p>
+                        Même principe que l'hospitalisation (un suivi qui s'étale sur plusieurs jours, facturé
+                        d'un coup à la fin), mais pour un patient qui repart chaque jour — pas de chambre ni de
+                        lit à réserver.
+                    </p>
+
+                    <h6 class="sous-titre">1. Ouvrir un épisode</h6>
+                    <ol>
+                        <li>Menu <strong>Soins ambulatoires</strong> → bouton <strong>Nouvel épisode</strong>.</li>
+                        <li>Choisir le patient, la date de début, le motif de la visite.</li>
+                        <li>Cocher <strong>Mise en observation</strong> si le patient reste sous surveillance sur place.</li>
+                        <li>Enregistrer un <strong>prédépôt</strong> si le patient verse déjà une avance (montant, mode de paiement, note) — ce montant n'entre en caisse qu'à la facturation finale, il est juste mémorisé en attendant et pourra être corrigé tant que l'épisode n'est pas facturé.</li>
+                    </ol>
+
+                    <h6 class="sous-titre">2. Suivre l'épisode au jour le jour</h6>
+                    <p class="mb-0">
+                        Exactement comme pour un séjour d'hospitalisation : ajouter les actes/médicaments avec
+                        leur propre date, activer/désactiver l'assurance ou le CAC pour cet épisode
+                        précisément, et suivre le solde en cours et la répartition assurance/patient en direct
+                        (voir le détail dans <a href="#hospitalisation">Hospitalisation</a> ci-dessus).
+                    </p>
+
+                    <h6 class="sous-titre">3. Clôturer puis facturer l'épisode</h6>
+                    <ol>
+                        <li>Bouton <strong>Clôturer l'épisode</strong> : juste la date de fin (pas de lit à libérer, pas d'Entente Préalable ici — spécifique aux séjours hospitaliers).</li>
+                        <li>Bouton <strong>Facturer l'épisode</strong> : construit une Proforma à partir des soins en cours, avec le prédépôt déjà pré-rempli comme montant déjà donné par le patient.</li>
+                        <li>Comme pour l'hospitalisation, cette proforma doit ensuite être convertie en vente réelle depuis <a href="#proformas">Factures Proforma</a> pour que tout (créance, caisse, comptabilité) soit mis à jour.</li>
+                    </ol>
                 </div>
             </div>
             {% endif %}
@@ -239,6 +353,38 @@
             <div class="card border-0 shadow-sm guide-section" id="factures">
                 <div class="card-header"><i class="fas fa-file-invoice"></i> Factures clients &amp; Créances</div>
                 <div class="card-body">
+                    <h6 class="sous-titre">Comment une facture est générée</h6>
+                    <p>Il y a deux façons dont une facture peut naître dans l'application — jamais de saisie comptable séparée, tout part d'une vente :</p>
+                    <ul>
+                        <li>
+                            <strong>Vente directe et immédiate</strong> — Actes&amp;Vente ou Pharmacie&amp;Vente :
+                            dès que l'encaissement est validé, la facture (et le reçu) sont générés sur le
+                            champ, avec le mode de paiement choisi.
+                        </li>
+                        <li>
+                            <strong>Devis puis conversion</strong> — pour tout ce qui s'étale dans le temps ou
+                            doit encore être ajusté avant paiement définitif : une <strong>Hospitalisation</strong>
+                            (bouton "Facturer le séjour"), un épisode de <strong>Soins ambulatoires</strong>
+                            (bouton "Facturer l'épisode"), ou un devis saisi à la main (<a href="#proformas">Factures Proforma</a>).
+                            Dans les trois cas, cela ne crée d'abord qu'une <em>Proforma</em> — rien n'est
+                            encore facturé ni encaissé. La facture n'existe qu'au moment où cette proforma est
+                            explicitement convertie en vente réelle depuis l'écran Proformas ; jusque-là, les
+                            quantités et prix peuvent encore être corrigés.
+                        </li>
+                    </ul>
+
+                    <h6 class="sous-titre">Ce que contient une facture</h6>
+                    <ul>
+                        <li>En-tête : nom, logo et coordonnées de la structure ; identité du patient.</li>
+                        <li>Un numéro propre à la structure (numérotation qui recommence à 1 pour chaque structure, indépendante de l'identifiant technique interne).</li>
+                        <li>Le détail ligne par ligne (chaque acte ou médicament, sa quantité, son prix unitaire).</li>
+                        <li>Si le patient est assuré : la répartition part assurance / part patient sur chaque ligne, calculée automatiquement selon le taux de prise en charge (AMU) et, le cas échéant, l'assurance complémentaire (CAC).</li>
+                        <li>La TVA, si la structure l'applique.</li>
+                        <li>Le sous-total, puis le montant net réellement à la charge du patient.</li>
+                        <li>Le mode de paiement et, si le patient n'a pas tout réglé, le solde restant dû (voir "Créances" ci-dessous).</li>
+                    </ul>
+
+                    <h6 class="sous-titre">Créances (montants restant dus)</h6>
                     <p>
                         Une facture regroupe les montants restant dus par un patient (ventes non intégralement
                         réglées, ou paiement différé). Depuis <strong>Factures clients&amp;Créances</strong> :
