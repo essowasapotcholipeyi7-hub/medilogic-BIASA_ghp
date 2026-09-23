@@ -18501,30 +18501,29 @@ def api_test(structure):
 def api_sync_patients():
     """Récupérer les patients d'une structure (avec token)"""
     from sqlalchemy import text
-    
+
     token = request.args.get('token') or request.headers.get('X-API-Token')
-    
+
     if not token:
         return jsonify({'error': 'Token requis'}), 401
-    
+
+    # ⭐ FIX : cette route vérifiait le token contre un onglet Google Sheets
+    # ("structures"), le seul endroit de tout /api/sync/* à ne pas utiliser
+    # StructureMapping.api_key comme tous les autres (voir /api/sync/prescriptions,
+    # /api/actes/disponibles, etc.) — la clé générée par
+    # /sync/gestion-patients/activer ne pouvait donc jamais correspondre,
+    # cassant silencieusement toute synchro de patients GHP -> gestion_patients.
+    mapping = StructureMapping.query.filter_by(api_key=token, actif=True).first()
+    if not mapping:
+        return jsonify({'error': 'Token invalide'}), 401
+
     try:
-        # Lire les structures depuis Google Sheets
-        structures = sheets_helper.get_all_records('structures', use_prefix=False)
-        
-        structure = None
-        for s in structures:
-            if s.get('token') == token or s.get('TOKEN') == token:
-                structure = s
-                break
-        
-        if not structure:
-            return jsonify({'error': 'Token invalide'}), 401
-        
-        structure_id = int(structure.get('ID'))
-        structure_nom = structure.get('nom')
-        
+        structure_id = mapping.source_structure_id
+        structure = Structure.query.get(structure_id)
+        structure_nom = structure.nom if structure else None
+
         print(f"✅ Token valide pour la structure {structure_id} - {structure_nom}")
-        
+
         # ⭐ Remplacer db.execute_query par db.session.execute avec text()
         result = db.session.execute(
             text("""
