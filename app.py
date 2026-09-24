@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from flask_mail import Mail, Message
 from config import Config
-from sheets_helper import sheets_helper
+from sheets_helper import sheets_helper, normaliser_nom_article
 import hashlib
 import re
 import secrets
@@ -19284,20 +19284,24 @@ def prescriptions_recues():
         produits = sheets_helper.get_medicamentos(structure_id)
         actes = sheets_helper.get_all_records('actes', use_prefix=True)
         
-        # ⭐ Construire les dictionnaires de prix
+        # ⭐ Construire les dictionnaires de prix — clés normalisées (accents,
+        # préfixe numérique de code, espaces) pour un matching robuste avec
+        # les noms envoyés par gestion_patients (patron : "pourquoi certains
+        # articles ne correspondent pas ? fait un bon matching"), voir
+        # normaliser_nom_article() dans sheets_helper.py.
         produits_dict = {}
         for p in produits:
-            nom = p.get('nom', '').lower().strip()
+            nom = normaliser_nom_article(p.get('nom', ''))
             if nom:
                 produits_dict[nom] = {
                     'prix': p.get('prix_vente', 0),
                     'pbr': p.get('pbr', 0),
                     'unite': p.get('unite', 'unité')
                 }
-        
+
         actes_dict = {}
         for a in actes:
-            nom = a.get('nom', '').lower().strip()
+            nom = normaliser_nom_article(a.get('nom', ''))
             if nom:
                 try:
                     prix = float(a.get('prix') or 0) if a.get('prix') else 0
@@ -19316,7 +19320,7 @@ def prescriptions_recues():
         for p in prescriptions:
             type_presc = p.get('type_prescription') or 'medicament'
             nom_recherche = p.get('medicament') or ''
-            nom_clean = nom_recherche.lower().strip()
+            nom_clean = normaliser_nom_article(nom_recherche)
 
             # ⭐ Le template groupe par patient_id (Jinja groupby → sorted()) :
             # si 2+ lignes ont patient_id=NULL (patient non retrouvé côté
@@ -19328,6 +19332,19 @@ def prescriptions_recues():
             # "non identifiés" plutôt que de laisser None.
             if p.get('patient_id') is None:
                 p['patient_id'] = -1
+
+            # ⭐ Même défaut de plantage que ci-dessus, mais sur le tri des
+            # groupes par date (template, "sorted_groups") : une ligne avec
+            # date_prescription NULL fait planter sort() dès qu'elle est
+            # comparée à une vraie date ("'<' not supported between
+            # instances of 'NoneType' and 'datetime.datetime'"), et la page
+            # retombe sur prescriptions_pharma=[]/prescriptions_actes=[]
+            # (silencieux : plus AUCUNE prescription visible, sans message
+            # d'erreur clair). Repéré en testant la correction manuelle
+            # d'un article — la date est censée toujours être renseignée
+            # (recu_le sert de repli), donc ce n'est qu'un garde-fou.
+            if p.get('date_prescription') is None:
+                p['date_prescription'] = p.get('recu_le') or datetime.min
 
             prix_unitaire = 0
             pbr = 0
@@ -19603,52 +19620,112 @@ def prescription_ajouter_panier(id):
 @permission_requise('prescriptions_recues')
 def api_prescriptions_suggestions():
     """
-    Retourne des suggestions pour un nom de médicament/acte non trouvé
-    """
+    Retourne des suggestions pour un nom de médicament/acte non trouvé.
+
+    ⭐ FIX : interrogeait les tables Postgres locales `produits`/`actes` —
+    un MIROIR séparé, distinct du catalogue Google Sheets réellement
+    utilisé pour le matching/les prix dans /prescriptions-recues (voir
+    normaliser_nom_article ci-dessus et le commentaire de get_all_records
+    dans sheets_helper.py). Ce mélange de sources rendait les suggestions
+    incohérentes avec ce qui compte vraiment pour la facturation, et
+    l'endpoint n'était de toute façon appelé nulle part dans le HTML —
+    branché maintenant sur le vrai catalogue (Sheets), avec un classement
+    approximatif (difflib) plutôt qu'un simple LIKE, pour retrouver un
+    article dont le libellé diffère un peu (marque différente, mot en
+    moins/en plus...) — patron : "pourquoi certains articles ne
+    correspondent pas ? fait un bon matching"."""
     structure_id = session.get('structure_id')
-    
+
     if not structure_id:
         return jsonify({'success': False, 'message': 'Structure non trouvée'}), 401
-    
+
     try:
+        import difflib
+
         data = request.json
         nom = data.get('nom', '').strip()
         type_presc = data.get('type', 'medicament')
-        
+
         if not nom or len(nom) < 2:
             return jsonify({'suggestions': []})
-        
-        suggestions = []
-        
+
+        sheets_helper.set_structure(structure_id)
+        nom_norm = normaliser_nom_article(nom)
+
         if type_presc == 'medicament':
-            # Rechercher des médicaments similaires
-            produits = db.execute_query("""
-                SELECT nom, prix_vente FROM produits 
-                WHERE structure_id = %s
-                AND (LOWER(nom) LIKE LOWER(%s) OR LOWER(nom) LIKE LOWER(%s))
-                LIMIT 10
-            """, (structure_id, '%' + nom + '%', '%' + ' '.join(nom.split()[:2]) + '%'))
-            
-            suggestions = [p.get('nom') for p in produits]
-            
-        else:  # actes
-            actes = db.execute_query("""
-                SELECT nom, prix FROM actes 
-                WHERE structure_id = %s
-                AND (LOWER(nom) LIKE LOWER(%s) OR LOWER(nom) LIKE LOWER(%s))
-                LIMIT 10
-            """, (structure_id, '%' + nom + '%', '%' + ' '.join(nom.split()[:2]) + '%'))
-            
-            suggestions = [a.get('nom') for a in actes]
-        
+            catalogue = sheets_helper.get_medicamentos(structure_id)
+            items = [
+                {'nom': p.get('nom'), 'prix': p.get('prix_vente', 0)}
+                for p in catalogue if p.get('nom')
+            ]
+        else:
+            catalogue = sheets_helper.get_all_records('actes', use_prefix=True)
+            items = [
+                {'nom': a.get('nom'), 'prix': a.get('prix', 0)}
+                for a in catalogue if a.get('nom')
+            ]
+
+        noms_norm = {normaliser_nom_article(it['nom']): it for it in items}
+        proches = difflib.get_close_matches(nom_norm, noms_norm.keys(), n=8, cutoff=0.5)
+        suggestions = [noms_norm[c] for c in proches]
+
         return jsonify({
             'success': True,
-            'suggestions': suggestions,
+            'suggestions': [s['nom'] for s in suggestions],
             'count': len(suggestions)
         })
-        
+
     except Exception as e:
         print(f"❌ Erreur suggestions: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/prescriptions/<int:id>/corriger-nom', methods=['POST'])
+@login_required
+@permission_requise('prescriptions_recues')
+def api_prescriptions_corriger_nom(id):
+    """Corrige le nom stocké d'une prescription reçue vers le libellé exact
+    du catalogue (choisi parmi les suggestions) — la ligne matche alors
+    normalement dès le prochain chargement de la page, sans qu'aucune
+    correspondance approximative ne soit jamais appliquée automatiquement :
+    c'est toujours un humain qui confirme le bon article avant que le prix
+    ne soit pris en compte."""
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return jsonify({'success': False, 'message': 'Structure non trouvée'}), 401
+
+    try:
+        data = request.json or {}
+        nom_correct = (data.get('nom_correct') or '').strip()
+        if not nom_correct:
+            return jsonify({'success': False, 'message': 'Nom manquant'}), 400
+
+        prescription = db.execute_query(
+            "SELECT id FROM prescriptions_recues WHERE id = %s AND structure_id = %s",
+            (id, structure_id)
+        )
+        if not prescription:
+            return jsonify({'success': False, 'message': 'Prescription introuvable'}), 404
+
+        # ⭐ commit=True est OBLIGATOIRE ici : db.execute_query() (redéfini
+        # plus haut sur SQLAlchemy, ~app.py:211) ne committe QUE si on le
+        # demande explicitement — sans ça, l'UPDATE s'exécute dans la
+        # session mais est perdu au démontage de la requête (repéré en
+        # testant cette route : la ligne "corrigée" redisparaissait sans
+        # aucune erreur visible). Vu le nombre d'appels à
+        # db.execute_query() dans ce fichier qui ne passent pas non plus
+        # commit=True, ce pourrait être un bug plus large ailleurs — à
+        # vérifier séparément, hors du périmètre de cette correction.
+        db.execute_query(
+            "UPDATE prescriptions_recues SET medicament = %s WHERE id = %s",
+            (nom_correct, id),
+            commit=True
+        )
+
+        return jsonify({'success': True})
+
+    except Exception as e:
+        print(f"❌ Erreur correction: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
 

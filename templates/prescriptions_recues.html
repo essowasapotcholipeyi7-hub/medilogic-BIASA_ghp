@@ -156,6 +156,9 @@
                                                         <span class="badge bg-success me-1" title="Disponible dans le catalogue de la structure">●</span>
                                                     {% else %}
                                                         <span class="badge bg-danger me-1" title="Absent du catalogue de cette structure — le patient devra l'obtenir ailleurs">●</span>
+                                                        <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1 me-1" onclick="ouvrirCorrection({{ p.id }}, 'medicament', {{ p.medicament|tojson }})" title="Corriger vers le bon article du catalogue">
+                                                            <i class="fas fa-wrench"></i>
+                                                        </button>
                                                     {% endif %}
                                                     <strong>{{ p.medicament }}</strong>
                                                 </td>
@@ -273,6 +276,9 @@
                                                 <span class="badge bg-success me-1" title="Disponible dans le catalogue de la structure">●</span>
                                             {% else %}
                                                 <span class="badge bg-danger me-1" title="Absent du catalogue de cette structure — le patient devra l'obtenir ailleurs">●</span>
+                                                <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1 me-1" onclick="ouvrirCorrection({{ p.id }}, 'acte', {{ p.medicament|tojson }})" title="Corriger vers le bon article du catalogue">
+                                                    <i class="fas fa-wrench"></i>
+                                                </button>
                                             {% endif %}
                                             {# ⭐ Onglet global (étape 6 du plan) : cette table réunit déjà
                                                3 sources (acte prescrit / acte posé / hospitalisation) dans le
@@ -362,6 +368,38 @@
                 <button type="button" class="btn btn-success" id="btnAjouterPanier" onclick="ajouterPanierDepuisModal()">
                     <i class="fas fa-cart-plus me-1"></i> Ajouter au panier
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ⭐ Modal "Corriger l'article" — un article "absent du catalogue" est
+souvent en fait présent, sous un libellé un peu différent (marque,
+abréviation, mot en plus/en moins) ; le rapprochement automatique
+(normaliser_nom_article) ne corrige que les écarts de forme (accents,
+majuscules, code numérique en préfixe), jamais un vrai écart de mot —
+plutôt que de deviner, on propose ici des suggestions du catalogue
+réel et c'est un humain qui confirme, avant que ce prix ne compte pour
+la facturation. Patron : "pourquoi certains articles ne correspondent
+pas ? fait un bon matching". -->
+<div class="modal fade" id="corrigerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title"><i class="fas fa-wrench me-2"></i>Corriger l'article</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted mb-2">Reçu : <strong id="corrigerNomActuel"></strong></p>
+                <p class="small">Article correspondant dans le catalogue de la structure :</p>
+                <div id="corrigerSuggestions">
+                    <div class="text-center py-3">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
             </div>
         </div>
     </div>
@@ -588,6 +626,67 @@ function ajouterPanierGroupe(ids) {
             showToast(`⚠️ ${success}/${idsFiltered.length} prescriptions ajoutées`, 'warning');
         }
     })();
+}
+
+// ============================================
+// CORRIGER UN ARTICLE NON TROUVÉ
+// ============================================
+let corrigerIdActuel = null;
+
+function ouvrirCorrection(id, type, nomActuel) {
+    corrigerIdActuel = id;
+    document.getElementById('corrigerNomActuel').textContent = nomActuel;
+    const zone = document.getElementById('corrigerSuggestions');
+    zone.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary" role="status"></div></div>';
+
+    const modal = new bootstrap.Modal(document.getElementById('corrigerModal'));
+    modal.show();
+
+    fetch('/api/prescriptions/suggestions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nom: nomActuel, type: type })
+    })
+    .then(r => r.json())
+    .then(data => {
+        const suggestions = (data.success && data.suggestions) ? data.suggestions : [];
+        if (suggestions.length === 0) {
+            zone.innerHTML = '<p class="text-muted small mb-0">Aucun article proche trouvé dans le catalogue de cette structure — le nom devra peut-être y être ajouté.</p>';
+            return;
+        }
+        zone.innerHTML = '';
+        suggestions.forEach(nom => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn btn-outline-primary w-100 text-start mb-2';
+            btn.textContent = nom;
+            btn.onclick = () => appliquerCorrection(nom);
+            zone.appendChild(btn);
+        });
+    })
+    .catch(() => {
+        zone.innerHTML = '<p class="text-danger small mb-0">Erreur lors de la recherche de suggestions.</p>';
+    });
+}
+
+function appliquerCorrection(nomCorrect) {
+    if (!corrigerIdActuel) return;
+    fetch(`/api/prescriptions/${corrigerIdActuel}/corriger-nom`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nom_correct: nomCorrect })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showToast('✅ Article corrigé', 'success');
+            bootstrap.Modal.getInstance(document.getElementById('corrigerModal')).hide();
+            setTimeout(() => location.reload(), 600);
+        } else {
+            showToast('❌ ' + (data.message || 'Erreur'), 'danger');
+        }
+    })
+    .catch(() => showToast('❌ Erreur réseau', 'danger'));
 }
 
 // ============================================

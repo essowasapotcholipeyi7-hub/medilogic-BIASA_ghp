@@ -7,9 +7,33 @@ import re
 import time
 import sys
 import base64
+import unicodedata
 from functools import lru_cache
 from threading import Timer
 from datetime import datetime
+
+
+def normaliser_nom_article(nom):
+    """Normalise un nom de médicament/acte pour un matching robuste entre
+    gestion_patients et le catalogue GHP (Sheets) — patron : "pourquoi
+    certains articles ne correspondent pas ? fait un bon matching". Le
+    matching précédent ne faisait que lower()+strip(), ce qui échoue
+    silencieusement sur :
+    - un préfixe numérique de code envoyé par gestion_patients (ex:
+      "0000149 Paracetamol Tm Comp 500mg B/20") absent du nom catalogue GHP,
+    - des accents qui diffèrent selon la saisie (é/e),
+    - des espaces multiples/non-insécables (copier-coller depuis Sheets).
+    Utilisée à la fois ici (get_prix_produit/get_prix_acte) et dans la
+    page /prescriptions-recues (app.py) pour que les deux mécanismes de
+    matching restent cohérents entre eux."""
+    if not nom:
+        return ''
+    nom = re.sub(r'^\d+\s*[-:]?\s*', '', nom.strip())
+    nom = unicodedata.normalize('NFKD', nom)
+    nom = ''.join(c for c in nom if not unicodedata.combining(c))
+    nom = nom.lower()
+    nom = re.sub(r'\s+', ' ', nom).strip()
+    return nom
 
 def get_credentials_info():
     """Récupère les credentials Google Sheets depuis une variable env (Render) ou un fichier (local)."""
@@ -192,22 +216,24 @@ class SheetsHelper:
         """
         if not nom_produit:
             return {'prix': 0, 'pbr': 0, 'unite': 'unité', 'trouve': False}
-        
+
+        nom_produit_norm = normaliser_nom_article(nom_produit)
+
         # ⭐ Vérifier le cache
-        cache_key = f"produit_{structure_id}_{nom_produit.lower().strip()}"
+        cache_key = f"produit_{structure_id}_{nom_produit_norm}"
         if cache_key in self._prix_cache:
             cached_data, timestamp = self._prix_cache[cache_key]
             if time.time() - timestamp < self._prix_cache_duration:
                 print(f"💾 Cache hit: {nom_produit}")
                 return cached_data
-        
+
         # ⭐ Recherche dans Sheets
         produits = self.get_medicamentos(structure_id)
         result = {'prix': 0, 'pbr': 0, 'unite': 'unité', 'trouve': False}
-        
+
         for p in produits:
             nom = p.get('nom', '')
-            if nom and nom.lower().strip() == nom_produit.lower().strip():
+            if nom and normaliser_nom_article(nom) == nom_produit_norm:
                 result = {
                     'prix': p.get('prix_vente', 0),
                     'pbr': p.get('pbr', 0),
@@ -227,22 +253,24 @@ class SheetsHelper:
         """
         if not nom_acte:
             return {'prix': 0, 'pbr': 0, 'trouve': False}
-        
+
+        nom_acte_norm = normaliser_nom_article(nom_acte)
+
         # ⭐ Vérifier le cache
-        cache_key = f"acte_{structure_id}_{nom_acte.lower().strip()}"
+        cache_key = f"acte_{structure_id}_{nom_acte_norm}"
         if cache_key in self._prix_cache:
             cached_data, timestamp = self._prix_cache[cache_key]
             if time.time() - timestamp < self._prix_cache_duration:
                 print(f"💾 Cache hit: {nom_acte}")
                 return cached_data
-        
+
         # ⭐ Recherche dans Sheets
         actes = self.get_all_records('actes', use_prefix=True)
         result = {'prix': 0, 'pbr': 0, 'trouve': False}
-        
+
         for a in actes:
             nom = a.get('nom', '')
-            if nom and nom.lower().strip() == nom_acte.lower().strip():
+            if nom and normaliser_nom_article(nom) == nom_acte_norm:
                 result = {
                     'prix': float(a.get('prix', 0)),
                     'pbr': float(a.get('pbr', 0)),
