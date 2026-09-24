@@ -19272,14 +19272,32 @@ def prescriptions_recues():
         flash('Structure non trouvée', 'danger')
         return redirect(url_for('dashboard'))
     
+    # ⭐ Vue par défaut : uniquement ce qui reste à traiter (EN_ATTENTE/
+    # AU_PANIER, ou statut absent) — un article livré/facturé restait
+    # jusqu'ici mélangé pour toujours avec les nouvelles arrivées (la
+    # requête ne filtrait jamais par statut), la liste grossissant sans
+    # fin. Patron : "faire en sorte que les actes ou médicaments facturés
+    # restent dans historique au lieu de se mélanger avec les nouveaux".
+    vue = request.args.get('vue', 'attente')
+    if vue not in ('attente', 'historique'):
+        vue = 'attente'
+
     try:
         # ⭐ Récupérer les prescriptions (les noms sont déjà dans la table)
-        prescriptions = db.execute_query("""
-            SELECT * FROM prescriptions_recues 
-            WHERE structure_id = %s 
-            ORDER BY recu_le DESC
-        """, (structure_id,))
-        
+        if vue == 'historique':
+            prescriptions = db.execute_query("""
+                SELECT * FROM prescriptions_recues
+                WHERE structure_id = %s AND statut IN ('DELIVREE', 'FACTURE')
+                ORDER BY recu_le DESC
+            """, (structure_id,))
+        else:
+            prescriptions = db.execute_query("""
+                SELECT * FROM prescriptions_recues
+                WHERE structure_id = %s
+                  AND (statut IS NULL OR statut NOT IN ('DELIVREE', 'FACTURE'))
+                ORDER BY recu_le DESC
+            """, (structure_id,))
+
         # ⭐ Charger les produits et actes pour les prix
         produits = sheets_helper.get_medicamentos(structure_id)
         actes = sheets_helper.get_all_records('actes', use_prefix=True)
@@ -19383,16 +19401,18 @@ def prescriptions_recues():
         
         return render_template('prescriptions_recues.html',
                              prescriptions_pharma=prescriptions_pharma,
-                             prescriptions_actes=prescriptions_actes)
-        
+                             prescriptions_actes=prescriptions_actes,
+                             vue=vue)
+
     except Exception as e:
         print(f"❌ Erreur: {e}")
         import traceback
         traceback.print_exc()
         flash(f'Erreur: {str(e)}', 'danger')
-        return render_template('prescriptions_recues.html', 
-                             prescriptions_pharma=[], 
-                             prescriptions_actes=[])
+        return render_template('prescriptions_recues.html',
+                             prescriptions_pharma=[],
+                             prescriptions_actes=[],
+                             vue=vue)
 
 @app.route('/api/prescriptions/<int:id>/details', methods=['GET'])
 @login_required

@@ -49,6 +49,23 @@
         </div>
     </div>
 
+    <!-- ⭐ VUE : "En attente" (par défaut, ce qui reste à traiter) vs
+    "Historique" (délivré/facturé) — sinon un article une fois vendu
+    restait mélangé pour toujours avec les nouvelles arrivées, la liste
+    grossissant sans fin. Patron : "faire en sorte que les actes ou
+    médicaments facturés restent dans historique au lieu de se mélanger
+    avec les nouveaux". -->
+    <div class="btn-group mb-4" role="group">
+        <a href="{{ url_for('prescriptions_recues', vue='attente') }}"
+           class="btn {{ 'btn-success' if vue != 'historique' else 'btn-outline-success' }}">
+            <i class="fas fa-hourglass-half me-1"></i> En attente
+        </a>
+        <a href="{{ url_for('prescriptions_recues', vue='historique') }}"
+           class="btn {{ 'btn-success' if vue == 'historique' else 'btn-outline-success' }}">
+            <i class="fas fa-check-circle me-1"></i> Historique (délivré / facturé)
+        </a>
+    </div>
+
     <!-- ═══════════════════════════════════════════ -->
     <!-- BARRE DE RECHERCHE -->
     <!-- ═══════════════════════════════════════════ -->
