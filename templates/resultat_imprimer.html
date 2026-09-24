@@ -165,6 +165,10 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
             {% if patient_email %}
             <button onclick="modifierEmailPatient()" class="btn btn-outline-secondary btn-sm" title="Modifier l'email du patient"><i class="fas fa-pen"></i></button>
             {% endif %}
+            <a href="{{ url_for('api_pdf_protege_resultat', resultat_id=resultat.id) }}" class="btn btn-primary btn-sm" title="PDF chiffré — code d'ouverture = code d'accès portail du patient">
+                <i class="fas fa-lock"></i> PDF protégé
+            </a>
+            <button onclick="voirCodePortailResultat()" class="btn btn-outline-dark btn-sm" title="Code d'accès (portail + PDF protégé)"><i class="fas fa-key"></i></button>
             <button onclick="fermerResultat()" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</button>
         </div>
         <div class="text-center no-print">
@@ -228,6 +232,28 @@ function fermerResultat() {
 // main pour un poste sans client mail configuré. Voir
 // api_preparer_email_resultat pour le détail.
 let emailPatientActuel = {{ (patient_email or '') | tojson }};
+
+// ⭐ Même code que le portail patient (AccesPortailPatient.code_acces) —
+// c'est AUSSI le mot de passe qui ouvre le "PDF protégé" ci-dessus, pas un
+// second code séparé. Voir api_pdf_protege_resultat (app.py).
+const patientNomResultat = {{ demande.patient_nom | tojson }};
+
+function voirCodePortailResultat() {
+    fetch('/api/patients/{{ demande.patient_id }}/code-portail').then(r => r.json()).then(data => {
+        const code = data.code_acces || '(non généré — se génère automatiquement au premier envoi/téléchargement)';
+        const regen = confirm(
+            "Code d'accès de " + patientNomResultat + " : " + code + "\n\n" +
+            "Vérifiez d'abord l'identité du patient avant de le communiquer par téléphone. " +
+            "Ce code ouvre à la fois le portail patient ET le PDF protégé.\n\n" +
+            "OK pour régénérer un nouveau code (l'ancien ne fonctionnera plus, y compris pour ouvrir un PDF déjà téléchargé) — Annuler pour garder celui-ci."
+        );
+        if (regen) {
+            fetch('/api/patients/{{ demande.patient_id }}/regenerer-code-portail', { method: 'POST' })
+                .then(r => r.json())
+                .then(d => { if (d.success) alert('Nouveau code : ' + d.code_acces); });
+        }
+    });
+}
 
 function envoyerParEmail(viaServeur) {
     let email = emailPatientActuel;

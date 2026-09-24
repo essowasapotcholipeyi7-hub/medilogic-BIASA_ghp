@@ -10812,6 +10812,108 @@ def page_imprimer_resultat(resultat_id):
     return render_template('resultat_imprimer.html', resultat=resultat, demande=demande, structure=structure_info, patient_email=patient_email)
 
 
+def _generer_pdf_resultat_texte_ghp(resultat, demande):
+    """Construit un PDF (contenu rédigé en ligne) via reportlab — PUR
+    PYTHON, sans binaire externe, même principe que côté gestion_patients
+    (_generer_pdf_resultat_texte, app.py de gestion_patients). contenu_html
+    (éditeur Quill) est simplifié en texte lisible (balises retirées)."""
+    import io as _io
+    import html as _html
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+
+    buf = _io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=2 * cm, bottomMargin=2 * cm,
+                             leftMargin=2 * cm, rightMargin=2 * cm)
+    styles = getSampleStyleSheet()
+    elements = [
+        Paragraph(f"Résultat — {_html.escape(demande.acte_nom)}", styles['Title']),
+        Spacer(1, 12),
+        Paragraph(f"Patient : {_html.escape(demande.patient_nom)}", styles['Normal']),
+        Paragraph(f"Type : {'Analyse' if demande.type_prestation == 'analyse' else 'Examen'}", styles['Normal']),
+    ]
+    if resultat.created_at:
+        elements.append(Paragraph(f"Date : {resultat.created_at.strftime('%d/%m/%Y %H:%M')}", styles['Normal']))
+    elements.append(Spacer(1, 16))
+    elements.append(Paragraph("Résultats :", styles['Heading3']))
+    elements.append(Spacer(1, 6))
+
+    texte = re.sub('<[^<]+?>', '\n', resultat.contenu_html or '')
+    texte = _html.unescape(texte)
+    for ligne in texte.split('\n'):
+        ligne = ligne.strip()
+        if ligne:
+            elements.append(Paragraph(_html.escape(ligne), styles['Normal']))
+            elements.append(Spacer(1, 4))
+
+    if resultat.nom_interprete:
+        elements.append(Spacer(1, 20))
+        signataire = (f"{resultat.titre_interprete} — " if resultat.titre_interprete else '') + resultat.nom_interprete
+        elements.append(Paragraph(_html.escape(signataire), styles['Normal']))
+
+    doc.build(elements)
+    return buf.getvalue()
+
+
+def _obtenir_pdf_resultat_non_protege_ghp(resultat, demande):
+    """(pdf_bytes, erreur) — réutilise le fichier déjà joint s'il s'agit
+    déjà d'un PDF, sinon génère un PDF depuis le contenu rédigé en ligne.
+    Même logique que gestion_patients (_obtenir_pdf_resultat_non_protege)."""
+    if resultat.fichier_data:
+        est_pdf = (resultat.fichier_mime == 'application/pdf') or \
+                  (resultat.fichier_nom or '').lower().endswith('.pdf')
+        if est_pdf:
+            return resultat.fichier_data, None
+        return None, ("Le fichier joint à ce résultat n'est pas un PDF "
+                       "(protection uniquement disponible pour un PDF ou un résultat rédigé en ligne).")
+    return _generer_pdf_resultat_texte_ghp(resultat, demande), None
+
+
+@app.route('/api/resultats-analyses/<int:resultat_id>/pdf-protege')
+@login_required
+def api_pdf_protege_resultat(resultat_id):
+    """Télécharge le résultat en PDF chiffré par mot de passe — réutilise
+    directement le MÊME code que le portail patient
+    (AccesPortailPatient.code_acces, voir obtenir_ou_creer_code_acces dans
+    services/laboratoire_service.py) comme mot de passe d'ouverture : un
+    seul code à retenir/communiquer pour tout (portail + PDF protégé), pas
+    un système séparé."""
+    structure_id = session.get('structure_id')
+    resultat = ResultatExamen.query.filter_by(id=resultat_id, structure_id=structure_id).first()
+    if not resultat:
+        flash('Résultat introuvable', 'danger')
+        return redirect(url_for('page_resultats_analyses'))
+    demande = DemandeExamen.query.get(resultat.demande_id)
+    if not demande:
+        flash('Demande introuvable', 'danger')
+        return redirect(url_for('page_resultats_analyses'))
+
+    pdf_bytes, erreur = _obtenir_pdf_resultat_non_protege_ghp(resultat, demande)
+    if erreur:
+        flash(erreur, 'danger')
+        return redirect(url_for('page_imprimer_resultat', resultat_id=resultat_id))
+
+    acces = obtenir_ou_creer_code_acces(structure_id, demande.patient_id, session.get('user_name', 'System'))
+
+    import io as _io
+    from pypdf import PdfReader, PdfWriter
+    from flask import send_file
+
+    reader = PdfReader(_io.BytesIO(pdf_bytes))
+    writer = PdfWriter()
+    for page in reader.pages:
+        writer.add_page(page)
+    writer.encrypt(user_password=acces.code_acces, algorithm="AES-256")
+    out = _io.BytesIO()
+    writer.write(out)
+    out.seek(0)
+
+    nom_fichier = f"Resultat_protege_{demande.patient_nom}_{resultat.id}.pdf".replace(' ', '_')
+    return send_file(out, as_attachment=True, download_name=nom_fichier, mimetype='application/pdf')
+
+
 def _preparer_lien_email_resultat_body(patient_nom, acte_nom, structure_nom, lien_portail):
     lignes = [
         f"Bonjour {patient_nom},",
