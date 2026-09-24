@@ -49,20 +49,30 @@
         </div>
     </div>
 
-    <!-- ⭐ VUE : "En attente" (par défaut, ce qui reste à traiter) vs
-    "Historique" (délivré/facturé) — sinon un article une fois vendu
-    restait mélangé pour toujours avec les nouvelles arrivées, la liste
-    grossissant sans fin. Patron : "faire en sorte que les actes ou
-    médicaments facturés restent dans historique au lieu de se mélanger
-    avec les nouveaux". -->
+    <!-- ⭐ VUE : "En attente" (récent, par défaut) / "Anciennes" (+14j ou
+    mises de côté à la main) / "Historique" (délivré/facturé) — sinon un
+    article une fois vendu restait mélangé pour toujours avec les nouvelles
+    arrivées, et une prescription jamais récupérée par le patient encombrait
+    la vue active indéfiniment. Patron : "faire en sorte que les actes ou
+    médicaments facturés restent dans historique" puis "les prescriptions
+    de plus de 14 jours restent à part également, et qu'on ait le choix
+    d'amener un produit qu'on vient de prescrire là-bas également, pour
+    libérer l'espace pour les nouveaux". -->
     <div class="btn-group mb-4" role="group">
         <a href="{{ url_for('prescriptions_recues', vue='attente') }}"
-           class="btn {{ 'btn-success' if vue != 'historique' else 'btn-outline-success' }}">
+           class="btn {{ 'btn-success' if vue == 'attente' else 'btn-outline-success' }}">
             <i class="fas fa-hourglass-half me-1"></i> En attente
+            <span class="badge bg-light text-dark ms-1">{{ counts.attente }}</span>
+        </a>
+        <a href="{{ url_for('prescriptions_recues', vue='anciennes') }}"
+           class="btn {{ 'btn-warning' if vue == 'anciennes' else 'btn-outline-warning' }}">
+            <i class="fas fa-box-archive me-1"></i> Anciennes (+14j / mises de côté)
+            <span class="badge bg-light text-dark ms-1">{{ counts.anciennes }}</span>
         </a>
         <a href="{{ url_for('prescriptions_recues', vue='historique') }}"
            class="btn {{ 'btn-success' if vue == 'historique' else 'btn-outline-success' }}">
             <i class="fas fa-check-circle me-1"></i> Historique (délivré / facturé)
+            <span class="badge bg-light text-dark ms-1">{{ counts.historique }}</span>
         </a>
     </div>
 
@@ -196,6 +206,13 @@
                                                     {% else %}
                                                         <span class="badge bg-secondary">{{ statut }}</span>
                                                     {% endif %}
+                                                    {% if vue == 'anciennes' %}
+                                                        {% if p.mise_de_cote %}
+                                                            <span class="badge bg-dark" title="Rangée manuellement par le personnel">Mise de côté</span>
+                                                        {% else %}
+                                                            <span class="badge bg-dark" title="Reçue il y a {{ p.jours_attente }} jours">+14j</span>
+                                                        {% endif %}
+                                                    {% endif %}
                                                 </td>
                                                 <td class="actions-cell">
                                                     <div class="btn-group btn-group-sm">
@@ -210,6 +227,15 @@
                                                         {% if statut == 'AU_PANIER' %}
                                                         <button class="btn btn-danger" onclick="retirerPanier({{ p.id }})" title="Retirer du panier">
                                                             <i class="fas fa-trash"></i>
+                                                        </button>
+                                                        {% endif %}
+                                                        {% if vue == 'anciennes' %}
+                                                        <button class="btn btn-outline-warning" onclick="remettreEnAttente({{ p.id }})" title="Remettre dans 'En attente'">
+                                                            <i class="fas fa-rotate-left"></i>
+                                                        </button>
+                                                        {% else %}
+                                                        <button class="btn btn-outline-secondary" onclick="mettreDeCote({{ p.id }})" title="Mettre de côté (libérer la place dans 'En attente')">
+                                                            <i class="fas fa-box-archive"></i>
                                                         </button>
                                                         {% endif %}
                                                         <button class="btn btn-secondary" onclick="imprimerPrescription({{ p.id }})" title="Imprimer">
@@ -324,6 +350,13 @@
                                             {% else %}
                                                 <span class="badge bg-secondary">{{ statut }}</span>
                                             {% endif %}
+                                            {% if vue == 'anciennes' %}
+                                                {% if p.mise_de_cote %}
+                                                    <span class="badge bg-dark" title="Rangée manuellement par le personnel">Mise de côté</span>
+                                                {% else %}
+                                                    <span class="badge bg-dark" title="Reçue il y a {{ p.jours_attente }} jours">+14j</span>
+                                                {% endif %}
+                                            {% endif %}
                                         </td>
                                         <td class="actions-cell">
                                             <div class="btn-group btn-group-sm">
@@ -338,6 +371,15 @@
                                                 {% if statut == 'AU_PANIER' %}
                                                 <button class="btn btn-danger" onclick="retirerPanier({{ p.id }})" title="Retirer du panier">
                                                     <i class="fas fa-trash"></i>
+                                                </button>
+                                                {% endif %}
+                                                {% if vue == 'anciennes' %}
+                                                <button class="btn btn-outline-warning" onclick="remettreEnAttente({{ p.id }})" title="Remettre dans 'En attente'">
+                                                    <i class="fas fa-rotate-left"></i>
+                                                </button>
+                                                {% else %}
+                                                <button class="btn btn-outline-secondary" onclick="mettreDeCote({{ p.id }})" title="Mettre de côté (libérer la place dans 'En attente')">
+                                                    <i class="fas fa-box-archive"></i>
                                                 </button>
                                                 {% endif %}
                                                 <button class="btn btn-secondary" onclick="imprimerPrescription({{ p.id }})" title="Imprimer">
@@ -704,6 +746,46 @@ function appliquerCorrection(nomCorrect) {
         }
     })
     .catch(() => showToast('❌ Erreur réseau', 'danger'));
+}
+
+// ============================================
+// METTRE DE CÔTÉ / REMETTRE EN ATTENTE
+// ============================================
+// ⭐ Bouton "boîte" (vue "En attente") : range manuellement une
+// prescription récente dans "Anciennes", même avant les 14 jours —
+// libère la place dans la vue active pour les nouvelles arrivées.
+function mettreDeCote(id) {
+    if (!confirm("Mettre cette prescription de côté (elle passera dans l'onglet 'Anciennes') ?")) return;
+
+    fetch(`/api/prescriptions/${id}/mettre-de-cote`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showToast('✅ Prescription mise de côté', 'success');
+                setTimeout(() => location.reload(), 400);
+            } else {
+                showToast('❌ ' + (data.message || 'Erreur'), 'danger');
+            }
+        })
+        .catch(() => showToast('❌ Erreur réseau', 'danger'));
+}
+
+// ⭐ Bouton "flèche" (vue "Anciennes") : lève le rangement manuel. Une
+// prescription restée à part uniquement à cause de son âge (+14j) sans
+// avoir été mise de côté à la main n'a pas besoin de ce bouton — elle
+// n'y est de toute façon pas.
+function remettreEnAttente(id) {
+    fetch(`/api/prescriptions/${id}/remettre-en-attente`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showToast('✅ Remise dans "En attente"', 'success');
+                setTimeout(() => location.reload(), 400);
+            } else {
+                showToast('❌ ' + (data.message || 'Erreur'), 'danger');
+            }
+        })
+        .catch(() => showToast('❌ Erreur réseau', 'danger'));
 }
 
 // ============================================

@@ -19278,8 +19278,17 @@ def prescriptions_recues():
     # requête ne filtrait jamais par statut), la liste grossissant sans
     # fin. Patron : "faire en sorte que les actes ou médicaments facturés
     # restent dans historique au lieu de se mélanger avec les nouveaux".
+    #
+    # ⭐ Vue "anciennes" (nouvelle) : au sein de ce qui reste à traiter, une
+    # prescription reçue depuis plus de 14 jours (le patient n'est
+    # probablement jamais venu la chercher) encombre la vue "En attente"
+    # au même titre qu'un article facturé — sans jamais en sortir puisque
+    # rien ne la fait passer à DELIVREE/FACTURE. On l'écarte automatiquement
+    # sur l'âge de `recu_le`, ET on permet en plus au personnel de ranger
+    # manuellement une prescription récente dans cette même vue (colonne
+    # `mise_de_cote`), pour "libérer l'espace pour les nouveaux" (patron).
     vue = request.args.get('vue', 'attente')
-    if vue not in ('attente', 'historique'):
+    if vue not in ('attente', 'anciennes', 'historique'):
         vue = 'attente'
 
     try:
@@ -19290,13 +19299,45 @@ def prescriptions_recues():
                 WHERE structure_id = %s AND statut IN ('DELIVREE', 'FACTURE')
                 ORDER BY recu_le DESC
             """, (structure_id,))
+        elif vue == 'anciennes':
+            prescriptions = db.execute_query("""
+                SELECT * FROM prescriptions_recues
+                WHERE structure_id = %s
+                  AND (statut IS NULL OR statut NOT IN ('DELIVREE', 'FACTURE'))
+                  AND (mise_de_cote = TRUE OR recu_le < NOW() - INTERVAL '14 days')
+                ORDER BY recu_le DESC
+            """, (structure_id,))
         else:
             prescriptions = db.execute_query("""
                 SELECT * FROM prescriptions_recues
                 WHERE structure_id = %s
                   AND (statut IS NULL OR statut NOT IN ('DELIVREE', 'FACTURE'))
+                  AND mise_de_cote = FALSE
+                  AND recu_le >= NOW() - INTERVAL '14 days'
                 ORDER BY recu_le DESC
             """, (structure_id,))
+
+        # ⭐ Compteurs des 3 vues pour les boutons de bascule — permet de voir
+        # d'un coup d'œil combien d'anciennes prescriptions encombrent la
+        # file, sans avoir à cliquer pour vérifier.
+        try:
+            counts_row = db.execute_query("""
+                SELECT
+                    COUNT(*) FILTER (
+                        WHERE (statut IS NULL OR statut NOT IN ('DELIVREE', 'FACTURE'))
+                          AND mise_de_cote = FALSE AND recu_le >= NOW() - INTERVAL '14 days'
+                    ) AS attente,
+                    COUNT(*) FILTER (
+                        WHERE (statut IS NULL OR statut NOT IN ('DELIVREE', 'FACTURE'))
+                          AND (mise_de_cote = TRUE OR recu_le < NOW() - INTERVAL '14 days')
+                    ) AS anciennes,
+                    COUNT(*) FILTER (WHERE statut IN ('DELIVREE', 'FACTURE')) AS historique
+                FROM prescriptions_recues
+                WHERE structure_id = %s
+            """, (structure_id,))
+            counts = counts_row[0] if counts_row else {'attente': 0, 'anciennes': 0, 'historique': 0}
+        except Exception:
+            counts = {'attente': 0, 'anciennes': 0, 'historique': 0}
 
         # ⭐ Charger les produits et actes pour les prix
         produits = sheets_helper.get_medicamentos(structure_id)
@@ -19389,7 +19430,13 @@ def prescriptions_recues():
             p['pbr'] = pbr
             p['prix_total'] = prix_unitaire * quantite
             p['article_trouve'] = article_trouve
-            
+
+            # ⭐ Pour la vue "anciennes" : distinguer visuellement ce qui y
+            # est à cause de l'âge (+14j, automatique) de ce qui y a été
+            # rangé manuellement par le personnel (mise_de_cote).
+            recu_le = p.get('recu_le')
+            p['jours_attente'] = (datetime.utcnow() - recu_le).days if recu_le else None
+
             # ⭐ Utiliser les noms déjà stockés
             p['patient_nom'] = p.get('patient_nom', 'Patient inconnu')
             p['patient_prenom'] = p.get('patient_prenom', '')
@@ -19402,7 +19449,8 @@ def prescriptions_recues():
         return render_template('prescriptions_recues.html',
                              prescriptions_pharma=prescriptions_pharma,
                              prescriptions_actes=prescriptions_actes,
-                             vue=vue)
+                             vue=vue,
+                             counts=counts)
 
     except Exception as e:
         print(f"❌ Erreur: {e}")
@@ -19412,7 +19460,8 @@ def prescriptions_recues():
         return render_template('prescriptions_recues.html',
                              prescriptions_pharma=[],
                              prescriptions_actes=[],
-                             vue=vue)
+                             vue=vue,
+                             counts={'attente': 0, 'anciennes': 0, 'historique': 0})
 
 @app.route('/api/prescriptions/<int:id>/details', methods=['GET'])
 @login_required
@@ -19748,6 +19797,71 @@ def api_prescriptions_corriger_nom(id):
         print(f"❌ Erreur correction: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
+
+@app.route('/api/prescriptions/<int:id>/mettre-de-cote', methods=['POST'])
+@login_required
+@permission_requise('prescriptions_recues')
+def api_prescriptions_mettre_de_cote(id):
+    """Range manuellement une prescription (encore active) dans la vue
+    "Anciennes", sans attendre les 14 jours — patron : "qu'on ait le choix
+    d'amener un produit qu'on vient de prescrire là-bas également, pour
+    libérer l'espace pour les nouveaux"."""
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return jsonify({'success': False, 'message': 'Structure non trouvée'}), 401
+
+    try:
+        prescription = db.execute_query(
+            "SELECT id FROM prescriptions_recues WHERE id = %s AND structure_id = %s "
+            "AND (statut IS NULL OR statut NOT IN ('DELIVREE', 'FACTURE'))",
+            (id, structure_id)
+        )
+        if not prescription:
+            return jsonify({'success': False, 'message': 'Prescription introuvable ou déjà traitée'}), 404
+
+        db.execute_query(
+            "UPDATE prescriptions_recues SET mise_de_cote = TRUE, mise_de_cote_le = NOW() WHERE id = %s",
+            (id,),
+            commit=True
+        )
+
+        return jsonify({'success': True})
+
+    except Exception as e:
+        print(f"❌ Erreur mise de côté: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/prescriptions/<int:id>/remettre-en-attente', methods=['POST'])
+@login_required
+@permission_requise('prescriptions_recues')
+def api_prescriptions_remettre_en_attente(id):
+    """Annule une mise de côté manuelle. Si la prescription a par ailleurs
+    plus de 14 jours, elle reste visible dans "Anciennes" via la règle
+    d'âge — ce bouton ne fait que lever le rangement manuel."""
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return jsonify({'success': False, 'message': 'Structure non trouvée'}), 401
+
+    try:
+        prescription = db.execute_query(
+            "SELECT id FROM prescriptions_recues WHERE id = %s AND structure_id = %s",
+            (id, structure_id)
+        )
+        if not prescription:
+            return jsonify({'success': False, 'message': 'Prescription introuvable'}), 404
+
+        db.execute_query(
+            "UPDATE prescriptions_recues SET mise_de_cote = FALSE, mise_de_cote_le = NULL WHERE id = %s",
+            (id,),
+            commit=True
+        )
+
+        return jsonify({'success': True})
+
+    except Exception as e:
+        print(f"❌ Erreur remise en attente: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 @app.route('/api/prescriptions/verifier-prix', methods=['POST'])

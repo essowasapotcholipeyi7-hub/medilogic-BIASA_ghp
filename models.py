@@ -222,6 +222,8 @@ class PrescriptionRecue(db.Model):
     recu_le = db.Column(db.DateTime, default=datetime.utcnow)
     delivre_le = db.Column(db.DateTime)
     facture_le = db.Column(db.DateTime)
+    mise_de_cote = db.Column(db.Boolean, default=False)
+    mise_de_cote_le = db.Column(db.DateTime)
 
 # ============================================================
 # MODULES RH - CORRIGÉS AVEC structure_id
