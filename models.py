@@ -3713,3 +3713,24 @@ class FaqQuestionUtilisateur(db.Model):
     statut = db.Column(db.String(20), nullable=False, default='en_attente')  # 'en_attente' | 'repondue'
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     repondue_at = db.Column(db.DateTime)
+
+
+class JourFerie(db.Model):
+    """Jours fériés déclarés par une structure — utilisé par
+    est_tarif_nuit_actif() (app.py) pour savoir si le tarif majoré
+    nuit/férié/dimanche s'applique à un acte, en plus de l'horaire et du
+    dimanche (calculables sans table). Par structure (pas global) : chaque
+    clinique gère sa propre liste, réutilisable chaque année sans toucher
+    au code. Introduit pour Clinique Valeo (structure 13) et sa convention
+    d'assurance privée locale, mais générique pour toute structure."""
+    __tablename__ = 'jours_feries'
+
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    date = db.Column(db.Date, nullable=False)
+    libelle = db.Column(db.String(200))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('structure_id', 'date', name='uq_structure_jour_ferie'),
+    )

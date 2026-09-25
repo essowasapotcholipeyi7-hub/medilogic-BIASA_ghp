@@ -15,7 +15,7 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient, FaqQuestion, FaqQuestionUtilisateur
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient, FaqQuestion, FaqQuestionUtilisateur, JourFerie
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
@@ -2762,7 +2762,14 @@ def actes_vente():
             
             prix = convertir_prix(a.get('prix'))
             pbr = convertir_prix(a.get('pbr', a.get('prix')))
-            
+
+            # ⭐ Tarif nuit/férié/dimanche (introduit pour Clinique Valeo,
+            # structure 13) — colonne optionnelle, absente/vide pour tout
+            # le reste du catalogue (comportement inchangé partout
+            # ailleurs). Voir est_tarif_nuit_actif() plus bas.
+            prix_nuit_raw = a.get('prix_nuit')
+            prix_nuit = convertir_prix(prix_nuit_raw) if prix_nuit_raw not in (None, '', '-') else 0
+
             prise_amu_raw = a.get('prise_en_charge_amu')
             if prise_amu_raw is None or prise_amu_raw == '':
                 prise_amu = True
@@ -2808,7 +2815,8 @@ def actes_vente():
                 'prise_en_charge_cac': prise_cac,
                 'commentaire_cac': a.get('commentaire_cac', ''),
                 'prise_en_charge_amu_tns': prise_amu_tns,
-                'statut': statut  # 🔥 AJOUTER ICI
+                'statut': statut,  # 🔥 AJOUTER ICI
+                'prix_nuit': prix_nuit or None,
             })
     
     patients = sheets_helper.get_all_records('patients', use_prefix=True)
@@ -2909,12 +2917,23 @@ def actes_vente():
             if va.patient_id:
                 vente_attente['patient'] = _charger_patient_pour_finalisation(va.patient_id, structure_id)
 
+    # ⭐ Tarif nuit/férié/dimanche : le flag "actif" est calculé côté
+    # serveur (pas l'horloge du navigateur), et la bannière ne s'affiche
+    # que si CETTE structure a effectivement au moins un acte avec un
+    # prix_nuit — sinon une structure qui n'a jamais configuré ce tarif
+    # verrait une bannière chaque nuit/dimanche sans que rien ne change
+    # jamais à son prix.
+    tarif_nuit_actif = est_tarif_nuit_actif(structure_id)
+    catalogue_a_tarif_nuit = any(a.get('prix_nuit') for a in actes_filtres)
+
     return render_template('actes_vente.html',
                           actes=actes_filtres,
                           patients=patients,
                           articles_auto=articles_auto,
                           patientTaux=patient_taux,
-                          vente_attente=vente_attente)
+                          vente_attente=vente_attente,
+                          tarif_nuit_actif=tarif_nuit_actif,
+                          catalogue_a_tarif_nuit=catalogue_a_tarif_nuit)
 
 
 @app.route('/pharma_vente')
@@ -4671,6 +4690,56 @@ def admin_structure():
     return render_template('admin_structure.html',
                          users=users,
                          structure_info=structure_info)
+
+
+@app.route('/admin/jours-feries', methods=['GET', 'POST'])
+@login_required
+@roles_required('admin', 'gestionnaire')
+def admin_jours_feries():
+    """Liste des jours fériés déclarés par la structure — alimente
+    est_tarif_nuit_actif() (tarif nuit/férié/dimanche, introduit pour
+    Clinique Valeo). Une petite page par structure plutôt qu'un calendrier
+    codé en dur : les jours fériés changent chaque année, et une structure
+    peut avoir ses propres fermetures."""
+    structure_id = session.get('structure_id')
+
+    if request.method == 'POST':
+        date_str = (request.form.get('date') or '').strip()
+        libelle = (request.form.get('libelle') or '').strip()
+        if not date_str:
+            flash('Date requise', 'danger')
+            return redirect(url_for('admin_jours_feries'))
+        try:
+            date_valeur = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            flash('Date invalide', 'danger')
+            return redirect(url_for('admin_jours_feries'))
+
+        existe = JourFerie.query.filter_by(structure_id=structure_id, date=date_valeur).first()
+        if existe:
+            flash('Cette date est déjà déclarée comme jour férié', 'warning')
+        else:
+            db.session.add(JourFerie(structure_id=structure_id, date=date_valeur, libelle=libelle or None))
+            db.session.commit()
+            flash('Jour férié ajouté', 'success')
+        return redirect(url_for('admin_jours_feries'))
+
+    jours = JourFerie.query.filter_by(structure_id=structure_id).order_by(JourFerie.date).all()
+    return render_template('admin_jours_feries.html', jours=jours)
+
+
+@app.route('/admin/jours-feries/<int:jour_id>/supprimer', methods=['POST'])
+@login_required
+@roles_required('admin', 'gestionnaire')
+def admin_jours_feries_supprimer(jour_id):
+    structure_id = session.get('structure_id')
+    jour = JourFerie.query.filter_by(id=jour_id, structure_id=structure_id).first()
+    if jour:
+        db.session.delete(jour)
+        db.session.commit()
+        flash('Jour férié supprimé', 'success')
+    return redirect(url_for('admin_jours_feries'))
+
 
 @app.route('/api/admin/actes', methods=['POST'])
 @login_required
@@ -8923,6 +8992,33 @@ def _charger_patient_pour_finalisation(patient_id, structure_id):
         'assurance': p[3] or 'non_assure', 'taux': float(p[4] or 0),
         'assurance2': p[5] or '', 'taux2': float(p[6] or 0), 'societe_assurance2': p[7] or '',
     }
+
+
+def est_tarif_nuit_actif(structure_id, moment=None):
+    """Le tarif nuit/férié/dimanche s'applique-t-il MAINTENANT pour cette
+    structure ? Introduit pour Clinique Valeo (structure 13) et sa
+    convention d'assurance privée locale (radiologie/échographie à prix
+    majoré la nuit, le dimanche et les jours fériés) — générique pour
+    toute structure qui renseignerait un `prix_nuit` sur ses actes.
+
+    18h-6h, ou dimanche, ou un jour explicitement déclaré dans
+    `jours_feries` pour CETTE structure. Calculé côté serveur (jamais
+    l'horloge du navigateur) pour que le flag affiché/appliqué ne dépende
+    pas d'un PC mal réglé.
+
+    ⭐ Pas de conversion de fuseau horaire : le serveur tourne déjà à
+    l'heure du Togo (UTC, sans heure d'été) — même hypothèse que le reste
+    du fichier, qui affiche directement NOW()/datetime.utcnow() comme
+    heure locale partout (recu_le, date_vente...).
+
+    `moment` overridable (tests) — sinon `datetime.utcnow()`."""
+    from datetime import time as _time
+    moment = moment or datetime.utcnow()
+    heure = moment.time()
+    nuit_horaire = heure >= _time(18, 0) or heure < _time(6, 0)
+    dimanche = moment.weekday() == 6
+    ferie = JourFerie.query.filter_by(structure_id=structure_id, date=moment.date()).first() is not None
+    return bool(nuit_horaire or dimanche or ferie)
 
 
 def _repartition_ligne_vente_attente(article, taux_amu, taux_cac):

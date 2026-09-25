@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}Jours fériés{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3">
+            <i class="fas fa-calendar-day me-2 text-warning"></i>
+            Jours fériés de la structure
+        </h1>
+        <a href="{{ url_for('admin_structure') }}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Retour
+        </a>
+    </div>
+
+    <p class="text-muted">
+        Les dates ci-dessous déclenchent le tarif nuit/férié/dimanche
+        (majoré) sur les actes qui en ont un, en plus de la nuit (18h-6h)
+        et du dimanche, calculés automatiquement sans rien saisir ici.
+    </p>
+
+    <div class="card mb-4">
+        <div class="card-header bg-warning bg-opacity-25">
+            <i class="fas fa-plus me-2"></i>Ajouter un jour férié
+        </div>
+        <div class="card-body">
+            <form method="POST" class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label class="form-label">Date</label>
+                    <input type="date" name="date" class="form-control" required>
+                </div>
+                <div class="col">
+                    <label class="form-label">Libellé (optionnel)</label>
+                    <input type="text" name="libelle" class="form-control" placeholder="ex: Fête de l'indépendance">
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-warning">
+                        <i class="fas fa-plus me-1"></i> Ajouter
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <i class="fas fa-list me-2"></i>Liste ({{ jours|length }})
+        </div>
+        <div class="card-body p-0">
+            {% if jours %}
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Libellé</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for jour in jours %}
+                    <tr>
+                        <td>{{ jour.date.strftime('%d/%m/%Y') }}</td>
+                        <td>{{ jour.libelle or '-' }}</td>
+                        <td class="text-end">
+                            <form method="POST" action="{{ url_for('admin_jours_feries_supprimer', jour_id=jour.id) }}" onsubmit="return confirm('Supprimer ce jour férié ?');" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="alert alert-info m-3 mb-0">
+                <i class="fas fa-info-circle me-2"></i>Aucun jour férié déclaré pour l'instant.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

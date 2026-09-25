@@ -27,9 +27,26 @@
 </div>
         <!-- Message si aucun patient sélectionné -->
         <div class="alert alert-warning" id="noPatientAlert">
-            <i class="fas fa-exclamation-triangle"></i> 
+            <i class="fas fa-exclamation-triangle"></i>
             Veuillez d'abord sélectionner un patient dans la <a href="{{ url_for('patients') }}">liste des patients</a>
         </div>
+
+        {% if tarif_nuit_actif and catalogue_a_tarif_nuit %}
+        <!-- ⭐ Tarif nuit/férié/dimanche (introduit pour Clinique Valeo,
+        structure 13) — n'apparaît que si LA structure a au moins un acte
+        avec un prix_nuit, sinon une structure sans ce tarif verrait cette
+        bannière chaque nuit/dimanche pour rien. Le prix appliqué au
+        panier bascule automatiquement (voir ajouterActe() plus bas) : ce
+        n'est qu'un rappel visuel de pourquoi le prix a changé. -->
+        <div class="alert alert-warning">
+            <i class="fas fa-moon"></i>
+            Tarif nuit / férié / dimanche actif — les actes concernés sont
+            facturés à leur tarif majoré automatiquement.
+            {% if session.role in ['admin', 'gestionnaire'] %}
+            <a href="{{ url_for('admin_jours_feries') }}" class="alert-link">Gérer les jours fériés</a>
+            {% endif %}
+        </div>
+        {% endif %}
 
         <div class="card mt-3">
             <div class="card-header bg-primary text-white">
@@ -62,9 +79,10 @@
     <select class="form-control" id="acteSelect" size="8">
         <option value="">-- Choisir un acte --</option>
         {% for acte in actes %}
-        <option value="{{ acte.ID }}" 
-                data-prix="{{ acte.prix }}" 
+        <option value="{{ acte.ID }}"
+                data-prix="{{ acte.prix }}"
                 data-pbr="{{ acte.pbr or acte.prix }}"
+                data-prix-nuit="{{ acte.prix_nuit or '' }}"
                 data-nom="{{ acte.nom }}"
                 data-statut="{{ acte.statut or 'direct' }}"
                 data-prise-en-charge-amu="{{ 'true' if acte.prise_en_charge_amu else 'false' }}"
@@ -73,6 +91,7 @@
                 data-commentaire-cac="{{ acte.commentaire_cac|default('') }}"
                 data-prise-en-charge-amu-tns="{{ 'true' if acte.prise_en_charge_amu_tns else 'false' }}">
             {{ acte.nom }} - {{ acte.prix }} FCFA
+            {% if tarif_nuit_actif and acte.prix_nuit %}(nuit: {{ acte.prix_nuit }} FCFA){% endif %}
             {% if acte.pbr %}(PBR: {{ acte.pbr }} FCFA){% endif %}
             {% if acte.prise_en_charge_amu == false and acte.prise_en_charge_cac == false %}
                 🚫 NON PRIS EN CHARGE (AMU & CAC)
@@ -482,6 +501,11 @@
 // ============================================
 // VARIABLES GLOBALES
 // ============================================
+// ⭐ Tarif nuit/férié/dimanche — calculé côté serveur (jamais l'horloge du
+// navigateur), voir est_tarif_nuit_actif() (app.py) et actes_vente().
+// Utilisé uniquement dans ajouterActe() pour choisir data-prix-nuit à la
+// place de data-prix ; le reste du panier réutilise item.prix tel quel.
+const TARIF_NUIT_ACTIF = {{ 'true' if tarif_nuit_actif else 'false' }};
 let tauxTvaActuel = 18;
 let panier = [];
 let patientId = null;
@@ -862,6 +886,24 @@ function ajouterActe() {
     let acteNom = selectedOption.getAttribute('data-nom');
     let actePrix = parseFloat(selectedOption.getAttribute('data-prix'));
     let actePBR = parseFloat(selectedOption.getAttribute('data-pbr')) || actePrix;
+
+    // ⭐ Tarif nuit/férié/dimanche (Clinique Valeo) : bascule le prix si le
+    // flag serveur est actif ET que CET acte a un prix nuit renseigné —
+    // sans quoi (tout le reste du catalogue) actePrix reste inchangé. Le
+    // PBR ne change pas nuit/jour (confirmé sur les barèmes fournis), donc
+    // pas de "PBR nuit" séparé. Seul point d'injection nécessaire : le
+    // reste du panier (afficherPanier/calculerTotal/finaliserVente)
+    // réutilise item.prix sans jamais relire le DOM.
+    let acteEnTarifNuit = false;
+    if (TARIF_NUIT_ACTIF) {
+        const prixNuitRaw = selectedOption.getAttribute('data-prix-nuit');
+        const prixNuit = prixNuitRaw ? parseFloat(prixNuitRaw) : 0;
+        if (prixNuit > 0) {
+            actePrix = prixNuit;
+            acteEnTarifNuit = true;
+            showToastActes(`🌙 Tarif nuit appliqué pour "${acteNom}" : ${prixNuit} FCFA`, 'info');
+        }
+    }
 
     // ⭐ Lu tôt pour la résolution AMU-TNS ci-dessous (déclaré à nouveau,
     // sans réaffectation, plus bas où le reste de la logique CAC en a besoin)
