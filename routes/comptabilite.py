@@ -3423,7 +3423,13 @@ def api_regler_achat_fournisseur(achat_id):
     user_name = session.get('user_name', 'System')
     data = request.json or {}
 
-    achat = AchatFournisseur.query.filter_by(id=achat_id, structure_id=structure_id).first()
+    # ⭐⭐ SÉCURITÉ : with_for_update() verrouille la ligne jusqu'au commit
+    # de cette requête — sans ça, deux règlements très rapprochés sur le
+    # même achat (double-clic, ou deux personnes en même temps) lisaient
+    # tous les deux le même reste_a_payer avant que l'un des deux
+    # n'écrive, passant chacun la vérification de montant alors que le
+    # total des deux dépassait ce qui était réellement dû.
+    achat = AchatFournisseur.query.filter_by(id=achat_id, structure_id=structure_id).with_for_update().first()
     if not achat:
         return jsonify({'error': 'Achat non trouvé'}), 404
 

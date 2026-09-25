@@ -11783,7 +11783,12 @@ def api_payer_ristourne(periode_id):
         return jsonify({'success': False, 'error': 'Accès non autorisé pour votre rôle.'}), 403
     try:
         structure_id = session.get('structure_id')
-        periode = PeriodeRistourne.query.filter_by(id=periode_id, structure_id=structure_id).first()
+        # ⭐⭐ SÉCURITÉ : with_for_update() — sans ça, un double-clic sur
+        # "Payer" pouvait faire passer les DEUX requêtes devant la
+        # vérification periode.statut == 'validee' (toutes les deux lisent
+        # 'validee' avant que la première n'ait eu le temps d'écrire),
+        # créant deux dépenses/écritures pour la même ristourne.
+        periode = PeriodeRistourne.query.filter_by(id=periode_id, structure_id=structure_id).with_for_update().first()
         if not periode:
             return jsonify({'success': False, 'error': 'Introuvable'}), 404
         if periode.statut != 'validee':
@@ -18001,19 +18006,29 @@ def api_enregistrer_paiement(facture_id):
         
         if montant <= 0:
             return jsonify({'success': False, 'error': 'Montant invalide'}), 400
-        
-        # Récupérer la facture
+
+        # ⭐⭐ SÉCURITÉ : FOR UPDATE verrouille la ligne jusqu'à la fin de la
+        # transaction (auto-commit en fin de requête, voir
+        # auto_commit_after_request) — sans ça, deux clics rapides ou deux
+        # caissiers réglant la même facture en même temps lisaient tous
+        # les deux le MÊME reste_a_payer avant que l'un des deux
+        # n'écrive, passant chacun la vérification "montant <=
+        # reste_actuel" alors que le total des deux paiements pouvait le
+        # dépasser (reste_a_payer négatif, facture sur-payée). La seconde
+        # requête attend maintenant que la première ait fini, puis relit
+        # un reste_a_payer déjà à jour.
         facture = db.execute_query("""
-            SELECT * FROM factures 
+            SELECT * FROM factures
             WHERE id = %s AND structure_id = %s
+            FOR UPDATE
         """, (facture_id, structure_id))
-        
+
         if not facture:
             return jsonify({'success': False, 'error': 'Facture non trouvée'}), 404
-        
+
         f = facture[0]
         reste_actuel = float(f.get('reste_a_payer') or 0)
-        
+
         if montant > reste_actuel:
             return jsonify({
                 'success': False, 
