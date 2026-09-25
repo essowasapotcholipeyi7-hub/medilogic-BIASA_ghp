@@ -246,7 +246,11 @@
             setTimeout(function() {
                 window.print();
                 setTimeout(function() {
-                    window.close();
+                    // ⭐ Renfort défensif (cohérence avec les autres pages
+                    // d'impression de l'appli) : window.close() est refusé
+                    // silencieusement par le navigateur si cette page n'a
+                    // pas été ouverte via window.open().
+                    try { window.close(); } catch (e) {}
                 }, 600);
             }, 500);
         };

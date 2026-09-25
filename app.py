@@ -3458,9 +3458,14 @@ def admin_global():
                             guide_pdf_autorisations=guide_pdf_autorisations,
                             faq_en_attente_count=faq_en_attente_count)
 
-@app.route('/admin/activate/<int:structure_id>')
+@app.route('/admin/activate/<int:structure_id>', methods=['POST'])
 def activate_structure(structure_id):
-    """Activer une structure"""
+    """Activer une structure. ⭐⭐ SÉCURITÉ : était en GET (comme
+    suspend/delete/toggle-guide-pdf ci-dessous) — un lien/image forgé
+    ailleurs (CSRF) pouvait déclencher cette action destructive tant
+    qu'un super_admin avait une session active, sans aucune action
+    volontaire de sa part. Passé en POST (formulaire JS, voir
+    postAction() dans admin_global.html)."""
     if 'super_admin' not in session:
         return redirect(url_for('admin_login'))
     try:
@@ -3520,7 +3525,7 @@ def admin_reset_password(structure_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/admin/suspend/<int:structure_id>')
+@app.route('/admin/suspend/<int:structure_id>', methods=['POST'])
 def suspend_structure(structure_id):
     """Suspendre une structure"""
     if 'super_admin' not in session:
@@ -3550,7 +3555,7 @@ def suspend_structure(structure_id):
 
     return redirect(url_for('admin_global'))
 
-@app.route('/admin/guide-pdf-autorisation/<int:structure_id>/toggle')
+@app.route('/admin/guide-pdf-autorisation/<int:structure_id>/toggle', methods=['POST'])
 def toggle_guide_pdf_autorisation(structure_id):
     """Autorise/retire la possibilité de télécharger le guide en PDF pour
     UNE structure précise — décision du SUPERADMIN uniquement, jamais de
@@ -3582,7 +3587,7 @@ def toggle_guide_pdf_autorisation(structure_id):
         flash(f'Erreur: {str(e)}', 'danger')
     return redirect(url_for('admin_global'))
 
-@app.route('/admin/delete/<int:structure_id>')
+@app.route('/admin/delete/<int:structure_id>', methods=['POST'])
 def delete_structure(structure_id):
     """Supprimer une structure"""
     if 'super_admin' not in session:
@@ -3609,19 +3614,19 @@ def logout():
     flash('Déconnecté', 'info')
     return redirect(url_for('index'))
 
-@app.route('/test_sheets')
-def test_sheets():
-    try:
-        structures = sheets_helper.get_all_records('structures', use_prefix=False)
-        return jsonify({"status": "success", "count": len(structures), "data": structures})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)})
-
 @app.route('/api/structures/disponibles', methods=['GET'])
 def get_structures_disponibles():
     """Retourne la liste des structures disponibles"""
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
-    disponibles = [s for s in structures if s.get('statut') == 'disponible']
+    # ⭐⭐ SÉCURITÉ : ne JAMAIS renvoyer la ligne brute — elle contient
+    # mot_de_passe (voir sheets_helper.py, en-têtes de la feuille
+    # "structures"). Route accessible sans connexion (pas de
+    # @login_required), donc uniquement les champs strictement
+    # nécessaires à l'affichage d'une liste publique de structures.
+    disponibles = [
+        {'ID': s.get('ID'), 'nom': s.get('nom'), 'statut': s.get('statut')}
+        for s in structures if s.get('statut') == 'disponible'
+    ]
     return jsonify(disponibles)
 
 @app.route('/recu/<int:vente_id>/<string:type>')
@@ -11765,6 +11770,17 @@ def api_payer_ristourne(periode_id):
     'si c'est par Tmoney ou Moov money etc pour enregistrer la paie on
     met les références obligatoire ref date / si c'est en espèce on met
     la date'."""
+    # ⭐⭐ SÉCURITÉ : cette route déclenche une vraie sortie de caisse mais
+    # n'avait AUCUN contrôle de rôle (juste @login_required) — n'importe
+    # quel utilisateur connecté de la structure (médecin, laborantin...)
+    # pouvait payer une ristourne, alors que la page qui affiche le
+    # bouton "Payer" (page_ristournes ci-dessus) est réservée à
+    # admin/secretaire/caissier (ou permission patients_externes). On
+    # applique ici le même contrôle, pas @admin_required : le paiement
+    # est normalement exécuté par le/la caissier(ère) ou secrétaire une
+    # fois la ristourne validée par un admin, pas réservé à l'admin seul.
+    if session.get('role') not in ('admin', 'secretaire', 'caissier') and not a_acces('patients_externes'):
+        return jsonify({'success': False, 'error': 'Accès non autorisé pour votre rôle.'}), 403
     try:
         structure_id = session.get('structure_id')
         periode = PeriodeRistourne.query.filter_by(id=periode_id, structure_id=structure_id).first()
@@ -13232,113 +13248,6 @@ def api_add_facture_assurance():
         print(f"Erreur: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-
-@app.route('/api/assurances/factures/<int:facture_id>/paiement', methods=['POST'])
-@login_required
-def api_paiement_assurance(facture_id):
-    if not a_acces('statistiques'):
-        return jsonify({'success': False, 'error': 'Non autorise'}), 403
-    
-    try:
-        data = request.json
-        structure_id = session.get('structure_id')
-        montant = float(data.get('montant') or 0)
-        date_remboursement = data.get('date_remboursement')
-
-        # ⭐ Pièces justificatives obligatoires (traçabilité de l'encaissement)
-        numero_reference_versement = (data.get('numero_reference_versement') or '').strip()
-        date_versement = data.get('date_versement')
-        if not numero_reference_versement or not date_versement:
-            return jsonify({'success': False, 'error': "Le numéro de référence du versement et la date de versement sont obligatoires pour tracer l'encaissement."}), 400
-
-        # Recuperer la facture
-        facture = db.execute_query("""
-            SELECT * FROM factures_assurance
-            WHERE id = %s AND structure_id = %s
-        """, (facture_id, structure_id))
-
-        if not facture:
-            return jsonify({'success': False, 'error': 'Facture non trouvee'}), 404
-
-        f = facture[0]
-        deja_rembourse = float(f.get('montant_rembourse') or 0)
-        nouveau_rembourse = deja_rembourse + montant
-        total_facture = float(f.get('montant_facture') or 0)
-
-        if nouveau_rembourse > total_facture:
-            return jsonify({'success': False, 'error': 'Montant depasse le solde restant'}), 400
-
-        if nouveau_rembourse >= total_facture:
-            statut = 'payee'
-        else:
-            statut = 'partielle'
-
-        # Mettre a jour la facture
-        db.execute_query("""
-            UPDATE factures_assurance
-            SET montant_rembourse = %s,
-                statut = %s,
-                date_remboursement = %s,
-                numero_reference_versement = %s,
-                date_versement = %s
-            WHERE id = %s AND structure_id = %s
-        """, (nouveau_rembourse, statut, date_remboursement,
-              numero_reference_versement, date_versement, facture_id, structure_id))
-        
-        # Ajouter a la caisse (recette)
-        db.execute_query("""
-            INSERT INTO recettes (structure_id, montant, source, description, created_by_nom)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (structure_id, montant, 'assurance', f'Remboursement assurance facture #{facture_id} - {f.get("patient_nom")}', session.get('user_name', 'Admin')))
-        
-        # Mettre a jour le solde de caisse
-        db.execute_query("""
-            INSERT INTO caisse (structure_id, solde_actuel, date_mise_a_jour)
-            VALUES (%s, 
-                (SELECT COALESCE(SUM(montant), 0) FROM recettes WHERE structure_id = %s) -
-                (SELECT COALESCE(SUM(montant), 0) FROM depenses WHERE structure_id = %s),
-                NOW())
-            ON CONFLICT (structure_id) DO UPDATE SET
-                solde_actuel = EXCLUDED.solde_actuel,
-                date_mise_a_jour = NOW()
-        """, (structure_id, structure_id, structure_id))
-
-        # ⭐⭐⭐ COMPTABILISATION AUTOMATIQUE : extinction de la créance assurance ⭐⭐⭐
-        try:
-            from services.comptabilite_service import generer_ecriture_remboursement_assurance
-            ecriture_ass = generer_ecriture_remboursement_assurance(
-                montant=montant,
-                assurance_nom=f.get('assurance'),
-                structure_id=structure_id,
-                reference=f"Facture assurance #{facture_id} - {f.get('patient_nom')}",
-                source_id=facture_id,
-                user_nom=session.get('user_name', 'Admin'),
-                numero_reference_versement=numero_reference_versement,
-                date_versement=date_versement,
-            )
-            if ecriture_ass:
-                print(f"🧾 Écriture comptable #{ecriture_ass.id} générée pour le remboursement assurance #{facture_id}")
-        except Exception as e:
-            print(f"⚠️ Erreur génération écriture comptable (remboursement assurance #{facture_id} conservé): {e}")
-
-        # ⭐ JOURNAL D'ACTIVITÉ
-        try:
-            from services.journal_service import JournalService
-            JournalService.creer_mouvement(
-                structure_id=structure_id, categorie='paiement_assurance',
-                description=f"Remboursement assurance {f.get('assurance')} — facture #{facture_id}",
-                montant=montant, type_montant='credit',
-                reference_type='facture_assurance', reference_id=facture_id,
-                utilisateur_nom=session.get('user_name', 'Admin'),
-            )
-        except Exception as e:
-            print(f"⚠️ Erreur journal d'activité (remboursement assurance #{facture_id}): {e}")
-
-        return jsonify({'success': True, 'message': 'Paiement enregistre'})
-
-    except Exception as e:
-        print(f"Erreur: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/assurances/generer_factures', methods=['POST'])
 @login_required

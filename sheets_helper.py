@@ -9,6 +9,7 @@ import sys
 import base64
 import unicodedata
 from functools import lru_cache
+import threading
 from threading import Timer
 from datetime import datetime
 
@@ -59,8 +60,23 @@ def get_credentials_info():
 class SheetsHelper:
     def __init__(self):
         self.scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        self.structure_prefix = None
-        self.structure_id = None
+        # ⭐⭐ SÉCURITÉ : structure_id/structure_prefix étaient de simples
+        # attributs d'instance sur ce singleton (une seule instance de
+        # SheetsHelper pour tout le process) alors que login_required
+        # appelle set_structure(session['structure_id']) à CHAQUE requête
+        # (app.py). Sous un worker avec plusieurs threads/greenlets
+        # (gthread/gevent — pas le sync worker par défaut, mais une
+        # config plausible), deux requêtes de DEUX STRUCTURES DIFFÉRENTES
+        # en vol en même temps pouvaient s'entrelacer sur un appel I/O
+        # (Google Sheets) : la requête A lit alors les données de la
+        # structure B (fuite de patients/produits/utilisateurs entre
+        # cliniques), sans qu'aucun filtre structure_id habituel des
+        # routes ne s'applique ici — le contournait entièrement. Passé en
+        # threading.local() : chaque thread/greenlet a désormais sa
+        # PROPRE valeur, aucun autre appel du code n'a besoin de changer
+        # (self.structure_id / self.structure_prefix se lisent et
+        # s'écrivent exactement comme avant).
+        self._local = threading.local()
         self._prix_cache = {}  # ⭐ Cache pour les prix
         self._prix_cache_duration = 300  # 5 minutes
 
@@ -95,7 +111,22 @@ class SheetsHelper:
         except Exception as e:
             print(f"⚠️ Erreur: {e}")
             raise e
-    
+
+    @property
+    def structure_id(self):
+        return getattr(self._local, 'structure_id', None)
+
+    @structure_id.setter
+    def structure_id(self, value):
+        self._local.structure_id = value
+
+    @property
+    def structure_prefix(self):
+        return getattr(self._local, 'structure_prefix', None)
+
+    @structure_prefix.setter
+    def structure_prefix(self, value):
+        self._local.structure_prefix = value
 
     def init_structures_sheet(self):
         """Crée la feuille structures si elle n'existe pas"""
@@ -289,10 +320,22 @@ class SheetsHelper:
         print("🧹 Cache des prix vidé")
 
     def get_user_by_id(self, user_id, structure_id):
-        """Récupère un utilisateur par son ID depuis Google Sheets"""
+        """Récupère un utilisateur par son ID depuis Google Sheets.
+        ⭐ Construit le nom de la feuille directement depuis `structure_id`
+        (paramètre explicite) plutôt que via get_all_records('users',
+        use_prefix=True), qui dépend de self.structure_prefix — état
+        PARTAGÉ sur l'instance unique sheets_helper, qui peut avoir
+        changé entre-temps si une requête concurrente pour une AUTRE
+        structure l'a modifié (même risque déjà documenté/corrigé pour
+        /api/actes/disponibles, voir app.py). Sans ce correctif, le nom
+        retourné pouvait être celui d'un utilisateur d'une autre
+        structure partageant le même ID — patron vécu côté GHP : "je me
+        connecté sous un nom et fait un protocole... ça prend le nom
+        d'une autre personne" (même bug, jamais porté ici)."""
         try:
-            records = self.get_all_records('users', use_prefix=True)
-            
+            sheet_name = f"struct_{structure_id}_users"
+            records = self.get_all_records(sheet_name, use_prefix=False)
+
             for record in records:
                 if str(record.get('ID')) == str(user_id):
                     nom = record.get('nom', '')

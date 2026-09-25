@@ -79,15 +79,15 @@
                         <td>
                             <div class="btn-group btn-group-sm" role="group">
                                 {% if structure.statut == 'pending' %}
-                                <a href="{{ url_for('activate_structure', structure_id=structure.ID) }}" class="btn btn-sm btn-success" title="Activer">
+                                <a href="#" onclick="postAction('{{ url_for('activate_structure', structure_id=structure.ID) }}'); return false;" class="btn btn-sm btn-success" title="Activer">
                                     <i class="fas fa-check"></i>
                                 </a>
                                 {% elif structure.statut == 'active' %}
-                                <a href="{{ url_for('suspend_structure', structure_id=structure.ID) }}" class="btn btn-sm btn-warning" title="Suspendre">
+                                <a href="#" onclick="postAction('{{ url_for('suspend_structure', structure_id=structure.ID) }}'); return false;" class="btn btn-sm btn-warning" title="Suspendre">
                                     <i class="fas fa-pause"></i>
                                 </a>
                                 {% elif structure.statut == 'suspended' %}
-                                <a href="{{ url_for('activate_structure', structure_id=structure.ID) }}" class="btn btn-sm btn-success" title="Réactiver">
+                                <a href="#" onclick="postAction('{{ url_for('activate_structure', structure_id=structure.ID) }}'); return false;" class="btn btn-sm btn-success" title="Réactiver">
                                     <i class="fas fa-play"></i>
                                 </a>
                                 {% endif %}
@@ -111,7 +111,7 @@
                                      défaut pour toute structure, décision du superadmin uniquement
                                      (voir toggle_guide_pdf_autorisation, app.py). -->
                                 {% set pdf_autorise = guide_pdf_autorisations.get(structure.ID|int, False) %}
-                                <a href="{{ url_for('toggle_guide_pdf_autorisation', structure_id=structure.ID) }}"
+                                <a href="#" onclick="postAction('{{ url_for('toggle_guide_pdf_autorisation', structure_id=structure.ID) }}'); return false;"
                                    class="btn btn-sm {{ 'btn-success' if pdf_autorise else 'btn-outline-secondary' }}"
                                    title="{{ 'Téléchargement du guide PDF autorisé — cliquer pour désactiver' if pdf_autorise else 'Téléchargement du guide PDF désactivé — cliquer pour autoriser' }}">
                                     <i class="fas fa-file-pdf"></i>{% if pdf_autorise %} <i class="fas fa-check"></i>{% endif %}
@@ -465,8 +465,21 @@ function resetPassword() {
 
 function confirmDelete(id) {
     if(confirm('Êtes-vous sûr de vouloir supprimer cette structure ? Cette action est irréversible.')) {
-        window.location.href = '/admin/delete/' + id;
+        postAction('/admin/delete/' + id);
     }
+}
+
+// ⭐ Ces actions (activer/suspendre/supprimer une structure, autoriser le
+// guide PDF) sont maintenant en POST côté serveur (protection CSRF — un
+// simple lien GET pouvait être déclenché depuis n'importe quelle page
+// pendant qu'un super_admin était connecté). Un lien classique ne peut
+// pas faire de POST : on soumet un formulaire créé à la volée à la place.
+function postAction(url) {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = url;
+    document.body.appendChild(form);
+    form.submit();
 }
 </script>
 {% endblock %}
