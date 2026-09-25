@@ -1,16 +1,38 @@
 # routes/statistiques.py
-from flask import Blueprint, render_template, request, jsonify, session
+from flask import Blueprint, render_template, request, jsonify, session, flash, redirect, url_for
 from datetime import datetime, timedelta, date
 from collections import defaultdict
 from sqlalchemy import or_, func, and_
 import json
 from utils.categorisation import categoriser_acte
 from utils.nombres_lettres import montant_en_lettres_fcfa
+from utils.permissions import a_acces
 from sheets_helper import sheets_helper
 
 from models import db, Vente, Patient, Structure
 
 statistiques_bp = Blueprint('statistiques', __name__, url_prefix='/api/statistiques')
+
+
+# ⭐⭐ SÉCURITÉ : ce blueprint n'avait AUCUNE protection (ni connexion, ni
+# rôle) — même trou déjà trouvé et corrigé sur compta_bp (voir
+# routes/comptabilite.py, commentaire identique) mais jamais porté ici.
+# N'importe quel compte avec un rôle sans rapport (caissier, infirmier...)
+# pouvait appeler directement ces routes et obtenir le chiffre d'affaires,
+# le détail des factures d'assurance, etc. de toute la structure.
+@statistiques_bp.before_request
+def _verifier_role_statistiques():
+    chemin_api = request.path.startswith('/api/statistiques/')
+    if 'user_id' not in session:
+        if chemin_api:
+            return jsonify({'error': 'Non autorisé'}), 401
+        flash('Veuillez vous connecter', 'warning')
+        return redirect(url_for('index'))
+    if not a_acces('statistiques'):
+        if chemin_api:
+            return jsonify({'error': 'Accès non autorisé pour votre rôle'}), 403
+        flash("Accès non autorisé pour votre rôle.", 'danger')
+        return redirect(url_for('dashboard'))
 
 
 def _get_structure_info(structure_id):

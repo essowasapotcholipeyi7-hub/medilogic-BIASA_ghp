@@ -1674,7 +1674,12 @@ def api_payer_paie(structure_id, paie_id):
         return jsonify({'success': False, 'error': 'Non autorisé'}), 403
     try:
         from services.paie_service import marquer_paie_payee
-        paie = Paie.query.filter_by(id=paie_id, structure_id=structure_id).first()
+        # ⭐⭐ SÉCURITÉ : with_for_update() — sans ça, un double-clic sur
+        # "Payer" pouvait faire passer les deux requêtes devant la
+        # vérification paie.statut == 'payee' (marquer_paie_payee) avant
+        # que l'une des deux n'écrive, créant deux Dépenses (double
+        # paiement du même salaire dans la caisse/comptabilité).
+        paie = Paie.query.filter_by(id=paie_id, structure_id=structure_id).with_for_update().first()
         if not paie:
             return jsonify({'success': False, 'error': 'Paie non trouvée'}), 404
 

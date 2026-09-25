@@ -7623,6 +7623,29 @@ def _decrementer_stock_produit(worksheet, produit_id, quantite_vendue, produit_n
     la vente elle-même était déjà encaissée. Retourne (succès, message
     d'erreur ou None)."""
     try:
+        # ⭐⭐ SÉCURITÉ : verrou consultatif Postgres (pg_advisory_xact_lock)
+        # AVANT de lire le stock — Google Sheets n'a aucun mécanisme de
+        # verrouillage de ligne natif (contrairement aux tables Postgres,
+        # voir FOR UPDATE ailleurs dans ce fichier), donc deux ventes
+        # quasi simultanées du MÊME produit (double-clic, ou deux
+        # caissiers) lisaient toutes les deux le même stock_actuel avant
+        # que l'une des deux n'écrive — la seconde écrasait le
+        # décrément de la première (vente perdue), pouvant survendre du
+        # stock sans que rien ne le détecte. Un verrou Python
+        # (threading.Lock) n'aurait protégé qu'un seul processus ; celui-ci,
+        # posé côté Postgres (auto-relâché à la fin de la transaction,
+        # voir auto_commit_after_request), fonctionne même avec plusieurs
+        # workers/processus. Clé = (structure_id, produit_id) hashés sur
+        # 2 entiers 32 bits, seule signature acceptée par
+        # pg_advisory_xact_lock(int, int).
+        try:
+            db.session.execute(
+                text("SELECT pg_advisory_xact_lock(:s, :p)"),
+                {"s": int(structure_id) % 2147483647, "p": int(produit_id) % 2147483647},
+            )
+        except Exception as e_lock:
+            print(f"   ⚠️ Verrou stock indisponible pour {produit_nom} (on continue quand même) : {e_lock}")
+
         cell = worksheet.find(produit_id, in_column=1)
         if not cell:
             msg = f"produit ID {produit_id} ({produit_nom}) introuvable dans le stock"
@@ -14658,12 +14681,19 @@ def api_convertir_proforma():
         if not proforma_id:
             return jsonify({'success': False, 'error': 'ID proforma manquant'}), 400
         
-        # Vérifier que la proforma existe
+        # ⭐⭐ SÉCURITÉ : FOR UPDATE — sans ça, deux clics rapprochés sur
+        # "Convertir en vente" (ou deux personnes en même temps) passaient
+        # tous les deux devant "statut IN ('en_attente','accepte')" avant
+        # que l'une des deux n'écrive, créant DEUX ventes distinctes à
+        # partir de la même proforma (double comptabilisation du revenu,
+        # double reçu imprimable, double créance si impayé). La deuxième
+        # requête attend maintenant la première puis relit un statut à jour.
         proforma = db.execute_query("""
-            SELECT * FROM proformas 
+            SELECT * FROM proformas
             WHERE id = %s AND structure_id = %s AND statut IN ('en_attente', 'accepte')
+            FOR UPDATE
         """, (proforma_id, structure_id))
-        
+
         if not proforma:
             return jsonify({'success': False, 'error': 'Proforma non trouvée ou déjà convertie'}), 404
         
@@ -15477,7 +15507,13 @@ def api_creer_hospitalisation():
         chambre_service = data.get('chambre_service', '')
         lit = None
         if lit_id:
-            lit = LitHospitalisation.query.filter_by(id=lit_id, structure_id=structure_id, actif=True).first()
+            # ⭐⭐ SÉCURITÉ : with_for_update() — sans ça, deux admissions
+            # lancées en même temps sur le MÊME lit libre lisaient toutes
+            # les deux statut='libre' avant que l'une des deux n'écrive
+            # 'occupe', créant deux hospitalisations actives sur un seul
+            # lit (occupant réel ambigu). La seconde requête attend
+            # maintenant la première puis relit un statut à jour.
+            lit = LitHospitalisation.query.filter_by(id=lit_id, structure_id=structure_id, actif=True).with_for_update().first()
             if not lit:
                 return jsonify({'success': False, 'error': 'Lit introuvable'}), 404
             if lit.statut == 'occupe':
@@ -15894,11 +15930,18 @@ def api_sortie_hospitalisation(hospit_id):
         structure_id = session.get('structure_id')
         user_name = session.get('user_name', 'System')
         data = request.json or {}
-        hospit = Hospitalisation.query.filter_by(id=hospit_id, structure_id=structure_id).first()
+        # ⭐⭐ SÉCURITÉ : with_for_update() + garde élargie à 'sortie' (pas
+        # seulement 'facturee') — sans ça, deux clics rapprochés sur
+        # "Enregistrer la sortie" passaient tous les deux devant la
+        # vérification (le séjour était encore 'en_cours' pour les deux),
+        # chacun insérant sa propre ligne de charge de chambre
+        # (SoinHospitalisation, jamais idempotent) et libérant le même lit
+        # deux fois — facture finale gonflée par une ligne en double.
+        hospit = Hospitalisation.query.filter_by(id=hospit_id, structure_id=structure_id).with_for_update().first()
         if not hospit:
             return jsonify({'success': False, 'error': 'Séjour introuvable'}), 404
-        if hospit.statut == 'facturee':
-            return jsonify({'success': False, 'error': 'Séjour déjà facturé'}), 400
+        if hospit.statut in ('facturee', 'sortie'):
+            return jsonify({'success': False, 'error': 'La sortie a déjà été enregistrée pour ce séjour'}), 400
 
         date_sortie_str = data.get('date_sortie')
         try:
@@ -15986,7 +16029,12 @@ def api_facturer_hospitalisation(hospit_id):
         structure_id = session.get('structure_id')
         user_name = session.get('user_name', 'System')
 
-        hospit = Hospitalisation.query.filter_by(id=hospit_id, structure_id=structure_id).first()
+        # ⭐⭐ SÉCURITÉ : with_for_update() — sans ça, un double-clic sur
+        # "Facturer" (ou deux onglets) pouvait faire passer les deux
+        # requêtes devant "statut == 'facturee'" avant que l'une des deux
+        # n'écrive, générant deux proformas (donc potentiellement deux
+        # ventes) pour le même séjour.
+        hospit = Hospitalisation.query.filter_by(id=hospit_id, structure_id=structure_id).with_for_update().first()
         if not hospit:
             return jsonify({'success': False, 'error': 'Séjour introuvable'}), 404
         if hospit.statut == 'facturee':
@@ -16531,7 +16579,9 @@ def api_facturer_soins_ambulatoires(episode_id):
         structure_id = session.get('structure_id')
         user_name = session.get('user_name', 'System')
 
-        episode = SoinsAmbulatoires.query.filter_by(id=episode_id, structure_id=structure_id).first()
+        # ⭐⭐ SÉCURITÉ : with_for_update() — même correctif que
+        # api_facturer_hospitalisation (double-clic = double facturation).
+        episode = SoinsAmbulatoires.query.filter_by(id=episode_id, structure_id=structure_id).with_for_update().first()
         if not episode:
             return jsonify({'success': False, 'error': 'Épisode introuvable'}), 404
         if episode.statut == 'facturee':
@@ -17733,17 +17783,31 @@ def api_creer_facture_from_vente(vente_id):
         
         date_echeance = data.get('date_echeance')
         mode_paiement = data.get('mode_paiement', 'especes')
-        
-        # Récupérer la vente
+
+        # ⭐⭐ SÉCURITÉ : FOR UPDATE sur la vente + vérification qu'aucune
+        # facture n'existe déjà pour elle — avant ce correctif, l'INSERT
+        # ne renseignait même pas vente_id (colonne pourtant présente sur
+        # le modèle Facture, jamais remplie ici), donc rien ne permettait
+        # de détecter un doublon : un double-clic sur "Générer facture"
+        # (ou un retour arrière + nouvelle soumission) créait DEUX
+        # factures indépendantes pour la même vente, chacune réclamable
+        # séparément — risque réel de faire payer le patient deux fois.
         vente = db.execute_query("""
-            SELECT * FROM ventes 
+            SELECT * FROM ventes
             WHERE id = %s AND structure_id = %s
+            FOR UPDATE
         """, (vente_id, structure_id))
-        
+
         if not vente:
             return jsonify({'success': False, 'error': 'Vente non trouvée'}), 404
-        
+
         v = vente[0]
+
+        facture_existante = db.execute_query("""
+            SELECT id FROM factures WHERE vente_id = %s AND structure_id = %s
+        """, (vente_id, structure_id))
+        if facture_existante:
+            return jsonify({'success': False, 'error': 'Une facture existe déjà pour cette vente', 'facture_id': facture_existante[0]['id']}), 400
         
         # Générer le numéro de facture
         numero = db.execute_query("""
@@ -17788,6 +17852,9 @@ def api_creer_facture_from_vente(vente_id):
         statut_initial = 'payee' if reste_a_payer_initial <= 0 else ('partielle' if montant_deja_encaisse > 0 else 'en_attente')
 
         # Créer la facture
+        # ⭐ vente_id renseigné (colonne présente sur le modèle mais jamais
+        # remplie ici avant ce correctif) — permet au garde-fou anti-
+        # doublon ci-dessus de fonctionner pour les prochaines tentatives.
         result = db.execute_query("""
             INSERT INTO factures (
                 structure_id, patient_id, patient_nom, patient_telephone,
@@ -17795,9 +17862,9 @@ def api_creer_facture_from_vente(vente_id):
                 sous_total, taux_assurance, prise_en_charge,
                 taux_assurance2, prise_en_charge2,
                 net_a_payer, montant_paye, reste_a_payer, statut,
-                articles, mode_paiement, notes, created_by
+                articles, mode_paiement, notes, created_by, vente_id
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             structure_id,
@@ -17819,7 +17886,8 @@ def api_creer_facture_from_vente(vente_id):
             json.dumps(articles, ensure_ascii=False),
             mode_paiement,
             data.get('notes', 'Facture issue de la vente #' + str(vente_id)),
-            user_name
+            user_name,
+            vente_id,
         ))
         
         facture_id = result[0]['id']
@@ -18143,17 +18211,24 @@ def api_annuler_facture(facture_id):
         
         structure_id = session.get('structure_id')
         motif = request.json.get('motif', 'Annulation manuelle')
-        
-        # Vérifier que la facture existe
+
+        # ⭐⭐ SÉCURITÉ : FOR UPDATE + garde "déjà annulée" — sans ça, cliquer
+        # deux fois sur "Annuler" (ou un double-clic) rejouait
+        # generer_ecriture_annulation_facture avec le MÊME reste_a_payer
+        # (jamais remis à 0 sur la ligne), créant une deuxième écriture
+        # comptable d'abandon de créance pour la même facture.
         facture = db.execute_query("""
-            SELECT * FROM factures 
+            SELECT * FROM factures
             WHERE id = %s AND structure_id = %s
+            FOR UPDATE
         """, (facture_id, structure_id))
-        
+
         if not facture:
             return jsonify({'success': False, 'error': 'Facture non trouvée'}), 404
-        
+
         f = facture[0]
+        if f.get('statut') == 'annulee':
+            return jsonify({'success': False, 'error': 'Cette facture est déjà annulée'}), 400
         reste_a_payer = float(f.get('reste_a_payer', 0) or 0)
 
         # Marquer comme annulée
