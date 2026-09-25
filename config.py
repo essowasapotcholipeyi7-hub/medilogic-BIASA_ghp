@@ -3,35 +3,57 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def _normaliser_url_postgres(url):
-    """Neon/Render fournissent parfois postgresql+psycopg://... (préfixe
-    pointant vers psycopg v3) au lieu de postgresql://... — seul
-    psycopg2-binary est installé (requirements.txt), pas psycopg v3, donc
-    ce préfixe fait planter l'appli au démarrage (ModuleNotFoundError:
-    No module named 'psycopg'). On force le schéma générique pour que
-    SQLAlchemy choisisse psycopg2 (déjà installé), quel que soit le
-    format exact renvoyé par Render/Neon si la chaîne de connexion est
-    régénérée plus tard."""
-    if url and url.startswith('postgresql+'):
-        return 'postgresql://' + url.split('://', 1)[1]
+def _url_postgres_generique(url):
+    """Schéma bare 'postgresql://...' (sans pilote précisé) — c'est ce que
+    comprend psycopg2.connect() en DSN brut (db_helper.py,
+    import_produits.py). Neon/Render fournissent parfois un préfixe
+    différent (postgres://, postgresql+psycopg://...) : on le ramène
+    toujours à ce format générique."""
+    if not url or '://' not in url:
+        return url
+    schema, reste = url.split('://', 1)
+    if schema.startswith('postgres'):
+        return 'postgresql://' + reste
     return url
+
+
+def _url_postgres_pour_sqlalchemy(url):
+    """⭐⭐ Un simple 'postgresql://...' (sans pilote précisé) NE SUFFIT PLUS
+    depuis SQLAlchemy 2.1 — vérifié en reproduisant exactement le crash en
+    local : SQLAlchemy 2.1 choisit par défaut le pilote 'psycopg' (v3, PAS
+    installé, seul psycopg2-binary l'est) même pour une URL bare
+    'postgresql://', alors qu'avant (2.0.x) c'était psycopg2 par défaut.
+    SQLAlchemy n'étant pas épinglé dans requirements.txt, Render installe
+    la dernière version disponible au moment du build, qui peut changer de
+    comportement sans prévenir. On force donc EXPLICITEMENT
+    'postgresql+psycopg2://...' pour TOUT ce qui passe par SQLAlchemy —
+    jamais pour du psycopg2.connect() brut (voir _url_postgres_generique
+    ci-dessus), qui ne comprend pas ce préfixe ('+psycopg2' est une
+    convention SQLAlchemy, pas une syntaxe DSN standard)."""
+    url = _url_postgres_generique(url)
+    if not url or '://' not in url:
+        return url
+    return 'postgresql+psycopg2://' + url.split('://', 1)[1]
 
 
 class Config:
     SECRET_KEY = os.getenv('SECRET_KEY', 'medilogic-secret-key-2024')
     ADMIN_EMAIL = os.getenv('ADMIN_EMAIL', 'essowasainfo60@gmail.com')
 
-    # ⭐ Base de données (pour SQLAlchemy)
-    DATABASE_URL = _normaliser_url_postgres(os.getenv('DATABASE_URL'))
+    # ⭐ Base de données — schéma générique, pour psycopg2.connect() en DSN
+    # brut (db_helper.py, import_produits.py).
+    DATABASE_URL = _url_postgres_generique(os.getenv('DATABASE_URL'))
 
-    # ⭐ SQLAlchemy
-    SQLALCHEMY_DATABASE_URI = DATABASE_URL or 'postgresql://...'
+    # ⭐ SQLAlchemy — schéma avec pilote explicite (voir
+    # _url_postgres_pour_sqlalchemy), PAS le même que DATABASE_URL
+    # ci-dessus.
+    SQLALCHEMY_DATABASE_URI = _url_postgres_pour_sqlalchemy(os.getenv('DATABASE_URL')) or 'postgresql+psycopg2://...'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # ⭐ Bascule hors-ligne (voir utils/db_failover.py) : n'existe que si
     # DATABASE_URL_LOCAL est définie (jamais le cas sur Render) — sinon
     # aucun changement de comportement.
-    _DATABASE_URL_LOCAL = os.getenv('DATABASE_URL_LOCAL')
+    _DATABASE_URL_LOCAL = _url_postgres_pour_sqlalchemy(os.getenv('DATABASE_URL_LOCAL'))
     SQLALCHEMY_BINDS = {'local': _DATABASE_URL_LOCAL} if _DATABASE_URL_LOCAL else {}
     
     # ⭐ Google Sheets
