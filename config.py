@@ -3,15 +3,29 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+def _normaliser_url_postgres(url):
+    """Neon/Render fournissent parfois postgresql+psycopg://... (préfixe
+    pointant vers psycopg v3) au lieu de postgresql://... — seul
+    psycopg2-binary est installé (requirements.txt), pas psycopg v3, donc
+    ce préfixe fait planter l'appli au démarrage (ModuleNotFoundError:
+    No module named 'psycopg'). On force le schéma générique pour que
+    SQLAlchemy choisisse psycopg2 (déjà installé), quel que soit le
+    format exact renvoyé par Render/Neon si la chaîne de connexion est
+    régénérée plus tard."""
+    if url and url.startswith('postgresql+'):
+        return 'postgresql://' + url.split('://', 1)[1]
+    return url
+
+
 class Config:
     SECRET_KEY = os.getenv('SECRET_KEY', 'medilogic-secret-key-2024')
     ADMIN_EMAIL = os.getenv('ADMIN_EMAIL', 'essowasainfo60@gmail.com')
-    
+
     # ⭐ Base de données (pour SQLAlchemy)
-    DATABASE_URL = os.getenv('DATABASE_URL')
-    
+    DATABASE_URL = _normaliser_url_postgres(os.getenv('DATABASE_URL'))
+
     # ⭐ SQLAlchemy
-    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', 'postgresql://...')
+    SQLALCHEMY_DATABASE_URI = DATABASE_URL or 'postgresql://...'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # ⭐ Bascule hors-ligne (voir utils/db_failover.py) : n'existe que si
