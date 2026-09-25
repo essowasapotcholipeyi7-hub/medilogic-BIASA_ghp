@@ -17991,11 +17991,17 @@ def api_get_factures():
             WHERE f.structure_id = %s
         """
         params = [structure_id]
-        
+
         if statut and statut != 'toutes':
-            query += " AND f.statut = %s"
-            params.append(statut)
-        
+            if statut == 'en_cours':
+                # Vue "Facturation en cours" : tout sauf les factures déjà
+                # payées ou annulées (celles-ci vivent dans l'Historique,
+                # pour éviter que la liste ne grossisse sans fin).
+                query += " AND f.statut NOT IN ('payee', 'annulee')"
+            else:
+                query += " AND f.statut = %s"
+                params.append(statut)
+
         query += " ORDER BY f.created_at DESC"
         
         factures = db.execute_query(query, params)

@@ -13,28 +13,47 @@
                 </div>
             </div>
             <div class="card-body">
-                <!-- Filtres -->
-                <div class="row mb-3">
+                <!-- Onglets Facturation en cours / Historique -->
+                <ul class="nav nav-tabs mb-3">
+                    <li class="nav-item">
+                        <a class="nav-link active" id="ongletEnCours" href="#" onclick="changerVue('en_cours'); return false;">
+                            <i class="fas fa-clock"></i> Facturation en cours
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" id="ongletHistorique" href="#" onclick="changerVue('historique'); return false;">
+                            <i class="fas fa-history"></i> Historique (payées)
+                        </a>
+                    </li>
+                </ul>
+
+                <!-- Filtres (facturation en cours uniquement) -->
+                <div class="row mb-3" id="filtresEnCours">
                     <div class="col-md-6">
                         <div class="btn-group" role="group">
-                            <button class="btn btn-outline-primary btn-sm active" onclick="filtrer('toutes')">Toutes</button>
+                            <button class="btn btn-outline-primary btn-sm active" onclick="filtrer('en_cours')">Toutes</button>
                             <button class="btn btn-outline-warning btn-sm" onclick="filtrer('en_attente')">En attente</button>
                             <button class="btn btn-outline-info btn-sm" onclick="filtrer('partielle')">Partielles</button>
                             <button class="btn btn-outline-danger btn-sm" onclick="filtrer('en_retard')">En retard</button>
-                            <button class="btn btn-outline-success btn-sm" onclick="filtrer('payee')">Payées</button>
                         </div>
                     </div>
                     <div class="col-md-6 text-end">
                         <span id="totalFactures" class="badge bg-secondary">0 facture(s)</span>
                     </div>
                 </div>
-                
+                <div class="row mb-3 d-none" id="totalHistorique">
+                    <div class="col-md-6"></div>
+                    <div class="col-md-6 text-end">
+                        <span id="totalFacturesHistorique" class="badge bg-secondary">0 facture(s)</span>
+                    </div>
+                </div>
+
                 <!-- Barre de recherche -->
                 <div class="row mb-3">
                     <div class="col-md-6">
                         <div class="input-group">
                             <span class="input-group-text"><i class="fas fa-search"></i></span>
-                            <input type="text" class="form-control" id="rechercheClient" placeholder="Rechercher par nom du patient..." onkeyup="rechercherClient()">
+                            <input type="text" class="form-control" id="rechercheClient" placeholder="Rechercher par nom du patient ou n° facture..." onkeyup="rechercherClient()">
                             <button class="btn btn-outline-secondary" type="button" onclick="rechercherClient()">Rechercher</button>
                             <button class="btn btn-outline-danger" type="button" onclick="reinitialiserRecherche()">✕</button>
                         </div>
@@ -214,18 +233,44 @@ let pageActuelle = 1;
 let itemsParPage = 25;
 let statutActuel = 'toutes';
 let rechercheActuelle = '';
+let vueActuelle = 'en_cours'; // 'en_cours' (en_attente/partielle/en_retard) ou 'historique' (payées)
+
+// ========== CHANGER DE VUE (Facturation en cours / Historique) ==========
+function changerVue(vue) {
+    vueActuelle = vue;
+    document.getElementById('ongletEnCours').classList.toggle('active', vue === 'en_cours');
+    document.getElementById('ongletHistorique').classList.toggle('active', vue === 'historique');
+    document.getElementById('filtresEnCours').classList.toggle('d-none', vue !== 'en_cours');
+    document.getElementById('totalHistorique').classList.toggle('d-none', vue !== 'historique');
+
+    document.getElementById('rechercheClient').value = '';
+    rechercheActuelle = '';
+    document.getElementById('resultatsRecherche').textContent = '';
+
+    if (vue === 'historique') {
+        chargerFactures('payee');
+    } else {
+        document.querySelectorAll('#filtresEnCours .btn-group .btn').forEach(b => b.classList.remove('active'));
+        document.querySelector('#filtresEnCours .btn-group .btn').classList.add('active');
+        chargerFactures('en_cours');
+    }
+}
 
 // ========== CHARGER LES FACTURES ==========
-function chargerFactures(statut = 'toutes') {
+// statut : 'en_cours' (tout sauf payée/annulée), 'payee' (historique), ou un
+// statut précis (en_attente/partielle/en_retard) — filtré côté serveur, pas
+// côté client, pour ne jamais rapatrier tout l'historique par défaut.
+function chargerFactures(statut = 'en_cours') {
     statutActuel = statut;
-    const url = statut === 'toutes' ? '/api/factures' : `/api/factures?statut=${statut}`;
-    
+    const url = `/api/factures?statut=${statut}`;
+
     fetch(url)
         .then(response => response.json())
         .then(data => {
             facturesData = data;
             facturesFiltrees = data;
-            document.getElementById('totalFactures').textContent = data.length + ' facture(s)';
+            const badgeId = vueActuelle === 'historique' ? 'totalFacturesHistorique' : 'totalFactures';
+            document.getElementById(badgeId).textContent = data.length + ' facture(s)';
             pageActuelle = 1;
             afficherPage();
         })
@@ -403,9 +448,9 @@ function rappelFactureWhatsApp(id) {
         });
 }
 
-// ========== FILTRER ==========
+// ========== FILTRER (vue "Facturation en cours") ==========
 function filtrer(statut) {
-    document.querySelectorAll('.btn-group .btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('#filtresEnCours .btn-group .btn').forEach(b => b.classList.remove('active'));
     event.target.classList.add('active');
     document.getElementById('rechercheClient').value = '';
     rechercheActuelle = '';
@@ -546,7 +591,7 @@ function confirmerPaiement() {
             alert(`Paiement enregistré !\nMontant: ${Math.round(montant).toLocaleString('fr-FR')} FCFA\nReste à payer: ${Math.round(data.reste_a_payer).toLocaleString('fr-FR')} FCFA`);
             
             bootstrap.Modal.getInstance(document.getElementById('paiementModal')).hide();
-            chargerFactures('toutes');
+            chargerFactures(statutActuel);
             
             if (data.statut === 'payee') {
                 if (confirm('La facture est entièrement payée. Voulez-vous imprimer le reçu ?')) {
@@ -610,12 +655,12 @@ function imprimerRecu(factureId) {
 
 // ========== RAFRAÎCHIR ==========
 function rafraichir() {
-    chargerFactures('toutes');
+    chargerFactures(statutActuel);
 }
 
 // ========== INIT ==========
 document.addEventListener('DOMContentLoaded', function() {
-    chargerFactures('toutes');
+    changerVue('en_cours');
 });
 </script>
 {% endblock %}
