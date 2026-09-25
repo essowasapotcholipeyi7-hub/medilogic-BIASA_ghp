@@ -165,7 +165,7 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
             {% if patient_email %}
             <button onclick="modifierEmailPatient()" class="btn btn-outline-secondary btn-sm" title="Modifier l'email du patient"><i class="fas fa-pen"></i></button>
             {% endif %}
-            <a href="{{ url_for('api_pdf_protege_resultat', resultat_id=resultat.id) }}" class="btn btn-primary btn-sm" title="PDF chiffré — code d'ouverture = code d'accès portail du patient">
+            <a href="{{ url_for('api_pdf_protege_resultat', resultat_id=resultat.id) }}" target="_blank" class="btn btn-primary btn-sm" title="PDF chiffré — code d'ouverture = code d'accès portail du patient">
                 <i class="fas fa-lock"></i> PDF protégé
             </a>
             <button onclick="voirCodePortailResultat()" class="btn btn-outline-dark btn-sm" title="Code d'accès (portail + PDF protégé)"><i class="fas fa-key"></i></button>
