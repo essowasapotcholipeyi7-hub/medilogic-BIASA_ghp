@@ -136,11 +136,11 @@
                     </div>
                     <div class="col-md-2" id="dateDebutGroup" style="display: none;">
                         <label class="form-label small">Début</label>
-                        <input type="date" id="filtreDateDebut" class="form-control form-control-sm">
+                        <input type="date" id="filtreDateDebut" class="form-control form-control-sm" onchange="filtrerHistorique()">
                     </div>
                     <div class="col-md-2" id="dateFinGroup" style="display: none;">
                         <label class="form-label small">Fin</label>
-                        <input type="date" id="filtreDateFin" class="form-control form-control-sm">
+                        <input type="date" id="filtreDateFin" class="form-control form-control-sm" onchange="filtrerHistorique()">
                     </div>
                     <div class="col-md-2">
                         <label class="form-label small">Type</label>
@@ -199,7 +199,7 @@
                         <label class="form-label small">Recherche</label>
                         <div class="input-group input-group-sm">
                             <input type="text" id="searchGlobal" class="form-control"
-                                   placeholder="Patient..."
+                                   placeholder="Patient, acte/produit (échographie, ECG, NFS...)..."
                                    onkeyup="filtrerHistorique()">
                             <button class="btn btn-outline-secondary" onclick="clearSearch()" type="button">
                                 <i class="fas fa-times"></i>
@@ -364,6 +364,12 @@ let rowsPerPage = 10;
 let currentVenteId = null;
 let currentVenteType = null;
 let periodeStatsCourante = 'tous';
+
+// ⭐ Recherche insensible aux accents — "echographie" doit trouver
+// "Échographie", "ecg" doit trouver "ECG", etc.
+function normaliserTexte(str) {
+    return (str || '').toString().toLowerCase().normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]', 'g'), '');
+}
 
 // ============================================
 // LOADER
@@ -555,10 +561,10 @@ function filtrerHistorique() {
             }
         }
         
-        // Filtre global
+        // Filtre global — patient ET acte/produit (échographie, ECG, NFS...)
         if (visible && searchGlobal) {
-            var texte = (v.patient_nom || '') + ' ' + (v.detail || '') + ' ' + (v.net_a_payer || '');
-            if (texte.toLowerCase().indexOf(searchGlobal) === -1) visible = false;
+            var texte = (v.patient_nom || '') + ' ' + (v.detail || '') + ' ' + (v.acte_nom || '') + ' ' + (v.produit_nom || '') + ' ' + (v.net_a_payer || '');
+            if (normaliserTexte(texte).indexOf(normaliserTexte(searchGlobal)) === -1) visible = false;
         }
         
         // Filtre par date
