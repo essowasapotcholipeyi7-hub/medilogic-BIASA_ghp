@@ -9742,7 +9742,28 @@ def api_get_all_ventes():
                 aide_hospitaliere = float(v.get('aide_hospitaliere') or 0) if v.get('aide_hospitaliere') is not None else 0
                 type_aide = v.get('type_aide') or 'pourcentage'
                 prise_en_charge = float(v.get('prise_en_charge') or 0) if v.get('prise_en_charge') is not None else 0
-                
+
+                # ⭐ Détail par article (nom + prix tarifaire propre à CET acte/
+                # produit) — nécessaire pour qu'une recherche par acte
+                # (échographie, ECG, NFS...) puisse afficher le prix propre
+                # de l'acte trouvé plutôt que le seul total de la vente,
+                # qui peut regrouper plusieurs actes. `total`/`prix` est le
+                # tarif brut de l'acte (avant assurance, qui s'applique au
+                # niveau de la vente entière).
+                articles_detail = []
+                for a in actes_data:
+                    articles_detail.append({
+                        'nom': a.get('nom', 'Acte'),
+                        'prix': float(a.get('total', a.get('prix', 0)) or 0),
+                        'quantite': a.get('quantite', 1),
+                    })
+                for p in produits_data:
+                    articles_detail.append({
+                        'nom': p.get('nom', 'Produit'),
+                        'prix': float(p.get('total', p.get('prix', 0)) or 0),
+                        'quantite': p.get('quantite', 1),
+                    })
+
                 result.append({
                     'ID': v.get('id'),
                     'numero_local': v.get('numero_local') or v.get('id'),
@@ -9752,6 +9773,7 @@ def api_get_all_ventes():
                     'taux_assurance': v.get('taux_assurance') or 0,
                     'date_vente': str(v.get('date_vente', '')),
                     'detail': detail,
+                    'articles': articles_detail,
                     'created_by_nom': v.get('created_by_nom', None),
                     'statut': v.get('statut', 'validee'),
                     'assurance_nom': assurance_principale,

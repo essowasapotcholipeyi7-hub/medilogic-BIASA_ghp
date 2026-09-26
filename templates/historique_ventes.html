@@ -262,21 +262,22 @@
                     <table class="table table-hover table-sm table-striped" id="ventesTable">
                         <thead class="table-light">
                             <tr>
-                                <th style="width: 5%;">N°</th>
-                                <th style="width: 12%;">Date</th>
-                                <th style="width: 15%;">Patient</th>
+                                <th style="width: 4%;">N°</th>
+                                <th style="width: 10%;">Date</th>
+                                <th style="width: 12%;">Patient</th>
                                 <th style="width: 8%;">Type</th>
-                                <th style="width: 12%;">Montant</th>
-                                <th style="width: 10%;">Payé</th>
-                                <th style="width: 10%;">Reste</th>
+                                <th style="width: 16%;">Détail (acte/produit)</th>
+                                <th style="width: 11%;">Montant</th>
+                                <th style="width: 9%;">Payé</th>
+                                <th style="width: 9%;">Reste</th>
                                 <!-- 🔥 NOUVELLE COLONNE AIDE -->
-                                <th style="width: 8%;">Aide</th>
-                                <th style="width: 10%;">Statut</th>
+                                <th style="width: 7%;">Aide</th>
+                                <th style="width: 9%;">Statut</th>
                                 <th style="width: 10%;">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="ventesList">
-                            <tr><td colspan="10" class="text-center">Chargement...</td></tr>
+                            <tr><td colspan="11" class="text-center">Chargement...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -364,6 +365,7 @@ let rowsPerPage = 10;
 let currentVenteId = null;
 let currentVenteType = null;
 let periodeStatsCourante = 'tous';
+let searchGlobalActuel = '';
 
 // ⭐ Recherche insensible aux accents — "echographie" doit trouver
 // "Échographie", "ecg" doit trouver "ECG", etc.
@@ -430,7 +432,7 @@ function chargerHistorique() {
         .catch(function(error) {
             console.error('❌ Erreur:', error);
             document.getElementById('ventesList').innerHTML =
-                '<tr><td colspan="10" class="text-center text-danger">❌ Erreur de chargement</td></tr>';
+                '<tr><td colspan="11" class="text-center text-danger">❌ Erreur de chargement</td></tr>';
             hideLoader();
         });
 }
@@ -522,7 +524,7 @@ function trierVentesFiltrees(cle) {
 function filtrerHistorique() {
     if (!toutesLesVentes || toutesLesVentes.length === 0) {
         document.getElementById('ventesList').innerHTML = 
-            '<tr><td colspan="10" class="text-center text-muted">Aucune vente trouvée</td></tr>';
+            '<tr><td colspan="11" class="text-center text-muted">Aucune vente trouvée</td></tr>';
         document.getElementById('resultCount').innerText = '0';
         ventesFiltrees = [];
         updatePagination();
@@ -533,6 +535,7 @@ function filtrerHistorique() {
     var periode = document.getElementById('periodeFiltre').value;
     var searchType = document.getElementById('searchType').value;
     var searchGlobal = document.getElementById('searchGlobal').value.toLowerCase().trim();
+    searchGlobalActuel = searchGlobal;  // ⭐ pour l'affichage du détail par acte (afficherPageVentes)
     var dateDebut = document.getElementById('filtreDateDebut').value;
     var dateFin = document.getElementById('filtreDateFin').value;
     var filtreStatutPaiement = document.getElementById('filtreStatutPaiement').value;
@@ -667,6 +670,54 @@ function filtrerHistorique() {
     afficherPageVentes(1);
 }
 
+function escFR(str) {
+    var div = document.createElement('div');
+    div.textContent = (str === undefined || str === null) ? '' : String(str);
+    return div.innerHTML;
+}
+
+// ⭐ Construit la cellule "Détail" d'une vente. Une vente peut regrouper
+// plusieurs actes/produits sous UN SEUL montant (net_a_payer) — sans
+// cela, chercher "échographie" retrouvait bien la vente mais affichait
+// uniquement le total combiné, impossible à distinguer du prix de
+// l'échographie elle-même si elle était vendue avec un autre acte.
+// Ici, quand une recherche est active, on isole et affiche le prix
+// tarifaire propre à l'acte/produit trouvé (v.articles[].prix), pas le
+// total de la vente.
+function construireDetailCellule(v) {
+    var articles = v.articles || [];
+    var recherche = (searchGlobalActuel || '').trim();
+
+    if (recherche && articles.length > 0) {
+        var rechercheNorm = normaliserTexte(recherche);
+        var correspondants = articles.filter(function(a) {
+            return normaliserTexte(a.nom || '').indexOf(rechercheNorm) !== -1;
+        });
+
+        if (correspondants.length > 0) {
+            var html = correspondants.map(function(a) {
+                return '<strong>' + escFR(a.nom) + '</strong> : ' +
+                       Math.round(a.prix || 0).toLocaleString('fr-FR') + ' F';
+            }).join('<br>');
+
+            var autres = articles.length - correspondants.length;
+            if (autres > 0) {
+                html += '<div class="text-muted small">+ ' + autres +
+                        ' autre' + (autres > 1 ? 's' : '') +
+                        ' acte/produit dans cette vente (total ' +
+                        Math.round(v.net_a_payer || 0).toLocaleString('fr-FR') + ' F)</div>';
+            }
+            return html;
+        }
+    }
+
+    // Pas de recherche active (ou la recherche ne correspond qu'au nom du
+    // patient) : afficher le détail complet, tronqué avec info-bulle.
+    var detail = v.detail || '-';
+    var detailCourt = detail.length > 35 ? detail.substring(0, 32) + '...' : detail;
+    return '<span title="' + escFR(detail) + '">' + escFR(detailCourt) + '</span>';
+}
+
 function afficherPageVentes(page) {
     var tbody = document.getElementById('ventesList');
     var start = (page - 1) * rowsPerPage;
@@ -726,9 +777,6 @@ function afficherPageVentes(page) {
             statutBadge = 'bg-success';
         }
         
-        var detail = v.detail || '';
-        if (detail.length > 30) detail = detail.substring(0, 27) + '...';
-        
         html += '<tr>';
         html += '<td><strong>#' + (v.numero_local || v.ID || (start + i + 1)) + '</strong></td>';
         html += '<td>' + dateStr + '</td>';
@@ -738,6 +786,7 @@ function afficherPageVentes(page) {
             html += ' <span class="badge bg-light text-dark border" title="Décomposition HT/TVA/TTC affichée sur le reçu/la facture">TVA</span>';
         }
         html += '</td>';
+        html += '<td>' + construireDetailCellule(v) + '</td>';
         html += '<td class="text-end fw-bold">' + Math.round(netAPayer).toLocaleString('fr-FR') + ' F</td>';
         html += '<td class="text-end" style="color:#28a745;">' + Math.round(montantDonne).toLocaleString('fr-FR') + ' F</td>';
         html += '<td class="text-end" style="color:#dc3545;">' + Math.round(resteAPayer).toLocaleString('fr-FR') + ' F</td>';
@@ -756,7 +805,7 @@ function afficherPageVentes(page) {
         html += '</tr>';
     }
     
-    tbody.innerHTML = html || '<tr><td colspan="10" class="text-center text-muted">Aucun résultat</td></tr>';
+    tbody.innerHTML = html || '<tr><td colspan="11" class="text-center text-muted">Aucun résultat</td></tr>';
 }
 
 function updatePagination() {
@@ -1256,6 +1305,26 @@ function imprimerHistorique() {
     // ⭐ NOUVEAU : compte des ventes avec une aide hospitalière apportée.
     var aideCount = ventesFiltrees.filter(function(v) { return (v.aide_hospitaliere || 0) > 0; }).length;
 
+    // ⭐ Quand une recherche par acte est active (échographie, ECG, NFS...),
+    // ajouter un total dédié à CET acte précis (nombre + somme des prix
+    // tarifaires propres) — sans ça, "faire les comptes" d'un acte précis
+    // depuis un rapport imprimé n'était pas possible : le CA global ci-
+    // dessus mélange tous les actes/produits de la vente entière.
+    var rechercheActive = (searchGlobalActuel || '').trim();
+    var totalActeRecherche = null;
+    var nbActeRecherche = 0;
+    if (rechercheActive) {
+        var rechercheNorm = normaliserTexte(rechercheActive);
+        ventesFiltrees.forEach(function(v) {
+            (v.articles || []).forEach(function(a) {
+                if (normaliserTexte(a.nom || '').indexOf(rechercheNorm) !== -1) {
+                    totalActeRecherche = (totalActeRecherche || 0) + (a.prix || 0);
+                    nbActeRecherche++;
+                }
+            });
+        });
+    }
+
     html += '<div class="summary">';
     html += '<div class="summary-item"><strong>Total ventes</strong><br>' + ventesFiltrees.length + '</div>';
     html += '<div class="summary-item"><strong>CA (espèces)</strong><br>' + Math.round(totalCA).toLocaleString('fr-FR') + ' F</div>';
@@ -1266,6 +1335,10 @@ function imprimerHistorique() {
     html += '<div class="summary-item"><strong style="color:#6c757d;">Non assurés</strong><br>' + nonAssuresCount + '</div>';
     html += '<div class="summary-item"><strong style="color:#20c997;">Avec CAC</strong><br>' + cacCount + '</div>';
     html += '<div class="summary-item"><strong style="color:#e0a800;">Avec aide</strong><br>' + aideCount + '</div>';
+    if (totalActeRecherche !== null) {
+        html += '<div class="summary-item"><strong style="color:#dc3545;">"' + escFR(rechercheActive) + '" (' + nbActeRecherche + ')</strong><br>' +
+                Math.round(totalActeRecherche).toLocaleString('fr-FR') + ' F</div>';
+    }
     html += '</div>';
     
     html += '<table>';
@@ -1304,21 +1377,30 @@ function imprimerHistorique() {
             badgeClass = 'badge-secondary';
         }
         
-        var details = v.detail || 'Aucun détail';
-        
-        if (v.detail_complet && v.detail_complet.length > 0) {
-            details = v.detail_complet.join(', ');
-        }
-        if (v.articles && v.articles.length > 0) {
-            var articlesListe = [];
-            for (var a = 0; a < v.articles.length; a++) {
-                var article = v.articles[a];
-                var nom = article.nom || 'Article';
-                var qte = article.quantite || 1;
-                articlesListe.push(nom + ' x' + qte);
+        // ⭐ Recherche active (échographie, ECG, NFS...) : afficher le prix
+        // propre de l'acte trouvé (comme à l'écran), pas seulement son nom
+        // — sinon le rapport imprimé retombe dans le même problème que le
+        // tableau avant le correctif : impossible de faire les comptes
+        // d'un acte précis quand il est vendu avec un autre.
+        var details;
+        if (rechercheActive) {
+            details = construireDetailCellule(v);
+        } else {
+            details = v.detail || 'Aucun détail';
+            if (v.detail_complet && v.detail_complet.length > 0) {
+                details = v.detail_complet.join(', ');
             }
-            if (articlesListe.length > 0) {
-                details = articlesListe.join(', ');
+            if (v.articles && v.articles.length > 0) {
+                var articlesListe = [];
+                for (var a = 0; a < v.articles.length; a++) {
+                    var article = v.articles[a];
+                    var nom = article.nom || 'Article';
+                    var qte = article.quantite || 1;
+                    articlesListe.push(nom + ' x' + qte);
+                }
+                if (articlesListe.length > 0) {
+                    details = articlesListe.join(', ');
+                }
             }
         }
         
