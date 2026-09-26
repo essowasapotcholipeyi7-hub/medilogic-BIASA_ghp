@@ -76,13 +76,14 @@
                 <div class="row">
 <div class="col-md-6">
     <label class="form-label">Sélectionner un acte</label>
-    <select class="form-control" id="acteSelect" size="8">
+    <select class="form-control" id="acteSelect" size="8" onchange="toggleMedecinRealisateur()">
         <option value="">-- Choisir un acte --</option>
         {% for acte in actes %}
         <option value="{{ acte.ID }}"
                 data-prix="{{ acte.prix }}"
                 data-pbr="{{ acte.pbr or acte.prix }}"
                 data-prix-nuit="{{ acte.prix_nuit or '' }}"
+                data-taux-medecin="{{ acte.taux_medecin or '' }}"
                 data-nom="{{ acte.nom }}"
                 data-statut="{{ acte.statut or 'direct' }}"
                 data-prise-en-charge-amu="{{ 'true' if acte.prise_en_charge_amu else 'false' }}"
@@ -93,6 +94,7 @@
             {{ acte.nom }} - {{ acte.prix }} FCFA
             {% if tarif_nuit_actif and acte.prix_nuit %}(nuit: {{ acte.prix_nuit }} FCFA){% endif %}
             {% if acte.pbr %}(PBR: {{ acte.pbr }} FCFA){% endif %}
+            {% if acte.taux_medecin %}[Part médecin {{ acte.taux_medecin }}%]{% endif %}
             {% if acte.prise_en_charge_amu == false and acte.prise_en_charge_cac == false %}
                 🚫 NON PRIS EN CHARGE (AMU & CAC)
             {% elif acte.prise_en_charge_amu == false %}
@@ -104,6 +106,20 @@
         {% endfor %}
     </select>
 </div>
+                    <div class="col-md-12 mt-2" id="medecinRealisateurWrapper" style="display:none;">
+                        <!-- ⭐ Part Médecin : visible uniquement pour un acte ayant un
+                        taux de rétrocession configuré (data-taux-medecin), voir
+                        toggleMedecinRealisateur() et ajouterActe() ci-dessous. -->
+                        <label class="form-label text-warning">
+                            <i class="fas fa-user-md me-1"></i>Réalisé par <span class="text-danger">*</span>
+                        </label>
+                        <select class="form-control" id="medecinRealisateurSelect">
+                            <option value="">-- Choisir le médecin réalisateur --</option>
+                            {% for medecin in medecins_liste %}
+                            <option value="{{ medecin.id }}">{{ medecin.nom_complet }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
                     <div class="col-md-3">
                         <label class="form-label">Quantité</label>
                         <input type="number" class="form-control" id="quantite" value="1" min="1">
@@ -869,6 +885,23 @@ function resetTauxPrincipalTemp() {
     }
 }
 
+// ⭐ Part Médecin : affiche le sélecteur "Réalisé par" dès que l'acte
+// sélectionné a un taux configuré, pour que le caissier le voie AVANT de
+// cliquer "Ajouter" (ajouterActe() re-vérifie de toute façon avant tout
+// ajout réel au panier).
+function toggleMedecinRealisateur() {
+    const select = document.getElementById('acteSelect');
+    const wrapper = document.getElementById('medecinRealisateurWrapper');
+    if (!select || !wrapper) return;
+    const option = select.options[select.selectedIndex];
+    const tauxMedecin = option ? option.getAttribute('data-taux-medecin') : '';
+    wrapper.style.display = tauxMedecin ? '' : 'none';
+    if (!tauxMedecin) {
+        const medecinSelect = document.getElementById('medecinRealisateurSelect');
+        if (medecinSelect) medecinSelect.value = '';
+    }
+}
+
 // ============================================
 // GESTION DU PANIER
 // ============================================
@@ -903,6 +936,26 @@ function ajouterActe() {
             acteEnTarifNuit = true;
             showToastActes(`🌙 Tarif nuit appliqué pour "${acteNom}" : ${prixNuit} FCFA`, 'info');
         }
+    }
+
+    // ⭐ Part Médecin : cet acte a-t-il un taux de rétrocession configuré
+    // (voir data-taux-medecin, /taux-part-medecin) ? Si oui, le sélecteur
+    // "Réalisé par" devient obligatoire — patron : "un sélecteur médecin
+    // par ligne... obligatoire pour ces actes-là, invisible pour les
+    // autres". medecinId/medecinNom restent null pour tout le reste du
+    // catalogue (comportement inchangé).
+    let medecinId = null;
+    let medecinNom = null;
+    const tauxMedecinRaw = selectedOption.getAttribute('data-taux-medecin');
+    if (tauxMedecinRaw) {
+        const medecinSelect = document.getElementById('medecinRealisateurSelect');
+        if (!medecinSelect || !medecinSelect.value) {
+            alert(`Veuillez indiquer quel médecin a réalisé "${acteNom}" (taux de rétrocession configuré pour cet acte).`);
+            if (medecinSelect) medecinSelect.focus();
+            return;
+        }
+        medecinId = medecinSelect.value;
+        medecinNom = medecinSelect.options[medecinSelect.selectedIndex].textContent.trim();
     }
 
     // ⭐ Lu tôt pour la résolution AMU-TNS ci-dessous (déclaré à nouveau,
@@ -967,8 +1020,9 @@ function ajouterActe() {
     
     // 🔥 SI LE PATIENT N'EST PAS ASSURÉ → AJOUT DIRECT
     if (!isAMU && !isCAC) {
-        ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite, 
-                           priseEnChargeAMU, commentaireAMU, priseEnChargeCAC, commentaireCAC);
+        ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,
+                           priseEnChargeAMU, commentaireAMU, priseEnChargeCAC, commentaireCAC,
+                           medecinId, medecinNom);
         return;
     }
 
@@ -1042,13 +1096,15 @@ function ajouterActe() {
     }
     
     // ✅ TOUT EST OK → AJOUT
-    ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite, 
-                       priseEnChargeAMU, commentaireAMU, priseEnChargeCAC, commentaireCAC);
+    ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,
+                       priseEnChargeAMU, commentaireAMU, priseEnChargeCAC, commentaireCAC,
+                       medecinId, medecinNom);
 }
 
 // 🔥 FONCTION POUR AJOUTER L'ACTE AU PANIER
-function ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite, 
-                             priseEnChargeAMU, commentaireAMU, priseEnChargeCAC, commentaireCAC) {
+function ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,
+                             priseEnChargeAMU, commentaireAMU, priseEnChargeCAC, commentaireCAC,
+                             medecinId, medecinNom) {
     let existant = panier.find(item => item.id == acteId);
     if (existant) {
         existant.quantite += quantite;
@@ -1058,6 +1114,9 @@ function ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,
         existant.prise_en_charge_cac = priseEnChargeCAC;
         existant.commentaire_amu = commentaireAMU;
         existant.commentaire_cac = commentaireCAC;
+        // ⭐ Part Médecin : une ligne déjà au panier garde son réalisateur
+        // d'origine tant qu'on n'en choisit pas un nouveau explicitement.
+        if (medecinId) { existant.medecin_id = medecinId; existant.medecin_nom = medecinNom; }
     } else {
         panier.push({
             id: acteId,
@@ -1070,7 +1129,9 @@ function ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,
             prise_en_charge_amu: priseEnChargeAMU,
             commentaire_amu: commentaireAMU,
             prise_en_charge_cac: priseEnChargeCAC,
-            commentaire_cac: commentaireCAC
+            commentaire_cac: commentaireCAC,
+            medecin_id: medecinId || null,
+            medecin_nom: medecinNom || null,
         });
     }
     
@@ -2231,7 +2292,14 @@ function finaliserVente() {
         quantite: parseInt(item.quantite),
         total: parseFloat(item.total),
         prise_en_charge_amu: item.prise_en_charge_amu !== false,
-        prise_en_charge_cac: item.prise_en_charge_cac !== false
+        prise_en_charge_cac: item.prise_en_charge_cac !== false,
+        // ⭐ Part Médecin : réalisateur choisi à l'ajout (voir
+        // ajouterActe()/ajouterActeAuPanier()) — vide pour tout acte sans
+        // taux configuré. Lu côté serveur par creer_lignes_part_medecin()
+        // (services/part_medecin_service.py), app.py juste après la
+        // création de la vente.
+        medecin_id: item.medecin_id || null,
+        medecin_nom: item.medecin_nom || null,
     }));
 
     const montantDonne = parseFloat(document.getElementById('montantDonne').value) || 0;

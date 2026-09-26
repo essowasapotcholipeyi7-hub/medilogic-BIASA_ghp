@@ -63,4 +63,11 @@ MODULES_STRUCTURE = {
         'page_resultats_analyses', 'page_modeles_resultats', 'page_patients_externes',
         'page_ristournes', 'page_classification_actes', 'page_signatures_intervenants',
     ]},
+    # ⭐ Rétrocession au médecin réalisateur (consultation, infiltration,
+    # imagerie...) — même esprit que "laboratoire_radiologie" ci-dessus,
+    # regroupe la page de clôture/paiement ET la configuration des taux
+    # sous un seul module masquable.
+    'part_medecin': {'label': 'Part Médecin', 'endpoints': [
+        'page_part_medecin', 'page_taux_part_medecin',
+    ]},
 }

@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% set cacher_navigation = True %}
+
+{% block title %}Reçu part médecin — {{ medecin.get_nom_complet() if medecin else '' }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    @media print {
+        @page { size: A4; margin: 12mm; }
+        .no-print { display: none !important; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-7">
+        <div class="card" id="recuContenu">
+            <div class="card-body" style="font-family: 'Segoe UI', Arial, sans-serif;">
+
+                <div class="row" style="background: linear-gradient(135deg, #1d6fa5 0%, #0f4c75 100%); color: white; margin: -20px -20px 20px -20px; padding: 18px; border-radius: 10px 10px 0 0;">
+                    <div class="col-8">
+                        <div class="d-flex align-items-center gap-3">
+                            {% if structure.logo_url %}
+                            <img src="{{ structure.logo_url }}" alt="Logo" style="max-height: 55px; max-width: 110px; background: white; padding: 4px; border-radius: 6px;">
+                            {% endif %}
+                            <div>
+                                <h5 style="margin: 0;">{{ structure.nom or "SSoftOne v10" }}</h5>
+                                <p style="margin: 3px 0 0 0; font-size: 11px; opacity: 0.9; white-space: pre-line;">{{ structure.adresse or "" }}
+Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-4 text-end">
+                        <h6 style="margin: 0;">REÇU PART MÉDECIN</h6>
+                        <p style="margin: 2px 0 0 0; font-size: 11px;">N° {{ "%05d"|format(periode.id) }}</p>
+                    </div>
+                </div>
+
+                <div style="font-size: 13px; margin-bottom: 14px; padding: 8px 12px; background: #f8f9fa; border-radius: 6px;">
+                    <strong>Médecin réalisateur :</strong> {{ medecin.get_nom_complet() if medecin else '—' }}<br>
+                    {% if medecin and medecin.telephone %}<strong>Téléphone :</strong> {{ medecin.telephone }}<br>{% endif %}
+                    <strong>Période :</strong> du {{ periode.date_debut.strftime('%d/%m/%Y') }} au {{ periode.date_fin.strftime('%d/%m/%Y') }}
+                </div>
+
+                <table style="width:100%; border-collapse: collapse; font-size: 12px;">
+                    <thead>
+                        <tr style="background:#f8f9fa; border-bottom: 2px solid #dee2e6;">
+                            <th style="padding:6px; text-align:left;">Acte</th>
+                            <th style="padding:6px; text-align:right;">Prix</th>
+                            <th style="padding:6px; text-align:right;">Taux</th>
+                            <th style="padding:6px; text-align:right;">Part médecin</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for l in lignes %}
+                        <tr style="border-bottom:1px solid #eee;">
+                            <td style="padding:6px;">{{ l.nom_acte }}</td>
+                            <td style="padding:6px; text-align:right;">{{ (l.prix|float * l.quantite)|round(0)|int }} F</td>
+                            <td style="padding:6px; text-align:right;">{{ l.taux_medecin_applique }} %</td>
+                            <td style="padding:6px; text-align:right;">{{ l.montant_part_medecin|round(0)|int }} F</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+                <div style="margin-top:14px; font-size:13px;">
+                    <div style="display:flex; justify-content:space-between;">
+                        <span>Base de calcul ({{ periode.nb_actes }} acte(s)) :</span>
+                        <span><strong>{{ periode.base_calcul|round(0)|int }} FCFA</strong></span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:8px; padding-top:8px; border-top:2px solid #ddd;">
+                        <span>MONTANT PAYÉ :</span>
+                        <span style="color:#1d6fa5;">{{ periode.montant_total|round(0)|int }} FCFA</span>
+                    </div>
+                    <div style="margin-top:10px; padding:8px 12px; background:#f8f9fa; border-radius:6px; font-size:12px;">
+                        <strong>Mode de paiement :</strong>
+                        {% if periode.mode_paiement == 'especes' %}
+                            Espèces — {{ periode.date_paiement.strftime('%d/%m/%Y') }}
+                        {% else %}
+                            {{ periode.operateur_mobile }} — Réf. {{ periode.reference_paiement }} — {{ periode.date_paiement.strftime('%d/%m/%Y') }}
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="mt-4" style="font-size:13px;">
+                    <div style="display:flex; justify-content:space-between; border-top:1px solid #ccc; padding-top:40px;">
+                        <span>Signature du réalisateur (émargement) :</span>
+                        <span>________________________</span>
+                    </div>
+                </div>
+
+                <hr>
+                <div class="text-center text-muted small">
+                    Calculée par {{ periode.calculee_par }} — Validée par {{ periode.validee_par }} — Payée par {{ periode.payee_par }}
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-3 no-print">
+            <button onclick="window.print()" class="btn btn-primary btn-sm"><i class="fas fa-print"></i> Imprimer</button>
+            <a href="{{ url_for('page_part_medecin') }}" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

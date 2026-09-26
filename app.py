@@ -15,12 +15,13 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient, FaqQuestion, FaqQuestionUtilisateur, JourFerie
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient, FaqQuestion, FaqQuestionUtilisateur, JourFerie, TauxPartMedecin, PrestationMedecin, PeriodePartMedecin
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
 from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur
 from services.laboratoire_service import charger_classification_actes, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
+from services.part_medecin_service import charger_taux_part_medecin, creer_lignes_part_medecin, prestations_en_attente, calculer_periode_part_medecin
 from services.facturation_amu_service import generer_lignes_facture_amu_cnss, charger_classification_amu_cnss, generer_lignes_facture_amu
 from utils.categories_amu_cnss import CATEGORIES_AMU_CNSS, CATEGORIES_AMU_CNSS_DICT
 from utils.categories_amu_inam import CATEGORIES_AMU_INAM, CATEGORIES_AMU_INAM_PLATES, CATEGORIES_AMU_INAM_DICT, REGIMES_AMU_INAM
@@ -2743,7 +2744,12 @@ def actes_vente():
     
     # 🔥 Récupérer les actes depuis Google Sheets
     actes = sheets_helper.get_all_records('actes', use_prefix=True)
-    
+
+    # ⭐ Part Médecin : {nom_acte: taux} pour poser un data-taux-medecin sur
+    # chaque <option> (même esprit que prix_nuit) — voir
+    # services/part_medecin_service.py.
+    taux_part_medecin_par_acte = charger_taux_part_medecin(structure_id)
+
     # Filtrer par structure
     actes_filtres = []
     for a in actes:
@@ -2817,6 +2823,7 @@ def actes_vente():
                 'prise_en_charge_amu_tns': prise_amu_tns,
                 'statut': statut,  # 🔥 AJOUTER ICI
                 'prix_nuit': prix_nuit or None,
+                'taux_medecin': taux_part_medecin_par_acte.get(a.get('nom', '')) or None,
             })
     
     patients = sheets_helper.get_all_records('patients', use_prefix=True)
@@ -2926,6 +2933,12 @@ def actes_vente():
     tarif_nuit_actif = est_tarif_nuit_actif(structure_id)
     catalogue_a_tarif_nuit = any(a.get('prix_nuit') for a in actes_filtres)
 
+    # ⭐ Part Médecin : liste des médecins actifs pour le sélecteur "Réalisé
+    # par", affiché uniquement pour les actes ayant un taux configuré (voir
+    # data-taux-medecin ci-dessus).
+    medecins_actifs = Medecin.query.filter_by(structure_id=structure_id, actif=True).order_by(Medecin.nom).all()
+    medecins_liste = [{'id': m.id, 'nom_complet': m.get_nom_complet()} for m in medecins_actifs]
+
     return render_template('actes_vente.html',
                           actes=actes_filtres,
                           patients=patients,
@@ -2933,7 +2946,8 @@ def actes_vente():
                           patientTaux=patient_taux,
                           vente_attente=vente_attente,
                           tarif_nuit_actif=tarif_nuit_actif,
-                          catalogue_a_tarif_nuit=catalogue_a_tarif_nuit)
+                          catalogue_a_tarif_nuit=catalogue_a_tarif_nuit,
+                          medecins_liste=medecins_liste)
 
 
 @app.route('/pharma_vente')
@@ -9435,6 +9449,16 @@ def api_add_acte_vente():
         except Exception as e:
             print(f"⚠️ Erreur génération demande labo/radio (vente #{vente_id} conservée): {e}")
 
+        # ⭐ Part Médecin : crée une PrestationMedecin pour chaque ligne
+        # portant un medecin_id (sélecteur "Réalisé par" dans
+        # actes_vente.html) ET dont l'acte a un taux configuré
+        # (TauxPartMedecin) — ignore le reste silencieusement (voir
+        # services/part_medecin_service.py).
+        try:
+            creer_lignes_part_medecin(structure_id, actes_data, vente_id, user_name)
+        except Exception as e:
+            print(f"⚠️ Erreur génération part médecin (vente #{vente_id} conservée): {e}")
+
         # ========== 2. AJOUTER LA RECETTE PATIENT ==========
         montant_effectif = montant_donne - rendu
         if montant_effectif > 0:
@@ -10064,6 +10088,84 @@ def api_supprimer_classification_acte(ligne_id):
     try:
         structure_id = session.get('structure_id')
         ligne = ClassificationActe.query.filter_by(id=ligne_id, structure_id=structure_id).first()
+        if not ligne:
+            return jsonify({'success': False, 'error': 'Introuvable'}), 404
+        db.session.delete(ligne)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================
+# PART MÉDECIN — configuration des taux par acte (quel % revient au
+# réalisateur) — même schéma que la classification labo/imagerie
+# ci-dessus (structure_id + nom_acte, upsert), patron : "sur certaines
+# prestations... qu'on puisse paramétrer les pourcentages pour le
+# réalisateur".
+# ============================================================
+@app.route('/taux-part-medecin')
+@login_required
+@roles_required('admin', 'gestionnaire')
+def page_taux_part_medecin():
+    return render_template('taux_part_medecin.html')
+
+
+@app.route('/api/taux-part-medecin', methods=['GET'])
+@login_required
+def api_lister_taux_part_medecin():
+    structure_id = session.get('structure_id')
+    lignes = TauxPartMedecin.query.filter_by(structure_id=structure_id).order_by(TauxPartMedecin.nom_acte).all()
+    return jsonify([{
+        'id': l.id, 'nom_acte': l.nom_acte, 'taux_medecin': float(l.taux_medecin or 0), 'actif': l.actif,
+    } for l in lignes])
+
+
+@app.route('/api/taux-part-medecin', methods=['POST'])
+@login_required
+@roles_required('admin', 'gestionnaire')
+def api_creer_taux_part_medecin():
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        nom_acte = (data.get('nom_acte') or '').strip()
+        taux_medecin = data.get('taux_medecin')
+        if not nom_acte:
+            return jsonify({'success': False, 'error': 'Acte requis'}), 400
+        try:
+            taux_medecin = float(taux_medecin)
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'Taux invalide'}), 400
+        if taux_medecin <= 0 or taux_medecin > 100:
+            return jsonify({'success': False, 'error': 'Le taux doit être entre 0 (exclu) et 100 %'}), 400
+
+        existante = TauxPartMedecin.query.filter_by(structure_id=structure_id, nom_acte=nom_acte).first()
+        if existante:
+            existante.taux_medecin = taux_medecin
+            existante.actif = True
+            db.session.commit()
+            return jsonify({'success': True, 'id': existante.id, 'mis_a_jour': True})
+
+        ligne = TauxPartMedecin(
+            structure_id=structure_id, nom_acte=nom_acte, taux_medecin=taux_medecin,
+            created_by=session.get('user_name', 'System'),
+        )
+        db.session.add(ligne)
+        db.session.commit()
+        return jsonify({'success': True, 'id': ligne.id, 'mis_a_jour': False})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/taux-part-medecin/<int:ligne_id>', methods=['DELETE'])
+@login_required
+@roles_required('admin', 'gestionnaire')
+def api_supprimer_taux_part_medecin(ligne_id):
+    try:
+        structure_id = session.get('structure_id')
+        ligne = TauxPartMedecin.query.filter_by(id=ligne_id, structure_id=structure_id).first()
         if not ligne:
             return jsonify({'success': False, 'error': 'Introuvable'}), 404
         db.session.delete(ligne)
@@ -12057,6 +12159,312 @@ def page_recu_ristourne(periode_id):
 
     return render_template('recu_ristourne.html', periode=periode, prescripteur=prescripteur,
                             demandes=demandes, structure=structure_info, whatsapp_lien=whatsapp_lien)
+
+
+# ============================================================
+# PART MÉDECIN — rétrocession au réalisateur (consultation, infiltration,
+# imagerie...). Même workflow en 3 états que les ristournes ci-dessus
+# (calculée -> validée -> payée), mais pour un médecin interne (Medecin)
+# et un taux par acte (voir services/part_medecin_service.py). Validation
+# élargie à admin/gestionnaire/comptable — demande explicite du patron
+# (la ristourne, elle, reste admin-only : @admin_required).
+# ============================================================
+def _peut_valider_part_medecin():
+    return session.get('is_admin') or session.get('role') in ('admin', 'gestionnaire', 'comptable')
+
+
+@app.route('/part-medecin')
+@login_required
+def page_part_medecin():
+    if session.get('role') not in ('admin', 'secretaire', 'caissier', 'gestionnaire', 'comptable'):
+        flash('Accès non autorisé pour votre rôle.', 'danger')
+        return redirect(url_for('dashboard'))
+    return render_template('part_medecin.html')
+
+
+@app.route('/api/part-medecin/en-attente', methods=['GET'])
+@login_required
+def api_part_medecin_en_attente():
+    """Pour chaque médecin actif : nombre de prestations pas encore
+    clôturées + montant RÉEL (déjà figé ligne par ligne à la vente, pas
+    estimé comme pour la ristourne)."""
+    structure_id = session.get('structure_id')
+    medecins = Medecin.query.filter_by(structure_id=structure_id, actif=True).order_by(Medecin.nom).all()
+    resultat = []
+    for m in medecins:
+        lignes = prestations_en_attente(structure_id, m.id)
+        if not lignes:
+            continue
+        base = sum(float(p.prix or 0) * int(p.quantite or 1) for p in lignes)
+        montant = sum(float(p.montant_part_medecin or 0) for p in lignes)
+        resultat.append({
+            'medecin_id': m.id, 'medecin_nom': m.get_nom_complet(),
+            'nb_actes': len(lignes), 'base_calcul': base, 'montant_reel': round(montant, 2),
+            'date_plus_ancienne': min(p.created_at.date() for p in lignes).strftime('%Y-%m-%d'),
+            'date_plus_recente': max(p.created_at.date() for p in lignes).strftime('%Y-%m-%d'),
+        })
+    return jsonify(resultat)
+
+
+@app.route('/api/part-medecin/calculer', methods=['POST'])
+@login_required
+def api_calculer_part_medecin():
+    """Clôture — secrétaire/caissière/admin."""
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        medecin_id = data.get('medecin_id')
+        date_debut = datetime.strptime(data.get('date_debut'), '%Y-%m-%d').date()
+        date_fin = datetime.strptime(data.get('date_fin'), '%Y-%m-%d').date()
+
+        periode = calculer_periode_part_medecin(structure_id, medecin_id, date_debut, date_fin, session.get('user_name', 'System'))
+        return jsonify({'success': True, 'id': periode.id, 'montant_total': float(periode.montant_total)})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/part-medecin', methods=['GET'])
+@login_required
+def api_lister_part_medecin():
+    structure_id = session.get('structure_id')
+    lignes = PeriodePartMedecin.query.filter_by(structure_id=structure_id).order_by(PeriodePartMedecin.created_at.desc()).all()
+    resultat = []
+    for l in lignes:
+        medecin = Medecin.query.get(l.medecin_id)
+        resultat.append({
+            'id': l.id, 'medecin_nom': medecin.get_nom_complet() if medecin else '—',
+            'medecin_telephone': medecin.telephone if medecin else None,
+            'date_debut': l.date_debut.strftime('%d/%m/%Y'), 'date_fin': l.date_fin.strftime('%d/%m/%Y'),
+            'base_calcul': float(l.base_calcul or 0), 'montant_total': float(l.montant_total or 0),
+            'nb_actes': l.nb_actes, 'statut': l.statut, 'calculee_par': l.calculee_par,
+            'validee_par': l.validee_par, 'mode_paiement': l.mode_paiement,
+            'operateur_mobile': l.operateur_mobile, 'reference_paiement': l.reference_paiement,
+            'date_paiement': l.date_paiement.strftime('%d/%m/%Y') if l.date_paiement else None,
+        })
+    return jsonify(resultat)
+
+
+@app.route('/api/part-medecin/<int:periode_id>/annuler', methods=['POST'])
+@login_required
+def api_annuler_part_medecin(periode_id):
+    """Avant validation seulement : les prestations redeviennent
+    disponibles pour une prochaine clôture (mauvaise période, mauvais
+    médecin...)."""
+    if not _peut_valider_part_medecin():
+        return jsonify({'success': False, 'error': 'Accès non autorisé pour votre rôle.'}), 403
+    try:
+        structure_id = session.get('structure_id')
+        periode = PeriodePartMedecin.query.filter_by(id=periode_id, structure_id=structure_id).first()
+        if not periode:
+            return jsonify({'success': False, 'error': 'Introuvable'}), 404
+        if periode.statut != 'calculee':
+            return jsonify({'success': False, 'error': "Seule une clôture pas encore validée peut être annulée."}), 400
+
+        PrestationMedecin.query.filter_by(periode_part_medecin_id=periode.id).update({'periode_part_medecin_id': None})
+        db.session.delete(periode)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/part-medecin/<int:periode_id>/valider', methods=['POST'])
+@login_required
+def api_valider_part_medecin(periode_id):
+    """Approbation — admin, gestionnaire OU comptable (élargi par rapport
+    à la ristourne, demande explicite du patron)."""
+    if not _peut_valider_part_medecin():
+        return jsonify({'success': False, 'error': 'Accès non autorisé pour votre rôle.'}), 403
+    try:
+        structure_id = session.get('structure_id')
+        periode = PeriodePartMedecin.query.filter_by(id=periode_id, structure_id=structure_id).first()
+        if not periode:
+            return jsonify({'success': False, 'error': 'Introuvable'}), 404
+        if periode.statut != 'calculee':
+            return jsonify({'success': False, 'error': "Seule une clôture 'calculée' peut être validée"}), 400
+
+        periode.statut = 'validee'
+        periode.validee_par = session.get('user_name', 'System')
+        periode.validee_le = datetime.utcnow()
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/part-medecin/<int:periode_id>/payer', methods=['POST'])
+@login_required
+def api_payer_part_medecin(periode_id):
+    """Enregistrement du paiement — accessible une fois la clôture
+    VALIDÉE. Référence obligatoire pour un mode Mobile Money, simple date
+    pour des espèces. Même mécanique caisse/comptabilité que le paiement
+    d'une ristourne (api_payer_ristourne) : dépense + mise à jour caisse +
+    écriture SYSCOHADA."""
+    if session.get('role') not in ('admin', 'secretaire', 'caissier') and not session.get('is_admin'):
+        return jsonify({'success': False, 'error': 'Accès non autorisé pour votre rôle.'}), 403
+    try:
+        structure_id = session.get('structure_id')
+        periode = PeriodePartMedecin.query.filter_by(id=periode_id, structure_id=structure_id).with_for_update().first()
+        if not periode:
+            return jsonify({'success': False, 'error': 'Introuvable'}), 404
+        if periode.statut != 'validee':
+            return jsonify({'success': False, 'error': "Seule une clôture 'validée' peut être payée"}), 400
+
+        data = request.json or {}
+        mode_paiement = data.get('mode_paiement')
+        date_paiement_str = data.get('date_paiement')
+        if not date_paiement_str:
+            return jsonify({'success': False, 'error': 'Date de paiement requise'}), 400
+        date_paiement = datetime.strptime(date_paiement_str, '%Y-%m-%d').date()
+
+        if mode_paiement == 'especes':
+            operateur_mobile = None
+            reference_paiement = None
+        elif mode_paiement == 'mobile_money':
+            operateur_mobile = data.get('operateur_mobile')
+            reference_paiement = (data.get('reference_paiement') or '').strip()
+            if not operateur_mobile:
+                return jsonify({'success': False, 'error': "L'opérateur (Tmoney, Moov Money...) est requis"}), 400
+            if not reference_paiement:
+                return jsonify({'success': False, 'error': 'La référence de transaction est obligatoire pour un paiement Mobile Money'}), 400
+        else:
+            return jsonify({'success': False, 'error': "mode_paiement doit être 'especes' ou 'mobile_money'"}), 400
+
+        user_name = session.get('user_name', 'System')
+        medecin = Medecin.query.get(periode.medecin_id)
+        nom_medecin = medecin.get_nom_complet() if medecin else 'Médecin'
+        motif = f"Part médecin — {nom_medecin}"
+        montant_total = float(periode.montant_total or 0)
+        description = (f"Part médecin {periode.date_debut.strftime('%d/%m/%Y')} au "
+                        f"{periode.date_fin.strftime('%d/%m/%Y')} — {nom_medecin} "
+                        f"({periode.nb_actes} acte(s))")
+
+        recettes_total = db.execute_query("""
+            SELECT COALESCE(SUM(montant), 0) as total FROM recettes
+            WHERE structure_id = %s AND (est_annulation IS NULL OR est_annulation = FALSE)
+        """, (structure_id,))
+        depenses_total = db.execute_query("""
+            SELECT COALESCE(SUM(montant), 0) as total FROM depenses WHERE structure_id = %s
+        """, (structure_id,))
+        solde = (recettes_total[0]['total'] if recettes_total else 0) - (depenses_total[0]['total'] if depenses_total else 0)
+        if montant_total > solde:
+            return jsonify({'success': False, 'error': f'Solde de caisse insuffisant. Solde actuel : {int(solde):,} FCFA'.replace(',', ' ')}), 400
+
+        result = db.execute_query("""
+            INSERT INTO depenses (structure_id, montant, motif, motif_personnalise, description, created_by_nom,
+                                   moyen_paiement, reference_paiement, date_paiement)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (
+            structure_id, montant_total, motif, None, description, user_name,
+            mode_paiement, reference_paiement, date_paiement,
+        ))
+        depense_id = result[0]['id']
+
+        db.execute_query("""
+            INSERT INTO caisse (structure_id, solde_actuel, date_mise_a_jour)
+            VALUES (%s,
+                (SELECT COALESCE(SUM(montant), 0) FROM recettes WHERE structure_id = %s AND (est_annulation IS NULL OR est_annulation = FALSE)) -
+                (SELECT COALESCE(SUM(montant), 0) FROM depenses WHERE structure_id = %s),
+                NOW())
+            ON CONFLICT (structure_id) DO UPDATE SET
+                solde_actuel = EXCLUDED.solde_actuel,
+                date_mise_a_jour = NOW()
+        """, (structure_id, structure_id, structure_id))
+
+        try:
+            from services.comptabilite_service import generer_ecriture_depense
+            depense_orm = Depense.query.get(depense_id)
+            if depense_orm:
+                ecriture_dep = generer_ecriture_depense(depense_orm, user_nom=user_name)
+                if ecriture_dep:
+                    print(f"🧾 Écriture comptable #{ecriture_dep.id} générée pour la part médecin #{periode_id} (dépense #{depense_id})")
+        except Exception as e:
+            print(f"⚠️ Erreur génération écriture comptable (part médecin #{periode_id}, dépense #{depense_id} conservée): {e}")
+
+        try:
+            from services.journal_service import JournalService
+            JournalService.creer_mouvement(
+                structure_id=structure_id, categorie='part_medecin_payee',
+                description=motif, montant=montant_total, type_montant='debit',
+                reference_type='part_medecin', reference_id=periode_id,
+                utilisateur_nom=user_name,
+            )
+        except Exception as e:
+            print(f"⚠️ Erreur journal d'activité (part médecin #{periode_id}): {e}")
+
+        periode.statut = 'payee'
+        periode.mode_paiement = mode_paiement
+        periode.operateur_mobile = operateur_mobile
+        periode.reference_paiement = reference_paiement
+        periode.date_paiement = date_paiement
+        periode.payee_par = user_name
+        periode.payee_le = datetime.utcnow()
+        db.session.commit()
+        return jsonify({'success': True, 'depense_id': depense_id})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/part-medecin/<int:periode_id>/recu')
+@login_required
+def page_recu_part_medecin(periode_id):
+    structure_id = session.get('structure_id')
+    periode = PeriodePartMedecin.query.filter_by(id=periode_id, structure_id=structure_id).first()
+    if not periode:
+        flash('Introuvable', 'danger')
+        return redirect(url_for('page_part_medecin'))
+    if periode.statut != 'payee':
+        flash("Le reçu n'est disponible qu'une fois le paiement enregistré.", 'warning')
+        return redirect(url_for('page_part_medecin'))
+
+    medecin = Medecin.query.get(periode.medecin_id)
+    lignes = PrestationMedecin.query.filter_by(periode_part_medecin_id=periode.id).order_by(PrestationMedecin.created_at.asc()).all()
+
+    structures = sheets_helper.get_all_records('structures', use_prefix=False)
+    structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
+    structure_info['adresse'] = sheets_helper.format_adresse(structure_info.get('adresse', ''))
+
+    return render_template('recu_part_medecin.html', periode=periode, medecin=medecin,
+                            lignes=lignes, structure=structure_info)
+
+
+@app.route('/part-medecin/emargement')
+@login_required
+def page_emargement_part_medecin():
+    """Liste imprimable de plusieurs clôtures sélectionnées (ex. toutes
+    les 'payées' du mois) — médecin, montant, colonne signature vide.
+    Patron : 'imprimer une liste complète avec tous les réalisateurs et
+    la somme à prendre... une colonne dédiée pour émargement'."""
+    if session.get('role') not in ('admin', 'secretaire', 'caissier', 'gestionnaire', 'comptable'):
+        flash('Accès non autorisé pour votre rôle.', 'danger')
+        return redirect(url_for('dashboard'))
+    structure_id = session.get('structure_id')
+    ids_str = (request.args.get('ids') or '').strip()
+    if ids_str:
+        ids = [int(i) for i in ids_str.split(',') if i.strip().isdigit()]
+        periodes = PeriodePartMedecin.query.filter(
+            PeriodePartMedecin.id.in_(ids), PeriodePartMedecin.structure_id == structure_id,
+        ).order_by(PeriodePartMedecin.id).all()
+    else:
+        periodes = []
+
+    lignes = []
+    for p in periodes:
+        medecin = Medecin.query.get(p.medecin_id)
+        lignes.append({'periode': p, 'medecin_nom': medecin.get_nom_complet() if medecin else '—'})
+
+    structures = sheets_helper.get_all_records('structures', use_prefix=False)
+    structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
+
+    return render_template('emargement_part_medecin.html', lignes=lignes, structure=structure_info,
+                            moment_impression=datetime.utcnow().strftime('%d/%m/%Y %H:%M'))
 
 
 @app.route('/api/actes')

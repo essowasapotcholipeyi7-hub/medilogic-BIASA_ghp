@@ -255,6 +255,18 @@
                 </a>
                 {% endif %}
 
+                <!-- ===== PART MÉDECIN (rétrocession réalisateur) — sous Finance ===== -->
+                {% if not onglet_cache('part_medecin') and not _bloq and session.role in ['admin', 'secretaire', 'caissier', 'gestionnaire', 'comptable'] %}
+                <a class="nav-link {% if request.endpoint == 'page_part_medecin' %}active{% endif %}" href="{{ url_for('page_part_medecin') }}">
+                    <span class="menu-text"><i class="fas fa-user-md me-1"></i> Part Médecin</span>
+                </a>
+                {% if session.is_admin or session.role == 'gestionnaire' %}
+                <a class="nav-link {% if request.endpoint == 'page_taux_part_medecin' %}active{% endif %}" style="padding-left: 32px; font-size: 13px;" href="{{ url_for('page_taux_part_medecin') }}">
+                    <span class="menu-text"><i class="fas fa-percentage me-2"></i>Configurer les taux</span>
+                </a>
+                {% endif %}
+                {% endif %}
+
                 <!-- ===== ENREGISTRER UNE CHARGE (jamais masqué — échappatoire) ===== -->
                 <a class="nav-link {% if request.endpoint == 'page_depenses_saisie' %}active{% endif %}" href="{{ url_for('page_depenses_saisie') }}">
                     <span class="menu-text">Enregistrer une charge</span>

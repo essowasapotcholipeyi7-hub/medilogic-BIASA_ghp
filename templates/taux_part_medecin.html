@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Taux Part Médecin{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h4 class="mb-0"><i class="fas fa-user-md me-2"></i>Part Médecin — configuration des taux par acte</h4>
+    <div>
+        <a href="{{ url_for('page_part_medecin') }}" class="btn btn-outline-dark btn-sm me-2">
+            <i class="fas fa-arrow-left me-1"></i> Part Médecin
+        </a>
+        <button class="btn btn-dark btn-sm" onclick="ouvrirModalTaux()">
+            <i class="fas fa-plus me-1"></i> Configurer un acte
+        </button>
+    </div>
+</div>
+
+<div class="alert alert-info">
+    <i class="fas fa-info-circle me-1"></i>
+    Un acte configuré ici affiche automatiquement un sélecteur "Réalisé par" dans
+    <a href="{{ url_for('actes_vente') }}">Actes &amp; Vente</a> — le pourcentage indiqué revient au médecin qui
+    a réalisé l'acte, le reste à la clinique. Un acte non configuré ici continue de se comporter exactement comme avant.
+</div>
+
+<div class="card">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <span><i class="fas fa-percentage me-1"></i> Actes configurés</span>
+        <span class="badge bg-light text-dark" id="totalTaux">0</span>
+    </div>
+    <div class="card-body p-0">
+        <div id="listeTaux"><div class="text-center text-muted py-4">Chargement...</div></div>
+    </div>
+</div>
+
+<!-- Modal configurer un acte -->
+<div class="modal fade" id="modalTaux" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-user-md me-2"></i>Configurer un acte</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="position-relative mb-2">
+                    <label class="form-label mb-1">Acte</label>
+                    <input type="text" class="form-control" id="tauxSearch" placeholder="Rechercher un acte..." autocomplete="off">
+                    <div id="tauxResultats" class="list-group position-absolute w-100" style="z-index:1000; max-height:220px; overflow-y:auto; display:none;"></div>
+                </div>
+                <div id="tauxChoisiBloc" style="display:none;" class="mb-2 p-2 border rounded bg-light">
+                    <strong id="tauxChoisiNom"></strong>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label mb-1">Taux pour le réalisateur (%)</label>
+                    <input type="number" class="form-control" id="tauxValeur" min="1" max="100" step="1" placeholder="ex: 60">
+                    <div class="form-text">Le reste (100 - ce taux) revient à la clinique.</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="enregistrerTaux()">
+                    <i class="fas fa-check me-1"></i> Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let tauxChoisi = null;
+let debounceTaux = null;
+
+function ouvrirModalTaux() {
+    document.getElementById('tauxSearch').value = '';
+    document.getElementById('tauxValeur').value = '';
+    viderTauxChoisi();
+    new bootstrap.Modal(document.getElementById('modalTaux')).show();
+}
+
+function viderTauxChoisi() {
+    tauxChoisi = null;
+    document.getElementById('tauxChoisiBloc').style.display = 'none';
+    document.getElementById('tauxResultats').style.display = 'none';
+}
+
+document.getElementById('tauxSearch').addEventListener('input', function() {
+    const q = this.value.trim();
+    clearTimeout(debounceTaux);
+    if (q.length < 2) { document.getElementById('tauxResultats').style.display = 'none'; return; }
+    debounceTaux = setTimeout(() => {
+        fetch('/api/actes?search=' + encodeURIComponent(q) + '&limit=20').then(r => r.json()).then(data => {
+            const box = document.getElementById('tauxResultats');
+            const liste = data.data || [];
+            if (!liste.length) { box.style.display = 'none'; return; }
+            box.innerHTML = liste.map(a => `
+                <a href="#" class="list-group-item list-group-item-action" onclick='choisirActeTaux(${JSON.stringify(a.nom).replace(/'/g, "&apos;")}); return false;'>
+                    ${a.nom}
+                </a>`).join('');
+            box.style.display = 'block';
+        });
+    }, 250);
+});
+
+function choisirActeTaux(nom) {
+    tauxChoisi = nom;
+    document.getElementById('tauxChoisiNom').textContent = nom;
+    document.getElementById('tauxChoisiBloc').style.display = '';
+    document.getElementById('tauxResultats').style.display = 'none';
+    document.getElementById('tauxSearch').value = nom;
+}
+
+function enregistrerTaux() {
+    if (!tauxChoisi) { alert('Choisissez un acte dans la liste.'); return; }
+    const taux_medecin = parseFloat(document.getElementById('tauxValeur').value);
+    if (isNaN(taux_medecin) || taux_medecin <= 0 || taux_medecin > 100) {
+        alert('Entrez un taux entre 1 et 100.');
+        return;
+    }
+    fetch('/api/taux-part-medecin', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nom_acte: tauxChoisi, taux_medecin: taux_medecin })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('modalTaux')).hide();
+            chargerTaux();
+        } else {
+            alert('Erreur : ' + (data.error || 'inconnue'));
+        }
+    })
+    .catch(e => alert('Erreur : ' + e));
+}
+
+function supprimerTaux(id) {
+    if (!confirm('Retirer ce taux ? Le sélecteur "Réalisé par" disparaîtra pour cet acte.')) return;
+    fetch('/api/taux-part-medecin/' + id, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(data => { if (data.success) chargerTaux(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+}
+
+function chargerTaux() {
+    fetch('/api/taux-part-medecin').then(r => r.json()).then(lignes => {
+        document.getElementById('totalTaux').textContent = lignes.length;
+        document.getElementById('listeTaux').innerHTML = lignes.length
+            ? '<div class="list-group list-group-flush">' + lignes.map(l => `
+                <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <span>${l.nom_acte}</span>
+                    <span>
+                        <span class="badge bg-success me-2">${l.taux_medecin}% médecin</span>
+                        <button class="btn btn-sm btn-outline-danger" onclick="supprimerTaux(${l.id})" title="Retirer">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </span>
+                </div>`).join('') + '</div>'
+            : '<div class="text-center text-muted py-4">Aucun acte configuré pour le moment.</div>';
+    });
+}
+
+document.addEventListener('click', function(e) {
+    const box = document.getElementById('tauxResultats');
+    if (box && !e.target.closest('#tauxSearch') && !e.target.closest('#tauxResultats')) box.style.display = 'none';
+});
+
+chargerTaux();
+</script>
+
+{% endblock %}

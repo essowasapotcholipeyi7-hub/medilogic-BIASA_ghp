@@ -2275,6 +2275,18 @@
                     Finances&Caisse&Charges
                 </a>
                 {% endif %}
+                <!-- ⭐ Rétrocession au médecin réalisateur — patron : "un
+                     sous-onglet dans le menu horizontal dans finance". -->
+                {% if not onglet_cache('part_medecin') and not _bloq and session.role in ['admin', 'secretaire', 'caissier', 'gestionnaire', 'comptable'] %}
+                <a class="menu-item" href="{{ url_for('page_part_medecin') }}">
+                    Part Médecin
+                </a>
+                {% if session.is_admin or session.role == 'gestionnaire' %}
+                <a class="menu-item" href="{{ url_for('page_taux_part_medecin') }}">
+                    Part Médecin — configurer les taux
+                </a>
+                {% endif %}
+                {% endif %}
                 {% if a_acces('statistiques') and not onglet_cache('statistiques') and not _bloq %}
                 <a class="menu-item" href="{{ url_for('statistiques_ventes') }}">
                     Statistiques des ventes

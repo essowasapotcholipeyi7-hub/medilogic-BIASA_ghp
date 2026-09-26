@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% set cacher_navigation = True %}
+
+{% block title %}Liste d'émargement — Part Médecin{% endblock %}
+
+{% block extra_css %}
+<style>
+    @media print {
+        @page { size: A4; margin: 12mm; }
+        .no-print { display: none !important; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <div class="card">
+            <div class="card-body" style="font-family: 'Segoe UI', Arial, sans-serif;">
+
+                <div class="row" style="background: linear-gradient(135deg, #1d6fa5 0%, #0f4c75 100%); color: white; margin: -20px -20px 20px -20px; padding: 18px; border-radius: 10px 10px 0 0;">
+                    <div class="col-8">
+                        <div class="d-flex align-items-center gap-3">
+                            {% if structure.logo_url %}
+                            <img src="{{ structure.logo_url }}" alt="Logo" style="max-height: 55px; max-width: 110px; background: white; padding: 4px; border-radius: 6px;">
+                            {% endif %}
+                            <div>
+                                <h5 style="margin: 0;">{{ structure.nom or "SSoftOne v10" }}</h5>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-4 text-end">
+                        <h6 style="margin: 0;">LISTE D'ÉMARGEMENT — PART MÉDECIN</h6>
+                        <p style="margin: 2px 0 0 0; font-size: 11px;">Éditée le {{ moment_impression }}</p>
+                    </div>
+                </div>
+
+                {% if not lignes %}
+                <div class="alert alert-warning">Aucune clôture sélectionnée.</div>
+                {% else %}
+                <table style="width:100%; border-collapse: collapse; font-size: 13px;">
+                    <thead>
+                        <tr style="background:#f8f9fa; border-bottom: 2px solid #333;">
+                            <th style="padding:8px; text-align:left;">Médecin réalisateur</th>
+                            <th style="padding:8px; text-align:left;">Période</th>
+                            <th style="padding:8px; text-align:left;">Statut</th>
+                            <th style="padding:8px; text-align:right;">Montant à prendre / pris</th>
+                            <th style="padding:8px; text-align:center; width:220px;">Émargement (signature)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% set total = namespace(montant=0) %}
+                        {% for l in lignes %}
+                        {% set p = l.periode %}
+                        {% set total.montant = total.montant + (p.montant_total|float) %}
+                        <tr style="border-bottom:1px solid #ddd;">
+                            <td style="padding:10px;">{{ l.medecin_nom }}</td>
+                            <td style="padding:10px;">{{ p.date_debut.strftime('%d/%m/%Y') }} → {{ p.date_fin.strftime('%d/%m/%Y') }}</td>
+                            <td style="padding:10px;">
+                                {% if p.statut == 'payee' %}Payée{% elif p.statut == 'validee' %}Validée{% else %}Calculée{% endif %}
+                            </td>
+                            <td style="padding:10px; text-align:right; font-weight:bold;">{{ p.montant_total|round(0)|int }} FCFA</td>
+                            <td style="padding:10px; border-left:1px solid #ddd;">&nbsp;</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr style="border-top:2px solid #333; font-weight:bold;">
+                            <td style="padding:10px;" colspan="3">TOTAL</td>
+                            <td style="padding:10px; text-align:right;">{{ total.montant|round(0)|int }} FCFA</td>
+                            <td style="padding:10px;"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+                {% endif %}
+
+                <hr>
+                <div class="text-center text-muted small">
+                    {{ lignes|length }} réalisateur(s) — document à faire signer par chaque médecin lors de la remise.
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-3 no-print">
+            <button onclick="window.print()" class="btn btn-primary btn-sm"><i class="fas fa-print"></i> Imprimer</button>
+            <a href="{{ url_for('page_part_medecin') }}" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

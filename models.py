@@ -2784,6 +2784,86 @@ class PeriodeRistourne(db.Model):
 
 
 # ============================================================
+# PART MÉDECIN — rétrocession au réalisateur d'un acte (consultation,
+# infiltration, imagerie...), même workflow en 3 états que
+# PeriodeRistourne ci-dessus mais pour un médecin INTERNE (Medecin)
+# plutôt qu'un PrescripteurExterne. Différence assumée : le taux est par
+# ACTE (TauxPartMedecin), pas par médecin — chaque PrestationMedecin fige
+# donc son propre taux/montant à la vente, plutôt qu'un taux unique
+# appliqué à toute une période comme pour la ristourne.
+# ============================================================
+class TauxPartMedecin(db.Model):
+    """Pourcentage reversé au réalisateur, par acte exact — même forme
+    que ClassificationActe (structure_id + nom_acte, upsert). Absent ou
+    à 0% = pas de partage pour cet acte (comportement par défaut,
+    inchangé pour tout le reste du catalogue)."""
+    __tablename__ = 'taux_part_medecin'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    nom_acte = db.Column(db.String(255), nullable=False)
+    taux_medecin = db.Column(db.Numeric, nullable=False)  # % pour le réalisateur
+    actif = db.Column(db.Boolean, default=True)
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('structure_id', 'nom_acte', name='uq_structure_taux_part_medecin'),
+    )
+
+
+class PrestationMedecin(db.Model):
+    """Une ligne facturée attribuée à un médecin réalisateur — créée
+    automatiquement à la vente (même principe que DemandeExamen pour les
+    ristournes, voir services/part_medecin_service.py). Taux et montant
+    FIGÉS au moment de la vente (pas de la clôture) : contrairement à la
+    ristourne où un seul taux s'applique à tout le prescripteur, ici
+    chaque ligne peut avoir un taux différent selon l'acte vendu — les
+    figer seulement à la clôture n'aurait pas de sens."""
+    __tablename__ = 'prestations_medecin'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    medecin_id = db.Column(db.Integer, nullable=False)
+    medecin_nom = db.Column(db.String(255))  # dénormalisé (Medecin.get_nom_complet())
+    vente_id = db.Column(db.Integer)
+    nom_acte = db.Column(db.String(255), nullable=False)
+    prix = db.Column(db.Numeric, nullable=False)
+    quantite = db.Column(db.Integer, default=1)
+    taux_medecin_applique = db.Column(db.Numeric, nullable=False)
+    montant_part_medecin = db.Column(db.Numeric, nullable=False)
+    periode_part_medecin_id = db.Column(db.Integer)  # NULL tant que pas clôturé
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class PeriodePartMedecin(db.Model):
+    """Clôture pour UN médecin sur une période — même 3 états que
+    PeriodeRistourne (calculee/validee/payee) et mêmes champs de
+    paiement. base_calcul/montant_total sont la SOMME des
+    PrestationMedecin déjà individuellement figées (pas un taux unique
+    × base)."""
+    __tablename__ = 'periodes_part_medecin'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    medecin_id = db.Column(db.Integer, nullable=False)
+    date_debut = db.Column(db.Date, nullable=False)
+    date_fin = db.Column(db.Date, nullable=False)
+    base_calcul = db.Column(db.Numeric, default=0)
+    montant_total = db.Column(db.Numeric, default=0)
+    nb_actes = db.Column(db.Integer, default=0)
+    statut = db.Column(db.String(20), default='calculee')  # 'calculee' | 'validee' | 'payee'
+    calculee_par = db.Column(db.String(255))
+    calculee_le = db.Column(db.DateTime, default=datetime.utcnow)
+    validee_par = db.Column(db.String(255))
+    validee_le = db.Column(db.DateTime)
+    mode_paiement = db.Column(db.String(20))
+    operateur_mobile = db.Column(db.String(50))
+    reference_paiement = db.Column(db.String(100))
+    date_paiement = db.Column(db.Date)
+    payee_par = db.Column(db.String(255))
+    payee_le = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# ============================================================
 # HOSPITALISATION — inventaire chambres/lits + occupation
 # ============================================================
 # Pré-créé une bonne fois par la structure (page de configuration), pour
