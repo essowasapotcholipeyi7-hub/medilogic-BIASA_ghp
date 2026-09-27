@@ -940,30 +940,31 @@ function toggleMedecinRealisateur() {
     }
 }
 
-// ⭐ Médecin du jour : défini/modifié depuis le bandeau en haut de la page
-// (voir #bandeauMedecinJour) — partagé entre tous les postes de la
-// structure, upserté côté serveur pour AUJOURD'HUI.
+// ⭐ Médecin du jour : défini/modifié/effacé depuis le bandeau en haut de
+// la page (voir #bandeauMedecinJour) — partagé entre tous les postes de
+// la structure, upserté côté serveur pour AUJOURD'HUI. Laisser "--
+// Choisir --" efface le médecin du jour (repasse à "non défini") au
+// lieu d'être bloqué — patron : "je veux pouvoir choisir rien" pour
+// forcer un nouveau choix explicite (ex: changement d'équipe) plutôt que
+// de risquer de rester sur le mauvais médecin.
 function definirMedecinDuJour() {
     const select = document.getElementById('medecinJourSelect');
-    if (!select || !select.value) {
-        alert('Choisissez un médecin.');
-        return;
-    }
+    if (!select) return;
     fetch('/api/medecin-du-jour', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ medecin_id: select.value })
+        body: JSON.stringify({ medecin_id: select.value || null })
     })
     .then(r => r.json())
     .then(data => {
         if (data.success) {
             MEDECIN_JOUR_ID = data.medecin_id;
             MEDECIN_JOUR_NOM = data.medecin_nom;
-            document.getElementById('medecinJourLabel').textContent = data.medecin_nom;
+            document.getElementById('medecinJourLabel').textContent = data.medecin_nom || 'non défini';
             const btn = document.querySelector('#bandeauMedecinJour button');
-            if (btn) btn.textContent = 'Changer';
+            if (btn) btn.textContent = data.medecin_nom ? 'Changer' : 'Définir';
             if (typeof showToastActes === 'function') {
-                showToastActes(`Médecin du jour : ${data.medecin_nom}`, 'success');
+                showToastActes(data.medecin_nom ? `Médecin du jour : ${data.medecin_nom}` : 'Médecin du jour effacé', 'success');
             }
             toggleMedecinRealisateur();
         } else {
