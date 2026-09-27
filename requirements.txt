@@ -20,3 +20,4 @@ mammoth==1.12.2
 pypdf==6.19.0
 reportlab==4.2.5
 beautifulsoup4==4.15.0
+cryptography==50.0.0

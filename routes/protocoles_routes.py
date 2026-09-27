@@ -7,6 +7,7 @@ from functools import wraps
 from datetime import datetime
 
 from models import db, Structure, ProtocoleMedical, HistoriqueProtocole, ProtocolePatient, Patient, Medecin
+from crypto_helper import dechiffrer_patients_orm
 from services.protocoles_service import ProtocolesService
 from utils.permissions import a_acces
 
@@ -371,7 +372,8 @@ def api_print_protocole(protocole_id):
         }
     
     # Récupérer les patients et médecins
-    patients = Patient.query.filter_by(structure_id=structure_id).order_by(Patient.nom).all()
+    patients = dechiffrer_patients_orm(Patient.query.filter_by(structure_id=structure_id).all())
+    patients.sort(key=lambda p: ((p.nom or '').lower(), (p.prenom or '').lower()))
     medecins = Medecin.query.filter_by(structure_id=structure_id, actif=True).order_by(Medecin.nom).all()
     
     return render_template(
@@ -389,8 +391,9 @@ def api_patients_liste():
     """API: Liste des patients pour sélection"""
     structure_id = session.get('structure_id')
     
-    patients = Patient.query.filter_by(structure_id=structure_id).order_by(Patient.nom).all()
-    
+    patients = dechiffrer_patients_orm(Patient.query.filter_by(structure_id=structure_id).all())
+    patients.sort(key=lambda p: ((p.nom or '').lower(), (p.prenom or '').lower()))
+
     result = []
     for p in patients:
         result.append({

@@ -70,10 +70,13 @@ class Patient(db.Model):
     structure_id = db.Column(db.Integer, db.ForeignKey('structures.id'), nullable=False)
     
     # Identité
-    nom = db.Column(db.String(100), nullable=False)
-    prenom = db.Column(db.String(100), nullable=False)
+    # ⭐ nom/prenom/telephone chiffrés en base (voir crypto_helper.py) —
+    # Text plutôt que String(100)/String(50) : un texte chiffré est
+    # nettement plus long que le texte en clair d'origine.
+    nom = db.Column(db.Text, nullable=False)
+    prenom = db.Column(db.Text, nullable=False)
     date_naissance = db.Column(db.Date)
-    telephone = db.Column(db.String(50))
+    telephone = db.Column(db.Text)
     adresse = db.Column(db.Text)
     
     # Assurance

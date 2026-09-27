@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from flask_mail import Mail, Message
 from config import Config
 from sheets_helper import sheets_helper, normaliser_nom_article
+from crypto_helper import chiffrer, dechiffrer, dechiffrer_champs, dechiffrer_lignes, dechiffrer_patients_orm
 import hashlib
 import re
 import secrets
@@ -1960,6 +1961,7 @@ def patients():
             ORDER BY id DESC
         """, (structure_id,))
 
+        dechiffrer_lignes(patients)
         patients_list = []
         if patients:
             for p in patients:
@@ -2053,12 +2055,26 @@ def api_recherche_globale():
     resultats = []
 
     try:
+        # ⭐ nom/prenom/telephone sont chiffrés en base (voir crypto_helper.py)
+        # — une recherche ILIKE au niveau SQL ne peut plus fonctionner sur du
+        # texte chiffré (IV aléatoire à chaque chiffrement). On récupère donc
+        # les patients de la structure, on déchiffre, puis on filtre en
+        # mémoire — volumes cliniques (quelques centaines/milliers de
+        # patients par structure), coût négligeable.
         cols = ['id', 'nom', 'prenom', 'telephone']
-        rows = db.execute_query(f"""
+        tous = db.execute_query(f"""
             SELECT {', '.join(cols)} FROM patients
-            WHERE structure_id = %s AND (nom ILIKE %s OR prenom ILIKE %s OR telephone ILIKE %s)
-            ORDER BY id DESC LIMIT 5
-        """, (structure_id, like, like, like)) or []
+            WHERE structure_id = %s
+            ORDER BY id DESC
+        """, (structure_id,)) or []
+        dechiffrer_lignes(tous)
+        q_lower = q.lower()
+        rows = [
+            r for r in tous
+            if q_lower in (r.get('nom') or '').lower()
+            or q_lower in (r.get('prenom') or '').lower()
+            or q_lower in (r.get('telephone') or '').lower()
+        ][:5]
         for r in rows:
             r = _ligne_recherche(r, cols)
             nom_complet = f"{r.get('nom') or ''} {r.get('prenom') or ''}".strip()
@@ -2298,9 +2314,9 @@ def api_add_patient():
             RETURNING id
         """, (
             structure_id,
-            data.get('nom'),
-            data.get('prenom', ''),
-            data.get('telephone'),
+            chiffrer(data.get('nom')),
+            chiffrer(data.get('prenom', '')),
+            chiffrer(data.get('telephone')),
             data.get('adresse', ''),
             data.get('date_naissance', ''),
             data.get('type_assurance', 'non_assure'),
@@ -2378,9 +2394,10 @@ def api_get_patient(id):
         
         if not result or len(result) == 0:
             return jsonify({'success': False, 'error': 'Patient non trouvé'}), 404
-        
+
         row = result[0]
-        
+        dechiffrer_champs(row)
+
         # Si c'est un dictionnaire
         if isinstance(row, dict):
             created_at = row.get('created_at')
@@ -2569,8 +2586,13 @@ def api_get_patients():
                    numero_local
             FROM patients
             WHERE structure_id = %s
-            ORDER BY nom, prenom
         """, (structure_id,))
+
+        # ⭐ nom/prenom chiffrés (crypto_helper.py) : le tri alphabétique ne
+        # peut plus se faire en SQL (ORDER BY sur du texte chiffré serait
+        # dans le désordre) — on déchiffre puis on trie en mémoire.
+        dechiffrer_lignes(patients)
+        patients.sort(key=lambda p: ((p.get('nom') or '').lower(), (p.get('prenom') or '').lower()))
 
         result = []
         for p in patients:
@@ -5965,8 +5987,9 @@ def rendez_vous():
     
     # Récupérer les médecins et patients
     medecins = Medecin.query.filter_by(structure_id=structure_id, actif=True).all()
-    patients = Patient.query.filter_by(structure_id=structure_id).order_by(Patient.nom).all()
-    
+    patients = dechiffrer_patients_orm(Patient.query.filter_by(structure_id=structure_id).all())
+    patients.sort(key=lambda p: ((p.nom or '').lower(), (p.prenom or '').lower()))
+
     return render_template(
         'rendez_vous.html',
         rendez_vous=rendez_vous,
@@ -6059,11 +6082,15 @@ def api_creer_rendez_vous_externe():
     ).first():
         return jsonify({'success': True, 'message': 'Déjà poussé précédemment', 'deja_existant': True})
 
-    patient = Patient.query.filter(
-        Patient.structure_id == structure_id,
-        db.func.lower(Patient.nom) == patient_nom.lower(),
-        db.func.lower(Patient.prenom) == patient_prenom.lower()
-    ).first()
+    # ⭐ nom/prenom chiffrés (crypto_helper.py) : l'égalité exacte ne peut
+    # plus se faire en SQL (chiffrement à IV aléatoire) — on récupère les
+    # patients de la structure, on déchiffre, on compare en mémoire.
+    candidats = dechiffrer_patients_orm(Patient.query.filter_by(structure_id=structure_id).all())
+    patient = next((
+        p for p in candidats
+        if (p.nom or '').lower() == patient_nom.lower()
+        and (p.prenom or '').lower() == patient_prenom.lower()
+    ), None)
     if not patient:
         return jsonify({'success': False, 'error': 'patient_introuvable'}), 404
 
@@ -6211,7 +6238,8 @@ def api_liste_patients():
     """API: Liste des patients pour la recherche"""
     structure_id = session.get('structure_id')
     
-    patients = Patient.query.filter_by(structure_id=structure_id).order_by(Patient.nom).all()
+    patients = dechiffrer_patients_orm(Patient.query.filter_by(structure_id=structure_id).all())
+    patients.sort(key=lambda p: ((p.nom or '').lower(), (p.prenom or '').lower()))
 
     result = []
     for p in patients:
@@ -6221,7 +6249,7 @@ def api_liste_patients():
             'prenom': p.prenom or '',
             'telephone': p.telephone or ''
         })
-    
+
     return jsonify({'success': True, 'data': result})
 
 @app.route('/rendez_vous/api/<int:rdv_id>/terminer', methods=['POST'])
@@ -6858,8 +6886,9 @@ def patient_rendez_vous(patient_id, token):
         
         # Essayer depuis PostgreSQL avec SQLAlchemy d'abord
         patient = Patient.query.get(patient_id)
-        
+
         if patient:
+            dechiffrer_patients_orm([patient])
             patient_info = {
                 'id': patient.id,
                 'nom': patient.nom,
@@ -6878,8 +6907,9 @@ def patient_rendez_vous(patient_id, token):
             
             if not result or len(result) == 0:
                 return "Patient non trouvé", 404
-            
+
             row = result[0]
+            dechiffrer_champs(row)
             if isinstance(row, dict):
                 patient_info = row
                 structure_id = row.get('structure_id')
@@ -7697,9 +7727,9 @@ def api_update_patient(patient_id):
                 personne_a_prevenir_nom = %s, personne_a_prevenir_telephone = %s, personne_a_prevenir_relation = %s
             WHERE id = %s AND structure_id = %s
         """, (
-            data.get('nom'),
-            data.get('prenom', ''),
-            data.get('telephone'),
+            chiffrer(data.get('nom')),
+            chiffrer(data.get('prenom', '')),
+            chiffrer(data.get('telephone')),
             data.get('adresse', ''),
             data.get('date_naissance', ''),
             data.get('type_assurance', 'non_assure'),
@@ -9097,6 +9127,7 @@ def _charger_patient_pour_finalisation(patient_id, structure_id):
     if not rows:
         return None
     p = rows[0]
+    dechiffrer_champs(p)
     if isinstance(p, dict):
         return {
             'id': p.get('id'), 'nom': f"{p.get('nom', '')} {p.get('prenom', '')}".strip(),
@@ -10605,6 +10636,7 @@ def api_creer_patient_externe():
         patient_row = db.execute_query("SELECT nom, prenom FROM patients WHERE id = %s AND structure_id = %s", (patient_id, structure_id))
         if not patient_row:
             return jsonify({'success': False, 'error': 'Patient introuvable'}), 404
+        dechiffrer_champs(patient_row[0])
         patient_nom = f"{patient_row[0].get('nom', '')} {patient_row[0].get('prenom', '')}".strip()
 
         # ⭐ Upsert (comme les prescripteurs) : un patient qui a DÉJÀ une
@@ -11501,6 +11533,7 @@ def page_carte_portail_patient(patient_id):
     if not patient_row:
         flash('Patient introuvable', 'danger')
         return redirect(url_for('patients'))
+    dechiffrer_champs(patient_row[0])
 
     acces = obtenir_ou_creer_code_acces(structure_id, patient_id, session.get('user_name', 'System'))
 
@@ -11732,6 +11765,8 @@ def api_verifier_portail_patient():
             "SELECT id, nom, prenom, telephone FROM patients WHERE id = %s AND structure_id = %s",
             (acces.patient_id, acces.structure_id)
         )
+        if patient_row:
+            dechiffrer_champs(patient_row[0])
         if not patient_row or (patient_row[0].get('telephone') or '').strip() != telephone:
             return jsonify({'success': False, 'error': 'Téléphone ou code incorrect'}), 401
 
@@ -11820,6 +11855,8 @@ def api_portail_webauthn_inscription_options():
     from services.webauthn_login_service import options_inscription
 
     patient_row = db.execute_query("SELECT nom, prenom FROM patients WHERE id = %s AND structure_id = %s", (patient_id, structure_id))
+    if patient_row:
+        dechiffrer_champs(patient_row[0])
     patient_nom = f"{patient_row[0].get('nom', '')} {patient_row[0].get('prenom', '')}".strip() if patient_row else f"Patient {patient_id}"
 
     options_json, challenge = options_inscription(request, structure_id, patient_id, 'patient', patient_nom)
@@ -11841,6 +11878,8 @@ def api_portail_webauthn_inscription_verifier():
         return jsonify({'success': False, 'error': 'Session expirée, recommencez.'}), 400
 
     patient_row = db.execute_query("SELECT nom, prenom FROM patients WHERE id = %s AND structure_id = %s", (patient_id, structure_id))
+    if patient_row:
+        dechiffrer_champs(patient_row[0])
     patient_nom = f"{patient_row[0].get('nom', '')} {patient_row[0].get('prenom', '')}".strip() if patient_row else f"Patient {patient_id}"
 
     try:
@@ -18541,6 +18580,7 @@ def api_creer_facture_from_vente(vente_id):
         patient_telephone = ''
         if patient:
             p = patient[0]
+            dechiffrer_champs(p)
             if isinstance(p, dict):
                 patient_nom = f"{p.get('nom', '')} {p.get('prenom', '')}".strip()
                 patient_telephone = p.get('telephone', '')
@@ -19372,9 +19412,9 @@ def api_sync_patients():
             date_naissance = p[5] if len(p) > 5 else None  # index 5 = date_naissance
             result_list.append({
                 'ID': p[0],  # id
-                'nom': p[1] or '',  # nom
-                'prenom': p[2] or '',  # prenom
-                'telephone': p[3] or '',  # telephone
+                'nom': dechiffrer(p[1]) or '',  # nom
+                'prenom': dechiffrer(p[2]) or '',  # prenom
+                'telephone': dechiffrer(p[3]) or '',  # telephone
                 'adresse': p[4] or '',  # adresse
                 'date_naissance': date_naissance.strftime('%Y-%m-%d') if date_naissance else None,
                 'type_assurance': p[6] or 'non_assure',  # type_assurance
@@ -19724,15 +19764,23 @@ def api_receive_prescriptions():
             patient_id = None
             
             if patient_nom and patient_prenom:
-                patient_info = db.execute_query("""
-                    SELECT id, telephone, type_assurance, taux_prise_charge,
+                # ⭐ nom/prenom chiffrés (crypto_helper.py) : égalité exacte
+                # impossible en SQL (chiffrement à IV aléatoire) — on
+                # récupère les patients de la structure, on déchiffre, on
+                # compare en mémoire.
+                candidats = db.execute_query("""
+                    SELECT id, nom, prenom, telephone, type_assurance, taux_prise_charge,
                            assurance2_nom, taux_assurance2, numero_assure
-                    FROM patients 
-                    WHERE LOWER(nom) = LOWER(%s) 
-                    AND LOWER(prenom) = LOWER(%s)
-                    AND structure_id = %s
-                """, (patient_nom.strip(), patient_prenom.strip(), structure_id))
-                
+                    FROM patients
+                    WHERE structure_id = %s
+                """, (structure_id,))
+                dechiffrer_lignes(candidats)
+                patient_info = [
+                    c for c in (candidats or [])
+                    if (c.get('nom') or '').strip().lower() == patient_nom.strip().lower()
+                    and (c.get('prenom') or '').strip().lower() == patient_prenom.strip().lower()
+                ]
+
                 if patient_info and len(patient_info) > 0:
                     pat = patient_info[0]
                     patient_id = pat.get('id')
@@ -19908,13 +19956,17 @@ def _resoudre_patient_sync_externe(structure_id, patient_source_id, patient_nom,
     if patient_source_id:
         p = Patient.query.filter_by(id=patient_source_id, structure_id=structure_id).first()
         if p:
-            return p
+            return dechiffrer_patients_orm([p])[0]
     if patient_nom and patient_prenom:
-        return Patient.query.filter(
-            db.func.lower(Patient.nom) == patient_nom.strip().lower(),
-            db.func.lower(Patient.prenom) == patient_prenom.strip().lower(),
-            Patient.structure_id == structure_id,
-        ).first()
+        # ⭐ nom/prenom chiffrés (crypto_helper.py) : égalité exacte
+        # impossible en SQL, on compare en mémoire (voir même logique dans
+        # api_receive_prescriptions ci-dessus).
+        candidats = dechiffrer_patients_orm(Patient.query.filter_by(structure_id=structure_id).all())
+        return next((
+            p for p in candidats
+            if (p.nom or '').lower() == patient_nom.strip().lower()
+            and (p.prenom or '').lower() == patient_prenom.strip().lower()
+        ), None)
     return None
 
 
@@ -21070,15 +21122,22 @@ def imprimer_ordonnances_medicaments(patient_id):
             return redirect(url_for('prescriptions_recues'))
         
         # ⭐⭐ RECHERCHER LE PATIENT PAR NOM ET PRÉNOM ⭐⭐
-        patient_info = db.execute_query("""
+        # ⭐ nom/prenom chiffrés (crypto_helper.py) : égalité exacte
+        # impossible en SQL — on récupère les patients de la structure, on
+        # déchiffre, on compare en mémoire.
+        candidats = db.execute_query("""
             SELECT id, nom, prenom, telephone, type_assurance, taux_prise_charge,
                    assurance2_nom, taux_assurance2, numero_assure
-            FROM patients 
-            WHERE LOWER(nom) = LOWER(%s) 
-            AND LOWER(prenom) = LOWER(%s)
-            AND structure_id = %s
-        """, (patient_nom.strip(), patient_prenom.strip(), structure_id))
-        
+            FROM patients
+            WHERE structure_id = %s
+        """, (structure_id,))
+        dechiffrer_lignes(candidats)
+        patient_info = [
+            c for c in (candidats or [])
+            if (c.get('nom') or '').strip().lower() == patient_nom.strip().lower()
+            and (c.get('prenom') or '').strip().lower() == patient_prenom.strip().lower()
+        ]
+
         # ⭐ SI LE PATIENT EST TROUVÉ → Utiliser ses infos
         if patient_info and len(patient_info) > 0:
             pat = patient_info[0]
@@ -21188,15 +21247,22 @@ def imprimer_ordonnances_actes(patient_id):
             return redirect(url_for('prescriptions_recues'))
         
         # ⭐⭐ RECHERCHER LE PATIENT PAR NOM ET PRÉNOM ⭐⭐
-        patient_info = db.execute_query("""
+        # ⭐ nom/prenom chiffrés (crypto_helper.py) : égalité exacte
+        # impossible en SQL — on récupère les patients de la structure, on
+        # déchiffre, on compare en mémoire.
+        candidats = db.execute_query("""
             SELECT id, nom, prenom, telephone, type_assurance, taux_prise_charge,
                    assurance2_nom, taux_assurance2, numero_assure
-            FROM patients 
-            WHERE LOWER(nom) = LOWER(%s) 
-            AND LOWER(prenom) = LOWER(%s)
-            AND structure_id = %s
-        """, (patient_nom.strip(), patient_prenom.strip(), structure_id))
-        
+            FROM patients
+            WHERE structure_id = %s
+        """, (structure_id,))
+        dechiffrer_lignes(candidats)
+        patient_info = [
+            c for c in (candidats or [])
+            if (c.get('nom') or '').strip().lower() == patient_nom.strip().lower()
+            and (c.get('prenom') or '').strip().lower() == patient_prenom.strip().lower()
+        ]
+
         # ⭐ SI LE PATIENT EST TROUVÉ → Utiliser ses infos
         if patient_info and len(patient_info) > 0:
             pat = patient_info[0]
