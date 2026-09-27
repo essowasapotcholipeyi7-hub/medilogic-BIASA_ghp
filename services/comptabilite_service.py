@@ -503,6 +503,7 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
         prise_en_charge = _to_float(vente.prise_en_charge)
         prise_en_charge2 = _to_float(vente.prise_en_charge2)
         reste_a_payer = _to_float(vente.reste_a_payer)
+        aide_hospitaliere = _to_float(getattr(vente, 'aide_hospitaliere', 0))
 
         lignes = []
         total_debit = 0.0
@@ -543,6 +544,21 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
                             'debit': reste_a_payer,
                             'tiers_type': 'patient', 'tiers_id': vente.patient_id, 'tiers_nom': vente.patient_nom})
             total_debit += reste_a_payer
+
+        # ⭐ FIX (anomalies "écriture déséquilibrée rejetée") : l'aide
+        # hospitalière n'était jamais comptabilisée — la vente est
+        # créditée au tarif brut (totaux_par_compte, plus bas) mais aucune
+        # ligne de débit ne couvrait la part que l'aide dispense le
+        # patient/l'assurance de payer, laissant l'écriture perpétuellement
+        # à découvert du montant exact de l'aide. Ici, une remise accordée
+        # au patient (691 — Rabais, remises et ristournes accordés), pas
+        # une créance à recevoir : ça rétablit l'équilibre débit=crédit
+        # sans affecter la trésorerie ni la créance client réelle.
+        if aide_hospitaliere > 0.5:
+            lignes.append({'numero_compte': COMPTE_CREANCE_ABANDONNEE,
+                            'libelle': f"Aide hospitalière accordée — {vente.patient_nom}",
+                            'debit': aide_hospitaliere})
+            total_debit += aide_hospitaliere
 
         if total_debit <= 0.5:
             return None  # rien à comptabiliser (ex: vente à 0)
