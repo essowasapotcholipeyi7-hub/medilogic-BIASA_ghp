@@ -3129,12 +3129,12 @@ function restoreSidebarState() {
     if (!sidebar) return;
 
     let hidden = localStorage.getItem('sidebarHidden');
-    // ⭐ Sur mobile/tablette, tant que l'utilisateur n'a jamais touché au
-    // bouton (aucune préférence enregistrée), le menu démarre replié —
-    // sinon il s'ouvre par-dessus tout le contenu au premier chargement
-    // (le "hidden" ne masque le sidebar qu'en dessous de 768px, donc ça
-    // ne change rien à l'affichage desktop).
-    if (hidden === null && window.innerWidth <= 768) {
+    // ⭐ Tant que l'utilisateur n'a jamais touché au bouton (aucune
+    // préférence enregistrée), le menu démarre replié par défaut — sur
+    // desktop comme sur mobile/tablette — pour laisser plus d'espace à
+    // l'écran (même logique que gestion_patients). Un utilisateur qui a
+    // déjà choisi (ouvert ou fermé) garde son choix via localStorage.
+    if (hidden === null) {
         hidden = 'true';
     }
 
