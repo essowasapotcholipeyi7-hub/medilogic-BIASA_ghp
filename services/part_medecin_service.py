@@ -19,6 +19,15 @@ def charger_taux_part_medecin(structure_id):
     return {l.nom_acte: float(l.taux_medecin or 0) for l in lignes}
 
 
+def charger_toujours_demander_medecin(structure_id):
+    """{nom_acte: bool} — actes dont le sélecteur "Réalisé par" doit
+    TOUJOURS être demandé ligne par ligne (ex: infiltration), même quand
+    un médecin du jour est défini. Voir data-medecin-obligatoire dans
+    actes_vente.html."""
+    lignes = TauxPartMedecin.query.filter_by(structure_id=structure_id, actif=True).all()
+    return {l.nom_acte: bool(l.toujours_demander_medecin) for l in lignes}
+
+
 def creer_lignes_part_medecin(structure_id, articles, vente_id, user_name):
     """Parcourt les articles d'une vente tout juste créée et crée une
     PrestationMedecin pour chaque ligne qui porte un medecin_id ET dont

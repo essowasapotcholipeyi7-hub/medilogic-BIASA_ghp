@@ -2803,6 +2803,9 @@ class TauxPartMedecin(db.Model):
     nom_acte = db.Column(db.String(255), nullable=False)
     taux_medecin = db.Column(db.Numeric, nullable=False)  # % pour le réalisateur
     actif = db.Column(db.Boolean, default=True)
+    # Toujours demander le médecin ligne par ligne, même si un "médecin du
+    # jour" est défini (ex: infiltration, où le réalisateur varie).
+    toujours_demander_medecin = db.Column(db.Boolean, default=False)
     created_by = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -3813,4 +3816,26 @@ class JourFerie(db.Model):
 
     __table_args__ = (
         db.UniqueConstraint('structure_id', 'date', name='uq_structure_jour_ferie'),
+    )
+
+
+class MedecinDuJour(db.Model):
+    """Médecin par défaut pour toutes les consultations/imageries d'une
+    journée donnée, par structure — évite de redemander le médecin à
+    chaque ligne de vente (voir toujours_demander_medecin sur
+    TauxPartMedecin pour les actes qui doivent continuer à demander,
+    ex: infiltration). Modifiable en cours de journée (upsert), même
+    patron que JourFerie."""
+    __tablename__ = 'medecin_du_jour'
+
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    date = db.Column(db.Date, nullable=False)
+    medecin_id = db.Column(db.Integer, nullable=False)
+    defini_par = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('structure_id', 'date', name='uq_structure_medecin_du_jour'),
     )

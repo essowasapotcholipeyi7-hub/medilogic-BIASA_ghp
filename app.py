@@ -15,13 +15,13 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient, FaqQuestion, FaqQuestionUtilisateur, JourFerie, TauxPartMedecin, PrestationMedecin, PeriodePartMedecin
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient, FaqQuestion, FaqQuestionUtilisateur, JourFerie, TauxPartMedecin, PrestationMedecin, PeriodePartMedecin, MedecinDuJour
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
 from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur
 from services.laboratoire_service import charger_classification_actes, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
-from services.part_medecin_service import charger_taux_part_medecin, creer_lignes_part_medecin, prestations_en_attente, calculer_periode_part_medecin
+from services.part_medecin_service import charger_taux_part_medecin, creer_lignes_part_medecin, prestations_en_attente, calculer_periode_part_medecin, charger_toujours_demander_medecin
 from services.facturation_amu_service import generer_lignes_facture_amu_cnss, charger_classification_amu_cnss, generer_lignes_facture_amu
 from utils.categories_amu_cnss import CATEGORIES_AMU_CNSS, CATEGORIES_AMU_CNSS_DICT
 from utils.categories_amu_inam import CATEGORIES_AMU_INAM, CATEGORIES_AMU_INAM_PLATES, CATEGORIES_AMU_INAM_DICT, REGIMES_AMU_INAM
@@ -2749,6 +2749,10 @@ def actes_vente():
     # chaque <option> (même esprit que prix_nuit) — voir
     # services/part_medecin_service.py.
     taux_part_medecin_par_acte = charger_taux_part_medecin(structure_id)
+    # ⭐ Médecin du jour : actes qui doivent TOUJOURS demander le médecin
+    # ligne par ligne (ex: infiltration), même si un médecin du jour est
+    # défini — voir data-medecin-obligatoire.
+    toujours_demander_medecin_par_acte = charger_toujours_demander_medecin(structure_id)
 
     # Filtrer par structure
     actes_filtres = []
@@ -2824,6 +2828,7 @@ def actes_vente():
                 'statut': statut,  # 🔥 AJOUTER ICI
                 'prix_nuit': prix_nuit or None,
                 'taux_medecin': taux_part_medecin_par_acte.get(a.get('nom', '')) or None,
+                'medecin_obligatoire': bool(toujours_demander_medecin_par_acte.get(a.get('nom', ''))),
             })
     
     patients = sheets_helper.get_all_records('patients', use_prefix=True)
@@ -2939,6 +2944,10 @@ def actes_vente():
     medecins_actifs = Medecin.query.filter_by(structure_id=structure_id, actif=True).order_by(Medecin.nom).all()
     medecins_liste = [{'id': m.id, 'nom_complet': m.get_nom_complet()} for m in medecins_actifs]
 
+    # ⭐ Médecin du jour : défini une fois le matin, appliqué automatiquement
+    # aux actes concernés (voir medecin_du_jour_actuel()).
+    medecin_du_jour = medecin_du_jour_actuel(structure_id)
+
     return render_template('actes_vente.html',
                           actes=actes_filtres,
                           patients=patients,
@@ -2947,7 +2956,8 @@ def actes_vente():
                           vente_attente=vente_attente,
                           tarif_nuit_actif=tarif_nuit_actif,
                           catalogue_a_tarif_nuit=catalogue_a_tarif_nuit,
-                          medecins_liste=medecins_liste)
+                          medecins_liste=medecins_liste,
+                          medecin_du_jour=medecin_du_jour)
 
 
 @app.route('/pharma_vente')
@@ -9035,6 +9045,21 @@ def est_tarif_nuit_actif(structure_id, moment=None):
     return bool(nuit_horaire or dimanche or ferie)
 
 
+def medecin_du_jour_actuel(structure_id, moment=None):
+    """Le médecin par défaut déclaré pour AUJOURD'HUI, pour cette
+    structure — ou None si personne ne l'a encore défini. Une seule ligne
+    par (structure_id, date), upsertée par api_definir_medecin_du_jour().
+    `moment` overridable (tests) — sinon `datetime.utcnow()`."""
+    moment = moment or datetime.utcnow()
+    ligne = MedecinDuJour.query.filter_by(structure_id=structure_id, date=moment.date()).first()
+    if not ligne:
+        return None
+    medecin = Medecin.query.get(ligne.medecin_id)
+    if not medecin:
+        return None
+    return {'id': medecin.id, 'nom_complet': medecin.get_nom_complet()}
+
+
 def _repartition_ligne_vente_attente(article, taux_amu, taux_cac):
     """Estimation de la répartition AMU/CAC/Patient d'une ligne, même formule
     que le panier d'actes_vente.html/pharma_vente.html (afficherPanier()) —
@@ -10141,6 +10166,7 @@ def api_lister_taux_part_medecin():
     lignes = TauxPartMedecin.query.filter_by(structure_id=structure_id).order_by(TauxPartMedecin.nom_acte).all()
     return jsonify([{
         'id': l.id, 'nom_acte': l.nom_acte, 'taux_medecin': float(l.taux_medecin or 0), 'actif': l.actif,
+        'toujours_demander_medecin': bool(l.toujours_demander_medecin),
     } for l in lignes])
 
 
@@ -10153,6 +10179,7 @@ def api_creer_taux_part_medecin():
         data = request.json or {}
         nom_acte = (data.get('nom_acte') or '').strip()
         taux_medecin = data.get('taux_medecin')
+        toujours_demander_medecin = bool(data.get('toujours_demander_medecin'))
         if not nom_acte:
             return jsonify({'success': False, 'error': 'Acte requis'}), 400
         try:
@@ -10166,11 +10193,13 @@ def api_creer_taux_part_medecin():
         if existante:
             existante.taux_medecin = taux_medecin
             existante.actif = True
+            existante.toujours_demander_medecin = toujours_demander_medecin
             db.session.commit()
             return jsonify({'success': True, 'id': existante.id, 'mis_a_jour': True})
 
         ligne = TauxPartMedecin(
             structure_id=structure_id, nom_acte=nom_acte, taux_medecin=taux_medecin,
+            toujours_demander_medecin=toujours_demander_medecin,
             created_by=session.get('user_name', 'System'),
         )
         db.session.add(ligne)
@@ -10193,6 +10222,42 @@ def api_supprimer_taux_part_medecin(ligne_id):
         db.session.delete(ligne)
         db.session.commit()
         return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/medecin-du-jour', methods=['POST'])
+@login_required
+def api_definir_medecin_du_jour():
+    """Définit/modifie le médecin du jour pour AUJOURD'HUI, pour cette
+    structure — accessible à quiconque a accès à Actes & Vente (pas
+    admin-only : c'est un geste de prise de poste du matin, pas un
+    paramétrage), modifiable autant de fois que nécessaire dans la
+    journée (upsert). Voir medecin_du_jour_actuel()."""
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        medecin_id = data.get('medecin_id')
+        if not medecin_id:
+            return jsonify({'success': False, 'error': 'Médecin requis'}), 400
+        medecin = Medecin.query.filter_by(id=medecin_id, structure_id=structure_id, actif=True).first()
+        if not medecin:
+            return jsonify({'success': False, 'error': 'Médecin introuvable'}), 404
+
+        aujourdhui = datetime.utcnow().date()
+        ligne = MedecinDuJour.query.filter_by(structure_id=structure_id, date=aujourdhui).first()
+        if ligne:
+            ligne.medecin_id = medecin.id
+            ligne.defini_par = session.get('user_name', 'System')
+        else:
+            ligne = MedecinDuJour(
+                structure_id=structure_id, date=aujourdhui, medecin_id=medecin.id,
+                defini_par=session.get('user_name', 'System'),
+            )
+            db.session.add(ligne)
+        db.session.commit()
+        return jsonify({'success': True, 'medecin_id': medecin.id, 'medecin_nom': medecin.get_nom_complet()})
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500

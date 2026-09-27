@@ -48,6 +48,33 @@
         </div>
         {% endif %}
 
+        <!-- ⭐ Médecin du jour : réglé une fois le matin, appliqué
+        automatiquement aux actes configurés (consultation, imagerie...)
+        sauf ceux marqués "toujours demander" (ex: infiltration) — voir
+        data-medecin-obligatoire, toggleMedecinRealisateur() et
+        ajouterActe() plus bas. Partagé entre tous les postes de la
+        structure (pas un réglage par navigateur), modifiable à tout
+        moment de la journée. -->
+        <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-2" id="bandeauMedecinJour">
+            <div>
+                <i class="fas fa-user-md"></i>
+                Médecin du jour :
+                <strong id="medecinJourLabel">{{ medecin_du_jour.nom_complet if medecin_du_jour else 'non défini' }}</strong>
+                — appliqué automatiquement aux actes concernés (consultation, imagerie...), sauf ceux qui demandent toujours le médecin (ex : infiltration).
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <select class="form-control form-control-sm" id="medecinJourSelect" style="width:auto;">
+                    <option value="">-- Choisir --</option>
+                    {% for medecin in medecins_liste %}
+                    <option value="{{ medecin.id }}" {% if medecin_du_jour and medecin_du_jour.id == medecin.id %}selected{% endif %}>{{ medecin.nom_complet }}</option>
+                    {% endfor %}
+                </select>
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="definirMedecinDuJour()">
+                    {{ 'Changer' if medecin_du_jour else 'Définir' }}
+                </button>
+            </div>
+        </div>
+
         <div class="card mt-3">
             <div class="card-header bg-primary text-white">
                 <h5>Actes médicaux</h5>
@@ -84,6 +111,7 @@
                 data-pbr="{{ acte.pbr or acte.prix }}"
                 data-prix-nuit="{{ acte.prix_nuit or '' }}"
                 data-taux-medecin="{{ acte.taux_medecin or '' }}"
+                data-medecin-obligatoire="{{ 'true' if acte.medecin_obligatoire else '' }}"
                 data-nom="{{ acte.nom }}"
                 data-statut="{{ acte.statut or 'direct' }}"
                 data-prise-en-charge-amu="{{ 'true' if acte.prise_en_charge_amu else 'false' }}"
@@ -522,6 +550,11 @@
 // Utilisé uniquement dans ajouterActe() pour choisir data-prix-nuit à la
 // place de data-prix ; le reste du panier réutilise item.prix tel quel.
 const TARIF_NUIT_ACTIF = {{ 'true' if tarif_nuit_actif else 'false' }};
+// ⭐ Médecin du jour : réassigné sans reload par definirMedecinDuJour()
+// quand on change/définit le médecin depuis le bandeau — voir
+// toggleMedecinRealisateur() et ajouterActe().
+let MEDECIN_JOUR_ID = {{ medecin_du_jour.id if medecin_du_jour else 'null' }};
+let MEDECIN_JOUR_NOM = {{ (medecin_du_jour.nom_complet | tojson) if medecin_du_jour else 'null' }};
 let tauxTvaActuel = 18;
 let panier = [];
 let patientId = null;
@@ -895,11 +928,49 @@ function toggleMedecinRealisateur() {
     if (!select || !wrapper) return;
     const option = select.options[select.selectedIndex];
     const tauxMedecin = option ? option.getAttribute('data-taux-medecin') : '';
-    wrapper.style.display = tauxMedecin ? '' : 'none';
-    if (!tauxMedecin) {
+    // ⭐ Médecin du jour : le sélecteur manuel n'est affiché que si l'acte a
+    // un taux configuré ET (l'acte est marqué "toujours demander", ex:
+    // infiltration, OU aucun médecin du jour n'est défini pour l'instant).
+    const obligatoire = option ? option.getAttribute('data-medecin-obligatoire') === 'true' : false;
+    const besoinSelecteurManuel = !!tauxMedecin && (obligatoire || !MEDECIN_JOUR_ID);
+    wrapper.style.display = besoinSelecteurManuel ? '' : 'none';
+    if (!besoinSelecteurManuel) {
         const medecinSelect = document.getElementById('medecinRealisateurSelect');
         if (medecinSelect) medecinSelect.value = '';
     }
+}
+
+// ⭐ Médecin du jour : défini/modifié depuis le bandeau en haut de la page
+// (voir #bandeauMedecinJour) — partagé entre tous les postes de la
+// structure, upserté côté serveur pour AUJOURD'HUI.
+function definirMedecinDuJour() {
+    const select = document.getElementById('medecinJourSelect');
+    if (!select || !select.value) {
+        alert('Choisissez un médecin.');
+        return;
+    }
+    fetch('/api/medecin-du-jour', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ medecin_id: select.value })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            MEDECIN_JOUR_ID = data.medecin_id;
+            MEDECIN_JOUR_NOM = data.medecin_nom;
+            document.getElementById('medecinJourLabel').textContent = data.medecin_nom;
+            const btn = document.querySelector('#bandeauMedecinJour button');
+            if (btn) btn.textContent = 'Changer';
+            if (typeof showToastActes === 'function') {
+                showToastActes(`Médecin du jour : ${data.medecin_nom}`, 'success');
+            }
+            toggleMedecinRealisateur();
+        } else {
+            alert('Erreur : ' + (data.error || 'inconnue'));
+        }
+    })
+    .catch(e => alert('Erreur : ' + e));
 }
 
 // ============================================
@@ -947,15 +1018,22 @@ function ajouterActe() {
     let medecinId = null;
     let medecinNom = null;
     const tauxMedecinRaw = selectedOption.getAttribute('data-taux-medecin');
+    const medecinObligatoire = selectedOption.getAttribute('data-medecin-obligatoire') === 'true';
     if (tauxMedecinRaw) {
-        const medecinSelect = document.getElementById('medecinRealisateurSelect');
-        if (!medecinSelect || !medecinSelect.value) {
-            alert(`Veuillez indiquer quel médecin a réalisé "${acteNom}" (taux de rétrocession configuré pour cet acte).`);
-            if (medecinSelect) medecinSelect.focus();
-            return;
+        if (!medecinObligatoire && MEDECIN_JOUR_ID) {
+            // ⭐ Médecin du jour : auto-rempli, pas de prompt par ligne.
+            medecinId = MEDECIN_JOUR_ID;
+            medecinNom = MEDECIN_JOUR_NOM;
+        } else {
+            const medecinSelect = document.getElementById('medecinRealisateurSelect');
+            if (!medecinSelect || !medecinSelect.value) {
+                alert(`Veuillez indiquer quel médecin a réalisé "${acteNom}" (taux de rétrocession configuré pour cet acte).`);
+                if (medecinSelect) medecinSelect.focus();
+                return;
+            }
+            medecinId = medecinSelect.value;
+            medecinNom = medecinSelect.options[medecinSelect.selectedIndex].textContent.trim();
         }
-        medecinId = medecinSelect.value;
-        medecinNom = medecinSelect.options[medecinSelect.selectedIndex].textContent.trim();
     }
 
     // ⭐ Lu tôt pour la résolution AMU-TNS ci-dessous (déclaré à nouveau,

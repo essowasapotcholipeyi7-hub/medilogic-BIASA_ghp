@@ -55,6 +55,13 @@
                     <input type="number" class="form-control" id="tauxValeur" min="1" max="100" step="1" placeholder="ex: 60">
                     <div class="form-text">Le reste (100 - ce taux) revient à la clinique.</div>
                 </div>
+                <div class="mb-2 form-check">
+                    <input type="checkbox" class="form-check-input" id="tauxToujoursDemander">
+                    <label class="form-check-label" for="tauxToujoursDemander">
+                        Toujours demander le médecin ligne par ligne (ignore le "médecin du jour")
+                    </label>
+                    <div class="form-text">À cocher pour un acte comme l'infiltration, où le réalisateur peut changer à chaque ligne.</div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
@@ -73,6 +80,7 @@ let debounceTaux = null;
 function ouvrirModalTaux() {
     document.getElementById('tauxSearch').value = '';
     document.getElementById('tauxValeur').value = '';
+    document.getElementById('tauxToujoursDemander').checked = false;
     viderTauxChoisi();
     new bootstrap.Modal(document.getElementById('modalTaux')).show();
 }
@@ -116,9 +124,10 @@ function enregistrerTaux() {
         alert('Entrez un taux entre 1 et 100.');
         return;
     }
+    const toujours_demander_medecin = document.getElementById('tauxToujoursDemander').checked;
     fetch('/api/taux-part-medecin', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nom_acte: tauxChoisi, taux_medecin: taux_medecin })
+        body: JSON.stringify({ nom_acte: tauxChoisi, taux_medecin: taux_medecin, toujours_demander_medecin: toujours_demander_medecin })
     })
     .then(r => r.json())
     .then(data => {
@@ -148,6 +157,7 @@ function chargerTaux() {
                     <span>${l.nom_acte}</span>
                     <span>
                         <span class="badge bg-success me-2">${l.taux_medecin}% médecin</span>
+                        ${l.toujours_demander_medecin ? '<span class="badge bg-warning text-dark me-2">Toujours demander</span>' : ''}
                         <button class="btn btn-sm btn-outline-danger" onclick="supprimerTaux(${l.id})" title="Retirer">
                             <i class="fas fa-trash"></i>
                         </button>
