@@ -16,7 +16,13 @@
 // le réseau d'abord, le cache ne sert qu'en dernier recours hors-ligne.
 // ============================================================
 
-const CACHE_NAME = 'ssoftone-app-v1';
+// ⭐ Bump obligatoire à chaque fois que le manifest ou une icône change —
+// c'est ce nom qui force le navigateur à détecter que le service worker a
+// changé (comparaison octet à octet du fichier) et à revider son cache
+// "cache d'abord" ; sans ça, un appareil qui a déjà ouvert l'appli garde
+// l'ancienne icône pour toujours (vécu : Edge continuait de proposer
+// l'ancien "SSoftOneV10" après le changement d'icône).
+const CACHE_NAME = 'ssoftone-app-v2';
 const ASSETS_STATIQUES = [
     '/app-manifest.json',
     '/static/images/app-icon-192.png',
