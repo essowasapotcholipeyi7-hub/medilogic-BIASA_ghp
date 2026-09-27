@@ -255,6 +255,14 @@
                                     <label class="form-label">Logo URL</label>
                                     <input type="text" class="form-control" id="structureLogo" value="{{ structure_info.get('logo_url', '') if structure_info else '' }}" placeholder="https://...">
                                 </div>
+                                <!-- ⭐ Texte d'en-tête A4 (spécialités, labo...) — n'apparaît
+                                     que sur les impressions A4 (factures, reçus), jamais sur
+                                     le format ticket 80mm. Vide par défaut : sans effet tant
+                                     qu'une structure ne le renseigne pas. -->
+                                <div class="col-md-12 mb-3">
+                                    <label class="form-label">Texte d'en-tête A4 (spécialités, laboratoire...)</label>
+                                    <textarea class="form-control" id="structureEnteteA4" rows="3" placeholder="Affiché uniquement sur les impressions A4 (factures, reçus), jamais sur le ticket 80mm">{{ structure_info.get('entete_a4', '') if structure_info else '' }}</textarea>
+                                </div>
                             </div>
                             <button type="submit" class="btn btn-primary">Mettre à jour</button>
                         </form>
@@ -1219,7 +1227,8 @@ document.getElementById('structureForm').addEventListener('submit', function(e) 
         email: document.getElementById('structureEmail').value,
         telephone: document.getElementById('structureTelephone').value,
         adresse: document.getElementById('structureAdresse').value,
-        logo_url: document.getElementById('structureLogo').value
+        logo_url: document.getElementById('structureLogo').value,
+        entete_a4: document.getElementById('structureEnteteA4').value
     };
 
     fetch('/api/admin/structure', {

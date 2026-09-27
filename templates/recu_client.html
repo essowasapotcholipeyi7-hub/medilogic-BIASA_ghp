@@ -160,6 +160,13 @@
 {% endblock %}
 
 {% block content %}
+<!-- ⭐ FIX : la variable "format" définie dans le bloc extra_css plus
+     haut ne fuit pas jusqu'ici (portée Jinja propre à chaque bloc) —
+     tous les tests conditionnels "format != 80mm" ci-dessous lisaient
+     donc une variable non définie, toujours vraie (Undefined != '80mm'
+     est True), et affichaient leur contenu réservé à l'A4 même en
+     80mm (ticket). Redéfinie ici, dans la bonne portée. -->
+{% set format = request.args.get('format', 'A4') %}
 <div class="row justify-content-center">
     <div class="col-md-6">
         <div class="card" id="recuContenu">
@@ -173,7 +180,11 @@
                             {% endif %}
                             <div>
                                 <h4 style="margin: 0; font-size: 14px;">{{ structure_nom or "SSoftone v10" }}</h4>
-
+                                {% if structure_entete_a4 and format != '80mm' %}
+                                <!-- ⭐ Texte d'en-tête A4 (spécialités/labo...) — jamais sur
+                                     80mm (ticket de caisse), voir structure_entete_a4 (app.py). -->
+                                <p style="margin: 2px 0 0 0; font-size: 8px; opacity: 0.9; white-space: pre-line;">{{ structure_entete_a4 }}</p>
+                                {% endif %}
                                 <p style="margin: 3px 0 0 0; font-size: 9px; opacity: 0.9; white-space: pre-line;">
                                     {{ structure_adresse or "" }}
                                     Tél: {{ structure_telephone or "" }} | Email: {{ structure_email or "" }}

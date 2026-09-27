@@ -3130,22 +3130,26 @@ def facture(vente_id, type):
     from datetime import datetime
     import json
     numero_local_vente = vente_id  # défaut, écrasé plus bas si la ligne est trouvée
-    
+
     structure_id = session.get('structure_id')
-    
+
     if not structure_id:
         return "Structure non trouvée", 404
-    
+
     # Récupérer les infos de la structure
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
-    
+
     structure_nom = structure_info.get('nom', 'Medilogic-GHP')
     structure_adresse = structure_info.get('adresse', '')
     structure_telephone = structure_info.get('telephone', '')
     structure_email = structure_info.get('email', '')
     structure_logo = structure_info.get('logo_url', '')
-    
+    # ⭐ Texte d'en-tête A4 (spécialités/labo...) — champ générique, affiché
+    # uniquement sur A4 (jamais sur 80mm, voir facture_client.html), vide
+    # par défaut donc sans effet pour les structures qui ne l'utilisent pas.
+    structure_entete_a4 = structure_info.get('entete_a4', '')
+
     articles = []
     sous_total = 0
     applique_tva_facture = False
@@ -3303,6 +3307,7 @@ def facture(vente_id, type):
                          date_actuelle=datetime.now().strftime('%d/%m/%Y %H:%M'),
                          nom_fichier=nom_fichier,
                          structure_logo=structure_logo,
+                         structure_entete_a4=structure_entete_a4,
                          nom_caissier=session.get('user_name', ''),
                          assurance2_nom=assurance2_nom,
                          taux_assurance2=taux_assurance2,
@@ -3323,17 +3328,18 @@ def facture_structure(vente_id, type):
     from datetime import datetime
     import json
     numero_local_vente = vente_id  # défaut, écrasé plus bas si la ligne est trouvée
-    
+
     structure_id = session.get('structure_id')
-    
+
     if not structure_id:
         return "Structure non trouvée", 404
-    
+
     # Récupérer les infos de la structure
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
-    
+
     structure_nom = structure_info.get('nom', 'Medilogic-GHP')
+    structure_entete_a4 = structure_info.get('entete_a4', '')
     structure_adresse = structure_info.get('adresse', '')
     structure_telephone = structure_info.get('telephone', '')
     structure_email = structure_info.get('email', '')
@@ -3480,6 +3486,7 @@ def facture_structure(vente_id, type):
                          date_actuelle=datetime.now().strftime('%d/%m/%Y %H:%M'),
                          nom_fichier=nom_fichier,
                          structure_logo=structure_logo,
+                         structure_entete_a4=structure_entete_a4,
                          nom_caissier=session.get('user_name', ''),
                          assurance2_nom=assurance2_nom,
                          taux_assurance2=taux_assurance2,
@@ -3683,17 +3690,18 @@ def recu(vente_id, type):
     from datetime import datetime
     import json
     numero_local_vente = vente_id  # défaut, écrasé plus bas si la ligne est trouvée
-    
+
     structure_id = session.get('structure_id')
-    
+
     if not structure_id:
         return "Structure non trouvée", 404
-    
+
     # Récupérer les infos de la structure
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
-    
+
     structure_nom = structure_info.get('nom', 'Medilogic-GHP')
+    structure_entete_a4 = structure_info.get('entete_a4', '')
 
 
     structure_adresse = sheets_helper.format_adresse(structure_info.get('adresse', ''))
@@ -4093,6 +4101,7 @@ def recu(vente_id, type):
                          structure_email=structure_email,
                          date_actuelle=datetime.now().strftime('%d/%m/%Y %H:%M'),
                          structure_logo=structure_logo,
+                         structure_entete_a4=structure_entete_a4,
                          nom_caissier=session.get('user_name', ''),
                          assurance2_nom=assurance2_nom,
                          taux_assurance2=taux_assurance2,
@@ -4122,17 +4131,18 @@ def recu_structure(vente_id, type):
     from datetime import datetime
     import json
     numero_local_vente = vente_id  # défaut, écrasé plus bas si la ligne est trouvée
-    
+
     structure_id = session.get('structure_id')
-    
+
     if not structure_id:
         return "Structure non trouvée", 404
-    
+
     # Récupérer les infos de la structure
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
-    
+
     structure_nom = structure_info.get('nom', 'Medilogic-GHP')
+    structure_entete_a4 = structure_info.get('entete_a4', '')
     structure_adresse = structure_info.get('adresse', '')
     structure_telephone = structure_info.get('telephone', '')
     structure_email = structure_info.get('email', '')
@@ -4275,6 +4285,7 @@ def recu_structure(vente_id, type):
                          structure_email=structure_email,
                          date_actuelle=datetime.now().strftime('%d/%m/%Y %H:%M'),
                          structure_logo=structure_logo,
+                         structure_entete_a4=structure_entete_a4,
                          nom_caissier=session.get('user_name', ''),
                          nom_fichier=nom_fichier,
                          assurance2_nom=assurance2_nom,
@@ -4922,9 +4933,16 @@ def api_update_structure():
                 while len(current_row) <= 11:
                     current_row.append('')
                 current_row[11] = data.get('logo_url', '')
-            
-            # Mettre à jour jusqu'à la colonne M (index 12)
-            sheet_structures.update(f'A{row_num}:M{row_num}', [current_row])
+
+            # ⭐ ENTETE_A4 à l'index 16 (colonne Q) — texte d'en-tête
+            # supplémentaire (spécialités/labo...) affiché uniquement sur les
+            # impressions A4, voir structure_entete_a4 (facture/recu routes).
+            while len(current_row) <= 16:
+                current_row.append('')
+            current_row[16] = data.get('entete_a4', '')
+
+            # Mettre à jour jusqu'à la colonne Q (index 16)
+            sheet_structures.update(f'A{row_num}:Q{row_num}', [current_row])
             return jsonify({'success': True})
         else:
             return jsonify({'success': False, 'error': 'Structure non trouvée'}), 404
