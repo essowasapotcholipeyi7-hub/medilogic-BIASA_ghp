@@ -227,6 +227,9 @@
                 {% endif %}
                 
                 <strong>Vendu par :</strong> {{ nom_caissier }}
+                {% if ligne_reimpression %}
+                <br><span style="color:#856404;">{{ ligne_reimpression }}</span>
+                {% endif %}
             </p>
         </div>
     </div>
@@ -294,6 +297,9 @@
 
                 <div class="text-muted small mt-2">
                     <i class="fas fa-user-check"></i> Vendu par : {{ nom_caissier }}
+                    {% if ligne_reimpression %}
+                    <br><span style="color:#856404;">{{ ligne_reimpression }}</span>
+                    {% endif %}
                 </div>
 
                 <div class="text-center mt-2 small">

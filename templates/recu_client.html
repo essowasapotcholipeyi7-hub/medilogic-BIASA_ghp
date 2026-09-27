@@ -410,6 +410,9 @@
                 <!-- CAISSIER -->
                 <div style="color:#6c757d; font-size:8px; margin-top:6px; text-align:center;">
                     Vendu par : {{ nom_caissier }}
+                    {% if ligne_reimpression %}
+                    <br><span style="color:#856404;">{{ ligne_reimpression }}</span>
+                    {% endif %}
                 </div>
 
                 <hr style="margin:4px 0;">

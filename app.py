@@ -3127,7 +3127,7 @@ def pharma_vente():
 @app.route('/facture/<int:vente_id>/<string:type>')
 @login_required
 def facture(vente_id, type):
-    from datetime import datetime
+    from datetime import datetime, timedelta
     import json
     numero_local_vente = vente_id  # défaut, écrasé plus bas si la ligne est trouvée
 
@@ -3206,6 +3206,23 @@ def facture(vente_id, type):
         prise_en_charge = float(v.get('prise_en_charge') or 0)
         net_a_payer = float(v.get('net_a_payer') or 0)
         sous_total = float(v.get('sous_total') or 0)
+
+        # ⭐ FIX : le nom affiché était TOUJOURS celui de qui CONSULTE le
+        # document (session en cours), pas celui qui a réellement fait la
+        # vente — patron : "si Kodjo fait la vente et Afi imprime le reçu,
+        # c'est le nom d'Afi qui reste alors que c'est pas elle qui a fait
+        # la vente". Idem pour la date, toujours celle du moment de
+        # l'impression. Les deux viennent maintenant de la vente elle-même.
+        vendeur_reel = v.get('created_by_nom') or session.get('user_name', 'Système')
+        date_vente_obj = v.get('date_vente')
+        date_vente_affichee = date_vente_obj.strftime('%d/%m/%Y %H:%M') if date_vente_obj else datetime.now().strftime('%d/%m/%Y %H:%M')
+        # ⭐ Au-delà de 24h après la vente, on considère qu'il s'agit d'une
+        # réimpression — patron : "on peut ajouter si c'est une
+        # réimpression... qu'on mette date de réimpression et nom de celui
+        # qui a réimprimé".
+        ligne_reimpression = ''
+        if date_vente_obj and (datetime.utcnow() - date_vente_obj) > timedelta(hours=24):
+            ligne_reimpression = f"Réimprimé le {datetime.now().strftime('%d/%m/%Y %H:%M')} par {session.get('user_name', '')}"
 
         # Voir le meme bloc dans recu() (app.py) - decomposition HT/TVA/TTC
         # decochee par defaut, purement informative, ne change aucun calcul.
@@ -3304,11 +3321,12 @@ def facture(vente_id, type):
                          structure_adresse=structure_adresse,
                          structure_telephone=structure_telephone,
                          structure_email=structure_email,
-                         date_actuelle=datetime.now().strftime('%d/%m/%Y %H:%M'),
+                         date_actuelle=date_vente_affichee,
                          nom_fichier=nom_fichier,
                          structure_logo=structure_logo,
                          structure_entete_a4=structure_entete_a4,
-                         nom_caissier=session.get('user_name', ''),
+                         nom_caissier=vendeur_reel,
+                         ligne_reimpression=ligne_reimpression,
                          assurance2_nom=assurance2_nom,
                          taux_assurance2=taux_assurance2,
                          prise_en_charge2=prise_en_charge2,
@@ -3325,7 +3343,7 @@ def facture(vente_id, type):
 @app.route('/facture_structure/<int:vente_id>/<string:type>')
 @login_required
 def facture_structure(vente_id, type):
-    from datetime import datetime
+    from datetime import datetime, timedelta
     import json
     numero_local_vente = vente_id  # défaut, écrasé plus bas si la ligne est trouvée
 
@@ -3403,6 +3421,23 @@ def facture_structure(vente_id, type):
         # de l'id technique (vente_id, séquence globale partagée entre
         # structures).
         numero_local_vente = v.get('numero_local') or vente_id
+
+        # ⭐ FIX : le nom affiché était TOUJOURS celui de qui CONSULTE le
+        # document (session en cours), pas celui qui a réellement fait la
+        # vente — patron : "si Kodjo fait la vente et Afi imprime le reçu,
+        # c'est le nom d'Afi qui reste alors que c'est pas elle qui a fait
+        # la vente". Idem pour la date, toujours celle du moment de
+        # l'impression. Les deux viennent maintenant de la vente elle-même.
+        vendeur_reel = v.get('created_by_nom') or session.get('user_name', 'Système')
+        date_vente_obj = v.get('date_vente')
+        date_vente_affichee = date_vente_obj.strftime('%d/%m/%Y %H:%M') if date_vente_obj else datetime.now().strftime('%d/%m/%Y %H:%M')
+        # ⭐ Au-delà de 24h après la vente, on considère qu'il s'agit d'une
+        # réimpression — patron : "on peut ajouter si c'est une
+        # réimpression... qu'on mette date de réimpression et nom de celui
+        # qui a réimprimé".
+        ligne_reimpression = ''
+        if date_vente_obj and (datetime.utcnow() - date_vente_obj) > timedelta(hours=24):
+            ligne_reimpression = f"Réimprimé le {datetime.now().strftime('%d/%m/%Y %H:%M')} par {session.get('user_name', '')}"
         
         # Récupérer les données de l'assurance complémentaire
         assurance2_nom = v.get('assurance2_nom', '')
@@ -3483,11 +3518,12 @@ def facture_structure(vente_id, type):
                          structure_adresse=structure_adresse,
                          structure_telephone=structure_telephone,
                          structure_email=structure_email,
-                         date_actuelle=datetime.now().strftime('%d/%m/%Y %H:%M'),
+                         date_actuelle=date_vente_affichee,
                          nom_fichier=nom_fichier,
                          structure_logo=structure_logo,
                          structure_entete_a4=structure_entete_a4,
-                         nom_caissier=session.get('user_name', ''),
+                         nom_caissier=vendeur_reel,
+                         ligne_reimpression=ligne_reimpression,
                          assurance2_nom=assurance2_nom,
                          taux_assurance2=taux_assurance2,
                          prise_en_charge2=prise_en_charge2,
@@ -3687,7 +3723,7 @@ def get_structures_disponibles():
 @app.route('/recu/<int:vente_id>/<string:type>')
 @login_required
 def recu(vente_id, type):
-    from datetime import datetime
+    from datetime import datetime, timedelta
     import json
     numero_local_vente = vente_id  # défaut, écrasé plus bas si la ligne est trouvée
 
@@ -3820,6 +3856,23 @@ def recu(vente_id, type):
         # de l'id technique (vente_id, séquence globale partagée entre
         # structures).
         numero_local_vente = v.get('numero_local') or vente_id
+
+        # ⭐ FIX : le nom affiché était TOUJOURS celui de qui CONSULTE le
+        # document (session en cours), pas celui qui a réellement fait la
+        # vente — patron : "si Kodjo fait la vente et Afi imprime le reçu,
+        # c'est le nom d'Afi qui reste alors que c'est pas elle qui a fait
+        # la vente". Idem pour la date, toujours celle du moment de
+        # l'impression. Les deux viennent maintenant de la vente elle-même.
+        vendeur_reel = v.get('created_by_nom') or session.get('user_name', 'Système')
+        date_vente_obj = v.get('date_vente')
+        date_vente_affichee = date_vente_obj.strftime('%d/%m/%Y %H:%M') if date_vente_obj else datetime.now().strftime('%d/%m/%Y %H:%M')
+        # ⭐ Au-delà de 24h après la vente, on considère qu'il s'agit d'une
+        # réimpression — patron : "on peut ajouter si c'est une
+        # réimpression... qu'on mette date de réimpression et nom de celui
+        # qui a réimprimé".
+        ligne_reimpression = ''
+        if date_vente_obj and (datetime.utcnow() - date_vente_obj) > timedelta(hours=24):
+            ligne_reimpression = f"Réimprimé le {datetime.now().strftime('%d/%m/%Y %H:%M')} par {session.get('user_name', '')}"
         
         base_remboursement = float(v.get('base_remboursement') or 0) if v.get('base_remboursement') is not None else 0
         
@@ -4099,10 +4152,11 @@ def recu(vente_id, type):
                          structure_adresse=structure_adresse,
                          structure_telephone=structure_telephone,
                          structure_email=structure_email,
-                         date_actuelle=datetime.now().strftime('%d/%m/%Y %H:%M'),
+                         date_actuelle=date_vente_affichee,
                          structure_logo=structure_logo,
                          structure_entete_a4=structure_entete_a4,
-                         nom_caissier=session.get('user_name', ''),
+                         nom_caissier=vendeur_reel,
+                         ligne_reimpression=ligne_reimpression,
                          assurance2_nom=assurance2_nom,
                          taux_assurance2=taux_assurance2,
                          prise_en_charge2=prise_en_charge2,
@@ -4128,7 +4182,7 @@ def recu(vente_id, type):
 @login_required
 def recu_structure(vente_id, type):
     """Reçu pour la structure (copie comptable)"""
-    from datetime import datetime
+    from datetime import datetime, timedelta
     import json
     numero_local_vente = vente_id  # défaut, écrasé plus bas si la ligne est trouvée
 
@@ -4204,6 +4258,23 @@ def recu_structure(vente_id, type):
         # de l'id technique (vente_id, séquence globale partagée entre
         # structures).
         numero_local_vente = v.get('numero_local') or vente_id
+
+        # ⭐ FIX : le nom affiché était TOUJOURS celui de qui CONSULTE le
+        # document (session en cours), pas celui qui a réellement fait la
+        # vente — patron : "si Kodjo fait la vente et Afi imprime le reçu,
+        # c'est le nom d'Afi qui reste alors que c'est pas elle qui a fait
+        # la vente". Idem pour la date, toujours celle du moment de
+        # l'impression. Les deux viennent maintenant de la vente elle-même.
+        vendeur_reel = v.get('created_by_nom') or session.get('user_name', 'Système')
+        date_vente_obj = v.get('date_vente')
+        date_vente_affichee = date_vente_obj.strftime('%d/%m/%Y %H:%M') if date_vente_obj else datetime.now().strftime('%d/%m/%Y %H:%M')
+        # ⭐ Au-delà de 24h après la vente, on considère qu'il s'agit d'une
+        # réimpression — patron : "on peut ajouter si c'est une
+        # réimpression... qu'on mette date de réimpression et nom de celui
+        # qui a réimprimé".
+        ligne_reimpression = ''
+        if date_vente_obj and (datetime.utcnow() - date_vente_obj) > timedelta(hours=24):
+            ligne_reimpression = f"Réimprimé le {datetime.now().strftime('%d/%m/%Y %H:%M')} par {session.get('user_name', '')}"
         
         # Récupérer les données de l'assurance complémentaire
         assurance2_nom = v.get('assurance2_nom', '')
@@ -4283,10 +4354,11 @@ def recu_structure(vente_id, type):
                          structure_adresse=structure_adresse,
                          structure_telephone=structure_telephone,
                          structure_email=structure_email,
-                         date_actuelle=datetime.now().strftime('%d/%m/%Y %H:%M'),
+                         date_actuelle=date_vente_affichee,
                          structure_logo=structure_logo,
                          structure_entete_a4=structure_entete_a4,
-                         nom_caissier=session.get('user_name', ''),
+                         nom_caissier=vendeur_reel,
+                         ligne_reimpression=ligne_reimpression,
                          nom_fichier=nom_fichier,
                          assurance2_nom=assurance2_nom,
                          taux_assurance2=taux_assurance2,
