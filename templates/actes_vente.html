@@ -72,6 +72,17 @@
                 <button type="button" class="btn btn-sm btn-outline-primary" onclick="definirMedecinDuJour()">
                     {{ 'Changer' if medecin_du_jour else 'Définir' }}
                 </button>
+                <!-- ⭐ Lien temporaire — patron : "en attendant... un lien qui
+                     mène vers où on ajoute un médecin... depuis la page acte
+                     vente on clique ça nous amène dans médecin et activité".
+                     Ouvre dans un nouvel onglet pour ne pas perdre le panier
+                     en cours. À retirer si un raccourci définitif est ajouté
+                     ailleurs. -->
+                {% if a_acces('medecins_activites') %}
+                <a href="{{ url_for('gestion_medecins') }}" target="_blank" class="btn btn-sm btn-outline-secondary" title="Ajouter un médecin absent de la liste">
+                    <i class="fas fa-user-plus"></i> Médecin absent ?
+                </a>
+                {% endif %}
             </div>
         </div>
 
