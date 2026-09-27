@@ -4,13 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>Medilogic-GHP - {% block title %}Gestion Hospitalière & Pharmacie{% endblock %}</title>
-    {% if session.user_id and not (cacher_navigation is defined and cacher_navigation) %}
-    <!-- ⭐ Application principale installable (PC/mobile) — uniquement pour
-         le personnel connecté (session.user_id) sur une page normale de
-         l'appli ; jamais sur une page cacher_navigation (portail patient,
-         accueil QR public, impressions...) même si une session staff
-         traîne encore dans le même navigateur — le portail patient a sa
-         propre PWA séparée (voir portail_patient.html). -->
+    {% if not (cacher_navigation is defined and cacher_navigation) %}
+    <!-- ⭐ Application principale installable (PC/mobile) — sur toute page
+         normale de l'appli, y compris l'écran de connexion (pas besoin
+         d'être connecté pour installer — patron : "il faut d'abord se
+         connecter avant de pouvoir installer" ; le manifeste n'était lié
+         qu'après connexion, donc le navigateur ne proposait jamais
+         "Installer" avant) ; jamais sur une page cacher_navigation (portail
+         patient, accueil QR public, impressions...) — le portail patient a
+         sa propre PWA séparée (voir portail_patient.html). -->
     <link rel="manifest" href="{{ url_for('app_manifest') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/app-icon-192.png') }}">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -3894,7 +3896,7 @@ document.addEventListener('DOMContentLoaded', function() {
 })();
 </script>
 {% endif %}
-{% if session.user_id and not (cacher_navigation is defined and cacher_navigation) %}
+{% if not (cacher_navigation is defined and cacher_navigation) %}
 <script>
 // ⭐ Enregistrement du service worker de l'appli principale — condition
 // technique pour que Chrome/Edge proposent le bouton "Installer" (PC) et
@@ -3902,6 +3904,11 @@ document.addEventListener('DOMContentLoaded', function() {
 // Voir static/sw-app.js : réseau toujours en priorité, donc une nouvelle
 // version déployée est visible dès le prochain chargement de page, sans
 // rien à faire de spécial pour "mettre à jour" l'appli installée.
+// ⭐ Plus besoin de session.user_id — patron : "il faut d'abord se connecter
+// avant de pouvoir installer" (le SW ne s'enregistrait qu'après connexion,
+// donc le bouton "Installer" n'apparaissait jamais sur l'écran de
+// connexion). cacher_navigation reste la condition : jamais sur les pages
+// publiques patient (portail, accueil), seulement sur l'appli interne.
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register("{{ url_for('app_service_worker') }}").catch(() => {});
