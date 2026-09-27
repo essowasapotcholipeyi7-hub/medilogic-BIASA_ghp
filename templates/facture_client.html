@@ -303,11 +303,13 @@
                     Merci de votre confiance ! Règlement à réception de facture.<br>
                     {{ structure_nom or "Medilogic-GHP" }}
                 </div>
-                {% if format != '80mm' %}
+                <!-- ⭐ Le code-barres s'affiche sur A4 ET 80mm (patron :
+                     "oui le code barre doit s'afficher aussi sur les 80mm")
+                     — seul le texte d'en-tête ci-dessus (structure_entete_a4)
+                     reste réservé à l'A4. -->
                 <div class="text-center mt-2">
                     <svg id="codeBarreFacture"></svg>
                 </div>
-                {% endif %}
             </div>
         </div>
 
@@ -319,14 +321,12 @@
     </div>
 </div>
 
-{% if format != '80mm' %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
 <script>
 if (window.JsBarcode) {
     JsBarcode("#codeBarreFacture", "FACT-{{ vente_id }}", { format: "CODE128", width: 1.4, height: 36, fontSize: 11, margin: 4 });
 }
 </script>
-{% endif %}
 <script>
 function telechargerPDF() {
     const element = document.getElementById('factureContenu');
