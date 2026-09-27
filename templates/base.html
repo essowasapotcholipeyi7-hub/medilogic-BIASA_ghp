@@ -1958,6 +1958,86 @@
 </head>
 <body>
 
+{% if not (cacher_navigation is defined and cacher_navigation) %}
+<!-- ⭐ Animation de lancement de l'appli installée — patron : "quand on
+     clique sur l'application les Ss tournent et viennent se croiser au
+     milieu, avec un fond qui devient blanc à ce moment". Ne joue que quand
+     l'appli tourne réellement en mode "standalone" (lancée depuis l'icône
+     installée, pas un onglet de navigateur normal), et une seule fois par
+     session (sessionStorage) — sans quoi elle rejouerait à chaque clic de
+     navigation interne, puisque chaque page est un rechargement complet. -->
+<div id="splashInstall" class="splash-install">
+    <span class="splash-s splash-s1">S</span>
+    <span class="splash-s splash-s2">s</span>
+</div>
+<style>
+.splash-install {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: #000000;
+    animation: splashBg 1.3s ease forwards;
+    transition: opacity 0.4s ease;
+}
+.splash-install.splash-active { display: flex; }
+.splash-install.splash-fade-out { opacity: 0; }
+.splash-s {
+    position: absolute;
+    font-family: Arial, Helvetica, sans-serif;
+    font-weight: 800;
+    font-size: clamp(90px, 26vmin, 240px);
+    color: #4ADE80;
+    line-height: 1;
+    opacity: 0;
+}
+.splash-s1 {
+    animation: splashS1 1s cubic-bezier(.25, .8, .3, 1) forwards;
+}
+.splash-s2 {
+    animation: splashS2 1s cubic-bezier(.25, .8, .3, 1) forwards;
+}
+@keyframes splashS1 {
+    0%   { transform: translateX(-45vmin) rotate(-220deg); opacity: 0; }
+    15%  { opacity: 1; }
+    70%, 100% { transform: translateX(4vmin) rotate(-8deg); opacity: 1; }
+}
+@keyframes splashS2 {
+    0%   { transform: translateX(45vmin) rotate(220deg); opacity: 0; }
+    15%  { opacity: 1; }
+    70%, 100% { transform: translateX(-4vmin) rotate(8deg); opacity: 1; }
+}
+@keyframes splashBg {
+    0%, 60%   { background: #000000; }
+    85%, 100% { background: #ffffff; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .splash-install { display: none !important; }
+}
+</style>
+<script>
+(function() {
+    try {
+        var isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+        var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (!isStandalone || reduceMotion) return;
+        if (sessionStorage.getItem('ssoftone_splash_played')) return;
+        sessionStorage.setItem('ssoftone_splash_played', '1');
+
+        var el = document.getElementById('splashInstall');
+        el.classList.add('splash-active');
+        setTimeout(function() {
+            el.classList.add('splash-fade-out');
+            setTimeout(function() { el.remove(); }, 450);
+        }, 1500);
+    } catch (e) {}
+})();
+</script>
+{% endif %}
+
 <!-- ============================================
      NAVBAR - CONSERVÉE
      ============================================ -->
