@@ -100,7 +100,14 @@ def sync_structures_globales():
             _upsert(int(sid), 'structures', sid, rec)
         except (TypeError, ValueError):
             continue
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        # ⭐ Même raison que le fix dans sync_all() : ne jamais laisser une
+        # transaction échouée repartir non-annulée dans le pool partagé.
+        logger.exception("Sheets mirror : échec commit structures globales")
+        db.session.rollback()
+        return False
     return True
 
 
@@ -142,9 +149,27 @@ def sync_all(structure_ids=None):
         logger.info("Sheets mirror : synchro déjà en cours, passage ignoré")
         return 0
     try:
-        sync_structures_globales()
-        if structure_ids is None:
-            structure_ids = [s.id for s in Structure.query.all()]
+        try:
+            sync_structures_globales()
+        except Exception:
+            logger.exception("Sheets mirror : échec sync_structures_globales (rattrapé)")
+            db.session.rollback()
+
+        try:
+            if structure_ids is None:
+                structure_ids = [s.id for s in Structure.query.all()]
+        except Exception:
+            # ⭐⭐ FIX : sans ce rollback, un hoquet réseau Neon transitoire ici
+            # (déjà observé : "relation structures does not exist") laissait
+            # la transaction PostgreSQL "aborted" — la connexion repartait
+            # ainsi dans le pool partagé, et la PROCHAINE requête web (une
+            # page normale, sans rapport) héritait de cette transaction
+            # cassée et plantait en cascade (500 sur tout le site jusqu'au
+            # redémarrage manuel du serveur) — symptôme vécu en production
+            # côté GHP le 2026-09-28.
+            logger.exception("Sheets mirror : échec récupération liste des structures")
+            db.session.rollback()
+            return 0
         ok = 0
         for sid in structure_ids:
             try:
@@ -152,6 +177,7 @@ def sync_all(structure_ids=None):
                     ok += 1
             except Exception:
                 logger.exception("Sheets mirror : échec pour structure %s", sid)
+                db.session.rollback()
 
         try:
             etat = SyncState.get_ou_creer()
@@ -162,7 +188,23 @@ def sync_all(structure_ids=None):
 
         logger.info("Sheets mirror : %d/%d structure(s) synchronisée(s)", ok, len(structure_ids))
         return ok
+    except Exception:
+        # ⭐⭐ FIX : filet de sécurité ULTIME — quoi qu'il arrive dans cette
+        # fonction (y compris un cas non prévu par les rollbacks ciblés
+        # ci-dessus), on n'autorise JAMAIS une transaction Postgres cassée à
+        # repartir dans le pool de connexions partagé. C'est exactement ce
+        # qui causait le 500 en cascade sur tout le site en production.
+        logger.exception("Sheets mirror : erreur inattendue dans sync_all")
+        db.session.rollback()
+        return 0
     finally:
+        # Filet de sécurité inconditionnel : même un chemin de sortie que je
+        # n'aurais pas anticipé ne doit jamais laisser la session dans un
+        # état transactionnel indéterminé avant de relâcher le verrou.
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
         _sync_lock.release()
 
 

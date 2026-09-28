@@ -381,7 +381,15 @@ def start_watchdog(app):
             try:
                 sheets_mirror.sync_all()  # premier remplissage du miroir Sheets au démarrage
             except Exception:
+                # ⭐⭐ FIX : sans ce rollback, un hoquet Neon transitoire ici (au
+                # tout premier démarrage du process) laissait la transaction
+                # "aborted" repartir dans le pool de connexions partagé —
+                # toute requête web suivante qui récupérait cette même
+                # connexion plantait en cascade (500 sur tout le site,
+                # symptôme vécu en production côté GHP, jusqu'au redémarrage
+                # manuel).
                 logger.exception("Echec du remplissage initial du miroir Sheets")
+                db.session.rollback()
 
         while True:
             time.sleep(CHECK_INTERVAL_SECONDS)
@@ -419,9 +427,21 @@ def start_watchdog(app):
                                     sheets_mirror.sync_all()
                                 except Exception:
                                     logger.exception("Echec du rafraîchissement périodique du miroir Sheets")
+                                    db.session.rollback()
                                 last_warm_refresh = now
             except Exception:
+                # ⭐⭐ FIX : filet de sécurité final — toute exception non
+                # prévue dans cette itération (y compris une venant de
+                # is_neon_reachable()/pull_refresh_from_neon() ou d'un des
+                # db.session.commit() ci-dessus) doit annuler la transaction
+                # avant que la connexion ne reparte dans le pool partagé,
+                # sinon la prochaine requête web héritée en hérite (500 en
+                # cascade sur tout le site).
                 logger.exception("Erreur dans le thread de surveillance de la bascule Neon/local")
+                try:
+                    db.session.rollback()
+                except Exception:
+                    pass
 
     t = threading.Thread(target=_loop, name='db-failover-watchdog', daemon=True)
     t.start()
