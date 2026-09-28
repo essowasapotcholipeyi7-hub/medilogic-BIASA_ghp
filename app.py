@@ -7981,6 +7981,35 @@ def _demander_validation(structure_id, type_demande, payload, resume, user_id, u
     return demande
 
 
+_RE_DATE_ISO = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+_RE_DATE_JJMMAAAA = re.compile(r'^(\d{1,2})/(\d{1,2})/(\d{4})$')
+
+
+def _normaliser_date_peremption(valeur):
+    """Normalise une date de péremption vers le format ISO (YYYY-MM-DD),
+    seul format compris par les champs <input type="date"> et par new
+    Date() en JS. Les produits ajoutés depuis l'appli sont déjà en ISO (le
+    sélecteur de date natif ne produit que ça), mais certaines structures
+    ont des produits dont la date a été tapée à la main directement dans
+    Google Sheets au format JJ/MM/AAAA (ex: "01/03/2027") — Sheets les
+    affiche alors tel quel, sans les convertir. Sans cette normalisation,
+    new Date("01/03/2027") est lu par le navigateur en MM/JJ/AAAA (3 janvier
+    au lieu du 1er mars) et le champ <input type="date"> refuse carrément la
+    valeur (il exige du ISO strict) — un produit modifié verrait alors sa
+    date de péremption existante silencieusement effacée à l'enregistrement."""
+    valeur = (valeur or '').strip()
+    if not valeur or _RE_DATE_ISO.match(valeur):
+        return valeur
+    m = _RE_DATE_JJMMAAAA.match(valeur)
+    if m:
+        jour, mois, annee = m.groups()
+        try:
+            return f"{annee}-{int(mois):02d}-{int(jour):02d}"
+        except ValueError:
+            return valeur
+    return valeur
+
+
 @app.route('/api/produits')
 @login_required
 def api_get_produits():
@@ -8029,7 +8058,7 @@ def api_get_produits():
                     seuil_alerte = int(float(seuil_raw)) if seuil_raw and seuil_raw != '' else 10
                     
                     unite = row[7] if len(row) > 7 else 'unité'
-                    date_peremption = row[8] if len(row) > 8 and row[8] else ''
+                    date_peremption = _normaliser_date_peremption(row[8] if len(row) > 8 and row[8] else '')
                     lot = row[9] if len(row) > 9 and row[9] else ''
                     struct_id = row[10] if len(row) > 10 else None
                     
@@ -8127,7 +8156,7 @@ def api_get_produits():
                             'quantite_stock': int(float(p.get('quantite_stock') or 0)),
                             'seuil_alerte': int(float(p.get('seuil_alerte', 10))),
                             'unite': p.get('unite', 'unité'),
-                            'date_peremption': p.get('date_peremption', ''),
+                            'date_peremption': _normaliser_date_peremption(p.get('date_peremption', '')),
                             'lot': p.get('lot', ''),
                             'prise_en_charge_amu': prise_amu,
                             'commentaire_amu': p.get('commentaire_amu', ''),
@@ -8297,7 +8326,7 @@ def api_produits_search():
                     quantite_stock = int(float(row[5])) if len(row) > 5 and row[5] else 0
                     seuil_alerte = int(float(row[6])) if len(row) > 6 and row[6] else 10
                     unite = row[7] if len(row) > 7 else 'unité'
-                    date_peremption = row[8] if len(row) > 8 and row[8] else ''
+                    date_peremption = _normaliser_date_peremption(row[8] if len(row) > 8 and row[8] else '')
                     lot = row[9] if len(row) > 9 and row[9] else ''
                     struct_id = row[10] if len(row) > 10 else None
                     
@@ -8403,7 +8432,7 @@ def api_produits_search():
                         'quantite_stock': int(p.get('quantite_stock') or 0),
                         'seuil_alerte': int(p.get('seuil_alerte', 10)),
                         'unite': p.get('unite', 'unité'),
-                        'date_peremption': p.get('date_peremption', ''),
+                        'date_peremption': _normaliser_date_peremption(p.get('date_peremption', '')),
                         'lot': p.get('lot', ''),
                         'structure_id': p.get('structure_id'),
                         # 🔥🔥🔥 NOUVEAUX CHAMPS 🔥🔥🔥

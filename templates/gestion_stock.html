@@ -352,9 +352,14 @@
                     </div>
                     <div class="card-footer d-flex justify-content-between align-items-center">
                         <span id="inventaireEcartsResume" class="text-muted"></span>
-                        <button class="btn btn-secondary" id="btnValiderInventaire" onclick="validerInventaire()">
-                            <i class="fas fa-check"></i> Valider l'inventaire
-                        </button>
+                        <div>
+                            <button class="btn btn-outline-secondary me-2" onclick="apercuInventaire()">
+                                <i class="fas fa-eye"></i> Aperçu / Imprimer
+                            </button>
+                            <button class="btn btn-secondary" id="btnValiderInventaire" onclick="validerInventaire()">
+                                <i class="fas fa-check"></i> Valider l'inventaire
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -600,6 +605,50 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
                 <button class="btn btn-warning" onclick="validerApprovisionnement()">Approvisionner</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== APERÇU INVENTAIRE (avant validation) ===== -->
+<div class="modal fade" id="modalApercuInventaire" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-secondary text-white">
+                <h5 class="modal-title"><i class="fas fa-eye"></i> Aperçu de l'inventaire</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info small">
+                    Seuls les médicaments comptés (quantité saisie) apparaissent ici. Rien n'est encore
+                    corrigé dans le stock — vérifiez, imprimez si besoin, puis fermez cette fenêtre et
+                    cliquez sur « Valider l'inventaire » pour appliquer les écarts.
+                </div>
+                <p id="apercuInventaireResume" class="fw-bold"></p>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Médicament</th>
+                                <th>Unité</th>
+                                <th class="text-end">Stock système</th>
+                                <th class="text-end">Quantité comptée</th>
+                                <th class="text-end">Écart</th>
+                                <th>Motif</th>
+                            </tr>
+                        </thead>
+                        <tbody id="apercuInventaireBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                <button class="btn btn-outline-dark" onclick="imprimerApercuInventaire()">
+                    <i class="fas fa-print"></i> Imprimer
+                </button>
+                <button class="btn btn-success" onclick="bootstrap.Modal.getInstance(document.getElementById('modalApercuInventaire')).hide(); validerInventaire();">
+                    <i class="fas fa-check"></i> Valider l'inventaire
+                </button>
             </div>
         </div>
     </div>
@@ -1345,18 +1394,118 @@ function filterInventaire() {
     renderInventaire(inventaireListeComplete.filter(p => p.nom.toLowerCase().includes(search)));
 }
 
-function validerInventaire() {
+// patron : "est ce possible qu'il ya un autre bouton qui permet de voir ce
+// que xa donne et pouvoir meme imprimer... lorsque c'est bon on vient
+// valider" — aperçu en lecture seule des SEULS produits comptés (aucun
+// appel serveur, aucune correction de stock), avec impression, avant de
+// cliquer sur le vrai bouton de validation.
+let inventaireApercuLignes = [];
+
+function _collecterLignesInventaireComptees() {
     const lignes = [];
     document.querySelectorAll('.inventaire-compte').forEach(input => {
         if (input.value === '') return;
         const id = input.dataset.id;
+        const systeme = parseInt(input.dataset.systeme) || 0;
+        const compte = parseInt(input.value) || 0;
         const motifInput = document.querySelector(`.inventaire-motif[data-id="${id}"]`);
+        const produit = inventaireListeComplete.find(p => String(p.id) === String(id));
         lignes.push({
             produit_id: id,
-            quantite_comptee: parseInt(input.value),
+            nom: produit ? produit.nom : '',
+            unite: produit ? (produit.unite || 'unité') : '',
+            stock_systeme: systeme,
+            quantite_comptee: compte,
+            ecart: compte - systeme,
             motif: motifInput ? motifInput.value : '',
         });
     });
+    return lignes;
+}
+
+function apercuInventaire() {
+    const lignes = _collecterLignesInventaireComptees();
+    if (lignes.length === 0) {
+        alert("Saisissez au moins une quantité comptée avant de voir l'aperçu.");
+        return;
+    }
+    inventaireApercuLignes = lignes;
+
+    document.getElementById('apercuInventaireBody').innerHTML = lignes.map(l => `
+        <tr>
+            <td>${l.nom}</td>
+            <td>${l.unite}</td>
+            <td class="text-end">${l.stock_systeme}</td>
+            <td class="text-end">${l.quantite_comptee}</td>
+            <td class="text-end fw-bold ${l.ecart === 0 ? 'text-muted' : (l.ecart > 0 ? 'text-success' : 'text-danger')}">${l.ecart > 0 ? '+' + l.ecart : l.ecart}</td>
+            <td>${l.motif || '-'}</td>
+        </tr>
+    `).join('');
+
+    const nbEcarts = lignes.filter(l => l.ecart !== 0).length;
+    document.getElementById('apercuInventaireResume').textContent =
+        `${lignes.length} médicament(s) compté(s), dont ${nbEcarts} écart(s).`;
+
+    new bootstrap.Modal(document.getElementById('modalApercuInventaire')).show();
+}
+
+function imprimerApercuInventaire() {
+    const lignes = inventaireApercuLignes;
+    if (!lignes || lignes.length === 0) return;
+    const dateStr = new Date().toLocaleDateString('fr-FR');
+    const html = `
+        <html><head><title>Inventaire physique - ${dateStr}</title>
+        <style>
+            body { font-family: Arial, sans-serif; padding: 20px; color: #222; }
+            h2 { margin-bottom: 4px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+            th, td { border: 1px solid #333; padding: 6px 8px; font-size: 13px; }
+            th { background: #eee; text-align: left; }
+            .text-end { text-align: right; }
+            .ecart-pos { color: #198754; font-weight: bold; }
+            .ecart-neg { color: #dc3545; font-weight: bold; }
+            .ecart-zero { color: #666; }
+            .signatures { margin-top: 60px; display: flex; justify-content: space-between; }
+            .signatures div { width: 45%; border-top: 1px solid #333; padding-top: 6px; text-align: center; }
+        </style>
+        </head><body>
+        <h2>Inventaire physique</h2>
+        <p>Date : ${dateStr}</p>
+        <table>
+            <thead><tr><th>Médicament</th><th>Unité</th><th>Stock système</th><th>Quantité comptée</th><th>Écart</th><th>Motif</th></tr></thead>
+            <tbody>
+                ${lignes.map(l => `
+                    <tr>
+                        <td>${l.nom}</td>
+                        <td>${l.unite}</td>
+                        <td class="text-end">${l.stock_systeme}</td>
+                        <td class="text-end">${l.quantite_comptee}</td>
+                        <td class="text-end ${l.ecart === 0 ? 'ecart-zero' : (l.ecart > 0 ? 'ecart-pos' : 'ecart-neg')}">${l.ecart > 0 ? '+' + l.ecart : l.ecart}</td>
+                        <td>${l.motif || ''}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+        <div class="signatures">
+            <div>Compté par</div>
+            <div>Vérifié / Validé par</div>
+        </div>
+        </body></html>
+    `;
+    const w = window.open('', '_blank');
+    if (!w) { alert("Le navigateur a bloqué l'ouverture de la fenêtre d'impression."); return; }
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 300);
+}
+
+function validerInventaire() {
+    const lignes = _collecterLignesInventaireComptees().map(l => ({
+        produit_id: l.produit_id,
+        quantite_comptee: l.quantite_comptee,
+        motif: l.motif,
+    }));
 
     if (lignes.length === 0) {
         alert('Saisissez au moins une quantité comptée avant de valider.');

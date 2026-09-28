@@ -199,6 +199,24 @@
                     <button class="btn btn-outline-secondary" onclick="clearSearchProduitAdmin()">✖</button>
                 </div>
             </div>
+            <div class="row g-2 mb-3">
+                <div class="col-md-3">
+                    <input type="text" class="form-control form-control-sm" id="filtreFournisseurAdmin" placeholder="Filtrer par fournisseur" onkeyup="filterProduitsAdmin()">
+                </div>
+                <div class="col-md-3">
+                    <input type="text" class="form-control form-control-sm" id="filtreDciAdmin" placeholder="Filtrer par DCI" onkeyup="filterProduitsAdmin()">
+                </div>
+                <div class="col-md-3">
+                    <input type="text" class="form-control form-control-sm" id="filtreRayonAdmin" placeholder="Filtrer par rayon" onkeyup="filterProduitsAdmin()">
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select form-select-sm" id="filtrePeremptionAdmin" onchange="filterProduitsAdmin()">
+                        <option value="">Toutes péremptions</option>
+                        <option value="perime">Périmés</option>
+                        <option value="bientot">Bientôt périmés (30j)</option>
+                    </select>
+                </div>
+            </div>
             <div class="table-responsive">
                 <table class="table table-bordered table-hover">
                     <thead class="table-light">
@@ -820,7 +838,27 @@ function renderProduitsPage() {
 
 function filterProduitsAdmin() {
     const search = document.getElementById('searchProduitAdmin').value.toLowerCase();
-    produitsFiltres = tousLesProduits.filter(p => p.nom.toLowerCase().includes(search));
+    const fournisseur = document.getElementById('filtreFournisseurAdmin').value.toLowerCase();
+    const dci = document.getElementById('filtreDciAdmin').value.toLowerCase();
+    const rayon = document.getElementById('filtreRayonAdmin').value.toLowerCase();
+    const peremption = document.getElementById('filtrePeremptionAdmin').value;
+    const today = new Date();
+    const dateLimite30 = new Date();
+    dateLimite30.setDate(dateLimite30.getDate() + 30);
+
+    produitsFiltres = tousLesProduits.filter(p => {
+        if (!p.nom.toLowerCase().includes(search)) return false;
+        if (fournisseur && !(p.fournisseur || '').toLowerCase().includes(fournisseur)) return false;
+        if (dci && !(p.dci || '').toLowerCase().includes(dci)) return false;
+        if (rayon && !(p.rayon_rangement || '').toLowerCase().includes(rayon)) return false;
+        if (peremption) {
+            if (!p.date_peremption) return false;
+            const perempDate = new Date(p.date_peremption);
+            if (peremption === 'perime' && !(perempDate < today)) return false;
+            if (peremption === 'bientot' && !(perempDate >= today && perempDate <= dateLimite30)) return false;
+        }
+        return true;
+    });
     produitsPageCourante = 1;
     renderProduitsPage();
 }
