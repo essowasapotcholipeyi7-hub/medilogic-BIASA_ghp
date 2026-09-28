@@ -26,7 +26,7 @@
             </li>
             <li class="nav-item" role="presentation">
                 <button class="nav-link" id="historique-tab" data-bs-toggle="tab" data-bs-target="#historiqueProduits" type="button" role="tab" onclick="chargerHistoriqueProduits()">
-                    <i class="fas fa-history"></i> Historique médicaments
+                    <i class="fas fa-history"></i> Historique des actes et produits
                 </button>
             </li>
         </ul>
@@ -359,7 +359,7 @@
                 </div>
             </div>
 
-            <!-- ========== ONGLET HISTORIQUE MÉDICAMENTS ========== -->
+            <!-- ========== ONGLET HISTORIQUE DES ACTES ET PRODUITS ========== -->
             <div class="tab-pane fade" id="historiqueProduits" role="tabpanel">
                 <div class="card">
                     <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -1567,7 +1567,7 @@ function validerInventaire() {
     });
 }
 
-// ========== HISTORIQUE DES MOUVEMENTS (médicaments) ==========
+// ========== HISTORIQUE DES MOUVEMENTS (actes et produits) ==========
 let histDebounceTimer = null;
 function chargerHistoriqueProduitsDebounce() {
     clearTimeout(histDebounceTimer);
