@@ -3561,7 +3561,13 @@ def admin_global():
     if 'super_admin' not in session:
         return redirect(url_for('admin_login'))
     
-    structures = sheets_helper.get_all_records('structures', use_prefix=False)
+    # ⭐ La feuille Google Sheets "structures" traîne des lignes fantômes
+    # complètement vides (ID='', tout le reste vide aussi) — probablement
+    # d'anciennes lignes supprimées à la main sans supprimer la ligne
+    # elle-même. Sans ce filtre, chacune plantait la page (500) dès que le
+    # template appelait statut_abonnement_pour('') pour son badge.
+    structures = [s for s in sheets_helper.get_all_records('structures', use_prefix=False)
+                  if str(s.get('ID') or '').strip()]
     guide_pdf_autorisations = {
         p.structure_id: p.guide_pdf_autorise
         for p in ParametrageAffichageStructure.query.all()

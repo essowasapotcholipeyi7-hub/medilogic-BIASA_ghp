@@ -55,9 +55,6 @@ def statut_abonnement(structure_id):
     """Statut complet de l'abonnement pour cette structure, calculé à la
     volée (pas de champ à rafraîchir) : {suivi_actif, mois_paye,
     niveau_alerte, bloque_effectif, grace_active, prix_mensuel, message}."""
-    aujourdhui = date.today()
-    param = _parametrage(structure_id)
-
     base = {
         'suivi_actif': False,
         'mois_paye': True,
@@ -67,6 +64,17 @@ def statut_abonnement(structure_id):
         'prix_mensuel': None,
         'message': '',
     }
+
+    # ⭐ Même garde que onglet_cache() ci-dessus, absente ici jusqu'ici —
+    # crashait /admin_global (500 InvalidTextRepresentation, structure_id
+    # colonne entière reçevant '') dès qu'une structure de la feuille
+    # Google Sheets avait un ID vide (lignes fantômes) : statut_abonnement_pour()
+    # est appelé une fois par ligne de la liste des structures.
+    if not structure_id:
+        return base
+
+    aujourdhui = date.today()
+    param = _parametrage(structure_id)
 
     if not param or not param.date_debut_suivi:
         return base
