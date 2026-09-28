@@ -1,0 +1,5 @@
+# Dépendances de développement/test uniquement — jamais installées sur
+# Render (voir requirements.txt pour les dépendances de production).
+# Utilisé par .github/workflows/tests.yml et en local : pip install -r requirements-dev.txt
+pytest>=8.0
+jinja2>=3.1

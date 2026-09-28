@@ -1,0 +1,31 @@
+name: Tests
+
+# Tourne sur chaque push et chaque pull request, sur n'importe quelle
+# branche — n'a besoin d'AUCUN secret (pas de credentials Google Sheets ni
+# de base de données) : ast.parse() et le parseur Jinja2 lisent le code
+# source sans jamais l'exécuter ni se connecter à quoi que ce soit. Voir
+# tests/test_dates.py sur pourquoi la logique métier testée ici (dates de
+# péremption) vit dans utils/dates.py plutôt que dans app.py directement.
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Volontairement PAS "pip install -r requirements.txt" : ces tests ne
+      # touchent ni Flask, ni gspread, ni psycopg2, donc pas besoin de toute
+      # la chaîne de dépendances de l'appli (plus rapide, et évite les
+      # échecs de résolution pip déjà rencontrés côté déploiement Render).
+      - name: Installer les dépendances de test
+        run: pip install -r requirements-dev.txt
+
+      - name: Lancer les tests
+        run: pytest -v
