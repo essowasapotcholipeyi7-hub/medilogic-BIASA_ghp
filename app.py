@@ -14624,6 +14624,160 @@ def _executer_paiement_assurance(facture_id, structure_id, montant, numero_refer
         }
 
 
+def _factures_ouvertes_compagnie(structure_id, assurance):
+    """Factures assurance complémentaire encore dues (reste > 0) pour UNE
+    compagnie, toutes sociétés confondues — partagé entre l'aperçu et
+    l'encaissement global (voir payer_facture_assurance_globale)."""
+    rows = db.execute_query("""
+        SELECT id, societe, mois_reference, montant_total, montant_rembourse
+        FROM factures_assurance
+        WHERE structure_id = %s AND assurance = %s
+          AND type_assurance = 'complementaire'
+          AND statut != 'payee'
+        ORDER BY societe, mois_reference
+    """, (structure_id, assurance))
+    factures = []
+    for f in (rows or []):
+        total = float(f.get('montant_total') or 0)
+        rembourse = float(f.get('montant_rembourse') or 0)
+        reste = total - rembourse
+        if reste > 0.01:
+            factures.append({
+                'id': f.get('id'), 'societe': f.get('societe') or '(sans société)',
+                'mois_reference': f.get('mois_reference'),
+                'montant_total': total, 'montant_rembourse': rembourse, 'reste': reste,
+            })
+    return factures
+
+
+def _calculer_repartition_globale(factures_ouvertes, montant_total):
+    """Répartit montant_total au prorata du reste dû de chaque société —
+    patron : "l'assurance peut envoyer les 100000 global pour les 6
+    sociétés". Le dernier élément absorbe l'écart d'arrondi pour que la
+    somme des parts égale exactement montant_total."""
+    total_reste = sum(f['reste'] for f in factures_ouvertes)
+    if total_reste <= 0:
+        return []
+    repartition = []
+    somme_attribuee = 0
+    for i, f in enumerate(factures_ouvertes):
+        if i == len(factures_ouvertes) - 1:
+            part = round(montant_total - somme_attribuee, 2)
+        else:
+            part = round(montant_total * (f['reste'] / total_reste), 2)
+        somme_attribuee += part
+        repartition.append({
+            'facture_id': f['id'], 'societe': f['societe'],
+            'mois_reference': f['mois_reference'], 'montant': part,
+        })
+    return repartition
+
+
+@app.route('/api/assurances/compagnies/<assurance>/factures-ouvertes', methods=['GET'])
+@login_required
+def api_factures_ouvertes_compagnie(assurance):
+    """Liste les factures encore dues d'UNE compagnie, toutes sociétés
+    confondues — alimente l'aperçu avant saisie du montant global."""
+    structure_id = session.get('structure_id')
+    factures = _factures_ouvertes_compagnie(structure_id, assurance)
+    return jsonify({
+        'success': True, 'factures': factures,
+        'total_reste': sum(f['reste'] for f in factures),
+    })
+
+
+@app.route('/api/assurances/compagnies/<assurance>/payer-global', methods=['POST'])
+@login_required
+def payer_facture_assurance_globale(assurance):
+    """Demande l'encaissement d'un versement GLOBAL d'une compagnie
+    d'assurance complémentaire couvrant plusieurs sociétés à la fois —
+    patron : "les compagnies ne remboursent pas par société mais de façon
+    globale... si on prend GTA avec ses sociétés, s'elle a 6 sociétés dont
+    la somme globale fait 100000, l'assurance peut envoyer les 100000
+    global pour les 6 sociétés, on ne peut pas saisir société par
+    société". Réparti au prorata du reste dû de chaque société (choix du
+    patron), puis passe par la MÊME file de validation que l'encaissement
+    facture-par-facture — jamais de caisse/comptabilité touchée avant
+    validation admin."""
+    role = session.get('role', 'caissier')
+    if role not in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable']:
+        return jsonify({'success': False, 'error': 'Non autorise'}), 403
+
+    data = request.json or {}
+    structure_id = session.get('structure_id')
+    user_id = session.get('user_id')
+    user_name = session.get('user_name', 'Utilisateur')
+    montant_total = float(data.get('montant_total') or 0)
+
+    if montant_total <= 0:
+        return jsonify({'success': False, 'error': 'Montant invalide'}), 400
+
+    numero_reference_versement = (data.get('numero_reference_versement') or '').strip()
+    date_versement = data.get('date_versement')
+    if not numero_reference_versement or not date_versement:
+        return jsonify({'success': False, 'error': "Le numéro de référence du versement et la date de versement sont obligatoires pour tracer l'encaissement."}), 400
+
+    factures_ouvertes = _factures_ouvertes_compagnie(structure_id, assurance)
+    if not factures_ouvertes:
+        return jsonify({'success': False, 'error': 'Aucune facture en attente pour cette compagnie'}), 400
+
+    total_reste = sum(f['reste'] for f in factures_ouvertes)
+    if montant_total > total_reste + 0.01:
+        return jsonify({
+            'success': False,
+            'error': f"Le montant ({int(montant_total):,} FCFA) dépasse le total dû par cette compagnie ({int(total_reste):,} FCFA).".replace(',', ' ')
+        }), 400
+
+    repartition = _calculer_repartition_globale(factures_ouvertes, montant_total)
+
+    resume = f"Encaissement global {assurance} — {int(montant_total):,} FCFA sur {len(repartition)} société(s)".replace(',', ' ')
+    detail_lignes = "; ".join(f"{r['societe']}: {int(r['montant']):,}".replace(',', ' ') for r in repartition)
+    if len(resume) + len(detail_lignes) + 3 <= 490:
+        resume = f"{resume} ({detail_lignes})"
+
+    try:
+        demande = _demander_validation(
+            structure_id=structure_id, type_demande='encaissement_assurance_global',
+            reference_id=None,
+            payload={
+                'assurance': assurance, 'montant_total': montant_total,
+                'numero_reference_versement': numero_reference_versement,
+                'date_versement': date_versement, 'repartition': repartition,
+            },
+            resume=resume,
+            user_id=user_id, user_name=user_name,
+        )
+        return jsonify({
+            'success': True, 'en_attente': True, 'demande_id': demande.id,
+            'repartition': repartition,
+            'message': "Demande d'encaissement global envoyée. En attente de validation par l'administrateur."
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def _executer_paiement_assurance_global(payload, structure_id, user_name):
+    """Exécute un encaissement global déjà réparti (voir
+    payer_facture_assurance_globale) — rejoue _executer_paiement_assurance
+    pour chaque société de la répartition, avec la même référence de
+    versement (c'est le même virement) mais le montant propre à chacune."""
+    resultats = []
+    for ligne in payload.get('repartition', []):
+        if ligne.get('montant', 0) <= 0:
+            continue
+        resultat = _executer_paiement_assurance(
+            ligne['facture_id'], structure_id, ligne['montant'],
+            payload['numero_reference_versement'], payload['date_versement'],
+            user_name,
+        )
+        resultats.append({'societe': ligne['societe'], **resultat})
+    return {
+        'success': True,
+        'message': f"Encaissement global de {payload.get('montant_total')} FCFA réparti sur {len(resultats)} société(s)",
+        'detail': resultats,
+    }
+
+
 @app.route('/validations')
 @login_required
 def page_validations():
@@ -14719,6 +14873,10 @@ def api_valider_demande(demande_id):
                 payload['facture_id'], structure_id, payload['montant'],
                 payload['numero_reference_versement'], payload['date_versement'],
                 demande.demandeur_nom,
+            )
+        elif demande.type_demande == 'encaissement_assurance_global':
+            resultat = _executer_paiement_assurance_global(
+                payload, structure_id, demande.demandeur_nom,
             )
         else:
             return jsonify({'success': False, 'error': f"Type de demande inconnu: {demande.type_demande}"}), 400

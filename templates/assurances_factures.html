@@ -16,6 +16,9 @@
                     <a href="{{ url_for('page_facture_amu_inam') }}" class="btn btn-light btn-sm">
                         <i class="fas fa-file-invoice"></i> Facture AMU INAM (mensuelle)
                     </a>
+                    <button class="btn btn-light btn-sm" onclick="ouvrirPaiementGlobal()">
+                        <i class="fas fa-layer-group"></i> Paiement global par compagnie
+                    </button>
                     <button class="btn btn-light btn-sm" onclick="chargerFactures()">
                         <i class="fas fa-sync-alt"></i> Actualiser
                     </button>
@@ -110,6 +113,66 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
                 <button class="btn btn-success" id="btnValiderPaiement" onclick="enregistrerPaiement()">Valider l'encaissement</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL PAIEMENT GLOBAL PAR COMPAGNIE -->
+<div class="modal fade" id="paiementGlobalModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-layer-group"></i> Paiement global par compagnie</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info small">
+                    <i class="fas fa-info-circle"></i>
+                    Pour une compagnie qui rembourse en un seul virement plusieurs sociétés à la fois
+                    (ex: GTA règle globalement ses 6 sociétés). Le montant saisi est réparti
+                    automatiquement <strong>au prorata du reste dû</strong> de chaque société.
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Compagnie</label>
+                    <select class="form-select" id="globalAssurance" onchange="chargerFacturesOuvertesCompagnie()">
+                        <option value="">— Choisir —</option>
+                    </select>
+                </div>
+                <div id="globalApercu" class="d-none">
+                    <div class="table-responsive mb-3">
+                        <table class="table table-sm">
+                            <thead class="table-light">
+                                <tr><th>Société</th><th>Mois</th><th class="text-end">Reste dû</th><th class="text-end">Part attribuée</th></tr>
+                            </thead>
+                            <tbody id="globalRepartitionList"></tbody>
+                            <tfoot>
+                                <tr class="fw-bold">
+                                    <td colspan="2">Total dû par cette compagnie</td>
+                                    <td class="text-end" id="globalTotalReste">-</td>
+                                    <td class="text-end" id="globalTotalAttribue">-</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Montant total reçu (FCFA)</label>
+                        <input type="number" class="form-control" id="globalMontant" min="1" oninput="previsualiserRepartition()">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">N° de référence du versement</label>
+                        <input type="text" class="form-control" id="globalReference" placeholder="Ex: référence du virement bancaire">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date de versement</label>
+                        <input type="date" class="form-control" id="globalDateVersement">
+                    </div>
+                </div>
+                <div id="globalVide" class="text-muted text-center py-3 d-none">Aucune facture en attente pour cette compagnie.</div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-success" id="btnValiderPaiementGlobal" onclick="enregistrerPaiementGlobal()" disabled>Valider l'encaissement global</button>
             </div>
         </div>
     </div>
@@ -257,6 +320,140 @@ function enregistrerPaiement() {
             chargerFactures();
         } else {
             alert('❌ Erreur : ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => {
+        btn.disabled = false;
+        alert('❌ Erreur réseau : ' + error);
+    });
+}
+
+// ⭐ PAIEMENT GLOBAL PAR COMPAGNIE — patron : "les compagnies ne
+// remboursent pas par société mais de façon globale... on ne peut pas
+// saisir société par société, il faut qu'on arrive à le faire de façon
+// globale aussi". Répartition au prorata du reste dû, calculée côté
+// serveur (voir /api/assurances/compagnies/<assurance>/payer-global).
+let globalFacturesOuvertes = [];
+
+function ouvrirPaiementGlobal() {
+    const select = document.getElementById('globalAssurance');
+    select.innerHTML = '<option value="">— Choisir —</option>';
+    document.getElementById('globalApercu').classList.add('d-none');
+    document.getElementById('globalVide').classList.add('d-none');
+    document.getElementById('btnValiderPaiementGlobal').disabled = true;
+
+    fetch('/api/assurances/factures')
+        .then(r => r.json())
+        .then(factures => {
+            const compagnies = [...new Set(
+                (factures || [])
+                    .filter(f => (f.type_assurance || 'principale') === 'complementaire' && f.statut !== 'payee')
+                    .map(f => f.assurance)
+            )].sort();
+            compagnies.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c;
+                opt.textContent = c;
+                select.appendChild(opt);
+            });
+            new bootstrap.Modal(document.getElementById('paiementGlobalModal')).show();
+        });
+}
+
+function chargerFacturesOuvertesCompagnie() {
+    const assurance = document.getElementById('globalAssurance').value;
+    document.getElementById('globalApercu').classList.add('d-none');
+    document.getElementById('globalVide').classList.add('d-none');
+    document.getElementById('btnValiderPaiementGlobal').disabled = true;
+    if (!assurance) return;
+
+    fetch(`/api/assurances/compagnies/${encodeURIComponent(assurance)}/factures-ouvertes`)
+        .then(r => r.json())
+        .then(result => {
+            globalFacturesOuvertes = (result.factures || []);
+            if (globalFacturesOuvertes.length === 0) {
+                document.getElementById('globalVide').classList.remove('d-none');
+                return;
+            }
+            document.getElementById('globalApercu').classList.remove('d-none');
+            document.getElementById('globalTotalReste').textContent =
+                Math.round(result.total_reste).toLocaleString('fr-FR') + ' FCFA';
+            document.getElementById('globalMontant').value = Math.round(result.total_reste);
+            document.getElementById('globalReference').value = '';
+            document.getElementById('globalDateVersement').value = '';
+            previsualiserRepartition();
+        });
+}
+
+// Aperçu client — indicatif seulement, la répartition réelle est
+// recalculée et validée côté serveur avant l'envoi en validation.
+function previsualiserRepartition() {
+    const montant = parseFloat(document.getElementById('globalMontant').value) || 0;
+    const totalReste = globalFacturesOuvertes.reduce((s, f) => s + f.reste, 0);
+    const tbody = document.getElementById('globalRepartitionList');
+
+    let sommeAttribuee = 0;
+    tbody.innerHTML = globalFacturesOuvertes.map((f, i) => {
+        let part;
+        if (i === globalFacturesOuvertes.length - 1) {
+            part = montant - sommeAttribuee;
+        } else {
+            part = totalReste > 0 ? Math.round(montant * (f.reste / totalReste)) : 0;
+        }
+        sommeAttribuee += part;
+        return `<tr>
+            <td>${f.societe}</td>
+            <td><small>${f.mois_reference}</small></td>
+            <td class="text-end">${Math.round(f.reste).toLocaleString('fr-FR')} FCFA</td>
+            <td class="text-end fw-bold">${Math.round(part).toLocaleString('fr-FR')} FCFA</td>
+        </tr>`;
+    }).join('');
+
+    document.getElementById('globalTotalAttribue').textContent =
+        Math.round(sommeAttribuee).toLocaleString('fr-FR') + ' FCFA';
+
+    const depasse = montant > totalReste + 0.5;
+    document.getElementById('btnValiderPaiementGlobal').disabled = !montant || montant <= 0 || depasse;
+}
+
+function enregistrerPaiementGlobal() {
+    const assurance = document.getElementById('globalAssurance').value;
+    const montant = parseFloat(document.getElementById('globalMontant').value);
+    const reference = document.getElementById('globalReference').value.trim();
+    const dateVersement = document.getElementById('globalDateVersement').value;
+
+    if (!montant || montant <= 0) {
+        alert('Montant valide requis');
+        return;
+    }
+    if (!reference || !dateVersement) {
+        alert('Le numéro de référence du versement et la date de versement sont obligatoires (pièces justificatives).');
+        return;
+    }
+    if (!confirm(`Envoyer la demande d'encaissement global de ${Math.round(montant).toLocaleString('fr-FR')} FCFA pour ${assurance}, réparti sur ${globalFacturesOuvertes.length} société(s) ?`)) return;
+
+    const btn = document.getElementById('btnValiderPaiementGlobal');
+    btn.disabled = true;
+
+    fetch(`/api/assurances/compagnies/${encodeURIComponent(assurance)}/payer-global`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            montant_total: montant,
+            numero_reference_versement: reference,
+            date_versement: dateVersement
+        })
+    })
+    .then(r => r.json())
+    .then(result => {
+        btn.disabled = false;
+        if (result.success) {
+            alert(result.en_attente ? ('📨 ' + result.message) : '✅ Encaissement enregistré !');
+            bootstrap.Modal.getInstance(document.getElementById('paiementGlobalModal')).hide();
+            chargerFactures();
+        } else {
+            alert('❌ Erreur : ' + (result.error || 'Erreur inconnue'));
+            btn.disabled = false;
         }
     })
     .catch(error => {
