@@ -56,15 +56,22 @@ jobs:
             echo "::error::Le secret BACKUP_DATABASE_URL n'est pas configuré (Settings > Secrets and variables > Actions)"
             exit 1
           fi
-          # ⭐ FIX : capturer $? DANS le bloc "if ! commande; then" donne le
-          # code de sortie du TEST "if", pas celui de pg_dump (toujours 0
-          # à cet endroit précis, puisque le "if" est devenu vrai) — bug
-          # repéré en conditions réelles : le job "réussissait" (exit 0)
-          # malgré un pg_dump réellement en échec, parce que ce $? erroné
-          # finissait dans le "exit $code" plus bas. $? doit être capturé
-          # IMMÉDIATEMENT après la commande elle-même.
+          # ⭐ FIX (2e tentative) : capturer $? DANS "if ! commande; then"
+          # donnait le code du TEST "if", pas celui de pg_dump — corrigé en
+          # sortant la commande du "if". Mais ça a révélé un AUTRE piège :
+          # bash tourne ici avec "set -e" par défaut (comportement GitHub
+          # Actions), qui arrête le script IMMÉDIATEMENT dès qu'une
+          # commande simple échoue — avant même d'atteindre "code=$?" et le
+          # message d'erreur détaillé, qui ne s'affichaient donc jamais
+          # (juste "Process completed with exit code 1", repéré en
+          # conditions réelles). "set +e"/"set -e" autour de la seule
+          # commande à risque neutralise ce comportement le temps de
+          # capturer le vrai code de sortie, sans le désactiver pour le
+          # reste du script.
+          set +e
           pg_dump "$DATABASE_URL" -Fc -f backup.dump 2>pgdump_stderr.log
           code=$?
+          set -e
           if [ $code -ne 0 ]; then
             # Redige tout segment "utilisateur:motdepasse@" avant
             # d'afficher l'erreur — les logs de ce job (via l'annotation
