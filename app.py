@@ -6181,6 +6181,8 @@ def api_print_rendez_vous(rdv_id):
     
     # Récupérer le patient et le médecin
     patient = db.session.get(Patient, rdv.patient_id)
+    if patient:
+        dechiffrer_patients_orm([patient])
     medecin = db.session.get(Medecin, rdv.medecin_id)
     
     # ============================================================
