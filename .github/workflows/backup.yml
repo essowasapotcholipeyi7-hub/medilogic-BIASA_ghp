@@ -30,8 +30,23 @@ jobs:
   backup:
     runs-on: ubuntu-latest
     steps:
-      - name: Installer pg_dump
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      - name: Installer pg_dump (version recente, compatible Neon)
+        run: |
+          # ⭐ FIX : "apt-get install postgresql-client" tout court installe
+          # la version des dépôts Ubuntu par défaut, plus ancienne que
+          # Neon (Postgres 17) — pg_dump refuse alors avec "aborting
+          # because of server version mismatch". Repéré en observant que
+          # le job "réussissait" quand même avec un dump de 201 octets au
+          # lieu de plusieurs Mo (voir aussi le fix du bug de capture de
+          # code de sortie juste en dessous, qui masquait cet échec).
+          # Dépôt officiel PGDG pour avoir une version récente du client.
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq curl ca-certificates gnupg lsb-release
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          pg_dump --version
 
       - name: Sauvegarder la base de donnees
         env:
@@ -41,9 +56,17 @@ jobs:
             echo "::error::Le secret BACKUP_DATABASE_URL n'est pas configuré (Settings > Secrets and variables > Actions)"
             exit 1
           fi
-          if ! pg_dump "$DATABASE_URL" -Fc -f backup.dump 2>pgdump_stderr.log; then
-            code=$?
-            # ⭐ Redige tout segment "utilisateur:motdepasse@" avant
+          # ⭐ FIX : capturer $? DANS le bloc "if ! commande; then" donne le
+          # code de sortie du TEST "if", pas celui de pg_dump (toujours 0
+          # à cet endroit précis, puisque le "if" est devenu vrai) — bug
+          # repéré en conditions réelles : le job "réussissait" (exit 0)
+          # malgré un pg_dump réellement en échec, parce que ce $? erroné
+          # finissait dans le "exit $code" plus bas. $? doit être capturé
+          # IMMÉDIATEMENT après la commande elle-même.
+          pg_dump "$DATABASE_URL" -Fc -f backup.dump 2>pgdump_stderr.log
+          code=$?
+          if [ $code -ne 0 ]; then
+            # Redige tout segment "utilisateur:motdepasse@" avant
             # d'afficher l'erreur — les logs de ce job (via l'annotation
             # ::error::) sont lisibles publiquement sans connexion sur un
             # dépôt public, contrairement au log complet du job.
