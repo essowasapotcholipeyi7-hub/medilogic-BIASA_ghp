@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Gestion des actes et produits{% endblock %}
+{% block title %}Gestion des actes et stocks de produits{% endblock %}
 
 {% block content %}
         <ul class="nav nav-tabs mb-3" id="gestionTab" role="tablist">
@@ -27,11 +27,6 @@
             <li class="nav-item" role="presentation">
                 <button class="nav-link" id="historique-tab" data-bs-toggle="tab" data-bs-target="#historiqueProduits" type="button" role="tab" onclick="chargerHistoriqueProduits()">
                     <i class="fas fa-history"></i> Historique médicaments
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="lunetterie-tab" data-bs-toggle="tab" data-bs-target="#lunetterie" type="button" role="tab">
-                    <i class="fas fa-glasses"></i> Lunetterie
                 </button>
             </li>
         </ul>
@@ -1631,21 +1626,6 @@ document.addEventListener('DOMContentLoaded', function() {
     chargerActesAdmin().then(() => chargerProduitsAdmin());
     const stockDateInput = document.getElementById('stockDateInput');
     if (stockDateInput) stockDateInput.value = new Date().toISOString().split('T')[0];
-    // Ajouter un bouton pour la remise en masse dans l'onglet lunetterie
-    const lunetterieTab = document.getElementById('lunetterie');
-    if (lunetterieTab) {
-        const headerDiv = lunetterieTab.querySelector('.card-header');
-        if (headerDiv) {
-            const btnGroup = headerDiv.querySelector('div');
-            if (btnGroup) {
-                const remiseBtn = document.createElement('button');
-                remiseBtn.className = 'btn btn-warning btn-sm me-2';
-                remiseBtn.innerHTML = '<i class="fas fa-tags"></i> Remise en masse';
-                remiseBtn.onclick = showRemiseMasseModal;
-                btnGroup.insertBefore(remiseBtn, btnGroup.firstChild);
-            }
-        }
-    }
 });
 </script>
 {% endblock %}

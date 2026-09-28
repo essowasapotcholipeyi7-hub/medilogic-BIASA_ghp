@@ -2304,7 +2304,7 @@
                 </a>
                 {% endif %}
                 <a class="menu-item" href="{{ url_for('gestion_stock') }}">
-                    Gestion des stocks
+                    Gestion des actes et stocks de produits
                 </a>
             </div>
         </li>
@@ -2464,6 +2464,9 @@
                 {% if session.role in ['admin', 'gestionnaire'] %}
                 <a class="menu-item" href="{{ url_for('admin_structure') }}">
                     <i class="fas fa-cog"></i> Administration
+                </a>
+                <a class="menu-item" href="{{ url_for('gestion_stock') }}">
+                    Gestion des actes et stocks de produits
                 </a>
                 {% endif %}
                 {% if a_acces('rh') and not onglet_cache('rh') and not _bloq %}

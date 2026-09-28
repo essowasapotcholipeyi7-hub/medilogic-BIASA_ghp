@@ -4793,11 +4793,17 @@ def sync_gestion_patients_desactiver():
 @login_required
 @roles_required('admin', 'gestionnaire')
 def admin_structure():
-    """Administration de la structure. Le gestionnaire n'a droit qu'au
-    sous-onglet Produits & stocks (géré côté template) ; on ne charge donc
-    la liste des utilisateurs que pour un admin — inutile de faire l'aller-
-    retour Sheets sinon, et ça évite toute fuite si le template est un jour
-    mal gardé."""
+    """Administration de la structure. La gestion des actes et des produits
+    a été retirée de cette page (elle vivait en double avec
+    gestion_stock.html) et déplacée uniquement là-bas ; le gestionnaire, qui
+    n'avait ici que ce sous-onglet, n'a donc plus rien à y voir — on le
+    redirige directement vers gestion_stock plutôt que de lui laisser une
+    page d'administration vide (les nombreux liens/boutons "Administration"
+    qui pointent encore ici pour lui, dans plusieurs templates, restent
+    ainsi valides sans avoir à tous les auditer un par un)."""
+    if session.get('role') != 'admin':
+        return redirect(url_for('gestion_stock'))
+
     structure_id = session.get('structure_id')
 
     users = []
