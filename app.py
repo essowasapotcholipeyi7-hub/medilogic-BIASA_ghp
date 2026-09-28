@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, Response
 from flask_mail import Mail, Message
 from config import Config
 from sheets_helper import sheets_helper, normaliser_nom_article
@@ -7833,6 +7833,48 @@ def _log_mouvement_stock(structure_id, produit_id, produit_nom, type_mouvement,
         print(f"⚠️ Erreur journalisation mouvement stock ({type_mouvement}, produit {produit_id}): {e}")
 
 
+# ⭐ Colonnes P..T attendues en en-tête de struct_<id>_produits — "statut" et
+# "AMU-TNS" existaient déjà en données (colonnes 16-17) mais l'en-tête de
+# certaines structures s'arrêtait avant elles ; R/S/T (fournisseur, rayon de
+# rangement, DCI) sont nouvelles. add_record() (sheets_helper.py) TRONQUE
+# toute ligne plus longue que l'en-tête existant — sans cette extension, les
+# nouvelles colonnes seraient silencieusement perdues à chaque création de
+# produit.
+_ENTETES_PRODUITS_MIN = [
+    'ID', 'nom', 'prix_vente', 'pbr', 'prix_achat', 'quantite_stock',
+    'seuil_alerte', 'unite', 'date_peremption', 'lot', 'structure_id',
+    'prise_en_charge_amu', 'commentaire_amu', 'prise_en_charge_cac', 'commentaire_cac',
+    'statut', 'AMU-TNS', 'fournisseur', 'rayon_rangement', 'dci',
+]
+
+
+def _assurer_entetes_produits_etendues(structure_id):
+    """Complète l'en-tête de struct_<id>_produits jusqu'à _ENTETES_PRODUITS_MIN
+    si besoin (idempotent, ne touche jamais aux colonnes déjà nommées)."""
+    try:
+        sheet_name = f"struct_{structure_id}_produits"
+        worksheet = sheets_helper.spreadsheet.worksheet(sheet_name)
+        headers = worksheet.row_values(1)
+        if len(headers) < len(_ENTETES_PRODUITS_MIN):
+            manquants = _ENTETES_PRODUITS_MIN[len(headers):]
+
+            def _lettre_colonne(n):
+                # 1-based, sans dépendre du module gspread pour une simple
+                # conversion index -> lettre (A, B, ..., Z, AA, ...).
+                lettres = ''
+                while n > 0:
+                    n, reste = divmod(n - 1, 26)
+                    lettres = chr(65 + reste) + lettres
+                return lettres
+
+            debut_col = _lettre_colonne(len(headers) + 1)
+            fin_col = _lettre_colonne(len(_ENTETES_PRODUITS_MIN))
+            worksheet.update(range_name=f"{debut_col}1:{fin_col}1", values=[manquants])
+            sheets_helper.clear_cache(sheet_name)
+    except Exception as e:
+        print(f"⚠️ Erreur extension en-têtes produits (structure {structure_id}): {e}")
+
+
 def _decrementer_stock_produit(worksheet, produit_id, quantite_vendue, produit_nom,
                                 structure_id, vente_id, user_nom):
     """Décrémente le stock d'UN SEUL produit dans Google Sheets — patron :
@@ -8004,6 +8046,15 @@ def api_get_produits():
                     # ⭐ RÉCUPÉRER AMU-TNS (COLONNE Q, INDEX 16)
                     prise_en_charge_amu_tns = row[16] if len(row) > 16 and row[16] else True
 
+                    # ⭐ NOUVEAU — colonnes facultatives ajoutées À LA SUITE des
+                    # colonnes existantes (R=17 fournisseur, S=18 rayon de
+                    # rangement, T=19 DCI) : "vraie surveillance des
+                    # médicaments" (filtrage par fournisseur/DCI/rayon) sans
+                    # toucher à la position des colonnes déjà en place.
+                    fournisseur = row[17] if len(row) > 17 and row[17] else ''
+                    rayon_rangement = row[18] if len(row) > 18 and row[18] else ''
+                    dci = row[19] if len(row) > 19 and row[19] else ''
+
                     # Convertir en booléens
                     if isinstance(prise_en_charge_amu, str):
                         prise_en_charge_amu = prise_en_charge_amu.upper() == 'TRUE'
@@ -8030,7 +8081,10 @@ def api_get_produits():
                                 'prise_en_charge_cac': prise_en_charge_cac,
                                 'commentaire_cac': commentaire_cac,
                                 'prise_en_charge_amu_tns': prise_en_charge_amu_tns,
-                                'statut': statut  # 🔥 NOUVEAU
+                                'statut': statut,  # 🔥 NOUVEAU
+                                'fournisseur': fournisseur,
+                                'rayon_rangement': rayon_rangement,
+                                'dci': dci,
                             })
                 except Exception as e:
                     print(f"⚠️ Erreur ligne {i}: {e}")
@@ -8080,7 +8134,10 @@ def api_get_produits():
                             'prise_en_charge_cac': prise_cac,
                             'commentaire_cac': p.get('commentaire_cac', ''),
                             'prise_en_charge_amu_tns': prise_amu_tns,
-                            'statut': statut  # 🔥 NOUVEAU
+                            'statut': statut,  # 🔥 NOUVEAU
+                            'fournisseur': p.get('fournisseur', ''),
+                            'rayon_rangement': p.get('rayon_rangement', ''),
+                            'dci': p.get('dci', ''),
                         })
                     except:
                         continue
@@ -8395,11 +8452,13 @@ def api_admin_add_produit():
         produits = sheets_helper.get_all_records('produits')
         new_id = get_next_id(produits, 'ID')
         
-        # A=ID, B=nom, C=prix_vente, D=pbr, E=prix_achat, 
-        # F=quantite_stock, G=seuil_alerte, H=unite, 
+        # A=ID, B=nom, C=prix_vente, D=pbr, E=prix_achat,
+        # F=quantite_stock, G=seuil_alerte, H=unite,
         # I=date_peremption, J=lot, K=structure_id,
-        # L=prise_en_charge_amu, M=commentaire_amu, 
-        # N=prise_en_charge_cac, O=commentaire_cac
+        # L=prise_en_charge_amu, M=commentaire_amu,
+        # N=prise_en_charge_cac, O=commentaire_cac,
+        # P=statut, Q=prise_en_charge_amu_tns,
+        # ⭐ R=fournisseur, S=rayon_rangement, T=dci (NOUVEAU, facultatifs)
         new_produit = [
             new_id,
             data.get('nom'),
@@ -8415,9 +8474,15 @@ def api_admin_add_produit():
             'TRUE' if data.get('prise_en_charge_amu', True) else 'FALSE',
             data.get('commentaire_amu', ''),
             'TRUE' if data.get('prise_en_charge_cac', True) else 'FALSE',
-            data.get('commentaire_cac', '')
+            data.get('commentaire_cac', ''),
+            data.get('statut', 'direct'),
+            'TRUE' if data.get('prise_en_charge_amu_tns', True) else 'FALSE',
+            data.get('fournisseur', ''),
+            data.get('rayon_rangement', ''),
+            data.get('dci', ''),
         ]
-        
+
+        _assurer_entetes_produits_etendues(structure_id)
         sheets_helper.add_record('produits', new_produit)
         stock_initial = int(data.get('quantite_stock') or 0)
         _log_mouvement_stock(structure_id, new_id, data.get('nom', ''), 'initial',
@@ -8457,8 +8522,9 @@ def api_admin_update_produit(produit_id):
         print(f"   Nombre de colonnes: {len(current_row)}")
         
         # 🔥 S'ASSURER QUE LA LIGNE A ASSEZ DE COLONNES
-        # On a besoin de 15 colonnes (A à O)
-        while len(current_row) < 15:
+        # On a besoin de 20 colonnes (A à T) — P/Q (statut, AMU-TNS) et
+        # R/S/T (fournisseur, rayon de rangement, DCI, NOUVEAU) inclus.
+        while len(current_row) < 20:
             current_row.append('')
 
         # Stock avant modification — pour journaliser l'écart si l'admin
@@ -8488,11 +8554,18 @@ def api_admin_update_produit(produit_id):
         current_row[12] = data.get('commentaire_amu', '')
         current_row[13] = 'TRUE' if data.get('prise_en_charge_cac', True) else 'FALSE'
         current_row[14] = data.get('commentaire_cac', '')
-        
+        # P=15 (statut), Q=16 (AMU-TNS) : gérés par une autre route, on ne
+        # touche pas à leur valeur existante ici.
+        # ⭐ R=17: fournisseur, S=18: rayon_rangement, T=19: dci (NOUVEAU,
+        # facultatifs) — écrasés seulement si le formulaire les envoie.
+        current_row[17] = data.get('fournisseur', current_row[17])
+        current_row[18] = data.get('rayon_rangement', current_row[18])
+        current_row[19] = data.get('dci', current_row[19])
+
         print(f"   Nouvelle ligne: {current_row}")
-        
+
         # 🔥 Mettre à jour la ligne
-        worksheet.update(range_name=f'A{row_num}:O{row_num}', values=[current_row])
+        worksheet.update(range_name=f'A{row_num}:T{row_num}', values=[current_row])
         sheets_helper.clear_cache(sheet_name)
 
         stock_apres = int(data.get('quantite_stock') or 0)
@@ -8574,12 +8647,276 @@ def api_approvisionner_produit(id):
                               user_nom=session.get('user_name'))
 
         return jsonify({'success': True, 'message': f'{quantite} unités ajoutées', 'stock': nouveau_stock})
-        
+
     except Exception as e:
         print(f"❌ Erreur: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================
+# INVENTAIRE PHYSIQUE — patron : "aujourd'hui on peut l'inventaire
+# tranquillement pour les médicaments... une vraie surveillance de
+# médicaments". Comptage produit par produit, écart calculé côté serveur
+# (jamais fait confiance au calcul client), stock ajusté + tracé dans
+# mouvements_stock (type 'inventaire') pour CHAQUE ligne où l'écart n'est
+# pas nul. reference_id partagé (horodatage) = identifiant de la "session"
+# de comptage, pour pouvoir la retrouver/exporter d'un bloc ensuite.
+# ============================================================
+@app.route('/api/produits/inventaire/valider', methods=['POST'])
+@login_required
+def api_inventaire_valider():
+    try:
+        data = request.json or {}
+        structure_id = session.get('structure_id')
+        lignes = data.get('lignes', [])
+        if not lignes:
+            return jsonify({'success': False, 'error': 'Aucune ligne à traiter'}), 400
+
+        sheet_name = f"struct_{structure_id}_produits"
+        worksheet = sheets_helper.spreadsheet.worksheet(sheet_name)
+        session_id = int(datetime.utcnow().timestamp())
+        user_nom = session.get('user_name', 'Utilisateur')
+
+        resultats = []
+        for ligne in lignes:
+            produit_id = ligne.get('produit_id')
+            quantite_comptee = ligne.get('quantite_comptee')
+            motif = (ligne.get('motif') or '').strip()
+            if produit_id is None or quantite_comptee is None or quantite_comptee == '':
+                continue
+            try:
+                quantite_comptee = int(quantite_comptee)
+            except (ValueError, TypeError):
+                continue
+
+            cell = worksheet.find(str(produit_id), in_column=1)
+            if not cell:
+                resultats.append({'produit_id': produit_id, 'success': False, 'error': 'Produit introuvable'})
+                continue
+
+            row_num = cell.row
+            current_row = worksheet.row_values(row_num)
+            nom_produit = current_row[1] if len(current_row) > 1 else ''
+            try:
+                stock_systeme = int(current_row[5]) if len(current_row) > 5 and current_row[5] else 0
+            except (ValueError, TypeError):
+                stock_systeme = 0
+
+            ecart = quantite_comptee - stock_systeme
+            if ecart == 0:
+                resultats.append({
+                    'produit_id': produit_id, 'produit_nom': nom_produit,
+                    'stock_systeme': stock_systeme, 'quantite_comptee': quantite_comptee,
+                    'ecart': 0, 'success': True,
+                })
+                continue
+
+            worksheet.update_cell(row_num, 6, quantite_comptee)  # Colonne F = stock
+            try:
+                db.execute_query("""
+                    INSERT INTO mouvements_stock
+                        (structure_id, produit_id, produit_nom, type_mouvement,
+                         quantite_delta, stock_apres, reference_type, reference_id,
+                         created_by_nom, motif)
+                    VALUES (%s, %s, %s, 'inventaire', %s, %s, 'inventaire', %s, %s, %s)
+                """, (structure_id, str(produit_id), nom_produit, ecart,
+                      quantite_comptee, session_id, user_nom, motif or None))
+            except Exception as e_log:
+                # ⭐ Repli si la colonne motif n'existe pas encore sur cette
+                # base (script de migration pas encore lancé) — le mouvement
+                # reste journalisé, juste sans motif.
+                print(f"⚠️ Log mouvement inventaire sans motif (repli): {e_log}")
+                _log_mouvement_stock(structure_id, produit_id, nom_produit, 'inventaire',
+                                      ecart, quantite_comptee, reference_type='inventaire',
+                                      reference_id=session_id, user_nom=user_nom)
+
+            resultats.append({
+                'produit_id': produit_id, 'produit_nom': nom_produit,
+                'stock_systeme': stock_systeme, 'quantite_comptee': quantite_comptee,
+                'ecart': ecart, 'motif': motif, 'success': True,
+            })
+
+        sheets_helper.clear_cache(sheet_name)
+        nb_ecarts = len([r for r in resultats if r.get('ecart')])
+        return jsonify({
+            'success': True, 'session_id': session_id,
+            'resultats': resultats, 'nb_lignes': len(resultats), 'nb_ecarts': nb_ecarts,
+        })
+    except Exception as e:
+        print(f"❌ Erreur validation inventaire: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def _charger_meta_produits(structure_id):
+    """Charge {produit_id: {fournisseur, rayon_rangement, dci, unite, nom}}
+    depuis Google Sheets — sert à enrichir/filtrer l'historique des
+    mouvements par ces critères (pas stockés dans mouvements_stock lui-même,
+    ce sont des attributs du produit, pas du mouvement)."""
+    meta = {}
+    try:
+        sheet_name = f"struct_{structure_id}_produits"
+        all_values = sheets_helper.get_all_values_cached(sheet_name)
+        for row in all_values[1:]:
+            if not row or len(row) < 2 or not row[0]:
+                continue
+            meta[str(row[0])] = {
+                'nom': row[1] if len(row) > 1 else '',
+                'unite': row[7] if len(row) > 7 else '',
+                'fournisseur': row[17] if len(row) > 17 else '',
+                'rayon_rangement': row[18] if len(row) > 18 else '',
+                'dci': row[19] if len(row) > 19 else '',
+            }
+    except Exception as e:
+        print(f"⚠️ _charger_meta_produits (structure {structure_id}): {e}")
+    return meta
+
+
+def _recuperer_historique_mouvements(structure_id, args):
+    """Cœur partagé entre la liste (JSON) et l'export (texte/Excel) de
+    l'historique des mouvements de stock — mêmes filtres dans les deux
+    cas, pour que l'export corresponde toujours à ce qui est affiché."""
+    produit_id = args.get('produit_id')
+    type_mouvement = args.get('type_mouvement')
+    date_debut = args.get('date_debut')
+    date_fin = args.get('date_fin')
+    fournisseur = (args.get('fournisseur') or '').strip().lower()
+    dci = (args.get('dci') or '').strip().lower()
+    rayon = (args.get('rayon_rangement') or '').strip().lower()
+
+    meta_produits = _charger_meta_produits(structure_id)
+
+    produit_ids_filtres = None
+    if fournisseur or dci or rayon:
+        produit_ids_filtres = {
+            pid for pid, m in meta_produits.items()
+            if (not fournisseur or fournisseur in (m.get('fournisseur') or '').lower())
+            and (not dci or dci in (m.get('dci') or '').lower())
+            and (not rayon or rayon in (m.get('rayon_rangement') or '').lower())
+        }
+
+    query = "SELECT * FROM mouvements_stock WHERE structure_id = %s"
+    params = [structure_id]
+    if produit_id:
+        query += " AND produit_id = %s"
+        params.append(str(produit_id))
+    if type_mouvement:
+        query += " AND type_mouvement = %s"
+        params.append(type_mouvement)
+    if date_debut:
+        query += " AND date_mouvement >= %s"
+        params.append(date_debut)
+    if date_fin:
+        query += " AND date_mouvement <= %s"
+        params.append(date_fin + ' 23:59:59')
+    query += " ORDER BY date_mouvement DESC LIMIT 3000"
+
+    rows = db.execute_query(query, params) or []
+    resultats = []
+    for r in rows:
+        pid = str(r.get('produit_id'))
+        if produit_ids_filtres is not None and pid not in produit_ids_filtres:
+            continue
+        m = meta_produits.get(pid, {})
+        date_mvt = r.get('date_mouvement')
+        resultats.append({
+            'id': r.get('id'),
+            'produit_id': pid,
+            'produit_nom': r.get('produit_nom') or m.get('nom', ''),
+            'type_mouvement': r.get('type_mouvement'),
+            'quantite_delta': float(r.get('quantite_delta') or 0),
+            'stock_apres': float(r.get('stock_apres') or 0),
+            'reference_type': r.get('reference_type'),
+            'reference_id': r.get('reference_id'),
+            'motif': r.get('motif'),
+            'date_mouvement': date_mvt.strftime('%Y-%m-%d %H:%M') if date_mvt else '',
+            'created_by_nom': r.get('created_by_nom'),
+            'fournisseur': m.get('fournisseur', ''),
+            'rayon_rangement': m.get('rayon_rangement', ''),
+            'dci': m.get('dci', ''),
+            'unite': m.get('unite', ''),
+        })
+    return resultats
+
+
+@app.route('/api/produits/historique', methods=['GET'])
+@login_required
+def api_historique_mouvements_produits():
+    structure_id = session.get('structure_id')
+    resultats = _recuperer_historique_mouvements(structure_id, request.args)
+    return jsonify({'success': True, 'mouvements': resultats})
+
+
+_LIBELLES_TYPE_MOUVEMENT = {
+    'vente': 'Vente', 'approvisionnement': 'Approvisionnement',
+    'ajustement': 'Ajustement', 'initial': 'Stock initial',
+    'inventaire': 'Inventaire',
+}
+
+
+@app.route('/api/produits/historique/export', methods=['GET'])
+@login_required
+def api_export_historique_produits():
+    """Export texte/Excel de l'historique — patron : "possibilité
+    d'exporter en text et en excel". Respecte les mêmes filtres que la
+    liste affichée à l'écran (voir _recuperer_historique_mouvements)."""
+    structure_id = session.get('structure_id')
+    format_export = (request.args.get('format') or 'excel').lower()
+    mouvements = _recuperer_historique_mouvements(structure_id, request.args)
+
+    colonnes = ['Date', 'Médicament', 'Type', 'Entrée', 'Sortie', 'Stock après',
+                'Fournisseur', 'DCI', 'Rayon', 'Motif', 'Par']
+
+    def _ligne(m):
+        delta = m['quantite_delta']
+        entree = delta if delta > 0 else ''
+        sortie = abs(delta) if delta < 0 else ''
+        return [
+            m['date_mouvement'],
+            m['produit_nom'],
+            _LIBELLES_TYPE_MOUVEMENT.get(m['type_mouvement'], m['type_mouvement']),
+            entree, sortie, m['stock_apres'],
+            m['fournisseur'], m['dci'], m['rayon_rangement'],
+            m['motif'] or '', m['created_by_nom'] or '',
+        ]
+
+    if format_export == 'texte':
+        lignes_txt = ['\t'.join(colonnes)]
+        for m in mouvements:
+            lignes_txt.append('\t'.join(str(v) for v in _ligne(m)))
+        contenu = '\n'.join(lignes_txt)
+        return Response(
+            contenu, mimetype='text/plain',
+            headers={'Content-Disposition': 'attachment; filename=historique_medicaments.txt'}
+        )
+
+    # Excel (openpyxl — déjà une dépendance du projet)
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Historique médicaments'
+    ws.append(colonnes)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    for m in mouvements:
+        ws.append(_ligne(m))
+    for col in ws.columns:
+        longueur = max((len(str(c.value)) for c in col if c.value is not None), default=10)
+        ws.column_dimensions[col[0].column_letter].width = min(longueur + 2, 40)
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return Response(
+        buffer.read(),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': 'attachment; filename=historique_medicaments.xlsx'}
+    )
+
 
 @app.route('/api/ventes/pharma', methods=['POST'])
 @login_required

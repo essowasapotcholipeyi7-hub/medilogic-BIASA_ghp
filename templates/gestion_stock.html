@@ -20,6 +20,16 @@
                 </button>
             </li>
             <li class="nav-item" role="presentation">
+                <button class="nav-link" id="inventaire-tab" data-bs-toggle="tab" data-bs-target="#inventaireProduits" type="button" role="tab" onclick="chargerInventaire()">
+                    <i class="fas fa-clipboard-check"></i> Inventaire
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="historique-tab" data-bs-toggle="tab" data-bs-target="#historiqueProduits" type="button" role="tab" onclick="chargerHistoriqueProduits()">
+                    <i class="fas fa-history"></i> Historique médicaments
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
                 <button class="nav-link" id="lunetterie-tab" data-bs-toggle="tab" data-bs-target="#lunetterie" type="button" role="tab">
                     <i class="fas fa-glasses"></i> Lunetterie
                 </button>
@@ -123,6 +133,24 @@
                                 <span class="input-group-text"><i class="fas fa-search"></i></span>
                                 <input type="text" id="searchProduitAdmin" class="form-control" placeholder="Rechercher un produit..." onkeyup="filterProduitsAdmin()">
                                 <button class="btn btn-outline-secondary" onclick="clearSearchProduitAdmin()">✖</button>
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-3">
+                                <input type="text" class="form-control form-control-sm" id="filtreFournisseurAdmin" placeholder="Filtrer par fournisseur" onkeyup="filterProduitsAdmin()">
+                            </div>
+                            <div class="col-md-3">
+                                <input type="text" class="form-control form-control-sm" id="filtreDciAdmin" placeholder="Filtrer par DCI" onkeyup="filterProduitsAdmin()">
+                            </div>
+                            <div class="col-md-3">
+                                <input type="text" class="form-control form-control-sm" id="filtreRayonAdmin" placeholder="Filtrer par rayon" onkeyup="filterProduitsAdmin()">
+                            </div>
+                            <div class="col-md-3">
+                                <select class="form-select form-select-sm" id="filtrePeremptionAdmin" onchange="filterProduitsAdmin()">
+                                    <option value="">Toutes péremptions</option>
+                                    <option value="perime">Périmés</option>
+                                    <option value="bientot">Bientôt périmés (30j)</option>
+                                </select>
                             </div>
                         </div>
                         <div class="table-responsive">
@@ -282,6 +310,135 @@
                 </div>
             </div>
 
+            <!-- ========== ONGLET INVENTAIRE ========== -->
+            <div class="tab-pane fade" id="inventaireProduits" role="tabpanel">
+                <div class="card">
+                    <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <h5><i class="fas fa-clipboard-check"></i> Inventaire physique</h5>
+                        <button class="btn btn-light btn-sm" onclick="chargerInventaire()">
+                            <i class="fas fa-sync-alt"></i> Actualiser
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info small">
+                            <i class="fas fa-info-circle"></i>
+                            Comptez les médicaments physiquement, saisissez la quantité trouvée pour chaque produit.
+                            L'écart avec le stock système est calculé automatiquement. Seules les lignes où la
+                            quantité comptée diffère du stock système seront ajustées à la validation.
+                        </div>
+                        <div class="mb-3">
+                            <div class="input-group" style="max-width:400px;">
+                                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                <input type="text" id="searchInventaire" class="form-control" placeholder="Rechercher un médicament..." onkeyup="filterInventaire()">
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-hover">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Médicament</th>
+                                        <th>Unité</th>
+                                        <th class="text-end">Stock système</th>
+                                        <th style="width:130px;">Quantité comptée</th>
+                                        <th class="text-end">Écart</th>
+                                        <th>Motif (si écart)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="inventaireList">
+                                    <tr><td colspan="6" class="text-center">Chargement...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="card-footer d-flex justify-content-between align-items-center">
+                        <span id="inventaireEcartsResume" class="text-muted"></span>
+                        <button class="btn btn-secondary" id="btnValiderInventaire" onclick="validerInventaire()">
+                            <i class="fas fa-check"></i> Valider l'inventaire
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== ONGLET HISTORIQUE MÉDICAMENTS ========== -->
+            <div class="tab-pane fade" id="historiqueProduits" role="tabpanel">
+                <div class="card">
+                    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <h5><i class="fas fa-history"></i> Historique des mouvements (entrées / sorties)</h5>
+                        <div>
+                            <button class="btn btn-light btn-sm me-2" onclick="exporterHistorique('texte')">
+                                <i class="fas fa-file-alt"></i> Export texte
+                            </button>
+                            <button class="btn btn-light btn-sm" onclick="exporterHistorique('excel')">
+                                <i class="fas fa-file-excel"></i> Export Excel
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-3">
+                                <label class="form-label small">Médicament</label>
+                                <select class="form-select form-select-sm" id="histFiltreProduit" onchange="chargerHistoriqueProduits()">
+                                    <option value="">Tous</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small">Type</label>
+                                <select class="form-select form-select-sm" id="histFiltreType" onchange="chargerHistoriqueProduits()">
+                                    <option value="">Tous</option>
+                                    <option value="vente">Vente (sortie)</option>
+                                    <option value="approvisionnement">Approvisionnement (entrée)</option>
+                                    <option value="inventaire">Inventaire (écart)</option>
+                                    <option value="ajustement">Ajustement</option>
+                                    <option value="initial">Stock initial</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small">Du</label>
+                                <input type="date" class="form-control form-control-sm" id="histFiltreDateDebut" onchange="chargerHistoriqueProduits()">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small">Au</label>
+                                <input type="date" class="form-control form-control-sm" id="histFiltreDateFin" onchange="chargerHistoriqueProduits()">
+                            </div>
+                            <div class="col-md-1">
+                                <label class="form-label small">Fournisseur</label>
+                                <input type="text" class="form-control form-control-sm" id="histFiltreFournisseur" onkeyup="chargerHistoriqueProduitsDebounce()">
+                            </div>
+                            <div class="col-md-1">
+                                <label class="form-label small">DCI</label>
+                                <input type="text" class="form-control form-control-sm" id="histFiltreDci" onkeyup="chargerHistoriqueProduitsDebounce()">
+                            </div>
+                            <div class="col-md-1">
+                                <label class="form-label small">Rayon</label>
+                                <input type="text" class="form-control form-control-sm" id="histFiltreRayon" onkeyup="chargerHistoriqueProduitsDebounce()">
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Médicament</th>
+                                        <th>Type</th>
+                                        <th class="text-end">Entrée</th>
+                                        <th class="text-end">Sortie</th>
+                                        <th class="text-end">Stock après</th>
+                                        <th>Fournisseur</th>
+                                        <th>DCI</th>
+                                        <th>Rayon</th>
+                                        <th>Motif</th>
+                                        <th>Par</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="historiqueList">
+                                    <tr><td colspan="11" class="text-center">Chargement...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
 
 
 <!-- Modal Acte -->
@@ -392,6 +549,23 @@
                             <label class="form-label">Date de péremption</label>
                             <input type="date" class="form-control" id="produitDatePeremption">
                             <small class="text-muted">Format: YYYY-MM-DD</small>
+                        </div>
+                    </div>
+
+                    <hr>
+                    <p class="text-muted small mb-2"><i class="fas fa-info-circle"></i> Champs facultatifs — pour la surveillance/filtrage des médicaments (fournisseur, DCI, rayon).</p>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Fournisseur</label>
+                            <input type="text" class="form-control" id="produitFournisseur" placeholder="Ex: UBIPHARM">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Rayon de rangement</label>
+                            <input type="text" class="form-control" id="produitRayon" placeholder="Ex: Rayon A2">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">DCI</label>
+                            <input type="text" class="form-control" id="produitDci" placeholder="Dénomination commune internationale">
                         </div>
                     </div>
                 </form>
@@ -641,7 +815,27 @@ function renderProduitsPage() {
 
 function filterProduitsAdmin() {
     const search = document.getElementById('searchProduitAdmin').value.toLowerCase();
-    produitsFiltres = tousLesProduits.filter(p => p.nom.toLowerCase().includes(search));
+    const fournisseur = document.getElementById('filtreFournisseurAdmin').value.toLowerCase();
+    const dci = document.getElementById('filtreDciAdmin').value.toLowerCase();
+    const rayon = document.getElementById('filtreRayonAdmin').value.toLowerCase();
+    const peremption = document.getElementById('filtrePeremptionAdmin').value;
+    const today = new Date();
+    const dateLimite30 = new Date();
+    dateLimite30.setDate(dateLimite30.getDate() + 30);
+
+    produitsFiltres = tousLesProduits.filter(p => {
+        if (!p.nom.toLowerCase().includes(search)) return false;
+        if (fournisseur && !(p.fournisseur || '').toLowerCase().includes(fournisseur)) return false;
+        if (dci && !(p.dci || '').toLowerCase().includes(dci)) return false;
+        if (rayon && !(p.rayon_rangement || '').toLowerCase().includes(rayon)) return false;
+        if (peremption) {
+            if (!p.date_peremption) return false;
+            const perempDate = new Date(p.date_peremption);
+            if (peremption === 'perime' && !(perempDate < today)) return false;
+            if (peremption === 'bientot' && !(perempDate >= today && perempDate <= dateLimite30)) return false;
+        }
+        return true;
+    });
     produitsPageCourante = 1;
     renderProduitsPage();
 }
@@ -927,6 +1121,9 @@ function showAddProduitModal() {
     document.getElementById('produitPrixAchat').value = '0';
     document.getElementById('produitDatePeremption').value = '';
     document.getElementById('produitLot').value = '';
+    document.getElementById('produitFournisseur').value = '';
+    document.getElementById('produitRayon').value = '';
+    document.getElementById('produitDci').value = '';
     new bootstrap.Modal(document.getElementById('produitModal')).show();
 }
 
@@ -944,6 +1141,9 @@ function modifierProduit(id) {
     document.getElementById('produitUnite').value = p.unite || 'unité';
     document.getElementById('produitDatePeremption').value = p.date_peremption || '';
     document.getElementById('produitLot').value = p.lot || '';
+    document.getElementById('produitFournisseur').value = p.fournisseur || '';
+    document.getElementById('produitRayon').value = p.rayon_rangement || '';
+    document.getElementById('produitDci').value = p.dci || '';
     new bootstrap.Modal(document.getElementById('produitModal')).show();
 }
 
@@ -958,7 +1158,10 @@ function saveProduit() {
         seuil_alerte: parseInt(document.getElementById('produitSeuil').value) || 10,
         unite: document.getElementById('produitUnite').value,
         date_peremption: document.getElementById('produitDatePeremption').value || '',
-        lot: document.getElementById('produitLot').value || ''
+        lot: document.getElementById('produitLot').value || '',
+        fournisseur: document.getElementById('produitFournisseur').value || '',
+        rayon_rangement: document.getElementById('produitRayon').value || '',
+        dci: document.getElementById('produitDci').value || ''
     };
     
     if (!produit.nom || !produit.prix_vente) {
@@ -1067,6 +1270,208 @@ function showLoader(message) {
 function hideLoader() {
     var loader = document.getElementById('loaderOverlay');
     if (loader) loader.style.display = 'none';
+}
+
+// ========== INVENTAIRE PHYSIQUE ==========
+// patron : "aujourd'hui on peut l'inventaire tranquillement pour les
+// médicaments... une vraie surveillance de médicaments" — comptage produit
+// par produit, écart calculé en direct côté client (juste pour l'affichage
+// immédiat), recalculé et appliqué côté serveur à la validation (jamais fait
+// confiance à un écart calculé côté client pour l'écriture réelle).
+let inventaireListeComplete = [];
+
+function chargerInventaire() {
+    fetch('/api/produits')
+        .then(r => r.json())
+        .then(data => {
+            inventaireListeComplete = (data || []).map(p => ({...p, _quantite_comptee: '', _motif: ''}));
+            renderInventaire(inventaireListeComplete);
+        })
+        .catch(() => {
+            document.getElementById('inventaireList').innerHTML = '<tr><td colspan="6" class="text-center text-danger">Erreur de chargement</td></tr>';
+        });
+}
+
+function renderInventaire(produits) {
+    const tbody = document.getElementById('inventaireList');
+    if (!produits || produits.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center">Aucun médicament</td></tr>';
+        return;
+    }
+    tbody.innerHTML = produits.map(p => `
+        <tr data-produit-id="${p.id}">
+            <td><strong>${p.nom}</strong></td>
+            <td>${p.unite || 'unité'}</td>
+            <td class="text-end">${p.quantite_stock || 0}</td>
+            <td>
+                <input type="number" class="form-control form-control-sm inventaire-compte"
+                       data-id="${p.id}" data-systeme="${p.quantite_stock || 0}"
+                       placeholder="—" oninput="majEcartInventaire(this)">
+            </td>
+            <td class="text-end fw-bold" id="ecart-${p.id}"></td>
+            <td>
+                <input type="text" class="form-control form-control-sm inventaire-motif" data-id="${p.id}" placeholder="Motif (optionnel)">
+            </td>
+        </tr>
+    `).join('');
+    document.getElementById('inventaireEcartsResume').textContent = '';
+}
+
+function majEcartInventaire(input) {
+    const id = input.dataset.id;
+    const systeme = parseInt(input.dataset.systeme) || 0;
+    const compte = input.value === '' ? null : parseInt(input.value);
+    const ecartCell = document.getElementById(`ecart-${id}`);
+    if (compte === null || isNaN(compte)) {
+        ecartCell.textContent = '';
+        ecartCell.className = 'text-end fw-bold';
+        return;
+    }
+    const ecart = compte - systeme;
+    ecartCell.textContent = ecart > 0 ? `+${ecart}` : `${ecart}`;
+    ecartCell.className = 'text-end fw-bold ' + (ecart === 0 ? 'text-muted' : (ecart > 0 ? 'text-success' : 'text-danger'));
+
+    const nbEcarts = document.querySelectorAll('.inventaire-compte').length
+        ? Array.from(document.querySelectorAll('.inventaire-compte')).filter(el => {
+            if (el.value === '') return false;
+            return (parseInt(el.value) || 0) !== (parseInt(el.dataset.systeme) || 0);
+        }).length
+        : 0;
+    document.getElementById('inventaireEcartsResume').textContent = nbEcarts > 0 ? `${nbEcarts} écart(s) détecté(s)` : '';
+}
+
+function filterInventaire() {
+    const search = document.getElementById('searchInventaire').value.toLowerCase();
+    renderInventaire(inventaireListeComplete.filter(p => p.nom.toLowerCase().includes(search)));
+}
+
+function validerInventaire() {
+    const lignes = [];
+    document.querySelectorAll('.inventaire-compte').forEach(input => {
+        if (input.value === '') return;
+        const id = input.dataset.id;
+        const motifInput = document.querySelector(`.inventaire-motif[data-id="${id}"]`);
+        lignes.push({
+            produit_id: id,
+            quantite_comptee: parseInt(input.value),
+            motif: motifInput ? motifInput.value : '',
+        });
+    });
+
+    if (lignes.length === 0) {
+        alert('Saisissez au moins une quantité comptée avant de valider.');
+        return;
+    }
+    if (!confirm(`Valider l'inventaire pour ${lignes.length} médicament(s) saisi(s) ?`)) return;
+
+    showLoader();
+    fetch('/api/produits/inventaire/valider', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({lignes: lignes})
+    })
+    .then(r => r.json())
+    .then(data => {
+        hideLoader();
+        if (data.success) {
+            alert(`✓ Inventaire validé — ${data.nb_ecarts} écart(s) ajusté(s) sur ${data.nb_lignes} médicament(s) compté(s).`);
+            chargerInventaire();
+            chargerProduitsAdmin();
+        } else {
+            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => {
+        hideLoader();
+        alert('Erreur: ' + error);
+    });
+}
+
+// ========== HISTORIQUE DES MOUVEMENTS (médicaments) ==========
+let histDebounceTimer = null;
+function chargerHistoriqueProduitsDebounce() {
+    clearTimeout(histDebounceTimer);
+    histDebounceTimer = setTimeout(chargerHistoriqueProduits, 400);
+}
+
+function peuplerFiltreProduitHistorique() {
+    const select = document.getElementById('histFiltreProduit');
+    if (select.options.length > 1) return; // déjà peuplé
+    fetch('/api/produits')
+        .then(r => r.json())
+        .then(produits => {
+            (produits || []).sort((a, b) => a.nom.localeCompare(b.nom)).forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = p.nom;
+                select.appendChild(opt);
+            });
+        });
+}
+
+function _histParamsActuels() {
+    const params = new URLSearchParams();
+    const produitId = document.getElementById('histFiltreProduit').value;
+    const type = document.getElementById('histFiltreType').value;
+    const dateDebut = document.getElementById('histFiltreDateDebut').value;
+    const dateFin = document.getElementById('histFiltreDateFin').value;
+    const fournisseur = document.getElementById('histFiltreFournisseur').value;
+    const dci = document.getElementById('histFiltreDci').value;
+    const rayon = document.getElementById('histFiltreRayon').value;
+    if (produitId) params.set('produit_id', produitId);
+    if (type) params.set('type_mouvement', type);
+    if (dateDebut) params.set('date_debut', dateDebut);
+    if (dateFin) params.set('date_fin', dateFin);
+    if (fournisseur) params.set('fournisseur', fournisseur);
+    if (dci) params.set('dci', dci);
+    if (rayon) params.set('rayon_rangement', rayon);
+    return params;
+}
+
+const LIBELLES_TYPE_MOUVEMENT_JS = {
+    vente: 'Vente', approvisionnement: 'Approvisionnement',
+    ajustement: 'Ajustement', initial: 'Stock initial', inventaire: 'Inventaire',
+};
+
+function chargerHistoriqueProduits() {
+    peuplerFiltreProduitHistorique();
+    const tbody = document.getElementById('historiqueList');
+    tbody.innerHTML = '<tr><td colspan="11" class="text-center">Chargement...</td></tr>';
+    fetch('/api/produits/historique?' + _histParamsActuels().toString())
+        .then(r => r.json())
+        .then(data => {
+            const mouvements = data.mouvements || [];
+            if (mouvements.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="11" class="text-center">Aucun mouvement</td></tr>';
+                return;
+            }
+            tbody.innerHTML = mouvements.map(m => {
+                const entree = m.quantite_delta > 0 ? `<span class="text-success">+${m.quantite_delta}</span>` : '';
+                const sortie = m.quantite_delta < 0 ? `<span class="text-danger">${m.quantite_delta}</span>` : '';
+                return `<tr>
+                    <td><small>${m.date_mouvement}</small></td>
+                    <td>${m.produit_nom}</td>
+                    <td><span class="badge bg-secondary">${LIBELLES_TYPE_MOUVEMENT_JS[m.type_mouvement] || m.type_mouvement}</span></td>
+                    <td class="text-end">${entree}</td>
+                    <td class="text-end">${sortie}</td>
+                    <td class="text-end">${m.stock_apres}</td>
+                    <td><small>${m.fournisseur || '-'}</small></td>
+                    <td><small>${m.dci || '-'}</small></td>
+                    <td><small>${m.rayon_rangement || '-'}</small></td>
+                    <td><small>${m.motif || '-'}</small></td>
+                    <td><small>${m.created_by_nom || '-'}</small></td>
+                </tr>`;
+            }).join('');
+        })
+        .catch(() => {
+            tbody.innerHTML = '<tr><td colspan="11" class="text-center text-danger">Erreur de chargement</td></tr>';
+        });
+}
+
+function exporterHistorique(format) {
+    const params = _histParamsActuels();
+    params.set('format', format);
+    window.open('/api/produits/historique/export?' + params.toString(), '_blank');
 }
 
 // ========== INITIALISATION ==========

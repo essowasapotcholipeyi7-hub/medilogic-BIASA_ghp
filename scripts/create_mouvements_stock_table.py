@@ -36,9 +36,12 @@ CREATE TABLE IF NOT EXISTS mouvements_stock (
     reference_id INTEGER,
     date_mouvement TIMESTAMP NOT NULL DEFAULT NOW(),
     created_by_nom VARCHAR(255),
-    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    motif TEXT
 );
 """
+
+MOTIF_COLUMN_SQL = "ALTER TABLE mouvements_stock ADD COLUMN IF NOT EXISTS motif TEXT;"
 
 INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_mouvements_stock_lookup
@@ -47,6 +50,7 @@ CREATE INDEX IF NOT EXISTS idx_mouvements_stock_lookup
 
 if __name__ == "__main__":
     db_helper.execute_query(SQL)
+    db_helper.execute_query(MOTIF_COLUMN_SQL)
     db_helper.execute_query(INDEX_SQL)
     check = db_helper.execute_query(
         "SELECT column_name, data_type FROM information_schema.columns "
