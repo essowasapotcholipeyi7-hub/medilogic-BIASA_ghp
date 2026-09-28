@@ -3218,7 +3218,7 @@ def facture(vente_id, type):
         v = vente[0]
         patient_nom = v.get('patient_nom', '')
         if not patient_nom:
-            patient_nom = f"{v.get('nom', '')} {v.get('prenom', '')}".strip()
+            patient_nom = f"{dechiffrer(v.get('nom')) or ''} {dechiffrer(v.get('prenom')) or ''}".strip()
         if not patient_nom:
             patient_nom = 'Patient'
         
@@ -3427,7 +3427,7 @@ def facture_structure(vente_id, type):
         v = vente[0]
         patient_nom = v.get('patient_nom', '')
         if not patient_nom:
-            patient_nom = f"{v.get('nom', '')} {v.get('prenom', '')}".strip()
+            patient_nom = f"{dechiffrer(v.get('nom')) or ''} {dechiffrer(v.get('prenom')) or ''}".strip()
         if not patient_nom:
             patient_nom = 'Patient'
         
@@ -3847,7 +3847,7 @@ def recu(vente_id, type):
         v = vente[0]
         patient_nom = v.get('patient_nom', '')
         if not patient_nom:
-            patient_nom = f"{v.get('nom', '')} {v.get('prenom', '')}".strip()
+            patient_nom = f"{dechiffrer(v.get('nom')) or ''} {dechiffrer(v.get('prenom')) or ''}".strip()
         if not patient_nom:
             patient_nom = 'Patient'
         
@@ -4265,7 +4265,7 @@ def recu_structure(vente_id, type):
         v = vente[0]
         patient_nom = v.get('patient_nom', '')
         if not patient_nom:
-            patient_nom = f"{v.get('nom', '')} {v.get('prenom', '')}".strip()
+            patient_nom = f"{dechiffrer(v.get('nom')) or ''} {dechiffrer(v.get('prenom')) or ''}".strip()
         if not patient_nom:
             patient_nom = 'Patient'
         
@@ -7348,7 +7348,8 @@ def verifier_rappels_automatiques():
                 LEFT JOIN patients p ON r.patient_id = p.id
                 WHERE r.structure_id = %s
             """, (structure_id,))
-            
+            dechiffrer_lignes(rendez_vous, champs=('nom', 'prenom', 'telephone'))
+
             aujourdhui = datetime.now().date()
             j7 = aujourdhui + timedelta(days=7)
             j1 = aujourdhui + timedelta(days=1)
@@ -9047,8 +9048,8 @@ def api_activites_recentes():
             if isinstance(v, dict):
                 patient_name = v.get('patient_nom', '')
                 if not patient_name or patient_name == '':
-                    nom = v.get('nom', '')
-                    prenom = v.get('prenom', '')
+                    nom = dechiffrer(v.get('nom')) or ''
+                    prenom = dechiffrer(v.get('prenom')) or ''
                     patient_name = f"{nom} {prenom}".strip()
                 if not patient_name:
                     patient_name = 'Patient'
@@ -11796,14 +11797,19 @@ def api_connexion_pin_portail_patient():
         if not telephone or not pin:
             return jsonify({'success': False, 'error': 'Téléphone et code requis'}), 400
 
+        # ⭐ patients.telephone chiffré (crypto_helper.py) : l'égalité exacte
+        # ne peut plus se faire en SQL — on récupère les accès PIN avec leur
+        # patient, on déchiffre le téléphone, on compare en mémoire.
         lignes = db.execute_query("""
-            SELECT a.id, a.patient_id, a.structure_id, a.pin_hash
+            SELECT a.id, a.patient_id, a.structure_id, a.pin_hash, p.telephone
             FROM acces_portail_patients a
             JOIN patients p ON p.id = a.patient_id
-            WHERE p.telephone = %s AND a.pin_hash IS NOT NULL
-        """, (telephone,))
+            WHERE a.pin_hash IS NOT NULL
+        """)
         pin_hash = hash_password(pin)
         for ligne in (lignes or []):
+            if dechiffrer(ligne.get('telephone')) != telephone:
+                continue
             if ligne['pin_hash'] == pin_hash:
                 session['portail_patient_id'] = ligne['patient_id']
                 session['portail_structure_id'] = ligne['structure_id']
@@ -19136,10 +19142,7 @@ def api_creer_facture_automatique():
         
         # Récupérer les infos du patient
         patient_nom = v.get('patient_nom', 'Patient') if isinstance(v, dict) else v[2] if len(v) > 2 else 'Patient'
-        patient_telephone = v.get('telephone', '') if isinstance(v, dict) else v[13] if len(v) > 13 else ''
-        
-        if not patient_telephone and isinstance(v, dict):
-            patient_telephone = v.get('telephone', '')
+        patient_telephone = dechiffrer(v.get('telephone')) or '' if isinstance(v, dict) else v[13] if len(v) > 13 else ''
         
         net_a_payer = float(v.get('net_a_payer') or 0) if isinstance(v, dict) else float(v[6]) if len(v) > 6 else 0
         

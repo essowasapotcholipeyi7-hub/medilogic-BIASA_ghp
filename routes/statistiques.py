@@ -10,6 +10,7 @@ from utils.permissions import a_acces
 from sheets_helper import sheets_helper
 
 from models import db, Vente, Patient, Structure
+from crypto_helper import dechiffrer_patients_orm
 
 statistiques_bp = Blueprint('statistiques', __name__, url_prefix='/api/statistiques')
 
@@ -544,10 +545,10 @@ def _ventes_filtrees(structure_id, periode, date_debut_str, date_fin_str,
     patients = []
     patients_dict = {}
     if patient_ids:
-        patients = Patient.query.filter(
+        patients = dechiffrer_patients_orm(Patient.query.filter(
             Patient.structure_id == structure_id,
             Patient.id.in_(patient_ids)
-        ).all()
+        ).all())
         patients_dict = {p.id: p.type_assurance for p in patients}
 
     return ventes, patients, patients_dict, dates
