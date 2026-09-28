@@ -4,6 +4,7 @@
 
 from datetime import datetime, date, timedelta
 from models import db, RendezVous, Patient, Structure
+from crypto_helper import dechiffrer_patients_orm
 
 # Pour accéder à sheets_helper (à importer si nécessaire)
 # from utils.sheets_helper import sheets_helper
@@ -22,7 +23,8 @@ class RappelsService:
             patient = Patient.query.get(rdv.patient_id)
             if not patient:
                 return False, {'error': 'Patient non trouvé'}
-            
+            dechiffrer_patients_orm([patient])
+
             if not patient.telephone:
                 return False, {'error': 'Numéro de téléphone manquant'}
             

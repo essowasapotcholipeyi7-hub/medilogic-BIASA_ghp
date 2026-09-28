@@ -8,6 +8,7 @@ que gestion_patients/tasks.py (boucle sur chaque mapping actif, jamais
 """
 from app import app, db
 from models import StructureMapping, ResultatExamen, ModeleResultat, DemandeExamen, Patient
+from crypto_helper import dechiffrer_patients_orm
 import requests
 import base64
 from datetime import datetime
@@ -62,6 +63,8 @@ def sync_resultats_examens_to_gestion_patients():
                     if not demande:
                         continue
                     patient = Patient.query.get(demande.patient_id)
+                    if patient:
+                        dechiffrer_patients_orm([patient])
 
                     payload = {
                         'categorie': 'resultat',

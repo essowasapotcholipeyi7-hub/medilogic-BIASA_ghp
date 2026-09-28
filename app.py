@@ -6341,6 +6341,8 @@ def api_reporter_rendez_vous():
             rdv = RendezVous.query.get(rdv_id)
             if rdv:
                 patient = Patient.query.get(rdv.patient_id)
+                if patient:
+                    dechiffrer_patients_orm([patient])
                 if patient and patient.telephone:
                     from datetime import datetime
                     import urllib.parse
@@ -6810,6 +6812,7 @@ def mes_rendez_vous():
             print(f"Erreur récupération patient: {e}")
             patient_info = {}
     else:
+        dechiffrer_patients_orm([patient])
         patient_info = {
             'ID': patient.id,
             'nom': patient.nom,
@@ -16244,6 +16247,7 @@ def api_creer_hospitalisation():
         patient = Patient.query.get(patient_id)
         if not patient or str(patient.structure_id) != str(structure_id):
             return jsonify({'success': False, 'error': 'Patient introuvable'}), 404
+        dechiffrer_patients_orm([patient])
 
         date_entree_str = data.get('date_entree')
         try:
@@ -17041,6 +17045,7 @@ def api_creer_soins_ambulatoires():
         patient = Patient.query.get(patient_id)
         if not patient or str(patient.structure_id) != str(structure_id):
             return jsonify({'success': False, 'error': 'Patient introuvable'}), 404
+        dechiffrer_patients_orm([patient])
 
         date_debut_str = data.get('date_debut')
         try:

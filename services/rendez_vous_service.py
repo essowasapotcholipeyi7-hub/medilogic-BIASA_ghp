@@ -5,6 +5,7 @@
 from datetime import datetime, date, timedelta
 import re
 from models import db, RendezVous, Medecin, Patient
+from crypto_helper import dechiffrer_patients_orm
 
 class RendezVousService:
     """Service pour la gestion des rendez-vous"""
@@ -29,7 +30,8 @@ class RendezVousService:
             patient = Patient.query.get(data['patient_id'])
             if not patient:
                 return False, {'error': 'Patient non trouvé'}
-            
+            dechiffrer_patients_orm([patient])
+
             # Vérifier le médecin
             medecin = Medecin.query.filter_by(
                 id=data['medecin_id'],
