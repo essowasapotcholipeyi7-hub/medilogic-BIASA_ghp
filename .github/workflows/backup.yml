@@ -33,20 +33,25 @@ jobs:
       - name: Installer pg_dump (version recente, compatible Neon)
         run: |
           # ⭐ FIX : "apt-get install postgresql-client" tout court installe
-          # la version des dépôts Ubuntu par défaut, plus ancienne que
-          # Neon (Postgres 17) — pg_dump refuse alors avec "aborting
-          # because of server version mismatch". Repéré en observant que
-          # le job "réussissait" quand même avec un dump de 201 octets au
-          # lieu de plusieurs Mo (voir aussi le fix du bug de capture de
-          # code de sortie juste en dessous, qui masquait cet échec).
-          # Dépôt officiel PGDG pour avoir une version récente du client.
+          # la version des dépôts Ubuntu par défaut, plus ancienne que Neon
+          # (serveur en version 17.11) — pg_dump refuse alors avec "aborting
+          # because of server version mismatch". Repéré en observant que le
+          # job "réussissait" quand même avec un dump de 201 octets au lieu
+          # de plusieurs Mo (voir aussi le fix du bug de capture de code de
+          # sortie juste en dessous, qui masquait cet échec). Dépôt officiel
+          # PGDG pour avoir une version récente du client — la version 17
+          # du dépôt PGDG a ENCORE échoué avec la même erreur (voir
+          # historique git), passé en version 18 : c'est précisément la
+          # version qui a fonctionné lors du test manuel en local contre ce
+          # même serveur Neon (18.6, un cran au-dessus de 17.11 — toujours
+          # sûr, pg_dump gère un client plus récent que le serveur).
           sudo apt-get update -qq
           sudo apt-get install -y -qq curl ca-certificates gnupg lsb-release
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg
           echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client-17
-          pg_dump --version
+          sudo apt-get install -y -qq postgresql-client-18
+          echo "::notice::$(pg_dump --version)"
 
       - name: Sauvegarder la base de donnees
         env:
