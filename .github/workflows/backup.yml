@@ -40,17 +40,26 @@ jobs:
           # de plusieurs Mo (voir aussi le fix du bug de capture de code de
           # sortie juste en dessous, qui masquait cet échec). Dépôt officiel
           # PGDG pour avoir une version récente du client — la version 17
-          # du dépôt PGDG a ENCORE échoué avec la même erreur (voir
-          # historique git), passé en version 18 : c'est précisément la
-          # version qui a fonctionné lors du test manuel en local contre ce
-          # même serveur Neon (18.6, un cran au-dessus de 17.11 — toujours
-          # sûr, pg_dump gère un client plus récent que le serveur).
+          # du dépôt PGDG a ENCORE échoué avec la même erreur, passé en
+          # version 18 (celle qui a fonctionné lors du test manuel en local
+          # contre ce même serveur Neon).
           sudo apt-get update -qq
           sudo apt-get install -y -qq curl ca-certificates gnupg lsb-release
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg
           echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update -qq
           sudo apt-get install -y -qq postgresql-client-18
+          # ⭐ FIX : passer à la version 18 n'a PAS suffi — le notice
+          # ci-dessous a révélé que "pg_dump" pointait toujours vers la
+          # version 16.15 PRÉ-INSTALLÉE sur l'image ubuntu-latest, malgré
+          # l'installation réussie de postgresql-client-18. Piège classique
+          # PGDG : le paquet versionné installe dans
+          # /usr/lib/postgresql/18/bin/, PAS sur le PATH par défaut — la
+          # version pré-existante (sur /usr/bin, déjà dans le PATH) restait
+          # donc prioritaire. $GITHUB_PATH fait passer le bon dossier en
+          # premier pour cette étape ET toutes celles qui suivent.
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+          export PATH="/usr/lib/postgresql/18/bin:$PATH"
           echo "::notice::$(pg_dump --version)"
 
       - name: Sauvegarder la base de donnees
