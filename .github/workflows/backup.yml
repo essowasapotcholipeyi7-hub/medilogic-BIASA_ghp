@@ -1,0 +1,64 @@
+name: Sauvegarde base de donnees
+
+# patron : "mets en place la sauvegarde" — audit du 2026-09-28 : aucune
+# sauvegarde automatique n'existait. La seule chose qui s'en rapprochait
+# (utils/db_failover.py) n'en est pas une : elle efface son fichier
+# immediatement apres usage et ne tourne meme pas sur Render (production).
+# Les seules vraies sauvegardes trouvees pour BIASA etaient 2 fichiers
+# crees a la main sur l'ordinateur d'un developpeur, jamais mis en
+# securite (aucune pour GHP).
+#
+# Ce workflow fait une sauvegarde automatique quotidienne de la base
+# Neon, CHIFFREE avant d'etre stockee (le depot est public — jamais de
+# donnees patients en clair), conservee 30 jours glissants.
+#
+# ⚠️ SETUP REQUIS (une seule fois) — 2 secrets a ajouter dans GitHub :
+# Settings > Secrets and variables > Actions > "New repository secret"
+#   - BACKUP_DATABASE_URL : meme valeur que DATABASE_URL sur Render
+#     (Render > service BIASA > Environment) ou dans le fichier .env local.
+#   - BACKUP_PASSPHRASE   : la phrase de chiffrement generee pour ce depot
+#     — a conserver precieusement (gestionnaire de mots de passe) : sans
+#     elle, personne ne peut lire les sauvegardes, pas meme nous. Voir
+#     scripts/restaurer_sauvegarde.py pour restaurer une sauvegarde en cas
+#     de besoin reel.
+on:
+  schedule:
+    - cron: '0 3 * * *'  # tous les jours a 3h du matin UTC
+  workflow_dispatch:  # bouton "Run workflow" pour tester manuellement
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Installer pg_dump
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - name: Sauvegarder la base de donnees
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Le secret BACKUP_DATABASE_URL n'est pas configuré (Settings > Secrets and variables > Actions)"
+            exit 1
+          fi
+          pg_dump "$DATABASE_URL" -Fc -f backup.dump
+
+      - name: Chiffrer la sauvegarde
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::error::Le secret BACKUP_PASSPHRASE n'est pas configuré (Settings > Secrets and variables > Actions)"
+            exit 1
+          fi
+          openssl enc -aes-256-cbc -pbkdf2 -salt \
+            -in backup.dump -out "backup-$(date +%Y-%m-%d).dump.enc" \
+            -pass pass:"$BACKUP_PASSPHRASE"
+          rm -f backup.dump
+
+      - name: Conserver la sauvegarde (30 jours glissants)
+        uses: actions/upload-artifact@v4
+        with:
+          name: sauvegarde-db-${{ github.run_id }}
+          path: backup-*.dump.enc
+          retention-days: 30
