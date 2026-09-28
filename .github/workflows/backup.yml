@@ -51,6 +51,15 @@ jobs:
             echo "::error::pg_dump a échoué (code $code) : $safe_error"
             exit $code
           fi
+          taille=$(wc -c < backup.dump)
+          echo "::notice::backup.dump fait $taille octets"
+          # ⭐ Un vrai dump de cette base fait plusieurs Mo — un fichier
+          # anormalement petit (échec silencieux, mauvaise base, etc.) ne
+          # doit jamais passer pour une sauvegarde réussie.
+          if [ "$taille" -lt 10000 ]; then
+            echo "::error::backup.dump ne fait que $taille octets — beaucoup trop petit pour être une vraie sauvegarde, arrêt."
+            exit 1
+          fi
 
       - name: Chiffrer la sauvegarde
         env:
@@ -63,6 +72,7 @@ jobs:
           openssl enc -aes-256-cbc -pbkdf2 -salt \
             -in backup.dump -out "backup-$(date +%Y-%m-%d).dump.enc" \
             -pass pass:"$BACKUP_PASSPHRASE"
+          echo "::notice::backup chiffré : $(wc -c < backup-$(date +%Y-%m-%d).dump.enc) octets"
           rm -f backup.dump
 
       - name: Conserver la sauvegarde (30 jours glissants)
