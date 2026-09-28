@@ -6528,7 +6528,8 @@ def api_disponibilites_medecin(medecin_id):
     
     disponibilite = RendezVousService.verifier_disponibilite_medecin(
         medecin_id=medecin_id,
-        date=date_obj
+        date=date_obj,
+        structure_id=session.get('structure_id')
     )
     
     return jsonify({
@@ -6933,167 +6934,6 @@ def mes_rendez_vous():
         today=datetime.now().strftime('%Y-%m-%d')
     )
 
-
-@app.route('/patient/rendez_vous/<int:patient_id>/<token>')
-def patient_rendez_vous(patient_id, token):
-    """Page patient pour CONSULTER ses rendez-vous (lecture seule)"""
-    from datetime import datetime
-    
-    try:
-        # ============================================================
-        # RÉCUPÉRER LES INFOS DU PATIENT
-        # ============================================================
-        
-        # Essayer depuis PostgreSQL avec SQLAlchemy d'abord
-        patient = Patient.query.get(patient_id)
-
-        if patient:
-            dechiffrer_patients_orm([patient])
-            patient_info = {
-                'id': patient.id,
-                'nom': patient.nom,
-                'prenom': patient.prenom,
-                'telephone': patient.telephone,
-                'structure_id': patient.structure_id
-            }
-            structure_id = patient.structure_id
-        else:
-            # Fallback: requête directe
-            result = db.execute_query("""
-                SELECT id, nom, prenom, telephone, structure_id
-                FROM patients 
-                WHERE id = %s
-            """, (patient_id,))
-            
-            if not result or len(result) == 0:
-                return "Patient non trouvé", 404
-
-            row = result[0]
-            dechiffrer_champs(row)
-            if isinstance(row, dict):
-                patient_info = row
-                structure_id = row.get('structure_id')
-            else:
-                patient_info = {
-                    'id': row[0],
-                    'nom': row[1],
-                    'prenom': row[2],
-                    'telephone': row[3],
-                    'structure_id': row[4] if len(row) > 4 else None
-                }
-                structure_id = row[4] if len(row) > 4 else None
-        
-        # ============================================================
-        # RÉCUPÉRER LA STRUCTURE DEPUIS GOOGLE SHEETS
-        # ============================================================
-        
-        structure_nom = 'Notre établissement'
-        structure_telephone = ''
-        structure_adresse = ''
-        
-        try:
-            structures = sheets_helper.get_all_records('structures', use_prefix=False)
-            for s in structures:
-                if str(s.get('ID')) == str(structure_id):
-                    structure_nom = s.get('nom') or 'Notre établissement'
-                    structure_telephone = s.get('telephone') or ''
-                    structure_adresse = s.get('adresse') or ''
-                    break
-        except Exception as e:
-            print(f"Erreur récupération structure: {e}")
-        
-        # ============================================================
-        # RÉCUPÉRER LES RENDEZ-VOUS DU PATIENT
-        # ============================================================
-        
-        mes_rendez_vous = []
-        
-        # Essayer avec SQLAlchemy d'abord
-        rendez_vous = RendezVous.query.filter_by(patient_id=patient_id).order_by(
-            RendezVous.date_rendez_vous.desc()
-        ).all()
-        
-        if rendez_vous:
-            for rdv in rendez_vous:
-                # Récupérer le nom du médecin
-                medecin_nom = ''
-                if rdv.medecin_id:
-                    medecin = Medecin.query.get(rdv.medecin_id)
-                    if medecin:
-                        medecin_nom = f"{medecin.titre} {medecin.nom}"
-                
-                mes_rendez_vous.append({
-                    'id': rdv.id,
-                    'date_rendez_vous': rdv.date_rendez_vous.strftime('%d/%m/%Y') if rdv.date_rendez_vous else '',
-                    'heure_rendez_vous': rdv.heure_rendez_vous,
-                    'motif': rdv.motif,
-                    'statut': rdv.statut,
-                    'medecin_nom': medecin_nom,
-                    'notes': rdv.notes or ''
-                })
-        else:
-            # Fallback: requête directe
-            result = db.execute_query("""
-                SELECT id, date_rdv, heure_rdv, motif, statut, notes, medecin_id
-                FROM rendez_vous
-                WHERE patient_id = %s
-                ORDER BY date_rdv DESC
-            """, (patient_id,))
-            
-            for r in result:
-                if isinstance(r, dict):
-                    medecin_nom = ''
-                    if r.get('medecin_id'):
-                        med = db.execute_query("SELECT nom, titre FROM medecins WHERE id = %s", (r.get('medecin_id'),))
-                        if med and len(med) > 0:
-                            m = med[0]
-                            if isinstance(m, dict):
-                                medecin_nom = f"{m.get('titre', 'Dr')} {m.get('nom', '')}"
-                            else:
-                                medecin_nom = f"{m[1] if len(m) > 1 else 'Dr'} {m[0] if len(m) > 0 else ''}"
-                    
-                    mes_rendez_vous.append({
-                        'id': r.get('id'),
-                        'date_rendez_vous': r.get('date_rdv'),
-                        'heure_rendez_vous': r.get('heure_rdv'),
-                        'motif': r.get('motif'),
-                        'statut': r.get('statut', 'programme'),
-                        'medecin_nom': medecin_nom,
-                        'notes': r.get('notes', '')
-                    })
-                else:
-                    medecin_nom = ''
-                    if len(r) > 6 and r[6]:
-                        med = db.execute_query("SELECT nom, titre FROM medecins WHERE id = %s", (r[6],))
-                        if med and len(med) > 0:
-                            m = med[0]
-                            if isinstance(m, dict):
-                                medecin_nom = f"{m.get('titre', 'Dr')} {m.get('nom', '')}"
-                            else:
-                                medecin_nom = f"{m[1] if len(m) > 1 else 'Dr'} {m[0] if len(m) > 0 else ''}"
-                    
-                    mes_rendez_vous.append({
-                        'id': r[0],
-                        'date_rendez_vous': r[1] if len(r) > 1 else '',
-                        'heure_rendez_vous': r[2] if len(r) > 2 else '',
-                        'motif': r[3] if len(r) > 3 else '',
-                        'statut': r[4] if len(r) > 4 else 'programme',
-                        'medecin_nom': medecin_nom,
-                        'notes': r[5] if len(r) > 5 else ''
-                    })
-        
-        return render_template('patient_rendez_vous.html',
-                             patient=patient_info,
-                             rendez_vous=mes_rendez_vous,
-                             structure_nom=structure_nom,
-                             structure_telephone=structure_telephone,
-                             structure_adresse=structure_adresse)
-                             
-    except Exception as e:
-        print(f"Erreur: {e}")
-        import traceback
-        traceback.print_exc()
-        return f"Erreur: {e}", 500
 
 @app.route('/api/structure/nom')
 @login_required
@@ -19495,14 +19335,20 @@ def api_enregistrer_paiement(facture_id):
         paiement_id = paiement_result[0]['id']
         
         # Mettre à jour la facture
+        # ⭐ AND structure_id = %s : défense en profondeur (le SELECT plus
+        # haut a déjà vérifié l'appartenance à la structure — voir audit
+        # sécurité du 2026-09-28) — inoffensif aujourd'hui puisque
+        # facture_id vient de l'URL, jamais du corps de la requête, mais
+        # évite qu'un futur refactor qui accepterait l'id depuis le JSON
+        # ne réintroduise silencieusement une faille.
         db.execute_query("""
-            UPDATE factures 
-            SET montant_paye = %s, 
-                reste_a_payer = %s, 
+            UPDATE factures
+            SET montant_paye = %s,
+                reste_a_payer = %s,
                 statut = %s,
                 updated_at = NOW()
-            WHERE id = %s
-        """, (nouveau_montant_paye, nouveau_reste, statut, facture_id))
+            WHERE id = %s AND structure_id = %s
+        """, (nouveau_montant_paye, nouveau_reste, statut, facture_id, structure_id))
         
         # Ajouter à la recette (caisse)
         db.execute_query("""
@@ -19601,13 +19447,16 @@ def api_annuler_facture(facture_id):
         reste_a_payer = float(f.get('reste_a_payer', 0) or 0)
 
         # Marquer comme annulée
+        # ⭐ AND structure_id = %s : défense en profondeur, voir note
+        # identique sur l'UPDATE de api_payer_facture (audit sécurité du
+        # 2026-09-28).
         db.execute_query("""
             UPDATE factures
             SET statut = 'annulee',
                 notes = CONCAT(COALESCE(notes, ''), ' [ANNULEE - ', %s, ']'),
                 updated_at = NOW()
-            WHERE id = %s
-        """, (motif, facture_id))
+            WHERE id = %s AND structure_id = %s
+        """, (motif, facture_id, structure_id))
 
         # ⭐⭐⭐ COMPTABILISATION AUTOMATIQUE : la créance restante est abandonnée ⭐⭐⭐
         if reste_a_payer > 0:

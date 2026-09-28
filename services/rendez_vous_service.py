@@ -144,11 +144,21 @@ class RendezVousService:
         return None
     
     @classmethod
-    def verifier_disponibilite_medecin(cls, medecin_id, date):
-        """Vérifie la disponibilité d'un médecin"""
+    def verifier_disponibilite_medecin(cls, medecin_id, date, structure_id=None):
+        """Vérifie la disponibilité d'un médecin.
+
+        ⭐ structure_id : sans ce filtre, un utilisateur connecté à une
+        structure pouvait interroger les disponibilités d'un médecin
+        appartenant à une AUTRE structure en devinant son id (aucune
+        donnée patient exposée, mais une fuite de planning — audit de
+        sécurité du 2026-09-28). Optionnel uniquement pour ne pas casser
+        un éventuel appel interne déjà vérifié ailleurs ; l'API web
+        (app.py) le passe toujours."""
         try:
             medecin = Medecin.query.get(medecin_id)
             if not medecin or not medecin.actif:
+                return {'disponible': False, 'motif': 'Médecin non disponible'}
+            if structure_id is not None and medecin.structure_id != structure_id:
                 return {'disponible': False, 'motif': 'Médecin non disponible'}
             
             duree = medecin.duree_consultation or cls.DUREE_DEFAUT
