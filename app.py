@@ -4938,6 +4938,12 @@ def api_add_acte():
                 worksheet.update_cell(row_num, 9, data.get('prise_en_charge_cac', True))
                 worksheet.update_cell(row_num, 10, data.get('commentaire_cac', ''))
                 print(f"✅ Acte {acte_id} modifié dans Sheets")
+                # ⭐ Trace qui a modifié cet acte — avant ce fix, rien ne
+                # gardait cette information (contrairement aux produits, qui
+                # ont mouvements_stock).
+                _log_mouvement_stock(structure_id, acte_id, data.get('nom', ''), 'modification_acte',
+                                      0, 0, reference_type='modification_acte',
+                                      user_nom=session.get('user_name'))
                 return jsonify({'success': True, 'message': 'Acte modifié avec succès'})
             else:
                 return jsonify({'success': False, 'error': 'Acte non trouvé'}), 404
@@ -4965,7 +4971,11 @@ def api_add_acte():
             ]
             worksheet.append_row(new_row)
             print(f"✅ Nouvel acte ajouté dans Sheets avec ID: {new_id}")
-            
+            # ⭐ Trace qui a créé cet acte — voir note similaire ci-dessus.
+            _log_mouvement_stock(structure_id, new_id, data.get('nom', ''), 'creation_acte',
+                                  0, 0, reference_type='creation_acte',
+                                  user_nom=session.get('user_name'))
+
             return jsonify({
                 'success': True, 
                 'message': 'Acte ajouté avec succès',
@@ -4996,8 +5006,14 @@ def api_delete_acte(acte_id):
         for i, row in enumerate(values, start=1):
             if i == 1: continue
             if row and row[0] == str(acte_id):
+                nom_acte = row[1] if len(row) > 1 else ''
                 worksheet.delete_rows(i)
                 print(f"✅ Acte {acte_id} supprimé de Sheets")
+                # ⭐ Trace qui a supprimé cet acte — voir note similaire dans
+                # api_add_acte().
+                _log_mouvement_stock(structure_id, acte_id, nom_acte, 'suppression_acte',
+                                      0, 0, reference_type='suppression_acte',
+                                      user_nom=session.get('user_name'))
                 return jsonify({'success': True, 'message': 'Acte supprimé avec succès'})
         
         return jsonify({'success': False, 'error': f'Acte {acte_id} non trouvé'}), 404
@@ -8615,6 +8631,15 @@ def api_admin_update_produit(produit_id):
                                   stock_apres - stock_avant, stock_apres,
                                   reference_type='modification_produit',
                                   user_nom=session.get('user_name'))
+        else:
+            # ⭐ Même si le stock n'a pas changé, on trace QUI a modifié la
+            # fiche (prix, nom, fournisseur, date de péremption, etc.) —
+            # avant ce fix, une modification qui ne touchait pas la quantité
+            # en stock ne laissait AUCUNE trace de qui l'avait faite.
+            _log_mouvement_stock(structure_id, produit_id, data.get('nom', ''), 'modification',
+                                  0, stock_apres,
+                                  reference_type='modification_produit',
+                                  user_nom=session.get('user_name'))
 
         return jsonify({'success': True})
         
@@ -8642,10 +8667,24 @@ def api_admin_delete_produit(produit_id):
         cell = worksheet.find(str(produit_id), in_column=1)
         if not cell:
             return jsonify({'success': False, 'error': 'Produit non trouvé'}), 404
-        
+
+        # ⭐ Capturer nom/stock AVANT suppression — pour tracer qui a
+        # supprimé quoi (avant ce fix, une suppression ne laissait AUCUNE
+        # trace, contrairement à la création/modification d'un produit).
+        row = worksheet.row_values(cell.row)
+        nom_produit = row[1] if len(row) > 1 else ''
+        try:
+            stock_avant = int(row[5]) if len(row) > 5 and row[5] else 0
+        except (ValueError, TypeError):
+            stock_avant = 0
+
         # Supprimer la ligne
         worksheet.delete_rows(cell.row)
         sheets_helper.clear_cache(sheet_name)
+
+        _log_mouvement_stock(structure_id, produit_id, nom_produit, 'suppression',
+                              -stock_avant, 0, reference_type='suppression_produit',
+                              user_nom=session.get('user_name'))
 
         return jsonify({'success': True, 'message': 'Produit supprimé'})
         
@@ -8894,7 +8933,10 @@ def api_historique_mouvements_produits():
 _LIBELLES_TYPE_MOUVEMENT = {
     'vente': 'Vente', 'approvisionnement': 'Approvisionnement',
     'ajustement': 'Ajustement', 'initial': 'Stock initial',
-    'inventaire': 'Inventaire',
+    'inventaire': 'Inventaire', 'modification': 'Modification',
+    'suppression': 'Suppression',
+    'creation_acte': 'Création acte', 'modification_acte': 'Modification acte',
+    'suppression_acte': 'Suppression acte',
 }
 
 

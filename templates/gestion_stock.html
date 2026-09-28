@@ -390,6 +390,11 @@
                                     <option value="inventaire">Inventaire (écart)</option>
                                     <option value="ajustement">Ajustement</option>
                                     <option value="initial">Stock initial</option>
+                                    <option value="modification">Modification (produit)</option>
+                                    <option value="suppression">Suppression (produit)</option>
+                                    <option value="creation_acte">Création acte</option>
+                                    <option value="modification_acte">Modification acte</option>
+                                    <option value="suppression_acte">Suppression acte</option>
                                 </select>
                             </div>
                             <div class="col-md-2">
@@ -1606,7 +1611,13 @@ function _histParamsActuels() {
 const LIBELLES_TYPE_MOUVEMENT_JS = {
     vente: 'Vente', approvisionnement: 'Approvisionnement',
     ajustement: 'Ajustement', initial: 'Stock initial', inventaire: 'Inventaire',
+    modification: 'Modification', suppression: 'Suppression',
+    creation_acte: 'Création acte', modification_acte: 'Modification acte',
+    suppression_acte: 'Suppression acte',
 };
+// Types sans notion de stock (actes) — n'affiche pas "0" en Stock après,
+// qui laisserait croire à tort que le stock est tombé à zéro.
+const TYPES_MOUVEMENT_SANS_STOCK = new Set(['creation_acte', 'modification_acte', 'suppression_acte']);
 
 function chargerHistoriqueProduits() {
     peuplerFiltreProduitHistorique();
@@ -1623,13 +1634,14 @@ function chargerHistoriqueProduits() {
             tbody.innerHTML = mouvements.map(m => {
                 const entree = m.quantite_delta > 0 ? `<span class="text-success">+${m.quantite_delta}</span>` : '';
                 const sortie = m.quantite_delta < 0 ? `<span class="text-danger">${m.quantite_delta}</span>` : '';
+                const sansStock = TYPES_MOUVEMENT_SANS_STOCK.has(m.type_mouvement);
                 return `<tr>
                     <td><small>${m.date_mouvement}</small></td>
                     <td>${m.produit_nom}</td>
                     <td><span class="badge bg-secondary">${LIBELLES_TYPE_MOUVEMENT_JS[m.type_mouvement] || m.type_mouvement}</span></td>
-                    <td class="text-end">${entree}</td>
-                    <td class="text-end">${sortie}</td>
-                    <td class="text-end">${m.stock_apres}</td>
+                    <td class="text-end">${sansStock ? '' : entree}</td>
+                    <td class="text-end">${sansStock ? '' : sortie}</td>
+                    <td class="text-end">${sansStock ? '-' : m.stock_apres}</td>
                     <td><small>${m.fournisseur || '-'}</small></td>
                     <td><small>${m.dci || '-'}</small></td>
                     <td><small>${m.rayon_rangement || '-'}</small></td>
