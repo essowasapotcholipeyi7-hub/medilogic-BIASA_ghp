@@ -560,6 +560,23 @@
                             <small class="text-muted">Format: YYYY-MM-DD</small>
                         </div>
                     </div>
+
+                    <hr>
+                    <p class="text-muted small mb-2"><i class="fas fa-info-circle"></i> Champs facultatifs — pour la surveillance/filtrage des médicaments (fournisseur, DCI, rayon).</p>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Fournisseur</label>
+                            <input type="text" class="form-control" id="produitFournisseur" placeholder="Ex: UBIPHARM">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Rayon de rangement</label>
+                            <input type="text" class="form-control" id="produitRayon" placeholder="Ex: Rayon A2">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">DCI</label>
+                            <input type="text" class="form-control" id="produitDci" placeholder="Dénomination commune internationale">
+                        </div>
+                    </div>
                 </form>
             </div>
             <div class="modal-footer">
@@ -823,6 +840,9 @@ function showAddProduitModal() {
     document.getElementById('produitPrixAchat').value = '0';
     document.getElementById('produitDatePeremption').value = '';
     document.getElementById('produitLot').value = '';
+    document.getElementById('produitFournisseur').value = '';
+    document.getElementById('produitRayon').value = '';
+    document.getElementById('produitDci').value = '';
     new bootstrap.Modal(document.getElementById('produitModal')).show();
 }
 
@@ -840,6 +860,9 @@ function modifierProduit(id) {
     document.getElementById('produitUnite').value = p.unite || 'unité';
     document.getElementById('produitDatePeremption').value = p.date_peremption || '';
     document.getElementById('produitLot').value = p.lot || '';
+    document.getElementById('produitFournisseur').value = p.fournisseur || '';
+    document.getElementById('produitRayon').value = p.rayon_rangement || '';
+    document.getElementById('produitDci').value = p.dci || '';
     new bootstrap.Modal(document.getElementById('produitModal')).show();
 }
 
@@ -854,7 +877,10 @@ function saveProduit() {
         seuil_alerte: parseInt(document.getElementById('produitSeuil').value) || 10,
         unite: document.getElementById('produitUnite').value,
         date_peremption: document.getElementById('produitDatePeremption').value || '',
-        lot: document.getElementById('produitLot').value || ''
+        lot: document.getElementById('produitLot').value || '',
+        fournisseur: document.getElementById('produitFournisseur').value || '',
+        rayon_rangement: document.getElementById('produitRayon').value || '',
+        dci: document.getElementById('produitDci').value || ''
     };
     
     if (!produit.nom || !produit.prix_vente) {
