@@ -19,6 +19,9 @@
                     <button class="btn btn-light btn-sm" onclick="ouvrirPaiementGlobal()">
                         <i class="fas fa-layer-group"></i> Paiement global par compagnie
                     </button>
+                    <button class="btn btn-light btn-sm" onclick="ouvrirBordereauGlobal()">
+                        <i class="fas fa-file-invoice"></i> Bordereau global par compagnie
+                    </button>
                     <button class="btn btn-light btn-sm" onclick="chargerFactures()">
                         <i class="fas fa-sync-alt"></i> Actualiser
                     </button>
@@ -173,6 +176,38 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
                 <button class="btn btn-success" id="btnValiderPaiementGlobal" onclick="enregistrerPaiementGlobal()" disabled>Valider l'encaissement global</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL BORDEREAU GLOBAL PAR COMPAGNIE -->
+<div class="modal fade" id="bordereauGlobalModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="fas fa-file-invoice"></i> Bordereau global par compagnie</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">
+                    Document imprimable listant tous les patients de <strong>toutes les sociétés</strong>
+                    de la compagnie choisie, regroupés par société avec sous-total — à adresser à la compagnie.
+                </p>
+                <div class="mb-3">
+                    <label class="form-label">Compagnie</label>
+                    <select class="form-select" id="bordereauGlobalAssurance">
+                        <option value="">— Choisir —</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Mois de référence</label>
+                    <input type="month" class="form-control" id="bordereauGlobalMois">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-info text-white" onclick="imprimerBordereauGlobal()"><i class="fas fa-print"></i> Imprimer</button>
             </div>
         </div>
     </div>
@@ -460,6 +495,52 @@ function enregistrerPaiementGlobal() {
         btn.disabled = false;
         alert('❌ Erreur réseau : ' + error);
     });
+}
+
+// ⭐ BORDEREAU GLOBAL PAR COMPAGNIE — patron : "imprimer aussi un
+// bordereau global aussi par compagnie dans la même page". Réutilise la
+// route existante /api/statistiques/assurance/bordereau sans le
+// paramètre "societe" : elle liste alors toutes les sociétés de la
+// compagnie, regroupées avec sous-total chacune (voir
+// routes/statistiques.py:bordereau_assurance).
+function ouvrirBordereauGlobal() {
+    const select = document.getElementById('bordereauGlobalAssurance');
+    select.innerHTML = '<option value="">— Choisir —</option>';
+    document.getElementById('bordereauGlobalMois').value = document.getElementById('filtreMois').value;
+
+    fetch('/api/assurances/factures')
+        .then(r => r.json())
+        .then(factures => {
+            const compagnies = [...new Set(
+                (factures || [])
+                    .filter(f => (f.type_assurance || 'principale') === 'complementaire')
+                    .map(f => f.assurance)
+            )].sort();
+            compagnies.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c;
+                opt.textContent = c;
+                select.appendChild(opt);
+            });
+            new bootstrap.Modal(document.getElementById('bordereauGlobalModal')).show();
+        });
+}
+
+function imprimerBordereauGlobal() {
+    const assurance = document.getElementById('bordereauGlobalAssurance').value;
+    const moisReference = document.getElementById('bordereauGlobalMois').value;
+    if (!assurance) { alert('Choisissez une compagnie'); return; }
+    if (!moisReference) { alert('Choisissez un mois de référence'); return; }
+
+    const [annee, mois] = moisReference.split('-').map(Number);
+    const dateDebut = `${moisReference}-01`;
+    const dernierJour = new Date(annee, mois, 0).getDate();
+    const dateFin = `${moisReference}-${String(dernierJour).padStart(2, '0')}`;
+
+    // Pas de "societe" ici -> bordereau global (toutes les sociétés de la compagnie)
+    const url = `/api/statistiques/assurance/bordereau?assurance=${encodeURIComponent(assurance)}&periode=personnalise&date_debut=${dateDebut}&date_fin=${dateFin}`;
+    window.open(url, '_blank');
+    bootstrap.Modal.getInstance(document.getElementById('bordereauGlobalModal')).hide();
 }
 </script>
 {% endblock %}

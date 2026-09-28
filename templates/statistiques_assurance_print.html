@@ -187,21 +187,48 @@
                 </tr>
             </thead>
             <tbody>
-                {% for l in lignes %}
-                <tr>
-                    <td>{{ l.date }}</td>
-                    <td><strong>{{ l.patient_nom }}</strong></td>
-                    <td>{{ l.numero_assure }}</td>
-                    <td class="prestations">
-                        {% for p in l.prestations %}<div>{{ p }}</div>{% endfor %}
-                    </td>
-                    <td class="num">{{ '{:,.0f}'.format(l.montant_total).replace(',', ' ') }} F</td>
-                    <td class="num">{{ '{:,.0f}'.format(l.part_assurance).replace(',', ' ') }} F</td>
-                    <td class="num">{{ '{:,.0f}'.format(l.reste_patient).replace(',', ' ') }} F</td>
-                </tr>
+                {% if groupes %}
+                    {% for g in groupes %}
+                    <tr style="background:#eef1fa;">
+                        <td colspan="7" style="font-weight:700; color:#1a2a6c;">Société : {{ g.societe }}</td>
+                    </tr>
+                    {% for l in g.lignes %}
+                    <tr>
+                        <td>{{ l.date }}</td>
+                        <td><strong>{{ l.patient_nom }}</strong></td>
+                        <td>{{ l.numero_assure }}</td>
+                        <td class="prestations">
+                            {% for p in l.prestations %}<div>{{ p }}</div>{% endfor %}
+                        </td>
+                        <td class="num">{{ '{:,.0f}'.format(l.montant_total).replace(',', ' ') }} F</td>
+                        <td class="num">{{ '{:,.0f}'.format(l.part_assurance).replace(',', ' ') }} F</td>
+                        <td class="num">{{ '{:,.0f}'.format(l.reste_patient).replace(',', ' ') }} F</td>
+                    </tr>
+                    {% endfor %}
+                    <tr style="font-weight:600;">
+                        <td colspan="4">Sous-total {{ g.societe }}</td>
+                        <td class="num">{{ '{:,.0f}'.format(g.sous_total_montant).replace(',', ' ') }} F</td>
+                        <td class="num">{{ '{:,.0f}'.format(g.sous_total_part).replace(',', ' ') }} F</td>
+                        <td class="num">{{ '{:,.0f}'.format(g.sous_total_reste).replace(',', ' ') }} F</td>
+                    </tr>
+                    {% endfor %}
                 {% else %}
-                <tr><td colspan="7" style="text-align:center; color:#888; padding:20px;">Aucune vente pour cette compagnie sur la période.</td></tr>
-                {% endfor %}
+                    {% for l in lignes %}
+                    <tr>
+                        <td>{{ l.date }}</td>
+                        <td><strong>{{ l.patient_nom }}</strong></td>
+                        <td>{{ l.numero_assure }}</td>
+                        <td class="prestations">
+                            {% for p in l.prestations %}<div>{{ p }}</div>{% endfor %}
+                        </td>
+                        <td class="num">{{ '{:,.0f}'.format(l.montant_total).replace(',', ' ') }} F</td>
+                        <td class="num">{{ '{:,.0f}'.format(l.part_assurance).replace(',', ' ') }} F</td>
+                        <td class="num">{{ '{:,.0f}'.format(l.reste_patient).replace(',', ' ') }} F</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="7" style="text-align:center; color:#888; padding:20px;">Aucune vente pour cette compagnie sur la période.</td></tr>
+                    {% endfor %}
+                {% endif %}
             </tbody>
             <tfoot>
                 <tr>
