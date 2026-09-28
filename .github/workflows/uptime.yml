@@ -1,0 +1,24 @@
+name: Surveillance production
+
+# Même dispositif que côté GHP — voir la note dans le fichier équivalent
+# de ce dépôt. Tourne toutes les 10 minutes et échoue si /health (app.py)
+# ne répond pas correctement ; GitHub envoie automatiquement un email au
+# propriétaire du dépôt dès qu'un workflow planifié échoue.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:  # bouton "Run workflow" pour tester manuellement
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Vérifier /health
+        run: |
+          code=$(curl -s -o /tmp/reponse.json -w "%{http_code}" --max-time 45 https://medilogic-biasa-ghp.onrender.com/health)
+          echo "Code HTTP : $code"
+          cat /tmp/reponse.json || true
+          if [ "$code" != "200" ]; then
+            echo "::error::/health a répondu $code au lieu de 200"
+            exit 1
+          fi

@@ -858,6 +858,33 @@ def api_admin_faq_repondre(question_id):
     return jsonify({'success': True})
 
 
+@app.route('/health')
+def health():
+    """Vérification de santé publique (aucune connexion requise) — utilisée
+    par le monitoring automatique (voir .github/workflows/uptime.yml) pour
+    détecter une panne AVANT qu'un patient/utilisateur ne tombe dessus, au
+    lieu de le découvrir seulement via une plainte (ce qui s'est produit
+    lors de l'incident du 2026-09-28, côté GHP : pool de connexions
+    Postgres empoisonné par un thread d'arrière-plan, corrigé le même
+    jour). Fait une vraie requête DB (pas juste "le process répond") pour
+    attraper exactement ce genre de panne — voir utils/db_failover.py et
+    utils/sheets_mirror.py pour le correctif des rollbacks manquants qui en
+    était la cause. Volontairement PAS d'appel Google Sheets ici : coûterait
+    du quota API à chaque ping du monitoring, pour un signal moins
+    pertinent que la DB (Sheets a déjà son propre repli local en cas de
+    panne, voir utils/sheets_mirror.py)."""
+    try:
+        db.session.execute(db.text('SELECT 1'))
+        db.session.rollback()
+        return jsonify({'status': 'ok'}), 200
+    except Exception as e:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        return jsonify({'status': 'erreur', 'detail': str(e)[:300]}), 503
+
+
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if 'user_id' in session:
