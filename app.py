@@ -8953,23 +8953,42 @@ def api_export_historique_produits():
     colonnes = ['Date', 'Médicament', 'Type', 'Entrée', 'Sortie', 'Stock après',
                 'Fournisseur', 'DCI', 'Rayon', 'Motif', 'Par']
 
+    # Types sans notion de stock (actes) — évite d'afficher "0" en
+    # Entrée/Sortie/Stock après, qui laisserait croire à tort que le stock
+    # est tombé à zéro (même logique que côté écran, voir gestion_stock.html).
+    TYPES_SANS_STOCK = {'creation_acte', 'modification_acte', 'suppression_acte'}
+
     def _ligne(m):
-        delta = m['quantite_delta']
-        entree = delta if delta > 0 else ''
-        sortie = abs(delta) if delta < 0 else ''
+        if m['type_mouvement'] in TYPES_SANS_STOCK:
+            entree, sortie, stock_apres = '', '', '-'
+        else:
+            delta = m['quantite_delta']
+            entree = delta if delta > 0 else ''
+            sortie = abs(delta) if delta < 0 else ''
+            stock_apres = m['stock_apres']
         return [
             m['date_mouvement'],
             m['produit_nom'],
             _LIBELLES_TYPE_MOUVEMENT.get(m['type_mouvement'], m['type_mouvement']),
-            entree, sortie, m['stock_apres'],
+            entree, sortie, stock_apres,
             m['fournisseur'], m['dci'], m['rayon_rangement'],
             m['motif'] or '', m['created_by_nom'] or '',
         ]
 
     if format_export == 'texte':
-        lignes_txt = ['\t'.join(colonnes)]
-        for m in mouvements:
-            lignes_txt.append('\t'.join(str(v) for v in _ligne(m)))
+        # ⭐ FIX : un simple join('\t') ne s'aligne PAS en colonnes propres
+        # dans un lecteur de texte brut (Bloc-notes, etc.) — la largeur
+        # d'une tabulation dépend du logiciel, et une valeur plus longue
+        # qu'un cran de tabulation décale tout ce qui suit. On calcule la
+        # largeur réelle de chaque colonne (texte le plus long, en-tête
+        # compris) et on complète chaque valeur avec des espaces (ljust)
+        # pour un alignement garanti quel que soit le lecteur.
+        lignes = [colonnes] + [[str(v) for v in _ligne(m)] for m in mouvements]
+        largeurs = [max(len(ligne[i]) for ligne in lignes) for i in range(len(colonnes))]
+        lignes_txt = [
+            '  '.join(valeur.ljust(largeurs[i]) for i, valeur in enumerate(ligne)).rstrip()
+            for ligne in lignes
+        ]
         contenu = '\n'.join(lignes_txt)
         return Response(
             contenu, mimetype='text/plain',
