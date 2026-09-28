@@ -425,6 +425,7 @@ function afficherQrModal(tokenAvecPrefixe, qrId, dateGeneration, dateDerniereUti
 }
 
 function genererQr() {
+    showLoader();
     fetch('/api/admin/qr/generer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -436,24 +437,35 @@ function genererQr() {
     })
         .then(r => r.json())
         .then(d => {
+            hideLoader();
             if (d.success) {
                 ouvrirModalQr(qrModalTypeCompte, qrModalUtilisateurId, qrModalNom);
             } else {
                 alert('Erreur: ' + (d.error || 'Erreur inconnue'));
             }
+        })
+        .catch(error => {
+            hideLoader();
+            alert('Erreur: ' + error);
         });
 }
 
 function revoquerQr(qrId) {
     if (!confirm('Révoquer ce code QR ? Il ne pourra plus être utilisé pour se connecter.')) return;
+    showLoader();
     fetch(`/api/admin/qr/${qrId}/revoquer`, { method: 'POST' })
         .then(r => r.json())
         .then(d => {
+            hideLoader();
             if (d.success) {
                 afficherAucunQr();
             } else {
                 alert('Erreur: ' + (d.error || 'Erreur inconnue'));
             }
+        })
+        .catch(error => {
+            hideLoader();
+            alert('Erreur: ' + error);
         });
 }
 
@@ -551,7 +563,7 @@ function toggleUserStatus(userId, actuel) {
 function deleteUser(id) {
     if (confirm('Supprimer cet utilisateur ?')) {
         showLoader();
-        
+
         fetch(`/api/admin/users/${id}`, { method: 'DELETE' })
             .then(r => r.json())
             .then(data => {
@@ -562,6 +574,10 @@ function deleteUser(id) {
                 } else {
                     alert('Erreur: ' + data.error);
                 }
+            })
+            .catch(error => {
+                hideLoader();
+                alert('Erreur: ' + error);
             });
     }
 }
@@ -585,6 +601,7 @@ document.getElementById('structureForm').addEventListener('submit', function(e) 
         entete_a4: document.getElementById('structureEnteteA4').value
     };
 
+    showLoader();
     fetch('/api/admin/structure', {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
@@ -592,12 +609,17 @@ document.getElementById('structureForm').addEventListener('submit', function(e) 
     })
     .then(r => r.json())
     .then(data => {
+        hideLoader();
         if(data.success) {
             alert('✓ Structure mise à jour');
             location.reload();
         } else {
             alert('Erreur: ' + (data.error || 'Erreur inconnue'));
         }
+    })
+    .catch(error => {
+        hideLoader();
+        alert('Erreur: ' + error);
     });
 });
 
@@ -655,14 +677,20 @@ function chargerHabilitations() {
 
 function revoquerHabilitation(id) {
     if (!confirm('Révoquer cet accès ?')) return;
+    showLoader();
     fetch(`/api/admin/habilitations/${id}/revoquer`, { method: 'POST' })
         .then(r => r.json())
         .then(data => {
+            hideLoader();
             if (data.success) {
                 chargerHabilitations();
             } else {
                 alert('Erreur: ' + (data.error || 'Erreur inconnue'));
             }
+        })
+        .catch(error => {
+            hideLoader();
+            alert('Erreur: ' + error);
         });
 }
 
@@ -674,6 +702,7 @@ document.getElementById('habilitationForm').addEventListener('submit', function(
         return;
     }
     const expirationVal = document.getElementById('habilitationExpiration').value;
+    showLoader();
     fetch('/api/admin/habilitations', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -686,17 +715,30 @@ document.getElementById('habilitationForm').addEventListener('submit', function(
     })
     .then(r => r.json())
     .then(data => {
+        hideLoader();
         if (data.success) {
             document.getElementById('habilitationForm').reset();
             chargerHabilitations();
         } else {
             alert('Erreur: ' + (data.error || 'Erreur inconnue'));
         }
+    })
+    .catch(error => {
+        hideLoader();
+        alert('Erreur: ' + error);
     });
 });
 {% endif %}
 
 // ========== LOADER ==========
+// patron : "bouton enregistré protège ça" — showLoader()/hideLoader()
+// encadrent déjà chaque action qui modifie des données sur cette page
+// (utilisateur, structure, habilitation) ; on en profite pour désactiver
+// TOUS les boutons de la page pendant qu'une de ces actions est en vol, au
+// lieu de devoir modifier chaque bouton individuellement (même principe
+// qu'appliqué côté gestion_stock.html).
+let _boutonsDesactivesParChargement = [];
+
 function showLoader() {
     var loader = document.getElementById('loaderOverlay');
     if (!loader) {
@@ -707,11 +749,15 @@ function showLoader() {
         document.body.appendChild(loader);
     }
     loader.style.display = 'flex';
+    _boutonsDesactivesParChargement = Array.from(document.querySelectorAll('button:not(:disabled)'));
+    _boutonsDesactivesParChargement.forEach(btn => { btn.disabled = true; });
 }
 
 function hideLoader() {
     var loader = document.getElementById('loaderOverlay');
     if (loader) loader.style.display = 'none';
+    _boutonsDesactivesParChargement.forEach(btn => { btn.disabled = false; });
+    _boutonsDesactivesParChargement = [];
 }
 
 // Initialisation

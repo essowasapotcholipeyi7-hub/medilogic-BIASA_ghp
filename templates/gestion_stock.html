@@ -1126,7 +1126,7 @@ function saveActe() {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(data => { 
+    .then(data => {
         hideLoader();
         if(data.success) {
             alert('Acte enregistré');
@@ -1134,6 +1134,10 @@ function saveActe() {
         } else {
             alert('Erreur: ' + (data.error || 'Erreur inconnue'));
         }
+    })
+    .catch(error => {
+        hideLoader();
+        alert('Erreur: ' + error);
     });
 }
 
@@ -1142,7 +1146,7 @@ function deleteActe(id) {
         showLoader();
         fetch(`/api/admin/actes/${id}`, { method: 'DELETE' })
             .then(r => r.json())
-            .then(data => { 
+            .then(data => {
                 hideLoader();
                 if(data.success) {
                     alert('Acte supprimé');
@@ -1150,6 +1154,10 @@ function deleteActe(id) {
                 } else {
                     alert('Erreur: ' + (data.error || 'Erreur inconnue'));
                 }
+            })
+            .catch(error => {
+                hideLoader();
+                alert('Erreur: ' + error);
             });
     }
 }
@@ -1273,6 +1281,10 @@ function validerApprovisionnement() {
         } else {
             alert('Erreur: ' + (data.error || 'Erreur inconnue'));
         }
+    })
+    .catch(error => {
+        hideLoader();
+        alert('Erreur: ' + error);
     });
 }
 
@@ -1289,12 +1301,27 @@ function supprimerProduit(id) {
                 } else {
                     alert('Erreur: ' + data.error);
                 }
+            })
+            .catch(error => {
+                hideLoader();
+                alert('Erreur: ' + error);
             });
     }
 }
 
 
 // ========== LOADER ==========
+// patron : "tous les boutons ... ne sont pas protégés contre un deuxième
+// clic après un premier" — showLoader()/hideLoader() encadrent déjà CHAQUE
+// action qui modifie des données sur cette page (enregistrer/supprimer un
+// acte ou un produit, approvisionner, valider l'inventaire) ; on en profite
+// pour désactiver TOUS les boutons de la page pendant qu'une de ces actions
+// est en vol, plutôt que de devoir modifier un par un chaque bouton et
+// chaque fonction. Un clic (même sur un AUTRE bouton) pendant l'appel
+// réseau ne peut donc plus déclencher une deuxième opération en double
+// (acte/produit créé deux fois, stock ajusté deux fois, etc.).
+let _boutonsDesactivesParChargement = [];
+
 function showLoader(message) {
     var loader = document.getElementById('loaderOverlay');
     if (!loader) {
@@ -1309,11 +1336,15 @@ function showLoader(message) {
         if (msgEl) msgEl.textContent = message;
     }
     loader.style.display = 'flex';
+    _boutonsDesactivesParChargement = Array.from(document.querySelectorAll('button:not(:disabled)'));
+    _boutonsDesactivesParChargement.forEach(btn => { btn.disabled = true; });
 }
 
 function hideLoader() {
     var loader = document.getElementById('loaderOverlay');
     if (loader) loader.style.display = 'none';
+    _boutonsDesactivesParChargement.forEach(btn => { btn.disabled = false; });
+    _boutonsDesactivesParChargement = [];
 }
 
 // ========== INVENTAIRE PHYSIQUE ==========
