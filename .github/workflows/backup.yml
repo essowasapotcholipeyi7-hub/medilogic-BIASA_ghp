@@ -41,7 +41,16 @@ jobs:
             echo "::error::Le secret BACKUP_DATABASE_URL n'est pas configuré (Settings > Secrets and variables > Actions)"
             exit 1
           fi
-          pg_dump "$DATABASE_URL" -Fc -f backup.dump
+          if ! pg_dump "$DATABASE_URL" -Fc -f backup.dump 2>pgdump_stderr.log; then
+            code=$?
+            # ⭐ Redige tout segment "utilisateur:motdepasse@" avant
+            # d'afficher l'erreur — les logs de ce job (via l'annotation
+            # ::error::) sont lisibles publiquement sans connexion sur un
+            # dépôt public, contrairement au log complet du job.
+            safe_error=$(sed -E 's#://[^:]+:[^@]+@#://[REDACTED]@#g' pgdump_stderr.log)
+            echo "::error::pg_dump a échoué (code $code) : $safe_error"
+            exit $code
+          fi
 
       - name: Chiffrer la sauvegarde
         env:
