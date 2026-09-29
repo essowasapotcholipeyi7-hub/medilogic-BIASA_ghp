@@ -17,6 +17,11 @@ from utils.dates import normaliser_date_peremption
         ("08/09/2026", "2026-09-08"),
         ("1/1/2026", "2026-01-01"),
         ("8/9/2026", "2026-09-08"),  # jour et mois sans zéro de tête
+        # Séparateurs alternatifs vus sur des saisies manuelles FR
+        ("01-03-2027", "2027-03-01"),  # JJ-MM-AAAA
+        ("01.03.2027", "2027-03-01"),  # JJ.MM.AAAA
+        ("2027/03/01", "2027-03-01"),  # AAAA/MM/JJ
+        ("2027.03.01", "2027-03-01"),  # AAAA.MM.JJ
         # Vide / blanc / None -> chaîne vide
         ("", ""),
         ("   ", ""),

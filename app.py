@@ -8458,7 +8458,12 @@ def api_admin_update_produit(produit_id):
         current_row[5] = str(int(data.get('quantite_stock') or 0))
         current_row[6] = str(int(data.get('seuil_alerte', 10)))
         current_row[7] = data.get('unite', 'unité')
-        current_row[8] = data.get('date_peremption', '')
+        # ⭐ Normalise aussi à l'écriture (pas seulement à la lecture) —
+        # filet de sécurité si jamais la valeur reçue n'est pas déjà en
+        # ISO (voir normaliser_date_peremption : sans ça, une date dans un
+        # format non reconnu par <input type="date"> finit par être écrite
+        # telle quelle, potentiellement illisible ensuite).
+        current_row[8] = _normaliser_date_peremption(data.get('date_peremption', ''))
         current_row[9] = data.get('lot', '')
         current_row[10] = str(structure_id)
         # ⭐ FIX : le formulaire "Modifier" (gestion_stock.html) n'a AUCUN
