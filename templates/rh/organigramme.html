@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block title %}Organigramme{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ⭐ Patron : "pas d'organigramme réel" — arbre indenté plutôt qu'un
+       schéma en boîtes reliées par des traits horizontaux : plus robuste
+       (aucun calcul CSS fragile de traits de connexion) et bien plus
+       lisible dès qu'un responsable a beaucoup de rattachés directs
+       (ex. un chef de service avec 15 infirmiers), un cas fréquent en
+       clinique où un arbre horizontal deviendrait vite trop large. */
+    .org-item {
+        margin-bottom: 6px;
+    }
+    .org-children {
+        margin-left: 26px;
+        padding-left: 16px;
+        border-left: 2px dashed #ced4da;
+        margin-top: 4px;
+    }
+    .org-card {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 6px 14px;
+        background: #fff;
+        cursor: pointer;
+        box-shadow: 0 1px 2px rgba(0,0,0,.06);
+        transition: border-color .15s, box-shadow .15s;
+    }
+    .org-card:hover {
+        border-color: #0d6efd;
+        box-shadow: 0 2px 6px rgba(13,110,253,.15);
+    }
+    .org-card.statut-inactif {
+        opacity: .55;
+    }
+    .org-nom {
+        font-weight: 600;
+        font-size: 13px;
+    }
+    .org-poste {
+        font-size: 11px;
+        color: #6c757d;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+        <div class="card">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h5 class="mb-0"><i class="fas fa-sitemap"></i> Organigramme</h5>
+                <div class="d-flex gap-3 align-items-center">
+                    <div class="form-check form-switch text-white mb-0">
+                        <input class="form-check-input" type="checkbox" id="inclureInactifs" onchange="chargerOrganigramme()">
+                        <label class="form-check-label small" for="inclureInactifs">Inclure les employés inactifs</label>
+                    </div>
+                    <a href="{{ url_for('rh.employes') }}" class="btn btn-light btn-sm">
+                        <i class="fas fa-arrow-left"></i> Retour
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info py-2 small">
+                    <i class="fas fa-circle-info me-1"></i>
+                    Le responsable hiérarchique de chaque employé se règle depuis sa fiche (bouton « Modifier »,
+                    champ « Responsable hiérarchique »). Cliquez sur une carte pour ouvrir la fiche de l'employé.
+                </div>
+                <div id="orgAlertes"></div>
+                <div style="overflow-x:auto;">
+                    <div id="orgContenu" class="text-center text-muted py-5">
+                        <i class="fas fa-spinner fa-spin me-2"></i> Chargement...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+<script>
+function chargerOrganigramme() {
+    const contenu = document.getElementById('orgContenu');
+    contenu.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin me-2"></i> Chargement...</div>';
+    const inclureInactifs = document.getElementById('inclureInactifs').checked ? '1' : '0';
+
+    fetch(`/rh/api/organigramme?inclure_inactifs=${inclureInactifs}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.arbre || data.arbre.length === 0) {
+                contenu.innerHTML = '<div class="text-center text-muted py-5">Aucun employé à afficher.</div>';
+                document.getElementById('orgAlertes').innerHTML = '';
+                return;
+            }
+            contenu.innerHTML = data.arbre.map(rendreNoeudOrganigramme).join('');
+            afficherAlertesOrganigramme(data);
+        })
+        .catch(error => {
+            console.error(error);
+            contenu.innerHTML = '<div class="text-center text-danger py-5">Erreur de chargement.</div>';
+        });
+}
+
+function rendreNoeudOrganigramme(n) {
+    const statutClass = n.statut !== 'Actif' ? 'statut-inactif' : '';
+    const enfants = (n.enfants && n.enfants.length)
+        ? `<div class="org-children">${n.enfants.map(rendreNoeudOrganigramme).join('')}</div>`
+        : '';
+    const compte = (n.enfants && n.enfants.length)
+        ? `<span class="badge bg-secondary">${n.enfants.length}</span>`
+        : '';
+    return `
+        <div class="org-item">
+            <div class="org-card ${statutClass}" onclick="window.open('/rh/employe/${n.id}', '_blank')" title="Voir la fiche de ${n.nom} ${n.prenom}">
+                <i class="fas fa-user-circle text-secondary"></i>
+                <div>
+                    <div class="org-nom">${n.nom} ${n.prenom}</div>
+                    <div class="org-poste">${n.poste || ''}${n.service ? ' — ' + n.service : ''}</div>
+                </div>
+                ${compte}
+            </div>
+            ${enfants}
+        </div>
+    `;
+}
+
+function afficherAlertesOrganigramme(data) {
+    const el = document.getElementById('orgAlertes');
+    if (data.orphelins && data.orphelins.length) {
+        el.innerHTML = `<div class="alert alert-warning py-2 small">
+            <i class="fas fa-triangle-exclamation me-1"></i>
+            ${data.orphelins.length} employé(s) rattaché(s) à un responsable non affiché (inactif) :
+            ${data.orphelins.map(o => `${o.nom} ${o.prenom}`).join(', ')}.
+            Activez « Inclure les employés inactifs » pour les voir rattachés à leur place.
+        </div>`;
+    } else {
+        el.innerHTML = '';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', chargerOrganigramme);
+</script>
+{% endblock %}

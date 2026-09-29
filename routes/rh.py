@@ -325,6 +325,9 @@ def api_employes(structure_id):
             # MOTIFS_DEPART/Employe.motif_depart_label (models.py).
             'date_depart': e.date_depart.strftime('%d/%m/%Y') if e.date_depart else '',
             'motif_depart_label': e.motif_depart_label() if e.motif_depart else '',
+            # ⭐ Patron : "pas d'organigramme réel" — voir Employe.manager_id.
+            'manager_id': e.manager_id,
+            'manager_nom': f"{e.manager.nom} {e.manager.prenom}" if e.manager else '',
         })
     
     return jsonify(result)
@@ -397,6 +400,10 @@ def api_employe_detail(structure_id, id):
         'motif_depart': employe.motif_depart,
         'motif_depart_label': employe.motif_depart_label() if employe.motif_depart else '',
         'commentaire_depart': employe.commentaire_depart or '',
+        # ⭐ Patron : "pas d'organigramme réel" — voir Employe.manager_id.
+        'manager_id': employe.manager_id,
+        'manager_nom': f"{employe.manager.nom} {employe.manager.prenom}" if employe.manager else '',
+        'nombre_subordonnes': len(employe.subordonnes),
     })
 
 
@@ -411,6 +418,32 @@ def api_comptes_utilisateurs(structure_id):
     } for c in _comptes_utilisateurs_structure(structure_id)])
 
 
+def _valider_manager(employe_id, nouveau_manager_id, structure_id):
+    """⭐ Patron : "pas d'organigramme réel" — refuse un responsable
+    hiérarchique qui créerait un cycle (un employé ne peut pas être,
+    directement ou indirectement, le manager de son propre manager) ou
+    qui n'appartient pas à la même structure. `employe_id` est None à la
+    création (l'employé n'a pas encore d'id — un cycle est alors
+    impossible par construction). Retourne un message d'erreur, ou None
+    si le choix est valide."""
+    if nouveau_manager_id is None:
+        return None
+    if employe_id is not None and nouveau_manager_id == employe_id:
+        return "Un employé ne peut pas être son propre responsable hiérarchique"
+    manager = Employe.query.filter_by(id=nouveau_manager_id, structure_id=structure_id).first()
+    if not manager:
+        return "Responsable hiérarchique introuvable"
+    if employe_id is not None:
+        vus = set()
+        courant = manager
+        while courant is not None and courant.id not in vus:
+            if courant.id == employe_id:
+                return "Ce choix créerait un cycle dans la hiérarchie"
+            vus.add(courant.id)
+            courant = courant.manager
+    return None
+
+
 @rh_bp.route('/employe/ajouter', methods=['POST'])
 @require_structure
 def employe_ajouter(structure_id):
@@ -423,7 +456,12 @@ def employe_ajouter(structure_id):
         for field in required_fields:
             if not data.get(field):
                 return jsonify({'error': f'Le champ {field} est obligatoire'}), 400
-        
+
+        manager_id = int(data['manager_id']) if data.get('manager_id') else None
+        erreur_manager = _valider_manager(None, manager_id, structure_id)
+        if erreur_manager:
+            return jsonify({'error': erreur_manager}), 400
+
         # Génération du matricule
         # ⭐ La colonne matricule est UNIQUE au niveau de toute la table (pas
         # seulement par structure), alors que le compteur ci-dessous ne compte
@@ -458,6 +496,7 @@ def employe_ajouter(structure_id):
             telephone=data.get('telephone').strip(),
             email=data.get('email', '').strip(),
             service_id=int(data.get('service_id')),
+            manager_id=manager_id,
             poste=data.get('poste').strip(),
             numero_poste=data.get('numero_poste', '').strip(),
             date_embauche=datetime.strptime(data.get('date_embauche'), '%Y-%m-%d').date(),
@@ -545,6 +584,12 @@ def api_modifier_employe(structure_id, id):
             employe.date_fin_contrat = datetime.strptime(data['date_fin_contrat'], '%Y-%m-%d').date() if data['date_fin_contrat'] else None
         if 'compte_utilisateur_id' in data:
             employe.compte_utilisateur_id = int(data['compte_utilisateur_id']) if data['compte_utilisateur_id'] else None
+        if 'manager_id' in data:
+            nouveau_manager_id = int(data['manager_id']) if data['manager_id'] else None
+            erreur_manager = _valider_manager(employe.id, nouveau_manager_id, structure_id)
+            if erreur_manager:
+                return jsonify({'error': erreur_manager}), 400
+            employe.manager_id = nouveau_manager_id
         if 'salaire_base' in data:
             employe.salaire_base = data['salaire_base']
         if 'personne_a_prevenir' in data:
@@ -784,6 +829,66 @@ def api_supprimer_document_employe(structure_id, id, type_doc):
         db.session.rollback()
         print(f"❌ Erreur api_supprimer_document_employe: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@rh_bp.route('/organigramme')
+@require_structure
+def page_organigramme(structure_id):
+    """⭐ Patron : "pas d'organigramme réel"."""
+    return render_template('rh/organigramme.html')
+
+
+@rh_bp.route('/api/organigramme')
+@require_structure
+def api_organigramme(structure_id):
+    """⭐ Patron : "pas d'organigramme réel" — construit l'arbre
+    hiérarchique complet (Employe.manager_id/subordonnes) de la
+    structure. Racines = employés sans manager (ou dont le manager est
+    exclu par le filtre `inclure_inactifs`). `inclure_inactifs` (défaut
+    false, ?inclure_inactifs=1 pour l'activer) : par défaut, seuls les
+    employés actifs apparaissent — l'organigramme représente "qui
+    reporte à qui aujourd'hui", pas l'historique complet."""
+    inclure_inactifs = request.args.get('inclure_inactifs') == '1'
+    query = Employe.query.filter_by(structure_id=structure_id)
+    if not inclure_inactifs:
+        query = query.filter(Employe.statut == 'Actif')
+    employes = query.all()
+
+    par_id = {e.id: e for e in employes}
+    enfants_par_manager = {}
+    racines = []
+    for e in employes:
+        if e.manager_id and e.manager_id in par_id:
+            enfants_par_manager.setdefault(e.manager_id, []).append(e)
+        else:
+            racines.append(e)
+
+    PROFONDEUR_MAX = 25  # ⭐ Garde-fou anti-cycle (voir Employe.chaine_hierarchique)
+
+    def noeud(e, profondeur=0):
+        base = {
+            'id': e.id,
+            'nom': e.nom,
+            'prenom': e.prenom,
+            'matricule': e.matricule,
+            'poste': e.poste,
+            'service': e.service.nom if e.service else '',
+            'statut': e.statut,
+            'photo_url': e.photo_url,
+        }
+        if profondeur >= PROFONDEUR_MAX:
+            return {**base, 'enfants': [], 'tronque': True}
+        sous = sorted(enfants_par_manager.get(e.id, []), key=lambda x: (x.nom, x.prenom))
+        return {**base, 'enfants': [noeud(c, profondeur + 1) for c in sous]}
+
+    arbre = [noeud(e) for e in sorted(racines, key=lambda x: (x.nom, x.prenom))]
+
+    # ⭐ manager_id pointant vers un employé exclu par le filtre (inactif,
+    # masqué) — signalé plutôt que silencieusement absent de l'arbre.
+    orphelins = [{'id': e.id, 'nom': e.nom, 'prenom': e.prenom}
+                 for e in employes if e.manager_id and e.manager_id not in par_id]
+
+    return jsonify({'arbre': arbre, 'total_employes': len(employes), 'orphelins': orphelins})
 
 
 @rh_bp.route('/employe/<int:id>')

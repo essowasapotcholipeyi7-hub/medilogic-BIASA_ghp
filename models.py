@@ -286,6 +286,14 @@ class Employe(db.Model):
     service_id = db.Column(db.Integer, db.ForeignKey('services.id'))
     poste = db.Column(db.String(100))
     numero_poste = db.Column(db.String(20))
+    # ⭐ Patron : "pas d'organigramme réel" — responsable hiérarchique
+    # DIRECT de cet employé (auto-référence, nullable : tout le monde n'a
+    # pas de manager, ex. le/la directeur·rice). Distinct de
+    # Service.responsable (texte libre, non lié à un employé précis) —
+    # voir _valider_manager (routes/rh.py) pour la protection anti-cycle
+    # (X ne peut pas devenir manager de son propre manager, direct ou
+    # indirect) et Employe.chaine_hierarchique ci-dessous.
+    manager_id = db.Column(db.Integer, db.ForeignKey('employes.id'))
     date_embauche = db.Column(db.Date, nullable=False)
     type_contrat = db.Column(db.String(50))
     # ⭐ Patron : "pas de date de fin de contrat ni d'alerte de
@@ -371,6 +379,9 @@ class Employe(db.Model):
     
     conges = db.relationship('Conge', backref='employe', lazy=True)
     permissions = db.relationship('Permission', backref='employe', lazy=True)
+    # ⭐ Patron : "pas d'organigramme réel" — voir manager_id ci-dessus.
+    # employe.manager (le N+1) / employe.subordonnes (l'équipe directe).
+    subordonnes = db.relationship('Employe', backref=db.backref('manager', remote_side=[id]), lazy=True)
 
     # Suivi des congés
     conges_annuels = db.Column(db.Integer, default=30)
@@ -418,6 +429,21 @@ class Employe(db.Model):
             cls.date_fin_contrat.isnot(None),
             cls.date_fin_contrat <= limite,
         ).order_by(cls.date_fin_contrat.asc()).all()
+
+    def chaine_hierarchique(self):
+        """⭐ Patron : "pas d'organigramme réel" — liste des managers
+        successifs, du plus proche (N+1) au plus haut. Protégée contre un
+        cycle accidentel (ex. manager_id mal réaffecté en base
+        directement) : s'arrête dès qu'un employé déjà vu réapparaît,
+        plutôt que de boucler indéfiniment."""
+        chaine = []
+        courant = self.manager
+        vus = {self.id}
+        while courant is not None and courant.id not in vus:
+            chaine.append(courant)
+            vus.add(courant.id)
+            courant = courant.manager
+        return chaine
 
     def motif_depart_label(self):
         """Libellé lisible du motif de départ (voir MOTIFS_DEPART) — la

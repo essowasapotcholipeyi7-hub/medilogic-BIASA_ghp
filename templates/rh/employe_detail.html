@@ -165,6 +165,21 @@
                             <div class="col-8 detail-value"><strong>{{ employe.poste or '-' }}</strong></div>
                         </div>
                         <div class="row mb-2">
+                            <!-- ⭐ Patron : "pas d'organigramme réel" — voir Employe.manager_id
+                                 (models.py) et /rh/organigramme. -->
+                            <div class="col-4 detail-label">Responsable</div>
+                            <div class="col-8 detail-value">
+                                {% if employe.manager %}
+                                    <a href="{{ url_for('rh.employe_detail', id=employe.manager.id) }}">{{ employe.manager.nom }} {{ employe.manager.prenom }}</a>
+                                {% else %}
+                                    <span class="text-muted">Aucun</span>
+                                {% endif %}
+                                {% if employe.subordonnes %}
+                                    <span class="badge bg-secondary ms-1">{{ employe.subordonnes|length }} rattaché(s)</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="row mb-2">
                             <div class="col-4 detail-label">N° poste</div>
                             <div class="col-8 detail-value">{{ employe.numero_poste or '-' }}</div>
                         </div>
