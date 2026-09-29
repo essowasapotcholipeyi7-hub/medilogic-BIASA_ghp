@@ -244,6 +244,22 @@ class Service(db.Model):
     employes = db.relationship('Employe', backref='service', lazy=True)
 
 
+# ⭐ Patron : "pas de vrai départ (offboarding) — suppression brute ou
+# juste un statut" — motifs valides pour un départ structuré (voir
+# Employe.date_depart/motif_depart/commentaire_depart et
+# routes/rh.py api_enregistrer_depart). Un motif hors de cette liste est
+# refusé côté API plutôt que silencieusement accepté.
+MOTIFS_DEPART = {
+    'demission': 'Démission',
+    'licenciement': 'Licenciement',
+    'fin_contrat': 'Fin de contrat',
+    'retraite': 'Retraite',
+    'rupture_conventionnelle': 'Rupture conventionnelle',
+    'deces': 'Décès',
+    'autre': 'Autre',
+}
+
+
 class Employe(db.Model):
     __tablename__ = 'employes'
     
@@ -290,6 +306,16 @@ class Employe(db.Model):
     # vers l'ID de ligne de cette feuille. Nullable : rien n'oblige à
     # lier un employé à un compte (agent de terrain sans accès appli...).
     compte_utilisateur_id = db.Column(db.Integer)
+
+    # ⭐ Patron : "pas de vrai départ (offboarding) — suppression brute ou
+    # juste un statut" — trace structurée d'un départ, distincte du simple
+    # changement de `statut`. Voir MOTIFS_DEPART ci-dessus et
+    # api_enregistrer_depart (routes/rh.py) : un vrai départ NE supprime
+    # JAMAIS l'historique (congés, permissions, paie), contrairement à
+    # DELETE /rh/employe/<id> (réservé aux erreurs de saisie).
+    date_depart = db.Column(db.Date)
+    motif_depart = db.Column(db.String(50))
+    commentaire_depart = db.Column(db.Text)
 
     # ⭐ Paramètres de paie individuels (modifiables par salarié — chaque
     # agent peut déroger aux valeurs par défaut de ParametragePaie).
@@ -371,6 +397,12 @@ class Employe(db.Model):
             cls.date_fin_contrat.isnot(None),
             cls.date_fin_contrat <= limite,
         ).order_by(cls.date_fin_contrat.asc()).all()
+
+    def motif_depart_label(self):
+        """Libellé lisible du motif de départ (voir MOTIFS_DEPART) — la
+        valeur brute stockée reste le code, pas le libellé, pour rester
+        stable si le libellé français est reformulé plus tard."""
+        return MOTIFS_DEPART.get(self.motif_depart, self.motif_depart)
 
     def solde_conges(self):
         """Solde total des congés (ancien système)"""

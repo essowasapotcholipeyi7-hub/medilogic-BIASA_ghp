@@ -7,7 +7,7 @@ import traceback
 
 from models import (db, Employe, Service, Conge, Permission, DocumentRH, SignatureRH,
                      Paie, ParametragePaie, EmpreinteEmploye, ParametragePointage, Pointage, VisageEmploye,
-                     TYPES_CONGE_DEDUCTIBLES)
+                     TYPES_CONGE_DEDUCTIBLES, MOTIFS_DEPART)
 from utils.permissions import a_acces
 
 rh_bp = Blueprint('rh', __name__, url_prefix='/rh')
@@ -129,6 +129,33 @@ def _comptes_utilisateurs_structure(structure_id):
     except Exception as e:
         print(f"⚠️ Erreur chargement comptes utilisateurs (structure {structure_id}): {e}")
         return []
+
+
+def _desactiver_compte_utilisateur(structure_id, compte_id):
+    """⭐ Désactive (actif='non') le compte de connexion lié à un employé
+    parti — voir api_enregistrer_depart. Même mécanique que
+    api_toggle_user (app.py), dupliquée ici volontairement : ce module ne
+    peut pas importer une route Flask d'app.py (import circulaire), et
+    l'écriture est de toute façon assez fine pour ne pas justifier une
+    extraction partagée. Best-effort : ne bloque JAMAIS l'enregistrement
+    du départ si Sheets est injoignable — retourne juste False."""
+    try:
+        from sheets_helper import sheets_helper
+        sheets_helper.set_structure(structure_id)
+        worksheet = sheets_helper.spreadsheet.worksheet(f"struct_{structure_id}_users")
+        cell = worksheet.find(str(compte_id), in_column=1)
+        if not cell:
+            return False
+        row_num = cell.row
+        current_row = worksheet.row_values(row_num)
+        while len(current_row) < 9:
+            current_row.append('')
+        current_row[7] = 'non'
+        worksheet.update(range_name=f'A{row_num}:I{row_num}', values=[current_row])
+        return True
+    except Exception as e:
+        print(f"⚠️ Erreur désactivation compte utilisateur {compte_id} (structure {structure_id}): {e}")
+        return False
 
 
 def verifier_solde_avec_anticipation(employe_id, jours_demandes, annee_demande):
@@ -281,6 +308,10 @@ def api_employes(structure_id):
             # ⭐ Juste l'id ici (pas d'aller-retour Sheets par employé dans
             # une liste) — voir /api/comptes_utilisateurs pour le détail.
             'compte_utilisateur_id': e.compte_utilisateur_id,
+            # ⭐ Patron : "pas de vrai départ (offboarding)" — voir
+            # MOTIFS_DEPART/Employe.motif_depart_label (models.py).
+            'date_depart': e.date_depart.strftime('%d/%m/%Y') if e.date_depart else '',
+            'motif_depart_label': e.motif_depart_label() if e.motif_depart else '',
         })
     
     return jsonify(result)
@@ -347,6 +378,12 @@ def api_employe_detail(structure_id, id):
             for c in _comptes_utilisateurs_structure(structure_id)
             if str(c.get('ID')) == str(employe.compte_utilisateur_id)
         ), None) if employe.compte_utilisateur_id else None,
+        # ⭐ Patron : "pas de vrai départ (offboarding)" — voir
+        # MOTIFS_DEPART/Employe.motif_depart_label (models.py).
+        'date_depart': employe.date_depart.strftime('%Y-%m-%d') if employe.date_depart else '',
+        'motif_depart': employe.motif_depart,
+        'motif_depart_label': employe.motif_depart_label() if employe.motif_depart else '',
+        'commentaire_depart': employe.commentaire_depart or '',
     })
 
 
@@ -582,6 +619,77 @@ def api_supprimer_employe(structure_id, id):
     except Exception as e:
         db.session.rollback()
         print(f"❌ Erreur api_supprimer_employe: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@rh_bp.route('/employe/<int:id>/depart', methods=['POST'])
+@require_structure
+def api_enregistrer_depart(structure_id, id):
+    """⭐ Patron : "pas de vrai départ (offboarding) — suppression brute
+    ou juste un statut". Enregistre un départ STRUCTURÉ (date + motif +
+    commentaire), statut basculé à 'Inactif' — sans jamais toucher à
+    l'historique (congés/permissions/paie restent intacts, contrairement
+    à DELETE /rh/employe/<id>, réservé aux erreurs de saisie). Optionnel :
+    désactive aussi le compte de connexion lié (voir
+    Employe.compte_utilisateur_id) — évite d'oublier de couper l'accès
+    appli d'un employé parti."""
+    if not session.get('is_admin'):
+        return jsonify({'error': 'Non autorisé'}), 403
+    employe = Employe.query.filter_by(id=id, structure_id=structure_id).first()
+    if not employe:
+        return jsonify({'error': 'Employé non trouvé'}), 404
+
+    data = request.json or {}
+    date_depart_str = data.get('date_depart')
+    motif = data.get('motif_depart')
+    if not date_depart_str or motif not in MOTIFS_DEPART:
+        return jsonify({'error': 'La date de départ et un motif valide sont obligatoires'}), 400
+    try:
+        date_depart = datetime.strptime(date_depart_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'error': 'Format de date invalide'}), 400
+
+    try:
+        employe.date_depart = date_depart
+        employe.motif_depart = motif
+        employe.commentaire_depart = (data.get('commentaire_depart') or '').strip()
+        employe.statut = 'Inactif'
+
+        compte_desactive = False
+        if data.get('desactiver_compte') and employe.compte_utilisateur_id:
+            compte_desactive = _desactiver_compte_utilisateur(structure_id, employe.compte_utilisateur_id)
+
+        db.session.commit()
+        return jsonify({'success': True, 'compte_desactive': compte_desactive})
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Erreur api_enregistrer_depart: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@rh_bp.route('/employe/<int:id>/reintegrer', methods=['POST'])
+@require_structure
+def api_reintegrer_employe(structure_id, id):
+    """Annule un départ précédemment enregistré (erreur de saisie, ou
+    ré-embauche) — remet le statut à 'Actif' et efface la trace de
+    départ. Ne touche jamais au compte de connexion (une réactivation
+    éventuelle du compte, si désactivé lors du départ, reste une
+    décision volontaire distincte — voir /admin_structure)."""
+    if not session.get('is_admin'):
+        return jsonify({'error': 'Non autorisé'}), 403
+    employe = Employe.query.filter_by(id=id, structure_id=structure_id).first()
+    if not employe:
+        return jsonify({'error': 'Employé non trouvé'}), 404
+    try:
+        employe.statut = 'Actif'
+        employe.date_depart = None
+        employe.motif_depart = None
+        employe.commentaire_depart = None
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Erreur api_reintegrer_employe: {e}")
         return jsonify({'error': str(e)}), 500
 
 

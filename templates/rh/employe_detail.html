@@ -247,6 +247,22 @@
                                 {% endif %}
                             </div>
                         </div>
+                        {% if employe.date_depart %}
+                        <!-- ⭐ Patron : "pas de vrai départ (offboarding) — suppression
+                             brute ou juste un statut" — trace structurée d'un départ,
+                             voir Employe.date_depart/motif_depart (models.py). -->
+                        <div class="row mb-2">
+                            <div class="col-4 detail-label">Départ</div>
+                            <div class="col-8 detail-value">
+                                <i class="fas fa-door-open text-danger"></i>
+                                {{ employe.date_depart.strftime('%d/%m/%Y') }}
+                                <span class="badge bg-secondary">{{ employe.motif_depart_label() }}</span>
+                                {% if employe.commentaire_depart %}
+                                    <div class="text-muted mt-1" style="font-size:13px;">{{ employe.commentaire_depart }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
 

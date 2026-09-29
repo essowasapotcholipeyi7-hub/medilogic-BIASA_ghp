@@ -899,6 +899,64 @@
     </div>
 </div>
 
+<!-- ⭐ MODAL DÉPART — patron : "pas de vrai départ (offboarding) —
+     suppression brute ou juste un statut". Enregistre un départ
+     STRUCTURÉ (date + motif + commentaire) plutôt qu'un simple
+     changement de statut : voir Employe.date_depart/motif_depart
+     (models.py) et api_enregistrer_depart (routes/rh.py). Ne supprime
+     JAMAIS l'historique (congés/permissions/paie), contrairement à
+     "Supprimer". -->
+<div class="modal fade" id="departModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-door-open me-2"></i>Enregistrer un départ — <span id="departEmployeNom"></span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="departEmployeId">
+                <div class="alert alert-warning py-2" style="font-size:13px;">
+                    <i class="fas fa-triangle-exclamation me-1"></i>
+                    L'employé passe au statut <strong>Inactif</strong>. L'historique (congés, permissions, bulletins de paie) n'est <strong>jamais supprimé</strong>. Utilisez "Réintégrer" ensuite en cas d'erreur ou de ré-embauche.
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Date de départ *</label>
+                    <input type="date" class="form-control form-control-sm" id="departDate" required>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Motif *</label>
+                    <select class="form-select form-select-sm" id="departMotif" required>
+                        <option value="">Sélectionner</option>
+                        <option value="demission">Démission</option>
+                        <option value="licenciement">Licenciement</option>
+                        <option value="fin_contrat">Fin de contrat</option>
+                        <option value="retraite">Retraite</option>
+                        <option value="rupture_conventionnelle">Rupture conventionnelle</option>
+                        <option value="deces">Décès</option>
+                        <option value="autre">Autre</option>
+                    </select>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Commentaire</label>
+                    <textarea class="form-control form-control-sm" id="departCommentaire" rows="2"></textarea>
+                </div>
+                <div class="form-check" id="departDesactiverCompteWrapper">
+                    <input class="form-check-input" type="checkbox" id="departDesactiverCompte">
+                    <label class="form-check-label small" for="departDesactiverCompte">
+                        Désactiver aussi son compte de connexion
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-danger" onclick="confirmerDepart()">
+                    <i class="fas fa-door-open me-1"></i> Enregistrer le départ
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- ⭐ MODAL CONGÉ -->
 <div class="modal fade" id="congeModal" tabindex="-1" data-bs-backdrop="static">
     <div class="modal-dialog">
@@ -1372,6 +1430,7 @@ function afficherEmployes() {
                     ${e.compte_utilisateur_id
                         ? '<i class="fas fa-link text-success ms-1" title="Compte de connexion lié"></i>'
                         : '<i class="fas fa-unlink text-muted ms-1" title="Aucun compte de connexion lié"></i>'}
+                    ${e.date_depart ? `<div><small class="text-danger" title="${e.motif_depart_label || ''}"><i class="fas fa-door-open"></i> Parti le ${e.date_depart}</small></div>` : ''}
                 </td>
                 <td class="text-center">
                     <div class="btn-group btn-group-sm">
@@ -1384,6 +1443,13 @@ function afficherEmployes() {
                         <button class="btn btn-warning" onclick="modifierEmploye(${e.id})" title="Modifier">
                             <i class="fas fa-edit"></i>
                         </button>
+                        ${e.date_depart
+                            ? `<button class="btn btn-outline-success" onclick="reintegrerEmploye(${e.id}, '${(e.nom + ' ' + e.prenom).replace(/'/g, "\\'")}')" title="Réintégrer">
+                                <i class="fas fa-user-check"></i>
+                               </button>`
+                            : `<button class="btn btn-outline-danger" onclick="ouvrirDepart(${e.id}, '${(e.nom + ' ' + e.prenom).replace(/'/g, "\\'")}', ${e.compte_utilisateur_id || 'null'})" title="Enregistrer un départ">
+                                <i class="fas fa-door-open"></i>
+                               </button>`}
                         <button class="btn btn-danger" onclick="supprimerEmploye(${e.id})" title="Supprimer">
                             <i class="fas fa-trash"></i>
                         </button>
@@ -1670,6 +1736,78 @@ function supprimerEmploye(id) {
         .then(result => {
             if (result.success) {
                 alert('Employé supprimé avec succès !');
+                chargerEmployes();
+            } else {
+                alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            }
+        })
+        .catch(error => alert('❌ Erreur: ' + error));
+}
+
+// ⭐ Départ structuré — voir commentaire sur #departModal et
+// api_enregistrer_depart (routes/rh.py). compteUtilisateurId permet de
+// n'afficher la case "désactiver aussi le compte" que si l'employé en a
+// un lié.
+function ouvrirDepart(id, nom, compteUtilisateurId) {
+    document.getElementById('departEmployeId').value = id;
+    document.getElementById('departEmployeNom').textContent = nom;
+    document.getElementById('departDate').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('departMotif').value = '';
+    document.getElementById('departCommentaire').value = '';
+    document.getElementById('departDesactiverCompte').checked = false;
+
+    const wrapper = document.getElementById('departDesactiverCompteWrapper');
+    wrapper.style.display = compteUtilisateurId ? '' : 'none';
+
+    new bootstrap.Modal(document.getElementById('departModal')).show();
+}
+
+function confirmerDepart() {
+    const id = document.getElementById('departEmployeId').value;
+    const dateDepart = document.getElementById('departDate').value;
+    const motif = document.getElementById('departMotif').value;
+
+    if (!dateDepart || !motif) {
+        alert('Veuillez renseigner la date de départ et le motif.');
+        return;
+    }
+
+    fetch(`/rh/employe/${id}/depart`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            date_depart: dateDepart,
+            motif_depart: motif,
+            commentaire_depart: document.getElementById('departCommentaire').value.trim(),
+            desactiver_compte: document.getElementById('departDesactiverCompte').checked,
+        })
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            let msg = 'Départ enregistré.';
+            if (document.getElementById('departDesactiverCompte').checked) {
+                msg += result.compte_desactive ? ' Compte de connexion désactivé.' : ' ⚠️ Le compte de connexion n\'a pas pu être désactivé automatiquement (à faire manuellement dans Administration > Utilisateurs).';
+            }
+            alert(msg);
+            bootstrap.Modal.getInstance(document.getElementById('departModal')).hide();
+            chargerEmployes();
+        } else {
+            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('❌ Erreur: ' + error));
+}
+
+function reintegrerEmploye(id, nom) {
+    if (!confirm(`Réintégrer ${nom} ? Son statut repasse à Actif et la trace du départ précédent est effacée.`)) {
+        return;
+    }
+    fetch(`/rh/employe/${id}/reintegrer`, {method: 'POST'})
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                alert('Employé réintégré.');
                 chargerEmployes();
             } else {
                 alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
