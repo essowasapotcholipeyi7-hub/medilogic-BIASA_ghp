@@ -18839,21 +18839,59 @@ def historique_factures_amu():
                  'Septembre', 'Octobre', 'Novembre', 'Décembre']
     noms_type = {'cnss': 'AMU CNSS', 'tns': 'AMU TNS', 'inam': 'AMU INAM'}
 
+    # ⭐ Encaissement — patron : "qu'on puisse enregistrer les encaissements
+    # [...] et que ça suive exactement le même cheminement qu'avant : caissière
+    # ou secrétaire enregistre et ça vient en attente pour la validation,
+    # écriture comptable etc, la caisse qui s'augmente". Ce cheminement
+    # existe déjà en entier (factures_assurance + _demander_validation +
+    # /api/validations/<id>/valider + _executer_paiement_assurance) pour les
+    # factures générées par generer_factures_assurance() (Statistiques des
+    # ventes) — les ventes AMU y sont déjà agrégées par mois sous
+    # assurance='amu_cnss'/'amu_tns'/'amu_inam', type_assurance='principale'
+    # (confirmé en production). On se contente ici de RETROUVER la ligne
+    # factures_assurance correspondant à chaque facture recap AMU, pour
+    # réutiliser TEL QUEL le même bouton "Encaisser"/même endpoint que la
+    # page Factures assurances — aucune nouvelle logique de caisse/
+    # comptabilité, pour ne jamais diverger du chemin existant.
+    factures_assurance_rows = db.execute_query("""
+        SELECT id, mois_reference, assurance, montant_total, montant_rembourse, statut
+        FROM factures_assurance
+        WHERE structure_id = %s AND type_assurance = 'principale'
+          AND assurance IN ('amu_cnss', 'amu_tns', 'amu_inam')
+    """, (structure_id,))
+    fa_par_cle = {(row['mois_reference'], row['assurance']): row for row in (factures_assurance_rows or [])}
+
     lignes = []
     for f in factures:
         total = sum(float(l.get('montant') or 0) for l in (f.lignes or []))
+        mois_reference = f"{f.annee}-{f.mois:02d}"
+        fa = fa_par_cle.get((mois_reference, f"amu_{f.type_amu}"))
+        encaissement = None
+        if fa:
+            montant_total_fa = float(fa['montant_total'] or 0)
+            montant_rembourse_fa = float(fa['montant_rembourse'] or 0)
+            encaissement = {
+                'facture_assurance_id': fa['id'],
+                'montant_total': montant_total_fa,
+                'montant_rembourse': montant_rembourse_fa,
+                'reste': montant_total_fa - montant_rembourse_fa,
+                'statut': fa['statut'],
+            }
         lignes.append({
             'id': f.id,
             'type_amu': f.type_amu,
             'type_libelle': noms_type.get(f.type_amu, f.type_amu),
             'periode': f"{noms_mois[f.mois]} {f.annee}",
+            'mois_reference': mois_reference,
             'numero_affiche': formater_numero_facture_amu(f.numero_local, parametrage.sigle, f.annee) or '—',
             'total': total,
             'statut': f.statut,
             'date_depot': f.date_depot,
+            'encaissement': encaissement,
         })
 
-    return render_template('assurance_factures_amu_historique.html', factures=lignes)
+    peut_encaisser = session.get('role') in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable']
+    return render_template('assurance_factures_amu_historique.html', factures=lignes, peut_encaisser=peut_encaisser)
 
 
 @app.route('/facture/detail/<int:facture_id>')

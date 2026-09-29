@@ -19,6 +19,17 @@
             Toutes les factures recap AMU (CNSS, TNS, INAM) générées pour cette structure, quel que soit le mois —
             utile pour retrouver rapidement la facture qu'une assurance a réglée et encaissée à partir de son numéro.
         </p>
+        <!-- ⭐ L'encaissement enregistré ici suit EXACTEMENT le même
+             cheminement que la page "Factures assurances" (même bouton,
+             même endpoint /api/assurances/factures/<id>/payer) : demande
+             en attente, validée par l'admin, qui seul déclenche caisse +
+             écriture comptable. -->
+        <div class="alert alert-warning small">
+            <i class="fas fa-info-circle me-1"></i>
+            L'encaissement enregistré ici reste <strong>en attente de validation</strong> par l'administrateur
+            avant d'être réellement pris en compte (caisse, comptabilité) — même circuit que la page
+            <a href="{{ url_for('page_factures_assurances') if session.role in ['caissier','secretaire'] else url_for('statistiques_ventes') }}">Factures assurances</a>.
+        </div>
         <div class="mb-3">
             <input type="text" id="rechercheNumero" class="form-control" style="max-width:360px;"
                    placeholder="Rechercher par N° de facture, période, type...">
@@ -33,6 +44,7 @@
                         <th class="text-end">Montant total</th>
                         <th>Statut</th>
                         <th>Date de dépôt</th>
+                        <th>Encaissement</th>
                         <th class="text-end">Action</th>
                     </tr>
                 </thead>
@@ -51,6 +63,25 @@
                             {% endif %}
                         </td>
                         <td>{{ f.date_depot.strftime('%d/%m/%Y') if f.date_depot else '—' }}</td>
+                        <td>
+                            {% if not f.encaissement %}
+                            <span class="badge bg-secondary" title="Générez d'abord les factures assurance du mois depuis Statistiques des ventes.">
+                                Non générée
+                            </span>
+                            {% elif f.encaissement.statut == 'payee' %}
+                            <span class="badge bg-success">Payée</span>
+                            {% else %}
+                            <span class="badge {{ 'bg-info text-dark' if f.encaissement.statut == 'partielle' else 'bg-secondary' }}">
+                                Reste {{ '{:,.0f}'.format(f.encaissement.reste).replace(',', ' ') }} FCFA
+                            </span>
+                            {% if peut_encaisser %}
+                            <button type="button" class="btn btn-sm btn-success ms-1"
+                                    onclick="showPaiementModal({{ f.encaissement.facture_assurance_id }}, '{{ f.type_libelle }}', '{{ f.periode }}', {{ f.encaissement.montant_total }}, {{ f.encaissement.montant_rembourse }})">
+                                <i class="fas fa-cash-register"></i> Encaisser
+                            </button>
+                            {% endif %}
+                            {% endif %}
+                        </td>
                         <td class="text-end">
                             {% if f.type_amu == 'inam' %}
                             <a href="{{ url_for('imprimer_facture_amu_inam', facture_id=f.id) }}" class="btn btn-sm btn-outline-primary" target="_blank">
@@ -65,7 +96,7 @@
                     </tr>
                     {% else %}
                     <tr id="ligneAucuneFacture">
-                        <td colspan="7" class="text-center text-muted py-4">Aucune facture recap générée pour l'instant.</td>
+                        <td colspan="8" class="text-center text-muted py-4">Aucune facture recap générée pour l'instant.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -74,6 +105,61 @@
         <p id="aucunResultatRecherche" class="text-center text-muted py-3" style="display:none;">
             Aucune facture ne correspond à cette recherche.
         </p>
+    </div>
+</div>
+
+<!-- MODAL ENCAISSEMENT — identique à celui de assurances_factures.html,
+     même endpoint /api/assurances/factures/<id>/payer : on réutilise
+     exactement le même circuit (demande -> validation admin -> caisse +
+     comptabilité), rien de nouveau côté serveur pour l'encaissement. -->
+<div class="modal fade" id="paiementModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">Enregistrer un encaissement assurance</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="paiementForm">
+                    <input type="hidden" id="paiementFactureId">
+                    <div class="mb-3">
+                        <label class="form-label">Assurance</label>
+                        <input type="text" class="form-control" id="paiementAssurance" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Mois de référence</label>
+                        <input type="text" class="form-control" id="paiementMois" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Montant total de la facture</label>
+                        <input type="text" class="form-control" id="paiementTotal" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Déjà remboursé</label>
+                        <input type="text" class="form-control" id="paiementDeja" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Montant de l'encaissement (FCFA)</label>
+                        <input type="number" class="form-control" id="paiementMontant" required min="1">
+                        <small class="text-muted" id="paiementResteHint"></small>
+                    </div>
+                    <hr>
+                    <p class="text-muted small mb-2"><i class="fas fa-file-invoice me-1"></i>Pièces justificatives du versement (obligatoire, pour la traçabilité)</p>
+                    <div class="mb-3">
+                        <label class="form-label">N° de référence du versement</label>
+                        <input type="text" class="form-control" id="paiementReference" required placeholder="Ex: référence du virement bancaire">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date de versement</label>
+                        <input type="date" class="form-control" id="paiementDateVersement" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-success" id="btnValiderPaiement" onclick="enregistrerPaiement()">Valider l'encaissement</button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -89,6 +175,68 @@ document.getElementById('rechercheNumero').addEventListener('input', function() 
     });
     document.getElementById('aucunResultatRecherche').style.display = (lignes.length && visibles === 0) ? '' : 'none';
 });
+
+// ⭐ Copie conforme de showPaiementModal/enregistrerPaiement
+// (assurances_factures.html) — même modal, même endpoint.
+function showPaiementModal(id, assurance, mois, total, deja) {
+    document.getElementById('paiementFactureId').value = id;
+    document.getElementById('paiementAssurance').value = assurance;
+    document.getElementById('paiementMois').value = mois;
+    document.getElementById('paiementTotal').value = Math.round(total).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('paiementDeja').value = Math.round(deja).toLocaleString('fr-FR') + ' FCFA';
+    const reste = total - deja;
+    document.getElementById('paiementMontant').value = reste;
+    document.getElementById('paiementResteHint').innerHTML = `Reste: ${Math.round(reste).toLocaleString('fr-FR')} FCFA`;
+    document.getElementById('paiementReference').value = '';
+    document.getElementById('paiementDateVersement').value = '';
+    new bootstrap.Modal(document.getElementById('paiementModal')).show();
+}
+
+function enregistrerPaiement() {
+    const id = document.getElementById('paiementFactureId').value;
+    const montant = parseFloat(document.getElementById('paiementMontant').value);
+    const reference = document.getElementById('paiementReference').value.trim();
+    const dateVersement = document.getElementById('paiementDateVersement').value;
+
+    if (!montant || montant <= 0) {
+        alert('Montant valide requis');
+        return;
+    }
+    if (!reference || !dateVersement) {
+        alert('Le numéro de référence du versement et la date de versement sont obligatoires (pièces justificatives).');
+        return;
+    }
+
+    if (!confirm(`Envoyer la demande d'encaissement de ${Math.round(montant).toLocaleString('fr-FR')} FCFA ?`)) return;
+
+    const btn = document.getElementById('btnValiderPaiement');
+    btn.disabled = true;
+
+    fetch(`/api/assurances/factures/${id}/payer`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            montant: montant,
+            numero_reference_versement: reference,
+            date_versement: dateVersement
+        })
+    })
+    .then(r => r.json())
+    .then(result => {
+        btn.disabled = false;
+        if (result.success) {
+            alert(result.en_attente ? ('📨 ' + result.message) : '✅ Encaissement enregistré !');
+            bootstrap.Modal.getInstance(document.getElementById('paiementModal')).hide();
+            window.location.reload();
+        } else {
+            alert('❌ Erreur : ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => {
+        btn.disabled = false;
+        alert('❌ Erreur réseau : ' + error);
+    });
+}
 </script>
 
 {% endblock %}
