@@ -2265,6 +2265,16 @@
                     Labo/Radio/Hospi/Actes
                 </a>
                 {% endif %}
+                <!-- ⭐ Raccourci "Gestion des actes et stocks de produits" ici
+                     aussi — patron : "gestion des actes qui est déjà dans
+                     pharmacie il le faut aussi du côté acte" (déjà présent
+                     dans Pharmacie, même lien/condition, page gérant aussi
+                     bien les actes que le stock). -->
+                {% if not onglet_cache('pharmacie') and not _bloq %}
+                <a class="menu-item" href="{{ url_for('gestion_stock') }}">
+                    Gestion des actes et stocks de produits
+                </a>
+                {% endif %}
                 <!-- ⭐ Racourci "Ventes en attente" ici aussi — patron : "dans le
                      menu horizontal dans l'onglet soins actes vente ajoute
                      aussi le racourci de vente en attente la" (déjà présent
@@ -2278,6 +2288,14 @@
                 {% if not onglet_cache('hospitalisation') %}
                 <a class="menu-item" href="{{ url_for('page_hospitalisation') }}">
                     Hospitalisation (suivi de séjour)
+                </a>
+                {% endif %}
+                <!-- ⭐ Sous-onglet "Soins ambulatoires" — même patron/gate que
+                     sidebar_menu.html (onglet_cache('soins_ambulatoires')),
+                     manquait du menu horizontal. -->
+                {% if not onglet_cache('soins_ambulatoires') and not _bloq %}
+                <a class="menu-item" href="{{ url_for('page_soins_ambulatoires') }}">
+                    Soins ambulatoires
                 </a>
                 {% endif %}
                 {% if a_acces('prescriptions_recues') and not onglet_cache('prescriptions_recues') %}
