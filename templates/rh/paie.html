@@ -9,6 +9,9 @@
                 <div class="d-flex gap-2 align-items-center">
                     <select class="form-select form-select-sm" id="paieMois" style="width:auto"></select>
                     <select class="form-select form-select-sm" id="paieAnnee" style="width:auto"></select>
+                    <button class="btn btn-light btn-sm" id="btnGenererMasse" onclick="genererPaieMasse()" title="Génère un bulletin de base pour tous les employés actifs qui n'en ont pas encore ce mois-ci">
+                        <i class="fas fa-layer-group"></i> Générer pour tous
+                    </button>
                     <a href="{{ url_for('rh.page_declarations') }}" class="btn btn-light btn-sm">
                         <i class="fas fa-file-contract"></i> Déclarations mensuelles
                     </a>
@@ -409,6 +412,44 @@ function confirmerGenererPaie() {
         }
     })
     .catch(err => alert('Erreur: ' + err));
+}
+
+function genererPaieMasse() {
+    const annee = document.getElementById('paieAnnee').value;
+    const mois = document.getElementById('paieMois').value;
+    if (!confirm(`Générer un bulletin de base pour tous les employés actifs sans bulletin en ${MOIS_NOMS[mois - 1]} ${annee} ?\n\nLes bulletins déjà existants (brouillon, calculé ou payé) ne seront pas modifiés.`)) {
+        return;
+    }
+
+    const btn = document.getElementById('btnGenererMasse');
+    const texteOriginal = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Génération...';
+
+    fetch('/rh/api/paie/generer_masse', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ annee: parseInt(annee), mois: parseInt(mois) })
+    })
+    .then(r => r.json())
+    .then(result => {
+        btn.disabled = false;
+        btn.innerHTML = texteOriginal;
+        if (result.success) {
+            let msg = `${result.nouvelles} bulletin(s) généré(s).`;
+            if (result.deja_generees) msg += ` ${result.deja_generees} bulletin(s) déjà existant(s) non touché(s).`;
+            if (result.erreurs && result.erreurs.length) msg += `\n\nErreurs :\n- ${result.erreurs.join('\n- ')}`;
+            alert(msg);
+            chargerPaies();
+        } else {
+            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.innerHTML = texteOriginal;
+        alert('Erreur: ' + err);
+    });
 }
 
 function ouvrirPayerPaie(paieId) {

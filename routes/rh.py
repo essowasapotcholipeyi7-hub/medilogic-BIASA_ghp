@@ -1921,6 +1921,61 @@ def api_generer_paie(structure_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@rh_bp.route('/api/paie/generer_masse', methods=['POST'])
+@require_structure
+def api_generer_paie_masse(structure_id):
+    """⭐ Génération en masse — patron : "paie générée un employé à la
+    fois, pas de génération en masse". Génère un bulletin de base (salaire
+    stocké de l'employé, sans primes/indemnités/retenues ponctuelles) pour
+    chaque employé ACTIF qui n'a PAS ENCORE de bulletin sur la période —
+    réutilise generer_ou_maj_paie() (même logique/idempotence que la
+    génération un par un). Les employés ayant déjà un bulletin (brouillon,
+    calculé ou payé) ne sont JAMAIS touchés ici : un admin ayant déjà
+    saisi des primes/retenues individuelles ne doit pas les voir écrasées
+    silencieusement — pour ajuster un bulletin existant, "Recalculer" reste
+    le bon outil, un par un."""
+    if not session.get('is_admin'):
+        return jsonify({'success': False, 'error': 'Non autorisé'}), 403
+    try:
+        from services.paie_service import generer_ou_maj_paie
+        data = request.json or {}
+        annee = data.get('annee', datetime.now().year)
+        mois = data.get('mois', datetime.now().month)
+
+        employes = Employe.query.filter_by(structure_id=structure_id, statut='Actif').all()
+        deja_ids = {p.employe_id for p in Paie.query.filter_by(
+            structure_id=structure_id, annee=annee, mois=mois).all()}
+        a_generer = [e for e in employes if e.id not in deja_ids]
+
+        generees, erreurs = [], []
+        for employe in a_generer:
+            try:
+                paie, erreur = generer_ou_maj_paie(
+                    structure_id=structure_id, employe_id=employe.id,
+                    annee=annee, mois=mois,
+                    personnes_a_charge=employe.personnes_a_charge,
+                    user_nom=session.get('user_name', 'Admin'),
+                )
+                if erreur:
+                    erreurs.append(f"{employe.nom} {employe.prenom} : {erreur}")
+                else:
+                    generees.append(f"{employe.nom} {employe.prenom}")
+            except Exception as e_ind:
+                db.session.rollback()
+                erreurs.append(f"{employe.nom} {employe.prenom} : {e_ind}")
+
+        return jsonify({
+            'success': True,
+            'total_actifs': len(employes),
+            'deja_generees': len(deja_ids),
+            'nouvelles': len(generees),
+            'erreurs': erreurs,
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @rh_bp.route('/api/paie/<int:paie_id>', methods=['GET'])
 @require_structure
 def api_detail_paie(structure_id, paie_id):
