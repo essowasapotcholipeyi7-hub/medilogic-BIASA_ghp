@@ -13051,7 +13051,15 @@ def api_get_actes():
         
         sheet_name = f"struct_{structure_id}_actes"
         print(f"   Feuille: {sheet_name}")
-        
+
+        # ⭐ Part médecin (patron, 2026-09-30) : cette recherche alimente
+        # aussi bien actes_vente.html (déjà couvert via les <option> server-
+        # side) que hospitalisation_suivi.html/soins_ambulatoires_suivi.html
+        # (via ce JSON, aucune autre source pour eux) — sans ces deux champs
+        # ici, impossible d'y proposer le sélecteur "Réalisé par".
+        taux_part_medecin_par_acte = charger_taux_part_medecin(structure_id)
+        toujours_demander_medecin_par_acte = charger_toujours_demander_medecin(structure_id)
+
         try:
             worksheet = sheets_helper.spreadsheet.worksheet(sheet_name)
             actes = worksheet.get_all_records()
@@ -13163,7 +13171,9 @@ def api_get_actes():
                     'prise_en_charge_cac': prise_en_charge_cac,
                     'commentaire_cac': str(commentaire_cac),
                     'prise_en_charge_amu_tns': prise_en_charge_amu_tns,
-                    'statut': statut  # 🔥 NOUVEAU
+                    'statut': statut,  # 🔥 NOUVEAU
+                    'taux_medecin': taux_part_medecin_par_acte.get(str(acte_nom).strip()) or None,
+                    'medecin_obligatoire': bool(toujours_demander_medecin_par_acte.get(str(acte_nom).strip())),
                 })
         
         return jsonify({
@@ -16144,6 +16154,14 @@ def api_convertir_proforma():
                 # changement de comportement pour elle.
                 'date_prestation': a.get('date_prestation'),
                 'date_fin_prestation': a.get('date_fin_prestation'),
+                # ⭐ Part médecin (patron, 2026-09-30) : porté par les
+                # articles venant d'une hospitalisation/épisode ambulatoire
+                # (capturé au moment du soin) — absent (None) pour une
+                # proforma/vente directe classique, sans médecin attaché.
+                # Utilisé juste après la création de la vente pour générer
+                # la commission (voir creer_lignes_part_medecin plus bas).
+                'medecin_id': a.get('medecin_id'),
+                'medecin_nom': a.get('medecin_nom'),
             }
 
             # 🔥 AMU — ET seulement si le patient a réellement une
@@ -16334,6 +16352,20 @@ def api_convertir_proforma():
             )
         except Exception as e:
             print(f"⚠️ Erreur génération demande labo/radio (vente #{vente_id} conservée): {e}")
+
+        # ⭐ Part Médecin (patron, 2026-09-30) : même mécanisme que dans
+        # api_add_acte_vente() — crée une PrestationMedecin pour chaque
+        # article portant un medecin_id ET dont l'acte a un taux configuré.
+        # Couvre à la fois une proforma directe (medecin_id absent -> rien
+        # ne se passe, comportement inchangé) et une vente issue d'une
+        # hospitalisation/épisode ambulatoire (medecin_id capturé au moment
+        # du soin, voir api_ajouter_soin_hospitalisation/api_ajouter_ligne_
+        # soin_ambulatoire) — jusqu'ici la SEULE façon de facturer ces
+        # séjours, donc la part médecin n'y était jamais générée.
+        try:
+            creer_lignes_part_medecin(structure_id, articles_transformes, vente_id, user_name)
+        except Exception as e:
+            print(f"⚠️ Erreur génération part médecin (vente #{vente_id} conservée): {e}")
 
         if assurance2_active:
             upsert_societe_assurance(structure_id, assurance2_nom, societe_assurance2)
@@ -16960,11 +16992,23 @@ def page_hospitalisation_suivi(hospit_id):
 
     taux_tva = float(ParametrageTva.get_ou_creer(structure_id).taux or 0)
 
+    # ⭐ Part médecin (patron, 2026-09-30) : mêmes données que actes_vente()
+    # pour le sélecteur "Réalisé par" — voir taux_medecin/medecin_obligatoire
+    # posés sur chaque option du catalogue, plus bas dans ce même fichier.
+    taux_part_medecin_par_acte = charger_taux_part_medecin(structure_id)
+    toujours_demander_medecin_par_acte = charger_toujours_demander_medecin(structure_id)
+    medecins_actifs_hospit = Medecin.query.filter_by(structure_id=structure_id, actif=True).order_by(Medecin.nom).all()
+    medecins_liste = [{'id': m.id, 'nom_complet': m.get_nom_complet()} for m in medecins_actifs_hospit]
+    medecin_du_jour = medecin_du_jour_actuel(structure_id)
+
     return render_template('hospitalisation_suivi.html', hospit=hospit, soins=soins, solde_en_cours=solde_en_cours,
                             patient_a_amu=patient_a_amu, patient_a_cac=patient_a_cac, patient_amu_ep=patient_amu_ep,
                             repartition=repartition, ligne_chambre_projetee=ligne_chambre_projetee,
                             montant_pbr_defaut=montant_pbr_defaut, montant_pbr_alternatif=montant_pbr_alternatif,
-                            taux_tva=taux_tva)
+                            taux_tva=taux_tva,
+                            taux_part_medecin_par_acte=taux_part_medecin_par_acte,
+                            toujours_demander_medecin_par_acte=toujours_demander_medecin_par_acte,
+                            medecins_liste=medecins_liste, medecin_du_jour=medecin_du_jour)
 
 
 @app.route('/api/hospitalisation/<int:hospit_id>/assurance', methods=['POST'])
@@ -17150,6 +17194,25 @@ def api_ajouter_soin_hospitalisation(hospit_id):
         if hospit.date_entree and date_prestation < hospit.date_entree:
             return jsonify({'success': False, 'error': "La date du soin ne peut pas précéder la date d'entrée du séjour."}), 400
 
+        # ⭐ Part médecin (patron, 2026-09-30) : capturé ICI, au moment où le
+        # soin est réellement réalisé — pas à la facturation en fin de
+        # séjour, qui peut couvrir plusieurs médecins différents sur le
+        # même séjour. Optionnel côté serveur (un acte sans taux configuré
+        # n'a pas besoin de médecin) — le front-end exige le choix
+        # uniquement quand l'acte sélectionné a un taux (même logique que
+        # actes_vente.html). Revalidé contre un médecin réellement actif de
+        # CETTE structure, jamais fait confiance à l'aveugle à l'ID envoyé.
+        medecin_id = data.get('medecin_id')
+        medecin_nom = None
+        if medecin_id:
+            medecin = Medecin.query.filter_by(id=medecin_id, structure_id=structure_id, actif=True).first()
+            if not medecin:
+                return jsonify({'success': False, 'error': 'Médecin invalide ou inactif'}), 400
+            medecin_nom = medecin.get_nom_complet()
+            medecin_id = medecin.id
+        else:
+            medecin_id = None
+
         heure_prestation = None
         heure_str = data.get('heure_prestation')
         if heure_str:
@@ -17195,6 +17258,7 @@ def api_ajouter_soin_hospitalisation(hospit_id):
                 date_prestation=l['date_prestation'], heure_prestation=heure_prestation,
                 date_fin_prestation=l['date_fin_prestation'], note=note,
                 enregistre_par=user_name, statut='en_cours',
+                medecin_id=medecin_id, medecin_nom=medecin_nom,
             )
             db.session.add(soin)
             db.session.flush()
@@ -17420,6 +17484,11 @@ def api_facturer_hospitalisation(hospit_id):
                 'type': 'produit' if s.type == 'medicament' else 'acte',
                 'date_prestation': s.date_prestation.isoformat() if s.date_prestation else None,
                 'date_fin_prestation': s.date_fin_prestation.isoformat() if s.date_fin_prestation else None,
+                # ⭐ Part médecin (patron, 2026-09-30) : capturé au moment du
+                # soin (voir api_ajouter_soin_hospitalisation) — reporté ici
+                # tel quel pour que la conversion en vente
+                # (api_convertir_proforma) puisse générer la commission.
+                'medecin_id': s.medecin_id, 'medecin_nom': s.medecin_nom,
             })
 
         prise_en_charge = 0
@@ -17669,10 +17738,21 @@ def page_soins_ambulatoires_suivi(episode_id):
 
     taux_tva = float(ParametrageTva.get_ou_creer(structure_id).taux or 0)
 
+    # ⭐ Part médecin — même principe que hospitalisation_suivi() (voir son
+    # commentaire équivalent).
+    taux_part_medecin_par_acte = charger_taux_part_medecin(structure_id)
+    toujours_demander_medecin_par_acte = charger_toujours_demander_medecin(structure_id)
+    medecins_actifs_ambu = Medecin.query.filter_by(structure_id=structure_id, actif=True).order_by(Medecin.nom).all()
+    medecins_liste = [{'id': m.id, 'nom_complet': m.get_nom_complet()} for m in medecins_actifs_ambu]
+    medecin_du_jour = medecin_du_jour_actuel(structure_id)
+
     return render_template('soins_ambulatoires_suivi.html', episode=episode, lignes=lignes, solde_en_cours=solde_en_cours,
                             patient_a_amu=patient_a_amu, patient_a_cac=patient_a_cac,
                             repartition=repartition, montant_pbr_defaut=montant_pbr_defaut,
-                            montant_pbr_alternatif=montant_pbr_alternatif, taux_tva=taux_tva)
+                            montant_pbr_alternatif=montant_pbr_alternatif, taux_tva=taux_tva,
+                            taux_part_medecin_par_acte=taux_part_medecin_par_acte,
+                            toujours_demander_medecin_par_acte=toujours_demander_medecin_par_acte,
+                            medecins_liste=medecins_liste, medecin_du_jour=medecin_du_jour)
 
 
 @app.route('/api/soins-ambulatoires/<int:episode_id>/assurance', methods=['POST'])
@@ -17784,6 +17864,19 @@ def api_ajouter_ligne_soin_ambulatoire(episode_id):
         if episode.date_debut and date_prestation < episode.date_debut.date():
             return jsonify({'success': False, 'error': "La date du soin ne peut pas précéder la date de début de l'épisode."}), 400
 
+        # ⭐ Part médecin — même principe que api_ajouter_soin_hospitalisation
+        # (voir son commentaire) : capturé au moment du soin.
+        medecin_id = data.get('medecin_id')
+        medecin_nom = None
+        if medecin_id:
+            medecin = Medecin.query.filter_by(id=medecin_id, structure_id=structure_id, actif=True).first()
+            if not medecin:
+                return jsonify({'success': False, 'error': 'Médecin invalide ou inactif'}), 400
+            medecin_nom = medecin.get_nom_complet()
+            medecin_id = medecin.id
+        else:
+            medecin_id = None
+
         heure_prestation = None
         heure_str = data.get('heure_prestation')
         if heure_str:
@@ -17813,6 +17906,7 @@ def api_ajouter_ligne_soin_ambulatoire(episode_id):
             prise_en_charge_amu=prise_amu, prise_en_charge_cac=prise_cac,
             date_prestation=date_prestation, heure_prestation=heure_prestation, note=note,
             enregistre_par=user_name, statut='en_cours',
+            medecin_id=medecin_id, medecin_nom=medecin_nom,
         )
         db.session.add(ligne)
         db.session.commit()
@@ -17957,6 +18051,9 @@ def api_facturer_soins_ambulatoires(episode_id):
                 'prise_en_charge_amu': prise_amu, 'prise_en_charge_cac': prise_cac,
                 'type': 'produit' if l.type == 'medicament' else 'acte',
                 'date_prestation': l.date_prestation.isoformat() if l.date_prestation else None,
+                # ⭐ Part médecin — même principe que la facturation
+                # d'hospitalisation (voir son commentaire).
+                'medecin_id': l.medecin_id, 'medecin_nom': l.medecin_nom,
             })
 
         prise_en_charge = 0

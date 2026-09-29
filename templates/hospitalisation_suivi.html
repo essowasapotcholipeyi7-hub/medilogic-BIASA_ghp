@@ -347,6 +347,26 @@
                     <strong id="acteChoisiNom"></strong> — <span id="acteChoisiPrix"></span> FCFA
                     <span class="text-muted small">(PBR <span id="acteChoisiPbr"></span>)</span>
                 </div>
+                <!-- ⭐ Part médecin (patron, 2026-09-30) : "un médecin qui doit
+                prendre de pourcentage réalise une écho... on doit pouvoir
+                récupérer ça" — capturé ICI, au moment du soin (un séjour
+                dure plusieurs jours, plusieurs médecins peuvent intervenir),
+                pas à la facturation en fin de séjour. Même logique que
+                actes_vente.html : affiché seulement si l'acte choisi a un
+                taux configuré, pré-rempli avec le médecin du jour, toujours
+                changeable y compris vers "Aucun médecin". -->
+                <div class="col-12 mb-2" id="acteMedecinWrapper" style="display:none;">
+                    <label class="form-label text-warning small mb-0">
+                        <i class="fas fa-user-md me-1"></i>Réalisé par <span class="text-danger">*</span>
+                    </label>
+                    <select class="form-control form-control-sm" id="acteMedecinSelect">
+                        <option value="">-- Choisir --</option>
+                        <option value="aucun">Aucun médecin (pas de part médecin sur ce soin)</option>
+                        {% for medecin in medecins_liste %}
+                        <option value="{{ medecin.id }}">{{ medecin.nom_complet }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
                 <div class="row g-2">
                     <div class="col-4">
                         <label class="form-label small mb-0">Quantité / jours</label>
@@ -493,6 +513,9 @@ const CHAMBRE_TARIF_INITIALE = (CHAMBRE_TARIF_DATA && CHAMBRE_TARIF_DATA.dataset
 let acteChoisi = null;
 let produitChoisi = null;
 let debounceActe = null;
+// ⭐ Part médecin — voir choisirActe()/ajouterSoin() plus bas.
+const MEDECIN_JOUR_ID = {{ medecin_du_jour.id if medecin_du_jour else 'null' }};
+const MEDECIN_JOUR_NOM = {{ (medecin_du_jour.nom_complet if medecin_du_jour else '')|tojson|safe }};
 
 // ⭐ Champ Date volontairement laissé vide au chargement — il se
 // pré-remplissait avant à la date du jour, ce qui pouvait faire enregistrer
@@ -535,6 +558,20 @@ function choisirActe(a) {
     document.getElementById('acteChoisiBloc').style.display = '';
     document.getElementById('acteResultats').style.display = 'none';
     document.getElementById('acteSearch').value = a.nom;
+
+    // ⭐ Part médecin — voir MEDECIN_JOUR_ID plus haut. Pré-rempli avec le
+    // médecin du jour par défaut (sauf "toujours demander"), toujours
+    // changeable y compris vers "Aucun médecin".
+    const wrapper = document.getElementById('acteMedecinWrapper');
+    const medecinSelect = document.getElementById('acteMedecinSelect');
+    if (wrapper && medecinSelect) {
+        wrapper.style.display = a.taux_medecin ? '' : 'none';
+        if (a.taux_medecin) {
+            medecinSelect.value = (!a.medecin_obligatoire && MEDECIN_JOUR_ID) ? String(MEDECIN_JOUR_ID) : '';
+        } else {
+            medecinSelect.value = '';
+        }
+    }
     document.getElementById('btnAjouterActe').disabled = false;
 }
 
@@ -653,6 +690,21 @@ function ajouterSoin(type, confirmerDoublon) {
         }
     }
 
+    // ⭐ Part médecin (patron, 2026-09-30) : exige un choix explicite — un
+    // médecin précis, ou "Aucun médecin" — uniquement quand l'acte choisi a
+    // un taux configuré. Voir choisirActe() pour le pré-remplissage.
+    let medecinId = null;
+    if (type === 'acte' && choix.taux_medecin) {
+        const medecinSelect = document.getElementById('acteMedecinSelect');
+        const valeurChoisie = medecinSelect ? medecinSelect.value : '';
+        if (!valeurChoisie) {
+            alert(`Veuillez indiquer qui a réalisé "${choix.nom}" — un médecin, ou "Aucun médecin" si la part médecin ne doit pas s'appliquer à ce soin (taux de rétrocession configuré pour cet acte).`);
+            if (medecinSelect) medecinSelect.focus();
+            return;
+        }
+        medecinId = (valeurChoisie === 'aucun') ? null : valeurChoisie;
+    }
+
     const payload = {
         type: type,
         reference_id: choix.id,
@@ -665,6 +717,7 @@ function ajouterSoin(type, confirmerDoublon) {
         prise_en_charge_amu: choix.prise_en_charge_amu !== false,
         prise_en_charge_cac: choix.prise_en_charge_cac !== false,
         confirmer_doublon: !!confirmerDoublon,
+        medecin_id: medecinId,
     };
 
     fetch(`/api/hospitalisation/${HOSPIT_ID}/soins`, {

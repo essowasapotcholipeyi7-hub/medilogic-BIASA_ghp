@@ -153,11 +153,17 @@
                             <i class="fas fa-user-md me-1"></i>Réalisé par <span class="text-danger">*</span>
                         </label>
                         <select class="form-control" id="medecinRealisateurSelect">
-                            <option value="">-- Choisir le médecin réalisateur --</option>
+                            <option value="">-- Choisir --</option>
+                            <option value="aucun">Aucun médecin (pas de part médecin sur cette vente)</option>
                             {% for medecin in medecins_liste %}
                             <option value="{{ medecin.id }}">{{ medecin.nom_complet }}</option>
                             {% endfor %}
                         </select>
+                        <div class="form-text">
+                            Le médecin du jour est pré-rempli s'il est défini — changez-le ou choisissez
+                            "Aucun médecin" si la part médecin ne doit pas s'appliquer à cette vente
+                            précise (médecin absent ce jour, remplaçant qui ne prend pas de commission...).
+                        </div>
                     </div>
                     <div class="col-md-3">
                         <label class="form-label">Quantité</label>
@@ -929,26 +935,25 @@ function resetTauxPrincipalTemp() {
     }
 }
 
-// ⭐ Part Médecin : affiche le sélecteur "Réalisé par" dès que l'acte
-// sélectionné a un taux configuré, pour que le caissier le voie AVANT de
-// cliquer "Ajouter" (ajouterActe() re-vérifie de toute façon avant tout
-// ajout réel au panier).
 function toggleMedecinRealisateur() {
     const select = document.getElementById('acteSelect');
     const wrapper = document.getElementById('medecinRealisateurWrapper');
-    if (!select || !wrapper) return;
+    const medecinSelect = document.getElementById('medecinRealisateurSelect');
+    if (!select || !wrapper || !medecinSelect) return;
     const option = select.options[select.selectedIndex];
     const tauxMedecin = option ? option.getAttribute('data-taux-medecin') : '';
-    // ⭐ Médecin du jour : le sélecteur manuel n'est affiché que si l'acte a
-    // un taux configuré ET (l'acte est marqué "toujours demander", ex:
-    // infiltration, OU aucun médecin du jour n'est défini pour l'instant).
-    const obligatoire = option ? option.getAttribute('data-medecin-obligatoire') === 'true' : false;
-    const besoinSelecteurManuel = !!tauxMedecin && (obligatoire || !MEDECIN_JOUR_ID);
-    wrapper.style.display = besoinSelecteurManuel ? '' : 'none';
-    if (!besoinSelecteurManuel) {
-        const medecinSelect = document.getElementById('medecinRealisateurSelect');
-        if (medecinSelect) medecinSelect.value = '';
+    wrapper.style.display = tauxMedecin ? '' : 'none';
+    if (!tauxMedecin) {
+        medecinSelect.value = '';
+        return;
     }
+    // ⭐ "Toujours demander" (ex: infiltration) : un médecin différent du
+    // médecin du jour intervient souvent, donc on force un choix actif à
+    // chaque ajout plutôt que de pré-remplir. Sinon, pré-remplit avec le
+    // médecin du jour s'il est défini (le caissier peut toujours changer,
+    // y compris vers "Aucun médecin").
+    const obligatoire = option.getAttribute('data-medecin-obligatoire') === 'true';
+    medecinSelect.value = (!obligatoire && MEDECIN_JOUR_ID) ? MEDECIN_JOUR_ID : '';
 }
 
 // ⭐ Médecin du jour : défini/modifié/effacé depuis le bandeau en haut de
@@ -1022,30 +1027,35 @@ function ajouterActe() {
     }
 
     // ⭐ Part Médecin : cet acte a-t-il un taux de rétrocession configuré
-    // (voir data-taux-medecin, /taux-part-medecin) ? Si oui, le sélecteur
-    // "Réalisé par" devient obligatoire — patron : "un sélecteur médecin
-    // par ligne... obligatoire pour ces actes-là, invisible pour les
-    // autres". medecinId/medecinNom restent null pour tout le reste du
-    // catalogue (comportement inchangé).
+    // (voir data-taux-medecin, /taux-part-medecin) ? Si oui, un choix
+    // explicite est exigé — soit un médecin précis, soit "Aucun médecin"
+    // pour exclure cette vente-là de la part médecin (voir
+    // toggleMedecinRealisateur() : pré-rempli avec le médecin du jour par
+    // défaut, mais toujours changeable). medecinDecide distingue "un choix
+    // vient d'être fait maintenant" de "rien n'a changé" — nécessaire pour
+    // qu'ajouterActeAuPanier() sache si elle doit mettre à jour une ligne
+    // déjà présente au panier, y compris pour la ramener explicitement à
+    // "Aucun médecin". medecinId/medecinNom restent null pour tout le
+    // reste du catalogue (comportement inchangé).
     let medecinId = null;
     let medecinNom = null;
+    let medecinDecide = false;
     const tauxMedecinRaw = selectedOption.getAttribute('data-taux-medecin');
-    const medecinObligatoire = selectedOption.getAttribute('data-medecin-obligatoire') === 'true';
     if (tauxMedecinRaw) {
-        if (!medecinObligatoire && MEDECIN_JOUR_ID) {
-            // ⭐ Médecin du jour : auto-rempli, pas de prompt par ligne.
-            medecinId = MEDECIN_JOUR_ID;
-            medecinNom = MEDECIN_JOUR_NOM;
-        } else {
-            const medecinSelect = document.getElementById('medecinRealisateurSelect');
-            if (!medecinSelect || !medecinSelect.value) {
-                alert(`Veuillez indiquer quel médecin a réalisé "${acteNom}" (taux de rétrocession configuré pour cet acte).`);
-                if (medecinSelect) medecinSelect.focus();
-                return;
-            }
-            medecinId = medecinSelect.value;
+        const medecinSelect = document.getElementById('medecinRealisateurSelect');
+        const valeurChoisie = medecinSelect ? medecinSelect.value : '';
+        if (!valeurChoisie) {
+            alert(`Veuillez indiquer qui a réalisé "${acteNom}" — un médecin, ou "Aucun médecin" si la part médecin ne doit pas s'appliquer à cette vente (taux de rétrocession configuré pour cet acte).`);
+            if (medecinSelect) medecinSelect.focus();
+            return;
+        }
+        medecinDecide = true;
+        if (valeurChoisie !== 'aucun') {
+            medecinId = valeurChoisie;
             medecinNom = medecinSelect.options[medecinSelect.selectedIndex].textContent.trim();
         }
+        // valeurChoisie === 'aucun' -> medecinId/medecinNom restent null,
+        // c'est le choix explicite "pas de part médecin sur cette vente".
     }
 
     // ⭐ Lu tôt pour la résolution AMU-TNS ci-dessous (déclaré à nouveau,
@@ -1112,7 +1122,7 @@ function ajouterActe() {
     if (!isAMU && !isCAC) {
         ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,
                            priseEnChargeAMU, commentaireAMU, priseEnChargeCAC, commentaireCAC,
-                           medecinId, medecinNom);
+                           medecinId, medecinNom, medecinDecide);
         return;
     }
 
@@ -1188,13 +1198,13 @@ function ajouterActe() {
     // ✅ TOUT EST OK → AJOUT
     ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,
                        priseEnChargeAMU, commentaireAMU, priseEnChargeCAC, commentaireCAC,
-                       medecinId, medecinNom);
+                       medecinId, medecinNom, medecinDecide);
 }
 
 // 🔥 FONCTION POUR AJOUTER L'ACTE AU PANIER
 function ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,
                              priseEnChargeAMU, commentaireAMU, priseEnChargeCAC, commentaireCAC,
-                             medecinId, medecinNom) {
+                             medecinId, medecinNom, medecinDecide) {
     let existant = panier.find(item => item.id == acteId);
     if (existant) {
         existant.quantite += quantite;
@@ -1205,8 +1215,13 @@ function ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,
         existant.commentaire_amu = commentaireAMU;
         existant.commentaire_cac = commentaireCAC;
         // ⭐ Part Médecin : une ligne déjà au panier garde son réalisateur
-        // d'origine tant qu'on n'en choisit pas un nouveau explicitement.
-        if (medecinId) { existant.medecin_id = medecinId; existant.medecin_nom = medecinNom; }
+        // d'origine tant qu'un choix explicite n'est pas refait — y compris
+        // pour la ramener explicitement à "Aucun médecin" (medecinDecide
+        // distingue "un choix vient d'être fait" de "rien n'a changé" ;
+        // avant, un medecinId vide/null ne mettait jamais à jour la ligne,
+        // rendant "Aucun médecin" impossible à appliquer sur une ligne déjà
+        // au panier).
+        if (medecinDecide) { existant.medecin_id = medecinId; existant.medecin_nom = medecinNom; }
     } else {
         panier.push({
             id: acteId,
@@ -2724,6 +2739,16 @@ function soumettreVenteEnAttente() {
             quantite: item.quantite,
             prise_en_charge_amu: item.prise_en_charge_amu !== false,
             prise_en_charge_cac: item.prise_en_charge_cac !== false,
+            // ⭐ FIX (patron, 2026-09-30) : ces deux champs étaient absents
+            // ici, donc perdus dès la mise en attente — une vente finalisée
+            // ensuite depuis "ventes en attente" échappait TOUJOURS à la
+            // part médecin, sans que personne ne l'ait décidé (ni "Aucun
+            // médecin" explicite, ni un vrai oubli — juste une perte de
+            // données silencieuse). Le choix fait à l'admission (y compris
+            // "Aucun médecin", voir ajouterActe()) est maintenant conservé
+            // jusqu'à la finalisation.
+            medecin_id: item.medecin_id || null,
+            medecin_nom: item.medecin_nom || null,
         };
     });
 
@@ -2801,6 +2826,12 @@ if (VENTE_ATTENTE) {
         nom: a.nom, prix: a.prix, pbr: a.pbr, quantite: a.quantite,
         prise_en_charge_amu: a.prise_en_charge_amu !== false,
         prise_en_charge_cac: a.prise_en_charge_cac !== false,
+        // ⭐ FIX (patron, 2026-09-30) : voir le même commentaire dans
+        // soumettreVenteEnAttente() — reconstitue le choix médecin fait à
+        // l'admission (peut être null, dont l'explicite "Aucun médecin"),
+        // au lieu de le perdre silencieusement à la finalisation.
+        medecin_id: a.medecin_id || null,
+        medecin_nom: a.medecin_nom || null,
     }));
     // ⭐ Pas de resoumission possible d'une vente déjà en cours de
     // finalisation — seul "Finaliser la vente" a un sens ici.

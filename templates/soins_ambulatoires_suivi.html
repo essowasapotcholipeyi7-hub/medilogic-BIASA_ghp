@@ -269,6 +269,20 @@
                     <strong id="acteChoisiNom"></strong> — <span id="acteChoisiPrix"></span> FCFA
                     <span class="text-muted small">(PBR <span id="acteChoisiPbr"></span>)</span>
                 </div>
+                <!-- ⭐ Part médecin (patron, 2026-09-30) — même principe que
+                hospitalisation_suivi.html (voir son commentaire équivalent). -->
+                <div class="col-12 mb-2" id="acteMedecinWrapper" style="display:none;">
+                    <label class="form-label text-warning small mb-0">
+                        <i class="fas fa-user-md me-1"></i>Réalisé par <span class="text-danger">*</span>
+                    </label>
+                    <select class="form-control form-control-sm" id="acteMedecinSelect">
+                        <option value="">-- Choisir --</option>
+                        <option value="aucun">Aucun médecin (pas de part médecin sur ce soin)</option>
+                        {% for medecin in medecins_liste %}
+                        <option value="{{ medecin.id }}">{{ medecin.nom_complet }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
                 <div class="row g-2">
                     <div class="col-4">
                         <label class="form-label small mb-0">Quantité</label>
@@ -394,6 +408,9 @@ const DATE_DEBUT_EPISODE = document.getElementById('acteDate')?.min || null;
 let acteChoisi = null;
 let produitChoisi = null;
 let debounceActe = null;
+// ⭐ Part médecin — voir choisirActe()/ajouterLigne() plus bas.
+const MEDECIN_JOUR_ID = {{ medecin_du_jour.id if medecin_du_jour else 'null' }};
+const MEDECIN_JOUR_NOM = {{ (medecin_du_jour.nom_complet if medecin_du_jour else '')|tojson|safe }};
 
 const AUJOURD_HUI = new Date().toISOString().slice(0, 10);
 document.getElementById('acteDate') && (document.getElementById('acteDate').max = AUJOURD_HUI);
@@ -432,6 +449,18 @@ function choisirActe(a) {
     document.getElementById('acteResultats').style.display = 'none';
     document.getElementById('acteSearch').value = a.nom;
     document.getElementById('btnAjouterActe').disabled = false;
+
+    // ⭐ Part médecin — voir MEDECIN_JOUR_ID plus haut.
+    const wrapper = document.getElementById('acteMedecinWrapper');
+    const medecinSelect = document.getElementById('acteMedecinSelect');
+    if (wrapper && medecinSelect) {
+        wrapper.style.display = a.taux_medecin ? '' : 'none';
+        if (a.taux_medecin) {
+            medecinSelect.value = (!a.medecin_obligatoire && MEDECIN_JOUR_ID) ? String(MEDECIN_JOUR_ID) : '';
+        } else {
+            medecinSelect.value = '';
+        }
+    }
 }
 
 // ===================== RECHERCHE PRODUITS (médicaments) =====================
@@ -533,6 +562,20 @@ function ajouterLigne(type, confirmerDoublon) {
         }
     }
 
+    // ⭐ Part médecin (patron, 2026-09-30) — même logique que
+    // hospitalisation_suivi.html (voir son commentaire équivalent).
+    let medecinId = null;
+    if (type === 'acte' && choix.taux_medecin) {
+        const medecinSelect = document.getElementById('acteMedecinSelect');
+        const valeurChoisie = medecinSelect ? medecinSelect.value : '';
+        if (!valeurChoisie) {
+            alert(`Veuillez indiquer qui a réalisé "${choix.nom}" — un médecin, ou "Aucun médecin" si la part médecin ne doit pas s'appliquer à ce soin (taux de rétrocession configuré pour cet acte).`);
+            if (medecinSelect) medecinSelect.focus();
+            return;
+        }
+        medecinId = (valeurChoisie === 'aucun') ? null : valeurChoisie;
+    }
+
     const payload = {
         type: type,
         reference_id: choix.id,
@@ -545,6 +588,7 @@ function ajouterLigne(type, confirmerDoublon) {
         prise_en_charge_amu: choix.prise_en_charge_amu !== false,
         prise_en_charge_cac: choix.prise_en_charge_cac !== false,
         confirmer_doublon: !!confirmerDoublon,
+        medecin_id: medecinId,
     };
 
     fetch(`/api/soins-ambulatoires/${EPISODE_ID}/lignes`, {

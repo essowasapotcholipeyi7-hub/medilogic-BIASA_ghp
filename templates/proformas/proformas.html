@@ -1960,7 +1960,14 @@ function convertirEnVente(proformaId) {
                 prise_en_charge_amu: a.prise_en_charge_amu !== false,
                 prise_en_charge_cac: a.prise_en_charge_cac !== false,
                 date_prestation: a.date_prestation || null,
-                date_fin_prestation: a.date_fin_prestation || null
+                date_fin_prestation: a.date_fin_prestation || null,
+                // ⭐ Même bug, même correctif que date_prestation ci-dessus
+                // (patron, 2026-09-30) : la part médecin capturée au moment
+                // du soin (hospitalisation/ambulatoire) était silencieusement
+                // perdue ici — la vente créée à la conversion n'avait donc
+                // jamais de médecin attaché, même quand la proforma en avait un.
+                medecin_id: a.medecin_id || null,
+                medecin_nom: a.medecin_nom || null
             })) : [];
             
             console.log('📊 Panier conversion avec PBR:', panierConversion);
@@ -2943,7 +2950,12 @@ function finaliserConversionVente() {
         // deux champs ici, la vente perdait la date par article même quand
         // la proforma l'avait (signalé, constaté sur une vraie vente).
         date_prestation: item.date_prestation || null,
-        date_fin_prestation: item.date_fin_prestation || null
+        date_fin_prestation: item.date_fin_prestation || null,
+        // ⭐ Voir le même commentaire sur panierConversion plus haut — sans
+        // ces deux champs ici, la vente créée n'aurait jamais de médecin
+        // attaché, donc jamais de part médecin générée (patron, 2026-09-30).
+        medecin_id: item.medecin_id || null,
+        medecin_nom: item.medecin_nom || null
     }));
     
     // 🔥 Calculer les totaux avec les bonnes valeurs
