@@ -487,7 +487,8 @@ def api_creer_ecriture():
             statut='brouillon' if data.get('soumettre') != 'true' else 'en_attente',
             created_by=session.get('user_id'),
             created_by_nom=user_name,
-            commentaire=data.get('commentaire')
+            commentaire=data.get('commentaire'),
+            journal_code=data.get('journal_code') or None,
         )
         
         db.session.add(ecriture)
@@ -542,6 +543,8 @@ def api_get_ecriture(id):
             'date_ecriture': ecriture.date_ecriture.strftime('%Y-%m-%d') if ecriture.date_ecriture else '',
             'libelle': ecriture.libelle,
             'piece_justificative': ecriture.piece_justificative or '',
+            'journal_code': ecriture.journal_code or '',
+            'journal_label': ecriture.get_journal_label() if ecriture.journal_code else '',
             'statut': ecriture.statut,
             'statut_label': ecriture.get_statut_label(),
             'commentaire': ecriture.commentaire or '',
@@ -599,6 +602,7 @@ def api_modifier_ecriture(id):
         
         ecriture.date_ecriture = date_ecriture
         ecriture.libelle = data.get('libelle')
+        ecriture.journal_code = data.get('journal_code') or None
         ecriture.commentaire = data.get('commentaire')
         # Ne pas modifier le numero de piece
         
@@ -911,6 +915,37 @@ def api_liste_journaux():
     return jsonify([{'code': code, 'nom': nom} for code, nom in EcritureComptable.JOURNAUX.items()])
 
 
+@compta_bp.route('/api/rapports/exercices/liste')
+def api_liste_exercices():
+    """⭐ Sélecteur "Exercice" des rapports — porté depuis GHP (2026-09-30).
+    Retourne les années ayant au moins une écriture validée pour cette
+    structure, plus l'année civile en cours même si elle est encore vide."""
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return jsonify([])
+
+    from sqlalchemy import text
+    rows = db.session.execute(text("""
+        SELECT DISTINCT EXTRACT(YEAR FROM date_ecriture)::int AS annee
+        FROM ecritures_comptables
+        WHERE structure_id = :structure_id AND statut = 'valide'
+    """), {'structure_id': structure_id}).fetchall()
+
+    annee_courante = datetime.now().year
+    annees = {r.annee for r in rows}
+    annees.add(annee_courante)
+
+    def _libelle(a):
+        ecart = annee_courante - a
+        if ecart == 0:
+            return f"Exercice {a} (en cours)"
+        if ecart > 0:
+            return f"Exercice {a} (N-{ecart})"
+        return f"Exercice {a} (N+{-ecart})"
+
+    return jsonify([{'annee': a, 'libelle': _libelle(a)} for a in sorted(annees, reverse=True)])
+
+
 @compta_bp.route('/api/rapports/grand_livre')
 def api_grand_livre():
     structure_id = session.get('structure_id')
@@ -1098,6 +1133,86 @@ def generer_grand_livre(structure_id, date_debut, date_fin, compte_id=None, tier
     return lignes
 
 
+@compta_bp.route('/api/cloture-exercice/apercu')
+def api_cloture_exercice_apercu():
+    """Calcule (sans rien enregistrer) l'écriture de clôture des comptes
+    de gestion (classes 6/7 -> compte 12) pour une période — porté depuis
+    GHP (2026-09-30)."""
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return jsonify({'success': False, 'error': 'Structure non trouvée'}), 404
+
+    date_debut = parse_date(request.args.get('date_debut'))
+    date_fin = parse_date(request.args.get('date_fin'))
+    if not date_debut or not date_fin:
+        return jsonify({'success': False, 'error': 'Dates de début/fin invalides'}), 400
+
+    from services.comptabilite_service import previsualiser_cloture_exercice
+    apercu = previsualiser_cloture_exercice(structure_id, date_debut, date_fin)
+    return jsonify({'success': True, **apercu})
+
+
+@compta_bp.route('/api/cloture-exercice/generer', methods=['POST'])
+def api_cloture_exercice_generer():
+    """Génère (et valide immédiatement) l'écriture de clôture des comptes
+    de gestion — action volontaire, jamais automatique."""
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return jsonify({'success': False, 'error': 'Structure non trouvée'}), 404
+
+    data = request.json or {}
+    date_debut = parse_date(data.get('date_debut'))
+    date_fin = parse_date(data.get('date_fin'))
+    if not date_debut or not date_fin:
+        return jsonify({'success': False, 'error': 'Dates de début/fin invalides'}), 400
+
+    from services.comptabilite_service import generer_cloture_exercice
+    ecriture = generer_cloture_exercice(structure_id, date_debut, date_fin, user_nom=session.get('user_name', 'System'))
+    if not ecriture:
+        return jsonify({'success': False, 'error': "Rien à clôturer, ou une clôture existe déjà pour cet exercice."}), 400
+
+    return jsonify({'success': True, 'ecriture_id': ecriture.id, 'piece_justificative': ecriture.piece_justificative})
+
+
+@compta_bp.route('/api/report-a-nouveau/apercu')
+def api_report_a_nouveau_apercu():
+    """Calcule (sans rien enregistrer) ce que produirait la génération du
+    report à nouveau pour une date de clôture donnée — porté depuis GHP
+    (2026-09-30)."""
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return jsonify({'success': False, 'error': 'Structure non trouvée'}), 404
+
+    date_cloture = parse_date(request.args.get('date_cloture'))
+    if not date_cloture:
+        return jsonify({'success': False, 'error': 'Date de clôture invalide'}), 400
+
+    from services.comptabilite_service import previsualiser_report_a_nouveau
+    apercu = previsualiser_report_a_nouveau(structure_id, date_cloture)
+    return jsonify({'success': True, **apercu})
+
+
+@compta_bp.route('/api/report-a-nouveau/generer', methods=['POST'])
+def api_report_a_nouveau_generer():
+    """Génère (et valide immédiatement) l'écriture de report à nouveau —
+    action volontaire du comptable, jamais automatique/planifiée."""
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return jsonify({'success': False, 'error': 'Structure non trouvée'}), 404
+
+    data = request.json or {}
+    date_cloture = parse_date(data.get('date_cloture'))
+    if not date_cloture:
+        return jsonify({'success': False, 'error': 'Date de clôture invalide'}), 400
+
+    from services.comptabilite_service import generer_report_a_nouveau
+    ecriture = generer_report_a_nouveau(structure_id, date_cloture, user_nom=session.get('user_name', 'System'))
+    if not ecriture:
+        return jsonify({'success': False, 'error': "Rien à générer, ou un report à nouveau existe déjà pour cet exercice — voir les anomalies comptables pour le détail."}), 400
+
+    return jsonify({'success': True, 'ecriture_id': ecriture.id, 'piece_justificative': ecriture.piece_justificative})
+
+
 @compta_bp.route('/api/tiers')
 def api_liste_tiers():
     """Liste des tiers (clients/fournisseurs) ayant AU MOINS une écriture —
@@ -1177,41 +1292,49 @@ def api_auto_lettrer():
 
 
 def generer_balance(structure_id, date_debut, date_fin):
+    """⭐ Réécrit en une seule requête SQL agrégée — porté depuis GHP
+    (2026-09-30). La version précédente chargeait TOUTES les lignes JAMAIS
+    enregistrées de CHAQUE compte (compte.lignes, sans filtre SQL), y
+    compris hors période demandée, puis filtrait en Python + déclenchait
+    une requête séparée par ligne pour lire ligne.ecriture.statut (N+1),
+    avec un vrai risque de crash (AttributeError) sur une ligne orpheline
+    (ecriture_id pointant vers une écriture supprimée)."""
+    from sqlalchemy import text
+
     date_debut_obj = parse_date(date_debut) if date_debut else None
     date_fin_obj = parse_date(date_fin) if date_fin else None
-    
-    comptes = CompteComptable.query.filter_by(
-        structure_id=structure_id,
-        actif=True
-    ).order_by(CompteComptable.numero).all()
-    
+
+    rows = db.session.execute(text("""
+        SELECT c.numero AS compte_numero, c.nom AS compte_nom,
+               SUM(l.debit) AS total_debit,
+               SUM(l.credit) AS total_credit
+        FROM comptes_comptables c
+        JOIN lignes_ecritures l ON l.compte_id = c.id
+        JOIN ecritures_comptables e ON e.id = l.ecriture_id
+        WHERE c.structure_id = :structure_id AND c.actif = true
+          AND e.statut = 'valide'
+          AND (:date_debut IS NULL OR e.date_ecriture >= :date_debut)
+          AND (:date_fin IS NULL OR e.date_ecriture <= :date_fin)
+        GROUP BY c.id, c.numero, c.nom
+        HAVING SUM(l.debit) > 0 OR SUM(l.credit) > 0
+        ORDER BY c.numero
+    """), {
+        'structure_id': structure_id,
+        'date_debut': date_debut_obj.strftime('%Y-%m-%d') if date_debut_obj else None,
+        'date_fin': date_fin_obj.strftime('%Y-%m-%d') if date_fin_obj else None,
+    }).fetchall()
+
     result = []
-    for compte in comptes:
-        total_debit = 0
-        total_credit = 0
-        
-        for ligne in compte.lignes:
-            if ligne.ecriture.statut != 'valide':
-                continue
-            
-            if date_debut_obj and ligne.ecriture.date_ecriture < date_debut_obj:
-                continue
-            if date_fin_obj and ligne.ecriture.date_ecriture > date_fin_obj:
-                continue
-            
-            total_debit += float(ligne.debit) if ligne.debit else 0
-            total_credit += float(ligne.credit) if ligne.credit else 0
-        
-        solde = total_debit - total_credit
-        
-        if total_debit > 0 or total_credit > 0:
-            result.append({
-                'compte_numero': compte.numero,
-                'compte_nom': compte.nom,
-                'total_debit': total_debit,
-                'total_credit': total_credit,
-                'solde': solde
-            })
+    for row in rows:
+        total_debit = float(row.total_debit)
+        total_credit = float(row.total_credit)
+        result.append({
+            'compte_numero': row.compte_numero,
+            'compte_nom': row.compte_nom,
+            'total_debit': total_debit,
+            'total_credit': total_credit,
+            'solde': total_debit - total_credit,
+        })
 
     return result
 
@@ -2469,6 +2592,16 @@ def _csv_montant(m):
     return str(int(round(m))) if m else ''
 
 
+def _csv_date(d):
+    """Date à 6 chiffres JJMMAA, sans séparateur (ex: '2026-09-30' ->
+    '300926') — porté depuis GHP (2026-09-30). Distinct du FEC, qui doit
+    rester AAAAMMJJ (norme DGFiP, jamais à modifier)."""
+    s = '' if d is None else str(d)
+    if len(s) >= 10 and s[4] == '-' and s[7] == '-':
+        return f"{s[8:10]}{s[5:7]}{s[2:4]}"
+    return s
+
+
 @compta_bp.route('/rapport/export-txt/<type_rapport>')
 def export_rapport_txt(type_rapport):
     """Export tableur (.csv, séparateur ';') d'UN rapport à la fois, avec
@@ -2530,7 +2663,7 @@ def export_rapport_txt(type_rapport):
         total_d = total_c = 0
         for l in data:
             lignes_csv.append(';'.join([
-                _csv_champ(l['date']), _csv_champ(l['piece']), _csv_champ(l['libelle']), _csv_champ(l['journal_code']),
+                _csv_champ(_csv_date(l['date'])), _csv_champ(l['piece']), _csv_champ(l['libelle']), _csv_champ(l['journal_code']),
                 _csv_champ(l['compte_numero']), _csv_champ(l['compte_nom']), _csv_champ(l.get('tiers_nom')),
                 _csv_montant(l['debit']), _csv_montant(l['credit']),
             ]))
@@ -2548,7 +2681,7 @@ def export_rapport_txt(type_rapport):
         total_d = total_c = 0
         for l in data:
             ligne = [
-                _csv_champ(l['date']), _csv_champ(l['compte_numero']), _csv_champ(l['compte_nom']), _csv_champ(l.get('tiers_nom')),
+                _csv_champ(_csv_date(l['date'])), _csv_champ(l['compte_numero']), _csv_champ(l['compte_nom']), _csv_champ(l.get('tiers_nom')),
                 _csv_champ(l['piece']), _csv_champ(l['libelle']),
                 _csv_montant(l['debit']), _csv_montant(l['credit']), _csv_champ(l.get('lettre')),
             ]
@@ -2578,13 +2711,13 @@ def export_rapport_txt(type_rapport):
         lignes_csv.append(_csv_champ('TVA COLLECTÉE (ventes)'))
         lignes_csv.append(';'.join(_csv_champ(c) for c in ['Date', 'Pièce', 'Libellé', 'Montant']))
         for l in data['lignes']:
-            lignes_csv.append(';'.join([_csv_champ(l['date']), _csv_champ(l['piece']), _csv_champ(l['libelle']), _csv_montant(l['montant'])]))
+            lignes_csv.append(';'.join([_csv_champ(_csv_date(l['date'])), _csv_champ(l['piece']), _csv_champ(l['libelle']), _csv_montant(l['montant'])]))
         lignes_csv.append(';'.join([_csv_champ('TOTAL TVA COLLECTÉE'), '', '', _csv_montant(data['total_collectee'])]))
         lignes_csv.append('')
         lignes_csv.append(_csv_champ('TVA DÉDUCTIBLE (achats fournisseurs)'))
         lignes_csv.append(';'.join(_csv_champ(c) for c in ['Date', 'Pièce', 'Libellé', 'Montant']))
         for l in data.get('lignes_deductible', []):
-            lignes_csv.append(';'.join([_csv_champ(l['date']), _csv_champ(l['piece']), _csv_champ(l['libelle']), _csv_montant(l['montant'])]))
+            lignes_csv.append(';'.join([_csv_champ(_csv_date(l['date'])), _csv_champ(l['piece']), _csv_champ(l['libelle']), _csv_montant(l['montant'])]))
         lignes_csv.append(';'.join([_csv_champ('TOTAL TVA DÉDUCTIBLE'), '', '', _csv_montant(data['total_deductible'])]))
         lignes_csv.append('')
         lignes_csv.append(';'.join([_csv_champ('TVA NETTE À PAYER (collectée - déductible)'), '', '', _csv_montant(data['tva_nette'])]))

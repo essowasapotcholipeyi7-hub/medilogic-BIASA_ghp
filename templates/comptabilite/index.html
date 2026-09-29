@@ -381,9 +381,17 @@
                     <div class="tab-pane fade" id="ecritures" role="tabpanel">
                         <div class="d-flex justify-content-between align-items-center mb-3">
                             <h6><i class="fas fa-pen"></i> Écritures comptables</h6>
-                            <button class="btn btn-primary btn-sm" onclick="ouvrirNouvelleEcriture()">
-                                <i class="fas fa-plus"></i> Nouvelle écriture
-                            </button>
+                            <div>
+                                <button class="btn btn-outline-secondary btn-sm" onclick="ouvrirClotureExercice()">
+                                    <i class="fas fa-scale-balanced"></i> Clôture des comptes de gestion
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm" onclick="ouvrirReportANouveau()">
+                                    <i class="fas fa-forward"></i> Report à nouveau
+                                </button>
+                                <button class="btn btn-primary btn-sm" onclick="ouvrirNouvelleEcriture()">
+                                    <i class="fas fa-plus"></i> Nouvelle écriture
+                                </button>
+                            </div>
                         </div>
 
                         <div class="row mb-3">
@@ -451,14 +459,23 @@
                     <div class="tab-pane fade" id="rapports" role="tabpanel">
                         <h6><i class="fas fa-file-alt"></i> Rapports comptables</h6>
 
+                        <div class="row mb-2">
+                            <div class="col-md-3">
+                                <label class="form-label small">Exercice</label>
+                                <select class="form-control form-control-sm" id="rapportExercice" onchange="appliquerExerciceRapport()">
+                                    <option value="">— Dates personnalisées —</option>
+                                </select>
+                            </div>
+                        </div>
+
                         <div class="row mb-3">
                             <div class="col-md-3">
                                 <label class="form-label small">Date début</label>
-                                <input type="date" class="form-control form-control-sm" id="rapportDateDebut" onchange="chargerJournal()">
+                                <input type="date" class="form-control form-control-sm" id="rapportDateDebut" onchange="document.getElementById('rapportExercice').value=''; chargerJournal();">
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label small">Date fin</label>
-                                <input type="date" class="form-control form-control-sm" id="rapportDateFin" onchange="chargerJournal()">
+                                <input type="date" class="form-control form-control-sm" id="rapportDateFin" onchange="document.getElementById('rapportExercice').value=''; chargerJournal();">
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label small">Type</label>
@@ -1434,11 +1451,17 @@
                                 <i class="fas fa-info-circle"></i> Numéro auto-généré par année (ECR-2026-000001)
                             </div>
                         </div>
-                        <div class="col-md-3 mb-3">
+                        <div class="col-md-2 mb-3">
                             <label class="form-label">Date *</label>
                             <input type="date" class="form-control" id="ecritureDate" required>
                         </div>
-                        <div class="col-md-6 mb-3">
+                        <div class="col-md-2 mb-3">
+                            <label class="form-label">Journal</label>
+                            <select class="form-control" id="ecritureJournalCode">
+                                <option value="">—</option>
+                            </select>
+                        </div>
+                        <div class="col-md-5 mb-3">
                             <label class="form-label">Libellé *</label>
                             <input type="text" class="form-control" id="ecritureLibelle" required>
                         </div>
@@ -1489,6 +1512,87 @@
                 </button>
                 <button class="btn btn-success" onclick="sauvegarderEcriture(true)">
                     <i class="fas fa-paper-plane"></i> Soumettre
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Clôture des comptes de gestion -->
+<div class="modal fade" id="clotureExerciceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-scale-balanced"></i> Clôture des comptes de gestion</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">
+                    Ramène à zéro chaque compte de charge (6) et de produit (7) sur la période
+                    choisie, et loge la différence (produits − charges) au compte 12 — bénéfice
+                    (crédité) ou perte (débitée). Étape normale de fin d'exercice, et nécessaire
+                    pour que le report à nouveau s'équilibre sur les seuls comptes de bilan.
+                </p>
+                <div class="row g-3 align-items-end mb-3">
+                    <div class="col-md-3">
+                        <label class="form-label">Début de l'exercice *</label>
+                        <input type="date" class="form-control" id="clotureDateDebut">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Fin de l'exercice *</label>
+                        <input type="date" class="form-control" id="clotureDateFin">
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-outline-primary" onclick="previsualiserClotureExercice()">
+                            <i class="fas fa-eye"></i> Aperçu
+                        </button>
+                    </div>
+                </div>
+                <div id="clotureApercuZone"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                <button class="btn btn-success" id="clotureBtnGenerer" onclick="genererClotureExercice()" disabled>
+                    <i class="fas fa-check"></i> Confirmer et générer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Report à nouveau -->
+<div class="modal fade" id="reportANouveauModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-forward"></i> Report à nouveau — ouverture d'exercice</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">
+                    Reprend le solde de CHAQUE compte de bilan (capitaux, immobilisations, stocks,
+                    tiers, trésorerie) tel qu'il était à la date de clôture choisie, sur une écriture
+                    datée du lendemain — journal RAN. Chaque tiers (client, fournisseur, assurance)
+                    garde sa propre ligne. Les comptes de charges/produits ne sont jamais repris
+                    (ils repartent à zéro chaque exercice).
+                </p>
+                <div class="row g-3 align-items-end mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Date de clôture de l'exercice précédent *</label>
+                        <input type="date" class="form-control" id="ranDateCloture">
+                    </div>
+                    <div class="col-md-4">
+                        <button class="btn btn-outline-primary" onclick="previsualiserReportANouveau()">
+                            <i class="fas fa-eye"></i> Aperçu
+                        </button>
+                    </div>
+                </div>
+                <div id="ranApercuZone"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                <button class="btn btn-success" id="ranBtnGenerer" onclick="genererReportANouveau()" disabled>
+                    <i class="fas fa-check"></i> Confirmer et générer
                 </button>
             </div>
         </div>
@@ -2078,8 +2182,9 @@ function ouvrirNouvelleEcriture() {
     document.getElementById('ecritureModalTitle').textContent = 'Nouvelle écriture';
     document.getElementById('ecritureDate').value = new Date().toISOString().split('T')[0];
     document.getElementById('ecritureLibelle').value = '';
+    document.getElementById('ecritureJournalCode').value = '';
     document.getElementById('ecritureCommentaire').value = '';
-    
+
     // Générer le numéro de pièce automatiquement
     fetch('/comptabilite/api/sequence/next/ecriture')
         .then(response => response.json())
@@ -2110,6 +2215,7 @@ function modifierEcriture(id) {
             document.getElementById('ecritureDate').value = data.date_ecriture || '';
             document.getElementById('ecritureLibelle').value = data.libelle || '';
             document.getElementById('ecriturePiece').value = data.piece_justificative || '';
+            document.getElementById('ecritureJournalCode').value = data.journal_code || '';
             document.getElementById('ecritureCommentaire').value = data.commentaire || '';
             
             const tbody = document.getElementById('lignesBody');
@@ -2139,6 +2245,7 @@ function voirEcriture(id) {
                     <div class="col-md-6">
                         <p><strong>Date :</strong> ${data.date_ecriture || ''}</p>
                         <p><strong>Pièce :</strong> ${data.piece_justificative || '-'}</p>
+                        <p><strong>Journal :</strong> ${data.journal_label || '-'}</p>
                         <p><strong>Libellé :</strong> ${data.libelle || ''}</p>
                         <p><strong>Statut :</strong> <span class="badge bg-success">${data.statut_label || data.statut}</span></p>
                     </div>
@@ -2262,6 +2369,7 @@ function sauvegarderEcriture(soumettre) {
     const date = document.getElementById('ecritureDate').value;
     const libelle = document.getElementById('ecritureLibelle').value.trim();
     const piece = document.getElementById('ecriturePiece').value.trim();
+    const journalCode = document.getElementById('ecritureJournalCode').value;
     const commentaire = document.getElementById('ecritureCommentaire').value.trim();
     const ecritureId = document.getElementById('ecritureId').value;
     
@@ -2302,6 +2410,7 @@ function sauvegarderEcriture(soumettre) {
         date_ecriture: date,
         libelle: libelle,
         piece_justificative: piece,
+        journal_code: journalCode || null,
         commentaire: commentaire,
         lignes: lignes,
         soumettre: soumettre ? 'true' : 'false'
@@ -3270,18 +3379,42 @@ function enregistrerParametrageTva() {
 
 function initFiltresJournaux() {
     // Sélecteur des journaux auxiliaires (journal des ventes, caisse, banque...)
+    // — alimente aussi le sélecteur "Journal" du formulaire de saisie manuelle
+    // d'écriture (#ecritureJournalCode) : avant, une écriture manuelle
+    // n'avait jamais de journal (impossible d'y affecter le journal des
+    // opérations diverses/à-nouveaux — voir aussi le nouveau journal RAN).
     fetch('/comptabilite/api/rapports/journaux/liste')
         .then(r => r.json())
         .then(journaux => {
+            window._journauxDisponibles = journaux;
             const sel = document.getElementById('rapportJournalCode');
+            const selEcriture = document.getElementById('ecritureJournalCode');
             journaux.forEach(j => {
                 const opt = document.createElement('option');
                 opt.value = j.code;
                 opt.textContent = j.nom;
                 sel.appendChild(opt);
+                if (selEcriture) selEcriture.appendChild(opt.cloneNode(true));
             });
         })
         .catch(err => console.error('Erreur chargement journaux:', err));
+
+    // Sélecteur "Exercice" (raccourci N / N-1 / N-2...) — chaque rapport
+    // acceptait déjà n'importe quelle plage de dates, mais il fallait les
+    // taper à la main pour revoir un exercice antérieur ; demandé
+    // explicitement par le patron.
+    fetch('/comptabilite/api/rapports/exercices/liste')
+        .then(r => r.json())
+        .then(exercices => {
+            const sel = document.getElementById('rapportExercice');
+            exercices.forEach(ex => {
+                const opt = document.createElement('option');
+                opt.value = ex.annee;
+                opt.textContent = ex.libelle;
+                sel.appendChild(opt);
+            });
+        })
+        .catch(err => console.error('Erreur chargement exercices:', err));
 
     // Sélecteur "grand livre d'un seul compte" — réutilise la liste des comptes
     fetch('/comptabilite/api/comptes')
@@ -3308,12 +3441,188 @@ function initFiltresJournaux() {
                 const opt = document.createElement('option');
                 opt.value = t.tiers_id;
                 opt.dataset.tiersType = t.tiers_type;
-                const badge = t.tiers_type === 'fournisseur' ? 'Fournisseur' : 'Client';
+                // ⭐ 'assurance' ajouté (2026-09-29) — avant, ce badge ne
+                // connaissait que fournisseur/client, une compagnie
+                // d'assurance "hors liste" (voir _tiers_id_assurance,
+                // comptabilite_service.py) se serait affichée à tort
+                // comme "Client".
+                const badges = {fournisseur: 'Fournisseur', assurance: 'Assurance'};
+                const badge = badges[t.tiers_type] || 'Client';
                 opt.textContent = `${t.tiers_nom} (${badge})`;
                 sel.appendChild(opt);
             });
         })
         .catch(err => console.error('Erreur chargement tiers:', err));
+}
+
+function appliquerExerciceRapport() {
+    const annee = document.getElementById('rapportExercice').value;
+    if (!annee) return;
+    document.getElementById('rapportDateDebut').value = `${annee}-01-01`;
+    document.getElementById('rapportDateFin').value = `${annee}-12-31`;
+    chargerJournal();
+}
+
+// ============================================================
+// CLÔTURE DES COMPTES DE GESTION (fin d'exercice — journal OD)
+// ============================================================
+
+function ouvrirClotureExercice() {
+    document.getElementById('clotureDateDebut').value = '';
+    document.getElementById('clotureDateFin').value = '';
+    document.getElementById('clotureApercuZone').innerHTML = '';
+    document.getElementById('clotureBtnGenerer').disabled = true;
+    new bootstrap.Modal(document.getElementById('clotureExerciceModal')).show();
+}
+
+function previsualiserClotureExercice() {
+    const dateDebut = document.getElementById('clotureDateDebut').value;
+    const dateFin = document.getElementById('clotureDateFin').value;
+    const zone = document.getElementById('clotureApercuZone');
+    document.getElementById('clotureBtnGenerer').disabled = true;
+    if (!dateDebut || !dateFin) {
+        alert('Choisissez le début et la fin de l\'exercice à clôturer.');
+        return;
+    }
+    zone.innerHTML = '<p class="text-muted"><i class="fas fa-spinner fa-spin"></i> Calcul en cours...</p>';
+
+    fetch(`/comptabilite/api/cloture-exercice/apercu?date_debut=${encodeURIComponent(dateDebut)}&date_fin=${encodeURIComponent(dateFin)}`)
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success) {
+                zone.innerHTML = `<p class="text-danger">${d.error || 'Erreur'}</p>`;
+                return;
+            }
+            if (!d.lignes.length) {
+                zone.innerHTML = '<p class="text-muted">Aucune charge ni produit à clôturer sur cette période.</p>';
+                return;
+            }
+            const fmt = n => Math.round(n).toLocaleString('fr-FR');
+            const resultatLabel = d.resultat >= 0 ? 'Bénéfice' : 'Perte';
+            let html = `<p class="fw-bold ${d.resultat >= 0 ? 'text-success' : 'text-danger'}">${resultatLabel} de l'exercice : ${fmt(Math.abs(d.resultat))} FCFA</p>`;
+            html += `<div class="table-responsive"><table class="table table-sm table-bordered">
+                <thead class="table-light"><tr><th>Compte</th><th class="text-end">Débit</th><th class="text-end">Crédit</th></tr></thead><tbody>`;
+            d.lignes.forEach(l => {
+                html += `<tr>
+                    <td>${l.numero_compte} — ${l.libelle}</td>
+                    <td class="text-end">${l.debit ? fmt(l.debit) : ''}</td>
+                    <td class="text-end">${l.credit ? fmt(l.credit) : ''}</td>
+                </tr>`;
+            });
+            html += `</tbody><tfoot><tr class="fw-bold">
+                <td class="text-end">Totaux</td>
+                <td class="text-end">${fmt(d.total_debit)}</td>
+                <td class="text-end">${fmt(d.total_credit)}</td>
+            </tr></tfoot></table></div>`;
+            if (!d.equilibre) {
+                html = `<p class="text-danger"><i class="fas fa-exclamation-triangle"></i> Débit ≠ Crédit — signalé, ne pas générer tel quel.</p>` + html;
+            }
+            zone.innerHTML = html;
+            document.getElementById('clotureBtnGenerer').disabled = !d.equilibre;
+        })
+        .catch(() => { zone.innerHTML = '<p class="text-danger">Erreur réseau</p>'; });
+}
+
+function genererClotureExercice() {
+    const dateDebut = document.getElementById('clotureDateDebut').value;
+    const dateFin = document.getElementById('clotureDateFin').value;
+    if (!confirm(`Clôturer les comptes de charges/produits du ${dateDebut} au ${dateFin} ? Cette écriture sera immédiatement validée.`)) return;
+
+    fetch('/comptabilite/api/cloture-exercice/generer', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({date_debut: dateDebut, date_fin: dateFin})
+    })
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) {
+                alert(`Clôture des comptes de gestion générée (pièce ${d.piece_justificative}).`);
+                bootstrap.Modal.getInstance(document.getElementById('clotureExerciceModal')).hide();
+                chargerEcritures();
+            } else {
+                alert('Erreur : ' + d.error);
+            }
+        })
+        .catch(() => alert('Erreur réseau'));
+}
+
+// ============================================================
+// REPORT À NOUVEAU (ouverture d'exercice — journal RAN)
+// ============================================================
+
+function ouvrirReportANouveau() {
+    document.getElementById('ranDateCloture').value = '';
+    document.getElementById('ranApercuZone').innerHTML = '';
+    document.getElementById('ranBtnGenerer').disabled = true;
+    new bootstrap.Modal(document.getElementById('reportANouveauModal')).show();
+}
+
+function previsualiserReportANouveau() {
+    const dateCloture = document.getElementById('ranDateCloture').value;
+    const zone = document.getElementById('ranApercuZone');
+    document.getElementById('ranBtnGenerer').disabled = true;
+    if (!dateCloture) {
+        alert('Choisissez la date de clôture de l\'exercice précédent.');
+        return;
+    }
+    zone.innerHTML = '<p class="text-muted"><i class="fas fa-spinner fa-spin"></i> Calcul en cours...</p>';
+
+    fetch('/comptabilite/api/report-a-nouveau/apercu?date_cloture=' + encodeURIComponent(dateCloture))
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success) {
+                zone.innerHTML = `<p class="text-danger">${d.error || 'Erreur'}</p>`;
+                return;
+            }
+            if (!d.lignes.length) {
+                zone.innerHTML = '<p class="text-muted">Aucun solde de bilan à reporter à cette date.</p>';
+                return;
+            }
+            const fmt = n => Math.round(n).toLocaleString('fr-FR');
+            let html = `<div class="table-responsive"><table class="table table-sm table-bordered">
+                <thead class="table-light"><tr><th>Compte</th><th>Tiers</th><th class="text-end">Débit</th><th class="text-end">Crédit</th></tr></thead><tbody>`;
+            d.lignes.forEach(l => {
+                html += `<tr>
+                    <td>${l.numero_compte} — ${l.compte_nom}</td>
+                    <td>${l.tiers_nom || ''}</td>
+                    <td class="text-end">${l.debit ? fmt(l.debit) : ''}</td>
+                    <td class="text-end">${l.credit ? fmt(l.credit) : ''}</td>
+                </tr>`;
+            });
+            html += `</tbody><tfoot><tr class="fw-bold">
+                <td colspan="2" class="text-end">Totaux</td>
+                <td class="text-end">${fmt(d.total_debit)}</td>
+                <td class="text-end">${fmt(d.total_credit)}</td>
+            </tr></tfoot></table></div>`;
+            if (!d.equilibre) {
+                html = `<p class="text-danger"><i class="fas fa-exclamation-triangle"></i> Débit ≠ Crédit — signalé, ne pas générer tel quel.</p>` + html;
+            }
+            zone.innerHTML = html;
+            document.getElementById('ranBtnGenerer').disabled = !d.equilibre;
+        })
+        .catch(() => { zone.innerHTML = '<p class="text-danger">Erreur réseau</p>'; });
+}
+
+function genererReportANouveau() {
+    const dateCloture = document.getElementById('ranDateCloture').value;
+    if (!confirm(`Générer le report à nouveau au ${dateCloture} ? Cette écriture sera immédiatement validée.`)) return;
+
+    fetch('/comptabilite/api/report-a-nouveau/generer', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({date_cloture: dateCloture})
+    })
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) {
+                alert(`Report à nouveau généré (pièce ${d.piece_justificative}).`);
+                bootstrap.Modal.getInstance(document.getElementById('reportANouveauModal')).hide();
+                chargerEcritures();
+            } else {
+                alert('Erreur : ' + d.error);
+            }
+        })
+        .catch(() => alert('Erreur réseau'));
 }
 
 function chargerJournal(preserverMessageLettrage) {

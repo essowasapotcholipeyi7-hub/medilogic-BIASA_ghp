@@ -169,6 +169,12 @@ COMPTE_CLIENTS_PATIENTS = '41110000'
 # Compte d'attente pour écarts non résolus automatiquement
 COMPTE_ATTENTE = '47130000'
 
+# Résultat net de l'exercice — voir generer_cloture_exercice()
+# (comptabilite_service.py) : bénéfice (crédité) si les produits (classe 7)
+# dépassent les charges (classe 6) sur la période, perte (débitée) sinon.
+COMPTE_RESULTAT_BENEFICE = '12000000'
+COMPTE_RESULTAT_PERTE = '12900000'
+
 # Compte fournisseurs par défaut (dettes courantes — achats à crédit).
 # Un seul compte partagé pour tous les fournisseurs, comme COMPTE_CLIENTS_PATIENTS
 # côté clients : le détail par fournisseur (qui doit quoi) est suivi au niveau

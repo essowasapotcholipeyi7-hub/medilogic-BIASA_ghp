@@ -40,6 +40,7 @@ from utils.plan_comptable_syscohada import (
     COMPTE_PERTE_CREANCE_IRRECOUVRABLE, COMPTE_CREANCE_ABANDONNEE,
     COMPTE_DOTATION_AMORTISSEMENT, compte_charge_pour_motif,
     COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE,
+    COMPTE_RESULTAT_BENEFICE, COMPTE_RESULTAT_PERTE,
 )
 from utils.categorisation import categoriser_acte
 
@@ -251,6 +252,28 @@ def _nom_assurance(vente, principale=True):
             return bloc['nom']
 
     return None
+
+
+def _tiers_id_assurance(nom_assurance):
+    """⭐ ID de tiers stable pour une compagnie d'assurance — porté depuis
+    GHP (2026-09-30). Les 7 compagnies nommées (SUNU, GTA, FIDELIA, NSIA,
+    GCA, C2A, OLEA + les 3 branches AMU) ont chacune leur propre compte
+    dédié dans le plan comptable, donc déjà distinguables par numéro de
+    compte seul — mais TOUTE AUTRE compagnie retombe sur le même compte
+    fourre-tout 41122800 (compte_assurance, utils/plan_comptable_syscohada.py),
+    où plusieurs compagnies "hors liste" différentes se mélangeaient sans
+    aucun moyen de les distinguer ni de les lettrer.
+
+    Pas de table "Assurance" en base — CRC32 du nom normalisé donne un
+    entier STABLE (même compagnie -> même id, y compris après un
+    redémarrage) — jamais hash() natif Python, randomisé par process.
+    Masqué sur 31 bits pour tenir dans LigneEcriture.tiers_id (INTEGER
+    signé)."""
+    import zlib
+    cle = str(nom_assurance or '').strip().lower()
+    if not cle:
+        return None
+    return zlib.crc32(cle.encode('utf-8')) & 0x7FFFFFFF
 
 
 def _compte_tresorerie(mode_paiement):
@@ -520,7 +543,9 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
             compte_num = compte_assurance(nom_assurance)
             lignes.append({'numero_compte': compte_num,
                             'libelle': f"Tiers-payant à recevoir ({nom_assurance or 'assurance'})",
-                            'debit': prise_en_charge})
+                            'debit': prise_en_charge,
+                            'tiers_type': 'assurance', 'tiers_id': _tiers_id_assurance(nom_assurance),
+                            'tiers_nom': nom_assurance})
             total_debit += prise_en_charge
 
         if prise_en_charge2 > 0:
@@ -535,7 +560,9 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
             libelle_assurance2 += f" — {societe})" if societe else ")"
             lignes.append({'numero_compte': compte_num2,
                             'libelle': libelle_assurance2,
-                            'debit': prise_en_charge2})
+                            'debit': prise_en_charge2,
+                            'tiers_type': 'assurance', 'tiers_id': _tiers_id_assurance(nom_assurance2),
+                            'tiers_nom': nom_assurance2})
             total_debit += prise_en_charge2
 
         if reste_a_payer > 0.5:
@@ -661,7 +688,7 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
                  'libelle': f"Encaissement vente — {vente.patient_nom}", 'credit': montant_effectif,
                  'tiers_type': 'patient', 'tiers_id': vente.patient_id, 'tiers_nom': vente.patient_nom},
             ]
-            journal_encaissement = 'CAI' if _compte_tresorerie(vente.mode_paiement) == COMPTE_CAISSE else 'BQ'
+            journal_encaissement = 'CAI' if _compte_tresorerie(vente.mode_paiement) == COMPTE_CAISSE else 'BQU'
             ecriture_encaissement = creer_ecriture(
                 structure_id=structure_id,
                 date_ecriture=(vente.date_vente.date() if vente.date_vente else datetime.utcnow().date()),
@@ -764,7 +791,7 @@ def generer_ecriture_paiement_facture(paiement, facture, user_nom='SYSTEME'):
             date_ecriture=(paiement.date_paiement.date() if paiement.date_paiement else datetime.utcnow().date()),
             libelle=f"Règlement facture {facture.numero_facture} — {facture.patient_nom}",
             lignes=lignes,
-            journal_code='CAI' if _compte_tresorerie(paiement.mode_paiement) == COMPTE_CAISSE else 'BQ',
+            journal_code='CAI' if _compte_tresorerie(paiement.mode_paiement) == COMPTE_CAISSE else 'BQU',
             piece_justificative=f"PAI-{paiement.id}",
             auto=True,
             source_type='paiement_facture',
@@ -803,7 +830,8 @@ def generer_ecriture_remboursement_assurance(montant, assurance_nom, structure_i
         date_txt = f" du {date_versement}" if date_versement else ""
         lignes = [
             {'numero_compte': COMPTE_BANQUE, 'libelle': f"Virement {assurance_nom}{ref_txt}{date_txt}", 'debit': montant},
-            {'numero_compte': compte_num, 'libelle': f"Solde tiers-payant {assurance_nom}{ref_txt}", 'credit': montant},
+            {'numero_compte': compte_num, 'libelle': f"Solde tiers-payant {assurance_nom}{ref_txt}", 'credit': montant,
+             'tiers_type': 'assurance', 'tiers_id': _tiers_id_assurance(assurance_nom), 'tiers_nom': assurance_nom},
         ]
 
         commentaire = None
@@ -817,7 +845,7 @@ def generer_ecriture_remboursement_assurance(montant, assurance_nom, structure_i
             date_ecriture=datetime.utcnow().date(),
             libelle=f"Remboursement assurance {assurance_nom} — {reference}{ref_txt}",
             lignes=lignes,
-            journal_code='BQ',
+            journal_code='BQU',
             piece_justificative=f"ASS-{source_id}",
             auto=True,
             source_type='paiement_assurance',
@@ -1006,7 +1034,7 @@ def generer_ecriture_reglement_fournisseur(reglement, achat, user_nom='SYSTEME')
             # banque) — l'achat lui-même (charge + dette) reste dans ACH,
             # séparément (voir generer_ecriture_achat_fournisseur). Un
             # règlement espèces va donc en CAI, un règlement banque en BQ.
-            journal_code='CAI' if _compte_tresorerie(reglement.mode_paiement) == COMPTE_CAISSE else 'BQ',
+            journal_code='CAI' if _compte_tresorerie(reglement.mode_paiement) == COMPTE_CAISSE else 'BQU',
             piece_justificative=f"REG-FRS-{reglement.id}",
             auto=True,
             source_type='reglement_fournisseur',
@@ -1153,7 +1181,7 @@ def generer_ecriture_paie(paie, employe, user_nom='SYSTEME'):
                 {'numero_compte': _compte_tresorerie(paie.mode_paiement),
                  'libelle': f"Paiement salaire — {employe.nom} {employe.prenom}", 'credit': net},
             ]
-            journal_paiement = 'CAI' if _compte_tresorerie(paie.mode_paiement) == COMPTE_CAISSE else 'BQ'
+            journal_paiement = 'CAI' if _compte_tresorerie(paie.mode_paiement) == COMPTE_CAISSE else 'BQU'
             ecriture_paiement = creer_ecriture(
                 structure_id=paie.structure_id,
                 date_ecriture=(paie.date_paiement or datetime.utcnow().date()),
@@ -1178,6 +1206,216 @@ def generer_ecriture_paie(paie, employe, user_nom='SYSTEME'):
         print(f"❌ [comptabilite_service] Erreur generer_ecriture_paie: {e}")
         _log_anomalie(getattr(paie, 'structure_id', None), 'paie',
                       getattr(paie, 'id', None), f"Échec génération écriture de paie: {e}")
+        return None
+
+
+# ============================================================
+# CLÔTURE DES COMPTES DE GESTION (fin d'exercice) — journal OD
+# ============================================================
+# Porté depuis GHP (2026-09-30). Prérequis pour que le report à nouveau
+# s'équilibre sur les comptes de bilan seuls : le résultat net (produits
+# classe 7 moins charges classe 6) doit d'abord être visible au compte 12.
+# Chaque compte de charge/produit reprend un solde inverse qui le ramène à
+# zéro, et la différence (produits - charges) est logée au compte 12 — 120
+# (bénéfice, crédité) ou 129 (perte, débitée).
+
+def previsualiser_cloture_exercice(structure_id, date_debut, date_fin):
+    """Calcule (sans rien persister) l'écriture de clôture des comptes de
+    gestion pour la période [date_debut, date_fin] — un compte par ligne
+    (charge ou produit), plus la ligne de résultat (12 ou 129). Retourne
+    aussi 'resultat' (positif = bénéfice, négatif = perte) pour l'écran de
+    confirmation."""
+    from sqlalchemy import text
+
+    rows = db.session.execute(text("""
+        SELECT c.numero AS compte_numero, c.nom AS compte_nom,
+               SUM(l.debit - l.credit) AS solde
+        FROM lignes_ecritures l
+        JOIN ecritures_comptables e ON e.id = l.ecriture_id
+        JOIN comptes_comptables c ON c.id = l.compte_id
+        WHERE e.structure_id = :structure_id
+          AND e.statut = 'valide'
+          AND e.date_ecriture >= :date_debut
+          AND e.date_ecriture <= :date_fin
+          AND LEFT(c.numero, 1) IN ('6', '7')
+        GROUP BY c.id, c.numero, c.nom
+        HAVING ABS(SUM(l.debit - l.credit)) > 0.5
+        ORDER BY c.numero
+    """), {'structure_id': structure_id, 'date_debut': date_debut, 'date_fin': date_fin}).fetchall()
+
+    lignes = []
+    resultat = 0.0
+    for row in rows:
+        solde = _to_float(row.solde)
+        resultat -= solde
+        if solde > 0:
+            lignes.append({'numero_compte': row.compte_numero,
+                            'libelle': f"Clôture exercice — {row.compte_nom}",
+                            'credit': round(solde, 2)})
+        else:
+            lignes.append({'numero_compte': row.compte_numero,
+                            'libelle': f"Clôture exercice — {row.compte_nom}",
+                            'debit': round(-solde, 2)})
+
+    resultat = round(resultat, 2)
+    if abs(resultat) > 0.5:
+        if resultat > 0:
+            lignes.append({'numero_compte': COMPTE_RESULTAT_BENEFICE,
+                            'libelle': "Résultat net de l'exercice (bénéfice)",
+                            'credit': resultat})
+        else:
+            lignes.append({'numero_compte': COMPTE_RESULTAT_PERTE,
+                            'libelle': "Résultat net de l'exercice (perte)",
+                            'debit': -resultat})
+
+    total_debit = round(sum(l.get('debit', 0) for l in lignes), 2)
+    total_credit = round(sum(l.get('credit', 0) for l in lignes), 2)
+    return {
+        'lignes': lignes,
+        'resultat': resultat,
+        'total_debit': total_debit,
+        'total_credit': total_credit,
+        'equilibre': abs(round(total_debit) - round(total_credit)) <= 1,
+    }
+
+
+def generer_cloture_exercice(structure_id, date_debut, date_fin, user_nom='SYSTEME'):
+    """Génère (et VALIDE immédiatement) l'écriture de clôture des comptes
+    de gestion — refuse de dupliquer : une seule clôture par (structure,
+    année de date_fin)."""
+    try:
+        piece = f"CLOTURE-{date_fin.year}"
+        deja_existante = EcritureComptable.query.filter_by(
+            structure_id=structure_id, piece_justificative=piece
+        ).first()
+        if deja_existante:
+            message = f"Clôture des comptes de gestion {date_fin.year} déjà générée (écriture #{deja_existante.id})."
+            print(f"⚠️ [comptabilite_service] {message}")
+            return None
+
+        apercu = previsualiser_cloture_exercice(structure_id, date_debut, date_fin)
+        if not apercu['lignes']:
+            print(f"ℹ️ [comptabilite_service] Clôture exercice : rien à clôturer pour la structure {structure_id} sur {date_debut}–{date_fin}.")
+            return None
+
+        return creer_ecriture(
+            structure_id=structure_id,
+            date_ecriture=date_fin,
+            libelle=f"Clôture des comptes de gestion — exercice {date_fin.year}",
+            lignes=apercu['lignes'],
+            journal_code='OD',
+            piece_justificative=piece,
+            auto=True,
+            source_type='cloture_exercice',
+            source_id=None,
+            user_nom=user_nom,
+        )
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ [comptabilite_service] Erreur generer_cloture_exercice: {e}")
+        _log_anomalie(structure_id, 'cloture_exercice', None, f"Échec génération de la clôture d'exercice: {e}")
+        return None
+
+
+# ============================================================
+# REPORT À NOUVEAU (OUVERTURE D'EXERCICE) — journal RAN
+# ============================================================
+# Porté depuis GHP (2026-09-30). Principe SYSCOHADA : chaque compte de
+# BILAN (classes 1-5) reprend son solde de clôture tel quel, sur une
+# écriture datée du lendemain, journal RAN. Un compte de tiers n'est PAS
+# reporté en bloc — chaque tiers (client, fournisseur, assurance) garde sa
+# propre ligne avec son propre solde.
+
+def previsualiser_report_a_nouveau(structure_id, date_cloture):
+    """Calcule ce que produirait generer_report_a_nouveau() SANS rien
+    persister."""
+    from sqlalchemy import text
+
+    rows = db.session.execute(text("""
+        SELECT
+            c.id AS compte_id, c.numero AS compte_numero, c.nom AS compte_nom,
+            l.tiers_type, l.tiers_id, l.tiers_nom,
+            SUM(l.debit - l.credit) AS solde
+        FROM lignes_ecritures l
+        JOIN ecritures_comptables e ON e.id = l.ecriture_id
+        JOIN comptes_comptables c ON c.id = l.compte_id
+        WHERE e.structure_id = :structure_id
+          AND e.statut = 'valide'
+          AND e.date_ecriture <= :date_cloture
+          AND LEFT(c.numero, 1) IN ('1', '2', '3', '4', '5')
+        GROUP BY c.id, c.numero, c.nom, l.tiers_type, l.tiers_id, l.tiers_nom
+        HAVING ABS(SUM(l.debit - l.credit)) > 0.5
+        ORDER BY c.numero, l.tiers_nom
+    """), {'structure_id': structure_id, 'date_cloture': date_cloture}).fetchall()
+
+    lignes = []
+    total_debit = 0.0
+    total_credit = 0.0
+    for row in rows:
+        solde = _to_float(row.solde)
+        debit = round(solde, 2) if solde > 0 else 0
+        credit = round(-solde, 2) if solde < 0 else 0
+        total_debit += debit
+        total_credit += credit
+        libelle_tiers = f" — {row.tiers_nom}" if row.tiers_nom else ""
+        lignes.append({
+            'numero_compte': row.compte_numero,
+            'compte_nom': row.compte_nom,
+            'libelle': f"À nouveau — {row.compte_nom}{libelle_tiers}",
+            'debit': debit,
+            'credit': credit,
+            'tiers_type': row.tiers_type,
+            'tiers_id': row.tiers_id,
+            'tiers_nom': row.tiers_nom,
+        })
+
+    return {
+        'lignes': lignes,
+        'total_debit': round(total_debit, 2),
+        'total_credit': round(total_credit, 2),
+        'equilibre': abs(round(total_debit) - round(total_credit)) <= 1,
+    }
+
+
+def generer_report_a_nouveau(structure_id, date_cloture, date_ouverture=None, user_nom='SYSTEME'):
+    """Génère (et VALIDE immédiatement) l'écriture de report à nouveau.
+    Refuse de dupliquer : une seule écriture RAN par (structure, date
+    d'ouverture)."""
+    try:
+        if date_ouverture is None:
+            date_ouverture = date_cloture + timedelta(days=1)
+
+        piece = f"RAN-{date_ouverture.year}"
+        deja_existante = EcritureComptable.query.filter_by(
+            structure_id=structure_id, journal_code='RAN', piece_justificative=piece
+        ).first()
+        if deja_existante:
+            message = f"Report à nouveau {date_ouverture.year} déjà généré (écriture #{deja_existante.id})."
+            print(f"⚠️ [comptabilite_service] {message}")
+            return None
+
+        apercu = previsualiser_report_a_nouveau(structure_id, date_cloture)
+        if not apercu['lignes']:
+            print(f"ℹ️ [comptabilite_service] Report à nouveau : rien à reporter pour la structure {structure_id} au {date_cloture}.")
+            return None
+
+        ecriture = creer_ecriture(
+            structure_id=structure_id,
+            date_ecriture=date_ouverture,
+            libelle=f"Report à nouveau — ouverture exercice {date_ouverture.year}",
+            lignes=apercu['lignes'],
+            journal_code='RAN',
+            piece_justificative=piece,
+            auto=True,
+            source_type='report_a_nouveau',
+            source_id=None,
+            user_nom=user_nom,
+        )
+        return ecriture
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ [comptabilite_service] Erreur generer_report_a_nouveau: {e}")
+        _log_anomalie(structure_id, 'report_a_nouveau', None, f"Échec génération du report à nouveau: {e}")
         return None
 
 

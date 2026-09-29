@@ -272,6 +272,13 @@ class Employe(db.Model):
     numero_poste = db.Column(db.String(20))
     date_embauche = db.Column(db.Date, nullable=False)
     type_contrat = db.Column(db.String(50))
+    # ⭐ Patron : "pas de date de fin de contrat ni d'alerte de
+    # renouvellement" — nullable : un CDI (ou tout contrat à durée
+    # indéterminée) n'en a simplement pas. Voir
+    # Employe.jours_avant_fin_contrat / contrats_a_renouveler ci-dessous
+    # pour l'alerte (jamais de désactivation automatique de l'employé à
+    # l'échéance — décision volontairement laissée à l'admin).
+    date_fin_contrat = db.Column(db.Date)
     salaire_base = db.Column(db.Numeric, default=0)
 
     # ⭐ Paramètres de paie individuels (modifiables par salarié — chaque
@@ -326,7 +333,35 @@ class Employe(db.Model):
             years = today.year - self.date_embauche.year - ((today.month, today.day) < (self.date_embauche.month, self.date_embauche.day))
             return years
         return 0
-    
+
+    def jours_avant_fin_contrat(self):
+        """None si pas de date de fin (CDI/indéterminé) — sinon nombre de
+        jours restants (négatif si déjà expiré)."""
+        if not self.date_fin_contrat:
+            return None
+        return (self.date_fin_contrat - date.today()).days
+
+    def contrat_a_renouveler(self, seuil_jours=30):
+        """⭐ Patron : "alerte de renouvellement" — True si un contrat à
+        durée déterminée expire dans moins de `seuil_jours` jours (y
+        compris déjà expiré). Jamais de désactivation automatique : cette
+        méthode sert uniquement à signaler, l'admin décide."""
+        jours = self.jours_avant_fin_contrat()
+        return jours is not None and jours <= seuil_jours
+
+    @classmethod
+    def contrats_a_renouveler(cls, structure_id, seuil_jours=30):
+        """Employés actifs de la structure dont le contrat expire dans
+        moins de `seuil_jours` jours (ou déjà expiré) — pour l'alerte du
+        tableau de bord RH."""
+        limite = date.today() + timedelta(days=seuil_jours)
+        return cls.query.filter(
+            cls.structure_id == structure_id,
+            cls.statut == 'Actif',
+            cls.date_fin_contrat.isnot(None),
+            cls.date_fin_contrat <= limite,
+        ).order_by(cls.date_fin_contrat.asc()).all()
+
     def solde_conges(self):
         """Solde total des congés (ancien système)"""
         anciennete_mois = self.calculer_anciennete() * 12
@@ -743,14 +778,18 @@ class EcritureComptable(db.Model):
     __tablename__ = 'ecritures_comptables'
 
     # Journaux auxiliaires (journaux divisionnaires SYSCOHADA)
+    # ⭐ 'BQ' -> 'BQU', 'RAN' ajouté — porté depuis GHP (2026-09-30), voir
+    # son commentaire équivalent. Les écritures déjà enregistrées sous
+    # 'BQ' sont migrées par scripts/renommer_journal_bq_en_bqu.py.
     JOURNAUX = {
         'VTE': "Journal des ventes",
         'CAI': "Journal de caisse",
-        'BQ': "Journal de banque",
+        'BQU': "Journal de banque",
         'ACH': "Journal des achats",
         'SAL': "Journal des salaires",
         'TR': "Journal de trésorerie",
         'OD': "Journal des opérations diverses",
+        'RAN': "Journal des à-nouveaux (report à nouveau)",
     }
 
     id = db.Column(db.Integer, primary_key=True)
@@ -2433,6 +2472,13 @@ class SoinHospitalisation(db.Model):
     date_enregistrement = db.Column(db.DateTime, default=datetime.utcnow)
     statut = db.Column(db.String(20), default='en_cours')  # en_cours/facture
 
+    # ⭐ Part médecin — porté depuis GHP (2026-09-30) : capturé ICI, au
+    # moment du soin, pas à la facturation en fin de séjour (voir
+    # services/part_medecin_service.py, déclenché à la conversion en
+    # Vente via api_convertir_proforma).
+    medecin_id = db.Column(db.Integer)
+    medecin_nom = db.Column(db.String(255))
+
     @property
     def total(self):
         return float(self.prix or 0) * int(self.quantite or 0)
@@ -3118,6 +3164,10 @@ class LigneSoinAmbulatoire(db.Model):
     enregistre_par = db.Column(db.String(255))
     date_enregistrement = db.Column(db.DateTime, default=datetime.utcnow)
     statut = db.Column(db.String(20), default='en_cours')  # en_cours / facture
+
+    # ⭐ Part médecin — même principe que SoinHospitalisation ci-dessus.
+    medecin_id = db.Column(db.Integer)
+    medecin_nom = db.Column(db.String(255))
 
     @property
     def total(self):
