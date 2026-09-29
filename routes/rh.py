@@ -1105,10 +1105,17 @@ def employe_detail(structure_id, id):
             if str(c.get('ID')) == str(employe.compte_utilisateur_id)
         ), None)
 
+    # ⭐ En-tête bleu sombre imprimable (logo/nom/adresse structure) — même
+    # charte que bulletin_paie.html/facture_print.html. Patron : "applique
+    # notre entête bleu sombre avec les informations de la structure".
+    from utils.structure_info import get_structure_info
+    structure = get_structure_info(structure_id)
+
     return render_template('rh/employe_detail.html',
                          employe=employe,
                          solde_info=solde_info,
-                         compte_utilisateur=compte_utilisateur)  # ⭐ AJOUTER solde_info
+                         compte_utilisateur=compte_utilisateur,
+                         structure=structure)  # ⭐ AJOUTER solde_info
 
 
 @rh_bp.route('/employe/modifier/<int:id>')
@@ -1625,6 +1632,14 @@ def conge_autorisation(structure_id, id):
         interessee = 'interesse'
         reprise = 'Il reprendra'
     
+    # ⭐ En-tête bleu sombre imprimable — voir commentaire équivalent sur
+    # employe_detail(). Remplace le mécanisme localStorage/JS précédent
+    # (structure jamais transmise par la route, donc dépendait de ce
+    # qu'un AUTRE onglet avait pu stocker) par la source de vérité
+    # utilisée partout ailleurs pour l'impression.
+    from utils.structure_info import get_structure_info
+    structure = get_structure_info(structure_id)
+
     return render_template('rh/autorisation_conge.html',
         conge=conge,
         employe=employe,
@@ -1636,7 +1651,8 @@ def conge_autorisation(structure_id, id):
         numero_ordre=numero_ordre,
         date_actuelle=datetime.now().strftime('%d/%m/%Y'),
         datetime=datetime,
-        signataire=conge.signataire
+        signataire=conge.signataire,
+        structure=structure,
     )
 
 
@@ -1922,6 +1938,11 @@ def permission_autorisation(structure_id, id):
     titre = 'Madame' if employe.sexe == 'Feminin' else 'Monsieur'
     autorisee = 'autorisee' if employe.sexe == 'Feminin' else 'autorise'
     
+    # ⭐ En-tête bleu sombre imprimable — voir commentaire équivalent sur
+    # employe_detail()/conge_autorisation().
+    from utils.structure_info import get_structure_info
+    structure = get_structure_info(structure_id)
+
     return render_template('rh/autorisation_permission.html',
         permission=permission,
         employe=employe,
@@ -1930,7 +1951,8 @@ def permission_autorisation(structure_id, id):
         numero_ordre=numero_ordre,
         date_actuelle=datetime.now().strftime('%d/%m/%Y'),
         datetime=datetime,
-        signataire=permission.signataire
+        signataire=permission.signataire,
+        structure=structure,
     )
 
 

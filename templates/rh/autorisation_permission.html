@@ -28,27 +28,50 @@
             page-break-inside: avoid;
         }
         
-        .header {
-            text-align: center;
-            border-bottom: 3px solid #1a2a6c;
-            padding-bottom: 12px;
-            margin-bottom: 15px;
+        /* ⭐ En-tête bande bleue foncée — même charte que les autres documents
+           imprimables (bulletin de paie, factures...) : logo + nom + adresse
+           de la structure. Remplace l'ancien en-tête texte simple alimenté
+           par localStorage (jamais renseigné par cette route, donc affichait
+           "Chargement..." en boucle). */
+        .recu-header {
+            background: #1a2a6c;
+            padding: 18px 25px;
+            color: white;
+            margin: -35px -45px 20px -45px;
+            border-radius: 12px 12px 0 0;
         }
-        
-        .header .logo {
-            font-size: 22px;
+        .recu-header .top-row {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        .recu-header .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .recu-header .logo-area img {
+            max-height: 45px;
+            max-width: 90px;
+            object-fit: contain;
+        }
+        .recu-header .logo-area h1 {
+            font-size: 20px;
             font-weight: 700;
             text-transform: uppercase;
-            color: #1a2a6c;
             letter-spacing: 1px;
+            margin: 0;
+            color: white;
         }
-        
-        .header .contact {
+        .recu-header .sub-info {
+            margin-top: 6px;
             font-size: 11px;
-            color: #6c7a89;
-            margin-top: 4px;
+            opacity: 0.9;
+            text-align: center;
         }
-        
+
         .numero {
             text-align: right;
             font-size: 12px;
@@ -234,6 +257,14 @@
             body { background: white; padding: 0; margin: 0; display: block; }
             .document-container { border-radius: 0; box-shadow: none; padding: 30px 40px; max-width: 100%; }
             .no-print { display: none !important; }
+            .recu-header {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                color-adjust: exact !important;
+                background: #1a2a6c !important;
+                border-radius: 0;
+                margin: -30px -40px 20px -40px;
+            }
         }
         
         @media (max-width: 600px) {
@@ -250,12 +281,19 @@
 <body>
     <div class="document-container">
         <!-- ===== EN-TÊTE ===== -->
-        <div class="header">
-            <div class="logo" id="structureNom">Chargement...</div>
-            <div class="contact" id="structureContact">
-                <span id="structureAdresse">Chargement...</span><br>
-                Tél: <span id="structureTelephone">Chargement...</span> | 
-                Email: <span id="structureEmail">Chargement...</span>
+        <div class="recu-header">
+            <div class="top-row">
+                <div class="logo-area">
+                    {% if structure and structure.logo_url %}
+                    <img src="{{ structure.logo_url }}" alt="Logo">
+                    {% endif %}
+                    <h1>{{ structure.nom if structure and structure.nom else 'Structure' }}</h1>
+                </div>
+            </div>
+            <div class="sub-info">
+                {% if structure and structure.adresse %}{{ structure.adresse }}{% endif %}
+                {% if structure and structure.telephone %} · Tél: {{ structure.telephone }}{% endif %}
+                {% if structure and structure.email %} · Email: {{ structure.email }}{% endif %}
             </div>
         </div>
 
@@ -265,8 +303,8 @@
 
         <div class="content">
             <p>
-                Je soussigné(e), <strong>{{ signataire }}</strong>, 
-                <strong id="structureNomTexte">Chargement...</strong>,
+                Je soussigné(e), <strong>{{ signataire }}</strong>,
+                <strong>{{ structure.nom if structure and structure.nom else 'la structure' }}</strong>,
             </p>
 
             <p>
@@ -343,7 +381,7 @@
         </div>
 
         <div class="footer">
-            <div id="footerText">Document généré le {{ date_actuelle }}</div>
+            <div id="footerText">Document généré par {{ structure.nom if structure and structure.nom else '' }} le {{ date_actuelle }}</div>
             <div class="generated">SSoftOneV10</div>
         </div>
     </div>
@@ -354,68 +392,32 @@
     </div>
 
     <script>
-        // ============================================================
-        // CHARGER LES INFOS DE LA STRUCTURE DEPUIS localStorage
-        // ============================================================
-        
-        function chargerStructure() {
-            // Récupérer les infos depuis localStorage
-            const nom = localStorage.getItem('structureNom');
-            const telephone = localStorage.getItem('structureTelephone');
-            const email = localStorage.getItem('structureEmail');
-            const adresse = localStorage.getItem('structureAdresse');
-            
-            // Vérifier si les données existent
-            if (!nom) {
-                // Si localStorage est vide, afficher un message d'erreur
-                document.getElementById('structureNom').textContent = 'ERREUR: Structure non chargée';
-                document.getElementById('structureNomTexte').textContent = 'ERREUR: Structure non chargée';
-                document.getElementById('structureAdresse').textContent = 'Veuillez vous reconnecter';
-                document.getElementById('structureTelephone').textContent = '---';
-                document.getElementById('structureEmail').textContent = '---';
-                document.getElementById('footerText').textContent = 'Document généré le ' + new Date().toLocaleDateString('fr-FR');
-                return;
-            }
-            
-            // Mettre à jour l'en-tête
-            document.getElementById('structureNom').textContent = nom;
-            document.getElementById('structureNomTexte').textContent = nom;
-            
-            // Mettre à jour le contact
-            document.getElementById('structureAdresse').textContent = adresse || '';
-            document.getElementById('structureTelephone').textContent = telephone || '';
-            document.getElementById('structureEmail').textContent = email || '';
-            
-            // Mettre à jour le footer
-            document.getElementById('footerText').textContent = `Document généré par ${nom} le {{ date_actuelle }}`;
-            
-            console.log('✅ Structure chargée depuis localStorage');
-        }
-        
+        // ⭐ Les informations de structure (logo/nom/adresse) sont désormais
+        // rendues côté serveur (Jinja, voir en-tête ci-dessus) via
+        // get_structure_info() — la route ne les transmettait pas avant,
+        // ce mécanisme localStorage restait donc en permanence sur
+        // "Chargement..." (aucun autre onglet ne les y écrivait pour cette
+        // page). Voir la même correction sur autorisation_conge.html.
+
         // ============================================================
         // IMPRESSION ET FERMETURE
         // ============================================================
-        
+
         let impressionLancee = false;
-        
+
         function imprimerDocument() {
             if (!impressionLancee) {
                 impressionLancee = true;
                 window.print();
             }
         }
-        
+
         function fermerFenetre() {
             if (confirm('Voulez-vous fermer cette fenêtre ?')) {
                 window.close();
             }
         }
-        
-        // Charger les infos au démarrage
-        document.addEventListener('DOMContentLoaded', function() {
-            chargerStructure();
-        });
-        
+
         // Fermeture automatique après impression
         window.addEventListener('afterprint', function() {
             if (impressionLancee) {

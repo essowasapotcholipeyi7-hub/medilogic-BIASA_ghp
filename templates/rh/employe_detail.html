@@ -38,12 +38,58 @@
         color: #6c757d;
         margin-top: 5px;
     }
+    /* ⭐ En-tête imprimable bleu sombre (logo/nom/adresse de la structure)
+       — même charte que bulletin_paie.html/facture_print.html. Invisible à
+       l'écran (redondant avec le titre de la page), affiché uniquement à
+       l'impression. Patron : "applique notre entête bleu sombre avec les
+       informations de la structure logo etc". */
+    .print-header { display: none; }
     @media print {
         .btn, .no-print {
             display: none !important;
         }
         .card {
             border: none !important;
+        }
+        .print-header {
+            display: block !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+            background: #1a2a6c !important;
+            color: white;
+            padding: 18px 25px;
+            margin: -1rem -1rem 20px -1rem;
+        }
+        .print-header .top-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .print-header .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .print-header .logo-area img {
+            max-height: 50px;
+            max-width: 100px;
+            object-fit: contain;
+        }
+        .print-header .logo-area h1 {
+            font-size: 20px;
+            font-weight: 600;
+            margin: 0;
+            color: white;
+        }
+        .print-header .sub-info {
+            margin-top: 10px;
+            font-size: 13px;
+            opacity: 0.9;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px 20px;
         }
     }
 </style>
@@ -60,21 +106,40 @@
                         Détail de l'employé
                     {% endif %}
                 </h5>
-                <div class="no-print">
-                    <button class="btn btn-light btn-sm me-1" onclick="fermerPage()" title="Fermer">
-                        <i class="fas fa-times"></i> Fermer
-                    </button>
-                    <button class="btn btn-warning btn-sm me-1" onclick="modifierEmploye()">
+                <div class="no-print btn-group btn-group-sm">
+                    <button class="btn btn-warning" onclick="modifierEmploye()" title="Modifier la fiche">
                         <i class="fas fa-edit"></i> Modifier
                     </button>
-                    <button class="btn btn-success btn-sm" onclick="imprimerFiche()">
+                    <button class="btn btn-light" onclick="imprimerFiche()" title="Imprimer la fiche">
                         <i class="fas fa-print"></i> Imprimer
+                    </button>
+                    <button class="btn btn-light" onclick="fermerPage()" title="Fermer">
+                        <i class="fas fa-times"></i> Fermer
                     </button>
                 </div>
             </div>
             <div class="card-body">
                 {% if employe %}
-                
+
+                <!-- ⭐ En-tête bleu sombre, visible uniquement à l'impression
+                     (voir .print-header, extra_css ci-dessus). -->
+                <div class="print-header">
+                    <div class="top-row">
+                        <div class="logo-area">
+                            {% if structure and structure.logo_url %}
+                            <img src="{{ structure.logo_url }}" alt="Logo">
+                            {% endif %}
+                            <h1>{{ structure.nom if structure and structure.nom else 'Structure' }}</h1>
+                        </div>
+                        <div class="text-end">Fiche employé</div>
+                    </div>
+                    <div class="sub-info">
+                        {% if structure and structure.adresse %}<span>{{ structure.adresse }}</span>{% endif %}
+                        {% if structure and structure.telephone %}<span>Tel: {{ structure.telephone }}</span>{% endif %}
+                        {% if structure and structure.email %}<span>Email: {{ structure.email }}</span>{% endif %}
+                    </div>
+                </div>
+
                 <!-- ============================================ -->
                 <!-- IDENTITÉ & PROFESSIONNEL                     -->
                 <!-- ============================================ -->
@@ -673,23 +738,6 @@
                                 </tbody>
                             </table>
                         </div>
-                    </div>
-                </div>
-
-                <!-- ============================================ -->
-                <!-- BOUTONS D'ACTION                             -->
-                <!-- ============================================ -->
-                <div class="row mt-4 no-print">
-                    <div class="col-12 text-center">
-                        <button onclick="fermerPage()" class="btn btn-secondary">
-                            <i class="fas fa-times me-1"></i> Fermer
-                        </a>
-                        <a href="/rh/employe/modifier/{{ employe.id }}" class="btn btn-warning">
-                            <i class="fas fa-edit me-1"></i> Modifier
-                        </a>
-                        <button onclick="window.print()" class="btn btn-success">
-                            <i class="fas fa-print me-1"></i> Imprimer
-                        </button>
                     </div>
                 </div>
 

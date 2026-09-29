@@ -1280,7 +1280,13 @@
         content: '' !important;
     }
 
-    .navbar, .sidebar, .btn, .no-print, 
+    /* ⭐ .top-nav (menu horizontal Accueil/Patients/...) ajouté ici — .navbar
+       (barre de marque tout en haut) était déjà masqué, mais pas ce second
+       menu juste en dessous, qui apparaissait donc encore à l'impression
+       sur toute page qui imprime en étendant base.html (constaté sur la
+       fiche employé). Patron : "les onglets du menu horizontal qui se
+       font voir". */
+    .navbar, .top-nav, .sidebar, .btn, .no-print,
     #selectedPatientBadge, .alert,
     button, .nav-link, .card-header .btn,
     .btn-primary, .btn-success, .btn-warning, .btn-danger,
