@@ -578,6 +578,105 @@
                 </div>
 
                 <!-- ============================================ -->
+                <!-- ÉVALUATIONS — patron : "pas d'évaluations ni de sanctions
+                     disciplinaires". Voir EvaluationRH (models.py) et
+                     api_ajouter_evaluation (routes/rh.py). -->
+                <!-- ============================================ -->
+                <div class="row mt-3 no-print">
+                    <div class="col-12">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="section-title mb-0"><i class="fas fa-star me-2"></i>Évaluations</h6>
+                            <button class="btn btn-sm btn-primary" onclick="ouvrirAjoutEvaluation()">
+                                <i class="fas fa-plus"></i> Ajouter une évaluation
+                            </button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Période</th>
+                                        <th>Évaluateur</th>
+                                        <th>Note</th>
+                                        <th>Commentaire</th>
+                                        <th class="no-print"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% if employe.evaluations %}
+                                        {% for ev in employe.evaluations|sort(attribute='date_evaluation', reverse=True) %}
+                                        <tr>
+                                            <td>{{ ev.date_evaluation.strftime('%d/%m/%Y') }}</td>
+                                            <td>{{ ev.periode or '-' }}</td>
+                                            <td>{{ ev.evaluateur_nom }}</td>
+                                            <td>{{ '%.1f/20'|format(ev.note) if ev.note is not none else '-' }}</td>
+                                            <td>{{ (ev.commentaire or '-')|truncate(40) }}</td>
+                                            <td class="no-print text-center">
+                                                <button class="btn btn-sm btn-outline-danger" onclick="supprimerEvaluation({{ ev.id }})" title="Supprimer">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    {% else %}
+                                        <tr><td colspan="6" class="text-center text-muted">Aucune évaluation enregistrée</td></tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================ -->
+                <!-- SANCTIONS DISCIPLINAIRES — voir SanctionDisciplinaire
+                     (models.py) et api_ajouter_sanction (routes/rh.py). -->
+                <!-- ============================================ -->
+                <div class="row mt-3 no-print">
+                    <div class="col-12">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="section-title mb-0"><i class="fas fa-gavel me-2"></i>Sanctions disciplinaires</h6>
+                            <button class="btn btn-sm btn-danger" onclick="ouvrirAjoutSanction()">
+                                <i class="fas fa-plus"></i> Ajouter une sanction
+                            </button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Type</th>
+                                        <th>Motif</th>
+                                        <th>Durée</th>
+                                        <th>Décidée par</th>
+                                        <th class="no-print"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% if employe.sanctions %}
+                                        {% for s in employe.sanctions|sort(attribute='date_sanction', reverse=True) %}
+                                        <tr>
+                                            <td>{{ s.date_sanction.strftime('%d/%m/%Y') }}</td>
+                                            <td><span class="badge bg-danger">{{ s.type_sanction_label() }}</span></td>
+                                            <td>{{ s.motif }}</td>
+                                            <td>{{ (s.duree_jours ~ ' j') if s.duree_jours else '-' }}</td>
+                                            <td>{{ s.decide_par or '-' }}</td>
+                                            <td class="no-print text-center">
+                                                <button class="btn btn-sm btn-outline-danger" onclick="supprimerSanction({{ s.id }})" title="Supprimer">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    {% else %}
+                                        <tr><td colspan="6" class="text-center text-muted">Aucune sanction enregistrée</td></tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================ -->
                 <!-- BOUTONS D'ACTION                             -->
                 <!-- ============================================ -->
                 <div class="row mt-4 no-print">
@@ -600,6 +699,114 @@
                     Employé non trouvé
                 </div>
                 {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ⭐ MODAL ÉVALUATION — patron : "pas d'évaluations ni de sanctions
+     disciplinaires". Voir EvaluationRH (models.py). -->
+<div class="modal fade" id="evaluationModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-star me-2"></i>Nouvelle évaluation</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2 mb-2">
+                    <div class="col-md-6">
+                        <label class="form-label small">Date de l'évaluation *</label>
+                        <input type="date" class="form-control form-control-sm" id="evalDate" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">Période</label>
+                        <input type="text" class="form-control form-control-sm" id="evalPeriode" placeholder="Ex: Annuelle 2026">
+                    </div>
+                </div>
+                <div class="row g-2 mb-2">
+                    <div class="col-md-6">
+                        <label class="form-label small">Évaluateur *</label>
+                        <input type="text" class="form-control form-control-sm" id="evalEvaluateur" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">Note /20 <span class="text-muted">(optionnel)</span></label>
+                        <input type="number" class="form-control form-control-sm" id="evalNote" min="0" max="20" step="0.5">
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Points forts</label>
+                    <textarea class="form-control form-control-sm" id="evalPointsForts" rows="2"></textarea>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Axes d'amélioration</label>
+                    <textarea class="form-control form-control-sm" id="evalAxesAmelioration" rows="2"></textarea>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Commentaire</label>
+                    <textarea class="form-control form-control-sm" id="evalCommentaire" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-primary" onclick="confirmerAjoutEvaluation()">
+                    <i class="fas fa-save me-1"></i> Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ⭐ MODAL SANCTION — voir SanctionDisciplinaire (models.py). -->
+<div class="modal fade" id="sanctionModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-gavel me-2"></i>Nouvelle sanction disciplinaire</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2 mb-2">
+                    <div class="col-md-6">
+                        <label class="form-label small">Type *</label>
+                        <select class="form-select form-select-sm" id="sanctionType" required>
+                            <option value="">Sélectionner</option>
+                            <option value="avertissement_verbal">Avertissement verbal</option>
+                            <option value="avertissement_ecrit">Avertissement écrit</option>
+                            <option value="blame">Blâme</option>
+                            <option value="mise_a_pied">Mise à pied</option>
+                            <option value="retrogradation">Rétrogradation</option>
+                            <option value="licenciement_faute">Licenciement pour faute</option>
+                            <option value="autre">Autre</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">Date *</label>
+                        <input type="date" class="form-control form-control-sm" id="sanctionDate" required>
+                    </div>
+                </div>
+                <div class="mb-2" id="sanctionDureeWrapper" style="display:none;">
+                    <label class="form-label small">Durée (jours)</label>
+                    <input type="number" class="form-control form-control-sm" id="sanctionDuree" min="1">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Motif *</label>
+                    <input type="text" class="form-control form-control-sm" id="sanctionMotif" required>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Description</label>
+                    <textarea class="form-control form-control-sm" id="sanctionDescription" rows="2"></textarea>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Décidée par</label>
+                    <input type="text" class="form-control form-control-sm" id="sanctionDecidePar">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-danger" onclick="confirmerAjoutSanction()">
+                    <i class="fas fa-save me-1"></i> Enregistrer
+                </button>
             </div>
         </div>
     </div>
@@ -650,6 +857,131 @@ function uploaderDocumentEmploye(typeDoc) {
 function supprimerDocumentEmploye(typeDoc) {
     if (!confirm('Supprimer ce document ?')) return;
     fetch(`/rh/employe/${employeId}/document/${typeDoc}`, {method: 'DELETE'})
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                window.location.reload();
+            } else {
+                alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            }
+        })
+        .catch(error => alert('❌ Erreur: ' + error));
+}
+
+// ⭐ Évaluations — voir #evaluationModal et api_ajouter_evaluation
+// (routes/rh.py).
+function ouvrirAjoutEvaluation() {
+    document.getElementById('evalDate').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('evalPeriode').value = '';
+    document.getElementById('evalEvaluateur').value = '';
+    document.getElementById('evalNote').value = '';
+    document.getElementById('evalPointsForts').value = '';
+    document.getElementById('evalAxesAmelioration').value = '';
+    document.getElementById('evalCommentaire').value = '';
+    new bootstrap.Modal(document.getElementById('evaluationModal')).show();
+}
+
+function confirmerAjoutEvaluation() {
+    const dateEvaluation = document.getElementById('evalDate').value;
+    const evaluateur = document.getElementById('evalEvaluateur').value.trim();
+    if (!dateEvaluation || !evaluateur) {
+        alert("La date et le nom de l'évaluateur sont obligatoires.");
+        return;
+    }
+    fetch(`/rh/employe/${employeId}/evaluation`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            date_evaluation: dateEvaluation,
+            periode: document.getElementById('evalPeriode').value.trim(),
+            evaluateur_nom: evaluateur,
+            note: document.getElementById('evalNote').value || null,
+            points_forts: document.getElementById('evalPointsForts').value.trim(),
+            axes_amelioration: document.getElementById('evalAxesAmelioration').value.trim(),
+            commentaire: document.getElementById('evalCommentaire').value.trim(),
+        })
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            window.location.reload();
+        } else {
+            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('❌ Erreur: ' + error));
+}
+
+function supprimerEvaluation(id) {
+    if (!confirm('Supprimer cette évaluation ?')) return;
+    fetch(`/rh/evaluation/${id}`, {method: 'DELETE'})
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                window.location.reload();
+            } else {
+                alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            }
+        })
+        .catch(error => alert('❌ Erreur: ' + error));
+}
+
+// ⭐ Sanctions disciplinaires — voir #sanctionModal et
+// api_ajouter_sanction (routes/rh.py).
+function ouvrirAjoutSanction() {
+    document.getElementById('sanctionType').value = '';
+    document.getElementById('sanctionDate').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('sanctionDuree').value = '';
+    document.getElementById('sanctionDureeWrapper').style.display = 'none';
+    document.getElementById('sanctionMotif').value = '';
+    document.getElementById('sanctionDescription').value = '';
+    document.getElementById('sanctionDecidePar').value = '';
+    new bootstrap.Modal(document.getElementById('sanctionModal')).show();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const selectType = document.getElementById('sanctionType');
+    if (selectType) {
+        selectType.addEventListener('change', function() {
+            document.getElementById('sanctionDureeWrapper').style.display = (this.value === 'mise_a_pied') ? '' : 'none';
+        });
+    }
+});
+
+function confirmerAjoutSanction() {
+    const type = document.getElementById('sanctionType').value;
+    const dateSanction = document.getElementById('sanctionDate').value;
+    const motif = document.getElementById('sanctionMotif').value.trim();
+    if (!type || !dateSanction || !motif) {
+        alert('Le type, la date et le motif sont obligatoires.');
+        return;
+    }
+    fetch(`/rh/employe/${employeId}/sanction`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            type_sanction: type,
+            date_sanction: dateSanction,
+            motif: motif,
+            description: document.getElementById('sanctionDescription').value.trim(),
+            duree_jours: document.getElementById('sanctionDuree').value || null,
+            decide_par: document.getElementById('sanctionDecidePar').value.trim(),
+        })
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            window.location.reload();
+        } else {
+            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('❌ Erreur: ' + error));
+}
+
+function supprimerSanction(id) {
+    if (!confirm('Supprimer cette sanction ?')) return;
+    fetch(`/rh/sanction/${id}`, {method: 'DELETE'})
         .then(r => r.json())
         .then(result => {
             if (result.success) {

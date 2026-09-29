@@ -8,7 +8,7 @@ import traceback
 
 from models import (db, Employe, Service, Conge, Permission, DocumentRH, SignatureRH,
                      Paie, ParametragePaie, EmpreinteEmploye, ParametragePointage, Pointage, VisageEmploye,
-                     TYPES_CONGE_DEDUCTIBLES, MOTIFS_DEPART)
+                     TYPES_CONGE_DEDUCTIBLES, MOTIFS_DEPART, EvaluationRH, SanctionDisciplinaire, TYPES_SANCTION)
 from utils.permissions import a_acces
 
 rh_bp = Blueprint('rh', __name__, url_prefix='/rh')
@@ -889,6 +889,197 @@ def api_organigramme(structure_id):
                  for e in employes if e.manager_id and e.manager_id not in par_id]
 
     return jsonify({'arbre': arbre, 'total_employes': len(employes), 'orphelins': orphelins})
+
+
+# ============================================================
+# ÉVALUATIONS & SANCTIONS DISCIPLINAIRES
+# ⭐ Patron : "pas d'évaluations ni de sanctions disciplinaires" — voir
+# EvaluationRH/SanctionDisciplinaire (models.py). Actions sensibles côté
+# personnel réservées à l'admin, comme le départ (api_enregistrer_depart)
+# ou la génération de paie en masse — même si le blueprint entier est
+# déjà filtré par rôle (_verifier_role_rh).
+# ============================================================
+
+@rh_bp.route('/api/employes/<int:id>/evaluations')
+@require_structure
+def api_evaluations_employe(structure_id, id):
+    employe = Employe.query.filter_by(id=id, structure_id=structure_id).first()
+    if not employe:
+        return jsonify({'error': 'Employé non trouvé'}), 404
+    evaluations = EvaluationRH.query.filter_by(employe_id=id, structure_id=structure_id) \
+        .order_by(EvaluationRH.date_evaluation.desc()).all()
+    return jsonify([{
+        'id': e.id,
+        'periode': e.periode,
+        'date_evaluation': e.date_evaluation.strftime('%d/%m/%Y'),
+        'evaluateur_nom': e.evaluateur_nom,
+        'note': float(e.note) if e.note is not None else None,
+        'points_forts': e.points_forts,
+        'axes_amelioration': e.axes_amelioration,
+        'commentaire': e.commentaire,
+        'created_by': e.created_by,
+        'created_at': e.created_at.strftime('%d/%m/%Y %H:%M'),
+    } for e in evaluations])
+
+
+@rh_bp.route('/employe/<int:id>/evaluation', methods=['POST'])
+@require_structure
+def api_ajouter_evaluation(structure_id, id):
+    if not session.get('is_admin'):
+        return jsonify({'error': 'Non autorisé'}), 403
+    employe = Employe.query.filter_by(id=id, structure_id=structure_id).first()
+    if not employe:
+        return jsonify({'error': 'Employé non trouvé'}), 404
+
+    data = request.json or {}
+    date_evaluation_str = data.get('date_evaluation')
+    evaluateur_nom = (data.get('evaluateur_nom') or '').strip()
+    if not date_evaluation_str or not evaluateur_nom:
+        return jsonify({'error': "La date d'évaluation et le nom de l'évaluateur sont obligatoires"}), 400
+    try:
+        date_evaluation = datetime.strptime(date_evaluation_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'error': 'Format de date invalide'}), 400
+
+    note = data.get('note')
+    if note not in (None, ''):
+        try:
+            note = float(note)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Note invalide'}), 400
+        if note < 0 or note > 20:
+            return jsonify({'error': 'La note doit être comprise entre 0 et 20'}), 400
+    else:
+        note = None
+
+    try:
+        evaluation = EvaluationRH(
+            structure_id=structure_id, employe_id=id,
+            periode=(data.get('periode') or '').strip(),
+            date_evaluation=date_evaluation,
+            evaluateur_nom=evaluateur_nom,
+            note=note,
+            points_forts=(data.get('points_forts') or '').strip(),
+            axes_amelioration=(data.get('axes_amelioration') or '').strip(),
+            commentaire=(data.get('commentaire') or '').strip(),
+            created_by=session.get('user_name', 'Admin'),
+        )
+        db.session.add(evaluation)
+        db.session.commit()
+        return jsonify({'success': True, 'id': evaluation.id})
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Erreur api_ajouter_evaluation: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@rh_bp.route('/evaluation/<int:id>', methods=['DELETE'])
+@require_structure
+def api_supprimer_evaluation(structure_id, id):
+    if not session.get('is_admin'):
+        return jsonify({'error': 'Non autorisé'}), 403
+    evaluation = EvaluationRH.query.filter_by(id=id, structure_id=structure_id).first()
+    if not evaluation:
+        return jsonify({'error': 'Évaluation non trouvée'}), 404
+    try:
+        db.session.delete(evaluation)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@rh_bp.route('/api/employes/<int:id>/sanctions')
+@require_structure
+def api_sanctions_employe(structure_id, id):
+    employe = Employe.query.filter_by(id=id, structure_id=structure_id).first()
+    if not employe:
+        return jsonify({'error': 'Employé non trouvé'}), 404
+    sanctions = SanctionDisciplinaire.query.filter_by(employe_id=id, structure_id=structure_id) \
+        .order_by(SanctionDisciplinaire.date_sanction.desc()).all()
+    return jsonify([{
+        'id': s.id,
+        'type_sanction': s.type_sanction,
+        'type_sanction_label': s.type_sanction_label(),
+        'date_sanction': s.date_sanction.strftime('%d/%m/%Y'),
+        'motif': s.motif,
+        'description': s.description,
+        'duree_jours': s.duree_jours,
+        'decide_par': s.decide_par,
+        'created_by': s.created_by,
+        'created_at': s.created_at.strftime('%d/%m/%Y %H:%M'),
+    } for s in sanctions])
+
+
+@rh_bp.route('/employe/<int:id>/sanction', methods=['POST'])
+@require_structure
+def api_ajouter_sanction(structure_id, id):
+    if not session.get('is_admin'):
+        return jsonify({'error': 'Non autorisé'}), 403
+    employe = Employe.query.filter_by(id=id, structure_id=structure_id).first()
+    if not employe:
+        return jsonify({'error': 'Employé non trouvé'}), 404
+
+    data = request.json or {}
+    type_sanction = data.get('type_sanction')
+    date_sanction_str = data.get('date_sanction')
+    motif = (data.get('motif') or '').strip()
+    if type_sanction not in TYPES_SANCTION:
+        return jsonify({'error': 'Type de sanction invalide'}), 400
+    if not date_sanction_str or not motif:
+        return jsonify({'error': 'La date et le motif sont obligatoires'}), 400
+    try:
+        date_sanction = datetime.strptime(date_sanction_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'error': 'Format de date invalide'}), 400
+
+    duree_jours = data.get('duree_jours')
+    if duree_jours not in (None, ''):
+        try:
+            duree_jours = int(duree_jours)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Durée invalide'}), 400
+        if duree_jours <= 0:
+            return jsonify({'error': 'La durée doit être positive'}), 400
+    else:
+        duree_jours = None
+
+    try:
+        sanction = SanctionDisciplinaire(
+            structure_id=structure_id, employe_id=id,
+            type_sanction=type_sanction,
+            date_sanction=date_sanction,
+            motif=motif,
+            description=(data.get('description') or '').strip(),
+            duree_jours=duree_jours,
+            decide_par=(data.get('decide_par') or '').strip(),
+            created_by=session.get('user_name', 'Admin'),
+        )
+        db.session.add(sanction)
+        db.session.commit()
+        return jsonify({'success': True, 'id': sanction.id})
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Erreur api_ajouter_sanction: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@rh_bp.route('/sanction/<int:id>', methods=['DELETE'])
+@require_structure
+def api_supprimer_sanction(structure_id, id):
+    if not session.get('is_admin'):
+        return jsonify({'error': 'Non autorisé'}), 403
+    sanction = SanctionDisciplinaire.query.filter_by(id=id, structure_id=structure_id).first()
+    if not sanction:
+        return jsonify({'error': 'Sanction non trouvée'}), 404
+    try:
+        db.session.delete(sanction)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 
 @rh_bp.route('/employe/<int:id>')

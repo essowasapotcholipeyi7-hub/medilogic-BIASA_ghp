@@ -853,7 +853,7 @@ class DocumentRH(db.Model):
 
 class SignatureRH(db.Model):
     __tablename__ = 'signatures_rh'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     document_id = db.Column(db.Integer, db.ForeignKey('documents_rh.id'))
     validateur_niveau = db.Column(db.Integer)
@@ -863,6 +863,80 @@ class SignatureRH(db.Model):
     signature_date = db.Column(db.Date)
     commentaire = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# ⭐ Patron : "pas d'évaluations ni de sanctions disciplinaires" — types de
+# sanction valides (voir SanctionDisciplinaire.type_sanction et
+# routes/rh.py api_ajouter_sanction). Un type hors de cette liste est
+# refusé côté API plutôt que silencieusement accepté.
+TYPES_SANCTION = {
+    'avertissement_verbal': 'Avertissement verbal',
+    'avertissement_ecrit': 'Avertissement écrit',
+    'blame': 'Blâme',
+    'mise_a_pied': 'Mise à pied',
+    'retrogradation': 'Rétrogradation',
+    'licenciement_faute': 'Licenciement pour faute',
+    'autre': 'Autre',
+}
+
+
+class EvaluationRH(db.Model):
+    """⭐ Patron : "pas d'évaluations ni de sanctions disciplinaires" —
+    évaluation périodique d'un employé (entretien annuel, bilan de
+    période d'essai...). Immuable une fois créée (pas de champ statut ni
+    de workflow de validation — une correction se fait en supprimant
+    l'entrée erronée et en recréant, comme pour une écriture comptable
+    dont on ne modifie jamais le contenu après coup)."""
+    __tablename__ = 'evaluations_rh'
+
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, db.ForeignKey('structures.id'), nullable=False)
+    employe_id = db.Column(db.Integer, db.ForeignKey('employes.id'), nullable=False)
+
+    periode = db.Column(db.String(100))  # ex. "Annuelle 2026", "Fin de période d'essai"
+    date_evaluation = db.Column(db.Date, nullable=False)
+    evaluateur_nom = db.Column(db.String(100), nullable=False)
+    # ⭐ Note sur 20 (usage francophone courant) — nullable : une
+    # évaluation qualitative pure, sans note chiffrée, reste possible.
+    note = db.Column(db.Numeric)
+    points_forts = db.Column(db.Text)
+    axes_amelioration = db.Column(db.Text)
+    commentaire = db.Column(db.Text)
+
+    created_by = db.Column(db.String(100))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    employe = db.relationship('Employe', backref='evaluations')
+
+
+class SanctionDisciplinaire(db.Model):
+    """⭐ Patron : "pas d'évaluations ni de sanctions disciplinaires" —
+    sanction disciplinaire appliquée à un employé. Immuable une fois
+    créée, même logique que EvaluationRH ci-dessus."""
+    __tablename__ = 'sanctions_disciplinaires'
+
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, db.ForeignKey('structures.id'), nullable=False)
+    employe_id = db.Column(db.Integer, db.ForeignKey('employes.id'), nullable=False)
+
+    type_sanction = db.Column(db.String(50), nullable=False)
+    date_sanction = db.Column(db.Date, nullable=False)
+    motif = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text)
+    # ⭐ Nombre de jours — pertinent seulement pour une mise à pied, mais
+    # laissé générique (nullable, ignoré pour les autres types) plutôt
+    # que d'ajouter une table/un champ spécifique à un seul type.
+    duree_jours = db.Column(db.Integer)
+    decide_par = db.Column(db.String(100))
+
+    created_by = db.Column(db.String(100))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    employe = db.relationship('Employe', backref='sanctions')
+
+    def type_sanction_label(self):
+        return TYPES_SANCTION.get(self.type_sanction, self.type_sanction)
+
 
 # ============================================================
 # COMPTABILITE - MODELES (CORRIGES)
