@@ -74,7 +74,9 @@
         <button class="btn btn-secondary btn-sm" onclick="chargerPeriode()"><i class="fas fa-folder-open me-1"></i> Charger</button>
         <div class="ms-auto d-flex align-items-center gap-2">
             {% if brouillon %}
-                {% if brouillon.statut == 'deposee' %}
+                {% if brouillon.statut == 'cloturee' %}
+                <span class="badge bg-dark"><i class="fas fa-lock me-1"></i>Clôturée le {{ brouillon.date_depot.strftime('%d/%m/%Y') if brouillon.date_depot else '' }}</span>
+                {% elif brouillon.statut == 'deposee' %}
                 <span class="badge bg-success">Déposée le {{ brouillon.date_depot.strftime('%d/%m/%Y') if brouillon.date_depot else '' }}</span>
                 {% else %}
                 <span class="badge bg-warning text-dark">Brouillon</span>
@@ -157,22 +159,50 @@
         </div>
     </div>
     <div class="card-body d-flex flex-wrap gap-2">
+        {% if not brouillon or brouillon.statut != 'cloturee' %}
         <button class="btn btn-outline-dark btn-sm" onclick="regenererDepuisVentes()">
             <i class="fas fa-sync-alt me-1"></i> Régénérer depuis les ventes
         </button>
         <button class="btn btn-primary btn-sm" onclick="enregistrerCorrections()">
             <i class="fas fa-save me-1"></i> Enregistrer les corrections
         </button>
+        {% endif %}
         {% if brouillon %}
         <a href="{{ url_for('imprimer_facture_amu_cnss', facture_id=brouillon.id) }}" target="_blank" class="btn btn-outline-secondary btn-sm">
             <i class="fas fa-print me-1"></i> Aperçu / Imprimer
         </a>
-        {% if brouillon.statut != 'deposee' %}
+        {% if brouillon.statut == 'brouillon' %}
         <button class="btn btn-success btn-sm ms-auto" onclick="marquerDeposee({{ brouillon.id }})">
             <i class="fas fa-check-circle me-1"></i> Marquer comme déposée
         </button>
         {% endif %}
+        {% if session.is_admin and brouillon.statut != 'cloturee' %}
+        <button class="btn btn-danger btn-sm{{ '' if brouillon.statut == 'brouillon' else ' ms-auto' }}" onclick="ouvrirModalCloture({{ brouillon.id }}, '{{ brouillon.date_depot.strftime('%Y-%m-%d') if brouillon.date_depot else '' }}', '/api/assurance/facture-amu/{{ brouillon.id }}/cloturer')">
+            <i class="fas fa-lock me-1"></i> Clôturer
+        </button>
         {% endif %}
+        {% endif %}
+    </div>
+</div>
+
+<!-- ⭐ Modal de clôture — patron : "préciser en rouge qu'apres cette étape
+     aucune modification n'est plus possible ; bien vérifier avant de
+     cliquer sur ok ou cloturer". CSS pur (pas Bootstrap) pour pouvoir être
+     réutilisé tel quel sur les pages d'impression (qui ne chargent pas
+     Bootstrap). -->
+<div id="modalCloture" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:9999; align-items:center; justify-content:center;">
+    <div style="background:white; border-radius:8px; padding:22px; max-width:440px; width:92%; font-family:inherit;">
+        <h5 style="margin:0 0 12px;"><i class="fas fa-lock me-1"></i> Clôturer la facture</h5>
+        <label class="form-label small mb-0">Date de dépôt</label>
+        <input type="date" id="clotureDateDepot" class="form-control mb-2">
+        <p style="color:#dc3545; font-weight:bold; margin:10px 0;">
+            ⚠️ Après cette étape, AUCUNE modification ne sera plus possible (montants, numéro de facture, date de dépôt).
+            Vérifiez bien avant de cliquer sur « Clôturer définitivement ».
+        </p>
+        <div style="display:flex; gap:8px; justify-content:flex-end;">
+            <button class="btn btn-secondary btn-sm" onclick="fermerModalCloture()">Annuler</button>
+            <button class="btn btn-danger btn-sm" onclick="confirmerCloture()">Clôturer définitivement</button>
+        </div>
     </div>
 </div>
 
@@ -261,6 +291,33 @@ function marquerDeposee(factureId) {
     })
         .then(r => r.json())
         .then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+}
+
+// ⭐ Clôture — voir le commentaire du modal #modalCloture pour le patron.
+let _clotureEndpoint = null;
+function ouvrirModalCloture(factureId, dateDepotActuelle, endpoint) {
+    _clotureEndpoint = endpoint;
+    document.getElementById('clotureDateDepot').value = dateDepotActuelle || new Date().toISOString().slice(0, 10);
+    document.getElementById('modalCloture').style.display = 'flex';
+}
+function fermerModalCloture() {
+    document.getElementById('modalCloture').style.display = 'none';
+    _clotureEndpoint = null;
+}
+function confirmerCloture() {
+    const dateStr = document.getElementById('clotureDateDepot').value;
+    if (!dateStr) { alert('La date de dépôt est obligatoire.'); return; }
+    if (!_clotureEndpoint) return;
+    fetch(_clotureEndpoint, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({date_depot: dateStr})
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) { fermerModalCloture(); window.location.reload(); }
+            else alert('Erreur : ' + (data.error || 'inconnue'));
+        })
+        .catch(e => alert('Erreur réseau : ' + e));
 }
 
 function modifierNumeroFacture(factureId, numeroActuel) {

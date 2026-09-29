@@ -149,13 +149,39 @@
     <div class="no-print">
         <button class="btn-print" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
         <button class="btn-pdf" onclick="telechargerPDF()"><i class="fas fa-file-pdf"></i> PDF</button>
-        {% if brouillon.statut != 'deposee' %}
+        {% if brouillon.statut == 'brouillon' %}
         <button class="btn-back" style="background:#198754;" onclick="demanderDateDepot()"><i class="fas fa-check"></i> Marquer déposée</button>
-        {% else %}
+        {% elif brouillon.statut == 'deposee' %}
         <button class="btn-back" style="background:#6c757d;" disabled><i class="fas fa-check-circle"></i> Déposée le {{ brouillon.date_depot.strftime('%d/%m/%Y') if brouillon.date_depot else '' }}</button>
+        {% else %}
+        <button class="btn-back" style="background:#212529;" disabled><i class="fas fa-lock"></i> Clôturée le {{ brouillon.date_depot.strftime('%d/%m/%Y') if brouillon.date_depot else '' }}</button>
+        {% endif %}
+        {% if session.is_admin and brouillon.statut != 'cloturee' %}
+        <button class="btn-back" style="background:#dc3545;" onclick="ouvrirModalCloture()"><i class="fas fa-lock"></i> Clôturer</button>
         {% endif %}
         <button class="btn-back" onclick="window.close()"><i class="fas fa-times"></i> Fermer</button>
     </div>
+
+    {% if session.is_admin and brouillon.statut != 'cloturee' %}
+    <!-- ⭐ Modal de clôture — patron : "préciser en rouge qu'apres cette
+         étape aucune modification n'est plus possible ; bien vérifier
+         avant de cliquer sur ok ou cloturer". -->
+    <div id="modalCloture" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:9999; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:8px; padding:22px; max-width:440px; width:92%; font-family:'Times New Roman', Times, serif;">
+            <h5 style="margin:0 0 12px;"><i class="fas fa-lock"></i> Clôturer la facture</h5>
+            <label style="display:block; font-size:12px; margin-bottom:4px;">Date de dépôt</label>
+            <input type="date" id="clotureDateDepot" style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px; margin-bottom:10px;">
+            <p style="color:#dc3545; font-weight:bold; margin:10px 0; font-size:13px;">
+                ⚠️ Après cette étape, AUCUNE modification ne sera plus possible (montants, numéro de facture, date de dépôt).
+                Vérifiez bien avant de cliquer sur « Clôturer définitivement ».
+            </p>
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                <button class="btn-back" style="background:#6c757d;" onclick="fermerModalCloture()">Annuler</button>
+                <button class="btn-back" style="background:#dc3545;" onclick="confirmerCloture()">Clôturer définitivement</button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     <script>
     function telechargerPDF() {
@@ -169,7 +195,7 @@
             pagebreak: { mode: ['css', 'legacy'] }
         };
         html2pdf().set(opt).from(element).save();
-        {% if brouillon.statut != 'deposee' %}
+        {% if brouillon.statut == 'brouillon' %}
         setTimeout(demanderDateDepot, 800);
         {% endif %}
     }
@@ -178,7 +204,7 @@
     // facture comme déposée [...] la vraie date saisie par l'utilisateur"
     // — invite déclenchée juste après impression/PDF, jamais de date
     // automatique.
-    {% if brouillon.statut != 'deposee' %}
+    {% if brouillon.statut == 'brouillon' %}
     function demanderDateDepot() {
         const dateStr = prompt("Date à laquelle ce bordereau a été déposé à la CNSS :", new Date().toISOString().slice(0, 10));
         if (!dateStr) return;
@@ -199,6 +225,31 @@
         .catch(e => alert('Erreur réseau : ' + e));
     }
     window.onafterprint = demanderDateDepot;
+    {% endif %}
+
+    {% if session.is_admin and brouillon.statut != 'cloturee' %}
+    function ouvrirModalCloture() {
+        document.getElementById('clotureDateDepot').value = {{ (brouillon.date_depot.strftime('%Y-%m-%d') if brouillon.date_depot else '')|tojson }} || new Date().toISOString().slice(0, 10);
+        document.getElementById('modalCloture').style.display = 'flex';
+    }
+    function fermerModalCloture() {
+        document.getElementById('modalCloture').style.display = 'none';
+    }
+    function confirmerCloture() {
+        const dateStr = document.getElementById('clotureDateDepot').value;
+        if (!dateStr) { alert('La date de dépôt est obligatoire.'); return; }
+        fetch(`/api/assurance/facture-amu/{{ brouillon.id }}/cloturer`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({date_depot: dateStr})
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) { fermerModalCloture(); window.location.reload(); }
+            else alert('Erreur : ' + (data.error || 'inconnue'));
+        })
+        .catch(e => alert('Erreur réseau : ' + e));
+    }
     {% endif %}
     </script>
 </body>

@@ -56,7 +56,9 @@
                         <td>{{ f.periode }}</td>
                         <td class="text-end">{{ '{:,.0f}'.format(f.total).replace(',', ' ') }} FCFA</td>
                         <td>
-                            {% if f.statut == 'deposee' %}
+                            {% if f.statut == 'cloturee' %}
+                            <span class="badge bg-dark"><i class="fas fa-lock me-1"></i>Clôturée</span>
+                            {% elif f.statut == 'deposee' %}
                             <span class="badge bg-success">Déposée</span>
                             {% else %}
                             <span class="badge bg-warning text-dark">Brouillon</span>
@@ -99,6 +101,12 @@
                             <a href="{{ url_for('imprimer_facture_amu_cnss', facture_id=f.id) }}" class="btn btn-sm btn-outline-primary" target="_blank">
                                 <i class="fas fa-print"></i>
                             </a>
+                            {% endif %}
+                            {% if session.is_admin and f.statut != 'cloturee' %}
+                            <button type="button" class="btn btn-sm btn-danger" title="Clôturer"
+                                    onclick="ouvrirModalCloture({{ f.id }}, '{{ f.date_depot.strftime('%Y-%m-%d') if f.date_depot else '' }}', '/api/assurance/facture-amu/{{ f.id }}/cloturer')">
+                                <i class="fas fa-lock"></i>
+                            </button>
                             {% endif %}
                         </td>
                     </tr>
@@ -167,6 +175,25 @@
                 <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
                 <button class="btn btn-success" id="btnValiderPaiement" onclick="enregistrerPaiement()">Valider l'encaissement</button>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- ⭐ Modal de clôture — patron : "préciser en rouge qu'apres cette étape
+     aucune modification n'est plus possible ; bien vérifier avant de
+     cliquer sur ok ou cloturer". -->
+<div id="modalCloture" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:9999; align-items:center; justify-content:center;">
+    <div style="background:white; border-radius:8px; padding:22px; max-width:440px; width:92%;">
+        <h5 style="margin:0 0 12px;"><i class="fas fa-lock me-1"></i> Clôturer la facture</h5>
+        <label class="form-label small mb-0">Date de dépôt</label>
+        <input type="date" id="clotureDateDepot" class="form-control mb-2">
+        <p style="color:#dc3545; font-weight:bold; margin:10px 0;">
+            ⚠️ Après cette étape, AUCUNE modification ne sera plus possible (montants, numéro de facture, date de dépôt).
+            Vérifiez bien avant de cliquer sur « Clôturer définitivement ».
+        </p>
+        <div style="display:flex; gap:8px; justify-content:flex-end;">
+            <button class="btn btn-secondary btn-sm" onclick="fermerModalCloture()">Annuler</button>
+            <button class="btn btn-danger btn-sm" onclick="confirmerCloture()">Clôturer définitivement</button>
         </div>
     </div>
 </div>
@@ -244,6 +271,33 @@ function enregistrerPaiement() {
         btn.disabled = false;
         alert('❌ Erreur réseau : ' + error);
     });
+}
+
+// ⭐ Clôture — voir le commentaire du modal #modalCloture pour le patron.
+let _clotureEndpoint = null;
+function ouvrirModalCloture(factureId, dateDepotActuelle, endpoint) {
+    _clotureEndpoint = endpoint;
+    document.getElementById('clotureDateDepot').value = dateDepotActuelle || new Date().toISOString().slice(0, 10);
+    document.getElementById('modalCloture').style.display = 'flex';
+}
+function fermerModalCloture() {
+    document.getElementById('modalCloture').style.display = 'none';
+    _clotureEndpoint = null;
+}
+function confirmerCloture() {
+    const dateStr = document.getElementById('clotureDateDepot').value;
+    if (!dateStr) { alert('La date de dépôt est obligatoire.'); return; }
+    if (!_clotureEndpoint) return;
+    fetch(_clotureEndpoint, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({date_depot: dateStr})
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) { fermerModalCloture(); window.location.reload(); }
+            else alert('Erreur : ' + (data.error || 'inconnue'));
+        })
+        .catch(e => alert('Erreur réseau : ' + e));
 }
 </script>
 

@@ -2088,6 +2088,16 @@ class FactureAssurance(db.Model):
     # Même logique que FactureAmuMensuelle.date_depot, mais ici pour le
     # bordereau détaillé (AMU ET complémentaire/CAC).
     date_depot = db.Column(db.Date)
+    # ⭐ Clôture — patron : "faire en sorte que si qu'on puisse cloturer
+    # une facture amu comme cac [...] apres cette étape aucune modification
+    # n'est plus possible". Verrou définitif (contrairement à date_depot,
+    # qui n'a jamais bloqué de modification) posé sur ce bordereau — la
+    # regénération mensuelle (generer_factures_assurance) et le nouveau
+    # dépôt (marquer_depose) le respectent. L'encaissement (/payer) reste
+    # volontairement possible après clôture : un assureur peut régler des
+    # semaines après le dépôt du bordereau, ça n'a rien à voir avec le
+    # contenu du document lui-même.
+    cloturee = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -2472,7 +2482,12 @@ class FactureAmuMensuelle(db.Model):
     mois = db.Column(db.Integer, nullable=False)  # 1-12
     numero_local = db.Column(db.Integer)  # numérotation locale — voir prochain_numero_local() ; "N° facture" côté INAM
     lignes = db.Column(db.JSON)  # [{categorie, nombre_feuilles, montant}, ...]
-    statut = db.Column(db.String(20), default='brouillon')  # 'brouillon' | 'deposee'
+    # ⭐ 'cloturee' ajouté — patron : "cloturer une facture [...] apres
+    # cette étape aucune modification n'est plus possible". Contrairement
+    # à 'deposee' (simple marqueur de traçabilité, jamais un verrou),
+    # 'cloturee' bloque réellement : régénération, enregistrement manuel,
+    # numéro de facture, nouveau dépôt. Voir api_cloturer_facture_amu.
+    statut = db.Column(db.String(20), default='brouillon')  # 'brouillon' | 'deposee' | 'cloturee'
     date_depot = db.Column(db.DateTime)
     created_by = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

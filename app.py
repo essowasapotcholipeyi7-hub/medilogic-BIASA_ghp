@@ -14501,7 +14501,7 @@ def generer_factures_assurance():
             # ÉCRASAIT son montant/type/détails au lieu d'en créer une
             # nouvelle — les deux se mélangeaient en une seule facture.
             existing = db.execute_query("""
-                SELECT id, montant_rembourse
+                SELECT id, montant_rembourse, cloturee
                 FROM factures_assurance
                 WHERE structure_id = %s AND mois_reference = %s AND assurance = %s
                 AND (societe = %s OR (societe IS NULL AND %s IS NULL))
@@ -14510,6 +14510,17 @@ def generer_factures_assurance():
 
             if existing and len(existing) > 0:
                 facture_id = existing[0]['id']
+                # ⭐ Clôturée = verrouillée — patron : "apres cette étape
+                # aucune modification n'est plus possible", y compris la
+                # régénération automatique mensuelle qui écraserait sinon
+                # montant_total/statut/details en silence.
+                if existing[0].get('cloturee'):
+                    resultats.append({
+                        'assurance': assurance, 'societe': societe,
+                        'montant': float(existing[0]['montant_rembourse'] or 0),
+                        'statut': 'cloturee_ignoree', 'type': data_assurance['type'],
+                    })
+                    continue
                 deja_rembourse = float(existing[0]['montant_rembourse'] or 0)
                 nouveau_total = data_assurance['total']
                 type_assurance = data_assurance['type']
@@ -14835,6 +14846,8 @@ def api_marquer_depose_facture_assurance(facture_id):
         facture = FactureAssurance.query.filter_by(id=facture_id, structure_id=structure_id).first()
         if not facture:
             return jsonify({'success': False, 'error': 'Facture introuvable'}), 404
+        if facture.cloturee:
+            return jsonify({'success': False, 'error': 'Facture clôturée — plus aucune modification possible.'}), 403
         data = request.json or {}
         date_depot_str = (data.get('date_depot') or '').strip()
         if not date_depot_str:
@@ -14843,6 +14856,39 @@ def api_marquer_depose_facture_assurance(facture_id):
             facture.date_depot = datetime.strptime(date_depot_str, '%Y-%m-%d').date()
         except ValueError:
             return jsonify({'success': False, 'error': 'Date invalide'}), 400
+        db.session.commit()
+        return jsonify({'success': True, 'date_depot': facture.date_depot.isoformat()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ⭐ Clôture d'un bordereau CAC/complémentaire (voir aussi
+# api_cloturer_facture_amu pour l'équivalent AMU) — patron : "cloturer une
+# facture amu comme cac [...] apres cette étape aucune modification n'est
+# plus possible". L'encaissement (/payer) reste volontairement possible
+# après clôture — voir le commentaire sur FactureAssurance.cloturee.
+@app.route('/api/assurances/factures/<int:facture_id>/cloturer', methods=['POST'])
+@login_required
+def api_cloturer_facture_assurance(facture_id):
+    if not session.get('is_admin'):
+        return jsonify({'success': False, 'error': "Réservé à l'administrateur"}), 403
+    try:
+        structure_id = session.get('structure_id')
+        facture = FactureAssurance.query.filter_by(id=facture_id, structure_id=structure_id).first()
+        if not facture:
+            return jsonify({'success': False, 'error': 'Facture introuvable'}), 404
+        if facture.cloturee:
+            return jsonify({'success': False, 'error': 'Déjà clôturée'}), 400
+        data = request.json or {}
+        date_depot_str = (data.get('date_depot') or '').strip()
+        if not date_depot_str:
+            return jsonify({'success': False, 'error': 'Date de dépôt requise pour clôturer'}), 400
+        try:
+            facture.date_depot = datetime.strptime(date_depot_str, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Date invalide'}), 400
+        facture.cloturee = True
         db.session.commit()
         return jsonify({'success': True, 'date_depot': facture.date_depot.isoformat()})
     except Exception as e:
@@ -18423,6 +18469,8 @@ def api_generer_facture_amu_cnss():
                                              numero_local=prochain_numero_local('factures_amu_mensuelles', structure_id),
                                              created_by=user_name)
             db.session.add(brouillon)
+        elif brouillon.statut == 'cloturee':
+            return jsonify({'success': False, 'error': 'Facture clôturée — plus aucune modification possible.'}), 403
         brouillon.lignes = lignes_liste
         db.session.commit()
 
@@ -18455,6 +18503,8 @@ def api_enregistrer_facture_amu_cnss():
                                              numero_local=prochain_numero_local('factures_amu_mensuelles', structure_id),
                                              created_by=user_name)
             db.session.add(brouillon)
+        elif brouillon.statut == 'cloturee':
+            return jsonify({'success': False, 'error': 'Facture clôturée — plus aucune modification possible.'}), 403
         # ⭐ Validation minimale : ne garder que les catégories connues, avec
         # des nombres propres — la saisie vient d'un formulaire HTML, pas
         # d'un appel API de confiance.
@@ -18484,6 +18534,8 @@ def api_deposer_facture_amu_cnss(facture_id):
         brouillon = FactureAmuMensuelle.query.filter_by(id=facture_id, structure_id=structure_id).first()
         if not brouillon:
             return jsonify({'success': False, 'error': 'Facture introuvable'}), 404
+        if brouillon.statut == 'cloturee':
+            return jsonify({'success': False, 'error': 'Facture clôturée — plus aucune modification possible.'}), 403
         # ⭐ La date de dépôt vient TOUJOURS de l'utilisateur (jamais
         # "maintenant" par défaut) — patron : le dépôt physique se fait
         # souvent un autre jour que celui où on marque la case dans
@@ -18507,6 +18559,43 @@ def api_deposer_facture_amu_cnss(facture_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+# ⭐ Clôture — patron : "faire en sorte que si qu'on puisse cloturer une
+# facture amu comme cac [...] et en cloturer on demande la date de depot
+# et qu'on préciser en rouge qu'apres cette étape aucune modification
+# n'est plus possible". Verrou définitif (contrairement à "déposée", qui
+# n'a jamais bloqué de modification) — voir les gardes `if statut ==
+# 'cloturee'` sur générer/enregistrer/déposer/numéro ci-dessus/dessous.
+# Réservé à l'admin, comme la modification du numéro de facture : une
+# clôture accidentelle est irréversible, pas touchable par erreur par un
+# caissier/secrétaire.
+@app.route('/api/assurance/facture-amu/<int:facture_id>/cloturer', methods=['POST'])
+@login_required
+def api_cloturer_facture_amu(facture_id):
+    if not session.get('is_admin'):
+        return jsonify({'success': False, 'error': "Réservé à l'administrateur"}), 403
+    try:
+        structure_id = session.get('structure_id')
+        brouillon = FactureAmuMensuelle.query.filter_by(id=facture_id, structure_id=structure_id).first()
+        if not brouillon:
+            return jsonify({'success': False, 'error': 'Facture introuvable'}), 404
+        if brouillon.statut == 'cloturee':
+            return jsonify({'success': False, 'error': 'Déjà clôturée'}), 400
+        data = request.json or {}
+        date_depot_str = (data.get('date_depot') or '').strip()
+        if not date_depot_str:
+            return jsonify({'success': False, 'error': 'Date de dépôt requise pour clôturer'}), 400
+        try:
+            brouillon.date_depot = datetime.strptime(date_depot_str, '%Y-%m-%d')
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Date invalide'}), 400
+        brouillon.statut = 'cloturee'
+        db.session.commit()
+        return jsonify({'success': True, 'date_depot': brouillon.date_depot.isoformat()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 # ⭐ Numéro de facture recap AMU (CNSS/TNS/INAM confondus — un seul
 # compteur par structure, voir prochain_numero_local) : "retrouver
 # facilement la facture que l'assurance a réglée et encaissée". Modifiable
@@ -18522,6 +18611,8 @@ def api_modifier_numero_facture_amu(facture_id):
         brouillon = FactureAmuMensuelle.query.filter_by(id=facture_id, structure_id=structure_id).first()
         if not brouillon:
             return jsonify({'success': False, 'error': 'Facture introuvable'}), 404
+        if brouillon.statut == 'cloturee':
+            return jsonify({'success': False, 'error': 'Facture clôturée — plus aucune modification possible.'}), 403
         data = request.json or {}
         try:
             nouveau_numero = int(data.get('numero_local'))
@@ -18724,6 +18815,8 @@ def api_generer_facture_amu_inam():
                                              numero_local=prochain_numero_local('factures_amu_mensuelles', structure_id),
                                              created_by=user_name)
             db.session.add(brouillon)
+        elif brouillon.statut == 'cloturee':
+            return jsonify({'success': False, 'error': 'Facture clôturée — plus aucune modification possible.'}), 403
         brouillon.lignes = lignes_liste
         db.session.commit()
 
@@ -18755,6 +18848,8 @@ def api_enregistrer_facture_amu_inam():
                                              numero_local=prochain_numero_local('factures_amu_mensuelles', structure_id),
                                              created_by=user_name)
             db.session.add(brouillon)
+        elif brouillon.statut == 'cloturee':
+            return jsonify({'success': False, 'error': 'Facture clôturée — plus aucune modification possible.'}), 403
         propre = []
         for l in lignes_liste:
             cle = l.get('categorie')
@@ -18781,6 +18876,8 @@ def api_deposer_facture_amu_inam(facture_id):
         brouillon = FactureAmuMensuelle.query.filter_by(id=facture_id, structure_id=structure_id).first()
         if not brouillon:
             return jsonify({'success': False, 'error': 'Facture introuvable'}), 404
+        if brouillon.statut == 'cloturee':
+            return jsonify({'success': False, 'error': 'Facture clôturée — plus aucune modification possible.'}), 403
         # ⭐ Même correctif que côté CNSS : date de dépôt saisie par
         # l'utilisateur, jamais "maintenant" par défaut.
         data = request.json or {}
