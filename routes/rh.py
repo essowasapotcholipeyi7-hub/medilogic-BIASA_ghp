@@ -1668,31 +1668,74 @@ def api_simuler_conge(structure_id, id):
 @rh_bp.route('/api/conges/stats/<int:employe_id>')
 @require_structure
 def api_conges_stats(structure_id, employe_id):
-    """API: Statistiques des congés par année"""
+    """API: Statistiques des congés par année — patron : "voir clairement
+    le nombre de jours de congés restant [...] en fonction des années [...]
+    quand on choisit un employé et choisit une année donnée qu'on voit
+    clairement les statistiques". `annee` (optionnel) recentre la fenêtre
+    de 5 ans affichée ET le détail des congés/permissions renvoyés ; par
+    défaut l'année en cours."""
     employe = Employe.query.filter_by(id=employe_id, structure_id=structure_id).first()
     if not employe:
         return jsonify({'error': 'Employé non trouvé'}), 404
-    
+
     annee_actuelle = datetime.now().year
+    annee_ref = request.args.get('annee', type=int) or annee_actuelle
     stats = []
-    
-    for an in range(annee_actuelle - 2, annee_actuelle + 3):
+
+    for an in range(annee_ref - 2, annee_ref + 3):
         solde_info = calculer_solde_conges(employe_id, an)
-        
+
         stats.append({
             'annee': an,
             'conges_pris': solde_info['conges_pris'],
             'permissions_pris': solde_info['permissions_pris'],
+            'permissions_deduites': solde_info.get('permissions_deduites', True),
             'total_pris': solde_info['pris'],
+            'total_annuel': solde_info.get('total_annuel', CONGES_ANNUELS),
             'solde_restant': solde_info['solde'],
             'est_epuise': solde_info['solde'] <= 0
         })
-    
+
+    # ⭐ Détail (uniquement pour l'année de référence, pas les 5, pour ne
+    # pas alourdir la réponse) — même logique de filtrage que
+    # Employe.get_solde_detail() : imputation par annee_utilisation, pas
+    # date_debut.
+    types_non_deductibles = [t for t, deductible in TYPES_CONGE_DEDUCTIBLES.items() if not deductible]
+    conges_annee = Conge.query.filter(
+        Conge.employe_id == employe_id,
+        Conge.annee_utilisation == annee_ref,
+    ).order_by(Conge.date_debut.asc()).all()
+    permissions_annee = Permission.query.filter(
+        Permission.employe_id == employe_id,
+        db.extract('year', Permission.date_debut) == annee_ref,
+    ).order_by(Permission.date_debut.asc()).all()
+
+    detail_conges = [{
+        'id': c.id,
+        'type_conge': c.type_conge,
+        'date_debut': c.date_debut.strftime('%d/%m/%Y'),
+        'date_fin': c.date_fin.strftime('%d/%m/%Y'),
+        'nombre_jours': c.nombre_jours,
+        'statut': c.statut,
+        'deductible': c.type_conge not in types_non_deductibles,
+    } for c in conges_annee]
+    detail_permissions = [{
+        'id': p.id,
+        'date_debut': p.date_debut.strftime('%d/%m/%Y') if p.date_debut else '',
+        'date_fin': p.date_fin.strftime('%d/%m/%Y') if p.date_fin else '',
+        'nombre_jours': p.nombre_jours,
+        'statut': p.statut,
+    } for p in permissions_annee]
+
     return jsonify({
         'employe': f"{employe.nom} {employe.prenom}",
+        'matricule': employe.matricule,
         'total_annuel': CONGES_ANNUELS,
         'stats': stats,
-        'annee_courante': annee_actuelle
+        'annee_courante': annee_actuelle,
+        'annee_reference': annee_ref,
+        'detail_conges': detail_conges,
+        'detail_permissions': detail_permissions,
     })
 
 

@@ -484,9 +484,14 @@
                         <div class="tab-pane fade" id="conges" role="tabpanel">
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <h6 class="mb-0"><i class="fas fa-calendar-alt me-2"></i>Gestion des congés</h6>
-                                <button class="btn btn-warning btn-sm" id="btnDemanderConge" onclick="ouvrirDemandeConge()">
-                                    <i class="fas fa-calendar-plus me-1"></i> Demander un congé
-                                </button>
+                                <div>
+                                    <button class="btn btn-outline-primary btn-sm" onclick="ouvrirSoldeConges()">
+                                        <i class="fas fa-chart-bar me-1"></i> Solde congés
+                                    </button>
+                                    <button class="btn btn-warning btn-sm" id="btnDemanderConge" onclick="ouvrirDemandeConge()">
+                                        <i class="fas fa-calendar-plus me-1"></i> Demander un congé
+                                    </button>
+                                </div>
                             </div>
 
                             <!-- Filtres -->
@@ -967,6 +972,43 @@
     </div>
 </div>
 
+<!-- ⭐ MODAL SOLDE CONGÉS — patron : "voir clairement le nombre de jours de
+     congés restant pour un employé donné en fonction des années [...] quand
+     on choisit un employé et choisit une année donnée qu'on voit clairement
+     les statistiques des congés". Consultation seule, ne crée/ne modifie
+     rien — s'appuie sur /rh/api/conges/stats/<id> (déjà correcte, déléguait
+     déjà à Employe.get_solde_detail(), mais n'était branchée nulle part). -->
+<div class="modal fade" id="soldeCongesModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-chart-bar me-2"></i>Solde de congés</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2 mb-3">
+                    <div class="col-md-8">
+                        <label class="form-label small">Employé *</label>
+                        <select class="form-select form-select-sm" id="soldeCongeEmploye" onchange="chargerSoldeConges()">
+                            <option value="">Sélectionner</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Année de référence</label>
+                        <input type="number" class="form-control form-control-sm" id="soldeCongeAnnee" onchange="chargerSoldeConges()">
+                    </div>
+                </div>
+                <div id="soldeCongesContenu">
+                    <div class="text-muted text-center py-3">Sélectionnez un employé pour voir son solde.</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- ⭐ MODAL PERMISSION -->
 <div class="modal fade" id="permissionModal" tabindex="-1" data-bs-backdrop="static">
     <div class="modal-dialog">
@@ -1319,6 +1361,9 @@ function afficherEmployes() {
                     <div class="btn-group btn-group-sm">
                         <button class="btn btn-info" onclick="voirEmploye(${e.id})" title="Détails">
                             <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-outline-primary" onclick="ouvrirSoldeConges(${e.id})" title="Solde congés">
+                            <i class="fas fa-chart-bar"></i>
                         </button>
                         <button class="btn btn-warning" onclick="modifierEmploye(${e.id})" title="Modifier">
                             <i class="fas fa-edit"></i>
@@ -1830,6 +1875,105 @@ function ouvrirDemandeCongeSimple() {
         .catch(error => {
             console.error('Erreur:', error);
             new bootstrap.Modal(document.getElementById('congeModal')).show();
+        });
+}
+
+// ⭐ Consultation du solde de congés — voir commentaire sur #soldeCongesModal.
+// employeId optionnel : pré-sélectionne l'employé (ex. depuis la liste des
+// employés) et charge directement ses stats ; sinon l'utilisateur choisit.
+function ouvrirSoldeConges(employeId) {
+    fetch('/rh/api/employes')
+        .then(r => r.json())
+        .then(employes => {
+            const select = document.getElementById('soldeCongeEmploye');
+            select.innerHTML = '<option value="">Sélectionner</option>';
+            employes.forEach(e => {
+                select.innerHTML += `<option value="${e.id}">${e.nom} ${e.prenom} (${e.matricule})</option>`;
+            });
+            document.getElementById('soldeCongeAnnee').value = new Date().getFullYear();
+            document.getElementById('soldeCongesContenu').innerHTML =
+                '<div class="text-muted text-center py-3">Sélectionnez un employé pour voir son solde.</div>';
+            new bootstrap.Modal(document.getElementById('soldeCongesModal')).show();
+            if (employeId) {
+                select.value = employeId;
+                chargerSoldeConges();
+            }
+        })
+        .catch(error => console.error('Erreur chargement employés:', error));
+}
+
+function chargerSoldeConges() {
+    const employeId = document.getElementById('soldeCongeEmploye').value;
+    const contenu = document.getElementById('soldeCongesContenu');
+    if (!employeId) {
+        contenu.innerHTML = '<div class="text-muted text-center py-3">Sélectionnez un employé pour voir son solde.</div>';
+        return;
+    }
+    const annee = document.getElementById('soldeCongeAnnee').value || new Date().getFullYear();
+    contenu.innerHTML = '<div class="text-muted text-center py-3"><i class="fas fa-spinner fa-spin me-2"></i>Chargement...</div>';
+
+    fetch(`/rh/api/conges/stats/${employeId}?annee=${annee}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                contenu.innerHTML = `<div class="alert alert-danger py-2">${data.error}</div>`;
+                return;
+            }
+
+            const statutBadge = (statut) => {
+                const cls = statut === 'approuve' ? 'success' : (statut === 'refuse' ? 'danger' : 'secondary');
+                return `<span class="badge bg-${cls}">${statut}</span>`;
+            };
+
+            const lignesAnnees = data.stats.map(s => {
+                const estCourante = s.annee === data.annee_courante;
+                const estReference = s.annee === data.annee_reference;
+                let soldeClass = 'text-success fw-bold';
+                if (s.solde_restant <= 0) soldeClass = 'text-danger fw-bold';
+                else if (s.solde_restant <= 5) soldeClass = 'text-warning fw-bold';
+                return `<tr class="${estReference ? 'table-primary' : ''}">
+                    <td>${s.annee} ${estCourante ? '<span class="badge bg-info ms-1">en cours</span>' : ''}</td>
+                    <td>${s.total_annuel} j</td>
+                    <td>${s.conges_pris} j</td>
+                    <td>${s.permissions_deduites ? s.permissions_pris + ' j' : '<span class="text-muted">non déduites</span>'}</td>
+                    <td>${s.total_pris} j</td>
+                    <td class="${soldeClass}">${s.solde_restant} j ${s.est_epuise ? '<i class="fas fa-exclamation-triangle" title="Solde épuisé"></i>' : ''}</td>
+                </tr>`;
+            }).join('');
+
+            const detailConges = (data.detail_conges || []).length
+                ? data.detail_conges.map(c => `<li class="list-group-item d-flex justify-content-between align-items-center py-1" style="font-size:12px;">
+                    <span>${c.type_conge}${c.deductible ? '' : ' <span class="text-muted">(non déductible)</span>'} — ${c.date_debut} → ${c.date_fin} (${c.nombre_jours} j)</span>
+                    ${statutBadge(c.statut)}
+                </li>`).join('')
+                : '<li class="list-group-item text-muted py-1" style="font-size:12px;">Aucun congé enregistré cette année</li>';
+
+            const detailPermissions = (data.detail_permissions || []).length
+                ? data.detail_permissions.map(p => `<li class="list-group-item d-flex justify-content-between align-items-center py-1" style="font-size:12px;">
+                    <span>Permission — ${p.date_debut} → ${p.date_fin} (${p.nombre_jours} j)</span>
+                    ${statutBadge(p.statut)}
+                </li>`).join('')
+                : '<li class="list-group-item text-muted py-1" style="font-size:12px;">Aucune permission enregistrée cette année</li>';
+
+            contenu.innerHTML = `
+                <h6 class="mb-3">${data.employe} <small class="text-muted">(${data.matricule || ''})</small></h6>
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm table-bordered">
+                        <thead class="table-light">
+                            <tr><th>Année</th><th>Droit annuel</th><th>Congés pris</th><th>Permissions</th><th>Total pris</th><th>Solde restant</th></tr>
+                        </thead>
+                        <tbody>${lignesAnnees}</tbody>
+                    </table>
+                </div>
+                <h6 class="mb-1" style="font-size:13px;"><i class="fas fa-list me-1"></i>Détail congés — ${annee}</h6>
+                <ul class="list-group mb-3">${detailConges}</ul>
+                <h6 class="mb-1" style="font-size:13px;"><i class="fas fa-list me-1"></i>Détail permissions — ${annee}</h6>
+                <ul class="list-group">${detailPermissions}</ul>
+            `;
+        })
+        .catch(error => {
+            console.error('Erreur chargement solde congés:', error);
+            contenu.innerHTML = '<div class="alert alert-danger py-2">Erreur de chargement.</div>';
         });
 }
 
