@@ -341,10 +341,31 @@ class Employe(db.Model):
     statut = db.Column(db.String(20), default='Actif')
     
     # Documents
+    # ⭐ Patron : "documents jamais gérés (photo, pièce d'identité, contrat
+    # — champs présents, jamais utilisés)" — les *_url ci-dessus existaient
+    # déjà mais rien ne les remplissait. Le contenu réel est stocké en base
+    # (base64, comme DocumentRH.contenu_pdf le fait déjà pour les
+    # documents générés) plutôt que sur disque : le filesystem de Render
+    # est éphémère (un fichier uploadé ne survivrait pas à un redeploy),
+    # et aucun service de stockage cloud n'est configuré dans ce projet.
+    # *_url pointe vers la route de téléchargement (voir
+    # telecharger_document_employe, routes/rh.py) qui sert ce contenu —
+    # rien d'autre dans l'appli n'a besoin de savoir comment il est
+    # réellement stocké. `db.deferred` : ces blobs ne sont PAS chargés par
+    # les requêtes Employe.query habituelles (listes paie/congés/RH...),
+    # seulement quand on y accède explicitement (téléchargement).
     photo_url = db.Column(db.String(500))
+    photo_data = db.deferred(db.Column(db.Text))
+    photo_content_type = db.Column(db.String(100))
     piece_identite_url = db.Column(db.String(500))
+    piece_identite_data = db.deferred(db.Column(db.Text))
+    piece_identite_content_type = db.Column(db.String(100))
+    piece_identite_filename = db.Column(db.String(255))
     contrat_url = db.Column(db.String(500))
-    
+    contrat_data = db.deferred(db.Column(db.Text))
+    contrat_content_type = db.Column(db.String(100))
+    contrat_filename = db.Column(db.String(255))
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

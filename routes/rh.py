@@ -1,7 +1,8 @@
 # routes/rh.py - VERSION CORRIGÉE ET OPTIMISÉE
-from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for, flash
+from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for, flash, Response
 from datetime import datetime, date, time, timedelta
 from sqlalchemy import or_, and_, extract, func
+import base64
 import json
 import traceback
 
@@ -56,6 +57,18 @@ def _verifier_role_rh():
 # CONSTANTES
 # ============================================================
 CONGES_ANNUELS = 30  # ⭐ Nombre de jours de congés par année
+
+# ⭐ Patron : "documents jamais gérés (photo, pièce d'identité, contrat —
+# champs présents, jamais utilisés)" — types de documents employé
+# acceptés en upload (voir api_uploader_document_employe) et leur taille
+# max, pour éviter qu'un fichier énorme gonfle inutilement la base
+# (aucun stockage disque/cloud disponible ici — voir commentaire sur
+# Employe.photo_data, models.py).
+TYPES_DOCUMENT_EMPLOYE = {
+    'photo': {'mimetypes': {'image/jpeg', 'image/png', 'image/webp'}, 'max_mo': 3},
+    'piece_identite': {'mimetypes': {'image/jpeg', 'image/png', 'application/pdf'}, 'max_mo': 5},
+    'contrat': {'mimetypes': {'image/jpeg', 'image/png', 'application/pdf'}, 'max_mo': 5},
+}
 
 
 def _clamp_personnes_a_charge(valeur, maximum=6):
@@ -690,6 +703,86 @@ def api_reintegrer_employe(structure_id, id):
     except Exception as e:
         db.session.rollback()
         print(f"❌ Erreur api_reintegrer_employe: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@rh_bp.route('/employe/<int:id>/document/<type_doc>', methods=['POST'])
+@require_structure
+def api_uploader_document_employe(structure_id, id, type_doc):
+    """⭐ Patron : "documents jamais gérés (photo, pièce d'identité,
+    contrat — champs présents, jamais utilisés)". Voir le commentaire sur
+    Employe.photo_data (models.py) pour le choix du stockage en base."""
+    regles = TYPES_DOCUMENT_EMPLOYE.get(type_doc)
+    if not regles:
+        return jsonify({'error': 'Type de document inconnu'}), 400
+    employe = Employe.query.filter_by(id=id, structure_id=structure_id).first()
+    if not employe:
+        return jsonify({'error': 'Employé non trouvé'}), 404
+    if 'file' not in request.files or not request.files['file'].filename:
+        return jsonify({'error': 'Aucun fichier fourni'}), 400
+
+    file = request.files['file']
+    contenu = file.read()
+    if len(contenu) > regles['max_mo'] * 1024 * 1024:
+        return jsonify({'error': f"Fichier trop volumineux (max {regles['max_mo']} Mo)"}), 400
+    if file.mimetype not in regles['mimetypes']:
+        formats = 'JPEG/PNG/PDF' if type_doc != 'photo' else 'JPEG/PNG/WEBP'
+        return jsonify({'error': f'Format non autorisé ({formats} uniquement)'}), 400
+
+    try:
+        data_b64 = base64.b64encode(contenu).decode('ascii')
+        setattr(employe, f'{type_doc}_data', data_b64)
+        setattr(employe, f'{type_doc}_content_type', file.mimetype)
+        if type_doc != 'photo':
+            setattr(employe, f'{type_doc}_filename', file.filename)
+        setattr(employe, f'{type_doc}_url', url_for('rh.telecharger_document_employe', id=id, type_doc=type_doc))
+        db.session.commit()
+        return jsonify({'success': True, 'url': getattr(employe, f'{type_doc}_url')})
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Erreur api_uploader_document_employe: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@rh_bp.route('/employe/<int:id>/document/<type_doc>', methods=['GET'])
+@require_structure
+def telecharger_document_employe(structure_id, id, type_doc):
+    """Sert le contenu stocké en base — voir api_uploader_document_employe.
+    Chargement explicite du champ `_data` (deferred, voir models.py) pour
+    cette seule requête."""
+    if type_doc not in TYPES_DOCUMENT_EMPLOYE:
+        return jsonify({'error': 'Type de document inconnu'}), 404
+    employe = Employe.query.filter_by(id=id, structure_id=structure_id).first()
+    if not employe:
+        return jsonify({'error': 'Employé non trouvé'}), 404
+
+    data_b64 = getattr(employe, f'{type_doc}_data', None)
+    if not data_b64:
+        return jsonify({'error': 'Aucun fichier'}), 404
+
+    content_type = getattr(employe, f'{type_doc}_content_type', None) or 'application/octet-stream'
+    return Response(base64.b64decode(data_b64), mimetype=content_type)
+
+
+@rh_bp.route('/employe/<int:id>/document/<type_doc>', methods=['DELETE'])
+@require_structure
+def api_supprimer_document_employe(structure_id, id, type_doc):
+    if type_doc not in TYPES_DOCUMENT_EMPLOYE:
+        return jsonify({'error': 'Type de document inconnu'}), 400
+    employe = Employe.query.filter_by(id=id, structure_id=structure_id).first()
+    if not employe:
+        return jsonify({'error': 'Employé non trouvé'}), 404
+    try:
+        setattr(employe, f'{type_doc}_data', None)
+        setattr(employe, f'{type_doc}_content_type', None)
+        setattr(employe, f'{type_doc}_url', None)
+        if type_doc != 'photo':
+            setattr(employe, f'{type_doc}_filename', None)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Erreur api_supprimer_document_employe: {e}")
         return jsonify({'error': str(e)}), 500
 
 

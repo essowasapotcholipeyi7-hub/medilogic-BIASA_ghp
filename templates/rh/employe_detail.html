@@ -302,6 +302,104 @@
                 </div>
 
                 <!-- ============================================ -->
+                <!-- DOCUMENTS — patron : "documents jamais gérés (photo, pièce
+                     d'identité, contrat — champs présents, jamais utilisés)".
+                     Voir api_uploader_document_employe (routes/rh.py) et
+                     Employe.photo_data (models.py) pour le stockage. -->
+                <!-- ============================================ -->
+                <div class="row mt-3 no-print">
+                    <div class="col-12">
+                        <h6 class="section-title"><i class="fas fa-folder-open me-2"></i>Documents</h6>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <div class="card h-100">
+                                    <div class="card-body text-center">
+                                        <h6 class="small text-muted mb-2">Photo</h6>
+                                        <div class="mb-2">
+                                            {% if employe.photo_url %}
+                                                <img src="{{ employe.photo_url }}" alt="Photo" style="max-width:100%; max-height:150px; border-radius:8px;">
+                                            {% else %}
+                                                <i class="fas fa-user-circle fa-4x text-muted"></i>
+                                                <div class="text-muted small">Aucune photo</div>
+                                            {% endif %}
+                                        </div>
+                                        <input type="file" class="form-control form-control-sm mb-2" id="docPhotoInput" accept="image/jpeg,image/png,image/webp">
+                                        <div class="btn-group btn-group-sm">
+                                            <button class="btn btn-primary" onclick="uploaderDocumentEmploye('photo')">
+                                                <i class="fas fa-upload"></i> {{ 'Remplacer' if employe.photo_url else 'Téléverser' }}
+                                            </button>
+                                            {% if employe.photo_url %}
+                                            <button class="btn btn-outline-danger" onclick="supprimerDocumentEmploye('photo')" title="Supprimer">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card h-100">
+                                    <div class="card-body text-center">
+                                        <h6 class="small text-muted mb-2">Pièce d'identité</h6>
+                                        <div class="mb-2">
+                                            {% if employe.piece_identite_url %}
+                                                <a href="{{ employe.piece_identite_url }}" target="_blank" class="text-decoration-none">
+                                                    <i class="fas fa-file-alt fa-4x text-primary"></i>
+                                                    <div class="small">{{ employe.piece_identite_filename or 'Voir le fichier' }}</div>
+                                                </a>
+                                            {% else %}
+                                                <i class="fas fa-file-alt fa-4x text-muted"></i>
+                                                <div class="text-muted small">Aucun fichier</div>
+                                            {% endif %}
+                                        </div>
+                                        <input type="file" class="form-control form-control-sm mb-2" id="docPieceIdentiteInput" accept="image/jpeg,image/png,application/pdf">
+                                        <div class="btn-group btn-group-sm">
+                                            <button class="btn btn-primary" onclick="uploaderDocumentEmploye('piece_identite')">
+                                                <i class="fas fa-upload"></i> {{ 'Remplacer' if employe.piece_identite_url else 'Téléverser' }}
+                                            </button>
+                                            {% if employe.piece_identite_url %}
+                                            <button class="btn btn-outline-danger" onclick="supprimerDocumentEmploye('piece_identite')" title="Supprimer">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card h-100">
+                                    <div class="card-body text-center">
+                                        <h6 class="small text-muted mb-2">Contrat</h6>
+                                        <div class="mb-2">
+                                            {% if employe.contrat_url %}
+                                                <a href="{{ employe.contrat_url }}" target="_blank" class="text-decoration-none">
+                                                    <i class="fas fa-file-contract fa-4x text-primary"></i>
+                                                    <div class="small">{{ employe.contrat_filename or 'Voir le fichier' }}</div>
+                                                </a>
+                                            {% else %}
+                                                <i class="fas fa-file-contract fa-4x text-muted"></i>
+                                                <div class="text-muted small">Aucun fichier</div>
+                                            {% endif %}
+                                        </div>
+                                        <input type="file" class="form-control form-control-sm mb-2" id="docContratInput" accept="image/jpeg,image/png,application/pdf">
+                                        <div class="btn-group btn-group-sm">
+                                            <button class="btn btn-primary" onclick="uploaderDocumentEmploye('contrat')">
+                                                <i class="fas fa-upload"></i> {{ 'Remplacer' if employe.contrat_url else 'Téléverser' }}
+                                            </button>
+                                            {% if employe.contrat_url %}
+                                            <button class="btn btn-outline-danger" onclick="supprimerDocumentEmploye('contrat')" title="Supprimer">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================ -->
                 <!-- STATISTIQUES RAPIDES                         -->
                 <!-- ============================================ -->
                 <div class="row mt-3">
@@ -504,6 +602,48 @@ function modifierEmploye() {
 
 function imprimerFiche() {
     window.print();
+}
+
+// ⭐ Documents (photo/pièce d'identité/contrat) — voir la section
+// "Documents" ci-dessus et api_uploader_document_employe (routes/rh.py).
+const DOC_INPUT_IDS = {
+    photo: 'docPhotoInput',
+    piece_identite: 'docPieceIdentiteInput',
+    contrat: 'docContratInput',
+};
+
+function uploaderDocumentEmploye(typeDoc) {
+    const input = document.getElementById(DOC_INPUT_IDS[typeDoc]);
+    if (!input || !input.files || !input.files[0]) {
+        alert('Choisissez un fichier d\'abord.');
+        return;
+    }
+    const formData = new FormData();
+    formData.append('file', input.files[0]);
+    fetch(`/rh/employe/${employeId}/document/${typeDoc}`, {method: 'POST', body: formData})
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                window.location.reload();
+            } else {
+                alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            }
+        })
+        .catch(error => alert('❌ Erreur: ' + error));
+}
+
+function supprimerDocumentEmploye(typeDoc) {
+    if (!confirm('Supprimer ce document ?')) return;
+    fetch(`/rh/employe/${employeId}/document/${typeDoc}`, {method: 'DELETE'})
+        .then(r => r.json())
+        .then(result => {
+            if (result.success) {
+                window.location.reload();
+            } else {
+                alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            }
+        })
+        .catch(error => alert('❌ Erreur: ' + error));
 }
 
 // ⭐ Gestion des raccourcis clavier
