@@ -68,7 +68,15 @@
                             <span class="badge bg-secondary" title="Générez d'abord les factures assurance du mois depuis Statistiques des ventes.">
                                 Non générée
                             </span>
-                            {% elif f.encaissement.statut == 'payee' %}
+                            {% elif f.encaissement.reste <= 0.5 %}
+                            <!-- ⭐ On juge "réglé" sur le reste réellement calculé
+                                 (montant_total - montant_rembourse), pas sur le
+                                 champ statut de factures_assurance : certaines
+                                 lignes ont un reste à 0 mais un statut resté à
+                                 "partielle" (écart constaté en production, ex.
+                                 facture AMU INAM juillet) — s'appuyer sur le
+                                 statut aurait laissé le bouton Encaisser visible
+                                 alors qu'il n'y a plus rien à encaisser. -->
                             <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Réglée</span>
                             {% else %}
                             <span class="badge {{ 'bg-info text-dark' if f.encaissement.statut == 'partielle' else 'bg-secondary' }}">
