@@ -596,21 +596,58 @@ class Conge(db.Model):
     def est_deductible(self):
         return conge_est_deductible(self.type_conge)
 
-    def calculer_jours_ouvres(self):
-        """Calcule le nombre de jours ouvrés (du lundi au vendredi)"""
+    def calculer_jours_ouvres(self, structure_id=None):
+        """⭐ Jours OUVRABLES (lundi à samedi inclus), pas jours ouvrés —
+        patron : "normalement les weekends font partie des jours de
+        congés", confirmé par le Code du travail togolais (congé acquis à
+        raison de 2,5 jours OUVRABLES/mois, soit 30/an — voir
+        Employe.conges_annuels) et la pratique standard francophone : le
+        samedi compte, seul le dimanche (repos hebdomadaire légal, jamais
+        travaillé) et les jours fériés chômés déclarés par la structure
+        (JourFerie) sont exclus. Avant ce fix, seuls lundi-vendredi
+        étaient comptés (jours OUVRÉS), sous-comptant systématiquement le
+        samedi.
+
+        `structure_id` : passé explicitement pour les calculs de
+        simulation (objet Conge non persisté, sans structure_id) — sinon
+        celui de l'instance."""
         from datetime import timedelta
+        sid = structure_id if structure_id is not None else self.structure_id
+        feries = set()
+        if sid is not None:
+            feries = {jf.date for jf in JourFerie.query.filter(
+                JourFerie.structure_id == sid,
+                JourFerie.date >= self.date_debut,
+                JourFerie.date <= self.date_fin,
+            ).all()}
         count = 0
         current = self.date_debut
         while current <= self.date_fin:
-            if current.weekday() < 5:  # Lundi=0, Dimanche=6
+            if current.weekday() < 6 and current not in feries:  # Lundi=0 ... Samedi=5 ; Dimanche=6 exclu
                 count += 1
             current += timedelta(days=1)
         return count
-    
-    def calculer_date_reprise(self):
-        """Calcule la date de reprise = date_fin + 1 jour"""
+
+    def calculer_date_reprise(self, structure_id=None):
+        """⭐ Date de reprise SUGGÉRÉE = lendemain de la fin, avancée si ce
+        jour tombe un dimanche ou un jour férié déclaré — reste modifiable
+        au cas par cas après coup (voir PUT /rh/conge/<id>/reprise) : ex.
+        un médecin de garde dont le congé finit un samedi doit parfois
+        reprendre le dimanche (jour de garde), pas le lundi comme le
+        suggérerait ce calcul par défaut."""
         from datetime import timedelta
-        return self.date_fin + timedelta(days=1)
+        sid = structure_id if structure_id is not None else self.structure_id
+        feries = set()
+        if sid is not None:
+            feries = {jf.date for jf in JourFerie.query.filter(
+                JourFerie.structure_id == sid,
+                JourFerie.date > self.date_fin,
+                JourFerie.date <= self.date_fin + timedelta(days=14),
+            ).all()}
+        candidate = self.date_fin + timedelta(days=1)
+        while candidate.weekday() == 6 or candidate in feries:
+            candidate += timedelta(days=1)
+        return candidate
 
 class Permission(db.Model):
     __tablename__ = 'permissions'

@@ -536,6 +536,7 @@
                                             <th>Début</th>
                                             <th>Fin</th>
                                             <th>Jours</th>
+                                            <th>Reprise</th>
                                             <th>Année</th>
                                             <th>Statut</th>
                                             <th class="text-center">Actions</th>
@@ -912,12 +913,16 @@
                     </div>
                     <div class="row g-2">
                         <div class="col-md-6">
-                            <label class="form-label small">Nombre de jours</label>
+                            <label class="form-label small">Nombre de jours (ouvrables)</label>
                             <input type="text" class="form-control form-control-sm" id="congeJours" readonly>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label small">Date reprise</label>
-                            <input type="text" class="form-control form-control-sm" id="congeReprise" readonly>
+                            <!-- ⭐ Modifiable — patron : "pouvoir ajuster la date de
+                                 reprise s'il le faut [...] un médecin qui fait les
+                                 gardes [...] doit reprendre le dimanche". Pré-remplie
+                                 automatiquement (suggestion), mais jamais figée. -->
+                            <input type="date" class="form-control form-control-sm" id="congeReprise">
                         </div>
                     </div>
                     <div class="mb-2">
@@ -1642,8 +1647,8 @@ function mettreAJourStatuts() {
 // ============================================
 function chargerConges() {
     const tbody = document.getElementById('congesBody');
-    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted"><i class="fas fa-spinner fa-spin me-2"></i> Chargement...</td></tr>';
-    
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted"><i class="fas fa-spinner fa-spin me-2"></i> Chargement...</td></tr>';
+
     fetch('/rh/api/conges')
         .then(r => r.json())
         .then(data => {
@@ -1657,7 +1662,7 @@ function chargerConges() {
         })
         .catch(error => {
             console.error('Erreur chargement congés:', error);
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">Erreur de chargement</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-danger">Erreur de chargement</td></tr>';
         });
 }
 
@@ -1670,14 +1675,14 @@ function afficherConges() {
     tbody.innerHTML = '';
     
     if (pageData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">Aucun congé trouvé</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">Aucun congé trouvé</td></tr>';
         mettreAJourPagination('conges');
         return;
     }
-    
+
     pageData.forEach(c => {
         const actions = [];
-        
+
         if (c.statut === 'en_attente') {
             actions.push(`
                 <button class="btn btn-sm btn-success" onclick="changerStatutConge(${c.id}, 'approuve')" title="Approuver">
@@ -1688,7 +1693,7 @@ function afficherConges() {
                 </button>
             `);
         }
-        
+
         if (c.statut === 'approuve') {
             actions.push(`
                 <button class="btn btn-sm btn-info" onclick="window.open('/rh/conge/${c.id}/autorisation', '_blank')" title="Imprimer">
@@ -1696,7 +1701,17 @@ function afficherConges() {
                 </button>
             `);
         }
-        
+
+        // ⭐ Toujours disponible, quel que soit le statut — patron : "un
+        // médecin qui fait les gardes [...] peut-être qu'il doit reprendre
+        // le dimanche" — l'ajustement peut être nécessaire après coup,
+        // même sur un congé déjà approuvé.
+        actions.push(`
+            <button class="btn btn-sm btn-outline-secondary" onclick="modifierRepriseConge(${c.id}, '${c.date_reprise_iso || ''}')" title="Ajuster la date de reprise">
+                <i class="fas fa-calendar-day"></i>
+            </button>
+        `);
+
         tbody.innerHTML += `
             <tr>
                 <td><strong>${c.employe_nom}</strong></td>
@@ -1704,6 +1719,7 @@ function afficherConges() {
                 <td>${c.date_debut}</td>
                 <td>${c.date_fin}</td>
                 <td>${c.nombre_jours || 0}</td>
+                <td>${c.date_reprise || '-'}</td>
                 <td>${c.annee_utilisation || '-'}</td>
                 <td>${getStatutBadge(c.statut)}</td>
                 <td class="text-center">
@@ -1763,6 +1779,7 @@ function ouvrirDemandeConge() {
                 document.getElementById('congeJours').value = '';
                 document.getElementById('congeReprise').value = '';
                 document.getElementById('congeAlerte').style.display = 'none';
+                _repriseModifieeParUtilisateur = false;
                 new bootstrap.Modal(document.getElementById('congeModal')).show();
                 reactiver();
             })
@@ -1791,6 +1808,19 @@ function ouvrirDemandeCongeSimple() {
         });
 }
 
+// ⭐ true dès que l'utilisateur touche lui-même le champ reprise — au-delà,
+// on ne l'écrase plus automatiquement (patron : "pouvoir ajuster la date
+// de reprise s'il le faut").
+let _repriseModifieeParUtilisateur = false;
+document.addEventListener('DOMContentLoaded', function() {
+    const champReprise = document.getElementById('congeReprise');
+    if (champReprise) champReprise.addEventListener('input', () => { _repriseModifieeParUtilisateur = true; });
+});
+
+function toISO(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
 function calculerJoursConge() {
     const debut = document.getElementById('congeDebut').value;
     const fin = document.getElementById('congeFin').value;
@@ -1802,25 +1832,30 @@ function calculerJoursConge() {
 
     if (d2 < d1) {
         document.getElementById('congeJours').value = 'Date invalide';
-        document.getElementById('congeReprise').value = '';
         return;
     }
 
+    // ⭐ Jours OUVRABLES (lundi-samedi), pas jours ouvrés — le Code du
+    // travail togolais compte le congé en jours ouvrables (2,5j/mois =
+    // 30/an) : le samedi compte, seul le dimanche (repos hebdomadaire) est
+    // exclu ici côté client (le calcul serveur, simulerConge(), exclut en
+    // plus les jours fériés déclarés — voir Conge.calculer_jours_ouvres).
     let jours = 0;
     let current = new Date(d1);
     while (current <= d2) {
-        if (current.getDay() !== 0 && current.getDay() !== 6) jours++;
+        if (current.getDay() !== 0) jours++;
         current.setDate(current.getDate() + 1);
     }
     document.getElementById('congeJours').value = jours + ' jours';
 
-    // ⭐ FIX : la reprise réelle (Conge.calculer_date_reprise, models.py)
-    // est simplement date_fin + 1 jour, SANS sauter le week-end — cet
-    // affichage sautait les week-ends et ne correspondait donc pas à ce
-    // qui est réellement enregistré.
-    let reprise = new Date(d2);
-    reprise.setDate(reprise.getDate() + 1);
-    document.getElementById('congeReprise').value = reprise.toLocaleDateString('fr-FR');
+    // ⭐ Suggestion de reprise (lendemain de la fin, dimanche sauté) —
+    // seulement si l'utilisateur n'a pas déjà ajusté ce champ lui-même.
+    if (!_repriseModifieeParUtilisateur) {
+        let reprise = new Date(d2);
+        reprise.setDate(reprise.getDate() + 1);
+        if (reprise.getDay() === 0) reprise.setDate(reprise.getDate() + 1);
+        document.getElementById('congeReprise').value = toISO(reprise);
+    }
 
     simulerConge();
 }
@@ -1905,6 +1940,9 @@ function sauvegarderConge() {
         type_conge: document.getElementById('congeType').value,
         date_debut: document.getElementById('congeDebut').value,
         date_fin: document.getElementById('congeFin').value,
+        // ⭐ Date de reprise ajustable — voir calculerJoursConge() pour la
+        // suggestion par défaut, remplaçable à la main avant soumission.
+        date_reprise: document.getElementById('congeReprise').value,
         motif: document.getElementById('congeMotif').value,
         signataire: signataire
     };
@@ -2003,6 +2041,28 @@ function sauvegarderConge() {
         console.error('❌ Erreur:', error);
         alert('❌ Erreur lors de l\'envoi: ' + error);
     });
+}
+
+// ⭐ Patron : "pouvoir ajuster la date de reprise s'il le faut [...] un
+// médecin qui fait les gardes [...] doit reprendre le dimanche" — ajustable
+// après coup, indépendamment du statut du congé.
+function modifierRepriseConge(id, dateRepriseActuelle) {
+    const saisie = prompt('Nouvelle date de reprise (AAAA-MM-JJ) :', dateRepriseActuelle || new Date().toISOString().slice(0, 10));
+    if (!saisie) return;
+    fetch(`/rh/conge/${id}/reprise`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({date_reprise: saisie})
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.success) {
+            chargerConges();
+        } else {
+            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => alert('❌ Erreur: ' + error));
 }
 
 function changerStatutConge(id, statut) {

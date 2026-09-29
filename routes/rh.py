@@ -605,6 +605,7 @@ def api_conges(structure_id):
             'date_debut': c.date_debut.strftime('%d/%m/%Y'),
             'date_fin': c.date_fin.strftime('%d/%m/%Y'),
             'date_reprise': c.date_reprise.strftime('%d/%m/%Y') if c.date_reprise else '',
+            'date_reprise_iso': c.date_reprise.isoformat() if c.date_reprise else '',
             'nombre_jours': c.nombre_jours,
             'annee_utilisation': c.annee_utilisation or c.date_debut.year,
             'solde_restant': solde_info['solde'],
@@ -737,16 +738,17 @@ def conge_demander(structure_id):
         print(f"📅 Année choisie: {annee_choisie}")
 
         # ⭐ FIX : le nombre de jours réellement décompté du solde est le
-        # nombre de jours OUVRÉS (calculer_jours_ouvres, lundi-vendredi),
-        # pas le nombre de jours calendaires — avant ce fix, la
-        # vérification de solde ET le message "solde restant" utilisaient
-        # les jours calendaires (ex: 7 jours pour une semaine incluant un
-        # week-end) alors que seuls les jours ouvrés (5) étaient
-        # effectivement enregistrés/décomptés, ce qui pouvait refuser à
-        # tort une demande dont le solde réel suffisait, et affichait un
-        # solde restant faux. Les congés non déductibles (voir
-        # TYPES_CONGE_DEDUCTIBLES) n'ont pas besoin de solde du tout.
-        jours_ouvres = Conge(date_debut=date_debut, date_fin=date_fin).calculer_jours_ouvres()
+        # nombre de jours OUVRABLES (calculer_jours_ouvres — lundi à
+        # samedi, hors dimanche et jours fériés déclarés ; voir le
+        # docstring de la méthode, models.py, pour la référence légale
+        # togolaise), pas le nombre de jours calendaires bruts — avant ce
+        # fix, la vérification de solde ET le message "solde restant"
+        # utilisaient les jours calendaires (ex: 7 jours pour une semaine),
+        # ce qui pouvait refuser à tort une demande dont le solde réel
+        # suffisait, et affichait un solde restant faux. Les congés non
+        # déductibles (voir TYPES_CONGE_DEDUCTIBLES) n'ont pas besoin de
+        # solde du tout.
+        jours_ouvres = Conge(date_debut=date_debut, date_fin=date_fin).calculer_jours_ouvres(structure_id=structure_id)
         deductible = type_conge in TYPES_CONGE_DEDUCTIBLES and TYPES_CONGE_DEDUCTIBLES[type_conge]
 
         if deductible:
@@ -781,7 +783,20 @@ def conge_demander(structure_id):
             nombre_jours=jours_ouvres,
             statut='en_attente'
         )
-        conge.date_reprise = conge.calculer_date_reprise()
+        # ⭐ La date de reprise SUGGÉRÉE (jour suivant si la fin tombe un
+        # dimanche/férié) reste modifiable dès la création — patron :
+        # "pouvoir ajuster la date de reprise s'il le faut [...] un
+        # médecin qui fait les gardes [...] peut-être qu'il doit reprendre
+        # le dimanche". Si le formulaire envoie une date, elle prime ;
+        # sinon la suggestion par défaut est utilisée.
+        date_reprise_str = (data.get('date_reprise') or '').strip()
+        if date_reprise_str:
+            try:
+                conge.date_reprise = datetime.strptime(date_reprise_str, '%Y-%m-%d').date()
+            except ValueError:
+                return jsonify({'success': False, 'error': 'Date de reprise invalide'}), 400
+        else:
+            conge.date_reprise = conge.calculer_date_reprise()
 
         db.session.add(conge)
         db.session.commit()
@@ -859,11 +874,45 @@ def conge_changer_statut(structure_id, id):
             'message': f'Statut du congé mis à jour en "{nouveau_statut}"',
             'employe_statut': employe.statut
         })
-        
+
     except Exception as e:
         db.session.rollback()
         print(f"❌ Erreur conge_changer_statut: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+# ⭐ Ajuster la date de reprise d'un congé déjà enregistré — patron :
+# "pouvoir ajuster la date de reprise s'il le faut [...] un médecin qui
+# fait les gardes est en congés et ses congés finissent un samedi [...]
+# peut-être qu'il doit reprendre le dimanche". La date suggérée
+# (calculer_date_reprise) reste une SUGGESTION par défaut, jamais une
+# contrainte — n'affecte jamais nombre_jours/le solde, seulement
+# l'information "quand l'employé doit revenir".
+@rh_bp.route('/conge/<int:id>/reprise', methods=['PUT'])
+@require_structure
+def conge_modifier_reprise(structure_id, id):
+    try:
+        conge = Conge.query.join(Employe).filter(
+            Conge.id == id,
+            Employe.structure_id == structure_id
+        ).first()
+        if not conge:
+            return jsonify({'success': False, 'error': 'Congé non trouvé'}), 404
+
+        data = request.json or {}
+        date_reprise_str = (data.get('date_reprise') or '').strip()
+        if not date_reprise_str:
+            return jsonify({'success': False, 'error': 'Date de reprise requise'}), 400
+        try:
+            conge.date_reprise = datetime.strptime(date_reprise_str, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Date invalide'}), 400
+
+        db.session.commit()
+        return jsonify({'success': True, 'date_reprise': conge.date_reprise.isoformat()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @rh_bp.route('/conge/<int:id>/autorisation')
@@ -1544,7 +1593,9 @@ def api_simuler_conge(structure_id, id):
     annee_choisie = request.args.get('annee_choisie')
     annee_choisie = int(annee_choisie) if annee_choisie else date_debut.year
 
-    jours_ouvres = Conge(date_debut=date_debut, date_fin=date_fin).calculer_jours_ouvres()
+    conge_calc = Conge(date_debut=date_debut, date_fin=date_fin)
+    jours_ouvres = conge_calc.calculer_jours_ouvres(structure_id=structure_id)
+    date_reprise_suggeree = conge_calc.calculer_date_reprise(structure_id=structure_id)
 
     conflits = []
     for c in Conge.query.filter(
@@ -1585,6 +1636,9 @@ def api_simuler_conge(structure_id, id):
         'conflits': conflits,
         'disponible': disponible,
         'annees_proposees': annees_proposees,
+        # ⭐ Suggestion seulement — modifiable par l'utilisateur avant
+        # soumission (voir date_reprise dans /conge/demander).
+        'date_reprise_suggeree': date_reprise_suggeree.isoformat(),
     })
 
 
