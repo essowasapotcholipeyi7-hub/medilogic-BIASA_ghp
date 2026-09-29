@@ -252,8 +252,12 @@ function enregistrerCorrections() {
 }
 
 function marquerDeposee(factureId) {
-    if (!confirm("Marquer cette facture comme déposée à l'INAM ?")) return;
-    fetch(`/api/assurance/facture-amu-inam/${factureId}/deposer`, { method: 'POST' })
+    const dateStr = prompt("Date à laquelle ce bordereau a été déposé à l'INAM :", new Date().toISOString().slice(0, 10));
+    if (!dateStr) return;
+    fetch(`/api/assurance/facture-amu-inam/${factureId}/deposer`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({date_depot: dateStr})
+    })
         .then(r => r.json())
         .then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); });
 }

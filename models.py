@@ -2080,6 +2080,14 @@ class FactureAssurance(db.Model):
     # générer une facture distincte par société sous une même compagnie
     # (ex: GTA/SOTOCO et GTA/TOGOCEL séparément).
     societe = db.Column(db.String(150))
+    # ⭐ Date à laquelle le bordereau papier a été réellement déposé chez
+    # l'assureur — saisie manuellement (jamais déduite automatiquement d'un
+    # encaissement, qui peut arriver des semaines après le dépôt réel) au
+    # moment de l'impression du bordereau (voir routes/statistiques.py:
+    # bordereau_assurance / /api/assurances/factures/<id>/marquer_depose).
+    # Même logique que FactureAmuMensuelle.date_depot, mais ici pour le
+    # bordereau détaillé (AMU ET complémentaire/CAC).
+    date_depot = db.Column(db.Date)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -14819,6 +14819,37 @@ def payer_facture_assurance(facture_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+# ⭐ Marquer un bordereau (AMU ou CAC/complémentaire, factures_assurance)
+# comme déposé — patron : "à quel moment on peut obliger les gens à
+# marquer la facture comme déposée [...] la vraie date saisie par
+# l'utilisateur", déclenché juste après l'impression du bordereau (voir
+# routes/statistiques.py:bordereau_assurance +
+# templates/statistiques_assurance_print.html). Jamais de date auto —
+# uniquement celle que l'utilisateur indique. Simple champ informatif,
+# aucun effet caisse/comptabilité (contrairement à /payer).
+@app.route('/api/assurances/factures/<int:facture_id>/marquer_depose', methods=['POST'])
+@login_required
+def api_marquer_depose_facture_assurance(facture_id):
+    try:
+        structure_id = session.get('structure_id')
+        facture = FactureAssurance.query.filter_by(id=facture_id, structure_id=structure_id).first()
+        if not facture:
+            return jsonify({'success': False, 'error': 'Facture introuvable'}), 404
+        data = request.json or {}
+        date_depot_str = (data.get('date_depot') or '').strip()
+        if not date_depot_str:
+            return jsonify({'success': False, 'error': 'Date de dépôt requise'}), 400
+        try:
+            facture.date_depot = datetime.strptime(date_depot_str, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Date invalide'}), 400
+        db.session.commit()
+        return jsonify({'success': True, 'date_depot': facture.date_depot.isoformat()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 def _executer_paiement_assurance(facture_id, structure_id, montant, numero_reference_versement, date_versement, user_name):
     """Exécute réellement l'encaissement (caisse, écriture comptable...).
     Lève une exception en cas d'échec."""
@@ -18453,8 +18484,22 @@ def api_deposer_facture_amu_cnss(facture_id):
         brouillon = FactureAmuMensuelle.query.filter_by(id=facture_id, structure_id=structure_id).first()
         if not brouillon:
             return jsonify({'success': False, 'error': 'Facture introuvable'}), 404
+        # ⭐ La date de dépôt vient TOUJOURS de l'utilisateur (jamais
+        # "maintenant" par défaut) — patron : le dépôt physique se fait
+        # souvent un autre jour que celui où on marque la case dans
+        # l'appli. Prompté juste après impression (voir
+        # assurance_facture_amu_cnss_imprimer.html) ou depuis le bouton
+        # "Marquer déposée" de l'écran de saisie.
+        data = request.json or {}
+        date_depot_str = (data.get('date_depot') or '').strip()
+        if date_depot_str:
+            try:
+                brouillon.date_depot = datetime.strptime(date_depot_str, '%Y-%m-%d')
+            except ValueError:
+                return jsonify({'success': False, 'error': 'Date invalide'}), 400
+        else:
+            brouillon.date_depot = datetime.now()
         brouillon.statut = 'deposee'
-        brouillon.date_depot = datetime.now()
         db.session.commit()
         return jsonify({'success': True, 'date_depot': brouillon.date_depot.isoformat()})
     except Exception as e:
@@ -18736,8 +18781,18 @@ def api_deposer_facture_amu_inam(facture_id):
         brouillon = FactureAmuMensuelle.query.filter_by(id=facture_id, structure_id=structure_id).first()
         if not brouillon:
             return jsonify({'success': False, 'error': 'Facture introuvable'}), 404
+        # ⭐ Même correctif que côté CNSS : date de dépôt saisie par
+        # l'utilisateur, jamais "maintenant" par défaut.
+        data = request.json or {}
+        date_depot_str = (data.get('date_depot') or '').strip()
+        if date_depot_str:
+            try:
+                brouillon.date_depot = datetime.strptime(date_depot_str, '%Y-%m-%d')
+            except ValueError:
+                return jsonify({'success': False, 'error': 'Date invalide'}), 400
+        else:
+            brouillon.date_depot = datetime.now()
         brouillon.statut = 'deposee'
-        brouillon.date_depot = datetime.now()
         db.session.commit()
         return jsonify({'success': True, 'date_depot': brouillon.date_depot.isoformat()})
     except Exception as e:

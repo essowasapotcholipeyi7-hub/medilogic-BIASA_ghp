@@ -127,6 +127,15 @@
 <body>
     <button class="btn-fermer" onclick="fermerBordereau()"><i class="fas fa-times"></i> Fermer</button>
     <button class="btn-print" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
+    {% if facture_assurance and not facture_assurance.date_depot %}
+    <span class="btn-fermer" style="background:#198754;cursor:pointer;" onclick="demanderDateDepot()">
+        <i class="fas fa-check"></i> Marquer déposé
+    </span>
+    {% elif facture_assurance and facture_assurance.date_depot %}
+    <span class="btn-fermer" style="background:#6c757d;">
+        <i class="fas fa-check-circle"></i> Déposé le {{ facture_assurance.date_depot.strftime('%d/%m/%Y') }}
+    </span>
+    {% endif %}
 
     <div class="conteneur">
         <div class="entete">
@@ -269,6 +278,35 @@
                 }
             }, 500);
         }
+
+        // ⭐ Patron : "amu comme cac" — même invite que la Facture AMU
+        // mensuelle, déclenchée juste après l'impression (jamais de date
+        // automatique, toujours saisie par l'utilisateur).
+        {% if facture_assurance and not facture_assurance.date_depot %}
+        const FACTURE_ASSURANCE_ID = {{ facture_assurance.id }};
+
+        function demanderDateDepot() {
+            const dateStr = prompt("Date à laquelle ce bordereau a été déposé chez l'assureur :", new Date().toISOString().slice(0, 10));
+            if (!dateStr) return;
+            fetch(`/api/assurances/factures/${FACTURE_ASSURANCE_ID}/marquer_depose`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({date_depot: dateStr})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Marqué comme déposé le ' + dateStr);
+                    window.location.reload();
+                } else {
+                    alert('Erreur : ' + (data.error || 'inconnue'));
+                }
+            })
+            .catch(e => alert('Erreur réseau : ' + e));
+        }
+
+        window.onafterprint = demanderDateDepot;
+        {% endif %}
     </script>
 </body>
 </html>

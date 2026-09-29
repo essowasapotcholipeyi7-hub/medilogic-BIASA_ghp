@@ -164,6 +164,11 @@
     <div class="no-print">
         <button class="btn-print" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
         <button class="btn-pdf" onclick="telechargerPDF()"><i class="fas fa-file-pdf"></i> PDF</button>
+        {% if brouillon.statut != 'deposee' %}
+        <button class="btn-back" style="background:#198754;" onclick="demanderDateDepot()"><i class="fas fa-check"></i> Marquer déposée</button>
+        {% else %}
+        <button class="btn-back" style="background:#6c757d;" disabled><i class="fas fa-check-circle"></i> Déposée le {{ brouillon.date_depot.strftime('%d/%m/%Y') if brouillon.date_depot else '' }}</button>
+        {% endif %}
         <button class="btn-back" onclick="window.close()"><i class="fas fa-times"></i> Fermer</button>
     </div>
 
@@ -179,7 +184,33 @@
             pagebreak: { mode: ['css', 'legacy'] }
         };
         html2pdf().set(opt).from(element).save();
+        {% if brouillon.statut != 'deposee' %}
+        setTimeout(demanderDateDepot, 800);
+        {% endif %}
     }
+
+    {% if brouillon.statut != 'deposee' %}
+    function demanderDateDepot() {
+        const dateStr = prompt("Date à laquelle ce bordereau a été déposé à l'INAM :", new Date().toISOString().slice(0, 10));
+        if (!dateStr) return;
+        fetch(`/api/assurance/facture-amu-inam/{{ brouillon.id }}/deposer`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({date_depot: dateStr})
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                alert('Marquée comme déposée le ' + dateStr);
+                window.location.reload();
+            } else {
+                alert('Erreur : ' + (data.error || 'inconnue'));
+            }
+        })
+        .catch(e => alert('Erreur réseau : ' + e));
+    }
+    window.onafterprint = demanderDateDepot;
+    {% endif %}
     </script>
 </body>
 </html>

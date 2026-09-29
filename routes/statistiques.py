@@ -4,12 +4,13 @@ from datetime import datetime, timedelta, date
 from collections import defaultdict
 from sqlalchemy import or_, func, and_
 import json
+import calendar
 from utils.categorisation import categoriser_acte
 from utils.nombres_lettres import montant_en_lettres_fcfa
 from utils.permissions import a_acces
 from sheets_helper import sheets_helper
 
-from models import db, Vente, Patient, Structure
+from models import db, Vente, Patient, Structure, FactureAssurance
 from crypto_helper import dechiffrer_patients_orm
 
 statistiques_bp = Blueprint('statistiques', __name__, url_prefix='/api/statistiques')
@@ -1383,6 +1384,35 @@ def bordereau_assurance():
     numero_bordereau = f"BDX-{structure_id}-{nom_assurance.upper()}-{datetime.now().strftime('%Y%m%d%H%M')}"
     montant_lettres = montant_en_lettres_fcfa(total_part_assurance)
 
+    # ⭐ Résoudre la ligne factures_assurance correspondante — patron :
+    # "amu comme cac", pouvoir proposer de marquer ce bordereau comme
+    # déposé (date saisie par l'utilisateur, jamais automatique) juste
+    # après impression, même logique que la Facture AMU mensuelle. Fiable
+    # seulement quand la période imprimée est un mois calendaire complet
+    # (toujours le cas venant de voirBordereauFacture/imprimerBordereauGlobal)
+    # ET qu'une seule ligne est concernée (société précisée pour le
+    # complémentaire, ou principale qui n'a pas de société) — le bordereau
+    # "global" (toutes sociétés) couvre plusieurs lignes à la fois, pas de
+    # dépôt à un seul id dans ce cas.
+    facture_assurance = None
+    debut_date = debut.date() if isinstance(debut, datetime) else debut
+    fin_date = fin.date() if isinstance(fin, datetime) else fin
+    dernier_jour_mois = calendar.monthrange(debut_date.year, debut_date.month)[1]
+    est_mois_calendaire = (
+        debut_date.day == 1 and fin_date == date(debut_date.year, debut_date.month, dernier_jour_mois)
+    )
+    if est_mois_calendaire and (est_principale or societe_filtre):
+        mois_reference = f"{debut_date.year}-{debut_date.month:02d}"
+        fa_query = FactureAssurance.query.filter(
+            FactureAssurance.structure_id == structure_id,
+            FactureAssurance.mois_reference == mois_reference,
+            db.func.lower(FactureAssurance.assurance) == nom_assurance.lower(),
+            FactureAssurance.type_assurance == type_hint,
+        )
+        if societe_filtre:
+            fa_query = fa_query.filter(db.func.lower(FactureAssurance.societe) == societe_filtre.lower())
+        facture_assurance = fa_query.first()
+
     return render_template(
         'statistiques_assurance_print.html',
         structure=structure,
@@ -1398,4 +1428,5 @@ def bordereau_assurance():
         montant_lettres=montant_lettres,
         nb_patients=len(set(l['patient_nom'] for l in lignes)),
         now=datetime.now(),
+        facture_assurance=facture_assurance,
     )
