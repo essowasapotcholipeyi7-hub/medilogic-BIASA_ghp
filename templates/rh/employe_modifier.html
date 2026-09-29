@@ -111,6 +111,14 @@
                                     </div>
                                     <div class="row">
                                         <div class="col-md-6 mb-2">
+                                            <!-- ⭐ Patron : "date de fin de contrat + alerte de renouvellement" -->
+                                            <label class="form-label">Date fin de contrat <small class="text-muted">(vide = CDI/sans échéance)</small></label>
+                                            <input type="date" class="form-control" id="empDateFinContrat"
+                                                   value="{{ employe.date_fin_contrat.strftime('%Y-%m-%d') if employe.date_fin_contrat else '' }}">
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-2">
                                             <label class="form-label">Salaire base (FCFA)</label>
                                             <input type="number" class="form-control" id="empSalaire" value="{{ employe.salaire_base or 0 }}" step="1000">
                                         </div>
@@ -171,6 +179,7 @@ function sauvegarderModification() {
         poste: document.getElementById('empPoste').value.trim(),
         date_embauche: document.getElementById('empDateEmbauche').value,
         type_contrat: document.getElementById('empTypeContrat').value,
+        date_fin_contrat: document.getElementById('empDateFinContrat').value,
         salaire_base: parseFloat(document.getElementById('empSalaire').value) || 0,
         statut: document.getElementById('empStatut').value,
         personne_a_prevenir: document.getElementById('empPrevenir').value.trim(),

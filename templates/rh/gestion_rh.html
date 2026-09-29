@@ -831,6 +831,16 @@
                                     </div>
                                     <div class="row g-2">
                                         <div class="col-md-12">
+                                            <!-- ⭐ Patron : "pas de date de fin de contrat ni d'alerte de
+                                                 renouvellement" — laisser vide pour un CDI/contrat sans
+                                                 échéance. Ne désactive jamais l'employé automatiquement,
+                                                 sert seulement à l'alerte du tableau de bord RH. -->
+                                            <label class="form-label small">Date fin de contrat <span class="text-muted">(vide = CDI/sans échéance)</span></label>
+                                            <input type="date" class="form-control form-control-sm" id="empDateFinContrat">
+                                        </div>
+                                    </div>
+                                    <div class="row g-2">
+                                        <div class="col-md-12">
                                             <label class="form-label small">Personne à prévenir</label>
                                             <input type="text" class="form-control form-control-sm" id="empPrevenir">
                                         </div>
@@ -1301,7 +1311,10 @@ function afficherEmployes() {
                 <td>${e.poste || '-'}</td>
                 <td>${e.telephone || '-'}</td>
                 <td><span class="${soldeClass}">${soldeIcon} ${solde} jrs</span></td>
-                <td>${getStatutEmployeBadge(e.statut)}</td>
+                <td>
+                    ${getStatutEmployeBadge(e.statut)}
+                    ${e.contrat_a_renouveler ? `<span class="badge bg-danger ms-1" title="Contrat à renouveler — fin le ${e.date_fin_contrat}"><i class="fas fa-exclamation-triangle"></i> ${e.date_fin_contrat}</span>` : ''}
+                </td>
                 <td class="text-center">
                     <div class="btn-group btn-group-sm">
                         <button class="btn btn-info" onclick="voirEmploye(${e.id})" title="Détails">
@@ -1475,50 +1488,61 @@ function ouvrirAjoutEmployeSimple() {
 function modifierEmploye(id) {
     const btn = event?.target;
     if (!btn) return;
-    
+
     boutonAvecLoader(btn, function(reactiver) {
         console.log('Modification employé ID:', id);
-        
+
         fetch(`/rh/api/employes/${id}`)
             .then(response => response.json())
             .then(data => {
                 console.log('📦 Données employé:', data);
-                
+
+                // ⭐ FIX : cette fonction référençait des ids "...RH" qui
+                // n'existent nulle part dans le DOM (#employeModal est
+                // partagé Ajout/Modification, ids sans suffixe — voir
+                // sauvegarderEmploye()) — le clic sur "Modifier" ne faisait
+                // donc jamais rien (exception silencieuse dans le .then()).
                 document.getElementById('employeModalTitle').textContent = 'Modifier l\'employé';
-                document.getElementById('empNomRH').value = data.nom;
-                document.getElementById('empPrenomRH').value = data.prenom;
-                document.getElementById('empSexeRH').value = data.sexe;
-                
+                document.getElementById('empNom').value = data.nom;
+                document.getElementById('empPrenom').value = data.prenom;
+                document.getElementById('empSexe').value = data.sexe;
+
+                document.getElementById('empDateNaissance').value = '';
                 if (data.date_naissance) {
                     const parts = data.date_naissance.split('/');
                     if (parts.length === 3) {
-                        document.getElementById('empDateNaissanceRH').value = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                        document.getElementById('empDateNaissance').value = `${parts[2]}-${parts[1]}-${parts[0]}`;
                     }
                 }
-                
-                document.getElementById('empTelephoneRH').value = data.telephone || '';
-                document.getElementById('empEmailRH').value = data.email || '';
-                document.getElementById('empQuartierRH').value = data.quartier || '';
-                document.getElementById('empPosteRH').value = data.poste || '';
-                
+
+                document.getElementById('empTelephone').value = data.telephone || '';
+                document.getElementById('empEmail').value = data.email || '';
+                document.getElementById('empQuartier').value = data.quartier || '';
+                document.getElementById('empPoste').value = data.poste || '';
+
+                document.getElementById('empDateEmbauche').value = '';
                 if (data.date_embauche) {
                     const parts = data.date_embauche.split('/');
                     if (parts.length === 3) {
-                        document.getElementById('empDateEmbaucheRH').value = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                        document.getElementById('empDateEmbauche').value = `${parts[2]}-${parts[1]}-${parts[0]}`;
                     }
                 }
-                
-                document.getElementById('empTypeContratRH').value = data.type_contrat || 'CDI';
-                document.getElementById('empPrevenirRH').value = data.personne_a_prevenir || '';
-                document.getElementById('empTelephonePrevenirRH').value = data.telephone_prevenir || '';
-                document.getElementById('empLienParenteRH').value = data.lien_parente || '';
-                
-                const statutSelect = document.getElementById('empStatutRH');
+
+                document.getElementById('empTypeContrat').value = data.type_contrat || 'CDI';
+                // ⭐ date_fin_contrat vient déjà en ISO (YYYY-MM-DD) depuis
+                // /api/employes/<id>, contrairement aux autres dates de cet
+                // endpoint (DD/MM/YYYY) — pas de conversion nécessaire.
+                document.getElementById('empDateFinContrat').value = data.date_fin_contrat || '';
+                document.getElementById('empPrevenir').value = data.personne_a_prevenir || '';
+                document.getElementById('empTelephonePrevenir').value = data.telephone_prevenir || '';
+                document.getElementById('empLienParente').value = data.lien_parente || '';
+
+                const statutSelect = document.getElementById('empStatut');
                 if (statutSelect) {
                     statutSelect.value = data.statut || 'Actif';
                 }
 
-                const serviceSelect = document.getElementById('empServiceRH');
+                const serviceSelect = document.getElementById('empService');
                 fetch('/rh/api/services')
                     .then(r => r.json())
                     .then(services => {
@@ -1527,19 +1551,19 @@ function modifierEmploye(id) {
                             const selected = s.id === data.service_id ? 'selected' : '';
                             serviceSelect.innerHTML += `<option value="${s.id}" ${selected}>${s.nom}</option>`;
                         });
-                        
-                        const modal = new bootstrap.Modal(document.getElementById('employeModalRH'));
+
+                        const modal = new bootstrap.Modal(document.getElementById('employeModal'));
                         modal.show();
                         reactiver();
                     })
                     .catch(error => {
                         console.error('Erreur chargement services:', error);
-                        const modal = new bootstrap.Modal(document.getElementById('employeModalRH'));
+                        const modal = new bootstrap.Modal(document.getElementById('employeModal'));
                         modal.show();
                         reactiver();
                     });
-                
-                document.getElementById('employeModalRH').dataset.employeId = id;
+
+                document.getElementById('employeModal').dataset.employeId = id;
             })
             .catch(error => {
                 console.error('❌ Erreur chargement employé:', error);
@@ -1586,6 +1610,7 @@ function sauvegarderEmploye() {
         poste: document.getElementById('empPoste').value.trim(),
         date_embauche: document.getElementById('empDateEmbauche').value,
         type_contrat: document.getElementById('empTypeContrat').value,
+        date_fin_contrat: document.getElementById('empDateFinContrat').value,
         personne_a_prevenir: document.getElementById('empPrevenir').value.trim(),
         telephone_prevenir: document.getElementById('empTelephonePrevenir').value.trim(),
         lien_parente: document.getElementById('empLienParente').value.trim(),
@@ -2386,7 +2411,7 @@ function chargerDashboard() {
             document.getElementById('statActifs').textContent = data.actifs || 0;
             document.getElementById('statEnConge').textContent = data.en_conge || 0;
             document.getElementById('statDemandesAttente').textContent = data.demandes_attente || 0;
-            chargerAlertes();
+            chargerAlertes(data.contrats_a_renouveler || []);
         })
         .catch(error => {
             console.error('Erreur dashboard:', error);
@@ -2402,15 +2427,23 @@ function chargerDashboard() {
         });
 }
 
-function chargerAlertes() {
+function chargerAlertes(contratsARenouveler) {
     const container = document.getElementById('alertesRH');
     container.innerHTML = '<div class="text-muted text-center"><i class="fas fa-spinner fa-spin me-2"></i> Chargement des alertes...</div>';
-    
+
     fetch('/rh/api/conges?statut=en_attente')
         .then(r => r.json())
         .then(attentes => {
+            // ⭐ Patron : "alerte de renouvellement" — en tête, plus urgent
+            // que les congés (rupture de contrat possible). alertesUrgentes
+            // rendues en rouge, le reste garde le style existant (orange).
+            let alertesUrgentes = (contratsARenouveler || []).map(c => {
+                const j = c.jours_avant_fin_contrat;
+                const quand = j < 0 ? `expiré depuis ${Math.abs(j)} jour(s)` : (j === 0 ? "expire aujourd'hui" : `expire dans ${j} jour(s)`);
+                return `Contrat de ${c.nom} ${c.prenom} (${c.matricule}) ${quand} — ${c.date_fin_contrat}`;
+            });
             let alertes = [];
-            
+
             // Demandes en attente
             const nbAttentes = attentes ? attentes.length : 0;
             if (nbAttentes > 0) {
@@ -2448,12 +2481,16 @@ function chargerAlertes() {
                         alertes.push(`${c.employe_nom} commence son congé le ${c.date_debut}`);
                     });
                     
-                    if (alertes.length === 0) {
+                    const html = alertesUrgentes.map(a =>
+                        `<div class="alert alert-danger py-1 mb-1" style="font-size:13px;"><i class="fas fa-exclamation-triangle me-1"></i> ${a}</div>`
+                    ).join('') + alertes.map(a =>
+                        `<div class="alert alert-warning py-1 mb-1" style="font-size:13px;">${a}</div>`
+                    ).join('');
+
+                    if (!html) {
                         container.innerHTML = '<div class="text-success text-center">Aucune alerte à signaler</div>';
                     } else {
-                        container.innerHTML = alertes.map(a => 
-                            `<div class="alert alert-warning py-1 mb-1" style="font-size:13px;">${a}</div>`
-                        ).join('');
+                        container.innerHTML = html;
                     }
                 });
         })

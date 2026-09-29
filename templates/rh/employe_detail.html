@@ -188,6 +188,20 @@
                             </div>
                         </div>
                         <div class="row mb-2">
+                            <!-- ⭐ Patron : "date de fin de contrat + alerte de renouvellement" -->
+                            <div class="col-4 detail-label">Fin de contrat</div>
+                            <div class="col-8 detail-value">
+                                {% if employe.date_fin_contrat %}
+                                    {{ employe.date_fin_contrat.strftime('%d/%m/%Y') }}
+                                    {% if employe.contrat_a_renouveler() %}
+                                        <span class="badge bg-danger"><i class="fas fa-exclamation-triangle"></i> À renouveler</span>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-muted">CDI / sans échéance</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="row mb-2">
                             <div class="col-4 detail-label">Salaire base</div>
                             <div class="col-8 detail-value">
                                 {% if employe.salaire_base %}

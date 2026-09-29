@@ -257,7 +257,10 @@ def api_employes(structure_id):
             'service_id': e.service_id,
             'age': e.calculer_age() if hasattr(e, 'calculer_age') else None,
             # ⭐ CORRECTION : utiliser la méthode calculer_anciennete()
-            'anciennete': e.calculer_anciennete() if hasattr(e, 'calculer_anciennete') else 0
+            'anciennete': e.calculer_anciennete() if hasattr(e, 'calculer_anciennete') else 0,
+            # ⭐ Patron : "alerte de renouvellement" — voir Employe.contrat_a_renouveler.
+            'date_fin_contrat': e.date_fin_contrat.strftime('%d/%m/%Y') if e.date_fin_contrat else '',
+            'contrat_a_renouveler': e.contrat_a_renouveler(),
         })
     
     return jsonify(result)
@@ -294,6 +297,9 @@ def api_employe_detail(structure_id, id):
         # ⭐ CORRECTION : utiliser la méthode calculer_anciennete()
         'anciennete': employe.calculer_anciennete() if hasattr(employe, 'calculer_anciennete') else 0,
         'type_contrat': employe.type_contrat,
+        'date_fin_contrat': employe.date_fin_contrat.strftime('%Y-%m-%d') if employe.date_fin_contrat else '',
+        'jours_avant_fin_contrat': employe.jours_avant_fin_contrat(),
+        'contrat_a_renouveler': employe.contrat_a_renouveler(),
         'salaire_base': float(employe.salaire_base) if employe.salaire_base else 0,
         'personne_a_prevenir': employe.personne_a_prevenir,
         'telephone_prevenir': employe.telephone_prevenir,
@@ -364,6 +370,7 @@ def employe_ajouter(structure_id):
             numero_poste=data.get('numero_poste', '').strip(),
             date_embauche=datetime.strptime(data.get('date_embauche'), '%Y-%m-%d').date(),
             type_contrat=data.get('type_contrat', 'CDI'),
+            date_fin_contrat=datetime.strptime(data.get('date_fin_contrat'), '%Y-%m-%d').date() if data.get('date_fin_contrat') else None,
             salaire_base=data.get('salaire_base', 0),
             personne_a_prevenir=data.get('personne_a_prevenir', '').strip(),
             telephone_prevenir=data.get('telephone_prevenir', '').strip(),
@@ -441,6 +448,8 @@ def api_modifier_employe(structure_id, id):
             employe.date_embauche = datetime.strptime(data['date_embauche'], '%Y-%m-%d').date()
         if 'type_contrat' in data:
             employe.type_contrat = data['type_contrat']
+        if 'date_fin_contrat' in data:
+            employe.date_fin_contrat = datetime.strptime(data['date_fin_contrat'], '%Y-%m-%d').date() if data['date_fin_contrat'] else None
         if 'salaire_base' in data:
             employe.salaire_base = data['salaire_base']
         if 'personne_a_prevenir' in data:
@@ -1433,18 +1442,32 @@ def api_dashboard_stats(structure_id):
             Conge.date_fin >= today
         ).count()
         
+        # ⭐ Patron : "alerte de renouvellement" — contrats à durée
+        # déterminée qui expirent dans <= 30 jours (ou déjà expirés).
+        # Jamais de désactivation automatique, juste un signalement.
+        contrats_a_renouveler = [
+            {
+                'id': e.id, 'nom': e.nom, 'prenom': e.prenom, 'matricule': e.matricule,
+                'date_fin_contrat': e.date_fin_contrat.strftime('%d/%m/%Y'),
+                'jours_avant_fin_contrat': e.jours_avant_fin_contrat(),
+            }
+            for e in Employe.contrats_a_renouveler(structure_id, seuil_jours=30)
+        ]
+
         return jsonify({
             'total_employes': total_employes,
             'actifs': actifs,
             'en_conge': en_conge,
             'inactifs': inactifs,
             'demandes_attente': demandes_attente,
-            'conges_en_cours': conges_en_cours
+            'conges_en_cours': conges_en_cours,
+            'contrats_a_renouveler': contrats_a_renouveler,
         })
-        
+
     except Exception as e:
         print(f"❌ Erreur api_dashboard_stats: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 
 @rh_bp.route('/api/update_all_status', methods=['POST'])
