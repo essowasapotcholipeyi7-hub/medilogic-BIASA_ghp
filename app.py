@@ -4960,10 +4960,20 @@ def api_add_acte():
                 worksheet.update_cell(row_num, 4, data.get('pbr', data.get('prix', 0)))
                 worksheet.update_cell(row_num, 5, data.get('description', ''))
                 worksheet.update_cell(row_num, 6, structure_id)
-                worksheet.update_cell(row_num, 7, data.get('prise_en_charge_amu', True))
-                worksheet.update_cell(row_num, 8, data.get('commentaire_amu', ''))
-                worksheet.update_cell(row_num, 9, data.get('prise_en_charge_cac', True))
-                worksheet.update_cell(row_num, 10, data.get('commentaire_cac', ''))
+                # ⭐ FIX : le formulaire "Modifier l'acte" (gestion_stock.html)
+                # n'envoie ni prise_en_charge_amu ni prise_en_charge_cac —
+                # data.get(..., True) écrasait donc une valeur FALSE
+                # existante par TRUE à chaque modification (même symptôme
+                # que côté produits, voir api_admin_update_produit). On ne
+                # touche à ces colonnes que si le payload les fournit.
+                if 'prise_en_charge_amu' in data:
+                    worksheet.update_cell(row_num, 7, data.get('prise_en_charge_amu'))
+                if 'commentaire_amu' in data:
+                    worksheet.update_cell(row_num, 8, data.get('commentaire_amu', ''))
+                if 'prise_en_charge_cac' in data:
+                    worksheet.update_cell(row_num, 9, data.get('prise_en_charge_cac'))
+                if 'commentaire_cac' in data:
+                    worksheet.update_cell(row_num, 10, data.get('commentaire_cac', ''))
                 print(f"✅ Acte {acte_id} modifié dans Sheets")
                 # ⭐ Trace qui a modifié cet acte — avant ce fix, rien ne
                 # gardait cette information (contrairement aux produits, qui
@@ -8451,10 +8461,21 @@ def api_admin_update_produit(produit_id):
         current_row[8] = data.get('date_peremption', '')
         current_row[9] = data.get('lot', '')
         current_row[10] = str(structure_id)
-        current_row[11] = 'TRUE' if data.get('prise_en_charge_amu', True) else 'FALSE'
-        current_row[12] = data.get('commentaire_amu', '')
-        current_row[13] = 'TRUE' if data.get('prise_en_charge_cac', True) else 'FALSE'
-        current_row[14] = data.get('commentaire_cac', '')
+        # ⭐ FIX : le formulaire "Modifier" (gestion_stock.html) n'a AUCUN
+        # champ pour prise_en_charge_amu/cac — data.get(..., True) écrasait
+        # donc systématiquement une valeur FALSE existante par TRUE à
+        # chaque modification (ex: changement de quantité), même quand
+        # rien n'avait été touché à la couverture assurance. Comme pour
+        # P/Q ci-dessous, on ne touche à ces colonnes QUE si le payload les
+        # fournit explicitement.
+        if 'prise_en_charge_amu' in data:
+            current_row[11] = 'TRUE' if data.get('prise_en_charge_amu') else 'FALSE'
+        if 'commentaire_amu' in data:
+            current_row[12] = data.get('commentaire_amu', '')
+        if 'prise_en_charge_cac' in data:
+            current_row[13] = 'TRUE' if data.get('prise_en_charge_cac') else 'FALSE'
+        if 'commentaire_cac' in data:
+            current_row[14] = data.get('commentaire_cac', '')
         # P=15 (statut), Q=16 (AMU-TNS) : gérés par une autre route, on ne
         # touche pas à leur valeur existante ici.
         # ⭐ R=17: fournisseur, S=18: rayon_rangement, T=19: dci (NOUVEAU,
