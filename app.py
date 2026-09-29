@@ -19,6 +19,7 @@ from db_helper import db as db_helper
 from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient, FaqQuestion, FaqQuestionUtilisateur, JourFerie, TauxPartMedecin, PrestationMedecin, PeriodePartMedecin, MedecinDuJour
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
+from utils.onglets_recherchables import onglets_recherchables
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
 from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur
 from services.laboratoire_service import charger_classification_actes, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
@@ -2071,6 +2072,15 @@ def _ligne_recherche(row, colonnes):
     return dict(zip(colonnes, row))
 
 
+def _sans_accents(texte):
+    """Utilisé uniquement pour matcher les libellés d'onglets (ex.
+    "comptabilite" tapé sans accent doit trouver "Comptabilité") — les
+    autres catégories de la recherche globale (patients, ventes...)
+    restent en comparaison exacte, comme avant."""
+    import unicodedata
+    return ''.join(c for c in unicodedata.normalize('NFKD', texte) if not unicodedata.combining(c))
+
+
 @app.route('/api/recherche-globale', methods=['GET'])
 @login_required
 def api_recherche_globale():
@@ -2080,6 +2090,27 @@ def api_recherche_globale():
         return jsonify([])
     like = f"%{q}%"
     resultats = []
+
+    # ⭐ Onglets/pages de l'appli — patron : "qu'on puisse rechercher un
+    # onglet par là et nous conduire vers l'onglet en question". Placé en
+    # premier (aucune requête DB, donc gratuit) : trouver directement la
+    # page qu'on cherche est souvent l'intention la plus probable. Voir
+    # utils/onglets_recherchables.py pour le registre et ses conditions de
+    # visibilité, calquées sur templates/base.html/sidebar_menu.html.
+    try:
+        q_normalisee = _sans_accents(q.lower())
+        role = session.get('role')
+        is_admin = session.get('is_admin')
+        bloq = _abonnement_statut_session().get('bloque_effectif')
+        for onglet in onglets_recherchables(role, is_admin, a_acces,
+                                             lambda cle: onglet_cache(structure_id, cle), bloq):
+            if q_normalisee in _sans_accents(onglet['label'].lower()):
+                resultats.append({
+                    'categorie': 'onglet', 'titre': onglet['label'], 'sous_titre': '',
+                    'url': url_for(onglet['endpoint'], **onglet['kwargs']),
+                })
+    except Exception as e:
+        print(f"❌ Recherche globale (onglets): {e}")
 
     try:
         # ⭐ nom/prenom/telephone sont chiffrés en base (voir crypto_helper.py)

@@ -3367,18 +3367,19 @@ function rechercheGlobaleSaisie() {
 }
 
 const ICONES_RECHERCHE_GLOBALE = {
-    patient: 'fa-user', vente: 'fa-cash-register', proforma: 'fa-file-invoice-dollar',
+    onglet: 'fa-compass', patient: 'fa-user', vente: 'fa-cash-register', proforma: 'fa-file-invoice-dollar',
     hospitalisation: 'fa-bed', soins_ambulatoire: 'fa-walking',
     rendez_vous: 'fa-calendar-check', prescription: 'fa-prescription-bottle-alt',
 };
 const LABELS_RECHERCHE_GLOBALE = {
-    patient: 'Patients', vente: 'Ventes', proforma: 'Proformas',
+    onglet: 'Onglets', patient: 'Patients', vente: 'Ventes', proforma: 'Proformas',
     hospitalisation: 'Hospitalisations', soins_ambulatoire: 'Soins ambulatoires',
     rendez_vous: 'Rendez-vous', prescription: 'Prescriptions reçues',
 };
 
 function urlResultatRechercheGlobale(r) {
     switch (r.categorie) {
+        case 'onglet': return r.url || '#';
         case 'patient': return '/patients?rechercher=' + encodeURIComponent(r.nom_complet || r.titre || '');
         case 'vente': return `/facture/${r.id}/${r.vente_type || 'actes'}`;
         case 'proforma': return `/proforma/${r.id}/print`;
