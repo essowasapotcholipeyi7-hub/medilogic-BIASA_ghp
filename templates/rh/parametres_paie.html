@@ -144,6 +144,21 @@
                     (congés conventionnels) ne le sont jamais.
                 </small>
 
+                <h6 class="mt-4 text-danger"><i class="fas fa-clock"></i> Pointage &rarr; Paie</h6>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="appliquerAbsencesPaie">
+                    <label class="form-check-label small" for="appliquerAbsencesPaie">
+                        Déduire automatiquement les absences (pointage) du salaire
+                    </label>
+                </div>
+                <small class="text-muted">
+                    Si activé, chaque jour ouvré du mois sans aucun pointage enregistré (voir Paramètres de
+                    pointage pour les jours travaillés) entraîne une retenue au prorata (salaire de base ÷
+                    jours ouvrés du mois) sur le prochain bulletin généré pour cet employé — visible comme
+                    ligne « Absences (pointage) » dans les retenues. Les retards ne sont pas déduits.
+                    Désactivé par défaut : n'affecte aucun bulletin tant que vous ne l'activez pas.
+                </small>
+
                 <div class="text-end mt-3">
                     <span class="text-muted small me-3" id="dernMaj"></span>
                     <button class="btn btn-primary" onclick="sauvegarderParametres()">
@@ -231,6 +246,7 @@ function chargerParametres() {
             document.getElementById('deductionPersonneCharge').value = p.deduction_personne_charge;
             document.getElementById('maxPersonnesCharge').value = p.max_personnes_charge;
             document.getElementById('deduirePermissionsConges').checked = p.deduire_permissions_des_conges !== false;
+            document.getElementById('appliquerAbsencesPaie').checked = p.appliquer_absences_sur_paie === true;
 
             document.getElementById('dernMaj').textContent = p.updated_at ? ('Dernière modification : ' + p.updated_at) : '';
 
@@ -272,6 +288,7 @@ function sauvegarderParametres() {
             max_personnes_charge: parseInt(document.getElementById('maxPersonnesCharge').value || 6),
             tranches_irpp: tranches,
             deduire_permissions_des_conges: document.getElementById('deduirePermissionsConges').checked,
+            appliquer_absences_sur_paie: document.getElementById('appliquerAbsencesPaie').checked,
         })
     })
     .then(r => r.json())

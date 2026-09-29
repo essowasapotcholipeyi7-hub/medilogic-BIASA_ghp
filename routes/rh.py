@@ -1717,6 +1717,9 @@ def api_get_parametres_paie(structure_id):
         # ⭐ Patron : "qu'on décide s'il faut enlever les jours de
         # permission dans les congés ou pas" — voir Employe.get_solde_detail.
         'deduire_permissions_des_conges': bool(p.deduire_permissions_des_conges) if p.deduire_permissions_des_conges is not None else True,
+        # ⭐ Patron : "pointage déconnecté de la paie [...] qu'on décide
+        # d'appliquer ou pas" — voir services/paie_service._retenue_absences.
+        'appliquer_absences_sur_paie': bool(p.appliquer_absences_sur_paie),
         'updated_at': p.updated_at.strftime('%Y-%m-%d %H:%M') if p.updated_at else None,
     })
 
@@ -1754,6 +1757,8 @@ def api_maj_parametres_paie(structure_id):
             p.tranches_irpp = data['tranches_irpp']
         if 'deduire_permissions_des_conges' in data:
             p.deduire_permissions_des_conges = bool(data['deduire_permissions_des_conges'])
+        if 'appliquer_absences_sur_paie' in data:
+            p.appliquer_absences_sur_paie = bool(data['appliquer_absences_sur_paie'])
         p.updated_by = session.get('user_name', 'Admin')
         db.session.commit()
         return jsonify({'success': True})

@@ -3585,6 +3585,16 @@ class ParametragePaie(db.Model):
     # pas ce réglage lui-même.
     deduire_permissions_des_conges = db.Column(db.Boolean, default=True)
 
+    # ⭐ Patron : "pointage déconnecté de la paie [...] qu'on décide
+    # d'appliquer ou pas". Désactivé par défaut — aucun bulletin de paie
+    # n'est modifié tant que l'admin n'active pas ce réglage lui-même. Une
+    # fois actif, une retenue "Absences (pointage)" est calculée au
+    # prorata (voir services/paie_service._retenue_absences) à partir des
+    # jours sans aucun pointage sur les jours ouvrés du paramétrage de
+    # pointage (ParametragePointage). Les retards ne sont PAS déduits
+    # (portée volontairement limitée aux absences journée complète).
+    appliquer_absences_sur_paie = db.Column(db.Boolean, default=False)
+
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     updated_by = db.Column(db.String(100))
 

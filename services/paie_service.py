@@ -213,6 +213,47 @@ def calculer_paie(employe, salaire_base, primes, indemnites, parametrage,
     }
 
 
+LIBELLE_RETENUE_ABSENCES = 'Absences (pointage)'
+
+
+def _retenue_absences(structure_id, employe_id, annee, mois, salaire_base, parametrage):
+    """⭐ Retenue automatique pour absences — patron : "pointage déconnecté
+    de la paie" puis "qu'on décide d'appliquer ou pas". Désactivé par
+    défaut (ParametragePaie.appliquer_absences_sur_paie) : n'affecte AUCUN
+    bulletin tant que l'admin ne l'active pas explicitement.
+
+    Quand activé : s'appuie sur services/pointage_service.resume_periode()
+    (déjà utilisé par l'écran Pointage — jours "ouvrés" du paramétrage de
+    pointage SANS aucune ligne de pointage = absence) pour compter les
+    jours d'absence du mois, et déduit au prorata (salaire de base / jours
+    ouvrés prévus du mois × jours absents). Volontairement limité aux
+    absences journée complète — les RETARDS ne sont pas déduits ici (portée
+    délibérément plus restreinte, à étendre plus tard si besoin)."""
+    if not parametrage.appliquer_absences_sur_paie:
+        return None
+    try:
+        import calendar as _calendar
+        from services.pointage_service import resume_periode
+        dernier_jour = _calendar.monthrange(annee, mois)[1]
+        resume = resume_periode(structure_id, date(annee, mois, 1), date(annee, mois, dernier_jour),
+                                 employe_id=employe_id)
+    except Exception as e:
+        print(f"⚠️ Retenue absences non calculée (paie {employe_id} {annee}-{mois}): {e}")
+        return None
+    if not resume:
+        return None
+    r = resume[0]
+    jours_absents = r.get('jours_absents') or 0
+    jours_ouvres_mois = r.get('jours_ouvres') or 0
+    if jours_absents <= 0 or jours_ouvres_mois <= 0:
+        return None
+    salaire_journalier = _d(salaire_base) / jours_ouvres_mois
+    montant = round(salaire_journalier * jours_absents, 2)
+    if montant <= 0:
+        return None
+    return {'libelle': f"{LIBELLE_RETENUE_ABSENCES} — {jours_absents}j", 'montant': montant}
+
+
 def generer_ou_maj_paie(structure_id, employe_id, annee, mois, salaire_base=None,
                          primes=0, indemnites=0, prets=0, acomptes=0,
                          autres_retenues=None, personnes_a_charge=None, user_nom='System'):
@@ -224,6 +265,17 @@ def generer_ou_maj_paie(structure_id, employe_id, annee, mois, salaire_base=None
 
     parametrage = ParametragePaie.get_ou_creer(structure_id)
     base = salaire_base if salaire_base is not None else employe.salaire_base
+
+    # ⭐ Retenue absences (voir _retenue_absences) — retire d'abord toute
+    # ligne "Absences (pointage)" déjà présente (recalcul idempotent, pas
+    # de doublon si generer_ou_maj_paie est rappelé plusieurs fois) avant
+    # d'en réinjecter une à jour si le réglage est actif.
+    autres_retenues = [r for r in (autres_retenues or [])
+                        if not (isinstance(r, dict) and str(r.get('libelle', '')).startswith(LIBELLE_RETENUE_ABSENCES))]
+    retenue_absences = _retenue_absences(structure_id, employe_id, annee, mois, base, parametrage)
+    if retenue_absences:
+        autres_retenues.append(retenue_absences)
+
     calc = calculer_paie(employe, base, primes, indemnites, parametrage,
                           prets=prets, acomptes=acomptes, autres_retenues=autres_retenues,
                           personnes_a_charge=personnes_a_charge)
