@@ -50,6 +50,20 @@ class Config:
     SQLALCHEMY_DATABASE_URI = _url_postgres_pour_sqlalchemy(os.getenv('DATABASE_URL')) or 'postgresql+psycopg2://...'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
+    # ⭐⭐ Porté depuis GHP (2026-09-30) — même correctif, même cause : Neon
+    # (via son pooler) ferme les connexions inactives côté serveur sans
+    # prévenir le pool SQLAlchemy. Sans pool_pre_ping, une connexion morte
+    # réutilisée par erreur fait planter la requête en cours -> 500
+    # générique, sur n'importe quelle route utilisant db.session, de façon
+    # intermittente. pool_pre_ping teste chaque connexion avant de la
+    # rendre et la remplace silencieusement si elle est morte.
+    # pool_recycle recycle aussi les connexions avant l'âge où Neon a
+    # tendance à les couper de son côté.
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_pre_ping': True,
+        'pool_recycle': 280,
+    }
+
     # ⭐ Bascule hors-ligne (voir utils/db_failover.py) : n'existe que si
     # DATABASE_URL_LOCAL est définie (jamais le cas sur Render) — sinon
     # aucun changement de comportement.
