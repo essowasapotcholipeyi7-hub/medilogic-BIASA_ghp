@@ -5,8 +5,25 @@
 {% block content %}
 
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-    <h4 class="mb-0"><i class="fas fa-file-invoice me-2"></i>Facture AMU {{ 'TNS' if type_amu == 'tns' else 'CNSS' }} — récapitulatif mensuel</h4>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+        <h4 class="mb-0"><i class="fas fa-file-invoice me-2"></i>Facture AMU {{ 'TNS' if type_amu == 'tns' else 'CNSS' }} — récapitulatif mensuel</h4>
+        <!-- ⭐ N° de facture recap — patron : "à côté du titre... vers la
+             droite", pour retrouver facilement la facture qu'une
+             assurance a réglée (voir historique + recherche). -->
+        {% if numero_facture_affiche %}
+        <span class="badge bg-dark" style="font-size:0.8em;">{{ numero_facture_affiche }}</span>
+        {% if session.is_admin %}
+        <button type="button" class="btn btn-sm btn-outline-secondary" title="Modifier le numéro (admin)"
+                onclick="modifierNumeroFacture({{ brouillon.id }}, {{ brouillon.numero_local }})">
+            <i class="fas fa-pen"></i>
+        </button>
+        {% endif %}
+        {% endif %}
+    </div>
     <div class="d-flex gap-2">
+        <a href="{{ url_for('historique_factures_amu') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-history me-1"></i> Historique
+        </a>
         <a href="{{ url_for('page_parametrage_amu_cnss') }}" class="btn btn-outline-secondary btn-sm">
             <i class="fas fa-cog me-1"></i> Paramètres CNSS
         </a>
@@ -240,6 +257,20 @@ function marquerDeposee(factureId) {
     fetch(`/api/assurance/facture-amu-cnss/${factureId}/deposer`, { method: 'POST' })
         .then(r => r.json())
         .then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+}
+
+function modifierNumeroFacture(factureId, numeroActuel) {
+    const saisie = prompt("Nouveau numéro de facture (juste le compteur, ex: 1 pour N° 000000001) :", numeroActuel);
+    if (saisie === null) return;
+    const numero = parseInt(saisie, 10);
+    if (!numero || numero <= 0) { alert('Numéro invalide.'); return; }
+    fetch(`/api/assurance/facture-amu/${factureId}/numero`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ numero_local: numero })
+    })
+    .then(r => r.json())
+    .then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); })
+    .catch(e => alert('Erreur : ' + e));
 }
 
 function classerActe(btn) {

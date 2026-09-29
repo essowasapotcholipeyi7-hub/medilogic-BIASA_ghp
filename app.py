@@ -18299,6 +18299,9 @@ def page_factures_assurances():
 # seulement les admins.
 # ============================================================
 
+from utils.numero_facture_amu import formater_numero_facture_amu
+
+
 def _lignes_dict_vers_liste(lignes_dict):
     return [
         {'categorie': cle, 'nombre_feuilles': int(lignes_dict.get(cle, {}).get('nombre_feuilles', 0) or 0),
@@ -18352,9 +18355,16 @@ def page_facture_amu_cnss():
     ]
     total_general = sum(l['montant'] for l in lignes_table)
 
+    parametrage = ParametrageAmuCnss.get_ou_creer(structure_id)
+    numero_facture_affiche = (
+        formater_numero_facture_amu(brouillon.numero_local, parametrage.sigle, annee)
+        if brouillon else None
+    )
+
     return render_template('assurance_facture_amu_cnss.html',
                             annee=annee, mois=mois, type_amu=type_amu, lignes=lignes_table, total_general=total_general,
                             non_classes=resultat['non_classes'], brouillon=brouillon,
+                            numero_facture_affiche=numero_facture_affiche,
                             categories=CATEGORIES_AMU_CNSS)
 
 
@@ -18379,6 +18389,7 @@ def api_generer_facture_amu_cnss():
         ).first()
         if not brouillon:
             brouillon = FactureAmuMensuelle(structure_id=structure_id, type_amu=type_amu, annee=annee, mois=mois,
+                                             numero_local=prochain_numero_local('factures_amu_mensuelles', structure_id),
                                              created_by=user_name)
             db.session.add(brouillon)
         brouillon.lignes = lignes_liste
@@ -18410,6 +18421,7 @@ def api_enregistrer_facture_amu_cnss():
         ).first()
         if not brouillon:
             brouillon = FactureAmuMensuelle(structure_id=structure_id, type_amu=type_amu, annee=annee, mois=mois,
+                                             numero_local=prochain_numero_local('factures_amu_mensuelles', structure_id),
                                              created_by=user_name)
             db.session.add(brouillon)
         # ⭐ Validation minimale : ne garder que les catégories connues, avec
@@ -18450,6 +18462,38 @@ def api_deposer_facture_amu_cnss(facture_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+# ⭐ Numéro de facture recap AMU (CNSS/TNS/INAM confondus — un seul
+# compteur par structure, voir prochain_numero_local) : "retrouver
+# facilement la facture que l'assurance a réglée et encaissée". Modifiable
+# uniquement par l'admin — la numérotation doit rester fiable pour
+# l'historique/la recherche, pas touchable par erreur par un caissier.
+@app.route('/api/assurance/facture-amu/<int:facture_id>/numero', methods=['PUT'])
+@login_required
+def api_modifier_numero_facture_amu(facture_id):
+    if not session.get('is_admin'):
+        return jsonify({'success': False, 'error': "Réservé à l'administrateur"}), 403
+    try:
+        structure_id = session.get('structure_id')
+        brouillon = FactureAmuMensuelle.query.filter_by(id=facture_id, structure_id=structure_id).first()
+        if not brouillon:
+            return jsonify({'success': False, 'error': 'Facture introuvable'}), 404
+        data = request.json or {}
+        try:
+            nouveau_numero = int(data.get('numero_local'))
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'Numéro invalide'}), 400
+        if nouveau_numero <= 0:
+            return jsonify({'success': False, 'error': 'Le numéro doit être positif'}), 400
+        brouillon.numero_local = nouveau_numero
+        db.session.commit()
+        parametrage = ParametrageAmuCnss.get_ou_creer(structure_id)
+        return jsonify({'success': True, 'numero_local': nouveau_numero,
+                         'numero_affiche': formater_numero_facture_amu(nouveau_numero, parametrage.sigle, brouillon.annee)})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/assurance/facture-amu-cnss/<int:facture_id>/imprimer')
 @login_required
 def imprimer_facture_amu_cnss(facture_id):
@@ -18470,12 +18514,14 @@ def imprimer_facture_amu_cnss(facture_id):
     parametrage = ParametrageAmuCnss.get_ou_creer(structure_id)
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
+    numero_facture_affiche = formater_numero_facture_amu(brouillon.numero_local, parametrage.sigle, brouillon.annee)
 
     noms_mois = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août',
                  'Septembre', 'Octobre', 'Novembre', 'Décembre']
     periode_libelle = f"{noms_mois[brouillon.mois]} {brouillon.annee}"
 
     return render_template('assurance_facture_amu_cnss_imprimer.html',
+                            numero_facture_affiche=numero_facture_affiche,
                             brouillon=brouillon, lignes=lignes_table, total_general=total_general,
                             montant_lettres=montant_en_lettres_fcfa(total_general),
                             parametrage=parametrage, structure=structure_info,
@@ -18523,11 +18569,14 @@ def page_parametrage_amu_cnss():
         parametrage.niveau_soins = niveau_soins if niveau_soins in ('1', '2', '3') else None
         parametrage.nom_banque = request.form.get('nom_banque', '').strip()
         parametrage.numero_compte = request.form.get('numero_compte', '').strip()
+        # ⭐ Sigle utilisé dans le numéro de facture recap AMU (CNSS/TNS/
+        # INAM) — voir formater_numero_facture_amu.
+        parametrage.sigle = request.form.get('sigle', '').strip()[:20]
         db.session.commit()
         flash('Paramètres AMU-CNSS enregistrés', 'success')
         return redirect(url_for('page_parametrage_amu_cnss'))
 
-    return render_template('assurance_parametrage_amu_cnss.html', parametrage=parametrage)
+    return render_template('assurance_parametrage_amu_cnss.html', parametrage=parametrage, now_year=date.today().year)
 
 
 # ============================================================
@@ -18596,9 +18645,16 @@ def page_facture_amu_inam():
     sections = _construire_sections_inam(lignes_affichees)
     total_general = sum(s['sous_total'] for s in sections)
 
+    parametrage = ParametrageAmuCnss.get_ou_creer(structure_id)
+    numero_facture_affiche = (
+        formater_numero_facture_amu(brouillon.numero_local, parametrage.sigle, annee)
+        if brouillon else None
+    )
+
     return render_template('assurance_facture_amu_inam.html',
                             annee=annee, mois=mois, sections=sections, total_general=total_general,
                             non_classes=resultat['non_classes'], brouillon=brouillon,
+                            numero_facture_affiche=numero_facture_affiche,
                             categories=CATEGORIES_AMU_INAM_PLATES)
 
 
@@ -18706,12 +18762,14 @@ def imprimer_facture_amu_inam(facture_id):
     parametrage_inam = ParametrageAmuInam.get_ou_creer(structure_id)
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
+    numero_facture_affiche = formater_numero_facture_amu(brouillon.numero_local, parametrage_cnss.sigle, brouillon.annee)
 
     noms_mois = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août',
                  'Septembre', 'Octobre', 'Novembre', 'Décembre']
     periode_libelle = f"{noms_mois[brouillon.mois]} {brouillon.annee}"
 
     return render_template('assurance_facture_amu_inam_imprimer.html',
+                            numero_facture_affiche=numero_facture_affiche,
                             brouillon=brouillon, sections=sections, total_general=total_general,
                             montant_lettres=montant_en_lettres_fcfa(total_general),
                             parametrage=parametrage_cnss, parametrage_inam=parametrage_inam,
@@ -18761,6 +18819,41 @@ def page_parametrage_amu_inam():
 
     return render_template('assurance_parametrage_amu_inam.html', parametrage=parametrage,
                             parametrage_cnss=parametrage_cnss, regimes=REGIMES_AMU_INAM)
+
+
+# ⭐ Historique + recherche par N° de facture recap AMU (CNSS/TNS/INAM
+# confondus) — patron : "ce numero servira à retrouver facilement la
+# facture que l'assurance a réglé et encaissé". Recherche faite côté
+# client (JS) : le nombre de factures recap par structure reste modeste
+# (une par mois par type d'assurance), pas besoin d'un endpoint dédié.
+@app.route('/assurance/factures-amu/historique')
+@login_required
+def historique_factures_amu():
+    structure_id = session.get('structure_id')
+    parametrage = ParametrageAmuCnss.get_ou_creer(structure_id)
+    factures = FactureAmuMensuelle.query.filter_by(structure_id=structure_id).order_by(
+        FactureAmuMensuelle.annee.desc(), FactureAmuMensuelle.mois.desc()
+    ).all()
+
+    noms_mois = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août',
+                 'Septembre', 'Octobre', 'Novembre', 'Décembre']
+    noms_type = {'cnss': 'AMU CNSS', 'tns': 'AMU TNS', 'inam': 'AMU INAM'}
+
+    lignes = []
+    for f in factures:
+        total = sum(float(l.get('montant') or 0) for l in (f.lignes or []))
+        lignes.append({
+            'id': f.id,
+            'type_amu': f.type_amu,
+            'type_libelle': noms_type.get(f.type_amu, f.type_amu),
+            'periode': f"{noms_mois[f.mois]} {f.annee}",
+            'numero_affiche': formater_numero_facture_amu(f.numero_local, parametrage.sigle, f.annee) or '—',
+            'total': total,
+            'statut': f.statut,
+            'date_depot': f.date_depot,
+        })
+
+    return render_template('assurance_factures_amu_historique.html', factures=lignes)
 
 
 @app.route('/facture/detail/<int:facture_id>')

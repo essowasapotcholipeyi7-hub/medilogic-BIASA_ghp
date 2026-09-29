@@ -2411,6 +2411,11 @@ class ParametrageAmuCnss(db.Model):
     niveau_soins = db.Column(db.String(5))  # '1' | '2' | '3'
     nom_banque = db.Column(db.String(150))
     numero_compte = db.Column(db.String(50))
+    # ⭐ Sigle de la clinique — utilisé dans le numéro de facture recap AMU
+    # (CNSS/TNS/INAM, voir FactureAmuMensuelle.numero_local +
+    # formater_numero_facture_amu) : "N° 000000001/AMU/<sigle>/<année>".
+    # Commun aux deux assureurs, comme le reste de ce paramétrage.
+    sigle = db.Column(db.String(20))
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     @classmethod

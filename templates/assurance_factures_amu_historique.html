@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}Historique factures AMU{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h4 class="mb-0"><i class="fas fa-history me-2"></i>Historique des factures recap AMU</h4>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('page_facture_amu_cnss') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-arrow-left me-1"></i> Retour
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <p class="text-muted small">
+            Toutes les factures recap AMU (CNSS, TNS, INAM) générées pour cette structure, quel que soit le mois —
+            utile pour retrouver rapidement la facture qu'une assurance a réglée et encaissée à partir de son numéro.
+        </p>
+        <div class="mb-3">
+            <input type="text" id="rechercheNumero" class="form-control" style="max-width:360px;"
+                   placeholder="Rechercher par N° de facture, période, type...">
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>N° de facture</th>
+                        <th>Assurance</th>
+                        <th>Période</th>
+                        <th class="text-end">Montant total</th>
+                        <th>Statut</th>
+                        <th>Date de dépôt</th>
+                        <th class="text-end">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="historiqueFacturesList">
+                    {% for f in factures %}
+                    <tr class="ligne-facture" data-recherche="{{ (f.numero_affiche ~ ' ' ~ f.periode ~ ' ' ~ f.type_libelle)|lower }}">
+                        <td><code>{{ f.numero_affiche }}</code></td>
+                        <td>{{ f.type_libelle }}</td>
+                        <td>{{ f.periode }}</td>
+                        <td class="text-end">{{ '{:,.0f}'.format(f.total).replace(',', ' ') }} FCFA</td>
+                        <td>
+                            {% if f.statut == 'deposee' %}
+                            <span class="badge bg-success">Déposée</span>
+                            {% else %}
+                            <span class="badge bg-warning text-dark">Brouillon</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ f.date_depot.strftime('%d/%m/%Y') if f.date_depot else '—' }}</td>
+                        <td class="text-end">
+                            {% if f.type_amu == 'inam' %}
+                            <a href="{{ url_for('imprimer_facture_amu_inam', facture_id=f.id) }}" class="btn btn-sm btn-outline-primary" target="_blank">
+                                <i class="fas fa-print"></i>
+                            </a>
+                            {% else %}
+                            <a href="{{ url_for('imprimer_facture_amu_cnss', facture_id=f.id) }}" class="btn btn-sm btn-outline-primary" target="_blank">
+                                <i class="fas fa-print"></i>
+                            </a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr id="ligneAucuneFacture">
+                        <td colspan="7" class="text-center text-muted py-4">Aucune facture recap générée pour l'instant.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p id="aucunResultatRecherche" class="text-center text-muted py-3" style="display:none;">
+            Aucune facture ne correspond à cette recherche.
+        </p>
+    </div>
+</div>
+
+<script>
+document.getElementById('rechercheNumero').addEventListener('input', function() {
+    const q = this.value.trim().toLowerCase();
+    const lignes = document.querySelectorAll('.ligne-facture');
+    let visibles = 0;
+    lignes.forEach(tr => {
+        const correspond = !q || tr.getAttribute('data-recherche').includes(q);
+        tr.style.display = correspond ? '' : 'none';
+        if (correspond) visibles++;
+    });
+    document.getElementById('aucunResultatRecherche').style.display = (lignes.length && visibles === 0) ? '' : 'none';
+});
+</script>
+
+{% endblock %}

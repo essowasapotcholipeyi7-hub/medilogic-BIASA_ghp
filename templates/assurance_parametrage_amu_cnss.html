@@ -52,6 +52,13 @@
                 <label class="form-label">N° de compte</label>
                 <input type="text" class="form-control" name="numero_compte" value="{{ parametrage.numero_compte or '' }}">
             </div>
+            <div class="mb-3">
+                <label class="form-label">Sigle de la clinique</label>
+                <input type="text" class="form-control" name="sigle" maxlength="20" placeholder="Ex: CVC"
+                       value="{{ parametrage.sigle or '' }}">
+                <small class="text-muted">Utilisé dans le numéro des factures recap AMU (CNSS/TNS/INAM) :
+                    N° 000000001/AMU/<strong>{{ parametrage.sigle or 'SIGLE' }}</strong>/{{ now_year }}.</small>
+            </div>
             <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i> Enregistrer</button>
         </form>
     </div>

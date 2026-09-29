@@ -11,6 +11,9 @@
         body { font-family: 'Times New Roman', Times, serif; background: #f0f2f5; padding: 14px; }
         .container { max-width: 780px; margin: 0 auto; background: white; padding: 18px 24px; border-radius: 6px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); font-size: 12px; line-height: 1.3; }
         h1 { text-align: center; font-size: 18px; margin: 6px 0 12px; text-decoration: underline; }
+        .entete-titre { position: relative; }
+        .numero-facture { position: absolute; top: 6px; right: 0; font-size: 10px; font-weight: bold;
+                           border: 1px solid #333; padding: 2px 6px; white-space: nowrap; }
         .entete-cnss { display: flex; align-items: center; gap: 14px; border-bottom: 1px solid #ccc; padding-bottom: 9px; margin-bottom: 7px; }
         .entete-cnss img { height: 48px; width: auto; }
         .entete-cnss .texte { font-size: 11px; line-height: 1.3; }
@@ -57,7 +60,12 @@
                 TOGO
             </div>
         </div>
-        <h1>FACTURE AMU</h1>
+        <div class="entete-titre">
+            <h1>FACTURE AMU</h1>
+            {% if numero_facture_affiche %}
+            <div class="numero-facture">{{ numero_facture_affiche }}</div>
+            {% endif %}
+        </div>
 
         <div class="ligne-double">
             <div class="champ" style="flex:2;"><span class="label">Raison sociale :</span><span class="valeur">{{ structure.nom or '' }}</span></div>
