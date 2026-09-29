@@ -114,6 +114,23 @@ def calculer_solde_conges(employe_id, annee):
     return employe.get_solde_detail(annee)
 
 
+def _comptes_utilisateurs_structure(structure_id):
+    """⭐ Comptes de connexion de la structure — patron : "fiche employé et
+    compte de connexion séparés (aucun lien)". Lit la feuille Google
+    Sheets struct_<id>_users (le VRAI système de login de l'appli, voir
+    Employe.compte_utilisateur_id dans models.py) — jamais la table SQL
+    Utilisateur, qui n'est interrogée nulle part pour l'authentification.
+    Best-effort : liste vide si Sheets est injoignable, jamais une 500."""
+    try:
+        from sheets_helper import sheets_helper
+        sheets_helper.set_structure(structure_id)
+        comptes = sheets_helper.get_all_records('users')
+        return [c for c in comptes if c.get('ID') and str(c.get('structure_id')) == str(structure_id)]
+    except Exception as e:
+        print(f"⚠️ Erreur chargement comptes utilisateurs (structure {structure_id}): {e}")
+        return []
+
+
 def verifier_solde_avec_anticipation(employe_id, jours_demandes, annee_demande):
     """
     Vérifie si le solde est suffisant, sinon propose les années futures.
@@ -261,6 +278,9 @@ def api_employes(structure_id):
             # ⭐ Patron : "alerte de renouvellement" — voir Employe.contrat_a_renouveler.
             'date_fin_contrat': e.date_fin_contrat.strftime('%d/%m/%Y') if e.date_fin_contrat else '',
             'contrat_a_renouveler': e.contrat_a_renouveler(),
+            # ⭐ Juste l'id ici (pas d'aller-retour Sheets par employé dans
+            # une liste) — voir /api/comptes_utilisateurs pour le détail.
+            'compte_utilisateur_id': e.compte_utilisateur_id,
         })
     
     return jsonify(result)
@@ -317,7 +337,29 @@ def api_employe_detail(structure_id, id):
         'taux_retraite_patronal_override': float(employe.taux_retraite_patronal_override) if employe.taux_retraite_patronal_override is not None else None,
         'taux_amu_salarial_override': float(employe.taux_amu_salarial_override) if employe.taux_amu_salarial_override is not None else None,
         'taux_amu_patronal_override': float(employe.taux_amu_patronal_override) if employe.taux_amu_patronal_override is not None else None,
+        # ⭐ Patron : "fiche employé et compte de connexion séparés (aucun
+        # lien)" — voir Employe.compte_utilisateur_id (models.py) et
+        # _comptes_utilisateurs_structure() ci-dessus.
+        'compte_utilisateur_id': employe.compte_utilisateur_id,
+        'compte_utilisateur': next((
+            {'id': c.get('ID'), 'nom': c.get('nom'), 'email': c.get('email'),
+             'role': c.get('role'), 'actif': c.get('actif', 'oui')}
+            for c in _comptes_utilisateurs_structure(structure_id)
+            if str(c.get('ID')) == str(employe.compte_utilisateur_id)
+        ), None) if employe.compte_utilisateur_id else None,
     })
+
+
+@rh_bp.route('/api/comptes_utilisateurs')
+@require_structure
+def api_comptes_utilisateurs(structure_id):
+    """API: comptes de connexion de la structure — pour le sélecteur de
+    liaison sur la fiche employé (voir _comptes_utilisateurs_structure)."""
+    return jsonify([{
+        'id': c.get('ID'), 'nom': c.get('nom'), 'email': c.get('email'),
+        'role': c.get('role'), 'actif': c.get('actif', 'oui'),
+    } for c in _comptes_utilisateurs_structure(structure_id)])
+
 
 @rh_bp.route('/employe/ajouter', methods=['POST'])
 @require_structure
@@ -371,6 +413,7 @@ def employe_ajouter(structure_id):
             date_embauche=datetime.strptime(data.get('date_embauche'), '%Y-%m-%d').date(),
             type_contrat=data.get('type_contrat', 'CDI'),
             date_fin_contrat=datetime.strptime(data.get('date_fin_contrat'), '%Y-%m-%d').date() if data.get('date_fin_contrat') else None,
+            compte_utilisateur_id=int(data['compte_utilisateur_id']) if data.get('compte_utilisateur_id') else None,
             salaire_base=data.get('salaire_base', 0),
             personne_a_prevenir=data.get('personne_a_prevenir', '').strip(),
             telephone_prevenir=data.get('telephone_prevenir', '').strip(),
@@ -450,6 +493,8 @@ def api_modifier_employe(structure_id, id):
             employe.type_contrat = data['type_contrat']
         if 'date_fin_contrat' in data:
             employe.date_fin_contrat = datetime.strptime(data['date_fin_contrat'], '%Y-%m-%d').date() if data['date_fin_contrat'] else None
+        if 'compte_utilisateur_id' in data:
+            employe.compte_utilisateur_id = int(data['compte_utilisateur_id']) if data['compte_utilisateur_id'] else None
         if 'salaire_base' in data:
             employe.salaire_base = data['salaire_base']
         if 'personne_a_prevenir' in data:
@@ -552,10 +597,21 @@ def employe_detail(structure_id, id):
     # ⭐⭐ CALCULER SOLDE_INFO ⭐⭐
     annee_actuelle = datetime.now().year
     solde_info = calculer_solde_conges(employe.id, annee_actuelle)
-    
-    return render_template('rh/employe_detail.html', 
+
+    # ⭐ Compte de connexion lié (voir Employe.compte_utilisateur_id et
+    # _comptes_utilisateurs_structure ci-dessus) — patron : "fiche employé
+    # et compte de connexion séparés (aucun lien)".
+    compte_utilisateur = None
+    if employe.compte_utilisateur_id:
+        compte_utilisateur = next((
+            c for c in _comptes_utilisateurs_structure(structure_id)
+            if str(c.get('ID')) == str(employe.compte_utilisateur_id)
+        ), None)
+
+    return render_template('rh/employe_detail.html',
                          employe=employe,
-                         solde_info=solde_info)  # ⭐ AJOUTER solde_info
+                         solde_info=solde_info,
+                         compte_utilisateur=compte_utilisateur)  # ⭐ AJOUTER solde_info
 
 
 @rh_bp.route('/employe/modifier/<int:id>')

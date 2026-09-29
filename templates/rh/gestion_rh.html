@@ -846,6 +846,19 @@
                                     </div>
                                     <div class="row g-2">
                                         <div class="col-md-12">
+                                            <!-- ⭐ Patron : "fiche employé et compte de connexion séparés
+                                                 (aucun lien)" — lien logique vers la feuille Google Sheets
+                                                 struct_<id>_users (le vrai système de login, voir
+                                                 Employe.compte_utilisateur_id dans models.py). Optionnel :
+                                                 rien n'oblige à lier un employé à un compte applicatif. -->
+                                            <label class="form-label small">Compte de connexion <span class="text-muted">(optionnel)</span></label>
+                                            <select class="form-select form-select-sm" id="empCompteUtilisateur">
+                                                <option value="">Aucun compte lié</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="row g-2">
+                                        <div class="col-md-12">
                                             <label class="form-label small">Personne à prévenir</label>
                                             <input type="text" class="form-control form-control-sm" id="empPrevenir">
                                         </div>
@@ -1356,6 +1369,9 @@ function afficherEmployes() {
                 <td>
                     ${getStatutEmployeBadge(e.statut)}
                     ${e.contrat_a_renouveler ? `<span class="badge bg-danger ms-1" title="Contrat à renouveler — fin le ${e.date_fin_contrat}"><i class="fas fa-exclamation-triangle"></i> ${e.date_fin_contrat}</span>` : ''}
+                    ${e.compte_utilisateur_id
+                        ? '<i class="fas fa-link text-success ms-1" title="Compte de connexion lié"></i>'
+                        : '<i class="fas fa-unlink text-muted ms-1" title="Aucun compte de connexion lié"></i>'}
                 </td>
                 <td class="text-center">
                     <div class="btn-group btn-group-sm">
@@ -1457,6 +1473,26 @@ function reinitialiserRechercheEmploye() {
     filtrerEmployes();
 }
 
+// ⭐ Peuple le sélecteur "Compte de connexion" (comptes struct_<id>_users,
+// Google Sheets — voir /rh/api/comptes_utilisateurs) et présélectionne
+// selectedId si fourni. Partagé par l'ajout et la modification (même
+// modal #employeModal).
+function remplirSelectComptesUtilisateurs(selectedId) {
+    const select = document.getElementById('empCompteUtilisateur');
+    if (!select) return Promise.resolve();
+    return fetch('/rh/api/comptes_utilisateurs')
+        .then(r => r.json())
+        .then(comptes => {
+            select.innerHTML = '<option value="">Aucun compte lié</option>';
+            (comptes || []).forEach(c => {
+                const inactif = c.actif && c.actif !== 'oui' ? ' — désactivé' : '';
+                select.innerHTML += `<option value="${c.id}">${c.nom || ''} (${c.email || ''}, ${c.role || ''})${inactif}</option>`;
+            });
+            select.value = selectedId ? String(selectedId) : '';
+        })
+        .catch(error => console.error('Erreur chargement comptes utilisateurs:', error));
+}
+
 function ouvrirAjoutEmploye() {
     // ⭐ Récupérer le bouton par son ID au lieu de event.target
     const btn = document.getElementById('btnNouvelEmploye');
@@ -1472,12 +1508,13 @@ function ouvrirAjoutEmploye() {
         
         // Réinitialiser le formulaire
         document.getElementById('employeForm').reset();
-        
+        remplirSelectComptesUtilisateurs();
+
         const statutSelect = document.getElementById('empStatut');
         if (statutSelect) {
             statutSelect.value = 'Actif';
         }
-        
+
         const serviceSelect = document.getElementById('empService');
         if (!serviceSelect) {
             console.error('Select empService non trouve');
@@ -1514,6 +1551,7 @@ function ouvrirAjoutEmploye() {
 // ⭐ Fonction de fallback
 function ouvrirAjoutEmployeSimple() {
     document.getElementById('employeForm').reset();
+    remplirSelectComptesUtilisateurs();
     const serviceSelect = document.getElementById('empService');
     if (serviceSelect) {
         serviceSelect.innerHTML = '<option value="">Chargement...</option>';
@@ -1578,6 +1616,7 @@ function modifierEmploye(id) {
                 // /api/employes/<id>, contrairement aux autres dates de cet
                 // endpoint (DD/MM/YYYY) — pas de conversion nécessaire.
                 document.getElementById('empDateFinContrat').value = data.date_fin_contrat || '';
+                remplirSelectComptesUtilisateurs(data.compte_utilisateur_id);
                 document.getElementById('empPrevenir').value = data.personne_a_prevenir || '';
                 document.getElementById('empTelephonePrevenir').value = data.telephone_prevenir || '';
                 document.getElementById('empLienParente').value = data.lien_parente || '';
@@ -1656,6 +1695,7 @@ function sauvegarderEmploye() {
         date_embauche: document.getElementById('empDateEmbauche').value,
         type_contrat: document.getElementById('empTypeContrat').value,
         date_fin_contrat: document.getElementById('empDateFinContrat').value,
+        compte_utilisateur_id: document.getElementById('empCompteUtilisateur').value || null,
         personne_a_prevenir: document.getElementById('empPrevenir').value.trim(),
         telephone_prevenir: document.getElementById('empTelephonePrevenir').value.trim(),
         lien_parente: document.getElementById('empLienParente').value.trim(),

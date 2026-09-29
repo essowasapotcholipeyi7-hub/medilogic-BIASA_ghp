@@ -281,6 +281,16 @@ class Employe(db.Model):
     date_fin_contrat = db.Column(db.Date)
     salaire_base = db.Column(db.Numeric, default=0)
 
+    # ⭐ Patron : "fiche employé et compte de connexion séparés (aucun
+    # lien)" — le VRAI système de connexion de l'appli n'est PAS la table
+    # SQL Utilisateur (jamais interrogée pour le login) mais une feuille
+    # Google Sheets par structure (struct_<id>_users, lignes ID/nom/email/
+    # mot_de_passe/role/actif — voir app.py, route index()). Ce champ ne
+    # peut donc pas être une vraie clé étrangère : c'est un lien logique
+    # vers l'ID de ligne de cette feuille. Nullable : rien n'oblige à
+    # lier un employé à un compte (agent de terrain sans accès appli...).
+    compte_utilisateur_id = db.Column(db.Integer)
+
     # ⭐ Paramètres de paie individuels (modifiables par salarié — chaque
     # agent peut déroger aux valeurs par défaut de ParametragePaie).
     # secteur_paie détermine l'organisme de retraite (CNSS/privé ou

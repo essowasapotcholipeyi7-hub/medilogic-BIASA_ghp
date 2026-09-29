@@ -202,6 +202,28 @@
                             </div>
                         </div>
                         <div class="row mb-2">
+                            <!-- ⭐ Patron : "fiche employé et compte de connexion séparés (aucun
+                                 lien)" — lien logique vers struct_<id>_users (Google Sheets, le
+                                 vrai système de login) — voir Employe.compte_utilisateur_id
+                                 (models.py) et routes/rh.py employe_detail(). -->
+                            <div class="col-4 detail-label">Compte de connexion</div>
+                            <div class="col-8 detail-value">
+                                {% if compte_utilisateur %}
+                                    {{ compte_utilisateur.email }}
+                                    <span class="badge bg-secondary">{{ compte_utilisateur.role }}</span>
+                                    {% if compte_utilisateur.actif == 'oui' %}
+                                        <span class="badge bg-success">Actif</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">Désactivé</span>
+                                    {% endif %}
+                                {% elif employe.compte_utilisateur_id %}
+                                    <span class="text-danger">Compte lié introuvable (supprimé ?)</span>
+                                {% else %}
+                                    <span class="text-muted">Aucun compte lié</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="row mb-2">
                             <div class="col-4 detail-label">Salaire base</div>
                             <div class="col-8 detail-value">
                                 {% if employe.salaire_base %}
