@@ -1932,8 +1932,12 @@ function afficherConges() {
         const actions = [];
 
         if (c.statut === 'en_attente') {
+            // ⭐ Patron : "validation à plusieurs niveaux (SignatureRH)" —
+            // libellé contextuel si une chaîne de validation est en
+            // cours (voir Conge.statut_validation, models.py).
+            const libelleApprouver = c.validation ? `Valider niveau ${c.validation.prochain_niveau}/${c.validation.niveaux_requis}` : 'Approuver';
             actions.push(`
-                <button class="btn btn-sm btn-success" onclick="changerStatutConge(${c.id}, 'approuve')" title="Approuver">
+                <button class="btn btn-sm btn-success" onclick="changerStatutConge(${c.id}, 'approuve')" title="${libelleApprouver}">
                     <i class="fas fa-check"></i>
                 </button>
                 <button class="btn btn-sm btn-danger" onclick="changerStatutConge(${c.id}, 'refuse')" title="Refuser">
@@ -1969,7 +1973,10 @@ function afficherConges() {
                 <td>${c.nombre_jours || 0}</td>
                 <td>${c.date_reprise || '-'}</td>
                 <td>${c.annee_utilisation || '-'}</td>
-                <td>${getStatutBadge(c.statut)}</td>
+                <td>
+                    ${getStatutBadge(c.statut)}
+                    ${c.validation ? ` <span class="badge bg-info" title="Validation à plusieurs niveaux">${c.validation.niveaux_valides}/${c.validation.niveaux_requis}</span>` : ''}
+                </td>
                 <td class="text-center">
                     <div class="btn-group btn-group-sm">
                         ${actions.join('')}
@@ -2423,7 +2430,11 @@ function changerStatutConge(id, statut) {
     .then(r => r.json())
     .then(result => {
         if (result.success) {
-            alert(`Statut mis à jour en "${statut}"`);
+            // ⭐ Patron : "validation à plusieurs niveaux (SignatureRH)" —
+            // le backend renvoie un message différent si un niveau
+            // intermédiaire vient d'être validé (congé pas encore
+            // finalisé) — voir _avancer_validation_conge (routes/rh.py).
+            alert(result.message || `Statut mis à jour en "${statut}"`);
             chargerConges();
             chargerDashboard();
         } else {

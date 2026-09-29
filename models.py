@@ -686,6 +686,14 @@ class Conge(db.Model):
     date_approbation = db.Column(db.Date)
     commentaire = db.Column(db.Text)
 
+    # ⭐ Patron : "validation à plusieurs niveaux (SignatureRH) codée mais
+    # jamais branchée" — lien vers le DocumentRH qui porte la chaîne de
+    # signatures (SignatureRH) quand ParametragePaie.niveaux_validation_conges
+    # > 1 pour la structure. NULL par défaut (comportement à un seul
+    # niveau inchangé) : créé seulement au moment où le PREMIER niveau est
+    # validé pour ce congé (voir _valider_conge, routes/rh.py).
+    document_validation_id = db.Column(db.Integer, db.ForeignKey('documents_rh.id'))
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -693,6 +701,32 @@ class Conge(db.Model):
 
     def est_deductible(self):
         return conge_est_deductible(self.type_conge)
+
+    def statut_validation(self):
+        """⭐ Résumé de la chaîne de validation multi-niveaux (SignatureRH)
+        pour ce congé, ou None si aucune chaîne n'a été créée (validation
+        à un seul niveau — cas par défaut, voir document_validation_id ci-
+        dessus). Ordre croissant des niveaux."""
+        if not self.document_validation_id:
+            return None
+        signatures = SignatureRH.query.filter_by(
+            document_id=self.document_validation_id
+        ).order_by(SignatureRH.validateur_niveau.asc()).all()
+        if not signatures:
+            return None
+        prochain = next((s for s in signatures if s.statut == 'en_attente'), None)
+        return {
+            'niveaux_requis': len(signatures),
+            'niveaux_valides': sum(1 for s in signatures if s.statut == 'approuve'),
+            'prochain_niveau': prochain.validateur_niveau if prochain else None,
+            'signatures': [{
+                'niveau': s.validateur_niveau,
+                'statut': s.statut,
+                'signature_nom': s.signature_nom,
+                'signature_date': s.signature_date.isoformat() if s.signature_date else None,
+                'commentaire': s.commentaire,
+            } for s in signatures],
+        }
 
     def calculer_jours_ouvres(self, structure_id=None):
         """⭐ Jours OUVRABLES (lundi à samedi inclus), pas jours ouvrés —
@@ -3707,6 +3741,15 @@ class ParametragePaie(db.Model):
     # pointage (ParametragePointage). Les retards ne sont PAS déduits
     # (portée volontairement limitée aux absences journée complète).
     appliquer_absences_sur_paie = db.Column(db.Boolean, default=False)
+
+    # ⭐ Patron : "validation à plusieurs niveaux (SignatureRH) codée mais
+    # jamais branchée". 1 = comportement inchangé (un clic "Approuver"
+    # valide directement le congé, comme aujourd'hui). > 1 : chaque
+    # "Approuver" ne valide qu'UN niveau de la chaîne SignatureRH/
+    # DocumentRH — le congé ne passe à statut='approuve' qu'une fois tous
+    # les niveaux validés (voir _valider_conge, routes/rh.py). Un refus à
+    # n'importe quel niveau refuse le congé immédiatement.
+    niveaux_validation_conges = db.Column(db.Integer, default=1)
 
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     updated_by = db.Column(db.String(100))

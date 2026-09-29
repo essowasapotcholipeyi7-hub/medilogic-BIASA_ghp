@@ -879,7 +879,11 @@ def api_conges(structure_id):
             'motif': c.motif,
             'statut': c.statut,
             'signataire': c.signataire,
-            'created_at': c.created_at.strftime('%d/%m/%Y %H:%M')
+            'created_at': c.created_at.strftime('%d/%m/%Y %H:%M'),
+            # ⭐ Patron : "validation à plusieurs niveaux (SignatureRH)
+            # codée mais jamais branchée" — None si validation à un seul
+            # niveau (cas par défaut, voir Conge.statut_validation).
+            'validation': c.statut_validation(),
         })
     
     return jsonify(result)
@@ -1092,6 +1096,72 @@ def conge_demander(structure_id):
         }), 500
 
 
+def _avancer_validation_conge(conge, structure_id, decision, validateur_nom, commentaire):
+    """⭐ Patron : "validation à plusieurs niveaux (SignatureRH) codée mais
+    jamais branchée". Avance la chaîne de validation d'UN niveau à la
+    fois — branchée sur DocumentRH/SignatureRH, créée à la volée au
+    premier niveau validé — quand ParametragePaie.niveaux_validation_conges
+    > 1 pour la structure. Si ce réglage vaut 1 (défaut), ne fait RIEN et
+    signale directement "terminé" : comportement identique à avant ce
+    commit, un seul clic "Approuver" finalise le congé.
+
+    Retourne (termine: bool, info: dict|None). `termine=False` signifie
+    qu'il reste des niveaux à valider — l'appelant NE DOIT PAS finaliser
+    le congé (statut reste 'en_attente')."""
+    parametrage = ParametragePaie.get_ou_creer(structure_id)
+    niveaux_requis = int(parametrage.niveaux_validation_conges or 1)
+
+    if niveaux_requis <= 1:
+        return True, None
+
+    if decision == 'refuse':
+        if conge.document_validation_id:
+            pendante = SignatureRH.query.filter_by(
+                document_id=conge.document_validation_id, statut='en_attente'
+            ).order_by(SignatureRH.validateur_niveau.asc()).first()
+            if pendante:
+                pendante.statut = 'refuse'
+                pendante.signature_nom = validateur_nom
+                pendante.signature_date = date.today()
+                pendante.commentaire = commentaire
+        return True, None
+
+    # decision == 'approuve' : crée la chaîne si elle n'existe pas encore
+    if not conge.document_validation_id:
+        doc = DocumentRH(
+            structure_id=structure_id, type_document='validation_conge',
+            employe_id=conge.employe_id, statut='brouillon',
+        )
+        db.session.add(doc)
+        db.session.flush()  # obtenir doc.id sans committer
+        for niveau in range(1, niveaux_requis + 1):
+            db.session.add(SignatureRH(document_id=doc.id, validateur_niveau=niveau, statut='en_attente'))
+        conge.document_validation_id = doc.id
+        db.session.flush()
+
+    prochaine = SignatureRH.query.filter_by(
+        document_id=conge.document_validation_id, statut='en_attente'
+    ).order_by(SignatureRH.validateur_niveau.asc()).first()
+
+    if not prochaine:
+        # ⭐ Sécurité : tous les niveaux sont déjà validés (ne devrait pas
+        # arriver via l'UI normale, ex. double-clic) — on finalise plutôt
+        # que de renvoyer une erreur bloquante.
+        return True, None
+
+    prochaine.statut = 'approuve'
+    prochaine.signature_nom = validateur_nom
+    prochaine.signature_date = date.today()
+    prochaine.commentaire = commentaire
+
+    termine = prochaine.validateur_niveau >= niveaux_requis
+    return termine, {
+        'niveau_valide': prochaine.validateur_niveau,
+        'niveaux_requis': niveaux_requis,
+        'termine': termine,
+    }
+
+
 @rh_bp.route('/conge/<int:id>/statut', methods=['PUT'])
 @require_structure
 def conge_changer_statut(structure_id, id):
@@ -1099,23 +1169,42 @@ def conge_changer_statut(structure_id, id):
     try:
         data = request.json
         nouveau_statut = data.get('statut')
-        
+
         if nouveau_statut not in ['en_attente', 'approuve', 'refuse', 'termine']:
             return jsonify({'error': 'Statut invalide'}), 400
-        
+
         conge = Conge.query.join(Employe).filter(
             Conge.id == id,
             Employe.structure_id == structure_id
         ).first()
-        
+
         if not conge:
             return jsonify({'error': 'Congé non trouvé'}), 404
-        
+
+        # ⭐ Patron : "validation à plusieurs niveaux (SignatureRH) codée
+        # mais jamais branchée" — voir _avancer_validation_conge ci-dessus.
+        # Sans effet (termine=True immédiatement) si niveaux_validation_
+        # conges <= 1 (défaut) : comportement inchangé.
+        validation_info = None
+        if nouveau_statut in ('approuve', 'refuse'):
+            termine, validation_info = _avancer_validation_conge(
+                conge, structure_id, nouveau_statut,
+                session.get('user_name', 'System'), data.get('commentaire', ''),
+            )
+            if not termine:
+                db.session.commit()
+                return jsonify({
+                    'success': True,
+                    'message': f"Niveau {validation_info['niveau_valide']}/{validation_info['niveaux_requis']} validé — en attente du niveau suivant",
+                    'validation': validation_info,
+                    'statut': conge.statut,
+                })
+
         conge.statut = nouveau_statut
         conge.approuve_par = session.get('user_name', 'System')
         conge.date_approbation = date.today()
         conge.commentaire = data.get('commentaire', '')
-        
+
         # ⭐ Mettre à jour le statut de l'employé
         employe = conge.employe
         employe.mettre_a_jour_statut()
@@ -1138,7 +1227,8 @@ def conge_changer_statut(structure_id, id):
         return jsonify({
             'success': True,
             'message': f'Statut du congé mis à jour en "{nouveau_statut}"',
-            'employe_statut': employe.statut
+            'employe_statut': employe.statut,
+            'validation': validation_info,
         })
 
     except Exception as e:
@@ -2043,6 +2133,9 @@ def api_get_parametres_paie(structure_id):
         # ⭐ Patron : "pointage déconnecté de la paie [...] qu'on décide
         # d'appliquer ou pas" — voir services/paie_service._retenue_absences.
         'appliquer_absences_sur_paie': bool(p.appliquer_absences_sur_paie),
+        # ⭐ Patron : "validation à plusieurs niveaux (SignatureRH) codée
+        # mais jamais branchée" — voir Conge.statut_validation (models.py).
+        'niveaux_validation_conges': int(p.niveaux_validation_conges or 1),
         'updated_at': p.updated_at.strftime('%Y-%m-%d %H:%M') if p.updated_at else None,
     })
 
@@ -2082,6 +2175,10 @@ def api_maj_parametres_paie(structure_id):
             p.deduire_permissions_des_conges = bool(data['deduire_permissions_des_conges'])
         if 'appliquer_absences_sur_paie' in data:
             p.appliquer_absences_sur_paie = bool(data['appliquer_absences_sur_paie'])
+        if 'niveaux_validation_conges' in data:
+            # ⭐ Borné à [1, 5] — au-delà, la chaîne de validation devient
+            # ingérable en pratique et n'apporte plus rien.
+            p.niveaux_validation_conges = max(1, min(int(data['niveaux_validation_conges'] or 1), 5))
         p.updated_by = session.get('user_name', 'Admin')
         db.session.commit()
         return jsonify({'success': True})

@@ -144,6 +144,17 @@
                     (congés conventionnels) ne le sont jamais.
                 </small>
 
+                <div class="mt-3">
+                    <label class="form-label small">Nombre de niveaux de validation requis</label>
+                    <input type="number" class="form-control form-control-sm" id="niveauxValidationConges" style="max-width:120px;" min="1" max="5">
+                </div>
+                <small class="text-muted">
+                    1 (défaut) : un seul clic « Approuver » valide directement le congé, comme aujourd'hui.
+                    2 ou plus : chaque clic « Approuver » ne valide qu'un niveau — le congé ne passe à
+                    « Approuvé » qu'une fois tous les niveaux validés (par exemple un premier validateur
+                    puis un second). Un refus à n'importe quel niveau refuse le congé immédiatement.
+                </small>
+
                 <h6 class="mt-4 text-danger"><i class="fas fa-clock"></i> Pointage &rarr; Paie</h6>
                 <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" id="appliquerAbsencesPaie">
@@ -246,6 +257,7 @@ function chargerParametres() {
             document.getElementById('deductionPersonneCharge').value = p.deduction_personne_charge;
             document.getElementById('maxPersonnesCharge').value = p.max_personnes_charge;
             document.getElementById('deduirePermissionsConges').checked = p.deduire_permissions_des_conges !== false;
+            document.getElementById('niveauxValidationConges').value = p.niveaux_validation_conges || 1;
             document.getElementById('appliquerAbsencesPaie').checked = p.appliquer_absences_sur_paie === true;
 
             document.getElementById('dernMaj').textContent = p.updated_at ? ('Dernière modification : ' + p.updated_at) : '';
@@ -288,6 +300,7 @@ function sauvegarderParametres() {
             max_personnes_charge: parseInt(document.getElementById('maxPersonnesCharge').value || 6),
             tranches_irpp: tranches,
             deduire_permissions_des_conges: document.getElementById('deduirePermissionsConges').checked,
+            niveaux_validation_conges: parseInt(document.getElementById('niveauxValidationConges').value || 1),
             appliquer_absences_sur_paie: document.getElementById('appliquerAbsencesPaie').checked,
         })
     })
