@@ -69,7 +69,7 @@
                                 Non générée
                             </span>
                             {% elif f.encaissement.statut == 'payee' %}
-                            <span class="badge bg-success">Payée</span>
+                            <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Réglée</span>
                             {% else %}
                             <span class="badge {{ 'bg-info text-dark' if f.encaissement.statut == 'partielle' else 'bg-secondary' }}">
                                 Reste {{ '{:,.0f}'.format(f.encaissement.reste).replace(',', ' ') }} FCFA
