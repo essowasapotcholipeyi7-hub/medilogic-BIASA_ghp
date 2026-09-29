@@ -15,7 +15,12 @@ jobs:
     steps:
       - name: Vérifier /health
         run: |
-          code=$(curl -s -o /tmp/reponse.json -w "%{http_code}" --max-time 45 https://medilogic-biasa-ghp.onrender.com/health)
+          # ⭐ 45s -> 90s : fausse alerte reçue le 2026-09-29 — /health a bien
+          # répondu 200, mais après 54s (le service Render s'était mis en
+          # veille faute de trafic, le temps de redémarrer dépasse le
+          # --max-time précédent). 90s laisse largement passer un réveil
+          # normal sans masquer une vraie panne prolongée.
+          code=$(curl -s -o /tmp/reponse.json -w "%{http_code}" --max-time 90 https://medilogic-biasa-ghp.onrender.com/health)
           echo "Code HTTP : $code"
           cat /tmp/reponse.json || true
           if [ "$code" != "200" ]; then
