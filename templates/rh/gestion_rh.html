@@ -882,30 +882,31 @@
                 <form id="congeForm" onsubmit="return false;">
                     <div class="mb-2">
                         <label class="form-label small">Employé *</label>
-                        <select class="form-select form-select-sm" id="congeEmploye" required>
+                        <select class="form-select form-select-sm" id="congeEmploye" required onchange="calculerJoursConge()">
                             <option value="">Sélectionner</option>
                         </select>
                     </div>
                     <div class="mb-2">
                         <label class="form-label small">Type de congé *</label>
-                        <select class="form-select form-select-sm" id="congeType" required>
+                        <select class="form-select form-select-sm" id="congeType" required onchange="calculerJoursConge()">
                             <option value="annuel">Annuel (payé)</option>
-                            <option value="maladie">Maladie</option>
-                            <option value="maternite">Maternité</option>
-                            <option value="paternite">Paternité</option>
-                            <option value="sans_solde">Sans solde</option>
-                            <option value="exceptionnel">Exceptionnel</option>
+                            <option value="maladie">Maladie (non déductible)</option>
+                            <option value="maternite">Maternité (non déductible)</option>
+                            <option value="paternite">Paternité (non déductible)</option>
+                            <option value="sans_solde">Sans solde (non déductible)</option>
+                            <option value="exceptionnel">Exceptionnel / conventionnel (non déductible)</option>
                         </select>
+                        <small class="text-muted">Seul « Annuel » est décompté des 30 jours de congé payé — les autres sont des droits séparés.</small>
                     </div>
                     <div class="row g-2">
                         <div class="col-md-6">
                             <label class="form-label small">Date début *</label>
-                            <input type="date" class="form-control form-control-sm" id="congeDebut" 
+                            <input type="date" class="form-control form-control-sm" id="congeDebut"
                                    required onchange="calculerJoursConge()">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label small">Date fin *</label>
-                            <input type="date" class="form-control form-control-sm" id="congeFin" 
+                            <input type="date" class="form-control form-control-sm" id="congeFin"
                                    required onchange="calculerJoursConge()">
                         </div>
                     </div>
@@ -1793,18 +1794,18 @@ function ouvrirDemandeCongeSimple() {
 function calculerJoursConge() {
     const debut = document.getElementById('congeDebut').value;
     const fin = document.getElementById('congeFin').value;
-    
+
     if (!debut || !fin) return;
-    
+
     const d1 = new Date(debut);
     const d2 = new Date(fin);
-    
+
     if (d2 < d1) {
         document.getElementById('congeJours').value = 'Date invalide';
         document.getElementById('congeReprise').value = '';
         return;
     }
-    
+
     let jours = 0;
     let current = new Date(d1);
     while (current <= d2) {
@@ -1812,13 +1813,82 @@ function calculerJoursConge() {
         current.setDate(current.getDate() + 1);
     }
     document.getElementById('congeJours').value = jours + ' jours';
-    
+
+    // ⭐ FIX : la reprise réelle (Conge.calculer_date_reprise, models.py)
+    // est simplement date_fin + 1 jour, SANS sauter le week-end — cet
+    // affichage sautait les week-ends et ne correspondait donc pas à ce
+    // qui est réellement enregistré.
     let reprise = new Date(d2);
     reprise.setDate(reprise.getDate() + 1);
-    while (reprise.getDay() === 0 || reprise.getDay() === 6) {
-        reprise.setDate(reprise.getDate() + 1);
-    }
     document.getElementById('congeReprise').value = reprise.toLocaleDateString('fr-FR');
+
+    simulerConge();
+}
+
+// ⭐ Patron : "pouvoir consulter ou simuler les congés [...] voir il reste
+// combien de jour de congés" — simulation SERVEUR (même calcul exact que
+// la soumission réelle : jours ouvrés, déductibilité du type, solde
+// avant/après, chevauchements bloquants) affichée en direct pendant la
+// saisie, avant de soumettre pour de vrai.
+let _simulerCongeTimeout = null;
+function simulerConge() {
+    clearTimeout(_simulerCongeTimeout);
+    const employeId = document.getElementById('congeEmploye').value;
+    const debut = document.getElementById('congeDebut').value;
+    const fin = document.getElementById('congeFin').value;
+    const type = document.getElementById('congeType').value;
+    const soldeInfo = document.getElementById('soldeInfo');
+    const alerte = document.getElementById('congeAlerte');
+    const alerteMsg = document.getElementById('congeAlerteMessage');
+
+    if (!employeId || !debut || !fin) {
+        soldeInfo.style.display = 'none';
+        alerte.style.display = 'none';
+        return;
+    }
+
+    _simulerCongeTimeout = setTimeout(() => {
+        const params = new URLSearchParams({date_debut: debut, date_fin: fin, type_conge: type});
+        fetch(`/rh/api/employes/${employeId}/simuler_conge?${params}`)
+            .then(r => r.json())
+            .then(sim => {
+                if (sim.error) {
+                    soldeInfo.style.display = 'none';
+                    alerte.style.display = 'block';
+                    alerteMsg.textContent = sim.error;
+                    return;
+                }
+
+                if (sim.deductible) {
+                    soldeInfo.style.display = 'block';
+                    document.getElementById('soldeRestant').textContent = sim.solde_apres;
+                    soldeInfo.innerHTML = `<i class="fas fa-info-circle me-1"></i> Solde ${sim.annee_choisie}: `
+                        + `${sim.solde_avant} jours → <strong>${sim.solde_apres}</strong> jours après ce congé `
+                        + `(${sim.jours_ouvres} jour(s) ouvré(s) décompté(s)).`;
+                } else {
+                    soldeInfo.style.display = 'block';
+                    soldeInfo.innerHTML = `<i class="fas fa-info-circle me-1"></i> Ce type de congé n'est pas déductible — `
+                        + `solde inchangé (${sim.solde_avant} jours). ${sim.jours_ouvres} jour(s) ouvré(s).`;
+                }
+
+                if (sim.conflits && sim.conflits.length > 0) {
+                    alerte.style.display = 'block';
+                    const detail = sim.conflits.map(c => `${c.type} du ${c.date_debut} au ${c.date_fin} (${c.statut})`).join(', ');
+                    alerteMsg.textContent = `⛔ Chevauchement bloquant : ${detail}`;
+                } else if (sim.deductible && !sim.disponible) {
+                    alerte.style.display = 'block';
+                    let msg = `Solde insuffisant pour ${sim.annee_choisie} (reste ${sim.solde_avant} jours, demandé ${sim.jours_ouvres}).`;
+                    if (sim.annees_proposees && sim.annees_proposees.length > 0) {
+                        msg += ' Années suivantes disponibles (force majeure) : '
+                            + sim.annees_proposees.map(a => `${a.annee} (${a.solde}j)`).join(', ') + '.';
+                    }
+                    alerteMsg.textContent = msg;
+                } else {
+                    alerte.style.display = 'none';
+                }
+            })
+            .catch(() => { soldeInfo.style.display = 'none'; alerte.style.display = 'none'; });
+    }, 300);
 }
 
 function sauvegarderConge() {
@@ -1884,18 +1954,20 @@ function sauvegarderConge() {
             if (choix) {
                 const anneeChoisie = parseInt(choix);
                 const anneeTrouvee = result.annees_futures.find(a => a.annee === anneeChoisie);
-                
+
                 if (anneeTrouvee) {
-                    const dateDebutParts = data.date_debut.split('-');
-                    const dateFinParts = data.date_fin.split('-');
-                    
+                    // ⭐ FIX (force majeure) : garder les VRAIES dates du congé
+                    // (l'employé part bien maintenant) — seule l'imputation
+                    // change (annee_choisie -> Conge.annee_utilisation), pas
+                    // les dates elles-mêmes. Avant ce fix, les dates étaient
+                    // réécrites sur l'année choisie : le congé ne pouvait
+                    // alors être pris que l'année suivante, ce qui annulait
+                    // tout l'intérêt d'un déblocage "force majeure" immédiat.
                     const newData = {
                         ...data,
                         annee_choisie: anneeChoisie,
-                        date_debut: `${anneeChoisie}-${dateDebutParts[1]}-${dateDebutParts[2]}`,
-                        date_fin: `${anneeChoisie}-${dateFinParts[1]}-${dateFinParts[2]}`
                     };
-                    
+
                     showLoader('Envoi de la demande...');
                     
                     fetch('/rh/conge/demander', {

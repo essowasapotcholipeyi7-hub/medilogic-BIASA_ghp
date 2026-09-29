@@ -130,6 +130,20 @@
                     </table>
                 </div>
 
+                <h6 class="mt-4 text-warning"><i class="fas fa-umbrella-beach"></i> Congés</h6>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="deduirePermissionsConges">
+                    <label class="form-check-label small" for="deduirePermissionsConges">
+                        Décompter les jours de permission du solde de congés annuel (30 jours)
+                    </label>
+                </div>
+                <small class="text-muted">
+                    Si désactivé, les permissions (autorisations d'absence) sont un droit totalement séparé
+                    et n'entament plus le solde de congés annuel. Seul le congé de type « Annuel » est de
+                    toute façon décompté — maladie, maternité, paternité, sans solde et exceptionnel
+                    (congés conventionnels) ne le sont jamais.
+                </small>
+
                 <div class="text-end mt-3">
                     <span class="text-muted small me-3" id="dernMaj"></span>
                     <button class="btn btn-primary" onclick="sauvegarderParametres()">
@@ -216,6 +230,7 @@ function chargerParametres() {
             document.getElementById('abattementPlafond').value = p.abattement_plafond_annuel;
             document.getElementById('deductionPersonneCharge').value = p.deduction_personne_charge;
             document.getElementById('maxPersonnesCharge').value = p.max_personnes_charge;
+            document.getElementById('deduirePermissionsConges').checked = p.deduire_permissions_des_conges !== false;
 
             document.getElementById('dernMaj').textContent = p.updated_at ? ('Dernière modification : ' + p.updated_at) : '';
 
@@ -256,6 +271,7 @@ function sauvegarderParametres() {
             deduction_personne_charge: parseFloat(document.getElementById('deductionPersonneCharge').value || 0),
             max_personnes_charge: parseInt(document.getElementById('maxPersonnesCharge').value || 6),
             tranches_irpp: tranches,
+            deduire_permissions_des_conges: document.getElementById('deduirePermissionsConges').checked,
         })
     })
     .then(r => r.json())

@@ -6,7 +6,8 @@ import json
 import traceback
 
 from models import (db, Employe, Service, Conge, Permission, DocumentRH, SignatureRH,
-                     Paie, ParametragePaie, EmpreinteEmploye, ParametragePointage, Pointage, VisageEmploye)
+                     Paie, ParametragePaie, EmpreinteEmploye, ParametragePointage, Pointage, VisageEmploye,
+                     TYPES_CONGE_DEDUCTIBLES)
 from utils.permissions import a_acces
 
 rh_bp = Blueprint('rh', __name__, url_prefix='/rh')
@@ -672,13 +673,13 @@ def conge_demander(structure_id):
                 'success': False,
                 'error': 'La date de fin doit être après la date de début'
             }), 400
-        
-        # ⭐ Calcul des jours
-        jours_demandes = (date_fin - date_debut).days + 1
+
         type_conge = data.get('type_conge', 'annuel')
+        if type_conge not in TYPES_CONGE_DEDUCTIBLES:
+            return jsonify({'success': False, 'error': f"Type de congé inconnu: {type_conge}"}), 400
         motif = data.get('motif', '').strip()
-        
-        # ⭐ Vérification des doublons
+
+        # ⭐ Vérification des doublons (chevauchement avec un AUTRE congé)
         conges_existants = Conge.query.filter(
             Conge.employe_id == employe_id,
             Conge.statut.in_(['en_attente', 'approuve']),
@@ -689,7 +690,7 @@ def conge_demander(structure_id):
                 )
             )
         ).all()
-        
+
         if conges_existants:
             chevauchement = []
             for c in conges_existants:
@@ -698,31 +699,75 @@ def conge_demander(structure_id):
                 'success': False,
                 'error': f"L'employé a déjà un congé sur cette période: {', '.join(chevauchement)}"
             }), 400
-        
-        # ⭐ Récupérer l'année choisie
+
+        # ⭐ Patron : "un employé en congés on ne peut plus le programmer
+        # pour la même période" — bloque aussi le chevauchement avec une
+        # PERMISSION active (une permission "journée(s)" pendant un congé
+        # n'a pas de sens ; les permissions "heures" sur le jour même sont
+        # tolérées — se recouper avec une seule journée de congé n'est pas
+        # le même genre de conflit qu'un vrai chevauchement de périodes).
+        permissions_existantes = Permission.query.filter(
+            Permission.employe_id == employe_id,
+            Permission.statut.in_(['en_attente', 'approuve']),
+            Permission.type_permission != 'heures',
+            Permission.date_debut.isnot(None),
+            Permission.date_fin.isnot(None),
+            Permission.date_debut <= date_fin,
+            Permission.date_fin >= date_debut,
+        ).all()
+        if permissions_existantes:
+            chevauchement = [
+                f"{p.date_debut.strftime('%d/%m/%Y')} -> {p.date_fin.strftime('%d/%m/%Y')} ({p.statut})"
+                for p in permissions_existantes
+            ]
+            return jsonify({
+                'success': False,
+                'error': f"L'employé a déjà une permission sur cette période: {', '.join(chevauchement)}"
+            }), 400
+
+        # ⭐ Récupérer l'année choisie — permet d'imputer un congé "force
+        # majeure" sur l'année SUIVANTE si le solde de l'année en cours est
+        # épuisé (voir Conge.annee_utilisation et Employe.get_solde_detail).
         annee_choisie = data.get('annee_choisie')
         if annee_choisie:
             annee_choisie = int(annee_choisie)
         else:
             annee_choisie = date_debut.year
-        
+
         print(f"📅 Année choisie: {annee_choisie}")
-        
-        # ⭐⭐ VÉRIFICATION DU SOLDE AVEC 30 JOURS ⭐⭐
-        verification = verifier_solde_avec_anticipation(employe_id, jours_demandes, annee_choisie)
-        
-        if not verification['disponible']:
-            return jsonify({
-                'success': False,
-                'error': f"Solde insuffisant pour {annee_choisie}",
-                'solde_insuffisant': True,
-                'solde_actuel': verification['solde_actuel'],
-                'jours_demandes': verification['jours_demandes'],
-                'annee_courante': verification['annee'],
-                'annees_futures': verification['annees_proposees'],
-                'message': verification['message']
-            }), 400
-        
+
+        # ⭐ FIX : le nombre de jours réellement décompté du solde est le
+        # nombre de jours OUVRÉS (calculer_jours_ouvres, lundi-vendredi),
+        # pas le nombre de jours calendaires — avant ce fix, la
+        # vérification de solde ET le message "solde restant" utilisaient
+        # les jours calendaires (ex: 7 jours pour une semaine incluant un
+        # week-end) alors que seuls les jours ouvrés (5) étaient
+        # effectivement enregistrés/décomptés, ce qui pouvait refuser à
+        # tort une demande dont le solde réel suffisait, et affichait un
+        # solde restant faux. Les congés non déductibles (voir
+        # TYPES_CONGE_DEDUCTIBLES) n'ont pas besoin de solde du tout.
+        jours_ouvres = Conge(date_debut=date_debut, date_fin=date_fin).calculer_jours_ouvres()
+        deductible = type_conge in TYPES_CONGE_DEDUCTIBLES and TYPES_CONGE_DEDUCTIBLES[type_conge]
+
+        if deductible:
+            # ⭐⭐ VÉRIFICATION DU SOLDE AVEC 30 JOURS ⭐⭐
+            verification = verifier_solde_avec_anticipation(employe_id, jours_ouvres, annee_choisie)
+
+            if not verification['disponible']:
+                return jsonify({
+                    'success': False,
+                    'error': f"Solde insuffisant pour {annee_choisie}",
+                    'solde_insuffisant': True,
+                    'solde_actuel': verification['solde_actuel'],
+                    'jours_demandes': verification['jours_demandes'],
+                    'annee_courante': verification['annee'],
+                    'annees_futures': verification['annees_proposees'],
+                    'message': verification['message']
+                }), 400
+            solde_avant = verification['solde_actuel']
+        else:
+            solde_avant = employe.get_solde_detail(annee_choisie)['solde']
+
         # ⭐ Créer le congé
         conge = Conge(
             structure_id=structure_id,
@@ -733,30 +778,29 @@ def conge_demander(structure_id):
             motif=motif,
             signataire=signataire,
             annee_utilisation=annee_choisie,
-            nombre_jours=jours_demandes,
+            nombre_jours=jours_ouvres,
             statut='en_attente'
         )
-        
-        # Calculer les jours ouvrés et la date de reprise
-        conge.nombre_jours = conge.calculer_jours_ouvres()
         conge.date_reprise = conge.calculer_date_reprise()
-        
+
         db.session.add(conge)
         db.session.commit()
-        
-        # ⭐ Calcul du nouveau solde
-        nouveau_solde = verification['solde_actuel'] - jours_demandes
-        
+
+        # ⭐ Calcul du nouveau solde (inchangé si le type n'est pas déductible)
+        nouveau_solde = (solde_avant - jours_ouvres) if deductible else solde_avant
+
         print(f"✅ Congé créé pour {employe.nom} {employe.prenom} (ID: {conge.id})")
-        
+
         return jsonify({
             'success': True,
             'id': conge.id,
             'message': 'Demande de congé soumise avec succès',
+            'nombre_jours': jours_ouvres,
+            'deductible': deductible,
             'solde_restant': nouveau_solde,
             'annee_utilisation': annee_choisie
         })
-        
+
     except Exception as e:
         db.session.rollback()
         print(f"❌ Erreur conge_demander: {e}")
@@ -991,23 +1035,55 @@ def permission_demander(structure_id):
             date_debut = datetime.strptime(data.get('date_debut'), '%Y-%m-%d').date()
             date_fin = datetime.strptime(data.get('date_fin'), '%Y-%m-%d').date()
             nombre_jours = (date_fin - date_debut).days + 1
-        
-        # ⭐ Vérification du solde avec 30 jours
+
+        # ⭐ Patron : "un employé en congés on ne peut plus le programmer
+        # pour la même période" — bloque une permission "journée(s)"
+        # pendant un congé approuvé/en attente. Les permissions "heures"
+        # ne bloquent/ne sont pas bloquées par un congé (une absence de
+        # quelques heures le jour du départ/retour de congé n'a pas de
+        # sens à interdire spécifiquement ici).
+        if type_permission != 'heures':
+            conges_existants = Conge.query.filter(
+                Conge.employe_id == employe_id,
+                Conge.statut.in_(['en_attente', 'approuve']),
+                Conge.date_debut <= date_fin,
+                Conge.date_fin >= date_debut,
+            ).all()
+            if conges_existants:
+                chevauchement = [
+                    f"{c.date_debut.strftime('%d/%m/%Y')} -> {c.date_fin.strftime('%d/%m/%Y')} ({c.statut})"
+                    for c in conges_existants
+                ]
+                return jsonify({
+                    'success': False,
+                    'error': f"L'employé est déjà en congé sur cette période: {', '.join(chevauchement)}"
+                }), 400
+
+        # ⭐ Vérification du solde — seulement si les permissions décomptent
+        # réellement le solde de congés (patron : "qu'on décide s'il faut
+        # enlever les jours de permission dans les congés ou pas", voir
+        # ParametragePaie.deduire_permissions_des_conges). Si désactivé,
+        # les permissions sont un droit totalement séparé, aucune raison
+        # de les bloquer faute de solde de congé.
         annee_courante = date_debut.year
-        verification = verifier_solde_avec_anticipation(employe_id, nombre_jours, annee_courante)
-        
-        if not verification['disponible']:
-            return jsonify({
-                'success': False,
-                'error': f'Solde de congés insuffisant pour {annee_courante}',
-                'solde_insuffisant': True,
-                'solde_actuel': verification['solde_actuel'],
-                'jours_demandes': verification['jours_demandes'],
-                'annee_courante': verification['annee'],
-                'annees_futures': verification['annees_proposees'],
-                'message': verification['message']
-            }), 400
-        
+        parametrage = ParametragePaie.query.filter_by(structure_id=structure_id).first()
+        deduire_permissions = bool(parametrage.deduire_permissions_des_conges) if parametrage else True
+
+        if deduire_permissions:
+            verification = verifier_solde_avec_anticipation(employe_id, nombre_jours, annee_courante)
+
+            if not verification['disponible']:
+                return jsonify({
+                    'success': False,
+                    'error': f'Solde de congés insuffisant pour {annee_courante}',
+                    'solde_insuffisant': True,
+                    'solde_actuel': verification['solde_actuel'],
+                    'jours_demandes': verification['jours_demandes'],
+                    'annee_courante': verification['annee'],
+                    'annees_futures': verification['annees_proposees'],
+                    'message': verification['message']
+                }), 400
+
         # ⭐ Créer la permission
         permission = Permission(
             employe_id=employe_id,
@@ -1405,23 +1481,110 @@ def update_conge_status(structure_id):
 @rh_bp.route('/api/employes/<int:id>/solde_conges')
 @require_structure
 def api_solde_conges(structure_id, id):
-    """API: Solde de congés d'un employé"""
+    """API: Solde de congés d'un employé — patron : "pouvoir consulter [...]
+    voir il reste combien de jour de congés dans l'année pour un employé
+    donné". `?annee=` optionnel (défaut : année en cours) pour consulter
+    une autre année (utile pour vérifier un solde déjà anticipé en cas de
+    force majeure — voir annee_utilisation)."""
     employe = Employe.query.filter_by(id=id, structure_id=structure_id).first()
     if not employe:
         return jsonify({'error': 'Employé non trouvé'}), 404
-    
-    annee_actuelle = datetime.now().year
-    solde_info = calculer_solde_conges(employe.id, annee_actuelle)
-    
+
+    try:
+        annee = int(request.args.get('annee') or datetime.now().year)
+    except (TypeError, ValueError):
+        annee = datetime.now().year
+
+    solde_info = calculer_solde_conges(employe.id, annee)
+
     return jsonify({
         'employe': f"{employe.nom} {employe.prenom}",
         'matricule': employe.matricule,
-        'annee': annee_actuelle,
-        'total_annuel': CONGES_ANNUELS,
+        'annee': annee,
+        'total_annuel': solde_info['total_annuel'],
         'conges_pris': solde_info['conges_pris'],
         'permissions_pris': solde_info['permissions_pris'],
+        'permissions_deduites': solde_info.get('permissions_deduites', True),
         'total_pris': solde_info['pris'],
         'solde_restant': solde_info['solde']
+    })
+
+
+@rh_bp.route('/api/employes/<int:id>/simuler_conge')
+@require_structure
+def api_simuler_conge(structure_id, id):
+    """⭐ API: simule une demande de congé SANS rien enregistrer — patron :
+    "pouvoir consulter ou simuler les congés". Prend les mêmes paramètres
+    que /conge/demander (date_debut, date_fin, type_conge, annee_choisie
+    optionnels) et renvoie exactement ce qui se passerait : jours ouvrés
+    décomptés, si le type est déductible, le solde avant/après, et tout
+    chevauchement bloquant (congé ou permission) — pour vérifier AVANT de
+    soumettre pour de vrai."""
+    employe = Employe.query.filter_by(id=id, structure_id=structure_id).first()
+    if not employe:
+        return jsonify({'error': 'Employé non trouvé'}), 404
+
+    date_debut_str = request.args.get('date_debut')
+    date_fin_str = request.args.get('date_fin')
+    if not date_debut_str or not date_fin_str:
+        return jsonify({'error': 'date_debut et date_fin sont obligatoires'}), 400
+    try:
+        date_debut = datetime.strptime(date_debut_str, '%Y-%m-%d').date()
+        date_fin = datetime.strptime(date_fin_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'error': 'Format de date invalide'}), 400
+    if date_debut > date_fin:
+        return jsonify({'error': 'La date de fin doit être après la date de début'}), 400
+
+    type_conge = request.args.get('type_conge', 'annuel')
+    if type_conge not in TYPES_CONGE_DEDUCTIBLES:
+        return jsonify({'error': f'Type de congé inconnu: {type_conge}'}), 400
+    deductible = TYPES_CONGE_DEDUCTIBLES[type_conge]
+
+    annee_choisie = request.args.get('annee_choisie')
+    annee_choisie = int(annee_choisie) if annee_choisie else date_debut.year
+
+    jours_ouvres = Conge(date_debut=date_debut, date_fin=date_fin).calculer_jours_ouvres()
+
+    conflits = []
+    for c in Conge.query.filter(
+        Conge.employe_id == id, Conge.statut.in_(['en_attente', 'approuve']),
+        Conge.date_debut <= date_fin, Conge.date_fin >= date_debut,
+    ).all():
+        conflits.append({'type': 'conge', 'date_debut': c.date_debut.isoformat(),
+                          'date_fin': c.date_fin.isoformat(), 'statut': c.statut})
+    for p in Permission.query.filter(
+        Permission.employe_id == id, Permission.statut.in_(['en_attente', 'approuve']),
+        Permission.type_permission != 'heures',
+        Permission.date_debut.isnot(None), Permission.date_fin.isnot(None),
+        Permission.date_debut <= date_fin, Permission.date_fin >= date_debut,
+    ).all():
+        conflits.append({'type': 'permission', 'date_debut': p.date_debut.isoformat(),
+                          'date_fin': p.date_fin.isoformat(), 'statut': p.statut})
+
+    solde_avant = employe.get_solde_detail(annee_choisie)
+    solde_apres = max(0, solde_avant['solde'] - jours_ouvres) if deductible else solde_avant['solde']
+
+    disponible = (not conflits) and (not deductible or jours_ouvres <= solde_avant['solde'])
+
+    annees_proposees = []
+    if deductible and jours_ouvres > solde_avant['solde']:
+        for an in range(annee_choisie + 1, annee_choisie + 6):
+            s = employe.get_solde_par_annee(an)
+            if s > 0:
+                annees_proposees.append({'annee': an, 'solde': s, 'disponible': s >= jours_ouvres})
+
+    return jsonify({
+        'employe': f"{employe.nom} {employe.prenom}",
+        'jours_ouvres': jours_ouvres,
+        'type_conge': type_conge,
+        'deductible': deductible,
+        'annee_choisie': annee_choisie,
+        'solde_avant': solde_avant['solde'],
+        'solde_apres': solde_apres,
+        'conflits': conflits,
+        'disponible': disponible,
+        'annees_proposees': annees_proposees,
     })
 
 
@@ -1497,6 +1660,9 @@ def api_get_parametres_paie(structure_id):
         'abattement_plafond_annuel': float(p.abattement_plafond_annuel or 0),
         'deduction_personne_charge': float(p.deduction_personne_charge or 0),
         'max_personnes_charge': int(p.max_personnes_charge or 6),
+        # ⭐ Patron : "qu'on décide s'il faut enlever les jours de
+        # permission dans les congés ou pas" — voir Employe.get_solde_detail.
+        'deduire_permissions_des_conges': bool(p.deduire_permissions_des_conges) if p.deduire_permissions_des_conges is not None else True,
         'updated_at': p.updated_at.strftime('%Y-%m-%d %H:%M') if p.updated_at else None,
     })
 
@@ -1532,6 +1698,8 @@ def api_maj_parametres_paie(structure_id):
 
         if 'tranches_irpp' in data:
             p.tranches_irpp = data['tranches_irpp']
+        if 'deduire_permissions_des_conges' in data:
+            p.deduire_permissions_des_conges = bool(data['deduire_permissions_des_conges'])
         p.updated_by = session.get('user_name', 'Admin')
         db.session.commit()
         return jsonify({'success': True})

@@ -339,19 +339,50 @@ class Employe(db.Model):
     
     def get_solde_detail(self, annee):
         """⭐ Source UNIQUE de calcul du solde de congés (jours acquis moins
-        congés + permissions pris sur l'année). Tout le reste (routes/rh.py
-        compris) doit passer par cette méthode — plus de logique dupliquée."""
+        congés déductibles + permissions prises sur l'année). Tout le reste
+        (routes/rh.py compris) doit passer par cette méthode — plus de
+        logique dupliquée.
+
+        Deux corrections importantes apportées à cette méthode :
+        - Filtre sur `annee_utilisation` (l'année à laquelle le congé est
+          RÉELLEMENT imputé) et non plus sur l'année de `date_debut` — sans
+          ça, un congé "force majeure" attribué à l'année suivante (voir
+          Conge.annee_utilisation) n'était décompté NULLE PART : ni sur
+          l'année de la demande (exclue exprès par l'admin), ni sur l'année
+          suivante (le filtre regardait la mauvaise colonne).
+        - Seuls les congés de type déductible comptent (voir
+          TYPES_CONGE_DEDUCTIBLES) — un congé maladie/maternité/paternité/
+          exceptionnel (conventionnel) ou sans solde n'entame plus le solde
+          des 30 jours de congé annuel payé.
+        """
+        types_non_deductibles = [t for t, deductible in TYPES_CONGE_DEDUCTIBLES.items() if not deductible]
         conges_pris = db.session.query(db.func.sum(Conge.nombre_jours)).filter(
             Conge.employe_id == self.id,
-            db.extract('year', Conge.date_debut) == annee,
+            Conge.annee_utilisation == annee,
+            ~Conge.type_conge.in_(types_non_deductibles),
             Conge.statut.in_(['en_attente', 'approuve', 'termine'])
         ).scalar() or 0
+
+        # ⭐ Patron : "qu'on décide s'il faut enlever les jours de
+        # permission dans les congés ou pas" — configurable par structure
+        # (ParametragePaie.deduire_permissions_des_conges), défaut = True
+        # pour ne rien changer au calcul existant tant que l'admin ne
+        # bascule pas ce réglage lui-même.
+        deduire_permissions = True
+        try:
+            parametrage = ParametragePaie.query.filter_by(structure_id=self.structure_id).first()
+            if parametrage is not None:
+                deduire_permissions = bool(parametrage.deduire_permissions_des_conges)
+        except Exception:
+            pass
 
         permissions_pris = db.session.query(db.func.sum(Permission.nombre_jours)).filter(
             Permission.employe_id == self.id,
             db.extract('year', Permission.date_debut) == annee,
             Permission.statut.in_(['en_attente', 'approuve'])
         ).scalar() or 0
+        if not deduire_permissions:
+            permissions_pris = 0
 
         total_annuel = self.conges_annuels or 30
         total_pris = conges_pris + permissions_pris
@@ -363,45 +394,36 @@ class Employe(db.Model):
             'conges_pris': conges_pris,
             'permissions_pris': permissions_pris,
             'total_annuel': total_annuel,
+            'permissions_deduites': deduire_permissions,
         }
 
     def get_solde_par_annee(self, annee):
         """Retourne le solde de congés (nombre) pour une année donnée."""
         return self.get_solde_detail(annee)['solde']
-    
+
     def solde_conges_restant(self):
         """Calcule le solde de congés restant pour l'année en cours (incluant les permissions)"""
         annee_actuelle = datetime.now().year
-        
+
         if self.annee_reference != annee_actuelle:
             self.conges_pris_annee = 0
             self.annee_reference = annee_actuelle
             db.session.commit()
-        
-        # ⭐ Utiliser la nouvelle méthode
-        solde = self.get_solde_par_annee(annee_actuelle)
-        
-        # ⭐ Mettre à jour le champ conges_pris_annee
-        conges_pris = db.session.query(db.func.sum(Conge.nombre_jours)).filter(
-            Conge.employe_id == self.id,
-            db.extract('year', Conge.date_debut) == annee_actuelle,
-            Conge.statut.in_(['en_attente', 'approuve', 'termine'])
-        ).scalar() or 0
-        
-        permissions_pris = db.session.query(db.func.sum(Permission.nombre_jours)).filter(
-            Permission.employe_id == self.id,
-            db.extract('year', Permission.date_debut) == annee_actuelle,
-            Permission.statut.in_(['en_attente', 'approuve'])
-        ).scalar() or 0
-        
-        total_pris = conges_pris + permissions_pris
-        
-        if self.conges_pris_annee != total_pris:
-            self.conges_pris_annee = total_pris
+
+        # ⭐ Utiliser la nouvelle méthode — get_solde_detail() est déjà la
+        # source unique, plus besoin de recalculer conges_pris/
+        # permissions_pris ici en double avec une logique différente
+        # (l'ancienne version ignorait annee_utilisation et les types non
+        # déductibles, contrairement à get_solde_detail).
+        detail = self.get_solde_detail(annee_actuelle)
+        solde = detail['solde']
+
+        if self.conges_pris_annee != detail['pris']:
+            self.conges_pris_annee = detail['pris']
             db.session.commit()
-        
+
         return solde
-    
+
     def verifier_conges_disponibles(self, jours_demandes, annee=None):
         """
         Vérifie si le nombre de jours demandés est disponible
@@ -509,34 +531,71 @@ class Employe(db.Model):
         return 'Actif'
 
 
+# ⭐ Congés conventionnels — patron : "les congés conventionnels tu les
+# connais ils sont non déductibles des jours de congés". Seul le congé
+# 'annuel' (le vrai congé payé légal, 30j/an) est décompté du solde ;
+# maladie/maternité/paternité/exceptionnel (mariage, décès, naissance...)
+# et sans_solde sont des droits séparés, distincts du Code du travail —
+# les compter dans le même pot que le congé annuel les punirait deux fois
+# (déjà sans salaire ou déjà encadrés par ailleurs). Avant ce commit,
+# Employe.get_solde_detail() sommait TOUS les types sans distinction.
+TYPES_CONGE_DEDUCTIBLES = {
+    'annuel': True,
+    'maladie': False,
+    'maternite': False,
+    'paternite': False,
+    'sans_solde': False,
+    'exceptionnel': False,
+}
+
+
+def conge_est_deductible(type_conge):
+    """True seulement pour les types explicitement marqués déductibles —
+    un type inconnu/mal saisi ne doit jamais échapper silencieusement au
+    décompte du solde (mieux vaut décompter à tort que l'inverse)."""
+    return TYPES_CONGE_DEDUCTIBLES.get(type_conge, True)
+
+
 class Conge(db.Model):
     __tablename__ = 'conges'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     structure_id = db.Column(db.Integer, db.ForeignKey('structures.id'), nullable=False)
     employe_id = db.Column(db.Integer, db.ForeignKey('employes.id'), nullable=False)
-    
+
     type_conge = db.Column(db.String(50), nullable=False)
     date_debut = db.Column(db.Date, nullable=False)
     date_fin = db.Column(db.Date, nullable=False)
     date_reprise = db.Column(db.Date)
     nombre_jours = db.Column(db.Integer)
+    # ⭐ Année à laquelle ce congé est réellement imputé — distincte de
+    # l'année calendaire de date_debut pour le cas "force majeure" (patron :
+    # "si les congés d'un employé est fini [...] en cas de force majeur on
+    # lui donne des congés, que ça propose l'année suivante et les calculs
+    # se suivent"). Ex: congé pris en décembre 2026 mais annee_utilisation=
+    # 2027 -> décompté du solde 2027, pas 2026. Employe.get_solde_detail()
+    # DOIT filtrer sur ce champ, jamais sur l'année de date_debut (bug
+    # corrigé par ce commit : le champ existait déjà mais n'était utilisé
+    # nulle part dans le calcul du solde, rendant ce mécanisme inopérant).
     annee_utilisation = db.Column(db.Integer, default=lambda: datetime.now().year)
-    
+
     motif = db.Column(db.Text)
     piece_jointe = db.Column(db.String(500))
     signataire = db.Column(db.String(100))
-    
+
     statut = db.Column(db.String(20), default='en_attente')
     approuve_par = db.Column(db.String(100))
     date_approbation = db.Column(db.Date)
     commentaire = db.Column(db.Text)
-    
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     # ========== MÉTHODES DE CALCUL ==========
-    
+
+    def est_deductible(self):
+        return conge_est_deductible(self.type_conge)
+
     def calculer_jours_ouvres(self):
         """Calcule le nombre de jours ouvrés (du lundi au vendredi)"""
         from datetime import timedelta
@@ -3480,6 +3539,14 @@ class ParametragePaie(db.Model):
     abattement_plafond_annuel = db.Column(db.Numeric, default=10000000)   # FCFA/an
     deduction_personne_charge = db.Column(db.Numeric, default=10000)      # FCFA/mois/personne
     max_personnes_charge = db.Column(db.Integer, default=6)
+
+    # ⭐ Congés — patron : "qu'on décide s'il faut enlever les jours de
+    # permission dans les congés ou pas". Configurable plutôt que figé en
+    # dur : True = comportement déjà en place (Employe.get_solde_detail
+    # décomptait déjà les permissions avant ce commit) — garde le calcul
+    # inchangé pour les structures existantes tant que l'admin ne bascule
+    # pas ce réglage lui-même.
+    deduire_permissions_des_conges = db.Column(db.Boolean, default=True)
 
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     updated_by = db.Column(db.String(100))
