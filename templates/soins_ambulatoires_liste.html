@@ -124,6 +124,18 @@
                     <label class="form-label">Date de début</label>
                     <input type="date" class="form-control" id="neDateDebut">
                 </div>
+                {% if services_liste %}
+                <div class="mb-3">
+                    <label class="form-label">Service</label>
+                    <select class="form-select" id="neService">
+                        <option value="">-- Choisir un service --</option>
+                        {% for s in services_liste %}
+                        <option value="{{ s.id }}">{{ s.nom }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text">Sert à répartir les recettes par service en fin d'année.</div>
+                </div>
+                {% endif %}
                 <hr>
                 <div class="mb-2 fw-bold"><i class="fas fa-hand-holding-usd me-1"></i> Prédépôt</div>
                 <div class="row g-2">
@@ -202,6 +214,10 @@ function creerEpisode() {
         predepot_mode_paiement: document.getElementById('nePredepotMode').value,
         predepot_note: document.getElementById('nePredepotNote').value,
     };
+    const neServiceEl = document.getElementById('neService');
+    if (neServiceEl && neServiceEl.value) {
+        payload.service_id = neServiceEl.value;
+    }
     fetch('/api/soins-ambulatoires', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

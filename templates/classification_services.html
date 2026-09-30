@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+
+{% block title %}Classification par service{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h4 class="mb-0"><i class="fas fa-hospital me-2"></i>Recettes par service — classification des actes</h4>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('page_rapport_recettes_service') }}" class="btn btn-outline-dark btn-sm">
+            <i class="fas fa-chart-bar me-1"></i> Voir le rapport
+        </a>
+        <button class="btn btn-dark btn-sm" onclick="ouvrirModalClassification()">
+            <i class="fas fa-plus me-1"></i> Classer un acte
+        </button>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <div class="fw-bold"><i class="fas fa-toggle-on me-1"></i> Sélecteur "Service" au moment de la vente</div>
+            <div class="text-muted small">
+                Activé : un sélecteur "Service" apparaît sur chaque ligne d'Actes &amp; Vente (jamais obligatoire).
+                Désactivé : la classification ci-dessous et la détection automatique restent actives dans tous les cas.
+            </div>
+        </div>
+        <div class="form-check form-switch fs-4 mb-0">
+            <input class="form-check-input" type="checkbox" id="choixServiceActifSwitch" onchange="toggleChoixServiceActif()">
+        </div>
+    </div>
+</div>
+
+<div class="alert alert-info">
+    <i class="fas fa-info-circle me-1"></i>
+    Certains actes sont classés automatiquement (S100 = Médecine générale, un suffixe "(SPÉCIALITÉ)", les codes Q =
+    Radiologie, les codes R = Laboratoire, la pharmacie). Classez ici les actes que le nom seul ne permet pas de
+    trancher (ex. un acte chirurgical sur l'appareil génital, qui doit aller en Gynéco-Obstétrique et pas en
+    Chirurgie générale).
+</div>
+
+<div class="card">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <span><i class="fas fa-list me-1"></i> Actes classés manuellement</span>
+        <span class="badge bg-light text-dark" id="totalClassifies">0</span>
+    </div>
+    <div class="card-body p-0">
+        <div id="listeClassifications"><div class="text-center text-muted py-4">Chargement...</div></div>
+    </div>
+</div>
+
+<!-- Modal classer un acte -->
+<div class="modal fade" id="modalClassification" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-hospital me-2"></i>Classer un acte</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="position-relative mb-2">
+                    <label class="form-label mb-1">Acte</label>
+                    <input type="text" class="form-control" id="classifSearch" placeholder="Rechercher un acte..." autocomplete="off">
+                    <div id="classifResultats" class="list-group position-absolute w-100" style="z-index:1000; max-height:220px; overflow-y:auto; display:none;"></div>
+                </div>
+                <div id="classifChoisiBloc" style="display:none;" class="mb-2 p-2 border rounded bg-light">
+                    <strong id="classifChoisiNom"></strong>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label mb-1">Service</label>
+                    <select class="form-select" id="classifServiceSelect">
+                        <option value="">-- Choisir un service --</option>
+                        {% for s in services_liste %}
+                        <option value="{{ s.id }}">{{ s.nom }}</option>
+                        {% endfor %}
+                    </select>
+                    {% if not services_liste %}
+                    <div class="form-text text-danger">
+                        Aucun service configuré — <a href="{{ url_for('page_hospitalisation_configuration') }}">créez-en d'abord un</a>.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="enregistrerClassification()">
+                    <i class="fas fa-check me-1"></i> Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let classifChoisi = null;
+let debounceClassif = null;
+
+function toggleChoixServiceActif() {
+    const actif = document.getElementById('choixServiceActifSwitch').checked;
+    fetch('/api/parametrage-service', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ choix_service_actif: actif })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.success) {
+            alert('Erreur : ' + (data.error || 'inconnue'));
+            document.getElementById('choixServiceActifSwitch').checked = !actif;
+        }
+    })
+    .catch(() => { alert('Erreur réseau'); document.getElementById('choixServiceActifSwitch').checked = !actif; });
+}
+
+fetch('/api/parametrage-service').then(r => r.json()).then(data => {
+    document.getElementById('choixServiceActifSwitch').checked = !!data.choix_service_actif;
+});
+
+function ouvrirModalClassification() {
+    document.getElementById('classifSearch').value = '';
+    document.getElementById('classifServiceSelect').value = '';
+    viderClassifChoisi();
+    new bootstrap.Modal(document.getElementById('modalClassification')).show();
+}
+
+function viderClassifChoisi() {
+    classifChoisi = null;
+    document.getElementById('classifChoisiBloc').style.display = 'none';
+    document.getElementById('classifResultats').style.display = 'none';
+}
+
+document.getElementById('classifSearch').addEventListener('input', function() {
+    const q = this.value.trim();
+    clearTimeout(debounceClassif);
+    if (q.length < 2) { document.getElementById('classifResultats').style.display = 'none'; return; }
+    debounceClassif = setTimeout(() => {
+        fetch('/api/actes?search=' + encodeURIComponent(q) + '&limit=20').then(r => r.json()).then(data => {
+            const box = document.getElementById('classifResultats');
+            const liste = data.data || [];
+            if (!liste.length) { box.style.display = 'none'; return; }
+            box.innerHTML = liste.map(a => `
+                <a href="#" class="list-group-item list-group-item-action" onclick='choisirActeClassif(${JSON.stringify(a.nom).replace(/'/g, "&apos;")}); return false;'>
+                    ${a.nom}
+                </a>`).join('');
+            box.style.display = 'block';
+        });
+    }, 250);
+});
+
+function choisirActeClassif(nom) {
+    classifChoisi = nom;
+    document.getElementById('classifChoisiNom').textContent = nom;
+    document.getElementById('classifChoisiBloc').style.display = '';
+    document.getElementById('classifResultats').style.display = 'none';
+    document.getElementById('classifSearch').value = nom;
+}
+
+function enregistrerClassification() {
+    if (!classifChoisi) { alert('Choisissez un acte dans la liste.'); return; }
+    const serviceId = document.getElementById('classifServiceSelect').value;
+    if (!serviceId) { alert('Choisissez un service.'); return; }
+    fetch('/api/classification-services', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nom_acte: classifChoisi, service_id: serviceId })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('modalClassification')).hide();
+            chargerClassifications();
+        } else {
+            alert('Erreur : ' + (data.error || 'inconnue'));
+        }
+    })
+    .catch(e => alert('Erreur : ' + e));
+}
+
+function supprimerClassification(id) {
+    if (!confirm('Retirer cette classification ? L\'acte redeviendra soumis uniquement à la détection automatique.')) return;
+    fetch('/api/classification-services/' + id, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(data => { if (data.success) chargerClassifications(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+}
+
+function chargerClassifications() {
+    fetch('/api/classification-services').then(r => r.json()).then(lignes => {
+        document.getElementById('totalClassifies').textContent = lignes.length;
+        document.getElementById('listeClassifications').innerHTML = lignes.length
+            ? '<div class="list-group list-group-flush">' + lignes.map(l => `
+                <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <span>${l.nom_acte} <span class="badge bg-secondary ms-1">${l.service_nom}</span></span>
+                    <button class="btn btn-sm btn-outline-danger" onclick="supprimerClassification(${l.id})" title="Retirer">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>`).join('') + '</div>'
+            : '<div class="text-center text-muted py-4">Aucun acte classé pour le moment.</div>';
+    });
+}
+
+document.addEventListener('click', function(e) {
+    const box = document.getElementById('classifResultats');
+    if (box && !e.target.closest('#classifSearch') && !e.target.closest('#classifResultats')) box.style.display = 'none';
+});
+
+chargerClassifications();
+</script>
+
+{% endblock %}

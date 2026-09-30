@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block title %}Recettes par service{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h4 class="mb-0"><i class="fas fa-chart-bar me-2"></i>Recettes par service</h4>
+    <a href="{{ url_for('page_classification_services') }}" class="btn btn-outline-dark btn-sm">
+        <i class="fas fa-cog me-1"></i> Classification des actes
+    </a>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-auto">
+                <label class="form-label small mb-1">Du</label>
+                <input type="date" class="form-control form-control-sm" id="rrsDateDebut">
+            </div>
+            <div class="col-auto">
+                <label class="form-label small mb-1">Au</label>
+                <input type="date" class="form-control form-control-sm" id="rrsDateFin">
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-dark btn-sm" onclick="chargerRapportService()">
+                    <i class="fas fa-sync me-1"></i> Actualiser
+                </button>
+            </div>
+            <div class="col-auto ms-auto text-end">
+                <div class="text-muted small">Total sur la période</div>
+                <div class="fs-4 fw-bold" id="rrsTotal">-</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <div id="rrsListe"><div class="text-center text-muted py-4">Chargement...</div></div>
+    </div>
+</div>
+
+<script>
+function anneeCourante() {
+    const now = new Date();
+    return {
+        debut: `${now.getFullYear()}-01-01`,
+        fin: now.toISOString().slice(0, 10),
+    };
+}
+
+function chargerRapportService() {
+    const dateDebut = document.getElementById('rrsDateDebut').value;
+    const dateFin = document.getElementById('rrsDateFin').value;
+    const liste = document.getElementById('rrsListe');
+    liste.innerHTML = '<div class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin"></i> Chargement...</div>';
+
+    fetch(`/api/rapports/recettes-service?date_debut=${dateDebut}&date_fin=${dateFin}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                liste.innerHTML = `<div class="text-center text-danger py-4">${data.error || 'Erreur'}</div>`;
+                return;
+            }
+            document.getElementById('rrsTotal').textContent = Math.round(data.total).toLocaleString('fr-FR') + ' FCFA';
+            if (!data.services.length) {
+                liste.innerHTML = '<div class="text-center text-muted py-4">Aucune recette sur cette période.</div>';
+                return;
+            }
+            const max = Math.max(...data.services.map(s => s.montant_total), 1);
+            liste.innerHTML = '<div class="list-group list-group-flush">' + data.services.map(s => {
+                const pct = data.total > 0 ? Math.round((s.montant_total / data.total) * 1000) / 10 : 0;
+                const largeur = Math.max(Math.round((s.montant_total / max) * 100), 2);
+                const estNonClasse = !s.service_id;
+                return `
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-baseline mb-1">
+                        <span class="fw-bold ${estNonClasse ? 'text-muted' : ''}">
+                            ${estNonClasse ? '<i class="fas fa-question-circle me-1"></i>' : ''}${s.service_nom}
+                        </span>
+                        <span>
+                            <span class="fw-bold">${Math.round(s.montant_total).toLocaleString('fr-FR')} FCFA</span>
+                            <span class="text-muted small ms-1">(${pct}% — ${s.nb_lignes} ligne(s))</span>
+                        </span>
+                    </div>
+                    <div class="progress" style="height:8px;">
+                        <div class="progress-bar ${estNonClasse ? 'bg-secondary' : 'bg-dark'}" style="width:${largeur}%"></div>
+                    </div>
+                </div>`;
+            }).join('') + '</div>';
+        })
+        .catch(() => { liste.innerHTML = '<div class="text-center text-danger py-4">Erreur réseau</div>'; });
+}
+
+const periode = anneeCourante();
+document.getElementById('rrsDateDebut').value = periode.debut;
+document.getElementById('rrsDateFin').value = periode.fin;
+chargerRapportService();
+</script>
+
+{% endblock %}

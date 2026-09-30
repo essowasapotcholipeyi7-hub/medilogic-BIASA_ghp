@@ -275,6 +275,12 @@ function creerSejour() {
     } else if (document.getElementById('nsChambreService')) {
         payload.chambre_service = document.getElementById('nsChambreService').value;
     }
+    // ⭐ Recettes par service : envoyé explicitement même quand un lit est
+    // choisi (le serveur le dérive aussi de lit_id, mais autant être
+    // explicite — voir api_creer_hospitalisation).
+    if (document.getElementById('nsService') && document.getElementById('nsService').value) {
+        payload.service_id = document.getElementById('nsService').value;
+    }
     fetch('/api/hospitalisation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

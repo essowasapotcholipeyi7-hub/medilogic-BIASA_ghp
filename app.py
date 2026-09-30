@@ -16,7 +16,7 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient, FaqQuestion, FaqQuestionUtilisateur, JourFerie, TauxPartMedecin, PrestationMedecin, PeriodePartMedecin, MedecinDuJour
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient, FaqQuestion, FaqQuestionUtilisateur, JourFerie, TauxPartMedecin, PrestationMedecin, PeriodePartMedecin, MedecinDuJour, ParametrageService, ClassificationServiceActe, RecetteService
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from utils.onglets_recherchables import onglets_recherchables
@@ -24,6 +24,7 @@ from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, ong
 from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur
 from services.laboratoire_service import charger_classification_actes, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
 from services.part_medecin_service import charger_taux_part_medecin, creer_lignes_part_medecin, prestations_en_attente, calculer_periode_part_medecin, charger_toujours_demander_medecin
+from services.service_acte_service import charger_services, deviner_service_acte, creer_lignes_service, generer_rapport_recettes_service
 from services.facturation_amu_service import generer_lignes_facture_amu_cnss, charger_classification_amu_cnss, generer_lignes_facture_amu
 from utils.categories_amu_cnss import CATEGORIES_AMU_CNSS, CATEGORIES_AMU_CNSS_DICT
 from utils.categories_amu_inam import CATEGORIES_AMU_INAM, CATEGORIES_AMU_INAM_PLATES, CATEGORIES_AMU_INAM_DICT, REGIMES_AMU_INAM
@@ -2881,6 +2882,19 @@ def actes_vente():
     # défini — voir data-medecin-obligatoire.
     toujours_demander_medecin_par_acte = charger_toujours_demander_medecin(structure_id)
 
+    # ⭐ Recettes par service (patron, 2026-09-30) : {nom_acte: service_id}
+    # deviné pour poser un data-service-devine sur chaque <option>, et
+    # choix_service_actif pour n'afficher le sélecteur "Service" que si
+    # cette structure l'a activé (ParametrageService) — voir
+    # services/service_acte_service.py.
+    parametrage_service = ParametrageService.get_ou_creer(structure_id)
+    choix_service_actif = bool(parametrage_service.choix_service_actif)
+    services_liste_vente = charger_services(structure_id) if choix_service_actif else []
+    classification_service_par_acte = {}
+    if choix_service_actif:
+        for l in ClassificationServiceActe.query.filter_by(structure_id=structure_id).all():
+            classification_service_par_acte[l.nom_acte] = l.service_id
+
     # Filtrer par structure
     actes_filtres = []
     for a in actes:
@@ -2956,6 +2970,10 @@ def actes_vente():
                 'prix_nuit': prix_nuit or None,
                 'taux_medecin': taux_part_medecin_par_acte.get(a.get('nom', '')) or None,
                 'medecin_obligatoire': bool(toujours_demander_medecin_par_acte.get(a.get('nom', ''))),
+                'service_devine': (
+                    classification_service_par_acte.get(a.get('nom', ''))
+                    or (deviner_service_acte(a.get('nom', ''), services_liste_vente) or {}).get('id')
+                ) if choix_service_actif else None,
             })
     
     patients = sheets_helper.get_all_records('patients', use_prefix=True)
@@ -3084,7 +3102,9 @@ def actes_vente():
                           tarif_nuit_actif=tarif_nuit_actif,
                           catalogue_a_tarif_nuit=catalogue_a_tarif_nuit,
                           medecins_liste=medecins_liste,
-                          medecin_du_jour=medecin_du_jour)
+                          medecin_du_jour=medecin_du_jour,
+                          choix_service_actif=choix_service_actif,
+                          services_liste=services_liste_vente)
 
 
 @app.route('/pharma_vente')
@@ -9150,7 +9170,15 @@ def api_vente_pharma():
 
         vente_id = result[0]['id']
         print(f"✅ Vente pharmacie enregistrée dans Neon avec ID: {vente_id}")
-        
+
+        # ⭐ Recettes par service — pharmacie va "d'office" au service
+        # Pharmacie (voir services/service_acte_service.py) : pas de
+        # sélecteur ni de classification par acte nécessaire ici.
+        try:
+            creer_lignes_service(structure_id, produits_data, vente_id, type_source_defaut='produit')
+        except Exception as e:
+            print(f"⚠️ Erreur génération recettes par service (vente #{vente_id} conservée): {e}")
+
         # ========== 2. AJOUTER LA RECETTE PATIENT (MONTANT DONNÉ) ==========
         montant_effectif = montant_donne - rendu
         if montant_effectif > 0:
@@ -10016,6 +10044,15 @@ def api_add_acte_vente():
         except Exception as e:
             print(f"⚠️ Erreur génération part médecin (vente #{vente_id} conservée): {e}")
 
+        # ⭐ Recettes par service (patron, 2026-09-30) : une RecetteService
+        # par ligne, résolue via le sélecteur "Service" (si activé pour
+        # cette structure), la classification manuelle, puis la détection
+        # automatique — voir services/service_acte_service.py.
+        try:
+            creer_lignes_service(structure_id, actes_data, vente_id)
+        except Exception as e:
+            print(f"⚠️ Erreur génération recettes par service (vente #{vente_id} conservée): {e}")
+
         # ========== 2. AJOUTER LA RECETTE PATIENT ==========
         montant_effectif = montant_donne - rendu
         if montant_effectif > 0:
@@ -10675,6 +10712,132 @@ def api_supprimer_classification_acte(ligne_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================
+# RECETTES PAR SERVICE (patron, 2026-09-30) — voir
+# services/service_acte_service.py pour la logique de résolution.
+# ============================================================
+
+@app.route('/api/parametrage-service', methods=['GET'])
+@login_required
+def api_get_parametrage_service():
+    structure_id = session.get('structure_id')
+    param = ParametrageService.get_ou_creer(structure_id)
+    return jsonify({'choix_service_actif': bool(param.choix_service_actif)})
+
+
+@app.route('/api/parametrage-service', methods=['POST'])
+@admin_required
+def api_set_parametrage_service():
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        param = ParametrageService.get_ou_creer(structure_id)
+        param.choix_service_actif = bool(data.get('choix_service_actif'))
+        db.session.commit()
+        return jsonify({'success': True, 'choix_service_actif': param.choix_service_actif})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/classification-services')
+@admin_required
+def page_classification_services():
+    """Page d'administration : quel service (département) attribuer à un
+    acte que la détection automatique ne peut pas trancher seule — voir
+    ClassificationServiceActe (models.py). Même logique d'accès que
+    /classification-actes."""
+    structure_id = session.get('structure_id')
+    return render_template('classification_services.html', services_liste=charger_services(structure_id))
+
+
+@app.route('/api/classification-services', methods=['GET'])
+@login_required
+def api_lister_classification_services():
+    structure_id = session.get('structure_id')
+    services_par_id = {s['id']: s['nom'] for s in charger_services(structure_id)}
+    lignes = ClassificationServiceActe.query.filter_by(structure_id=structure_id).order_by(ClassificationServiceActe.nom_acte).all()
+    return jsonify([{
+        'id': l.id, 'nom_acte': l.nom_acte, 'service_id': l.service_id,
+        'service_nom': services_par_id.get(l.service_id, '—'),
+    } for l in lignes])
+
+
+@app.route('/api/classification-services', methods=['POST'])
+@admin_required
+def api_creer_classification_service():
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        nom_acte = (data.get('nom_acte') or '').strip()
+        service_id = data.get('service_id')
+        if not nom_acte:
+            return jsonify({'success': False, 'error': 'Acte requis'}), 400
+        if not service_id:
+            return jsonify({'success': False, 'error': 'Service requis'}), 400
+
+        existante = ClassificationServiceActe.query.filter_by(structure_id=structure_id, nom_acte=nom_acte).first()
+        if existante:
+            existante.service_id = service_id
+            db.session.commit()
+            return jsonify({'success': True, 'id': existante.id, 'mis_a_jour': True})
+
+        ligne = ClassificationServiceActe(
+            structure_id=structure_id, nom_acte=nom_acte, service_id=service_id,
+            created_by=session.get('user_name', 'System'),
+        )
+        db.session.add(ligne)
+        db.session.commit()
+        return jsonify({'success': True, 'id': ligne.id, 'mis_a_jour': False})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/classification-services/<int:ligne_id>', methods=['DELETE'])
+@admin_required
+def api_supprimer_classification_service(ligne_id):
+    try:
+        structure_id = session.get('structure_id')
+        ligne = ClassificationServiceActe.query.filter_by(id=ligne_id, structure_id=structure_id).first()
+        if not ligne:
+            return jsonify({'success': False, 'error': 'Introuvable'}), 404
+        db.session.delete(ligne)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/rapport-recettes-service')
+@admin_required
+def page_rapport_recettes_service():
+    """Comparaison des recettes par service sur une période — pour
+    décider des ristournes de fin d'année (patron, 2026-09-30)."""
+    return render_template('rapport_recettes_service.html')
+
+
+@app.route('/api/rapports/recettes-service', methods=['GET'])
+@admin_required
+def api_rapport_recettes_service():
+    structure_id = session.get('structure_id')
+    date_debut_str = request.args.get('date_debut')
+    date_fin_str = request.args.get('date_fin')
+    try:
+        date_debut = datetime.strptime(date_debut_str, '%Y-%m-%d')
+        # ⭐ Borne de fin EXCLUSIVE, +1 jour — pour inclure toute la
+        # journée de date_fin (les RecetteService.created_at portent une
+        # heure, pas juste une date).
+        date_fin = datetime.strptime(date_fin_str, '%Y-%m-%d') + timedelta(days=1)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'Dates invalides'}), 400
+
+    resultat = generer_rapport_recettes_service(structure_id, date_debut, date_fin)
+    total = round(sum(r['montant_total'] for r in resultat), 2)
+    return jsonify({'success': True, 'services': resultat, 'total': total})
 
 
 # ============================================================
@@ -13133,6 +13296,19 @@ def api_get_actes():
         taux_part_medecin_par_acte = charger_taux_part_medecin(structure_id)
         toujours_demander_medecin_par_acte = charger_toujours_demander_medecin(structure_id)
 
+        # ⭐ Recettes par service (patron, 2026-09-30) : service deviné pour
+        # chaque acte — utilisé pour pré-remplir le sélecteur "Service" côté
+        # front quand il est activé (ParametrageService), sans jamais
+        # imposer un service qui n'existe pas réellement chez cette
+        # structure. Voir services/service_acte_service.py.
+        parametrage_service = ParametrageService.get_ou_creer(structure_id)
+        services_liste = charger_services(structure_id) if parametrage_service.choix_service_actif else []
+        classification_service = {}
+        if parametrage_service.choix_service_actif:
+            for l in ClassificationServiceActe.query.filter_by(structure_id=structure_id).all():
+                classification_service[l.nom_acte] = l.service_id
+        services_par_id = {s['id']: s['nom'] for s in services_liste}
+
         try:
             worksheet = sheets_helper.spreadsheet.worksheet(sheet_name)
             actes = worksheet.get_all_records()
@@ -13247,6 +13423,11 @@ def api_get_actes():
                     'statut': statut,  # 🔥 NOUVEAU
                     'taux_medecin': taux_part_medecin_par_acte.get(str(acte_nom).strip()) or None,
                     'medecin_obligatoire': bool(toujours_demander_medecin_par_acte.get(str(acte_nom).strip())),
+                    'choix_service_actif': parametrage_service.choix_service_actif,
+                    'service_devine': (
+                        classification_service.get(str(acte_nom).strip())
+                        or (deviner_service_acte(str(acte_nom).strip(), services_liste) or {}).get('id')
+                    ) if parametrage_service.choix_service_actif else None,
                 })
         
         return jsonify({
@@ -16440,6 +16621,25 @@ def api_convertir_proforma():
         except Exception as e:
             print(f"⚠️ Erreur génération part médecin (vente #{vente_id} conservée): {e}")
 
+        # ⭐ Recettes par service (patron, 2026-09-30) : si cette proforma
+        # vient d'une hospitalisation ou d'un épisode ambulatoire, TOUTE la
+        # recette du séjour va au service RÉEL du séjour (service_id_force),
+        # quel que soit le type de chaque acte facturé dedans — sinon
+        # résolution ligne par ligne (choix à la vente > classification >
+        # détection automatique). Voir services/service_acte_service.py.
+        try:
+            service_id_force = None
+            hospit_origine = Hospitalisation.query.filter_by(structure_id=structure_id, proforma_id=proforma_id).first()
+            if hospit_origine:
+                service_id_force = hospit_origine.service_id
+            else:
+                episode_origine = SoinsAmbulatoires.query.filter_by(structure_id=structure_id, proforma_id=proforma_id).first()
+                if episode_origine:
+                    service_id_force = episode_origine.service_id
+            creer_lignes_service(structure_id, articles_transformes, vente_id, service_id_force=service_id_force)
+        except Exception as e:
+            print(f"⚠️ Erreur génération recettes par service (vente #{vente_id} conservée): {e}")
+
         if assurance2_active:
             upsert_societe_assurance(structure_id, assurance2_nom, societe_assurance2)
         upsert_compagnie_complementaire(structure_id, assurance2_nom)
@@ -16921,6 +17121,7 @@ def api_creer_hospitalisation():
         lit_id = data.get('lit_id')
         chambre_service = data.get('chambre_service', '')
         lit = None
+        service_de_la_chambre = None
         if lit_id:
             # ⭐⭐ SÉCURITÉ : with_for_update() — sans ça, deux admissions
             # lancées en même temps sur le MÊME lit libre lisaient toutes
@@ -16934,8 +17135,22 @@ def api_creer_hospitalisation():
             if lit.statut == 'occupe':
                 return jsonify({'success': False, 'error': 'Ce lit est déjà occupé — choisissez-en un autre.'}), 409
             chambre = ChambreHospitalisation.query.get(lit.chambre_id)
-            service = ServiceHospitalisation.query.get(chambre.service_id) if chambre else None
-            chambre_service = f"{service.nom} > {chambre.nom} > {lit.nom}" if (service and chambre) else lit.nom
+            service_de_la_chambre = ServiceHospitalisation.query.get(chambre.service_id) if chambre else None
+            chambre_service = f"{service_de_la_chambre.nom} > {chambre.nom} > {lit.nom}" if (service_de_la_chambre and chambre) else lit.nom
+
+        # ⭐ Recettes par service (patron, 2026-09-30) : "Répartie par
+        # service d'hospitalisation réel" — service_id explicite envoyé
+        # par le formulaire d'admission (toujours possible, même sans
+        # inventaire chambre/lit configuré), sinon dérivé du service de la
+        # chambre choisie ci-dessus. Revalidé contre un service réellement
+        # actif de CETTE structure, jamais fait confiance à l'aveugle à
+        # l'ID envoyé. Voir services/service_acte_service.py.
+        service_id = data.get('service_id')
+        if service_id:
+            service_admission = ServiceHospitalisation.query.filter_by(id=service_id, structure_id=structure_id, actif=True).first()
+            service_id = service_admission.id if service_admission else None
+        if not service_id and service_de_la_chambre:
+            service_id = service_de_la_chambre.id
 
         hospit = Hospitalisation(
             structure_id=structure_id,
@@ -16945,6 +17160,7 @@ def api_creer_hospitalisation():
             date_entree=date_entree,
             chambre_service=chambre_service,
             lit_id=lit.id if lit else None,
+            service_id=service_id,
             assurance_nom=patient.type_assurance,
             taux_assurance=patient.taux_prise_charge or 0,
             assurance2_nom=patient.assurance2_nom,
@@ -17074,6 +17290,13 @@ def page_hospitalisation_suivi(hospit_id):
     medecins_liste = [{'id': m.id, 'nom_complet': m.get_nom_complet()} for m in medecins_actifs_hospit]
     medecin_du_jour = medecin_du_jour_actuel(structure_id)
 
+    # ⭐ Recettes par service (patron, 2026-09-30) : liste des services pour
+    # le sélecteur d'admission (toujours affiché ici, indépendamment de
+    # ParametrageService — "Répartie par service d'hospitalisation réel"
+    # attend un service à l'admission dans tous les cas, contrairement au
+    # sélecteur par LIGNE d'actes_vente.html qui reste optionnel).
+    services_liste = charger_services(structure_id)
+
     return render_template('hospitalisation_suivi.html', hospit=hospit, soins=soins, solde_en_cours=solde_en_cours,
                             patient_a_amu=patient_a_amu, patient_a_cac=patient_a_cac, patient_amu_ep=patient_amu_ep,
                             repartition=repartition, ligne_chambre_projetee=ligne_chambre_projetee,
@@ -17081,7 +17304,8 @@ def page_hospitalisation_suivi(hospit_id):
                             taux_tva=taux_tva,
                             taux_part_medecin_par_acte=taux_part_medecin_par_acte,
                             toujours_demander_medecin_par_acte=toujours_demander_medecin_par_acte,
-                            medecins_liste=medecins_liste, medecin_du_jour=medecin_du_jour)
+                            medecins_liste=medecins_liste, medecin_du_jour=medecin_du_jour,
+                            services_liste=services_liste)
 
 
 @app.route('/api/hospitalisation/<int:hospit_id>/assurance', methods=['POST'])
@@ -17721,7 +17945,13 @@ def page_soins_ambulatoires():
     structure_id = session.get('structure_id')
     episodes = SoinsAmbulatoires.query.filter_by(structure_id=structure_id)\
         .order_by(SoinsAmbulatoires.created_at.desc()).all()
-    return render_template('soins_ambulatoires_liste.html', episodes=episodes)
+    # ⭐ Recettes par service (patron, 2026-09-30) : sélecteur "Service" à
+    # l'admission, affiché seulement si cette structure a déjà configuré
+    # au moins un service (même garde-fou que a_inventaire côté
+    # hospitalisation) — zéro régression pour une structure qui n'en a
+    # pas besoin.
+    services_liste = charger_services(structure_id)
+    return render_template('soins_ambulatoires_liste.html', episodes=episodes, services_liste=services_liste)
 
 
 @app.route('/api/soins-ambulatoires', methods=['POST'])
@@ -17749,6 +17979,15 @@ def api_creer_soins_ambulatoires():
 
         numero_local = prochain_numero_local('soins_ambulatoires', structure_id)
 
+        # ⭐ Recettes par service — même principe que Hospitalisation (voir
+        # son commentaire équivalent, api_creer_hospitalisation) : pas de
+        # chambre/lit ici, donc uniquement le service explicite envoyé par
+        # le formulaire d'admission, revalidé contre un service actif.
+        service_id = data.get('service_id')
+        if service_id:
+            service_admission = ServiceHospitalisation.query.filter_by(id=service_id, structure_id=structure_id, actif=True).first()
+            service_id = service_admission.id if service_admission else None
+
         episode = SoinsAmbulatoires(
             structure_id=structure_id,
             numero_local=numero_local,
@@ -17767,6 +18006,7 @@ def api_creer_soins_ambulatoires():
             societe_assurance2=patient.societe_assurance2,
             statut='en_cours',
             created_by=user_name,
+            service_id=service_id,
         )
         db.session.add(episode)
         db.session.commit()
@@ -17819,13 +18059,18 @@ def page_soins_ambulatoires_suivi(episode_id):
     medecins_liste = [{'id': m.id, 'nom_complet': m.get_nom_complet()} for m in medecins_actifs_ambu]
     medecin_du_jour = medecin_du_jour_actuel(structure_id)
 
+    # ⭐ Recettes par service — même principe que hospitalisation_suivi()
+    # (voir son commentaire équivalent).
+    services_liste = charger_services(structure_id)
+
     return render_template('soins_ambulatoires_suivi.html', episode=episode, lignes=lignes, solde_en_cours=solde_en_cours,
                             patient_a_amu=patient_a_amu, patient_a_cac=patient_a_cac,
                             repartition=repartition, montant_pbr_defaut=montant_pbr_defaut,
                             montant_pbr_alternatif=montant_pbr_alternatif, taux_tva=taux_tva,
                             taux_part_medecin_par_acte=taux_part_medecin_par_acte,
                             toujours_demander_medecin_par_acte=toujours_demander_medecin_par_acte,
-                            medecins_liste=medecins_liste, medecin_du_jour=medecin_du_jour)
+                            medecins_liste=medecins_liste, medecin_du_jour=medecin_du_jour,
+                            services_liste=services_liste)
 
 
 @app.route('/api/soins-ambulatoires/<int:episode_id>/assurance', methods=['POST'])

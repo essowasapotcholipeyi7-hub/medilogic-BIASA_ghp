@@ -2606,6 +2606,14 @@ class Hospitalisation(db.Model):
     vente_id = db.Column(db.Integer)
     created_by = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # ⭐ Recettes par service (patron, 2026-09-30) : service RÉEL du séjour
+    # (ServiceHospitalisation), pour attribuer TOUTE la recette du séjour à
+    # ce service à la facturation — indépendant de lit_id (un séjour sans
+    # lit/chambre assigné doit quand même pouvoir être rattaché à un
+    # service). Choisi à l'admission ; dérivé automatiquement du service de
+    # la chambre si un lit est choisi, mais toujours modifiable/forçable.
+    # Voir services/service_acte_service.py.
+    service_id = db.Column(db.Integer)
 
     @property
     def nombre_jours(self):
@@ -2890,6 +2898,78 @@ class ClassificationActe(db.Model):
     nom_acte = db.Column(db.String(255), nullable=False)
     type_prestation = db.Column(db.String(20), nullable=False)  # 'analyse' | 'examen'
     created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# ============================================================
+# ⭐ RECETTES PAR SERVICE (patron, 2026-09-30) : "à la fin d'année on doit
+# [évaluer] les efforts de chaque service... pour décider de ristourne ou
+# pas". Réutilise la liste de services déjà réelle et déjà peuplée
+# (ServiceHospitalisation, Service > Chambre > Lit) comme référentiel
+# unique plutôt que d'en créer une deuxième — voir
+# services/service_acte_service.py pour la résolution à 3 niveaux (choix
+# explicite à la vente > classification manuelle ci-dessous > détection
+# automatique depuis le code de nomenclature dans le nom de l'acte).
+# ============================================================
+class ParametrageService(db.Model):
+    """Active/désactive, pour CETTE structure, le sélecteur "Service" au
+    moment de la vente — patron : "chaque structure décide de le faire
+    ainsi ou pas, parce que certains centres n'ont pas besoin de ça".
+    Désactivé par défaut ; la classification manuelle et la détection
+    automatique restent actives dans tous les cas, même désactivé."""
+    __tablename__ = 'parametrage_service'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False, unique=True)
+    choix_service_actif = db.Column(db.Boolean, default=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @classmethod
+    def get_ou_creer(cls, structure_id):
+        param = cls.query.filter_by(structure_id=structure_id).first()
+        if not param:
+            param = cls(structure_id=structure_id)
+            db.session.add(param)
+            db.session.commit()
+        return param
+
+
+class ClassificationServiceActe(db.Model):
+    """Service attribué manuellement à un acte précis — même forme que
+    ClassificationActe ci-dessus (structure_id + nom_acte, upsert) : pour
+    les cas que la détection automatique ne peut pas trancher seule (ex.
+    un acte chirurgical sur l'appareil génital doit aller en
+    Gynéco-Obstétrique, pas en Chirurgie générale — indiscernable depuis
+    le seul nom de l'acte)."""
+    __tablename__ = 'classification_service_actes'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    nom_acte = db.Column(db.String(255), nullable=False)
+    service_id = db.Column(db.Integer, nullable=False)
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class RecetteService(db.Model):
+    """Une ligne facturée attribuée à un service — créée automatiquement à
+    la vente (même principe que PrestationMedecin). Rapport de GESTION
+    pour comparer l'activité des services (décision de ristourne en fin
+    d'année) : ne touche jamais aux écritures comptables SYSCOHADA
+    elles-mêmes, qui restent scopées par compte, pas par service.
+    service_id/service_nom restent NULL (service_nom='Non classé') quand
+    aucun des 3 niveaux de résolution n'a pu trancher — jamais de ligne
+    silencieusement absente du rapport."""
+    __tablename__ = 'recettes_service'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    service_id = db.Column(db.Integer)
+    service_nom = db.Column(db.String(255))  # dénormalisé, figé au moment de la vente
+    vente_id = db.Column(db.Integer)
+    nom_acte = db.Column(db.String(255), nullable=False)
+    type_source = db.Column(db.String(20))  # 'acte' | 'produit' | 'hospitalisation'
+    origine = db.Column(db.String(20))  # 'choix_manuel' | 'classification' | 'auto' | 'non_classe'
+    prix = db.Column(db.Numeric, nullable=False)
+    quantite = db.Column(db.Integer, default=1)
+    montant = db.Column(db.Numeric, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -3321,6 +3401,9 @@ class SoinsAmbulatoires(db.Model):
     vente_id = db.Column(db.Integer)
     created_by = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # ⭐ Recettes par service — même principe que Hospitalisation.service_id
+    # (voir son commentaire équivalent).
+    service_id = db.Column(db.Integer)
 
     # ⭐ Mêmes propriétés "effectives", mot pour mot, que Hospitalisation
     # (models.py) — y compris le garde-fou taux > 0, sans quoi un patient

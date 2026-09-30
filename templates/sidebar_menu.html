@@ -319,7 +319,7 @@
                      supplémentaire qui les rassemble. -->
                 {% set _parametres_visible = (session.role in ['admin', 'gestionnaire']) or (session.role in ['admin', 'comptable', 'gestionnaire']) or (session.role in ['laborantin', 'radiologue', 'secretaire']) or session.is_admin %}
                 {% if _parametres_visible %}
-                {% set _parametres_actif = request.endpoint in ['admin_structure', 'page_classification_actes', 'page_pbr_complementaires', 'sync_gestion_patients_config', 'page_modeles_resultats', 'page_signatures_intervenants', 'page_taux_part_medecin'] %}
+                {% set _parametres_actif = request.endpoint in ['admin_structure', 'page_classification_actes', 'page_pbr_complementaires', 'sync_gestion_patients_config', 'page_modeles_resultats', 'page_signatures_intervenants', 'page_taux_part_medecin', 'page_classification_services', 'page_rapport_recettes_service'] %}
                 <a class="nav-link d-flex justify-content-between align-items-center {% if _parametres_actif %}active{% endif %}" href="#" data-bs-toggle="collapse" data-bs-target="#parametresCollapse" role="button" aria-expanded="{{ 'true' if _parametres_actif else 'false' }}" aria-controls="parametresCollapse">
                     <span class="menu-text"><i class="fas fa-sliders-h me-1"></i> Paramètres</span>
                     <i class="fas fa-chevron-down" style="font-size: 11px; opacity: 0.6;"></i>
@@ -336,6 +336,10 @@
                     {% endif %}
                     {% if session.is_admin or session.role == 'gestionnaire' %}
                     <a class="nav-link {% if request.endpoint == 'page_taux_part_medecin' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_taux_part_medecin') }}"><i class="fas fa-percentage me-2"></i>Taux Part Médecin</a>
+                    {% endif %}
+                    {% if session.is_admin %}
+                    <a class="nav-link {% if request.endpoint == 'page_classification_services' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_classification_services') }}"><i class="fas fa-hospital me-2"></i>Classification par service</a>
+                    <a class="nav-link {% if request.endpoint == 'page_rapport_recettes_service' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_rapport_recettes_service') }}"><i class="fas fa-chart-bar me-2"></i>Recettes par service</a>
                     {% endif %}
                     {% if session.role in ['laborantin', 'radiologue', 'secretaire'] %}
                     <a class="nav-link {% if request.endpoint == 'page_modeles_resultats' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_modeles_resultats') }}"><i class="fas fa-file-word me-2"></i>Modèles de résultats</a>

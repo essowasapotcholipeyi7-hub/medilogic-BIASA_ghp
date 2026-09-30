@@ -114,7 +114,7 @@
                 <div class="row">
 <div class="col-md-6">
     <label class="form-label">Sélectionner un acte</label>
-    <select class="form-control" id="acteSelect" size="8" onchange="toggleMedecinRealisateur()">
+    <select class="form-control" id="acteSelect" size="8" onchange="toggleMedecinRealisateur(); preRemplirServiceActe();">
         <option value="">-- Choisir un acte --</option>
         {% for acte in actes %}
         <option value="{{ acte.ID }}"
@@ -123,6 +123,7 @@
                 data-prix-nuit="{{ acte.prix_nuit or '' }}"
                 data-taux-medecin="{{ acte.taux_medecin or '' }}"
                 data-medecin-obligatoire="{{ 'true' if acte.medecin_obligatoire else '' }}"
+                data-service-devine="{{ acte.service_devine or '' }}"
                 data-nom="{{ acte.nom }}"
                 data-statut="{{ acte.statut or 'direct' }}"
                 data-prise-en-charge-amu="{{ 'true' if acte.prise_en_charge_amu else 'false' }}"
@@ -165,6 +166,27 @@
                             précise (médecin absent ce jour, remplaçant qui ne prend pas de commission...).
                         </div>
                     </div>
+                    {% if choix_service_actif %}
+                    <div class="col-md-12 mt-2" id="serviceActeWrapper">
+                        <!-- ⭐ Recettes par service (patron, 2026-09-30) : activé pour
+                        cette structure (ParametrageService) — toujours visible, jamais
+                        obligatoire (la détection automatique/classification manuelle
+                        couvre le reste si laissé sur "Détection automatique"). -->
+                        <label class="form-label text-info">
+                            <i class="fas fa-hospital me-1"></i>Service
+                        </label>
+                        <select class="form-control" id="serviceActeSelect">
+                            <option value="">-- Détection automatique --</option>
+                            {% for s in services_liste %}
+                            <option value="{{ s.id }}">{{ s.nom }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">
+                            Pré-rempli automatiquement quand le service se déduit du code de l'acte —
+                            changez-le si besoin pour cette vente précise.
+                        </div>
+                    </div>
+                    {% endif %}
                     <div class="col-md-3">
                         <label class="form-label">Quantité</label>
                         <input type="number" class="form-control" id="quantite" value="1" min="1">
@@ -956,6 +978,19 @@ function toggleMedecinRealisateur() {
     medecinSelect.value = (!obligatoire && MEDECIN_JOUR_ID) ? MEDECIN_JOUR_ID : '';
 }
 
+// ⭐ Recettes par service (patron, 2026-09-30) : pré-remplit #serviceActeSelect
+// avec le service deviné côté serveur pour l'acte choisi (data-service-devine,
+// voir api.../actes_vente() dans app.py) — jamais obligatoire, l'utilisateur
+// peut toujours changer ou laisser sur "Détection automatique".
+function preRemplirServiceActe() {
+    const select = document.getElementById('acteSelect');
+    const serviceSelect = document.getElementById('serviceActeSelect');
+    if (!select || !serviceSelect) return;
+    const option = select.options[select.selectedIndex];
+    const serviceDevine = option ? option.getAttribute('data-service-devine') : '';
+    serviceSelect.value = serviceDevine || '';
+}
+
 // ⭐ Médecin du jour : défini/modifié/effacé depuis le bandeau en haut de
 // la page (voir #bandeauMedecinJour) — partagé entre tous les postes de
 // la structure, upserté côté serveur pour AUJOURD'HUI. Laisser "--
@@ -1058,6 +1093,13 @@ function ajouterActe() {
         // c'est le choix explicite "pas de part médecin sur cette vente".
     }
 
+    // ⭐ Recettes par service (patron, 2026-09-30) : jamais obligatoire
+    // (contrairement au médecin ci-dessus) — vide -> résolution côté
+    // serveur (classification manuelle puis détection automatique). Voir
+    // preRemplirServiceActe().
+    const serviceActeSelect = document.getElementById('serviceActeSelect');
+    const serviceId = serviceActeSelect ? (serviceActeSelect.value || null) : null;
+
     // ⭐ Lu tôt pour la résolution AMU-TNS ci-dessous (déclaré à nouveau,
     // sans réaffectation, plus bas où le reste de la logique CAC en a besoin)
     const patientAssuranceActe = sessionStorage.getItem('selectedPatientAssurance');
@@ -1122,7 +1164,7 @@ function ajouterActe() {
     if (!isAMU && !isCAC) {
         ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,
                            priseEnChargeAMU, commentaireAMU, priseEnChargeCAC, commentaireCAC,
-                           medecinId, medecinNom, medecinDecide);
+                           medecinId, medecinNom, medecinDecide, serviceId);
         return;
     }
 
@@ -1198,13 +1240,13 @@ function ajouterActe() {
     // ✅ TOUT EST OK → AJOUT
     ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,
                        priseEnChargeAMU, commentaireAMU, priseEnChargeCAC, commentaireCAC,
-                       medecinId, medecinNom, medecinDecide);
+                       medecinId, medecinNom, medecinDecide, serviceId);
 }
 
 // 🔥 FONCTION POUR AJOUTER L'ACTE AU PANIER
 function ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,
                              priseEnChargeAMU, commentaireAMU, priseEnChargeCAC, commentaireCAC,
-                             medecinId, medecinNom, medecinDecide) {
+                             medecinId, medecinNom, medecinDecide, serviceId) {
     let existant = panier.find(item => item.id == acteId);
     if (existant) {
         existant.quantite += quantite;
@@ -1222,6 +1264,10 @@ function ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,
         // rendant "Aucun médecin" impossible à appliquer sur une ligne déjà
         // au panier).
         if (medecinDecide) { existant.medecin_id = medecinId; existant.medecin_nom = medecinNom; }
+        // ⭐ Recettes par service : jamais obligatoire, donc on met à jour
+        // seulement si un service a été explicitement choisi cette fois-ci
+        // (sinon on garde la valeur déjà sur la ligne, y compris vide).
+        if (serviceId) { existant.service_id = serviceId; }
     } else {
         panier.push({
             id: acteId,
@@ -1237,9 +1283,10 @@ function ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,
             commentaire_cac: commentaireCAC,
             medecin_id: medecinId || null,
             medecin_nom: medecinNom || null,
+            service_id: serviceId || null,
         });
     }
-    
+
     afficherPanier();
     document.getElementById('acteSelect').selectedIndex = 0;
     document.getElementById('quantite').value = '1';
@@ -2405,6 +2452,11 @@ function finaliserVente() {
         // création de la vente.
         medecin_id: item.medecin_id || null,
         medecin_nom: item.medecin_nom || null,
+        // ⭐ Recettes par service (patron, 2026-09-30) : service choisi à
+        // l'ajout (voir preRemplirServiceActe()/ajouterActeAuPanier()) —
+        // vide -> résolution côté serveur (creer_lignes_service,
+        // services/service_acte_service.py).
+        service_id: item.service_id || null,
     }));
 
     const montantDonne = parseFloat(document.getElementById('montantDonne').value) || 0;
@@ -2749,6 +2801,10 @@ function soumettreVenteEnAttente() {
             // jusqu'à la finalisation.
             medecin_id: item.medecin_id || null,
             medecin_nom: item.medecin_nom || null,
+            // ⭐ Recettes par service — même raison que medecin_id ci-dessus :
+            // sans ce champ, une vente finalisée depuis "ventes en attente"
+            // perdrait le service choisi à l'admission.
+            service_id: item.service_id || null,
         };
     });
 
@@ -2832,6 +2888,7 @@ if (VENTE_ATTENTE) {
         // au lieu de le perdre silencieusement à la finalisation.
         medecin_id: a.medecin_id || null,
         medecin_nom: a.medecin_nom || null,
+        service_id: a.service_id || null,
     }));
     // ⭐ Pas de resoumission possible d'une vente déjà en cours de
     // finalisation — seul "Finaliser la vente" a un sens ici.
