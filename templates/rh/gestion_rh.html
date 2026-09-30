@@ -127,6 +127,61 @@
         margin-top: 4px;
     }
 
+    /* ⭐ Continuation de l'harmonisation — patron : "vérifie le contenu et
+       continue". Reteinte via des overrides scopés à .rh-shell (au lieu de
+       modifier chaque bouton/titre un par un dans le HTML) : couvre d'un
+       coup TOUS les onglets (Services, Personnel, Pointage, Congés,
+       Permissions), pas seulement le tableau de bord déjà fait — même
+       principe que compta-shell mais sans réécrire chaque bloc Bootstrap
+       existant, plus sûr et plus simple à maintenir si de nouveaux boutons
+       sont ajoutés plus tard. */
+    .rh-shell .tab-pane h6 {
+        color: var(--navy-900);
+        font-weight: 700;
+    }
+    .rh-shell .btn-primary {
+        background: var(--navy-800);
+        border-color: var(--navy-800);
+    }
+    .rh-shell .btn-primary:hover, .rh-shell .btn-primary:focus {
+        background: var(--navy-900);
+        border-color: var(--navy-900);
+    }
+    .rh-shell .btn-outline-primary {
+        color: var(--navy-800);
+        border-color: var(--navy-800);
+    }
+    .rh-shell .btn-outline-primary:hover {
+        background: var(--navy-800);
+        border-color: var(--navy-800);
+    }
+    .rh-shell .btn-success {
+        background: var(--emerald-600);
+        border-color: var(--emerald-600);
+    }
+    .rh-shell .btn-success:hover, .rh-shell .btn-success:focus {
+        background: var(--emerald-700);
+        border-color: var(--emerald-700);
+    }
+    .rh-shell .btn-outline-success {
+        color: var(--emerald-600);
+        border-color: var(--emerald-600);
+    }
+    .rh-shell .btn-outline-success:hover {
+        background: var(--emerald-600);
+        border-color: var(--emerald-600);
+    }
+    .rh-shell .btn-warning {
+        background: var(--amber-600);
+        border-color: var(--amber-600);
+        color: white;
+    }
+    .rh-shell .btn-warning:hover, .rh-shell .btn-warning:focus {
+        background: var(--amber-700);
+        border-color: var(--amber-700);
+        color: white;
+    }
+
     .btn-loading {
         opacity: 0.7;
         cursor: wait !important;
