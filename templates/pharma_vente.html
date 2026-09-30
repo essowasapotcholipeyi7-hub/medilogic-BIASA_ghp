@@ -407,7 +407,14 @@
     </small>
 </div>
 
-                    <div class="col-md-12 mt-2 d-grid gap-2">
+                    <!-- ⭐ Barre d'action collante (patron, 2026-09-30) : "le
+                         bouton finaliser remonte pour un accès facile... il
+                         faut scroller soit même". Voir actes_vente.html pour le
+                         même correctif — `position:fixed` seul ne suffit pas à
+                         cause du backdrop-filter sur .main-content (voir base.html,
+                         "FIX GLOBAL : barre d'action collante en bas d'écran") :
+                         la barre est sortie vers <body> en JS. -->
+                    <div class="col-md-12 mt-2 d-grid gap-2" id="actionBarVente" style="background: #fff; padding: 10px 16px; box-shadow: 0 -6px 14px rgba(0,0,0,0.10); border-radius: 8px 8px 0 0;">
                         <!-- ⭐ Rendu clairement distinct du bouton "vente en
                              attente" (plus grand, vert = action principale
                              qui conclut la vente). -->
@@ -427,6 +434,7 @@
                             <i class="fas fa-clock"></i> Soumettre (vente en attente)
                         </button>
                     </div>
+                    <div id="actionBarVenteEspace"></div>
                 </div>
             </div>
         </div>
@@ -2513,6 +2521,10 @@ if (VENTE_ATTENTE) {
 // ============================================
 document.addEventListener('DOMContentLoaded', function() {
     console.log('=== CHARGEMENT AUTOMATIQUE PHARMA ===');
+
+    // ⭐ Barre d'action collante — voir base.html pour le pourquoi (fix
+    // "FIX GLOBAL : barre d'action collante en bas d'écran").
+    activerBarreActionCollante('actionBarVente', 'actionBarVenteEspace');
 
     if (VENTE_ATTENTE) {
         afficherPanier();

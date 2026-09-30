@@ -519,7 +519,19 @@
     </small>
 </div>
 
-                    <div class="col-md-12 mt-2 d-grid gap-2">
+                    <!-- ⭐ Barre d'action collante (patron, 2026-09-30) : "le
+                         bouton finaliser remonte pour un accès facile... il
+                         faut scroller soit même". Reste visible en bas de
+                         l'écran pendant le remplissage du panier/du montant
+                         donné, sans avoir à descendre la page pour l'atteindre.
+                         `position:fixed` seul ne suffit PAS ici : .main-content
+                         a un backdrop-filter (voir le commentaire "FIX GLOBAL :
+                         modales Bootstrap" dans base.html), ce qui en fait la
+                         containing block de tout descendant fixed — il resterait
+                         ancré au bas du contenu DÉFILABLE, pas du bas de l'écran.
+                         Même parade que ce fix modales : sortir l'élément vers
+                         <body> en JS (voir actionBarVente.js plus bas). -->
+                    <div class="col-md-12 mt-2 d-grid gap-2" id="actionBarVente" style="background: #fff; padding: 10px 16px; box-shadow: 0 -6px 14px rgba(0,0,0,0.10); border-radius: 8px 8px 0 0;">
                         <!-- ⭐ Rendu clairement distinct du bouton "vente en
                              attente" (plus grand, vert = action principale
                              qui conclut la vente). -->
@@ -545,6 +557,10 @@
                             <i class="fas fa-clock"></i> Soumettre (vente en attente)
                         </button>
                     </div>
+                    <!-- ⭐ Espace réservé à la place de la barre une fois sortie
+                         du flux normal (sinon le panier "saute" vers le bas de
+                         la hauteur de la barre à chaque chargement de page). -->
+                    <div id="actionBarVenteEspace"></div>
                 </div>
             </div>
         </div>
@@ -2920,6 +2936,10 @@ if (VENTE_ATTENTE) {
 // ============================================
 document.addEventListener('DOMContentLoaded', function() {
     console.log('=== CHARGEMENT AUTOMATIQUE ACTES ===');
+
+    // ⭐ Barre d'action collante — voir base.html pour le pourquoi (fix
+    // "FIX GLOBAL : barre d'action collante en bas d'écran").
+    activerBarreActionCollante('actionBarVente', 'actionBarVenteEspace');
 
     if (VENTE_ATTENTE) {
         afficherPanier();

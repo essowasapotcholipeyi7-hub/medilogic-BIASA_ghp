@@ -2811,6 +2811,47 @@ document.addEventListener('show.bs.modal', function(e) {
 });
 
 // ============================================
+// FIX GLOBAL : barre d'action collante en bas d'écran
+// ============================================
+// ⭐ Même cause que le fix modales juste au-dessus (patron, 2026-09-30 :
+// "le bouton finaliser remonte pour un accès facile... il faut scroller
+// soit même") : .main-content a un backdrop-filter, qui en fait la
+// containing block de tout descendant position:fixed — une barre d'action
+// "fixed" y resterait ancrée au bas du CONTENU défilable (elle défilerait
+// avec le panier) plutôt qu'au bas de l'ÉCRAN. Même parade : sortir la
+// barre vers <body>, elle redevient fixe par rapport à la fenêtre comme
+// attendu. Réutilisable par toute page posant `id="<barId>"` sur sa barre
+// d'action et, optionnellement, `id="<espaceId>"` sur un div vide juste
+// après (pour ne pas laisser un trou une fois la barre sortie du flux) —
+// voir actes_vente.html, pharma_vente.html.
+function activerBarreActionCollante(barId, espaceId) {
+    const bar = document.getElementById(barId);
+    if (!bar) return;
+    const espace = espaceId ? document.getElementById(espaceId) : null;
+
+    document.body.appendChild(bar);
+    bar.style.position = 'fixed';
+    bar.style.bottom = '0';
+    bar.style.zIndex = '1030';
+
+    function synchroniser() {
+        const mainContent = document.querySelector('.main-content');
+        if (!mainContent) return;
+        const rect = mainContent.getBoundingClientRect();
+        bar.style.left = rect.left + 'px';
+        bar.style.width = rect.width + 'px';
+        if (espace) espace.style.height = bar.offsetHeight + 'px';
+    }
+
+    synchroniser();
+    window.addEventListener('resize', synchroniser);
+    // ⭐ La largeur de .main-content change en s'animant (repli/dépli du
+    // sidebar, voir toggleSidebar()) — transitionend rattrape ce cas sans
+    // dépendre du nom de la fonction qui l'a déclenché.
+    window.addEventListener('transitionend', synchroniser);
+}
+
+// ============================================
 // HORLOGE - CONSERVÉE
 // ============================================
 function updateHorloge() {
