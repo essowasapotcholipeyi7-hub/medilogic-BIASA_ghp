@@ -961,8 +961,18 @@ class CompteComptable(db.Model):
     lignes = db.relationship('LigneEcriture', backref='compte', lazy=True)
     
     def get_solde(self, date_debut=None, date_fin=None):
+        """⭐ Ne compte que les écritures VALIDÉES (statut='valide') — corrigé
+        car c'était le seul endroit du module comptable à ne pas filtrer le
+        statut (generer_balance/generer_journal/generer_grand_livre le font
+        déjà). Sans ce filtre, une écriture brouillon/en attente/refusée
+        faussait la trésorerie, le chiffre d'affaires, le solde du plan
+        comptable ET le rapprochement bancaire — 4 endroits qui utilisent
+        cette méthode — ce qui rendait les totaux du tableau de bord
+        incohérents entre eux (repéré par le patron : "mes calculs ne
+        tombent pas")."""
         query = db.session.query(db.func.sum(LigneEcriture.debit - LigneEcriture.credit)).filter(
-            LigneEcriture.compte_id == self.id
+            LigneEcriture.compte_id == self.id,
+            LigneEcriture.ecriture.has(EcritureComptable.statut == 'valide'),
         )
         if date_debut:
             query = query.filter(LigneEcriture.ecriture.has(EcritureComptable.date_ecriture >= date_debut))

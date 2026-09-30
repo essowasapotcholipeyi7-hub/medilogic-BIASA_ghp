@@ -156,13 +156,22 @@ def api_dashboard_stats():
     total_ecritures = EcritureComptable.query.filter_by(structure_id=structure_id).count()
     en_attente = EcritureComptable.query.filter_by(structure_id=structure_id, statut='en_attente').count()
     validees = EcritureComptable.query.filter_by(structure_id=structure_id, statut='valide').count()
-    
+
+    # ⭐ total_debit/total_credit/solde ne comptent que les écritures
+    # VALIDÉES — comme CompteComptable.get_solde() (models.py) et toutes
+    # les autres agrégations du module (generer_balance, répartition par
+    # journal, créances par assureur). Avant ce correctif, une écriture
+    # brouillon/en attente/refusée faussait la "masse comptable" du
+    # tableau de bord sans qu'aucune autre carte ne la compte — les
+    # totaux ne pouvaient jamais se recouper.
     total_debit = db.session.query(db.func.sum(LigneEcriture.debit)).filter(
-        LigneEcriture.ecriture.has(EcritureComptable.structure_id == structure_id)
+        LigneEcriture.ecriture.has(EcritureComptable.structure_id == structure_id),
+        LigneEcriture.ecriture.has(EcritureComptable.statut == 'valide'),
     ).scalar() or 0
-    
+
     total_credit = db.session.query(db.func.sum(LigneEcriture.credit)).filter(
-        LigneEcriture.ecriture.has(EcritureComptable.structure_id == structure_id)
+        LigneEcriture.ecriture.has(EcritureComptable.structure_id == structure_id),
+        LigneEcriture.ecriture.has(EcritureComptable.statut == 'valide'),
     ).scalar() or 0
     
     return jsonify({
