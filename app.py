@@ -166,18 +166,6 @@ app.jinja_env.globals['statut_abonnement_pour'] = statut_abonnement
 app.jinja_env.globals['MODULES_STRUCTURE'] = MODULES_STRUCTURE
 app.jinja_env.globals['MOYENS_PAIEMENT_LABELS'] = MOYENS_PAIEMENT_LABELS
 
-# ⭐ Bascule hors-ligne Neon <-> Postgres local (inactif si DATABASE_URL_LOCAL
-# n'est pas définie dans l'environnement — voir utils/db_failover.py)
-from utils import db_failover
-with app.app_context():
-    db_failover.register_events(db)
-    if db_failover.FAILOVER_ENABLED:
-        try:
-            db.create_all(bind_key='local')  # crée sync_state/sync_changelog si absentes
-        except Exception as _e:
-            print(f"⚠️ Bascule hors-ligne : impossible de préparer la base locale ({_e})")
-db_failover.start_watchdog(app)
-
 # ⭐ Importer le blueprint RH
 from routes.rh import rh_bp
 app.register_blueprint(rh_bp)
@@ -678,47 +666,6 @@ def prochain_numero_local(table, structure_id):
     return result[0]['next_num'] if result else 1
 
 
-@app.route('/api/sync/status')
-def api_sync_status():
-    """État de la bascule Neon/local — interrogé par la bannière de base.html."""
-    if not db_failover.FAILOVER_ENABLED:
-        return jsonify({'enabled': False}), 200
-    if 'user_id' not in session and 'structure_id' not in session:
-        return jsonify({'enabled': False}), 200
-    try:
-        return jsonify(db_failover.get_status())
-    except Exception as e:
-        return jsonify({'enabled': False, 'erreur': str(e)}), 200
-
-
-@app.route('/api/sync/forcer', methods=['POST'])
-@admin_required
-def api_sync_forcer():
-    """Force une synchronisation immédiate (admin) — utile pour vérifier
-    manuellement au lieu d'attendre le prochain passage du watchdog."""
-    if not db_failover.FAILOVER_ENABLED:
-        return jsonify({'success': False, 'message': "Bascule hors-ligne non configurée sur cette machine"}), 400
-    if db_failover.OFFLINE_STATE.is_offline:
-        if not db_failover.is_neon_reachable():
-            return jsonify({'success': False, 'message': 'Neon toujours injoignable'}), 200
-        ok = db_failover.push_sync_to_neon() and db_failover.pull_refresh_from_neon()
-        if ok:
-            db_failover.OFFLINE_STATE.is_offline = False
-            from models import SyncState
-            etat = SyncState.get_ou_creer()
-            etat.mode = 'online'
-            db.session.commit()
-        return jsonify({'success': ok, 'message': 'Synchronisé, retour en mode normal' if ok else 'Echec de la synchronisation, voir logs serveur'})
-    else:
-        ok = db_failover.pull_refresh_from_neon()
-        try:
-            from utils import sheets_mirror
-            sheets_mirror.sync_all()
-        except Exception:
-            pass
-        return jsonify({'success': ok, 'message': 'Mirroir local rafraîchi depuis Neon (+ Google Sheets)' if ok else 'Echec du rafraîchissement'})
-
-
 @app.route('/guide')
 @login_required
 def guide_utilisation():
@@ -911,12 +858,9 @@ def health():
     lors de l'incident du 2026-09-28, côté GHP : pool de connexions
     Postgres empoisonné par un thread d'arrière-plan, corrigé le même
     jour). Fait une vraie requête DB (pas juste "le process répond") pour
-    attraper exactement ce genre de panne — voir utils/db_failover.py et
-    utils/sheets_mirror.py pour le correctif des rollbacks manquants qui en
-    était la cause. Volontairement PAS d'appel Google Sheets ici : coûterait
-    du quota API à chaque ping du monitoring, pour un signal moins
-    pertinent que la DB (Sheets a déjà son propre repli local en cas de
-    panne, voir utils/sheets_mirror.py)."""
+    attraper exactement ce genre de panne. Volontairement PAS d'appel
+    Google Sheets ici : coûterait du quota API à chaque ping du
+    monitoring, pour un signal moins pertinent que la DB."""
     try:
         db.session.execute(db.text('SELECT 1'))
         db.session.rollback()
@@ -954,29 +898,7 @@ def index():
             all_worksheets = spreadsheet.worksheets()
         except Exception as e:
             print(f"❌ Erreur accès Google Sheets: {e}")
-            # ⭐ Google Sheets injoignable (coupure) : on tente une connexion
-            # via le miroir local — voir utils/sheets_mirror.py
-            try:
-                from utils.sheets_mirror import tenter_connexion_hors_ligne
-                infos = tenter_connexion_hors_ligne(email, hash_password(password))
-            except Exception:
-                infos = None
-            if infos:
-                session.permanent = se_souvenir
-                session['user_id'] = infos['user_id']
-                session['user_name'] = infos['user_name']
-                session['structure_id'] = infos['structure_id']
-                session['structure_nom'] = infos['structure_nom']
-                session['structure_email'] = infos['structure_email']
-                session['structure_logo'] = infos.get('structure_logo', '')
-                session['structure_telephone'] = infos['structure_telephone']
-                session['role'] = infos['role']
-                session['is_admin'] = infos['is_admin']
-                session['type_compte'] = 'structure' if infos['is_admin'] else 'user'
-                _reinitialiser_medecin_du_jour_connexion(infos['structure_id'])
-                flash(f"Bienvenue {infos['user_name']} (mode hors-ligne — Google Sheets injoignable)", 'warning')
-                return redirect(url_for('dashboard'))
-            flash('Connexion à Google Sheets impossible, et aucun compte hors-ligne correspondant trouvé.', 'danger')
+            flash('Connexion à Google Sheets impossible pour le moment. Réessayez dans un instant.', 'danger')
             return redirect(url_for('index'))
         
         user_trouve = False

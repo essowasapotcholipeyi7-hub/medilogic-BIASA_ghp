@@ -405,31 +405,6 @@ class SheetsHelper:
             return data
         except Exception as e:
             print(f"⚠️ Feuille {sheet_name} non trouvée: {e}")
-            # ⭐ Repli sur le miroir local (Postgres) si Sheets est injoignable
-            # ou si la feuille est momentanément inaccessible — voir
-            # utils/sheets_mirror.py. Inoffensif si le miroir n'est pas
-            # configuré sur cette machine (retombe sur [] comme avant).
-            #
-            # Important : on extrait le structure_id du NOM DE LA FEUILLE
-            # (sheet_name), pas de self.structure_id — ce dernier est un état
-            # partagé sur l'instance unique sheets_helper et peut changer
-            # entre-temps (une requête web pour une autre structure, pendant
-            # que le thread de fond synchronise) : le lire ici mélangerait
-            # les données de structures différentes.
-            try:
-                from utils.sheets_mirror import get_mirrored_records, get_all_mirrored_structures
-                if use_prefix:
-                    m = re.match(r'^struct_(\d+)_', sheet_name)
-                    mirror_data = get_mirrored_records(int(m.group(1)), base_name) if m else []
-                elif base_name == 'structures':
-                    mirror_data = get_all_mirrored_structures()
-                else:
-                    mirror_data = []
-                if mirror_data:
-                    print(f"↩️ Repli miroir local pour {sheet_name} ({len(mirror_data)} ligne(s))")
-                    return mirror_data
-            except Exception:
-                pass
             return []
 
     def get_all_records_with_headers(self, base_name, use_prefix=True, force_refresh=False):

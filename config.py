@@ -64,12 +64,6 @@ class Config:
         'pool_recycle': 280,
     }
 
-    # ⭐ Bascule hors-ligne (voir utils/db_failover.py) : n'existe que si
-    # DATABASE_URL_LOCAL est définie (jamais le cas sur Render) — sinon
-    # aucun changement de comportement.
-    _DATABASE_URL_LOCAL = _url_postgres_pour_sqlalchemy(os.getenv('DATABASE_URL_LOCAL'))
-    SQLALCHEMY_BINDS = {'local': _DATABASE_URL_LOCAL} if _DATABASE_URL_LOCAL else {}
-    
     # ⭐ Google Sheets
     SPREADSHEET_ID = os.getenv('SPREADSHEET_ID', '1yLVp-zwjCFhYx5VZVZN1HXRRgYEyak8kiHHtwWpkLEE')
     

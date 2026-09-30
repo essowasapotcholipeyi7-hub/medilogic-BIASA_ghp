@@ -25,20 +25,6 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-        /* ⭐ FIX : #offlineBanner porte aussi la classe utilitaire Bootstrap
-           .d-flex (display:flex !important) pour sa mise en page interne.
-           Le navigateur cache normalement un élément [hidden] via une règle
-           UA "display:none" — mais celle-ci n'est PAS !important, donc le
-           !important de .d-flex gagnait toujours et la bannière restait
-           visible en permanence, quoi que fasse le JS (qui ne fait
-           qu'ajouter/retirer l'attribut hidden). D'où le bandeau "Mode
-           hors-ligne" affiché en continu même quand tout était en ligne.
-           Cette règle, plus spécifique (#id[hidden]) et elle aussi
-           !important, reprend la main quand hidden est présent. */
-        #offlineBanner[hidden] {
-            display: none !important;
-        }
-
         /* ============================================
            BASE - CONSERVÉE
            ============================================ */
@@ -1925,40 +1911,6 @@
     transform-origin: top center;
 }
 
-/* ⭐ Indicateur "connecté" — pulsation violette chic à côté de l'horloge,
-   voir verifierEtatSynchro() (JS) pour ce qui pilote .offline. Le halo qui
-   se dilate en s'effaçant (::after) donne l'effet "battement" plutôt qu'un
-   clignotement brut, moins fatigant à l'œil en continu toute la journée. */
-.statut-connexion-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #4C2A85;
-    display: inline-block;
-    position: relative;
-    flex-shrink: 0;
-}
-.statut-connexion-dot::after {
-    content: '';
-    position: absolute;
-    inset: -6px;
-    border-radius: 50%;
-    border: 1.5px solid #4C2A85;
-    opacity: 0.65;
-    animation: statutConnexionPulse 1.8s ease-out infinite;
-}
-@keyframes statutConnexionPulse {
-    0%   { transform: scale(0.5); opacity: 0.65; }
-    70%  { transform: scale(1.8); opacity: 0; }
-    100% { transform: scale(1.8); opacity: 0; }
-}
-.statut-connexion-dot.hors-ligne {
-    background: #9AA3AB;
-}
-.statut-connexion-dot.hors-ligne::after {
-    display: none;
-}
-
     </style>
     {% block extra_css %}{% endblock %}
 </head>
@@ -2161,7 +2113,6 @@
                      "..." — le bouton tient TOUJOURS dans la navbar, et le
                      nom complet reste lisible via l'infobulle (title). -->
                 <button class="btn btn-light rounded-pill dropdown-toggle d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown" title="{{ session.user_name|default('Utilisateur') }}">
-                    <span class="statut-connexion-dot" id="statutConnexionDot" title="Connecté au serveur principal"></span>
                     <i class="fas fa-user-circle"></i>
                     <span class="user-name-text">{{ session.user_name|default('Utilisateur') }}</span>
                 </button>
@@ -2700,17 +2651,6 @@
         </div>
         {% endif %}
 
-        <!-- ===== BANNIÈRE MODE HORS-LIGNE (bascule Neon <-> local) ===== -->
-        <div id="offlineBanner" class="alert alert-warning d-flex align-items-center justify-content-between shadow-sm mb-2" role="alert" hidden>
-            <span><i class="fas fa-plug-circle-xmark me-2"></i><span id="offlineBannerText">Mode hors-ligne — travail en cours sur la base locale.</span></span>
-            <span class="d-flex align-items-center gap-2">
-                <span id="offlineBannerPending" class="badge bg-warning text-dark"></span>
-                {% if session.get('is_admin') %}
-                <button type="button" class="btn btn-sm btn-outline-dark" onclick="forcerSynchro()"><i class="fas fa-sync"></i> Forcer la synchro</button>
-                {% endif %}
-            </span>
-        </div>
-
         <!-- ===== FLASH MESSAGES ===== -->
         <div class="container-fluid px-0">
             {% with messages = get_flashed_messages(with_categories=true) %}
@@ -2883,65 +2823,6 @@ function updateHorloge() {
     
 setInterval(updateHorloge, 1000);
 updateHorloge();
-
-// ============================================
-// BASCULE HORS-LIGNE — bannière Neon <-> local
-// ============================================
-let syncPollingActif = null;
-
-// ⭐ Pilote le petit point pulsant à côté de l'horloge (desktop + mobile) —
-// violet et animé tant que la connexion au serveur principal est confirmée,
-// gris et statique dès qu'on bascule sur la copie locale (voir CSS
-// .statut-connexion-dot). Un seul point de vérité pour les deux variantes
-// (desktop/mobile) appelées depuis les 3 issues possibles de la requête
-// ci-dessous (ok / bascule non configurée / requête en échec).
-function mettreAJourStatutConnexionDot(horsLigne) {
-    document.querySelectorAll('.statut-connexion-dot').forEach(dot => {
-        dot.classList.toggle('hors-ligne', horsLigne);
-        dot.title = horsLigne ? 'Hors-ligne — travail sur la copie locale' : 'Connecté au serveur principal';
-    });
-}
-
-function verifierEtatSynchro() {
-    fetch('/api/sync/status').then(r => r.ok ? r.json() : null).then(etat => {
-        if (!etat || !etat.enabled) {
-            // Bascule non configurée sur ce serveur (ex: Render, sans base
-            // locale de secours) : inutile de re-sonder toutes les 15s.
-            // La requête elle-même a réussi -> bien connecté au serveur.
-            mettreAJourStatutConnexionDot(false);
-            if (syncPollingActif) { clearInterval(syncPollingActif); syncPollingActif = null; }
-            return;
-        }
-        const banniere = document.getElementById('offlineBanner');
-        const texte = document.getElementById('offlineBannerText');
-        const badge = document.getElementById('offlineBannerPending');
-        mettreAJourStatutConnexionDot(etat.is_offline);
-        if (etat.is_offline) {
-            banniere.hidden = false;
-            texte.textContent = "Mode hors-ligne — connexion au serveur principal indisponible, vous travaillez sur la copie locale. La synchronisation se fera automatiquement au retour de la connexion.";
-            badge.textContent = etat.changements_en_attente + ' en attente';
-        } else if (etat.changements_en_attente > 0) {
-            banniere.hidden = false;
-            texte.textContent = "Synchronisation en cours avec le serveur principal...";
-            badge.textContent = etat.changements_en_attente + ' en attente';
-        } else {
-            banniere.hidden = true;
-        }
-    }).catch(() => {
-        // La requête de vérification elle-même a échoué -> signal fiable
-        // que la connexion au serveur principal a un problème.
-        mettreAJourStatutConnexionDot(true);
-    });
-}
-verifierEtatSynchro();
-syncPollingActif = setInterval(verifierEtatSynchro, 15000);
-
-function forcerSynchro() {
-    fetch('/api/sync/forcer', {method: 'POST'})
-        .then(r => r.json())
-        .then(res => { alert(res.message || (res.success ? 'OK' : 'Echec')); verifierEtatSynchro(); })
-        .catch(() => alert('Erreur réseau lors de la synchronisation.'));
-}
 
 // Stocker les infos de la structure
 {% if session.structure_nom %}

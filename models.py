@@ -1,12 +1,8 @@
 # models.py - GHP
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, date, time, timedelta
-from utils.db_failover import FailoverSession
 # ⭐ Créer db pour les modèles
-# session_options : voir utils/db_failover.py — route chaque requête vers
-# Neon ou le Postgres local selon l'état de la bascule (inactif si
-# DATABASE_URL_LOCAL n'est pas définie, donc aucun changement sur Render).
-db = SQLAlchemy(session_options={'class_': FailoverSession})
+db = SQLAlchemy()
 
 # ============================================================
 # STRUCTURE
@@ -4033,75 +4029,6 @@ class Paie(db.Model):
         mois_noms = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
                      'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
         return f"{mois_noms[self.mois]} {self.annee}"
-
-
-# ============================================================================
-# BASCULE HORS-LIGNE — synchronisation base locale <-> Neon (voir utils/db_failover.py)
-# __bind_key__ = 'local' : ces 2 tables ne vivent QUE sur Postgres local,
-# jamais sur Neon (Neon n'a pas ce bind). Elles ne sont donc jamais écrasées
-# par un rapatriement (pg_restore) des données de Neon vers le local.
-# ============================================================================
-
-class SyncState(db.Model):
-    """État courant de la bascule (une seule ligne, id=1)."""
-    __tablename__ = 'sync_state'
-    __bind_key__ = 'local'
-
-    id = db.Column(db.Integer, primary_key=True)
-    mode = db.Column(db.String(10), default='online')  # 'online' (Neon) | 'offline' (local)
-    derniere_bascule_offline = db.Column(db.DateTime)
-    dernier_sync_reussi = db.Column(db.DateTime)
-    derniere_erreur_sync = db.Column(db.Text)
-    derniere_erreur_sync_at = db.Column(db.DateTime)
-    dernier_sync_sheets = db.Column(db.DateTime)  # dernier rafraîchissement du miroir Google Sheets
-
-    @classmethod
-    def get_ou_creer(cls):
-        etat = cls.query.get(1)
-        if not etat:
-            etat = cls(id=1, mode='online')
-            db.session.add(etat)
-            db.session.commit()
-        return etat
-
-
-class SyncChangelog(db.Model):
-    """Journal des écritures faites en local pendant une coupure Neon,
-    à rejouer vers Neon dès que la connexion revient."""
-    __tablename__ = 'sync_changelog'
-    __bind_key__ = 'local'
-
-    id = db.Column(db.Integer, primary_key=True)
-    table_name = db.Column(db.String(100), nullable=False)
-    operation = db.Column(db.String(10), nullable=False)  # insert | update | delete
-    pk_value = db.Column(db.Integer, nullable=False)
-    payload = db.Column(db.JSON)  # snapshot complet de la ligne (insert/update) ; null pour delete
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    synced = db.Column(db.Boolean, default=False)
-    synced_at = db.Column(db.DateTime)
-
-
-class SheetsMirror(db.Model):
-    """Miroir local, en LECTURE SEULE, de certaines feuilles Google Sheets
-    (actes, produits/médicaments, users, lunettes — par structure — et la
-    feuille globale 'structures'). Permet à l'appli (y compris la connexion)
-    de continuer à fonctionner quand Google Sheets est injoignable.
-    Alimenté par utils/sheets_mirror.py — ne jamais modifier à la main,
-    ce n'est pas la source de vérité (contrairement à sync_changelog qui,
-    lui, part du local vers Neon)."""
-    __tablename__ = 'sheets_mirror'
-    __bind_key__ = 'local'
-
-    id = db.Column(db.Integer, primary_key=True)
-    structure_id = db.Column(db.Integer, nullable=False)
-    sheet_type = db.Column(db.String(30), nullable=False)  # actes | produits | users | lunettes | structures
-    row_key = db.Column(db.String(50), nullable=False)     # colonne "ID" de la feuille
-    data = db.Column(db.JSON, nullable=False)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    __table_args__ = (
-        db.UniqueConstraint('structure_id', 'sheet_type', 'row_key', name='uq_sheets_mirror_row'),
-    )
 
 
 # ============================================================================
