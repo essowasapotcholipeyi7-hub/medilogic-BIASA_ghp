@@ -3,28 +3,56 @@
 {% block title %}Gestion des Ressources Humaines{% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&display=swap">
 <style>
+    /* ⭐ Patron : "l'autre session améliore le design de la comptabilité,
+       fait le même design ici pour harmoniser" — mêmes tokens (mêmes noms,
+       mêmes valeurs) que .compta-shell (templates/comptabilite/index.html,
+       en cours de refonte au moment de ce commit) : palette navy/émeraude/
+       ambre + polices Space Grotesk (titres/valeurs) et Source Sans 3
+       (corps), scopés à .rh-shell pour ne jamais changer le reste de
+       l'appli — uniquement ce module. */
+    .rh-shell {
+        --navy-900:#082B41;--navy-800:#0A3D5C;--navy-700:#114A6E;--navy-600:#175E86;--navy-50:#EEF3F5;
+        --emerald-700:#0B7C52;--emerald-600:#0E9D67;--emerald-50:#E7F6EE;
+        --amber-700:#92400E;--amber-600:#B45309;--amber-50:#FCEEE0;
+        --slate-600:#51636D;--slate-400:#93A2AA;--border:#E3E8EC;--bg:#F5F7F8;--bg-200:#EDF1F2;
+        --font-display:'Space Grotesk',Arial,sans-serif;--font-body:'Source Sans 3',Arial,sans-serif;
+        font-family: var(--font-body);
+    }
+    .rh-shell h1, .rh-shell h2, .rh-shell h3, .rh-shell h5, .rh-shell h6,
+    .rh-shell .rh-kpi-value {
+        font-family: var(--font-display);
+    }
     /* Styles RH */
+    /* ⭐ flex-wrap + row-gap : avec 9 onglets désormais tous visibles (patron :
+       "affiche plus d'onglets parce qu'il y a encore de l'espace"), la barre
+       passe proprement à la ligne sur les écrans plus étroits au lieu de
+       déborder. */
+    .rh-tabs {
+        flex-wrap: wrap;
+        row-gap: 6px;
+    }
     .rh-tabs .nav-link {
-        border-radius: 12px 12px 0 0;
-        padding: 10px 20px;
+        border-radius: 10px 10px 0 0;
+        padding: 8px 16px;
         margin-right: 4px;
         font-weight: 600;
         transition: all 0.3s ease;
         border: none;
-        color: #495057;
-        background: #f8f9fa;
+        color: var(--slate-600);
+        background: var(--bg);
     }
-    
+
     .rh-tabs .nav-link.active {
-        background: linear-gradient(135deg, #667eea, #764ba2);
+        background: var(--navy-800);
         color: white;
         border: none;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        box-shadow: none;
     }
-    
+
     .rh-tabs .nav-link:hover:not(.active) {
-        background: #e9ecef;
+        background: var(--navy-50);
         transform: translateY(-2px);
     }
     
@@ -48,41 +76,55 @@
     
     /* Tableaux */
     .table-rh th {
-        background: #f8f9fa;
-        border-bottom: 2px solid #dee2e6;
+        background: var(--bg);
+        border-bottom: 2px solid var(--border);
         font-weight: 600;
         font-size: 13px;
         white-space: nowrap;
+        color: var(--navy-900);
     }
-    
+
     .table-rh td {
         vertical-align: middle;
         font-size: 13px;
     }
-    
-    /* Cards Dashboard */
-    .stat-card {
-        border-radius: 12px;
+
+    .table-rh tbody tr:nth-child(even) {
+        background: var(--bg-200);
+    }
+
+    /* ⭐ KPI tableau de bord — cartes bordées neutres (même traitement que
+       les tuiles KPI de compta-shell) plutôt que des blocs pleine couleur
+       bg-primary/success/warning/danger : seule l'icône porte l'accent. */
+    .rh-kpi-card {
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: white;
         padding: 20px;
         text-align: center;
-        transition: transform 0.3s ease;
-        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
-    
-    .stat-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+
+    .rh-kpi-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 30px rgba(8,43,65,0.08);
     }
-    
-    .stat-card .number {
-        font-size: 32px;
+
+    .rh-kpi-card .rh-kpi-icon {
+        font-size: 20px;
+        margin-bottom: 8px;
+    }
+
+    .rh-kpi-card .rh-kpi-value {
+        font-size: 1.7rem;
         font-weight: 700;
+        color: var(--navy-900);
     }
-    
-    .stat-card .label {
-        font-size: 14px;
-        opacity: 0.8;
-        margin-top: 5px;
+
+    .rh-kpi-card .rh-kpi-label {
+        font-size: 12px;
+        color: var(--slate-600);
+        margin-top: 4px;
     }
 
     .btn-loading {
@@ -101,10 +143,18 @@
 
 {% block content %}
 
-        <!-- Contenu principal -->
-        <div class="col-md-10 col-lg-10">
-            <div class="card shadow-sm">
-                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <!-- ⭐ Patron : "le tableau est retracté vers la gauche, corrige
+                 pour que ça cadre bien avec le contenant" — cette carte était
+                 enveloppée dans un div col-md-10/col-lg-10 orphelin (aucun
+                 .row ni .col-md-2 parent, jamais eu de "sidebar" — le bloc
+                 content de base.html n'ouvre aucun wrapper englobant).
+                 Bootstrap applique quand même width:83.33% à ce col-*, d'où
+                 la carte entière décalée à gauche avec un vide à droite —
+                 contrairement à comptabilite/index.html, admin_finances.html,
+                 statistiques_ventes.html, qui n'ont pas ce wrapper et
+                 occupent toute la largeur. -->
+            <div class="card shadow-sm rh-shell">
+                <div class="card-header d-flex justify-content-between align-items-center" style="background:var(--navy-900);color:white;">
                     <h5 class="mb-0">
                         <i class="fas fa-users-cog me-2"></i> Gestion des Ressources Humaines
                     </h5>
@@ -120,7 +170,13 @@
                 <div class="card-body">
                     
                     <!-- ========================================= -->
-                    <!-- ONGLETS RH - CORRIGÉS                      -->
+                    <!-- ONGLETS RH — patron : "affiche plus d'onglets parce
+                         qu'il y a encore de l'espace" — Permissions/Services/
+                         Organigramme/Paie/Déclarations vivaient tous dans un
+                         menu "Plus", alors que rien ne les y obligeait (voir
+                         .rh-tabs plus bas : aucune limite de largeur/nombre).
+                         Tous visibles directement désormais ; nav-tabs passe
+                         à la ligne tout seul (flex-wrap) sur petit écran. -->
                     <!-- ========================================= -->
                     <ul class="nav nav-tabs rh-tabs" id="rhTabs" role="tablist">
                         <li class="nav-item">
@@ -153,40 +209,34 @@
                                 <span class="badge bg-warning text-dark ms-1" id="badgeCongesAttente">0</span>
                             </button>
                         </li>
-                        <li class="nav-item dropdown">
-                            <button class="nav-link dropdown-toggle" id="rhPlus-tab" data-bs-toggle="dropdown" type="button" aria-expanded="false">
-                                <i class="fas fa-ellipsis"></i> Plus
+                        <li class="nav-item">
+                            <button class="nav-link" id="permissions-tab"
+                                    data-bs-toggle="tab" data-bs-target="#permissions"
+                                    type="button" role="tab">
+                                <i class="fas fa-door-open me-1"></i> Permissions
                             </button>
-                            <ul class="dropdown-menu" aria-labelledby="rhPlus-tab">
-                                <li>
-                                    <button class="dropdown-item" id="permissions-tab"
-                                            data-bs-toggle="tab" data-bs-target="#permissions" type="button" role="tab">
-                                        <i class="fas fa-door-open me-2"></i>Permissions
-                                    </button>
-                                </li>
-                                <li>
-                                    <button class="dropdown-item" id="services-tab"
-                                            data-bs-toggle="tab" data-bs-target="#services" type="button" role="tab">
-                                        <i class="fas fa-building me-2"></i>Services
-                                    </button>
-                                </li>
-                                <li>
-                                    <a class="dropdown-item" href="{{ url_for('rh.page_organigramme') }}">
-                                        <i class="fas fa-sitemap me-2"></i>Organigramme
-                                    </a>
-                                </li>
-                                <li><hr class="dropdown-divider"></li>
-                                <li>
-                                    <a class="dropdown-item" href="{{ url_for('rh.page_paie') }}">
-                                        <i class="fas fa-money-check-dollar me-2"></i>Paie (salaires)
-                                    </a>
-                                </li>
-                                <li>
-                                    <a class="dropdown-item" href="{{ url_for('rh.page_declarations') }}">
-                                        <i class="fas fa-file-invoice me-2"></i>Déclarations mensuelles
-                                    </a>
-                                </li>
-                            </ul>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link" id="services-tab"
+                                    data-bs-toggle="tab" data-bs-target="#services"
+                                    type="button" role="tab">
+                                <i class="fas fa-building me-1"></i> Services
+                            </button>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('rh.page_organigramme') }}">
+                                <i class="fas fa-sitemap me-1"></i> Organigramme
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('rh.page_paie') }}">
+                                <i class="fas fa-money-check-dollar me-1"></i> Paie
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('rh.page_declarations') }}">
+                                <i class="fas fa-file-invoice me-1"></i> Déclarations
+                            </a>
                         </li>
                     </ul>
 
@@ -235,7 +285,7 @@
                                 <div>
                                     <button class="btn btn-success btn-sm" id="btnNouvelEmploye" onclick="ouvrirAjoutEmploye()">
                                         <i class="fas fa-user-plus me-1"></i> Nouvel employé
-                                    </button>>
+                                    </button>
                                     <button class="btn btn-outline-secondary btn-sm" onclick="mettreAJourStatuts()">
                                         <i class="fas fa-sync me-1"></i> MàJ statuts
                                     </button>
@@ -638,34 +688,38 @@
                             <!-- Statistiques -->
                             <div class="row g-3 mb-4">
                                 <div class="col-md-3 col-6">
-                                    <div class="stat-card bg-primary text-white">
-                                        <div class="number" id="statTotalEmployes">0</div>
-                                        <div class="label">Total employés</div>
+                                    <div class="rh-kpi-card">
+                                        <div class="rh-kpi-icon" style="color:var(--navy-700);"><i class="fas fa-users"></i></div>
+                                        <div class="rh-kpi-value" id="statTotalEmployes">0</div>
+                                        <div class="rh-kpi-label">Total employés</div>
                                     </div>
                                 </div>
                                 <div class="col-md-3 col-6">
-                                    <div class="stat-card bg-success text-white">
-                                        <div class="number" id="statActifs">0</div>
-                                        <div class="label">Actifs</div>
+                                    <div class="rh-kpi-card">
+                                        <div class="rh-kpi-icon" style="color:var(--emerald-600);"><i class="fas fa-user-check"></i></div>
+                                        <div class="rh-kpi-value" id="statActifs">0</div>
+                                        <div class="rh-kpi-label">Actifs</div>
                                     </div>
                                 </div>
                                 <div class="col-md-3 col-6">
-                                    <div class="stat-card bg-warning text-dark">
-                                        <div class="number" id="statEnConge">0</div>
-                                        <div class="label">En congé</div>
+                                    <div class="rh-kpi-card">
+                                        <div class="rh-kpi-icon" style="color:var(--amber-600);"><i class="fas fa-umbrella-beach"></i></div>
+                                        <div class="rh-kpi-value" id="statEnConge">0</div>
+                                        <div class="rh-kpi-label">En congé</div>
                                     </div>
                                 </div>
                                 <div class="col-md-3 col-6">
-                                    <div class="stat-card bg-danger text-white">
-                                        <div class="number" id="statDemandesAttente">0</div>
-                                        <div class="label">Demandes en attente</div>
+                                    <div class="rh-kpi-card">
+                                        <div class="rh-kpi-icon" style="color:var(--amber-700);"><i class="fas fa-hourglass-half"></i></div>
+                                        <div class="rh-kpi-value" id="statDemandesAttente">0</div>
+                                        <div class="rh-kpi-label">Demandes en attente</div>
                                     </div>
                                 </div>
                             </div>
 
                             <!-- Alertes -->
-                            <div class="card">
-                                <div class="card-header bg-warning">
+                            <div class="card" style="border:1px solid var(--border);border-radius:16px;overflow:hidden;">
+                                <div class="card-header" style="background:var(--amber-600);color:white;border:none;">
                                     <i class="fas fa-bell me-2"></i> Alertes et notifications
                                 </div>
                                 <div class="card-body" id="alertesRH">
@@ -674,26 +728,26 @@
                                     </div>
                                 </div>
                             </div>
-                            
+
                             <!-- Graphiques (placeholder) -->
                             <div class="row mt-4">
                                 <div class="col-md-6">
-                                    <div class="card">
-                                        <div class="card-header bg-light">
-                                            <small><i class="fas fa-chart-bar me-1"></i> Répartition par service</small>
-                                        </div>
-                                        <div class="card-body text-center text-muted" style="height:200px;">
-                                            <canvas id="chartServices" style="max-height:180px;"></canvas>
+                                    <div class="card h-100" style="border:1px solid var(--border);border-radius:16px;">
+                                        <div class="card-body">
+                                            <div class="small fw-semibold mb-2" style="color:var(--slate-600);"><i class="fas fa-chart-bar me-1"></i> Répartition par service</div>
+                                            <div class="text-center text-muted" style="height:180px;">
+                                                <canvas id="chartServices" style="max-height:180px;"></canvas>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
-                                    <div class="card">
-                                        <div class="card-header bg-light">
-                                            <small><i class="fas fa-chart-line me-1"></i> Évolution des congés</small>
-                                        </div>
-                                        <div class="card-body text-center text-muted" style="height:200px;">
-                                            <canvas id="chartConges" style="max-height:180px;"></canvas>
+                                    <div class="card h-100" style="border:1px solid var(--border);border-radius:16px;">
+                                        <div class="card-body">
+                                            <div class="small fw-semibold mb-2" style="color:var(--slate-600);"><i class="fas fa-chart-line me-1"></i> Évolution des congés</div>
+                                            <div class="text-center text-muted" style="height:180px;">
+                                                <canvas id="chartConges" style="max-height:180px;"></canvas>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -703,9 +757,6 @@
                     </div> <!-- Fin tab-content -->
                 </div> <!-- Fin card-body -->
             </div> <!-- Fin card -->
-        </div> <!-- Fin col -->
-    </div> <!-- Fin row -->
-</div> <!-- Fin container-fluid -->
 
 <!-- ============================================================ -->
 <!-- MODALS                                                       -->
