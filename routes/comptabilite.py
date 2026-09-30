@@ -151,11 +151,26 @@ def index():
 
 @compta_bp.route('/api/dashboard/stats')
 def api_dashboard_stats():
+    """⭐ date_debut/date_fin (optionnels) scopent les CHIFFRES DE FLUX
+    (nombre d'écritures, masse comptable) sur la période choisie — voir
+    le tableau de bord, sélecteur de période. `en_attente` reste
+    volontairement NON filtré : c'est un indicateur opérationnel ("qu'est-
+    ce qui attend une action MAINTENANT"), pas une statistique
+    historique — le filtrer ferait croire à tort que rien n'attend
+    quand on consulte un exercice passé."""
     structure_id = session.get('structure_id')
-    
-    total_ecritures = EcritureComptable.query.filter_by(structure_id=structure_id).count()
+    date_debut = request.args.get('date_debut')
+    date_fin = request.args.get('date_fin')
+
+    q_ecritures = EcritureComptable.query.filter_by(structure_id=structure_id)
+    if date_debut:
+        q_ecritures = q_ecritures.filter(EcritureComptable.date_ecriture >= date_debut)
+    if date_fin:
+        q_ecritures = q_ecritures.filter(EcritureComptable.date_ecriture <= date_fin)
+
+    total_ecritures = q_ecritures.count()
     en_attente = EcritureComptable.query.filter_by(structure_id=structure_id, statut='en_attente').count()
-    validees = EcritureComptable.query.filter_by(structure_id=structure_id, statut='valide').count()
+    validees = q_ecritures.filter(EcritureComptable.statut == 'valide').count()
 
     # ⭐ total_debit/total_credit/solde ne comptent que les écritures
     # VALIDÉES — comme CompteComptable.get_solde() (models.py) et toutes
@@ -164,16 +179,23 @@ def api_dashboard_stats():
     # brouillon/en attente/refusée faussait la "masse comptable" du
     # tableau de bord sans qu'aucune autre carte ne la compte — les
     # totaux ne pouvaient jamais se recouper.
+    conditions = [
+        EcritureComptable.structure_id == structure_id,
+        EcritureComptable.statut == 'valide',
+    ]
+    if date_debut:
+        conditions.append(EcritureComptable.date_ecriture >= date_debut)
+    if date_fin:
+        conditions.append(EcritureComptable.date_ecriture <= date_fin)
+
     total_debit = db.session.query(db.func.sum(LigneEcriture.debit)).filter(
-        LigneEcriture.ecriture.has(EcritureComptable.structure_id == structure_id),
-        LigneEcriture.ecriture.has(EcritureComptable.statut == 'valide'),
+        *[LigneEcriture.ecriture.has(c) for c in conditions]
     ).scalar() or 0
 
     total_credit = db.session.query(db.func.sum(LigneEcriture.credit)).filter(
-        LigneEcriture.ecriture.has(EcritureComptable.structure_id == structure_id),
-        LigneEcriture.ecriture.has(EcritureComptable.statut == 'valide'),
+        *[LigneEcriture.ecriture.has(c) for c in conditions]
     ).scalar() or 0
-    
+
     return jsonify({
         'total_ecritures': total_ecritures,
         'en_attente': en_attente,
@@ -1348,20 +1370,26 @@ def generer_balance(structure_id, date_debut, date_fin):
     return result
 
 
-def generer_repartition_journaux(structure_id):
+def generer_repartition_journaux(structure_id, date_debut=None, date_fin=None):
     """[{journal_code, label, nb}] — nombre d'écritures VALIDÉES par
     journal, pour la barre segmentée du tableau de bord. Même patron SQL
     agrégé que generer_balance() ci-dessus. Labels tirés de
-    EcritureComptable.JOURNAUX (models.py) — pas de libellé recopié en dur."""
+    EcritureComptable.JOURNAUX (models.py) — pas de libellé recopié en dur.
+
+    ⭐ C'est un FLUX (combien d'écritures sur la période) — les deux
+    bornes s'appliquent, contrairement à generer_creances_par_assureur()
+    juste en dessous qui est un solde (date_fin seule)."""
     from sqlalchemy import text
 
     rows = db.session.execute(text("""
         SELECT journal_code, COUNT(*) AS nb
         FROM ecritures_comptables
         WHERE structure_id = :structure_id AND statut = 'valide' AND journal_code IS NOT NULL
+          AND (:date_debut IS NULL OR date_ecriture >= :date_debut)
+          AND (:date_fin IS NULL OR date_ecriture <= :date_fin)
         GROUP BY journal_code
         ORDER BY nb DESC
-    """), {'structure_id': structure_id}).fetchall()
+    """), {'structure_id': structure_id, 'date_debut': date_debut, 'date_fin': date_fin}).fetchall()
 
     return [
         {'journal_code': row.journal_code, 'label': EcritureComptable.JOURNAUX.get(row.journal_code, row.journal_code), 'nb': row.nb}
@@ -1369,7 +1397,7 @@ def generer_repartition_journaux(structure_id):
     ]
 
 
-def generer_creances_par_assureur(structure_id):
+def generer_creances_par_assureur(structure_id, date_fin=None):
     """[{tiers_nom, montant}] — encours net (débit - crédit, un compte de
     tiers-payant à recevoir est normalement débiteur) par assureur, pour
     la carte "Créances par assureur" du tableau de bord.
@@ -1382,7 +1410,13 @@ def generer_creances_par_assureur(structure_id):
     generer_ecriture_vente() ne le remplissent pas systématiquement. Le
     compte, lui, est toujours renseigné (c'est la ligne comptable
     elle-même). Même convention de signe que get_soldes_caisses()
-    (services/comptabilite_service.py)."""
+    (services/comptabilite_service.py).
+
+    ⭐ C'est un SOLDE (combien reste dû À une date), pas un flux — donc
+    SEULE date_fin s'applique (cumul depuis toujours jusqu'à cette date,
+    même convention que get_bilan()/_soldes_comptes_a_date()) : une
+    créance née avant le début de la période choisie mais toujours
+    impayée doit continuer à apparaître, pas de date_debut ici."""
     from sqlalchemy import text
 
     rows = db.session.execute(text("""
@@ -1393,10 +1427,11 @@ def generer_creances_par_assureur(structure_id):
         JOIN ecritures_comptables e ON e.id = l.ecriture_id
         WHERE e.structure_id = :structure_id AND e.statut = 'valide'
           AND (cc.nom ILIKE '%tiers-payant%' OR cc.nom ILIKE '%assurance%')
+          AND (:date_fin IS NULL OR e.date_ecriture <= :date_fin)
         GROUP BY cc.numero, cc.nom
         HAVING SUM(l.debit) - SUM(l.credit) > 0
         ORDER BY montant DESC
-    """), {'structure_id': structure_id}).fetchall()
+    """), {'structure_id': structure_id, 'date_fin': date_fin}).fetchall()
 
     import re
     resultat = []
@@ -1409,13 +1444,16 @@ def generer_creances_par_assureur(structure_id):
 @compta_bp.route('/api/dashboard/repartition-journaux')
 def api_dashboard_repartition_journaux():
     structure_id = session.get('structure_id')
-    return jsonify(generer_repartition_journaux(structure_id))
+    date_debut = request.args.get('date_debut')
+    date_fin = request.args.get('date_fin')
+    return jsonify(generer_repartition_journaux(structure_id, date_debut, date_fin))
 
 
 @compta_bp.route('/api/dashboard/creances-assureurs')
 def api_dashboard_creances_assureurs():
     structure_id = session.get('structure_id')
-    return jsonify(generer_creances_par_assureur(structure_id))
+    date_fin = request.args.get('date_fin')
+    return jsonify(generer_creances_par_assureur(structure_id, date_fin))
 
 
 # ========== TVA (3e chantier comptable : comptes auxiliaires → lettrage → TVA) ==========

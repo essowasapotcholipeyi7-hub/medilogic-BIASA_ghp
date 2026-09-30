@@ -200,15 +200,47 @@
                              anciennes cartes en dégradé brut ET la rangée de 4
                              .stats-card — même données, même comportement de
                              clic vers les rapports filtrés, nouvelle présentation. -->
+                        <!-- ⭐ Sélecteur de période — patron : "ajoute ça et bien
+                             détaillé". Mirroring exact du sélecteur déjà utilisé
+                             dans l'onglet "Journal & Rapports" (#rapportExercice/
+                             #rapportDateDebut/#rapportDateFin, voir
+                             appliquerExerciceRapport() plus bas) : un select
+                             d'exercice peuplé par /api/rapports/exercices/liste
+                             (déjà existant, réutilisé tel quel) + deux dates
+                             éditables à la main. Voir initPeriodeDashboard()/
+                             appliquerExerciceDashboard()/rechargerTableauDeBord(). -->
+                        <div class="d-flex flex-wrap align-items-end gap-2 mb-2">
+                            <div>
+                                <label class="form-label small mb-1" style="color:var(--slate-600);">Période</label>
+                                <select class="form-control form-control-sm" id="dashboardExercice" onchange="appliquerExerciceDashboard()" style="width:auto;">
+                                    <option value="tout">Depuis toujours</option>
+                                    <option value="">Dates personnalisées</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="form-label small mb-1" style="color:var(--slate-600);">Du</label>
+                                <input type="date" class="form-control form-control-sm" id="dashboardDateDebut" style="width:auto;"
+                                       onchange="document.getElementById('dashboardExercice').value=''; rechargerTableauDeBord();">
+                            </div>
+                            <div>
+                                <label class="form-label small mb-1" style="color:var(--slate-600);">Au</label>
+                                <input type="date" class="form-control form-control-sm" id="dashboardDateFin" style="width:auto;"
+                                       onchange="document.getElementById('dashboardExercice').value=''; rechargerTableauDeBord();">
+                            </div>
+                        </div>
+
                         <!-- ⭐ Légende de convention — patron : "je dois pouvoir
                              expliquer ces cartes contenant des chiffres". Toutes
-                             les cartes du tableau de bord suivent maintenant la
-                             MÊME règle (voir CompteComptable.get_solde(),
-                             models.py, et api_dashboard_stats ci-dessus) : une
-                             seule phrase ici évite de la répéter sur chaque
-                             carte. -->
-                        <div class="small mb-2" style="color:var(--slate-400);">
-                            <i class="fas fa-circle-info"></i> Tous les montants ci-dessous ne comptent que les écritures <strong>validées</strong> (pas les brouillons/en attente/refusées), cumulées depuis la création de la structure.
+                             les cartes comptent uniquement les écritures VALIDÉES
+                             (voir CompteComptable.get_solde(), models.py, et
+                             api_dashboard_stats). Distinction flux/solde ajoutée
+                             avec le sélecteur de période : un flux (chiffre
+                             d'affaires, écritures) se compte SUR la période, un
+                             solde (trésorerie, créances) se calcule À la date de
+                             fin choisie (même convention que get_bilan() ailleurs
+                             dans ce module). -->
+                        <div class="small mb-3" style="color:var(--slate-400);">
+                            <i class="fas fa-circle-info"></i> Toutes les cartes ne comptent que les écritures <strong>validées</strong>. Le chiffre d'affaires, les écritures et la répartition par journal sont comptés <strong>sur la période</strong> choisie ; la trésorerie et les créances reflètent la situation <strong>à la date de fin</strong> de cette période. "En attente" reste global (indicateur opérationnel, pas historique).
                         </div>
                         <div class="row g-3 mb-3">
                             <div class="col-lg-4">
@@ -235,7 +267,7 @@
                                             <div class="card-body">
                                                 <div class="small fw-semibold" style="color:var(--slate-600);"><i class="fas fa-wallet"></i> Trésorerie disponible</div>
                                                 <div class="kpi-value mt-1" style="font-size:1.3rem;font-weight:700;color:var(--navy-900);" id="caisseTresorerieMontant">0 FCFA</div>
-                                                <div class="small mt-1" style="color:var(--slate-400);">Espèces + banque</div>
+                                                <div class="small mt-1" style="color:var(--slate-400);" id="caisseTresorerieSousTitre">Espèces + banque</div>
                                             </div>
                                         </div>
                                     </div>
@@ -245,7 +277,7 @@
                                             <div class="card-body">
                                                 <div class="small fw-semibold" style="color:var(--slate-600);"><i class="fas fa-chart-line"></i> Chiffre d'affaires validé</div>
                                                 <div class="kpi-value mt-1" style="font-size:1.3rem;font-weight:700;color:var(--navy-900);" id="caisseChiffreAffairesMontant">0 FCFA</div>
-                                                <div class="small mt-1" style="color:var(--slate-400);">Depuis toujours · clic → journal des ventes</div>
+                                                <div class="small mt-1" style="color:var(--slate-400);" id="caisseChiffreAffairesSousTitre">Clic → journal des ventes</div>
                                             </div>
                                         </div>
                                     </div>
@@ -1786,11 +1818,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // 1. Modals
     initModals();
     
-    // 2. Dashboard (rapide)
-    chargerDashboard();
-    chargerCaisses();
-    chargerRepartitionJournaux();
-    chargerCreancesAssureurs();
+    // 2. Dashboard (rapide) — initPeriodeDashboard() peuple le sélecteur
+    // d'exercice puis déclenche le premier chargement des 4 sources.
+    initPeriodeDashboard();
     genererAnnees();
     verifierAnomaliesAuChargement();
 
@@ -1869,8 +1899,89 @@ function initModals() {
 // TABLEAU DE BORD
 // ============================================================
 
-function chargerDashboard() {
-    fetch('/comptabilite/api/dashboard/stats')
+// ⭐ Sélecteur de période — patron : "ajoute ça et bien détaillé".
+// Réutilise le sélecteur d'exercice déjà en place dans "Journal &
+// Rapports" (#rapportExercice/appliquerExerciceRapport(), même API
+// /api/rapports/exercices/liste) plutôt que d'en inventer un nouveau.
+// Par défaut, l'exercice en cours est sélectionné : un tableau de bord
+// doit montrer "cette année" par défaut, avec un accès facile à
+// "Depuis toujours" ou un exercice antérieur.
+function initPeriodeDashboard() {
+    fetch('/comptabilite/api/rapports/exercices/liste')
+        .then(r => r.json())
+        .then(exercices => {
+            const sel = document.getElementById('dashboardExercice');
+            (exercices || []).forEach(ex => {
+                const opt = document.createElement('option');
+                opt.value = ex.annee;
+                opt.textContent = ex.libelle;
+                sel.insertBefore(opt, sel.lastElementChild); // avant "Dates personnalisées"
+            });
+            const anneeCourante = String(new Date().getFullYear());
+            if ([...sel.options].some(o => o.value === anneeCourante)) {
+                sel.value = anneeCourante;
+            }
+            appliquerExerciceDashboard();
+        })
+        .catch(error => { console.error('Erreur liste exercices:', error); rechargerTableauDeBord(); });
+}
+
+function appliquerExerciceDashboard() {
+    const sel = document.getElementById('dashboardExercice');
+    const v = sel.value;
+    if (v === 'tout') {
+        document.getElementById('dashboardDateDebut').value = '';
+        document.getElementById('dashboardDateFin').value = '';
+    } else if (v !== '') {
+        document.getElementById('dashboardDateDebut').value = `${v}-01-01`;
+        document.getElementById('dashboardDateFin').value = `${v}-12-31`;
+    }
+    // v === '' ("Dates personnalisées") : on ne touche pas aux dates déjà saisies.
+    rechargerTableauDeBord();
+}
+
+function formatDateFrDashboard(iso) {
+    if (!iso) return null;
+    const [a, m, j] = iso.split('-');
+    return `${j}/${m}/${a}`;
+}
+
+// ⭐ Recharge les 4 sources avec la période choisie, en respectant la
+// distinction FLUX vs SOLDE établie ailleurs dans ce module
+// (get_bilan()/_soldes_comptes_a_date() côté serveur) :
+// - Flux (écritures, chiffre d'affaires, répartition par journal) :
+//   comptés SUR la période → date_debut ET date_fin.
+// - Solde (trésorerie, créances) : calculés À la date de fin → date_fin
+//   SEULE, jamais de date_debut (un encours né avant le début de la
+//   période mais toujours impayé doit continuer à apparaître).
+function rechargerTableauDeBord() {
+    const debut = document.getElementById('dashboardDateDebut').value;
+    const fin = document.getElementById('dashboardDateFin').value;
+
+    const qsFlux = new URLSearchParams();
+    if (debut) qsFlux.set('date_debut', debut);
+    if (fin) qsFlux.set('date_fin', fin);
+    const qsSolde = new URLSearchParams();
+    if (fin) qsSolde.set('date_fin', fin);
+
+    const libellePeriode = (debut && fin) ? `du ${formatDateFrDashboard(debut)} au ${formatDateFrDashboard(fin)}` : 'depuis toujours';
+    const libelleDate = fin ? `au ${formatDateFrDashboard(fin)}` : 'à ce jour';
+
+    chargerDashboard(qsFlux.toString());
+    chargerCaisses(qsFlux.toString());
+    chargerRepartitionJournaux(qsFlux.toString());
+    chargerCreancesAssureurs(qsSolde.toString(), libelleDate);
+
+    const elCA = document.getElementById('caisseChiffreAffairesSousTitre');
+    if (elCA) elCA.textContent = `Sur la période (${libellePeriode}) · clic → journal des ventes`;
+    const elTreso = document.getElementById('caisseTresorerieSousTitre');
+    if (elTreso) elTreso.textContent = `Espèces + banque · ${libelleDate}`;
+    const elJournauxTitre = document.getElementById('repartitionJournauxTitre');
+    if (elJournauxTitre) elJournauxTitre.textContent = `Répartition par journal (${libellePeriode})`;
+}
+
+function chargerDashboard(qs = '') {
+    fetch('/comptabilite/api/dashboard/stats' + (qs ? '?' + qs : ''))
         .then(r => r.json())
         .then(data => {
             document.getElementById('statTotalEcritures').textContent = data.total_ecritures || 0;
@@ -1914,8 +2025,8 @@ function rendreBarresDashboard(containerId, items, couleurVar) {
     `).join('');
 }
 
-function chargerRepartitionJournaux() {
-    fetch('/comptabilite/api/dashboard/repartition-journaux')
+function chargerRepartitionJournaux(qs = '') {
+    fetch('/comptabilite/api/dashboard/repartition-journaux' + (qs ? '?' + qs : ''))
         .then(r => r.json())
         .then(items => {
             const barre = document.getElementById('repartitionJournauxBarre');
@@ -1938,8 +2049,8 @@ function chargerRepartitionJournaux() {
         .catch(error => console.error('Erreur repartition journaux:', error));
 }
 
-function chargerCreancesAssureurs() {
-    fetch('/comptabilite/api/dashboard/creances-assureurs')
+function chargerCreancesAssureurs(qs = '', libelleDate = 'à ce jour') {
+    fetch('/comptabilite/api/dashboard/creances-assureurs' + (qs ? '?' + qs : ''))
         .then(r => r.json())
         .then(items => {
             items = items || [];
@@ -1947,7 +2058,7 @@ function chargerCreancesAssureurs() {
             const elTotal = document.getElementById('statCreancesTotal');
             const elNb = document.getElementById('statCreancesNbAssureurs');
             if (elTotal) elTotal.textContent = Math.round(total).toLocaleString('fr-FR') + ' FCFA';
-            if (elNb) elNb.textContent = items.length + (items.length > 1 ? ' assureurs à recevoir' : ' assureur à recevoir');
+            if (elNb) elNb.textContent = items.length + (items.length > 1 ? ' assureurs' : ' assureur') + ` à recevoir · ${libelleDate}`;
             rendreBarresDashboard('creancesParAssureur', items.map(a => ({ label: a.tiers_nom, montant: a.montant })), 'amber-600');
         })
         .catch(error => console.error('Erreur creances assureurs:', error));
@@ -1985,8 +2096,8 @@ function chargerDernieresEcritures() {
 // LES DEUX CAISSES (Trésorerie vs Chiffre d'affaires)
 // ============================================================
 
-function chargerCaisses() {
-    fetch('/comptabilite/api/caisses')
+function chargerCaisses(qs = '') {
+    fetch('/comptabilite/api/caisses' + (qs ? '?' + qs : ''))
         .then(r => r.json())
         .then(data => {
             const elTreso = document.getElementById('caisseTresorerieMontant');

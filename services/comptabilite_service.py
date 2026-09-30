@@ -1559,10 +1559,18 @@ def solde_caisse_disponible(structure_id):
 def get_soldes_caisses(structure_id, date_debut=None, date_fin=None):
     """Retourne les deux indicateurs demandés :
     - tresorerie : solde réel disponible (classe 5 : Caisse 571 + Banque 521),
-      toutes périodes confondues (c'est un solde, pas un flux).
+      cumulé depuis toujours JUSQU'À date_fin incluse (photo de bilan à un
+      instant donné — c'est un solde, pas un flux, donc jamais de borne
+      basse : même convention que get_bilan()/_soldes_comptes_a_date()).
     - chiffre_affaires : total des ventes (classe 7, comptes 70x) sur la
       période donnée (flux, pas un solde).
-    """
+
+    ⭐ Avant correctif, la trésorerie ignorait totalement date_fin (appel
+    à get_solde() sans argument) — elle restait "depuis toujours" même
+    quand l'appelant demandait explicitement une période, contrairement
+    au chiffre d'affaires ci-dessous qui, lui, respectait déjà
+    date_debut/date_fin. Repéré en ajoutant le sélecteur de période du
+    tableau de bord."""
     comptes_tresorerie = CompteComptable.query.filter(
         CompteComptable.structure_id == structure_id,
         CompteComptable.numero.in_(COMPTES_TRESORERIE)
@@ -1571,7 +1579,7 @@ def get_soldes_caisses(structure_id, date_debut=None, date_fin=None):
     tresorerie = 0.0
     detail_tresorerie = []
     for c in comptes_tresorerie:
-        solde = _to_float(c.get_solde())
+        solde = _to_float(c.get_solde(date_fin=date_fin))
         tresorerie += solde
         detail_tresorerie.append({'numero': c.numero, 'nom': c.nom, 'solde': solde})
 
