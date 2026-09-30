@@ -242,62 +242,86 @@
                         <div class="small mb-3" style="color:var(--slate-400);">
                             <i class="fas fa-circle-info"></i> Toutes les cartes ne comptent que les écritures <strong>validées</strong>. Le chiffre d'affaires, les écritures et la répartition par journal sont comptés <strong>sur la période</strong> choisie ; la trésorerie et les créances reflètent la situation <strong>à la date de fin</strong> de cette période. "En attente" reste global (indicateur opérationnel, pas historique).
                         </div>
+                        <!-- ⭐ patron : "on remet chiffre d'affaires et trésorerie bien
+                             visibles c'est mieux" — reprennent le traitement "hero"
+                             (grandes cartes de couleur) qu'avait la masse comptable ;
+                             la masse comptable, elle, reste repliée dans la carte
+                             "Situation comptable" plus discrète juste en dessous
+                             (voir toggleMasseComptable()). -->
                         <div class="row g-3 mb-3">
-                            <div class="col-lg-4">
-                                <div class="card border-0 h-100" style="background:var(--navy-900);border-radius:16px;">
-                                    <div class="card-body text-white d-flex flex-column justify-content-between" style="padding:24px;">
+                            <div class="col-md-6">
+                                <div class="card border-0 h-100" style="background:var(--navy-900);border-radius:16px;cursor:pointer;"
+                                     onclick="document.getElementById('rapports-tab').click(); setTimeout(()=>{document.getElementById('rapportType').value='grand_livre'; onChangeRapportType();}, 50);">
+                                    <div class="card-body text-white" style="padding:24px;">
+                                        <div class="text-uppercase small" style="letter-spacing:.06em;opacity:.75;"><i class="fas fa-wallet"></i> Trésorerie disponible</div>
+                                        <div class="kpi-hero-value mt-2" style="font-size:2rem;font-weight:700;" id="caisseTresorerieMontant">0 FCFA</div>
+                                        <div class="small mt-1" style="opacity:.7;" id="caisseTresorerieSousTitre">Espèces + banque</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card border-0 h-100" style="background:var(--emerald-700);border-radius:16px;cursor:pointer;"
+                                     onclick="document.getElementById('rapports-tab').click(); setTimeout(()=>{document.getElementById('rapportType').value='journal'; document.getElementById('rapportJournalCode').value='VTE'; onChangeRapportType();}, 50);">
+                                    <div class="card-body text-white" style="padding:24px;">
+                                        <div class="text-uppercase small" style="letter-spacing:.06em;opacity:.75;"><i class="fas fa-chart-line"></i> Chiffre d'affaires validé</div>
+                                        <div class="kpi-hero-value mt-2" style="font-size:2rem;font-weight:700;" id="caisseChiffreAffairesMontant">0 FCFA</div>
+                                        <div class="small mt-1" style="opacity:.7;" id="caisseChiffreAffairesSousTitre">Clic → journal des ventes</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <div class="card h-100" style="border:1px solid var(--border);border-radius:16px;">
+                                    <div class="card-body">
                                         <div class="d-flex justify-content-between align-items-start">
-                                            <div class="text-uppercase small" style="letter-spacing:.06em;opacity:.75;">Masse comptable validée</div>
-                                            <div id="soldeEquilibreBadge" class="small fw-semibold" style="background:rgba(255,255,255,.12);border-radius:999px;padding:4px 12px;color:#CFF3DE;"></div>
+                                            <div class="small fw-semibold" style="color:var(--slate-600);">Situation comptable</div>
+                                            <div id="soldeEquilibreBadge" class="small fw-semibold" style="border-radius:999px;padding:4px 12px;"></div>
                                         </div>
-                                        <div class="kpi-hero-value mt-2" style="font-size:2rem;font-weight:700;" id="statSoldeTotal">0 FCFA</div>
-                                        <div class="small mt-3 pt-3 d-flex gap-4" style="border-top:1px solid rgba(255,255,255,.15);">
-                                            <div><div class="fw-bold" style="font-family:var(--font-display);font-size:1.1rem;" id="statTotalEcritures">0</div><div style="opacity:.7;">écritures</div></div>
-                                            <div><div class="fw-bold" style="font-family:var(--font-display);font-size:1.1rem;color:#8FE3B0;" id="statValidees">0</div><div style="opacity:.7;">validées</div></div>
-                                            <div><div class="fw-bold" style="font-family:var(--font-display);font-size:1.1rem;color:var(--emerald-600);" id="statEnAttente">0</div><div style="opacity:.7;">en attente</div></div>
+                                        <!-- ⭐ patron : "je préfère qu'elle soit cachée quelque part, si on
+                                             veut on clique pour voir" — la masse comptable (total débit, tous
+                                             journaux confondus) n'est pas un chiffre d'affaires ni une
+                                             trésorerie, elle compte souvent CHAQUE vente deux fois
+                                             (facturation + encaissement dans deux journaux différents) : trop
+                                             technique pour être un chiffre en vedette. Le badge Équilibré/Écart
+                                             et le nombre d'écritures sont le contenu principal ; la masse
+                                             comptable se replie derrière toggleMasseComptable(). -->
+                                        <div class="mt-2 d-flex gap-4">
+                                            <div><div class="fw-bold" style="font-family:var(--font-display);font-size:1.4rem;color:var(--navy-900);" id="statTotalEcritures">0</div><div class="small" style="color:var(--slate-400);">écritures</div></div>
+                                            <div><div class="fw-bold" style="font-family:var(--font-display);font-size:1.4rem;color:var(--emerald-700);" id="statValidees">0</div><div class="small" style="color:var(--slate-400);">validées</div></div>
+                                            <div><div class="fw-bold" style="font-family:var(--font-display);font-size:1.4rem;color:var(--amber-600);" id="statEnAttente">0</div><div class="small" style="color:var(--slate-400);">en attente</div></div>
+                                        </div>
+                                        <div class="mt-2 pt-2" style="border-top:1px solid var(--border);">
+                                            <button type="button" class="btn btn-link btn-sm p-0" style="font-size:.8rem;" onclick="toggleMasseComptable()">
+                                                <span id="toggleMasseComptableLabel">Voir la masse comptable</span>
+                                            </button>
+                                            <div id="masseComptableDetail" style="display:none;" class="mt-2">
+                                                <div style="font-family:var(--font-display);font-size:1.2rem;font-weight:700;color:var(--navy-900);" id="statSoldeTotal">0 FCFA</div>
+                                                <div class="small" style="color:var(--slate-400);">Total des débits validés, tous journaux confondus — une même vente compte souvent deux fois (facturation puis encaissement) : un indicateur de volume d'activité, pas le chiffre d'affaires.</div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-lg-8">
-                                <div class="row g-3 h-100">
-                                    <div class="col-md-4">
-                                        <div class="card h-100" style="border:1px solid var(--border);border-radius:16px;cursor:pointer;"
-                                             onclick="document.getElementById('rapports-tab').click(); setTimeout(()=>{document.getElementById('rapportType').value='grand_livre'; onChangeRapportType();}, 50);">
-                                            <div class="card-body">
-                                                <div class="small fw-semibold" style="color:var(--slate-600);"><i class="fas fa-wallet"></i> Trésorerie disponible</div>
-                                                <div class="kpi-value mt-1" style="font-size:1.3rem;font-weight:700;color:var(--navy-900);" id="caisseTresorerieMontant">0 FCFA</div>
-                                                <div class="small mt-1" style="color:var(--slate-400);" id="caisseTresorerieSousTitre">Espèces + banque</div>
-                                            </div>
-                                        </div>
+                            <div class="col-md-6">
+                                <div class="card h-100" style="border:1px solid var(--border);border-radius:16px;">
+                                    <div class="card-body">
+                                        <div class="small fw-semibold" style="color:var(--slate-600);"><i class="fas fa-shield-halved"></i> Créances tiers-payants</div>
+                                        <div class="kpi-value mt-1" style="font-size:1.3rem;font-weight:700;color:var(--navy-900);" id="statCreancesTotal">0 FCFA</div>
+                                        <div class="small mt-1" style="color:var(--slate-400);" id="statCreancesNbAssureurs">—</div>
                                     </div>
-                                    <div class="col-md-4">
-                                        <div class="card h-100" style="border:1px solid var(--border);border-radius:16px;cursor:pointer;"
-                                             onclick="document.getElementById('rapports-tab').click(); setTimeout(()=>{document.getElementById('rapportType').value='journal'; document.getElementById('rapportJournalCode').value='VTE'; onChangeRapportType();}, 50);">
-                                            <div class="card-body">
-                                                <div class="small fw-semibold" style="color:var(--slate-600);"><i class="fas fa-chart-line"></i> Chiffre d'affaires validé</div>
-                                                <div class="kpi-value mt-1" style="font-size:1.3rem;font-weight:700;color:var(--navy-900);" id="caisseChiffreAffairesMontant">0 FCFA</div>
-                                                <div class="small mt-1" style="color:var(--slate-400);" id="caisseChiffreAffairesSousTitre">Clic → journal des ventes</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-4">
-                                        <div class="card h-100" style="border:1px solid var(--border);border-radius:16px;">
-                                            <div class="card-body">
-                                                <div class="small fw-semibold" style="color:var(--slate-600);"><i class="fas fa-shield-halved"></i> Créances tiers-payants</div>
-                                                <div class="kpi-value mt-1" style="font-size:1.3rem;font-weight:700;color:var(--navy-900);" id="statCreancesTotal">0 FCFA</div>
-                                                <div class="small mt-1" style="color:var(--slate-400);" id="statCreancesNbAssureurs">—</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-12">
-                                        <div class="card" style="border:1px solid var(--border);border-radius:16px;">
-                                            <div class="card-body">
-                                                <div class="small fw-semibold mb-2" style="color:var(--slate-600);" id="repartitionJournauxTitre">Répartition par journal</div>
-                                                <div class="d-flex" style="height:20px;border-radius:10px;overflow:hidden;" id="repartitionJournauxBarre"></div>
-                                                <div class="d-flex flex-wrap gap-3 mt-2 small" style="color:var(--slate-600);" id="repartitionJournauxLegende"></div>
-                                            </div>
-                                        </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row g-3 mb-3">
+                            <div class="col-12">
+                                <div class="card" style="border:1px solid var(--border);border-radius:16px;">
+                                    <div class="card-body">
+                                        <div class="small fw-semibold mb-2" style="color:var(--slate-600);" id="repartitionJournauxTitre">Répartition par journal</div>
+                                        <div class="d-flex" style="height:20px;border-radius:10px;overflow:hidden;" id="repartitionJournauxBarre"></div>
+                                        <div class="d-flex flex-wrap gap-3 mt-2 small" style="color:var(--slate-600);" id="repartitionJournauxLegende"></div>
                                     </div>
                                 </div>
                             </div>
@@ -1980,6 +2004,17 @@ function rechargerTableauDeBord() {
     if (elJournauxTitre) elJournauxTitre.textContent = `Répartition par journal (${libellePeriode})`;
 }
 
+// ⭐ Patron : "je préfère qu'elle soit cachée quelque part, si on veut on
+// clique pour voir" — la masse comptable est repliée par défaut dans la
+// carte "Situation comptable" (voir commentaire HTML au-dessus).
+function toggleMasseComptable() {
+    const det = document.getElementById('masseComptableDetail');
+    const label = document.getElementById('toggleMasseComptableLabel');
+    const visible = det.style.display !== 'none';
+    det.style.display = visible ? 'none' : 'block';
+    label.textContent = visible ? 'Voir la masse comptable' : 'Masquer la masse comptable';
+}
+
 function chargerDashboard(qs = '') {
     fetch('/comptabilite/api/dashboard/stats' + (qs ? '?' + qs : ''))
         .then(r => r.json())
@@ -1998,6 +2033,8 @@ function chargerDashboard(qs = '') {
                 badge.innerHTML = equilibre
                     ? '<i class="fas fa-check"></i> Équilibré'
                     : '<i class="fas fa-triangle-exclamation"></i> Écart';
+                badge.style.background = equilibre ? 'var(--emerald-50)' : 'var(--amber-50)';
+                badge.style.color = equilibre ? 'var(--emerald-700)' : 'var(--amber-700)';
             }
         })
         .catch(error => console.error('Erreur dashboard:', error));
