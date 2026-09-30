@@ -2399,6 +2399,15 @@
                     Statistiques des ventes
                 </a>
                 {% endif %}
+                <!-- ⭐ Recettes par service (patron, 2026-09-30) : "affiche le
+                     lien recette par service dans onglet finance du menu
+                     horizontal" — comparaison des recettes par département,
+                     pour la décision de ristourne de fin d'année. -->
+                {% if session.is_admin and not _bloq %}
+                <a class="menu-item" href="{{ url_for('page_rapport_recettes_service') }}">
+                    Recettes par service
+                </a>
+                {% endif %}
                 <!-- Demandes en attente : jamais masqué, c'est là qu'on valide sa propre charge d'abonnement.
                      Visible aussi au gestionnaire — il peut valider à la place de l'admin (voir plan de session). -->
                 {% if session.is_admin or session.role == 'gestionnaire' %}
@@ -2548,6 +2557,20 @@
                 {% if session.is_admin or session.role == 'gestionnaire' %}
                 <a class="menu-item" href="{{ url_for('page_taux_part_medecin') }}">
                     Taux Part Médecin
+                </a>
+                <a class="menu-item" href="{{ url_for('page_hospitalisation_configuration') }}">
+                    Configuration des services
+                </a>
+                {% endif %}
+                <!-- ⭐ Recettes par service (patron, 2026-09-30) : "dans
+                     paramètre du menu horizontal fait afficher le lien de
+                     classification par service et recette par service". -->
+                {% if session.is_admin %}
+                <a class="menu-item" href="{{ url_for('page_classification_services') }}">
+                    Classification par service
+                </a>
+                <a class="menu-item" href="{{ url_for('page_rapport_recettes_service') }}">
+                    Recettes par service
                 </a>
                 {% endif %}
                 {% if session.role in ['laborantin', 'radiologue', 'secretaire'] %}

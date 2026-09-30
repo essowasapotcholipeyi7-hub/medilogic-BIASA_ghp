@@ -336,6 +336,7 @@
                     {% endif %}
                     {% if session.is_admin or session.role == 'gestionnaire' %}
                     <a class="nav-link {% if request.endpoint == 'page_taux_part_medecin' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_taux_part_medecin') }}"><i class="fas fa-percentage me-2"></i>Taux Part Médecin</a>
+                    <a class="nav-link {% if request.endpoint == 'page_hospitalisation_configuration' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_hospitalisation_configuration') }}"><i class="fas fa-bed me-2"></i>Configuration des services</a>
                     {% endif %}
                     {% if session.is_admin %}
                     <a class="nav-link {% if request.endpoint == 'page_classification_services' %}active{% endif %}" style="padding-left: 40px; font-size: 13px;" href="{{ url_for('page_classification_services') }}"><i class="fas fa-hospital me-2"></i>Classification par service</a>

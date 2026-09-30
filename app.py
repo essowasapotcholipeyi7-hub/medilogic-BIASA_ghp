@@ -10840,6 +10840,31 @@ def api_rapport_recettes_service():
     return jsonify({'success': True, 'services': resultat, 'total': total})
 
 
+@app.route('/rapport-recettes-service/print')
+@admin_required
+def print_rapport_recettes_service():
+    """Version imprimable du rapport "Recettes par service" (patron,
+    2026-09-30) — même schéma que comptabilite.print_rapport() : une page
+    autonome (pas d'entête/sidebar), impression déclenchée automatiquement
+    à l'ouverture, fermeture automatique après impression."""
+    structure_id = session.get('structure_id')
+    date_debut_str = request.args.get('date_debut')
+    date_fin_str = request.args.get('date_fin')
+    try:
+        date_debut = datetime.strptime(date_debut_str, '%Y-%m-%d')
+        date_fin_bornee = datetime.strptime(date_fin_str, '%Y-%m-%d') + timedelta(days=1)
+    except (TypeError, ValueError):
+        flash('Dates invalides', 'danger')
+        return redirect(url_for('page_rapport_recettes_service'))
+
+    resultat = generer_rapport_recettes_service(structure_id, date_debut, date_fin_bornee)
+    total = round(sum(r['montant_total'] for r in resultat), 2)
+    return render_template('rapport_recettes_service_print.html',
+                            services=resultat, total=total,
+                            date_debut=date_debut_str, date_fin=date_fin_str,
+                            now=datetime.now())
+
+
 # ============================================================
 # PART MÉDECIN — configuration des taux par acte (quel % revient au
 # réalisateur) — même schéma que la classification labo/imagerie

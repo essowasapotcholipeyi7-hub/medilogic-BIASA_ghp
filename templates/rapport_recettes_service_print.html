@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recettes par service</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+            background: white;
+            padding: 40px;
+            color: #1a2a3a;
+        }
+
+        .rapport-container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        .rapport-header {
+            text-align: center;
+            padding: 30px 0 20px 0;
+            border-bottom: 3px solid #1a2a6c;
+            margin-bottom: 25px;
+        }
+
+        .rapport-header .logo-area {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .rapport-header .logo-area img {
+            max-height: 60px;
+            max-width: 120px;
+            object-fit: contain;
+        }
+
+        .rapport-header h1 {
+            font-size: 22px;
+            color: #1a2a6c;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        .rapport-header .sub-info {
+            font-size: 12px;
+            color: #6c7a89;
+            margin-top: 5px;
+        }
+
+        .rapport-header .titre-rapport {
+            font-size: 20px;
+            font-weight: 600;
+            color: #2d4373;
+            margin-top: 10px;
+            background: #f5f7fb;
+            padding: 8px 25px;
+            border-radius: 8px;
+            display: inline-block;
+        }
+
+        .rapport-header .period {
+            font-size: 13px;
+            color: #6c7a89;
+            margin-top: 5px;
+        }
+
+        .rapport-header .generated {
+            font-size: 10px;
+            color: #8e9aaf;
+            margin-top: 8px;
+        }
+
+        .stat-boxes {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin: 20px 0 25px 0;
+        }
+
+        .stat-box {
+            background: #f8faff;
+            border-radius: 10px;
+            padding: 12px 15px;
+            text-align: center;
+            border-left: 3px solid #667eea;
+        }
+
+        .stat-box .number {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1a2a6c;
+        }
+
+        .stat-box .label {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: #8e9aaf;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .table-container {
+            margin-top: 20px;
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th {
+            background: #1a2a6c;
+            color: white;
+            padding: 10px 12px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 9px 12px;
+            border-bottom: 1px solid #e6ebf2;
+            color: #3d4f60;
+        }
+
+        .text-end {
+            text-align: right;
+        }
+
+        .text-muted {
+            color: #8e9aaf;
+        }
+
+        .rapport-footer {
+            margin-top: 30px;
+            padding-top: 15px;
+            border-top: 2px solid #e6ebf2;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            font-size: 10px;
+            color: #8e9aaf;
+        }
+
+        .rapport-footer .signature {
+            display: flex;
+            gap: 40px;
+        }
+
+        .rapport-footer .signature .sig-item {
+            text-align: center;
+        }
+
+        .rapport-footer .signature .sig-item .line {
+            width: 150px;
+            border-top: 1px solid #1a2a6c;
+            margin-top: 30px;
+        }
+
+        .rapport-footer .signature .sig-item .label {
+            font-size: 9px;
+            color: #8e9aaf;
+        }
+
+        .rapport-footer .right {
+            font-weight: 500;
+            color: #1a2a6c;
+        }
+
+        @media print {
+            body {
+                padding: 20px;
+                background: white;
+            }
+
+            .rapport-header {
+                padding: 15px 0;
+            }
+
+            .rapport-header .logo-area img {
+                max-height: 45px;
+            }
+
+            th {
+                background: #1a2a6c !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            .stat-box {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            .rapport-footer .signature .sig-item .line {
+                border-top: 1px solid #1a2a6c !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            .no-print {
+                display: none !important;
+            }
+        }
+
+        .no-print {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-print {
+            background: #1a2a6c;
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(26, 42, 108, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .btn-print:hover {
+            background: #2d4373;
+            transform: translateY(-2px);
+        }
+
+        .btn-close-pdf {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(220, 53, 69, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .btn-close-pdf:hover {
+            background: #c82333;
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body>
+    <div class="no-print">
+        <button class="btn-print" onclick="imprimerPDF()">
+            <i class="fas fa-print"></i> Imprimer PDF
+        </button>
+        <button class="btn-close-pdf" onclick="fermerFenetre()">
+            <i class="fas fa-times"></i> Fermer
+        </button>
+    </div>
+
+    <div class="rapport-container">
+        <div class="rapport-header">
+            <div class="logo-area">
+                <img id="structureLogo" src="" alt="Logo" style="display:none;">
+                <h1 id="structureNom">Mon Etablissement</h1>
+            </div>
+            <div class="sub-info">
+                <span id="structureAdresse"></span>
+                <span id="structureTel"></span>
+                <span id="structureEmail"></span>
+            </div>
+            <div class="titre-rapport">Recettes par service</div>
+            <div class="period">
+                {% if date_debut and date_fin %}
+                Période du {{ date_debut }} au {{ date_fin }}
+                {% else %}
+                Toutes les périodes
+                {% endif %}
+            </div>
+            <div class="generated">
+                Généré le {{ now.strftime('%d/%m/%Y à %H:%M') }}
+            </div>
+        </div>
+
+        <div class="stat-boxes">
+            <div class="stat-box">
+                <div class="number">{{ services|length }}</div>
+                <div class="label">Services</div>
+            </div>
+            <div class="stat-box">
+                <div class="number">{{ total|round(0)|int }} F</div>
+                <div class="label">Total recettes</div>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:45%">Service</th>
+                        <th style="width:20%">Lignes</th>
+                        <th style="width:20%">Part</th>
+                        <th style="width:15%">Montant</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in services %}
+                    <tr>
+                        <td {% if not s.service_id %}class="text-muted"{% endif %}>{{ s.service_nom }}</td>
+                        <td>{{ s.nb_lignes }}</td>
+                        <td>{{ ((s.montant_total / total * 100) if total else 0)|round(1) }} %</td>
+                        <td class="text-end">{{ s.montant_total|round(0)|int }} F</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot style="font-weight:bold; background:#f5f7fb;">
+                    <tr>
+                        <td colspan="3" class="text-end">TOTAL</td>
+                        <td class="text-end">{{ total|round(0)|int }} F</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+
+        <div class="rapport-footer">
+            <div class="signature">
+                <div class="sig-item">
+                    <div class="line"></div>
+                    <div class="label">Le comptable</div>
+                </div>
+                <div class="sig-item">
+                    <div class="line"></div>
+                    <div class="label">Le responsable</div>
+                </div>
+            </div>
+            <div class="right" id="footerNom">
+                Mon Etablissement - {{ now.strftime('%d/%m/%Y') }}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function chargerStructure() {
+            const nom = localStorage.getItem('structureNom') || 'Mon Etablissement';
+            const telephone = localStorage.getItem('structureTelephone') || '';
+            const email = localStorage.getItem('structureEmail') || '';
+            const adresse = localStorage.getItem('structureAdresse') || '';
+            const logo = localStorage.getItem('structureLogo') || '';
+
+            document.getElementById('structureNom').textContent = nom;
+            document.getElementById('footerNom').textContent = nom + ' - ' + new Date().toLocaleDateString('fr-FR');
+
+            const adresseEl = document.getElementById('structureAdresse');
+            const telEl = document.getElementById('structureTel');
+            const emailEl = document.getElementById('structureEmail');
+
+            let infos = [];
+            if (adresse) infos.push(adresse);
+            if (telephone) infos.push('Tel: ' + telephone);
+            if (email) infos.push('Email: ' + email);
+
+            if (infos.length > 0) {
+                adresseEl.textContent = infos.join(' | ');
+            }
+
+            if (logo) {
+                const logoImg = document.getElementById('structureLogo');
+                logoImg.src = logo;
+                logoImg.style.display = 'inline';
+            }
+        }
+
+        let impressionLancee = false;
+
+        function imprimerPDF() {
+            if (!impressionLancee) {
+                impressionLancee = true;
+                window.print();
+            }
+        }
+
+        function fermerFenetre() {
+            if (confirm('Voulez-vous fermer cette fenêtre ?')) {
+                window.close();
+            }
+        }
+
+        window.onload = function() {
+            if (typeof chargerStructure === 'function') {
+                chargerStructure();
+            }
+            setTimeout(function() {
+                if (!impressionLancee) {
+                    impressionLancee = true;
+                    window.print();
+                }
+            }, 800);
+        };
+
+        window.addEventListener('afterprint', function() {
+            if (impressionLancee) {
+                setTimeout(function() {
+                    try {
+                        window.close();
+                    } catch(e) {
+                        console.log('⚠️ Fermeture automatique impossible');
+                    }
+                }, 600);
+            }
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                fermerFenetre();
+            }
+            if (e.ctrlKey && e.key === 'p') {
+                e.preventDefault();
+                imprimerPDF();
+            }
+        });
+    </script>
+</body>
+</html>
