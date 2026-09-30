@@ -3,35 +3,62 @@
 {% block title %}Comptabilité{% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&display=swap">
 <style>
+    /* ⭐ Refonte visuelle du module Comptabilité — patron : "améliore le
+       design de toute la comptabilité, un très bon design captivant".
+       Tokens scopés à .compta-shell (posée sur la carte englobante du
+       module, voir plus bas) pour ne jamais changer la police/les
+       couleurs du reste de l'appli — uniquement ce module. Reprend la
+       palette déjà établie ailleurs (sidebar navy/émeraude) plutôt que
+       le dégradé violet #667eea/#764ba2 d'origine, qui ne correspondait
+       à rien d'autre dans l'appli. Onglet "Tableau de bord" entièrement
+       refait ; les 12 autres onglets héritent de ces tokens (onglets
+       nav-tabs, tuiles .stats-card) mais gardent leur contenu Bootstrap
+       d'origine jusqu'à leur propre passe de refonte. */
+    .compta-shell {
+        --navy-900:#082B41;--navy-800:#0A3D5C;--navy-700:#114A6E;--navy-600:#175E86;--navy-50:#EEF3F5;
+        --emerald-700:#0B7C52;--emerald-600:#0E9D67;--emerald-50:#E7F6EE;
+        --amber-700:#92400E;--amber-600:#B45309;--amber-50:#FCEEE0;
+        --slate-600:#51636D;--slate-400:#93A2AA;--border:#E3E8EC;--bg:#F5F7F8;--bg-200:#EDF1F2;
+        --font-display:'Space Grotesk',Arial,sans-serif;--font-body:'Source Sans 3',Arial,sans-serif;
+        font-family: var(--font-body);
+    }
+    .compta-shell h1, .compta-shell h2, .compta-shell h3,
+    .compta-shell .kpi-value, .compta-shell .kpi-hero-value {
+        font-family: var(--font-display);
+    }
     .nav-tabs .nav-link {
         border-radius: 10px;
         padding: 10px 20px;
         margin-right: 8px;
         font-weight: 600;
         transition: all 0.3s ease;
-        color: #4a5568;
+        color: var(--slate-600);
     }
     .nav-tabs .nav-link:hover {
-        background: #f0f4ff;
+        background: var(--navy-50);
     }
     .nav-tabs .nav-link.active {
-        background: linear-gradient(135deg, #667eea, #764ba2);
+        background: var(--navy-800);
         color: white;
         border: none;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        box-shadow: none;
     }
     .tab-pane {
         padding-top: 20px;
     }
     .stats-card {
-        border-radius: 15px;
-        transition: all 0.3s ease;
-        border: none;
+        border-radius: 16px;
+        transition: all 0.2s ease;
+        border: 1px solid var(--border);
     }
     .stats-card:hover {
         transform: translateY(-3px);
-        box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+        box-shadow: 0 10px 30px rgba(8,43,65,0.08);
+    }
+    #dernieresEcritures tbody tr:nth-child(even) {
+        background: var(--bg-200);
     }
     .d-flex.flex-wrap.gap-1 {
         gap: 4px !important;
@@ -65,9 +92,9 @@
 {% endblock %}
 
 {% block content %}
-        <div class="card">
-            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                <h5><i class="fas fa-calculator"></i> Comptabilité</h5>
+        <div class="card compta-shell">
+            <div class="card-header d-flex justify-content-between align-items-center" style="background:var(--navy-900);color:white;">
+                <h5 style="font-family:var(--font-display);margin:0;"><i class="fas fa-calculator"></i> Comptabilité</h5>
                 <div>
                     <button class="btn btn-light btn-sm me-2" onclick="initComptes()" title="Initialiser le plan comptable standard">
                         <i class="fas fa-database"></i> Init comptes
@@ -167,75 +194,94 @@
                     <!-- ========================================== -->
                     <div class="tab-pane fade show active" id="dashboard" role="tabpanel">
 
-                        <!-- ⭐ LES DEUX CAISSES — bien visibles, bien distinctes ⭐ -->
-                        <div class="row g-3 mb-4">
-                            <div class="col-md-6">
-                                <div class="card border-0 shadow-sm" style="background:linear-gradient(135deg,#0d6efd,#0a58ca); cursor:pointer;"
-                                     onclick="document.getElementById('rapports-tab').click(); setTimeout(()=>{document.getElementById('rapportType').value='grand_livre'; onChangeRapportType();}, 50);">
-                                    <div class="card-body text-white">
+                        <!-- ⭐ Refonte "Finance moderne, couleurs maison" — voir le
+                             bloc de tokens .compta-shell en tête de fichier. La
+                             carte hero + 3 tuiles KPI remplacent les deux
+                             anciennes cartes en dégradé brut ET la rangée de 4
+                             .stats-card — même données, même comportement de
+                             clic vers les rapports filtrés, nouvelle présentation. -->
+                        <div class="row g-3 mb-3">
+                            <div class="col-lg-4">
+                                <div class="card border-0 h-100" style="background:var(--navy-900);border-radius:16px;">
+                                    <div class="card-body text-white d-flex flex-column justify-content-between" style="padding:24px;">
                                         <div class="d-flex justify-content-between align-items-start">
-                                            <div>
-                                                <div class="text-uppercase small opacity-75"><i class="fas fa-wallet"></i> Caisse Trésorerie</div>
-                                                <div class="fs-6 opacity-75">Argent réellement disponible (espèces + banque)</div>
-                                                <h2 class="mt-2 mb-0" id="caisseTresorerieMontant">0 FCFA</h2>
+                                            <div class="text-uppercase small" style="letter-spacing:.06em;opacity:.75;">Masse comptable de l'exercice</div>
+                                            <div id="soldeEquilibreBadge" class="small fw-semibold" style="background:rgba(255,255,255,.12);border-radius:999px;padding:4px 12px;color:#CFF3DE;"></div>
+                                        </div>
+                                        <div class="kpi-hero-value mt-2" style="font-size:2rem;font-weight:700;" id="statSoldeTotal">0 FCFA</div>
+                                        <div class="small mt-3 pt-3 d-flex gap-4" style="border-top:1px solid rgba(255,255,255,.15);">
+                                            <div><div class="fw-bold" style="font-family:var(--font-display);font-size:1.1rem;" id="statTotalEcritures">0</div><div style="opacity:.7;">écritures</div></div>
+                                            <div><div class="fw-bold" style="font-family:var(--font-display);font-size:1.1rem;color:#8FE3B0;" id="statValidees">0</div><div style="opacity:.7;">validées</div></div>
+                                            <div><div class="fw-bold" style="font-family:var(--font-display);font-size:1.1rem;color:var(--emerald-600);" id="statEnAttente">0</div><div style="opacity:.7;">en attente</div></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-8">
+                                <div class="row g-3 h-100">
+                                    <div class="col-md-4">
+                                        <div class="card h-100" style="border:1px solid var(--border);border-radius:16px;cursor:pointer;"
+                                             onclick="document.getElementById('rapports-tab').click(); setTimeout(()=>{document.getElementById('rapportType').value='grand_livre'; onChangeRapportType();}, 50);">
+                                            <div class="card-body">
+                                                <div class="small fw-semibold" style="color:var(--slate-600);"><i class="fas fa-wallet"></i> Trésorerie disponible</div>
+                                                <div class="kpi-value mt-1" style="font-size:1.3rem;font-weight:700;color:var(--navy-900);" id="caisseTresorerieMontant">0 FCFA</div>
+                                                <div class="small mt-1" style="color:var(--slate-400);">Espèces + banque</div>
                                             </div>
                                         </div>
-                                        <hr class="opacity-25">
-                                        <div id="caisseTresorerieDetail" class="small"></div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="card h-100" style="border:1px solid var(--border);border-radius:16px;cursor:pointer;"
+                                             onclick="document.getElementById('rapports-tab').click(); setTimeout(()=>{document.getElementById('rapportType').value='journal'; document.getElementById('rapportJournalCode').value='VTE'; onChangeRapportType();}, 50);">
+                                            <div class="card-body">
+                                                <div class="small fw-semibold" style="color:var(--slate-600);"><i class="fas fa-chart-line"></i> Produits de la période</div>
+                                                <div class="kpi-value mt-1" style="font-size:1.3rem;font-weight:700;color:var(--navy-900);" id="caisseChiffreAffairesMontant">0 FCFA</div>
+                                                <div class="small mt-1" style="color:var(--slate-400);">Clic → journal des ventes</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="card h-100" style="border:1px solid var(--border);border-radius:16px;">
+                                            <div class="card-body">
+                                                <div class="small fw-semibold" style="color:var(--slate-600);"><i class="fas fa-shield-halved"></i> Créances tiers-payants</div>
+                                                <div class="kpi-value mt-1" style="font-size:1.3rem;font-weight:700;color:var(--navy-900);" id="statCreancesTotal">0 FCFA</div>
+                                                <div class="small mt-1" style="color:var(--slate-400);" id="statCreancesNbAssureurs">—</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-12">
+                                        <div class="card" style="border:1px solid var(--border);border-radius:16px;">
+                                            <div class="card-body">
+                                                <div class="small fw-semibold mb-2" style="color:var(--slate-600);" id="repartitionJournauxTitre">Répartition par journal</div>
+                                                <div class="d-flex" style="height:20px;border-radius:10px;overflow:hidden;" id="repartitionJournauxBarre"></div>
+                                                <div class="d-flex flex-wrap gap-3 mt-2 small" style="color:var(--slate-600);" id="repartitionJournauxLegende"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <div class="card h-100" style="border:1px solid var(--border);border-radius:16px;">
+                                    <div class="card-body">
+                                        <div class="fw-semibold mb-3" style="font-family:var(--font-display);color:var(--navy-900);">Produits par activité</div>
+                                        <div id="produitsParActivite"><div class="text-muted small">Chargement…</div></div>
                                     </div>
                                 </div>
                             </div>
                             <div class="col-md-6">
-                                <div class="card border-0 shadow-sm" style="background:linear-gradient(135deg,#198754,#146c43); cursor:pointer;"
-                                     onclick="document.getElementById('rapports-tab').click(); setTimeout(()=>{document.getElementById('rapportType').value='journal'; document.getElementById('rapportJournalCode').value='VTE'; onChangeRapportType();}, 50);">
-                                    <div class="card-body text-white">
-                                        <div class="text-uppercase small opacity-75"><i class="fas fa-chart-line"></i> Caisse Chiffre d'affaires</div>
-                                        <div class="fs-6 opacity-75">Total des ventes de la période (encaissé ou non)</div>
-                                        <h2 class="mt-2 mb-0" id="caisseChiffreAffairesMontant">0 FCFA</h2>
-                                        <hr class="opacity-25">
-                                        <div class="small opacity-75">Clic pour voir le journal des ventes</div>
+                                <div class="card h-100" style="border:1px solid var(--border);border-radius:16px;">
+                                    <div class="card-body">
+                                        <div class="fw-semibold mb-3" style="font-family:var(--font-display);color:var(--navy-900);">Créances par assureur</div>
+                                        <div id="creancesParAssureur"><div class="text-muted small">Chargement…</div></div>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="row g-3 mb-4" id="dashboardStats">
-                            <div class="col-md-3">
-                                <div class="card stats-card bg-info bg-opacity-10">
-                                    <div class="card-body text-center">
-                                        <h3 class="text-info" id="statTotalEcritures">0</h3>
-                                        <small class="text-muted">Total écritures</small>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="card stats-card bg-warning bg-opacity-10">
-                                    <div class="card-body text-center">
-                                        <h3 class="text-warning" id="statEnAttente">0</h3>
-                                        <small class="text-muted">En attente</small>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="card stats-card bg-success bg-opacity-10">
-                                    <div class="card-body text-center">
-                                        <h3 class="text-success" id="statValidees">0</h3>
-                                        <small class="text-muted">Validées</small>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="card stats-card bg-primary bg-opacity-10">
-                                    <div class="card-body text-center">
-                                        <h3 class="text-primary" id="statSoldeTotal">0 FCFA</h3>
-                                        <small class="text-muted">Solde total</small>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="card">
-                            <div class="card-header bg-light">
+                        <div class="card" style="border:1px solid var(--border);border-radius:16px;overflow:hidden;">
+                            <div class="card-header" style="background:var(--navy-900);color:white;border:none;">
                                 <i class="fas fa-clock"></i> Dernières écritures
                             </div>
                             <div class="card-body p-0">
@@ -1733,6 +1779,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // 2. Dashboard (rapide)
     chargerDashboard();
     chargerCaisses();
+    chargerRepartitionJournaux();
+    chargerCreancesAssureurs();
     genererAnnees();
     verifierAnomaliesAuChargement();
 
@@ -1818,9 +1866,81 @@ function chargerDashboard() {
             document.getElementById('statTotalEcritures').textContent = data.total_ecritures || 0;
             document.getElementById('statEnAttente').textContent = data.en_attente || 0;
             document.getElementById('statValidees').textContent = data.validees || 0;
-            document.getElementById('statSoldeTotal').textContent = Math.round(data.solde || 0).toLocaleString('fr-FR') + ' FCFA';
+            // ⭐ data.solde (débit - crédit) vaut ~0 par construction sur une
+            // comptabilité en partie double équilibrée — l'afficher en vedette
+            // du tableau de bord n'a aucun sens ("0 FCFA" en gros). On met en
+            // avant la masse comptable réelle (débit = crédit) à la place.
+            document.getElementById('statSoldeTotal').textContent = Math.round(data.total_debit || 0).toLocaleString('fr-FR') + ' FCFA';
+            const badge = document.getElementById('soldeEquilibreBadge');
+            if (badge) {
+                const equilibre = Math.abs((data.total_debit || 0) - (data.total_credit || 0)) < 0.01;
+                badge.innerHTML = equilibre
+                    ? '<i class="fas fa-check"></i> Équilibré'
+                    : '<i class="fas fa-triangle-exclamation"></i> Écart';
+            }
         })
         .catch(error => console.error('Erreur dashboard:', error));
+}
+
+// ⭐ Barres horizontales réutilisées par "Produits par activité" et
+// "Créances par assureur" — items: [{label, montant}], couleurVar: un
+// nom de variable CSS de .compta-shell (ex. 'emerald-600').
+function rendreBarresDashboard(containerId, items, couleurVar) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    if (!items || items.length === 0) {
+        el.innerHTML = '<div class="text-muted small">Aucune donnée</div>';
+        return;
+    }
+    const max = Math.max(...items.map(i => i.montant), 0.01);
+    el.innerHTML = items.map(i => `
+        <div class="d-flex align-items-center gap-3 mb-2">
+            <div class="small text-truncate" style="width:150px;color:var(--navy-900);font-weight:600;" title="${i.label}">${i.label}</div>
+            <div style="flex-grow:1;height:10px;border-radius:5px;background:var(--bg-200);overflow:hidden;">
+                <div style="width:${(i.montant / max * 100).toFixed(1)}%;height:100%;background:var(--${couleurVar});border-radius:5px;"></div>
+            </div>
+            <div class="small text-end" style="width:110px;font-family:var(--font-display);font-weight:600;color:var(--navy-900);">${Math.round(i.montant).toLocaleString('fr-FR')}</div>
+        </div>
+    `).join('');
+}
+
+function chargerRepartitionJournaux() {
+    fetch('/comptabilite/api/dashboard/repartition-journaux')
+        .then(r => r.json())
+        .then(items => {
+            const barre = document.getElementById('repartitionJournauxBarre');
+            const legende = document.getElementById('repartitionJournauxLegende');
+            if (!barre || !legende) return;
+            const total = (items || []).reduce((s, j) => s + j.nb, 0);
+            if (total === 0) {
+                barre.innerHTML = '';
+                legende.innerHTML = '<span class="text-muted">Aucune écriture validée</span>';
+                return;
+            }
+            const couleurs = ['navy-700', 'emerald-600', 'amber-600', 'slate-400', 'navy-600', 'emerald-700', 'amber-700', 'slate-600'];
+            barre.innerHTML = items.map((j, idx) =>
+                `<div style="width:${(j.nb / total * 100).toFixed(1)}%;background:var(--${couleurs[idx % couleurs.length]});"></div>`
+            ).join('');
+            legende.innerHTML = items.map((j, idx) =>
+                `<div class="d-flex align-items-center gap-2"><span style="width:9px;height:9px;border-radius:2px;background:var(--${couleurs[idx % couleurs.length]});display:inline-block;"></span>${j.label} (${j.nb})</div>`
+            ).join('');
+        })
+        .catch(error => console.error('Erreur repartition journaux:', error));
+}
+
+function chargerCreancesAssureurs() {
+    fetch('/comptabilite/api/dashboard/creances-assureurs')
+        .then(r => r.json())
+        .then(items => {
+            items = items || [];
+            const total = items.reduce((s, a) => s + a.montant, 0);
+            const elTotal = document.getElementById('statCreancesTotal');
+            const elNb = document.getElementById('statCreancesNbAssureurs');
+            if (elTotal) elTotal.textContent = Math.round(total).toLocaleString('fr-FR') + ' FCFA';
+            if (elNb) elNb.textContent = items.length + (items.length > 1 ? ' assureurs à recevoir' : ' assureur à recevoir');
+            rendreBarresDashboard('creancesParAssureur', items.map(a => ({ label: a.tiers_nom, montant: a.montant })), 'amber-600');
+        })
+        .catch(error => console.error('Erreur creances assureurs:', error));
 }
 
 function chargerDernieresEcritures() {
@@ -1864,12 +1984,10 @@ function chargerCaisses() {
             if (elTreso) elTreso.textContent = Math.round(data.caisse_tresorerie || 0).toLocaleString('fr-FR') + ' FCFA';
             if (elCA) elCA.textContent = Math.round(data.caisse_chiffre_affaires || 0).toLocaleString('fr-FR') + ' FCFA';
 
-            const detailTreso = document.getElementById('caisseTresorerieDetail');
-            if (detailTreso) {
-                detailTreso.innerHTML = (data.detail_tresorerie || []).map(c =>
-                    `<div class="d-flex justify-content-between"><span>${c.numero} ${c.nom}</span><strong>${Math.round(c.solde || 0).toLocaleString('fr-FR')} F</strong></div>`
-                ).join('') || '<span class="text-muted">Aucun mouvement</span>';
-            }
+            const produits = (data.detail_chiffre_affaires || [])
+                .slice().sort((a, b) => b.montant - a.montant)
+                .map(c => ({ label: c.nom, montant: c.montant }));
+            rendreBarresDashboard('produitsParActivite', produits, 'emerald-600');
         })
         .catch(error => console.error('Erreur caisses:', error));
 }

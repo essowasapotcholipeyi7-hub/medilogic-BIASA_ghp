@@ -1339,6 +1339,76 @@ def generer_balance(structure_id, date_debut, date_fin):
     return result
 
 
+def generer_repartition_journaux(structure_id):
+    """[{journal_code, label, nb}] — nombre d'écritures VALIDÉES par
+    journal, pour la barre segmentée du tableau de bord. Même patron SQL
+    agrégé que generer_balance() ci-dessus. Labels tirés de
+    EcritureComptable.JOURNAUX (models.py) — pas de libellé recopié en dur."""
+    from sqlalchemy import text
+
+    rows = db.session.execute(text("""
+        SELECT journal_code, COUNT(*) AS nb
+        FROM ecritures_comptables
+        WHERE structure_id = :structure_id AND statut = 'valide' AND journal_code IS NOT NULL
+        GROUP BY journal_code
+        ORDER BY nb DESC
+    """), {'structure_id': structure_id}).fetchall()
+
+    return [
+        {'journal_code': row.journal_code, 'label': EcritureComptable.JOURNAUX.get(row.journal_code, row.journal_code), 'nb': row.nb}
+        for row in rows
+    ]
+
+
+def generer_creances_par_assureur(structure_id):
+    """[{tiers_nom, montant}] — encours net (débit - crédit, un compte de
+    tiers-payant à recevoir est normalement débiteur) par assureur, pour
+    la carte "Créances par assureur" du tableau de bord.
+
+    ⭐ Regroupe par COMPTE (chaque assureur a son propre compte dédié dans
+    le plan SYSCOHADA, ex. 41122700 "Assurance OLEA"), PAS par
+    lignes_ecritures.tiers_type/tiers_nom : vérifié en direct sur des
+    données réelles, ce couple n'est renseigné que sur une poignée de
+    lignes (2 sur ~260) — la grande majorité des écritures générées par
+    generer_ecriture_vente() ne le remplissent pas systématiquement. Le
+    compte, lui, est toujours renseigné (c'est la ligne comptable
+    elle-même). Même convention de signe que get_soldes_caisses()
+    (services/comptabilite_service.py)."""
+    from sqlalchemy import text
+
+    rows = db.session.execute(text("""
+        SELECT cc.numero AS numero, cc.nom AS nom,
+               SUM(l.debit) - SUM(l.credit) AS montant
+        FROM lignes_ecritures l
+        JOIN comptes_comptables cc ON cc.id = l.compte_id
+        JOIN ecritures_comptables e ON e.id = l.ecriture_id
+        WHERE e.structure_id = :structure_id AND e.statut = 'valide'
+          AND (cc.nom ILIKE '%tiers-payant%' OR cc.nom ILIKE '%assurance%')
+        GROUP BY cc.numero, cc.nom
+        HAVING SUM(l.debit) - SUM(l.credit) > 0
+        ORDER BY montant DESC
+    """), {'structure_id': structure_id}).fetchall()
+
+    import re
+    resultat = []
+    for row in rows:
+        label = re.split(r'[—/]', row.nom)[0].strip()
+        resultat.append({'tiers_nom': label, 'montant': float(row.montant)})
+    return resultat
+
+
+@compta_bp.route('/api/dashboard/repartition-journaux')
+def api_dashboard_repartition_journaux():
+    structure_id = session.get('structure_id')
+    return jsonify(generer_repartition_journaux(structure_id))
+
+
+@compta_bp.route('/api/dashboard/creances-assureurs')
+def api_dashboard_creances_assureurs():
+    structure_id = session.get('structure_id')
+    return jsonify(generer_creances_par_assureur(structure_id))
+
+
 # ========== TVA (3e chantier comptable : comptes auxiliaires → lettrage → TVA) ==========
 
 def generer_declaration_tva(structure_id, date_debut, date_fin):
