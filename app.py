@@ -96,6 +96,48 @@ def _rediriger_domaine_portail():
     if PORTAIL_DOMAIN and request.host.split(':')[0].lower() == PORTAIL_DOMAIN and request.path == '/':
         return redirect(url_for('page_portail_patient'))
 
+
+# ⭐ Neon (autosuspend actif à 5 min — choix du patron pour ne pas payer un
+# compute "always on") : au réveil du compute après un creux d'activité, une
+# brève fenêtre où le catalogue de tables n'est pas encore visible sur la
+# connexion peut faire planter la 1ère vraie requête SQL de la page
+# ("relation does not exist" sur des tables qui existent pourtant bien) —
+# vécu en prod sur GHP le 30/09/2026 (~40s d'indisponibilité, un vrai
+# utilisateur bloqué à la connexion) ; répliqué ici en prévention car BIASA
+# utilise le même schéma Neon (endpoint différent). On absorbe ce délai ICI,
+# par un sondage léger + nouvelles tentatives, AVANT que la vraie logique de
+# la route ne s'exécute — une vraie panne applicative reste un vrai 500
+# (jamais masquée), seul le réveil du compute Neon est retenté. Le sondage
+# ne se relance pas à chaque requête (coûterait une requête en plus en
+# permanence) : seulement s'il s'est passé plus d'une minute depuis la
+# dernière requête qui a réussi.
+_dernier_sondage_db_ok = [0.0]
+SEUIL_RESONDAGE_DB_SECONDES = 60
+
+
+@app.before_request
+def _absorber_reveil_neon():
+    import time
+    if request.endpoint == 'static':
+        return
+    maintenant = time.time()
+    if maintenant - _dernier_sondage_db_ok[0] < SEUIL_RESONDAGE_DB_SECONDES:
+        return
+    for tentative in range(3):
+        try:
+            db.session.execute(text('SELECT 1 FROM structures LIMIT 1'))
+            db.session.commit()
+            _dernier_sondage_db_ok[0] = maintenant
+            return
+        except Exception:
+            db.session.rollback()
+            if tentative < 2:
+                time.sleep(0.8 * (tentative + 1))
+    # Après 3 échecs, la requête suit son cours normalement — si Neon est
+    # réellement injoignable (pas juste en train de se réveiller), la route
+    # affichera l'erreur habituelle, jamais masquée indéfiniment.
+
+
 # ⭐ a_acces() (utils/permissions.py) utilisable directement dans les
 # templates Jinja — {% if a_acces('comptabilite') %} — point de vérité
 # unique partagé avec les décorateurs de routes (permission_requise) et
