@@ -865,9 +865,6 @@ def page_amu_entente_prealable():
     for d in demandes:
         p = patients_par_id.get(d.patient_id)
         hospit_liee = hospitalisations_par_id.get(d.hospitalisation_id)
-        peut_faire_definitive = bool(
-            d.statut == 'approuvee' and d.inclure_hospitalisation and d.imprime_le and not d.definitive_le
-        )
         demandes_detail.append({
             'id': d.id,
             'statut': d.statut,
@@ -895,7 +892,6 @@ def page_amu_entente_prealable():
             'hospitalisation_date_entree': hospit_liee.date_entree.strftime('%Y-%m-%d') if hospit_liee and hospit_liee.date_entree else '',
             'hospitalisation_date_sortie': hospit_liee.date_sortie.strftime('%Y-%m-%d') if hospit_liee and hospit_liee.date_sortie else '',
             'definitive_le': d.definitive_le.strftime('%d/%m/%Y %H:%M') if d.definitive_le else '',
-            'peut_faire_definitive': peut_faire_definitive,
         })
 
     # ⭐ Pré-remplissage depuis la page Hospitalisation (patron : "fait en
@@ -953,6 +949,12 @@ def api_amu_ep_patients():
     demandé (?type_amu=amu_cnss|amu_tns|amu_inam), pas aux 3 régimes
     mélangés — un patient AMU-INAM ne doit jamais apparaître quand on a
     choisi AMU-CNSS, et inversement."""
+    # ⭐ Revue de sécurité (2026-10-01) : manquait par rapport à toutes les
+    # autres routes EP — sans ça, n'importe quel compte connecté de la
+    # structure pouvait interroger cette recherche (nom/tél/n° AMU) même
+    # sans la permission 'entente_prealable'.
+    if not a_acces('entente_prealable'):
+        return jsonify({'data': [], 'error': 'Accès non autorisé'}), 403
     structure_id = session.get('structure_id')
     q = (request.args.get('search') or '').strip().lower()
     type_amu = request.args.get('type_amu')
@@ -1112,6 +1114,15 @@ def api_amu_ep_modifier(demande_id):
     # ne jamais l'écraser ici, sinon toute modification déferait la
     # liaison EP <-> Hospitalisation déjà établie.
     champs.pop('hospitalisation_id', None)
+    # ⭐⭐ Trouvé en revue de code : le formulaire "Modifier" permet aussi de
+    # rechercher et choisir un AUTRE patient que celui d'origine. Si la
+    # demande était liée à une hospitalisation, ce lien appartient au
+    # patient D'ORIGINE — le garder tel quel après un changement de patient
+    # ferait pointer demande.hospitalisation_id vers le séjour de quelqu'un
+    # d'autre. On le détache dans ce cas précis (jamais réassigné au
+    # hasard : juste remis à zéro, comme une demande jamais liée).
+    if demande.hospitalisation_id and champs.get('patient_id') != demande.patient_id:
+        demande.hospitalisation_id = None
     for cle, valeur in champs.items():
         setattr(demande, cle, valeur)
     db.session.commit()
@@ -1155,6 +1166,13 @@ def api_amu_ep_refuser(demande_id):
 @app.route('/amu/entente-prealable/<int:demande_id>/imprimer')
 @login_required
 def page_amu_ep_imprimer(demande_id):
+    # ⭐ Revue de sécurité (2026-10-01) : manquait — sans ça, n'importe quel
+    # compte connecté de la structure pouvait imprimer le PDF (nom,
+    # n° AMU... déchiffrés) de n'importe quelle EP approuvée en devinant son
+    # id, même sans la permission 'entente_prealable'.
+    if not a_acces('entente_prealable'):
+        flash('Accès non autorisé', 'danger')
+        return redirect(url_for('dashboard'))
     structure_id = session.get('structure_id')
     demande = DemandeEntentePrealable.query.filter_by(id=demande_id, structure_id=structure_id).first_or_404()
     if demande.statut != 'approuvee':
@@ -17922,13 +17940,19 @@ def api_creer_hospitalisation():
         # encore liée, et qu'aucune date d'entrée n'a été saisie à la main
         # ici, on reprend celle de l'EP — sinon (date saisie explicitement)
         # on la laisse telle quelle, la liaison se fait quand même mais un
-        # éventuel écart reste visible côté EP (Détails).
+        # éventuel écart reste visible côté EP (Détails). ⭐⭐ Bornée aux 30
+        # derniers jours : sans ça, une EP hospit. faite une fois et jamais
+        # liée (séjour finalement non réalisé à l'époque) se raccrocherait
+        # par erreur à une toute nouvelle hospitalisation sans rapport pour
+        # ce même patient des mois plus tard, lui collant sa vieille date
+        # d'admission (trouvé en revue de code, jamais vécu en prod).
         ep_a_lier = DemandeEntentePrealable.query.filter(
             DemandeEntentePrealable.structure_id == structure_id,
             DemandeEntentePrealable.patient_id == patient.id,
             DemandeEntentePrealable.inclure_hospitalisation == True,
             DemandeEntentePrealable.hospitalisation_id.is_(None),
             DemandeEntentePrealable.statut != 'refusee',
+            DemandeEntentePrealable.created_at >= datetime.utcnow() - timedelta(days=30),
         ).order_by(DemandeEntentePrealable.created_at.desc()).first()
 
         date_entree_str = data.get('date_entree')

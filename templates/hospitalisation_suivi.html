@@ -364,6 +364,14 @@
                             La date d'admission de l'EP ({{ ep_liee.hospit_date_admission.strftime('%d/%m/%Y') }}) ne correspond pas à la date d'entrée de ce séjour ({{ hospit.date_entree.strftime('%d/%m/%Y') }}) — vérifiez et ajustez si besoin.
                         </div>
                         {% endif %}
+                        {% if ep_liee.statut == 'refusee' %}
+                        <!-- ⭐ Trouvé en revue de code : une fois liée, même refusée,
+                             le raccourci pré-rempli disparaissait sans retour
+                             possible — on permet de refaire une demande. -->
+                        <a class="btn btn-sm btn-warning ms-1" href="{{ url_for('page_amu_entente_prealable', patient_id=hospit.patient_id, hospit=1, hospitalisation_id=hospit.id) }}" target="_blank">
+                            <i class="fas fa-redo"></i> Refaire une demande
+                        </a>
+                        {% endif %}
                         {% else %}
                         <a class="btn btn-sm btn-warning ms-2" href="{{ url_for('page_amu_entente_prealable', patient_id=hospit.patient_id, hospit=1, hospitalisation_id=hospit.id) }}" target="_blank">
                             <i class="fas fa-file-medical"></i> Demander l'Entente Préalable

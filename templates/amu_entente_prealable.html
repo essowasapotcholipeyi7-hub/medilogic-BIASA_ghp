@@ -378,6 +378,19 @@ let lignesActes = [];
 let lignesProduits = [];
 let debouncePatient = null, debounceActe = null, debounceProduit = null;
 
+// ⭐ Revue de sécurité (2026-10-01) : plusieurs blocs ci-dessous injectent du
+// texte saisi par l'utilisateur (nom patient, motif, acte/produit en
+// "saisie manuelle"...) dans du innerHTML ou des attributs HTML sans
+// échappement — un motif contenant par ex. un simple guillemet cassait déjà
+// l'attribut value="..." de son propre champ, et un nom/motif contenant des
+// balises aurait pu s'exécuter comme HTML pour quiconque ouvre "Détails".
+// Toute valeur d'origine utilisateur insérée en HTML doit passer par ceci.
+function escapeHtml(valeur) {
+    return String(valeur ?? '').replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+}
+
 function toggleSection(nom) {
     const chk = document.getElementById('chk' + nom);
     document.getElementById('section' + nom).classList.toggle('active', chk.checked);
@@ -421,7 +434,7 @@ function appliquerPatient(p) {
     document.getElementById('patientResultats').style.display = 'none';
     const bloc = document.getElementById('patientChoisiBloc');
     bloc.style.display = '';
-    bloc.innerHTML = `N° AMU : <strong>${p.numero_assure || '—'}</strong> · Tél : ${p.telephone || '—'} · Régime : <strong>${p.type_assurance}</strong>`;
+    bloc.innerHTML = `N° AMU : <strong>${escapeHtml(p.numero_assure) || '—'}</strong> · Tél : ${escapeHtml(p.telephone) || '—'} · Régime : <strong>${escapeHtml(p.type_assurance)}</strong>`;
 }
 
 document.getElementById('patientSearch').addEventListener('input', function() {
@@ -443,8 +456,8 @@ document.getElementById('patientSearch').addEventListener('input', function() {
                     return;
                 }
                 box.innerHTML = liste.map(p => `
-                    <a href="#" class="list-group-item list-group-item-action p-2" onclick='appliquerPatient(${JSON.stringify(p).replace(/'/g, "&apos;")}); return false;'>
-                        <strong>${p.nom} ${p.prenom}</strong> — ${p.telephone || ''} <span class="text-muted">(${p.type_assurance})</span>
+                    <a href="#" class="list-group-item list-group-item-action p-2" onclick='appliquerPatient(${escapeHtml(JSON.stringify(p))}); return false;'>
+                        <strong>${escapeHtml(p.nom)} ${escapeHtml(p.prenom)}</strong> — ${escapeHtml(p.telephone)} <span class="text-muted">(${escapeHtml(p.type_assurance)})</span>
                     </a>`).join('');
                 box.style.display = 'block';
             });
@@ -470,8 +483,8 @@ function brancherRecherche(inputId, resultId, url, type) {
                         return;
                     }
                     box.innerHTML = liste.map(l => `
-                        <a href="#" class="list-group-item list-group-item-action p-2" onclick='ajouterLigne(${JSON.stringify({type, nom: l.nom}).replace(/'/g, "&apos;")}); return false;'>
-                            ${l.nom}
+                        <a href="#" class="list-group-item list-group-item-action p-2" onclick='ajouterLigne(${escapeHtml(JSON.stringify({type, nom: l.nom}))}); return false;'>
+                            ${escapeHtml(l.nom)}
                         </a>`).join('');
                     box.style.display = 'block';
                 });
@@ -522,8 +535,8 @@ function rendreLignes(type) {
     if (!lignes.length) { el.innerHTML = '<div class="text-muted small">Aucune ligne ajoutée.</div>'; return; }
     el.innerHTML = lignes.map((l, i) => `
         <div class="ep-ligne-motif">
-            <span class="ep-ligne-nom">${l.nom}${l.saisie_manuelle ? ' <span class="text-muted">(manuel)</span>' : ''}</span>
-            <input type="text" class="form-control ep-ligne-motif-input" placeholder="Motif ou indication..." value="${l.motif || ''}" oninput="majMotifLigne('${type}', ${i}, this.value)">
+            <span class="ep-ligne-nom">${escapeHtml(l.nom)}${l.saisie_manuelle ? ' <span class="text-muted">(manuel)</span>' : ''}</span>
+            <input type="text" class="form-control ep-ligne-motif-input" placeholder="Motif ou indication..." value="${escapeHtml(l.motif)}" oninput="majMotifLigne('${type}', ${i}, this.value)">
             <button type="button" class="btn btn-sm btn-outline-danger" onclick="retirerLigne('${type}', ${i})"><i class="fas fa-times"></i></button>
         </div>`).join('');
 }
@@ -534,36 +547,36 @@ function voirDetails(id) {
     if (!d) return;
     const p = d.patient;
     let html = `
-        <p><strong>Patient :</strong> ${p ? (p.nom + ' ' + p.prenom) : '—'}
-           ${p ? `(N° AMU : ${p.numero_assure || '—'} · Tél : ${p.telephone || '—'})` : ''}</p>
-        <p><strong>Médecin prescripteur :</strong> ${d.medecin_nom}</p>
-        <p><strong>Régime :</strong> ${TYPE_AMU_LABELS_JS[d.type_amu] || d.type_amu}
-           &nbsp;·&nbsp; <strong>Date de prescription :</strong> ${d.date_prescription}
-           ${d.numero_feuille_soins ? `&nbsp;·&nbsp; <strong>N° Feuille de soins :</strong> ${d.numero_feuille_soins}` : ''}</p>`;
+        <p><strong>Patient :</strong> ${p ? (escapeHtml(p.nom) + ' ' + escapeHtml(p.prenom)) : '—'}
+           ${p ? `(N° AMU : ${escapeHtml(p.numero_assure) || '—'} · Tél : ${escapeHtml(p.telephone) || '—'})` : ''}</p>
+        <p><strong>Médecin prescripteur :</strong> ${escapeHtml(d.medecin_nom)}</p>
+        <p><strong>Régime :</strong> ${escapeHtml(TYPE_AMU_LABELS_JS[d.type_amu] || d.type_amu)}
+           &nbsp;·&nbsp; <strong>Date de prescription :</strong> ${escapeHtml(d.date_prescription)}
+           ${d.numero_feuille_soins ? `&nbsp;·&nbsp; <strong>N° Feuille de soins :</strong> ${escapeHtml(d.numero_feuille_soins)}` : ''}</p>`;
 
     if (d.inclure_actes) {
         const actes = d.lignes_motif.filter(l => l.type === 'acte');
-        html += `<p class="mb-1"><strong>Actes</strong></p><ul>${actes.map(l => `<li>${l.nom} — <em>${l.motif || 'aucun motif renseigné'}</em></li>`).join('') || '<li class="text-muted">Aucun</li>'}</ul>`;
+        html += `<p class="mb-1"><strong>Actes</strong></p><ul>${actes.map(l => `<li>${escapeHtml(l.nom)} — <em>${escapeHtml(l.motif) || 'aucun motif renseigné'}</em></li>`).join('') || '<li class="text-muted">Aucun</li>'}</ul>`;
     }
     if (d.inclure_produits) {
         const produits = d.lignes_motif.filter(l => l.type === 'produit');
-        html += `<p class="mb-1"><strong>Produits / Médicaments</strong></p><ul>${produits.map(l => `<li>${l.nom} — <em>${l.motif || 'aucun motif renseigné'}</em></li>`).join('') || '<li class="text-muted">Aucun</li>'}</ul>`;
+        html += `<p class="mb-1"><strong>Produits / Médicaments</strong></p><ul>${produits.map(l => `<li>${escapeHtml(l.nom)} — <em>${escapeHtml(l.motif) || 'aucun motif renseigné'}</em></li>`).join('') || '<li class="text-muted">Aucun</li>'}</ul>`;
     }
     if (d.inclure_hospitalisation) {
         const ecart = d.hospitalisation_date_entree && d.hospit_date_admission && d.hospitalisation_date_entree !== d.hospit_date_admission;
         html += `<p class="mb-1"><strong>Hospitalisation</strong> ${d.definitive_le ? '<span class="badge bg-dark">Définitive</span>' : '<span class="badge bg-secondary">Pré-accord</span>'}</p>
             <ul>
-                <li>Date d'admission (EP) : ${d.hospit_date_admission || '—'}</li>
-                ${d.hospitalisation_id ? `<li>Date d'entrée (séjour lié) : ${d.hospitalisation_date_entree || '—'}${d.hospitalisation_date_sortie ? ' · Date de sortie : ' + d.hospitalisation_date_sortie : ''}</li>` : ''}
-                <li>Motif : ${d.hospit_motif || '—'}</li>
-                <li>Catégorie de salle : ${d.hospit_categorie_salle === 'autre' ? ('Autre — ' + (d.hospit_categorie_autre_precision || 'non précisé')) : 'Cabine ventilée à 2 lits'}</li>
-                <li>Durée ${d.definitive_le ? 'réelle' : 'probable'} du séjour : ${d.hospit_duree_sejour || '—'}</li>
+                <li>Date d'admission (EP) : ${escapeHtml(d.hospit_date_admission) || '—'}</li>
+                ${d.hospitalisation_id ? `<li>Date d'entrée (séjour lié) : ${escapeHtml(d.hospitalisation_date_entree) || '—'}${d.hospitalisation_date_sortie ? ' · Date de sortie : ' + escapeHtml(d.hospitalisation_date_sortie) : ''}</li>` : ''}
+                <li>Motif : ${escapeHtml(d.hospit_motif) || '—'}</li>
+                <li>Catégorie de salle : ${d.hospit_categorie_salle === 'autre' ? ('Autre — ' + (escapeHtml(d.hospit_categorie_autre_precision) || 'non précisé')) : 'Cabine ventilée à 2 lits'}</li>
+                <li>Durée ${d.definitive_le ? 'réelle' : 'probable'} du séjour : ${escapeHtml(d.hospit_duree_sejour) || '—'}</li>
             </ul>
             ${ecart ? `<p class="small text-danger"><i class="fas fa-exclamation-circle"></i> La date d'admission de l'EP ne correspond pas à la date d'entrée du séjour lié — vérifiez et ajustez si besoin.</p>` : ''}
-            ${d.hospitalisation_id ? `<a class="btn btn-sm btn-outline-dark" href="/hospitalisation/${d.hospitalisation_id}/billet" target="_blank"><i class="fas fa-receipt"></i> Imprimer le billet d'hospitalisation</a>` : ''}`;
+            ${d.hospitalisation_id ? `<a class="btn btn-sm btn-outline-dark" href="/hospitalisation/${encodeURIComponent(d.hospitalisation_id)}/billet" target="_blank"><i class="fas fa-receipt"></i> Imprimer le billet d'hospitalisation</a>` : ''}`;
     }
-    html += `<p class="small text-muted mb-0 mt-2">Créée par ${d.cree_par_nom || '—'}</p>`;
-    if (d.motif_refus) html += `<p class="small text-danger">Motif du refus : ${d.motif_refus}</p>`;
+    html += `<p class="small text-muted mb-0 mt-2">Créée par ${escapeHtml(d.cree_par_nom) || '—'}</p>`;
+    if (d.motif_refus) html += `<p class="small text-danger">Motif du refus : ${escapeHtml(d.motif_refus)}</p>`;
 
     document.getElementById('detailsEpBody').innerHTML = html;
     new bootstrap.Modal(document.getElementById('modalDetailsEp')).show();
