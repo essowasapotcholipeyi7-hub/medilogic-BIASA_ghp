@@ -87,21 +87,23 @@ def _texte(c, hauteur, x, top, valeur, taille=None, largeur_max=None):
 def _texte_precision_inam(c, hauteur, valeur, taille=9):
     """Champ "Si non, catégorie attribuée (préciser) :" du gabarit INAM —
     DEUX lignes de pointillés disponibles : une courte juste après le
-    label sur sa propre ligne (x=372-472, y=717-727) et une complète juste
-    en dessous (x=321-471, y=731-741). On préfère écrire sur la ligne
-    complète SEULE (plus de place, rendu plus propre) ; seulement si ça ne
-    suffit toujours pas au plancher de police, on utilise les deux lignes
-    : début sur la courte, suite sur la complète — jamais les deux en même
-    temps sur une coordonnée qui n'appartient à aucune des deux (c'était le
-    bug : x de la ligne complète + y de la ligne courte, le texte flottait
-    entre les deux pointillés au lieu de reposer dessus)."""
+    label, sur la MÊME ligne que lui (x=372-472, y=717-727) et une
+    complète juste en dessous (x=321-471, y=731-741). Patron : le texte
+    saisi doit commencer à la suite du ":" sur la même ligne que le
+    label — donc on écrit d'abord sur la ligne courte ; seulement si la
+    valeur ne tient pas entière dessus, on déborde sur la ligne complète
+    en dessous (début sur la courte, suite sur la complète) — jamais les
+    deux en même temps sur une coordonnée qui n'appartient à aucune des
+    deux (c'était le bug initial : x de la ligne complète + y de la ligne
+    courte, le texte flottait entre les deux pointillés au lieu de
+    reposer dessus)."""
     if not valeur:
         return
     ligne_longue = (321, 739, 150)
     ligne_courte = (372, 725, 100)
-    tient, _taille = _ajuster_pour_largeur(valeur, ligne_longue[2], taille)
+    tient, _taille = _ajuster_pour_largeur(valeur, ligne_courte[2], taille)
     if tient == valeur:
-        _texte(c, hauteur, ligne_longue[0], ligne_longue[1], valeur, taille=taille, largeur_max=ligne_longue[2])
+        _texte(c, hauteur, ligne_courte[0], ligne_courte[1], valeur, taille=taille, largeur_max=ligne_courte[2])
         return
     mots = valeur.split(' ')
     ligne1 = ''
@@ -215,17 +217,20 @@ def remplir_ep_inam(demande, patient, medecin, code_formation_sanitaire):
     actes = _lignes_par_type(demande.lignes_motif, 'acte')[:3]
     produits = _lignes_par_type(demande.lignes_motif, 'produit')[:3]
 
+    # ⭐ Patron : le texte saisi doit commencer à la suite des ":" sur la
+    # MÊME ligne que le label (et non sur la ligne de pointillés séparée
+    # juste en dessous, qui reste alors vide/non utilisée).
     def dessiner(c, h):
-        _texte(c, h, 44, 157, patient.nom or '', largeur_max=235)
-        _texte(c, h, 44, 194, patient.prenom or '', largeur_max=235)
-        _texte(c, h, 44, 231, patient.numero_assure or '', largeur_max=235)
-        _texte(c, h, 44, 267, demande.numero_feuille_soins or '', largeur_max=235)
+        _texte(c, h, 72, 149.5, patient.nom or '', largeur_max=220)
+        _texte(c, h, 90, 186, patient.prenom or '', largeur_max=200)
+        _texte(c, h, 124, 223, patient.numero_assure or '', largeur_max=165)
+        _texte(c, h, 137, 260, demande.numero_feuille_soins or '', largeur_max=150)
 
-        _texte(c, h, 321, 157, code_formation_sanitaire or '', largeur_max=215)
-        _texte(c, h, 321, 194, medecin.code_prescripteur or '', largeur_max=215)
-        _texte(c, h, 321, 231, medecin.telephone or '', largeur_max=215)
+        _texte(c, h, 446, 149.5, code_formation_sanitaire or '', largeur_max=95)
+        _texte(c, h, 414, 186, medecin.code_prescripteur or '', largeur_max=125)
+        _texte(c, h, 414, 223, medecin.telephone or '', largeur_max=125)
         d = demande.date_prescription or date.today()
-        _texte(c, h, 321, 267, d.strftime('%d/%m/%Y'), largeur_max=215)
+        _texte(c, h, 437, 260, d.strftime('%d/%m/%Y'), largeur_max=100)
 
         # Tableau "Actes" — N°(35.3-63.6) | Actes(63.6-311.7) | Motifs(311.7-559.8)
         if demande.inclure_actes:
