@@ -23,6 +23,7 @@ from datetime import date
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import black
+from reportlab.pdfbase.pdfmetrics import stringWidth
 
 AMU_CNSS_PDF = 'static/documents/amu_cnss/demande_entente_prealable.pdf'
 AMU_INAM_PDF = 'static/documents/amu_inam/demande_entente_prealable.pdf'
@@ -32,6 +33,8 @@ FONT_SIZE = 11      # ⭐ augmenté (était 10) — patron : "augmente un peu la
                      # police du texte pour que ça soit même chose que ce
                      # qui est sur la fiche déjà".
 FONT_SIZE_TABLE = 10  # était 8 — tableaux Actes/Médicaments/Hospitalisation
+FONT_SIZE_MIN = 6     # ⭐ plancher en-dessous duquel on tronque plutôt que
+                       # de continuer à rapetisser (devient illisible).
 
 
 def _overlay(largeur, hauteur, dessiner):
@@ -45,16 +48,73 @@ def _overlay(largeur, hauteur, dessiner):
     return PdfReader(buf).pages[0]
 
 
-def _texte(c, hauteur, x, top, valeur, taille=None):
+def _ajuster_pour_largeur(valeur, largeur_max, taille_base):
+    """⭐ Sans ça, une valeur plus longue que prévu (nom composé, libellé
+    d'acte/produit tiré du tableau tarifaire, texte libre saisi à la main)
+    déborde purement et simplement par-dessus le reste de la fiche — vécu
+    en prod (patron : "le texte ne reste pas bien", une valeur chiffrée de
+    test qui débordait sur toute la largeur de la page). Rétrécit la
+    police par pas de 0.5pt jusqu'à FONT_SIZE_MIN ; si ça ne suffit
+    toujours pas, tronque avec une ellipse plutôt que de déborder."""
+    if not largeur_max or not valeur:
+        return valeur, taille_base
+    taille = taille_base
+    while taille > FONT_SIZE_MIN and stringWidth(valeur, FONT, taille) > largeur_max:
+        taille -= 0.5
+    if stringWidth(valeur, FONT, taille) <= largeur_max:
+        return valeur, taille
+    # Toujours trop large même au plancher : tronque avec "…"
+    tronque = valeur
+    while tronque and stringWidth(tronque + '…', FONT, taille) > largeur_max:
+        tronque = tronque[:-1]
+    return (tronque + '…' if tronque else valeur[:1]), taille
+
+
+def _texte(c, hauteur, x, top, valeur, taille=None, largeur_max=None):
     """Écrit `valeur` avec son coin bas-gauche à (x, top) en coordonnées
-    pdfplumber (top = distance depuis le HAUT de la page)."""
+    pdfplumber (top = distance depuis le HAUT de la page). Si `largeur_max`
+    est fourni, la police rétrécit (puis tronque en dernier recours) pour
+    ne jamais déborder de sa colonne/case — voir _ajuster_pour_largeur."""
     if not valeur:
         return
-    if taille:
-        c.setFont(FONT, taille)
-    c.drawString(x, hauteur - top, str(valeur))
-    if taille:
-        c.setFont(FONT, FONT_SIZE)
+    taille_effective = taille or FONT_SIZE
+    valeur, taille_effective = _ajuster_pour_largeur(str(valeur), largeur_max, taille_effective)
+    c.setFont(FONT, taille_effective)
+    c.drawString(x, hauteur - top, valeur)
+    c.setFont(FONT, FONT_SIZE)
+
+
+def _texte_precision_inam(c, hauteur, valeur, taille=9):
+    """Champ "Si non, catégorie attribuée (préciser) :" du gabarit INAM —
+    DEUX lignes de pointillés disponibles : une courte juste après le
+    label sur sa propre ligne (x=372-472, y=717-727) et une complète juste
+    en dessous (x=321-471, y=731-741). On préfère écrire sur la ligne
+    complète SEULE (plus de place, rendu plus propre) ; seulement si ça ne
+    suffit toujours pas au plancher de police, on utilise les deux lignes
+    : début sur la courte, suite sur la complète — jamais les deux en même
+    temps sur une coordonnée qui n'appartient à aucune des deux (c'était le
+    bug : x de la ligne complète + y de la ligne courte, le texte flottait
+    entre les deux pointillés au lieu de reposer dessus)."""
+    if not valeur:
+        return
+    ligne_longue = (321, 739, 150)
+    ligne_courte = (372, 725, 100)
+    tient, _taille = _ajuster_pour_largeur(valeur, ligne_longue[2], taille)
+    if tient == valeur:
+        _texte(c, hauteur, ligne_longue[0], ligne_longue[1], valeur, taille=taille, largeur_max=ligne_longue[2])
+        return
+    mots = valeur.split(' ')
+    ligne1 = ''
+    i = 0
+    while i < len(mots) and stringWidth((ligne1 + ' ' + mots[i]).strip(), FONT, taille) <= ligne_courte[2]:
+        ligne1 = (ligne1 + ' ' + mots[i]).strip()
+        i += 1
+    if not ligne1:
+        ligne1 = mots[0]
+        i = 1
+    reste = ' '.join(mots[i:])
+    _texte(c, hauteur, ligne_courte[0], ligne_courte[1], ligne1, taille=taille, largeur_max=ligne_courte[2])
+    _texte(c, hauteur, ligne_longue[0], ligne_longue[1], reste, taille=taille, largeur_max=ligne_longue[2])
 
 
 def _coche(c, hauteur, x0, x1, top0, top1):
@@ -93,44 +153,47 @@ def remplir_ep_cnss(demande, patient, medecin, code_formation_sanitaire):
 
     def dessiner(c, h):
         nom_complet = f"{patient.nom} {patient.prenom}".strip()
-        _texte(c, h, 95, 118, patient.numero_assure or '')
-        _texte(c, h, 132, 139, nom_complet)
-        _texte(c, h, 430, 139, patient.telephone or '')
+        _texte(c, h, 95, 118, patient.numero_assure or '', largeur_max=390)
+        _texte(c, h, 132, 139, nom_complet, largeur_max=220)
+        _texte(c, h, 430, 139, patient.telephone or '', largeur_max=130)
 
-        _texte(c, h, 180, 182.5, code_formation_sanitaire or '')
-        _texte(c, h, 419, 181, medecin.code_prescripteur or '')
-        _texte(c, h, 97, 206, medecin.telephone or '')
+        _texte(c, h, 180, 182.5, code_formation_sanitaire or '', largeur_max=115)
+        _texte(c, h, 419, 181, medecin.code_prescripteur or '', largeur_max=140)
+        _texte(c, h, 97, 206, medecin.telephone or '', largeur_max=140)
         d = demande.date_prescription or date.today()
-        _texte(c, h, 384, 206, d.strftime('%d/%m'))
-        _texte(c, h, 463, 206, str(d.year)[-2:])
+        _texte(c, h, 384, 206, d.strftime('%d/%m'), largeur_max=35)
+        _texte(c, h, 463, 206, str(d.year)[-2:], largeur_max=25)
 
         # Tableau "Actes" — N°(27.5-50.2) | Acte(50.2-198.3) | Motif(198.3-361.0)
         if demande.inclure_actes:
             y_rows = [291, 320.5, 346.5]
             for ligne, y in zip(actes, y_rows):
-                _texte(c, h, 55, y, _ligne_nom(ligne), taille=FONT_SIZE_TABLE)
-                _texte(c, h, 203, y, _ligne_motif(ligne), taille=FONT_SIZE_TABLE)
+                _texte(c, h, 55, y, _ligne_nom(ligne), taille=FONT_SIZE_TABLE, largeur_max=140)
+                _texte(c, h, 203, y, _ligne_motif(ligne), taille=FONT_SIZE_TABLE, largeur_max=155)
 
         # Tableau "Médicament et assimilé" — N°(27-55.6) | Médicament(55.6-213.8) | Motif(213.8-418.8)
         if demande.inclure_produits:
             y_rows = [423.5, 450.5, 480.9, 503.4]
             for ligne, y in zip(produits, y_rows):
-                _texte(c, h, 60, y, _ligne_nom(ligne), taille=FONT_SIZE_TABLE)
-                _texte(c, h, 218, y, _ligne_motif(ligne), taille=FONT_SIZE_TABLE)
+                _texte(c, h, 60, y, _ligne_nom(ligne), taille=FONT_SIZE_TABLE, largeur_max=150)
+                _texte(c, h, 218, y, _ligne_motif(ligne), taille=FONT_SIZE_TABLE, largeur_max=195)
 
         # Tableau "Hospitalisation" — colonnes : Date admission(26.5-77.2) |
         # Motif(77.2-203.3) | Catégorie de salle(203.3-324.1, checkboxes
         # Oui/Non) | Durée séjour(324.1-380.0)
         if demande.inclure_hospitalisation:
             if demande.hospit_date_admission:
-                _texte(c, h, 32, 615, demande.hospit_date_admission.strftime('%d/%m/%Y'), taille=FONT_SIZE_TABLE)
-            _texte(c, h, 80, 615, demande.hospit_motif or '', taille=FONT_SIZE_TABLE)
-            _texte(c, h, 327, 615, demande.hospit_duree_sejour or '', taille=FONT_SIZE_TABLE)
+                _texte(c, h, 29, 615, demande.hospit_date_admission.strftime('%d/%m/%Y'), taille=FONT_SIZE_TABLE, largeur_max=45)
+            _texte(c, h, 80, 615, demande.hospit_motif or '', taille=FONT_SIZE_TABLE, largeur_max=120)
+            _texte(c, h, 327, 615, demande.hospit_duree_sejour or '', taille=FONT_SIZE_TABLE, largeur_max=50)
             if demande.hospit_categorie_salle == 'cabine_ventilee':
                 _coche(c, h, 230.2, 243.5, 645.5, 655.6)  # case "Oui"
             elif demande.hospit_categorie_salle == 'autre':
                 _coche(c, h, 230.2, 243.5, 659.4, 669.5)  # case "Non"
-                _texte(c, h, 212, 718, demande.hospit_categorie_autre_precision or '', taille=9)
+                # ⭐ Une seule ligne de pointillés disponible ici (contrairement
+                # à l'INAM qui en a deux) : rétrécit/tronque, pas de retour
+                # à la ligne possible.
+                _texte(c, h, 212, 719, demande.hospit_categorie_autre_precision or '', taille=9, largeur_max=80)
 
     page1.merge_page(_overlay(largeur, hauteur, dessiner))
 
@@ -153,44 +216,44 @@ def remplir_ep_inam(demande, patient, medecin, code_formation_sanitaire):
     produits = _lignes_par_type(demande.lignes_motif, 'produit')[:3]
 
     def dessiner(c, h):
-        _texte(c, h, 44, 157, patient.nom or '')
-        _texte(c, h, 44, 194, patient.prenom or '')
-        _texte(c, h, 44, 231, patient.numero_assure or '')
-        _texte(c, h, 44, 267, demande.numero_feuille_soins or '')
+        _texte(c, h, 44, 157, patient.nom or '', largeur_max=235)
+        _texte(c, h, 44, 194, patient.prenom or '', largeur_max=235)
+        _texte(c, h, 44, 231, patient.numero_assure or '', largeur_max=235)
+        _texte(c, h, 44, 267, demande.numero_feuille_soins or '', largeur_max=235)
 
-        _texte(c, h, 321, 157, code_formation_sanitaire or '')
-        _texte(c, h, 321, 194, medecin.code_prescripteur or '')
-        _texte(c, h, 321, 231, medecin.telephone or '')
+        _texte(c, h, 321, 157, code_formation_sanitaire or '', largeur_max=215)
+        _texte(c, h, 321, 194, medecin.code_prescripteur or '', largeur_max=215)
+        _texte(c, h, 321, 231, medecin.telephone or '', largeur_max=215)
         d = demande.date_prescription or date.today()
-        _texte(c, h, 321, 267, d.strftime('%d/%m/%Y'))
+        _texte(c, h, 321, 267, d.strftime('%d/%m/%Y'), largeur_max=215)
 
         # Tableau "Actes" — N°(35.3-63.6) | Actes(63.6-311.7) | Motifs(311.7-559.8)
         if demande.inclure_actes:
             y_rows = [333, 365, 396]
             for ligne, y in zip(actes, y_rows):
-                _texte(c, h, 68, y, _ligne_nom(ligne), taille=FONT_SIZE_TABLE)
-                _texte(c, h, 316, y, _ligne_motif(ligne), taille=FONT_SIZE_TABLE)
+                _texte(c, h, 68, y, _ligne_nom(ligne), taille=FONT_SIZE_TABLE, largeur_max=235)
+                _texte(c, h, 316, y, _ligne_motif(ligne), taille=FONT_SIZE_TABLE, largeur_max=235)
 
         # Tableau "Produits pharmaceutiques" — mêmes colonnes que Actes
         if demande.inclure_produits:
             y_rows = [477, 508, 539]
             for ligne, y in zip(produits, y_rows):
-                _texte(c, h, 68, y, _ligne_nom(ligne), taille=FONT_SIZE_TABLE)
-                _texte(c, h, 316, y, _ligne_motif(ligne), taille=FONT_SIZE_TABLE)
+                _texte(c, h, 68, y, _ligne_nom(ligne), taille=FONT_SIZE_TABLE, largeur_max=235)
+                _texte(c, h, 316, y, _ligne_motif(ligne), taille=FONT_SIZE_TABLE, largeur_max=235)
 
         # Tableau "Hospitalisation" — Date admission(35.3-113.3) |
         # Motifs(113.3-297.6) | Catégorie de salle(297.6-481.9, checkboxes
         # Oui/Non) | Durée séjour(481.9-559.8)
         if demande.inclure_hospitalisation:
             if demande.hospit_date_admission:
-                _texte(c, h, 40, 650, demande.hospit_date_admission.strftime('%d/%m/%Y'), taille=FONT_SIZE_TABLE)
-            _texte(c, h, 118, 650, demande.hospit_motif or '', taille=FONT_SIZE_TABLE)
-            _texte(c, h, 487, 650, demande.hospit_duree_sejour or '', taille=FONT_SIZE_TABLE)
+                _texte(c, h, 38, 650, demande.hospit_date_admission.strftime('%d/%m/%Y'), taille=FONT_SIZE_TABLE, largeur_max=72)
+            _texte(c, h, 118, 650, demande.hospit_motif or '', taille=FONT_SIZE_TABLE, largeur_max=175)
+            _texte(c, h, 487, 650, demande.hospit_duree_sejour or '', taille=FONT_SIZE_TABLE, largeur_max=68)
             if demande.hospit_categorie_salle == 'cabine_ventilee':
                 _coche(c, h, 344.9, 357.9, 678.6, 688.4)  # case "Oui"
             elif demande.hospit_categorie_salle == 'autre':
                 _coche(c, h, 396.2, 409.2, 679.7, 689.5)  # case "Non"
-                _texte(c, h, 326, 726, demande.hospit_categorie_autre_precision or '', taille=9)
+                _texte_precision_inam(c, h, demande.hospit_categorie_autre_precision or '')
 
     page1.merge_page(_overlay(largeur, hauteur, dessiner))
 

@@ -873,16 +873,22 @@ def page_amu_entente_prealable():
 @app.route('/api/amu/entente-prealable/patients')
 @login_required
 def api_amu_ep_patients():
-    """Recherche de patients AMU pour l'auto-remplissage — filtrée aux 3
-    régimes AMU (seuls concernés par l'Entente Préalable), contrairement à
-    /api/patients/liste qui liste tout le monde."""
+    """Recherche de patients AMU pour l'auto-remplissage — patron :
+    "normalement si on choisit le régime c'est les patients de ce régime
+    qui viennent pour qu'on ne se trompe pas". Filtrée au régime EXACT
+    demandé (?type_amu=amu_cnss|amu_tns|amu_inam), pas aux 3 régimes
+    mélangés — un patient AMU-INAM ne doit jamais apparaître quand on a
+    choisi AMU-CNSS, et inversement."""
     structure_id = session.get('structure_id')
     q = (request.args.get('search') or '').strip().lower()
+    type_amu = request.args.get('type_amu')
+    if type_amu not in ('amu_cnss', 'amu_tns', 'amu_inam'):
+        return jsonify({'data': [], 'error': 'Choisissez d\'abord le régime AMU'}), 400
     if len(q) < 2:
         return jsonify({'data': []})
     patients = Patient.query.filter(
         Patient.structure_id == structure_id,
-        Patient.type_assurance.in_(list(TYPE_AMU_LABELS.keys())),
+        Patient.type_assurance == type_amu,
     ).all()
     patients = dechiffrer_patients_orm(patients)
     resultats = [
@@ -909,16 +915,20 @@ def api_amu_ep_creer():
     medecin = Medecin.query.filter_by(id=data.get('medecin_id'), structure_id=structure_id).first()
     if not patient or not medecin:
         return jsonify({'success': False, 'error': 'Patient ou médecin introuvable'}), 400
-    if patient.type_assurance not in TYPE_AMU_LABELS:
-        return jsonify({'success': False, 'error': "Ce patient n'a pas d'assurance AMU"}), 400
 
-    # ⭐ Régime choisi EXPLICITEMENT dans le formulaire (patron : "on
-    # devrait avoir la possibilité de choisir EP inam ou cnss"), plus
-    # seulement déduit du patient — 'amu_tns' n'existe pas comme gabarit à
-    # part, il réutilise 'amu_cnss' (même administration CNSS).
+    # ⭐ Régime choisi EXPLICITEMENT dans le formulaire, 3 valeurs distinctes
+    # (patron : "normalement si on choisit le régime c'est les patients de
+    # ce régime qui viennent pour qu'on ne se trompe pas"). Le patient doit
+    # avoir EXACTEMENT ce régime — pas juste "une assurance AMU
+    # quelconque" — vérifié ici aussi (pas seulement côté recherche) pour
+    # ne jamais enregistrer un mauvais couple patient/régime. 'amu_tns'
+    # n'a pas son propre gabarit PDF, il réutilise 'amu_cnss' à
+    # l'impression (même administration CNSS) mais reste stocké tel quel.
     type_amu = data.get('type_amu')
-    if type_amu not in ('amu_cnss', 'amu_inam'):
-        return jsonify({'success': False, 'error': 'Régime AMU invalide (CNSS ou INAM)'}), 400
+    if type_amu not in ('amu_cnss', 'amu_tns', 'amu_inam'):
+        return jsonify({'success': False, 'error': 'Régime AMU invalide (CNSS, TNS ou INAM)'}), 400
+    if patient.type_assurance != type_amu:
+        return jsonify({'success': False, 'error': f"Ce patient n'est pas assuré {TYPE_AMU_LABELS.get(type_amu, type_amu)}"}), 400
 
     inclure_actes = bool(data.get('inclure_actes'))
     inclure_produits = bool(data.get('inclure_produits'))

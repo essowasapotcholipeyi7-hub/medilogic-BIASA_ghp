@@ -75,27 +75,34 @@
         <h6><i class="fas fa-plus-circle me-1"></i>Nouvelle demande</h6>
         <form id="formEp">
             <div class="row g-3">
-                <div class="col-md-6 position-relative">
-                    <label class="form-label small fw-semibold">Patient (assuré AMU)</label>
-                    <input type="text" class="form-control" id="patientSearch" placeholder="Rechercher nom, prénom ou téléphone..." autocomplete="off">
+                <!-- ⭐ Régime choisi EN PREMIER (patron : "normalement si on
+                     choisit le régime c'est les patients de ce régime qui
+                     viennent pour qu'on ne se trompe pas") — la recherche
+                     patient juste à côté n'est activée qu'une fois ce choix
+                     fait, et ne propose QUE les patients de ce régime exact. -->
+                <div class="col-md-3">
+                    <label class="form-label small fw-semibold">Régime AMU</label>
+                    <select class="form-control" id="typeAmu" required onchange="changerRegime()">
+                        <option value="">— Choisir —</option>
+                        <option value="amu_cnss">AMU-CNSS</option>
+                        <option value="amu_tns">AMU-TNS</option>
+                        <option value="amu_inam">AMU-INAM</option>
+                    </select>
+                </div>
+                <div class="col-md-5 position-relative">
+                    <label class="form-label small fw-semibold">Patient (assuré de ce régime)</label>
+                    <input type="text" class="form-control" id="patientSearch" placeholder="Choisissez d'abord le régime..." autocomplete="off" disabled>
                     <div id="patientResultats"></div>
                     <div id="patientChoisiBloc" class="mt-2 small text-muted" style="display:none;"></div>
                     <input type="hidden" id="patientId">
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-4">
                     <label class="form-label small fw-semibold">Médecin prescripteur</label>
                     <select class="form-control" id="medecinId" required>
                         <option value="">— Choisir —</option>
                         {% for m in medecins_liste %}
                         <option value="{{ m.id }}">{{ m.nom_complet }}</option>
                         {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label small fw-semibold">Régime AMU</label>
-                    <select class="form-control" id="typeAmu" required>
-                        <option value="amu_cnss">AMU-CNSS / AMU-TNS</option>
-                        <option value="amu_inam">AMU-INAM</option>
                     </select>
                 </div>
                 <div class="col-md-4">
@@ -283,8 +290,34 @@ function toggleHospitAutre() {
         document.getElementById('hospitCatAutre').checked ? '' : 'none';
 }
 
-// ===================== RECHERCHE PATIENT =====================
+// ===================== RÉGIME → PATIENT =====================
+// ⭐ Le régime se choisit EN PREMIER (patron : "si on choisit le régime
+// c'est les patients de ce régime qui viennent pour qu'on ne se trompe
+// pas") — changer de régime invalide le patient déjà choisi (il pourrait
+// être du mauvais régime) et réactive la recherche, filtrée à ce régime.
+function changerRegime() {
+    const regime = document.getElementById('typeAmu').value;
+    patientChoisi = null;
+    document.getElementById('patientId').value = '';
+    document.getElementById('patientSearch').value = '';
+    document.getElementById('patientChoisiBloc').style.display = 'none';
+    document.getElementById('patientResultats').style.display = 'none';
+    const champ = document.getElementById('patientSearch');
+    champ.disabled = !regime;
+    champ.placeholder = regime ? "Rechercher nom, prénom ou téléphone..." : "Choisissez d'abord le régime...";
+    document.getElementById('feuilleSoinsWrapper').style.display = (regime === 'amu_inam') ? '' : 'none';
+}
+
 function appliquerPatient(p) {
+    // ⭐ Pré-remplissage externe (depuis la page Hospitalisation, voir
+    // PATIENT_PREREMPLI) : le régime du patient est déjà connu avant tout
+    // choix manuel — on l'applique ici SANS passer par changerRegime()
+    // (qui efface la sélection en cours) puisqu'on est en train de la
+    // poser, pas de la changer.
+    document.getElementById('typeAmu').value = p.type_assurance;
+    document.getElementById('patientSearch').disabled = false;
+    document.getElementById('feuilleSoinsWrapper').style.display = (p.type_assurance === 'amu_inam') ? '' : 'none';
+
     patientChoisi = p;
     document.getElementById('patientId').value = p.id;
     document.getElementById('patientSearch').value = p.nom + ' ' + p.prenom;
@@ -292,19 +325,17 @@ function appliquerPatient(p) {
     const bloc = document.getElementById('patientChoisiBloc');
     bloc.style.display = '';
     bloc.innerHTML = `N° AMU : <strong>${p.numero_assure || '—'}</strong> · Tél : ${p.telephone || '—'} · Régime : <strong>${p.type_assurance}</strong>`;
-    document.getElementById('feuilleSoinsWrapper').style.display = (p.type_assurance === 'amu_inam') ? '' : 'none';
-    document.getElementById('typeAmu').value = (p.type_assurance === 'amu_inam') ? 'amu_inam' : 'amu_cnss';
 }
 
 document.getElementById('patientSearch').addEventListener('input', function() {
     const q = this.value.trim();
+    const regime = document.getElementById('typeAmu').value;
     clearTimeout(debouncePatient);
     patientChoisi = null;
     document.getElementById('patientId').value = '';
-    document.getElementById('feuilleSoinsWrapper').style.display = 'none';
-    if (q.length < 2) { document.getElementById('patientResultats').style.display = 'none'; return; }
+    if (!regime || q.length < 2) { document.getElementById('patientResultats').style.display = 'none'; return; }
     debouncePatient = setTimeout(() => {
-        fetch('/api/amu/entente-prealable/patients?search=' + encodeURIComponent(q))
+        fetch('/api/amu/entente-prealable/patients?type_amu=' + encodeURIComponent(regime) + '&search=' + encodeURIComponent(q))
             .then(r => r.json())
             .then(data => {
                 const box = document.getElementById('patientResultats');
