@@ -16482,7 +16482,31 @@ def api_convertir_proforma():
         if assurance2_active:
             print(f"   CAC {assurance2_nom} ({taux_assurance2}%): {prise_en_charge2} FCFA")
         print(f"   Net à payer: {net_a_payer} FCFA")
-        
+
+        # ⭐⭐ FIX : contrairement à api_add_acte_vente/api_vente_pharma, cette
+        # route (hospitalisation, soins ambulatoires et conversion directe
+        # de proforma passent TOUTES par ici) n'a jamais rempli le JSON
+        # `ventes.assurances` — generer_ecriture_vente() (comptabilite_
+        # service.py, _nom_assurance()) ne trouve donc aucun nom d'assurance
+        # pour la prise en charge principale et retombe systématiquement sur
+        # le compte générique "Autre assurance à recevoir" (41122800), même
+        # pour une AMU pourtant bien identifiée sur la proforma/facture.
+        # Vécu en prod le 2026-09-30 côté GHP : hospitalisation AMU+CAC
+        # facturée correctement, mais créance comptabilisée dans le mauvais
+        # compte. Même structure que assurances_data dans api_add_acte_vente.
+        assurances_data = {
+            'principale': {
+                'nom': assurance_nom,
+                'taux': taux_assurance,
+                'montant_prise_en_charge': prise_en_charge
+            },
+            'complementaire': {
+                'nom': assurance2_nom,
+                'taux': taux_assurance2,
+                'montant_prise_en_charge': prise_en_charge2
+            } if assurance2_nom and taux_assurance2 > 0 else None
+        }
+
         # 🔥 Récupérer les données de paiement
         montant_donne = float(data.get('montant_donne') or 0)
         
@@ -16506,6 +16530,7 @@ def api_convertir_proforma():
                 patient_id, patient_nom, structure_id, type, sous_total,
                 prise_en_charge, net_a_payer, mode_paiement, taux_assurance,
                 date_vente, actes, produits, created_by_nom, statut,
+                assurances,
                 assurance2_nom, taux_assurance2, societe_assurance2, prise_en_charge2,
                 montant_donne, rendu, reste_a_payer,
                 assurance_principale_active, proforma_id,
@@ -16513,7 +16538,7 @@ def api_convertir_proforma():
                 taux_aide, aide_hospitaliere, type_aide,
                 numero_local, applique_pbr_cac, pbr_cac_variante, applique_tva
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s::jsonb, %s, 'validee', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s::jsonb, %s::jsonb, %s, 'validee', %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             data.get('patient_id'),
@@ -16528,6 +16553,7 @@ def api_convertir_proforma():
             json.dumps(actes_data, ensure_ascii=False) if actes_data else '[]',
             json.dumps(produits_data, ensure_ascii=False) if produits_data else '[]',
             user_name,
+            json.dumps(assurances_data, ensure_ascii=False),
             assurance2_nom if assurance2_active else '',
             taux_assurance2 if assurance2_active else 0,
             societe_assurance2 if assurance2_active else None,
