@@ -16,7 +16,7 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, CorrespondanceSalleAmu, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient, FaqQuestion, FaqQuestionUtilisateur, JourFerie, TauxPartMedecin, PrestationMedecin, PeriodePartMedecin, MedecinDuJour, ParametrageService, ClassificationServiceActe, RecetteService
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, CorrespondanceSalleAmu, CodeBarreArticle, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient, FaqQuestion, FaqQuestionUtilisateur, JourFerie, TauxPartMedecin, PrestationMedecin, PeriodePartMedecin, MedecinDuJour, ParametrageService, ClassificationServiceActe, RecetteService
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from utils.onglets_recherchables import onglets_recherchables
@@ -10691,6 +10691,158 @@ def api_actes_liste_admin():
         import traceback
         traceback.print_exc()
         return jsonify([]), 500
+
+
+@app.route('/codes-barres')
+@login_required
+def page_codes_barres():
+    """Page d'administration des codes-barres (scan douchette USB/
+    Bluetooth ou caméra téléphone) propres à CETTE structure — voir
+    CodeBarreArticle (models.py). Liste chargée en JS (même esprit que
+    pbr_complementaires.html) pour un premier affichage instantané."""
+    return render_template('codes_barres.html')
+
+
+@app.route('/api/codes-barres', methods=['GET'])
+@login_required
+def api_lister_codes_barres():
+    """Toutes les entrées de la structure, triées par type puis par nom —
+    pour la page d'admin et pour l'impression (voir page_imprimer_codes_barres)."""
+    structure_id = session.get('structure_id')
+    type_article = request.args.get('type', '').strip()
+    q = CodeBarreArticle.query.filter_by(structure_id=structure_id)
+    if type_article in ('acte', 'produit'):
+        q = q.filter_by(type_article=type_article)
+    lignes = q.order_by(CodeBarreArticle.type_article, CodeBarreArticle.nom_article).all()
+    return jsonify([{
+        'id': l.id, 'type_article': l.type_article, 'nom_article': l.nom_article,
+        'code_barre': l.code_barre,
+    } for l in lignes])
+
+
+@app.route('/api/codes-barres', methods=['POST'])
+@login_required
+def api_ajouter_code_barre():
+    """Attribue un nouveau code-barres à un acte/produit du catalogue de
+    cette structure (voir CodeBarreArticle.generer_code) — un seul code par
+    (structure, type, nom) : rappelle le code déjà attribué plutôt que d'en
+    créer un second pour le même article."""
+    try:
+        structure_id = session.get('structure_id')
+        user_name = session.get('user_name', 'System')
+        data = request.json or {}
+        type_article = data.get('type_article')
+        nom_article = (data.get('nom_article') or '').strip()
+        if type_article not in ('acte', 'produit'):
+            return jsonify({'success': False, 'error': 'Type invalide (acte ou produit attendu)'}), 400
+        if not nom_article:
+            return jsonify({'success': False, 'error': 'Nom de l\'article requis'}), 400
+
+        existante = CodeBarreArticle.query.filter_by(
+            structure_id=structure_id, type_article=type_article, nom_article=nom_article
+        ).first()
+        if existante:
+            return jsonify({'success': True, 'code_barre': existante.code_barre, 'deja_existant': True})
+
+        code = CodeBarreArticle.generer_code(structure_id, type_article)
+        entree = CodeBarreArticle(
+            structure_id=structure_id, type_article=type_article, nom_article=nom_article,
+            code_barre=code, created_by_nom=user_name,
+        )
+        db.session.add(entree)
+        db.session.commit()
+        return jsonify({'success': True, 'code_barre': code, 'id': entree.id})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/codes-barres/<int:code_id>', methods=['DELETE'])
+@login_required
+def api_retirer_code_barre(code_id):
+    """Retire la correspondance code-barres <-> article (le code pourra
+    être réattribué à un autre article par la suite — pas de trace à
+    garder, contrairement à CodeQrConnexion qui concerne un accès)."""
+    try:
+        structure_id = session.get('structure_id')
+        entree = CodeBarreArticle.query.filter_by(id=code_id, structure_id=structure_id).first()
+        if not entree:
+            return jsonify({'success': False, 'error': 'Code introuvable'}), 404
+        db.session.delete(entree)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/codes-barres/resoudre')
+@login_required
+def api_resoudre_code_barre():
+    """Scan -> article : retrouve l'entrée par son code, puis relit son
+    prix/pbr/statut À JOUR dans le catalogue Sheets de la structure (pas de
+    prix figé au moment où le code a été généré). Même forme de retour que
+    /api/actes et /api/produits/search, pour être directement utilisable
+    par les futurs écrans de scan (Actes/Vente, Pharmacie, Hospitalisation,
+    Proforma)."""
+    structure_id = session.get('structure_id')
+    code = (request.args.get('code') or '').strip()
+    if not code:
+        return jsonify({'success': False, 'error': 'Code manquant'}), 400
+
+    entree = CodeBarreArticle.query.filter_by(structure_id=structure_id, code_barre=code).first()
+    if not entree:
+        return jsonify({'success': False, 'error': f'Code "{code}" non reconnu pour cette structure'}), 404
+
+    sheet = 'actes' if entree.type_article == 'acte' else 'produits'
+    catalogue = sheets_helper.get_all_records(sheet, use_prefix=True)
+    article = next(
+        (a for a in catalogue if str(a.get('nom', '')).strip() == entree.nom_article),
+        None
+    )
+    if not article:
+        return jsonify({
+            'success': False,
+            'error': f'"{entree.nom_article}" introuvable dans le catalogue — a peut-être été supprimé ou renommé.'
+        }), 404
+
+    return jsonify({'success': True, 'type_article': entree.type_article, 'article': article})
+
+
+@app.route('/codes-barres/imprimer')
+@login_required
+def page_imprimer_codes_barres():
+    """Liste imprimable (A4) des actes ou des produits codés, un
+    code-barres CODE128 devant chaque nom — pour affichage à l'accueil
+    (accès rapide) ou classeur papier. `type` : 'acte' ou 'produit'."""
+    structure_id = session.get('structure_id')
+    type_article = request.args.get('type', 'acte')
+    if type_article not in ('acte', 'produit'):
+        type_article = 'acte'
+    lignes = CodeBarreArticle.query.filter_by(
+        structure_id=structure_id, type_article=type_article
+    ).order_by(CodeBarreArticle.nom_article).all()
+    structures = sheets_helper.get_all_records('structures', use_prefix=False)
+    structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
+    return render_template('codes_barres_imprimer.html', lignes=lignes, type_article=type_article,
+                            structure_nom=structure_info.get('nom', ''))
+
+
+@app.route('/codes-barres/etiquettes')
+@login_required
+def page_etiquettes_codes_barres():
+    """Planche d'étiquettes autocollantes (plusieurs par ligne, format
+    petit) — pour coller directement sur les boîtes de médicaments.
+    `type` : 'acte' ou 'produit' (utile aussi pour un acte, ex. une
+    pochette de dossier), par défaut 'produit'."""
+    structure_id = session.get('structure_id')
+    type_article = request.args.get('type', 'produit')
+    if type_article not in ('acte', 'produit'):
+        type_article = 'produit'
+    lignes = CodeBarreArticle.query.filter_by(
+        structure_id=structure_id, type_article=type_article
+    ).order_by(CodeBarreArticle.nom_article).all()
+    return render_template('codes_barres_etiquettes.html', lignes=lignes, type_article=type_article)
 
 
 @app.route('/pbr-complementaires')

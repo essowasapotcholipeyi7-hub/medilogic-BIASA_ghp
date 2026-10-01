@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+
+{% block title %}Codes-barres{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h4 class="mb-0"><i class="fas fa-barcode me-2"></i>Codes-barres actes &amp; produits</h4>
+    <div class="d-flex gap-2 flex-wrap">
+        <button class="btn btn-dark btn-sm" onclick="ouvrirModalCodeBarre('acte')">
+            <i class="fas fa-plus me-1"></i> Ajouter un acte
+        </button>
+        <button class="btn btn-dark btn-sm" onclick="ouvrirModalCodeBarre('produit')">
+            <i class="fas fa-plus me-1"></i> Ajouter un produit
+        </button>
+    </div>
+</div>
+
+<div class="alert alert-info">
+    <i class="fas fa-info-circle me-1"></i>
+    Attribuez un code-barres aux actes/médicaments les plus utilisés, pour les ajouter d'un coup de scan (douchette
+    USB/Bluetooth ou caméra du téléphone) depuis Actes/Vente, Pharmacie, Hospitalisation et Proforma. Chaque code est
+    propre à <strong>cette structure</strong> — pas de risque de confusion avec une autre clinique.
+</div>
+
+<div class="row g-3">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-stethoscope me-1"></i> Actes codés</span>
+                <span id="totalActes" class="badge bg-light text-dark">0</span>
+            </div>
+            <div class="card-body p-0">
+                <div id="listeActes"><div class="text-center text-muted py-4">Chargement...</div></div>
+            </div>
+            <div class="card-footer d-flex gap-2 flex-wrap">
+                <a href="{{ url_for('page_imprimer_codes_barres') }}?type=acte" target="_blank" class="btn btn-outline-primary btn-sm">
+                    <i class="fas fa-print me-1"></i> Imprimer la liste
+                </a>
+                <a href="{{ url_for('page_etiquettes_codes_barres') }}?type=acte" target="_blank" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-tags me-1"></i> Étiquettes
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-pills me-1"></i> Produits codés</span>
+                <span id="totalProduits" class="badge bg-light text-dark">0</span>
+            </div>
+            <div class="card-body p-0">
+                <div id="listeProduits"><div class="text-center text-muted py-4">Chargement...</div></div>
+            </div>
+            <div class="card-footer d-flex gap-2 flex-wrap">
+                <a href="{{ url_for('page_imprimer_codes_barres') }}?type=produit" target="_blank" class="btn btn-outline-primary btn-sm">
+                    <i class="fas fa-print me-1"></i> Imprimer la liste
+                </a>
+                <a href="{{ url_for('page_etiquettes_codes_barres') }}?type=produit" target="_blank" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-tags me-1"></i> Étiquettes (à coller sur les boîtes)
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Ajouter -->
+<div class="modal fade" id="modalCodeBarre" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalCodeBarreTitre"><i class="fas fa-barcode me-2"></i>Nouveau code-barres</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="position-relative mb-2">
+                    <label class="form-label mb-1">Rechercher</label>
+                    <input type="text" class="form-control" id="codeBarreSearch" placeholder="Rechercher..." autocomplete="off">
+                    <div id="codeBarreResultats" class="list-group position-absolute w-100" style="z-index:1000; max-height:220px; overflow-y:auto; display:none;"></div>
+                </div>
+                <div id="codeBarreChoisiBloc" style="display:none;" class="p-2 border rounded bg-light">
+                    <strong id="codeBarreChoisiNom"></strong>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="enregistrerCodeBarre()">
+                    <i class="fas fa-check me-1"></i> Générer le code
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+<script>
+let codeBarreTypeActuel = 'acte';
+let codeBarreChoisi = null;
+let debounceCodeBarre = null;
+let toutesLesEntrees = [];
+
+function ouvrirModalCodeBarre(type) {
+    codeBarreTypeActuel = type;
+    codeBarreChoisi = null;
+    document.getElementById('modalCodeBarreTitre').innerHTML =
+        '<i class="fas fa-barcode me-2"></i>Nouveau code-barres — ' + (type === 'acte' ? 'acte' : 'produit');
+    document.getElementById('codeBarreSearch').value = '';
+    document.getElementById('codeBarreResultats').style.display = 'none';
+    document.getElementById('codeBarreChoisiBloc').style.display = 'none';
+    new bootstrap.Modal(document.getElementById('modalCodeBarre')).show();
+}
+
+document.getElementById('codeBarreSearch').addEventListener('input', function() {
+    const q = this.value.trim();
+    clearTimeout(debounceCodeBarre);
+    if (q.length < 2) { document.getElementById('codeBarreResultats').style.display = 'none'; return; }
+    debounceCodeBarre = setTimeout(() => {
+        const url = codeBarreTypeActuel === 'acte'
+            ? '/api/actes?search=' + encodeURIComponent(q) + '&limit=20'
+            : '/api/produits/search?search=' + encodeURIComponent(q) + '&limit=20';
+        fetch(url).then(r => r.json()).then(data => {
+            const box = document.getElementById('codeBarreResultats');
+            const liste = data.data || [];
+            if (!liste.length) { box.style.display = 'none'; return; }
+            box.innerHTML = liste.map(a => `
+                <a href="#" class="list-group-item list-group-item-action" onclick='choisirCodeBarreArticle(${JSON.stringify(a.nom).replace(/'/g, "&apos;")}); return false;'>
+                    ${a.nom}
+                </a>`).join('');
+            box.style.display = 'block';
+        });
+    }, 250);
+});
+
+function choisirCodeBarreArticle(nom) {
+    codeBarreChoisi = nom;
+    document.getElementById('codeBarreChoisiNom').textContent = nom;
+    document.getElementById('codeBarreChoisiBloc').style.display = '';
+    document.getElementById('codeBarreResultats').style.display = 'none';
+    document.getElementById('codeBarreSearch').value = nom;
+}
+
+function enregistrerCodeBarre() {
+    if (!codeBarreChoisi) { alert('Choisissez un article dans la liste.'); return; }
+    fetch('/api/codes-barres', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type_article: codeBarreTypeActuel, nom_article: codeBarreChoisi })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('modalCodeBarre')).hide();
+            if (data.deja_existant) alert('Cet article a déjà le code ' + data.code_barre + '.');
+            chargerCodesBarres();
+        } else {
+            alert('Erreur : ' + (data.error || 'inconnue'));
+        }
+    })
+    .catch(e => alert('Erreur : ' + e));
+}
+
+function supprimerCodeBarre(id) {
+    if (!confirm('Retirer ce code-barres ?')) return;
+    fetch('/api/codes-barres/' + id, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) chargerCodesBarres();
+            else alert('Erreur : ' + (data.error || 'inconnue'));
+        });
+}
+
+function rendreListe(conteneurId, lignes) {
+    const el = document.getElementById(conteneurId);
+    if (!lignes.length) {
+        el.innerHTML = '<div class="text-center text-muted py-4">Aucun code attribué pour l\'instant.</div>';
+        return;
+    }
+    el.innerHTML = '<table class="table table-sm mb-0"><tbody>' + lignes.map(l => `
+        <tr>
+            <td class="align-middle">${l.nom_article}</td>
+            <td class="align-middle text-end"><code>${l.code_barre}</code></td>
+            <td class="align-middle text-end">
+                <button class="btn btn-sm btn-outline-danger" onclick="supprimerCodeBarre(${l.id})" title="Retirer">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </td>
+        </tr>`).join('') + '</tbody></table>';
+}
+
+function chargerCodesBarres() {
+    fetch('/api/codes-barres')
+        .then(r => r.json())
+        .then(lignes => {
+            toutesLesEntrees = lignes;
+            const actes = lignes.filter(l => l.type_article === 'acte');
+            const produits = lignes.filter(l => l.type_article === 'produit');
+            document.getElementById('totalActes').textContent = actes.length;
+            document.getElementById('totalProduits').textContent = produits.length;
+            rendreListe('listeActes', actes);
+            rendreListe('listeProduits', produits);
+        });
+}
+
+document.addEventListener('DOMContentLoaded', chargerCodesBarres);
+</script>
+{% endblock %}

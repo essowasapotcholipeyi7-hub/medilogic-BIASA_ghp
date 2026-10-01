@@ -2166,6 +2166,42 @@ class CodeQrConnexion(db.Model):
     # en direct : 500 sur /api/admin/qr/generer après une révocation).
 
 
+# ⭐ Code-barres interne (scan douchette USB/Bluetooth ou caméra téléphone)
+# pour ajouter rapidement un acte/produit au panier (Actes/Vente, Pharmacie,
+# Hospitalisation, Proforma) — patron, 2026-10-02. Le catalogue actes/
+# produits lui-même reste dans Google Sheets (identifié par NOM, comme
+# O101/CorrespondanceSalleAmu plus haut) ; SEULE la correspondance
+# code-barres <-> article vit ici en Postgres. Le code généré commence
+# TOUJOURS par l'ID de la structure (voir generer_code()) : unique entre
+# structures sans vérification globale, et la contrainte unique ci-dessous
+# ne fait que confirmer cette garantie.
+class CodeBarreArticle(db.Model):
+    __tablename__ = 'codes_barres_articles'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    type_article = db.Column(db.String(10), nullable=False)  # 'acte' | 'produit'
+    nom_article = db.Column(db.String(255), nullable=False)
+    code_barre = db.Column(db.String(40), unique=True, nullable=False, index=True)
+    created_by_nom = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @classmethod
+    def generer_code(cls, structure_id, type_article):
+        """Code lisible par CODE128 : "<structure_id><A|P><0001>", ex.
+        "12A0007" = 7e acte codé par la structure 12. Le numéro de séquence
+        repart du plus grand suffixe numérique déjà utilisé pour ce couple
+        (structure, type) — pas un simple COUNT(), qui réutiliserait un
+        numéro déjà attribué après une suppression."""
+        prefixe = 'A' if type_article == 'acte' else 'P'
+        base = f"{structure_id}{prefixe}"
+        max_seq = 0
+        for entree in cls.query.filter_by(structure_id=structure_id, type_article=type_article).all():
+            suffixe = entree.code_barre[len(base):]
+            if suffixe.isdigit():
+                max_seq = max(max_seq, int(suffixe))
+        return f"{base}{max_seq + 1:04d}"
+
+
 class IdentifiantWebauthn(db.Model):
     """Connexion par biométrie de l'appareil (Face ID / Windows Hello /
     empreinte), via WebAuthn — à ne PAS confondre avec EmpreinteEmploye

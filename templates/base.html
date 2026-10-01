@@ -2600,6 +2600,11 @@
                     Configuration des services
                 </a>
                 {% endif %}
+                {% if session.is_admin or session.role in ['gestionnaire', 'secretaire', 'caissier', 'pharmacien'] %}
+                <a class="menu-item" href="{{ url_for('page_codes_barres') }}">
+                    <i class="fas fa-barcode"></i> Codes-barres
+                </a>
+                {% endif %}
                 <!-- ⭐ Recettes par service (patron, 2026-09-30) : "dans
                      paramètre du menu horizontal fait afficher le lien de
                      classification par service et recette par service". -->
