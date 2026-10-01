@@ -29,7 +29,7 @@ from services.facturation_amu_service import generer_lignes_facture_amu_cnss, ch
 from utils.categories_amu_cnss import CATEGORIES_AMU_CNSS, CATEGORIES_AMU_CNSS_DICT
 from utils.categories_amu_inam import CATEGORIES_AMU_INAM, CATEGORIES_AMU_INAM_PLATES, CATEGORIES_AMU_INAM_DICT, REGIMES_AMU_INAM
 from utils.nombres_lettres import montant_en_lettres_fcfa
-from utils.grille_amu_hospitalisation import acte_virtuel_o101, CATEGORIES_SALLE_AMU
+from utils.grille_amu_hospitalisation import acte_virtuel_o101, CATEGORIES_SALLE_AMU, erreur_duree_observation
 
 # ⭐ Numéro WhatsApp de l'éditeur (Togo, +228) pour l'envoi du reçu
 # d'abonnement — voir admin_finances.html.
@@ -17373,7 +17373,14 @@ def page_hospitalisation_suivi(hospit_id):
     # (signalé par le patron).
     patient_a_amu = hospit.est_assure_amu
     patient_a_cac = hospit.a_cac
-    patient_amu_ep = patient_a_amu and str(hospit.assurance_nom).lower().startswith('amu')
+    # ⭐ Mise en observation (catégorie 'observation') : porte le code P160
+    # et reste remboursée à 90%, mais contrairement aux autres séjours P160,
+    # elle n'est PAS soumise à Entente Préalable (patron, 2026-10-01) —
+    # exclue ici, revérifié côté serveur à la clôture (api_sortie_hospitalisation).
+    patient_amu_ep = (
+        patient_a_amu and str(hospit.assurance_nom).lower().startswith('amu')
+        and hospit.chambre_categorie_amu != 'observation'
+    )
 
     # ⭐ Aperçu "part patient / part assurance" pendant le séjour (avant même
     # la clôture) — même calcul que la facturation finale
@@ -17620,6 +17627,13 @@ def api_definir_chambre_tarif_hospitalisation(hospit_id):
             # ici (ou déjà connue pour ce nom, voir CorrespondanceSalleAmu) —
             # mémorisée pour les prochaines fois que ce nom est utilisé.
             categorie_salle = data.get('categorie_salle') or None
+            # ⭐ Une mise en observation ne peut pas dépasser JOURS_MAX_OBSERVATION
+            # jours (patron, 2026-10-01) — vérifié ici sur la durée déjà
+            # écoulée (séjour encore en cours, re-vérifié pour de bon à la
+            # clôture avec le nombre de jours définitif).
+            erreur_obs = erreur_duree_observation(categorie_salle, hospit.nombre_jours)
+            if erreur_obs:
+                return jsonify({'success': False, 'error': erreur_obs}), 400
             if categorie_salle:
                 hospit.chambre_categorie_amu = categorie_salle
                 CorrespondanceSalleAmu.memoriser(structure_id, nom, categorie_salle)
@@ -17815,6 +17829,11 @@ def api_sortie_hospitalisation(hospit_id):
         # répartition par palier ni rappel EP.
         patient_assure = hospit.est_assure_amu
 
+        nb_jours = max((date_sortie - hospit.date_entree).days, 0)
+        chambre = data.get('chambre')
+        categorie_salle_chambre = (chambre or {}).get('categorie_salle') or hospit.chambre_categorie_amu
+        lignes_chambre_creees = 0
+
         # ⭐ Entente Préalable (EP) : une hospitalisation sur un patient
         # assuré AMU (amu_cnss/amu_inam/amu_tns) nécessite l'accord préalable
         # de l'assurance — on ne bloque pas la clôture indéfiniment, mais on
@@ -17822,8 +17841,14 @@ def api_sortie_hospitalisation(hospit_id):
         # obtenu avant de clôturer (même pattern que confirmer_doublon :
         # rappel côté client, vérifié aussi côté serveur pour ne pas
         # dépendre uniquement du JS). S'applique à toute clôture d'un
-        # patient AMU, pas seulement quand une chambre est choisie.
-        patient_amu = patient_assure and str(hospit.assurance_nom).lower().startswith('amu')
+        # patient AMU, pas seulement quand une chambre est choisie — SAUF
+        # une mise en observation (catégorie 'observation') : porte le code
+        # P160 et reste remboursée à 90%, mais n'est pas soumise à EP
+        # (patron, 2026-10-01).
+        patient_amu = (
+            patient_assure and str(hospit.assurance_nom).lower().startswith('amu')
+            and categorie_salle_chambre != 'observation'
+        )
         if patient_amu and not data.get('ep_confirme'):
             return jsonify({
                 'success': False, 'ep_requis': True,
@@ -17831,9 +17856,12 @@ def api_sortie_hospitalisation(hospit_id):
                          "Confirmez avoir reçu l'accord de l'assurance avant de clôturer."
             }), 409
 
-        nb_jours = max((date_sortie - hospit.date_entree).days, 0)
-        chambre = data.get('chambre')
-        lignes_chambre_creees = 0
+        # ⭐ Une mise en observation ne peut pas dépasser JOURS_MAX_OBSERVATION
+        # jours (patron, 2026-10-01) — vérification définitive ici avec le
+        # nombre de jours réel de la clôture.
+        erreur_obs = erreur_duree_observation(categorie_salle_chambre, nb_jours)
+        if erreur_obs:
+            return jsonify({'success': False, 'error': erreur_obs}), 400
 
         if chambre and chambre.get('nom') and nb_jours > 0:
             tous_les_actes = sheets_helper.get_all_records('actes', use_prefix=True)

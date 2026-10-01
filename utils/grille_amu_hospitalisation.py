@@ -27,12 +27,16 @@
 # fichier source (aucune ligne niveau 2) — absente ici au niveau 2.
 #
 # "Mise en observation" n'a qu'un seul montant (pas de dégressivité par
-# semaine) — mémorisé ici comme valant pour les 3 paliers.
+# semaine) — mémorisé ici comme valant pour les 3 paliers. Une mise en
+# observation est par nature un court séjour : le patron (2026-10-01) a
+# demandé qu'elle ne dépasse jamais JOURS_MAX_OBSERVATION jours — voir la
+# validation dans app.py (api_definir_chambre_tarif_hospitalisation /
+# api_sortie_hospitalisation).
 #
-# Utilisation (Phase 2, pas encore branchée) : pbr_officiel_p160(niveau,
-# categorie_salle, palier) — reste SANS EFFET tant qu'une structure n'a pas
-# explicitement fait correspondre un de ses actes "chambre" à une catégorie
-# via CorrespondanceSalleAmu (zéro régression pour les structures qui n'ont
+# Utilisation (Phase 2) : pbr_officiel_p160(niveau, categorie_salle, palier)
+# — reste SANS EFFET tant qu'une structure n'a pas explicitement fait
+# correspondre un de ses actes "chambre" à une catégorie via
+# CorrespondanceSalleAmu (zéro régression pour les structures qui n'ont
 # rien configuré).
 #
 # Hors périmètre, volontairement : le forfait "Réa Polyvalente CHU SO"
@@ -42,6 +46,12 @@
 
 TAUX_AMU_P160 = 90  # déjà en place ailleurs (taux_amu_pour_article), rappelé ici pour référence
 TAUX_AMU_O101 = 100
+
+# Une "mise en observation" (catégorie 'observation') ne peut pas dépasser
+# ce nombre de jours — au-delà, ce n'est plus une observation mais une
+# vraie hospitalisation, qui doit être catégorisée dans une autre salle
+# (cabine, salle commune...). Voir app.py, routes chambre_tarif/sortie.
+JOURS_MAX_OBSERVATION = 3
 
 # Catégories canoniques de salle — libellé affiché dans la future page de
 # correspondance (Phase 2).
@@ -73,6 +83,18 @@ GRILLE_AMU_HOSPITALISATION = {
         'reanimation': {1: 2500, 2: 1625, 3: 875},
     },
 }
+
+
+def erreur_duree_observation(categorie_salle, nb_jours):
+    """None si `categorie_salle`/`nb_jours` ne posent pas de problème,
+    sinon le message d'erreur à renvoyer — une "mise en observation" ne
+    peut pas dépasser JOURS_MAX_OBSERVATION jours (voir ce nom)."""
+    if categorie_salle == 'observation' and nb_jours and nb_jours > JOURS_MAX_OBSERVATION:
+        return (
+            f"Une mise en observation ne peut pas dépasser {JOURS_MAX_OBSERVATION} jours "
+            f"({nb_jours} jours ici). Choisissez une autre catégorie de salle si le séjour est plus long."
+        )
+    return None
 
 
 def pbr_officiel_p160(niveau, categorie_salle, palier):

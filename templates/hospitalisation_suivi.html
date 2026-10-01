@@ -981,8 +981,14 @@ function cloturerSejour() {
     const dateSortie = document.getElementById('dateSortieInput').value;
     if (!dateSortie) { alert('Choisissez une date de sortie.'); return; }
 
+    // ⭐ Mise en observation : pas d'EP (patron, 2026-10-01) — même si la
+    // case n'a pas été cochée (la page a pu être chargée avant que la
+    // catégorie ne soit choisie), on ne bloque pas ici si la catégorie
+    // actuellement sélectionnée est "observation". Revérifié de toute
+    // façon côté serveur (api_sortie_hospitalisation).
+    const categorieActuelle = document.getElementById('chambreCategorie')?.value;
     const epCheckbox = document.getElementById('epConfirme');
-    if (epCheckbox && !epCheckbox.checked) {
+    if (epCheckbox && !epCheckbox.checked && categorieActuelle !== 'observation') {
         alert("Patient assuré AMU : confirmez avoir reçu l'accord de l'assurance (Entente Préalable) avant de clôturer.");
         return;
     }
