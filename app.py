@@ -10784,12 +10784,16 @@ def api_retirer_code_barre(code_id):
 @app.route('/api/codes-barres/resoudre')
 @login_required
 def api_resoudre_code_barre():
-    """Scan -> article : retrouve l'entrée par son code, puis relit son
-    prix/pbr/statut À JOUR dans le catalogue Sheets de la structure (pas de
-    prix figé au moment où le code a été généré). Même forme de retour que
-    /api/actes et /api/produits/search, pour être directement utilisable
-    par les futurs écrans de scan (Actes/Vente, Pharmacie, Hospitalisation,
-    Proforma)."""
+    """Scan -> identité de l'article (type + nom). Renvoie VOLONTAIREMENT
+    juste ça, pas le prix/pbr/statut : chaque écran de scan (Actes/Vente,
+    Pharmacie, Hospitalisation, Proforma) recherche ensuite ce nom via la
+    MÊME route déjà utilisée par son champ de recherche manuel (/api/actes
+    ou /api/produits/search) — ces routes font déjà toute la normalisation
+    (prix, booléens prise_en_charge_amu/cac, statut EP/TPC/DIRECT, date de
+    péremption...). Dupliquer cette normalisation ici aurait risqué de
+    diverger en silence d'un des deux côtés ; cette route reste donc une
+    simple correspondance code -> nom, toujours à jour (pas de prix figé
+    au moment où le code a été généré)."""
     structure_id = session.get('structure_id')
     code = (request.args.get('code') or '').strip()
     if not code:
@@ -10799,19 +10803,7 @@ def api_resoudre_code_barre():
     if not entree:
         return jsonify({'success': False, 'error': f'Code "{code}" non reconnu pour cette structure'}), 404
 
-    sheet = 'actes' if entree.type_article == 'acte' else 'produits'
-    catalogue = sheets_helper.get_all_records(sheet, use_prefix=True)
-    article = next(
-        (a for a in catalogue if str(a.get('nom', '')).strip() == entree.nom_article),
-        None
-    )
-    if not article:
-        return jsonify({
-            'success': False,
-            'error': f'"{entree.nom_article}" introuvable dans le catalogue — a peut-être été supprimé ou renommé.'
-        }), 404
-
-    return jsonify({'success': True, 'type_article': entree.type_article, 'article': article})
+    return jsonify({'success': True, 'type_article': entree.type_article, 'nom_article': entree.nom_article})
 
 
 @app.route('/codes-barres/imprimer')

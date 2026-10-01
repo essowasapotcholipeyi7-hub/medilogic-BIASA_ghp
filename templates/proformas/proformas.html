@@ -321,7 +321,19 @@
                                     </button>
                                 </div>
                             </div>
-                            
+
+                            <!-- ⭐ Scan code-barres (douchette USB/Bluetooth, ou caméra via une
+                                 app de scan qui "tape" le code ici) — voir
+                                 ajouterArticleParScan()/CodeBarreArticle. -->
+                            <div class="row mt-2">
+                                <div class="col-12">
+                                    <label class="form-label mb-1"><i class="fas fa-barcode"></i> Scanner un code-barres</label>
+                                    <input type="text" class="form-control" id="champScannerProforma"
+                                           placeholder="Cliquez ici puis scannez..." autocomplete="off">
+                                    <div id="scanStatutProforma" class="small mt-1"></div>
+                                </div>
+                            </div>
+
                             <hr>
                             
                             <!-- Panier -->
@@ -1125,153 +1137,233 @@ function ajouterArticleSelectionne() {
     // (une valeur vide ou 'Non assuré', pas 'non_assure' comme sur les
     // pages de vente directe — le champ ici est un texte libre, pas un
     // code) — nécessaire pour les mêmes vérifications EP/TPC/prise en
-    // charge qu'à l'ajout d'un acte ou d'un médicament en vente directe,
-    // jusqu'ici totalement absentes du panier proforma.
+    // charge qu'à l'ajout d'un acte ou d'un médicament en vente directe.
     const isAMU = patientAssuranceProforma && patientAssuranceProforma !== '' && patientAssuranceProforma !== 'Non assuré';
     const isCAC = assurance2Active && assurance2Nom && assurance2Nom !== 'Aucune';
 
     // 🔥 Parcourir les actes sélectionnés
     for (let opt of acteSelect.selectedOptions) {
         if (!opt.value || opt.disabled) continue;
-        const nom = opt.dataset.nom || opt.text.split(' - ')[0];
-        const prix = parseFloat(opt.dataset.prix) || 0;
-        const pbr = parseFloat(opt.dataset.pbr);
-        const pbrValue = (pbr !== undefined && pbr !== null && !isNaN(pbr)) ? pbr : 0;
-        const priseEnChargeAMU = (patientAssuranceProforma === 'amu_tns')
-            ? opt.dataset.priseEnChargeAmuTns !== 'false'
-            : opt.dataset.priseEnChargeAmu !== 'false';
-        const priseEnChargeCAC = opt.dataset.priseEnChargeCac !== 'false';
-        const commentaireAMU = opt.dataset.commentaireAmu || '';
-        const commentaireCAC = opt.dataset.commentaireCac || '';
-        const statutActe = (opt.dataset.statut || 'DIRECT').toUpperCase();
-
-        // ⭐ ENTENTE PRÉALABLE — même vérification bloquante que ajouterActe()
-        // dans actes_vente.html (les actes n'ont pas de statut TPC là-bas
-        // non plus, donc aucun TPC à vérifier ici pour être fidèle).
-        if (isAMU && statutActe === 'EP') {
-            if (!confirm('⚠️ ENTENTE PRÉALABLE (EP)\n\nL\'acte "' + nom + '" est sous Entente Préalable.\n\nAvez-vous reçu un accord écrit de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.')) {
-                opt.selected = false;
-                continue;
-            }
-        }
-
-        // ⭐ Non prise en charge AMU/CAC — même message que ajouterActe().
-        let infoMessageActe = '';
-        if (!priseEnChargeAMU && !priseEnChargeCAC && (isAMU || isCAC)) {
-            infoMessageActe = `⚠️ ACTE NON PRIS EN CHARGE PAR LES ASSURANCES\n\nL'acte "${nom}" n'est pas pris en charge par les assurances du patient.\n\nLe patient devra payer la totalité du montant : ${Math.round(prix * qte).toLocaleString('fr-FR')} FCFA\n\nVoulez-vous ajouter cet acte au panier ?`;
-        } else if (!priseEnChargeAMU && priseEnChargeCAC && isAMU && isCAC) {
-            infoMessageActe = `Pris en charge par ${assurance2Nom} (CAC) mais pas par ${patientAssuranceProforma} (AMU).\n\nL'assurance complémentaire prendra le relais sur le reste à charge.`;
-        } else if (priseEnChargeAMU && !priseEnChargeCAC && isAMU && isCAC) {
-            infoMessageActe = `Pris en charge par ${patientAssuranceProforma} (AMU) mais pas par ${assurance2Nom} (CAC).\n\nLe patient devra payer la différence après l'AMU.`;
-        } else if (!priseEnChargeAMU && isAMU && !isCAC) {
-            infoMessageActe = `L'acte "${nom}" n'est pas pris en charge par ${patientAssuranceProforma} (AMU).\n\nLe patient n'a pas d'assurance complémentaire, il devra payer la totalité.`;
-        } else if (!priseEnChargeCAC && isCAC && !isAMU) {
-            infoMessageActe = `L'acte "${nom}" n'est pas pris en charge par ${assurance2Nom} (CAC).\n\nLe patient n'a pas d'assurance principale.`;
-        }
-        if (infoMessageActe && !confirm(infoMessageActe)) {
-            opt.selected = false;
-            continue;
-        }
-
-        if (prix > 0) {
-            ajouterAuPanierComplet(nom, 'acte', prix, pbrValue, qte, priseEnChargeAMU, priseEnChargeCAC);
-            added++;
-        }
+        const acte = {
+            nom: opt.dataset.nom || opt.text.split(' - ')[0],
+            prix: parseFloat(opt.dataset.prix) || 0,
+            pbr: parseFloat(opt.dataset.pbr),
+            prise_en_charge_amu: opt.dataset.priseEnChargeAmu !== 'false',
+            prise_en_charge_amu_tns: opt.dataset.priseEnChargeAmuTns !== 'false',
+            prise_en_charge_cac: opt.dataset.priseEnChargeCac !== 'false',
+            statut: opt.dataset.statut || 'DIRECT',
+        };
+        if (validerEtAjouterActeProforma(acte, qte, isAMU, isCAC, patientAssuranceProforma)) added++;
         opt.selected = false;
     }
 
     // 🔥🔥🔥 Parcourir les produits sélectionnés (avec vérifications) 🔥🔥🔥
     for (let opt of produitSelect.selectedOptions) {
         if (!opt.value || opt.disabled) continue;
-
-        const nom = opt.dataset.nom || opt.text.split(' - ')[0];
-        const prix = parseFloat(opt.dataset.prix) || 0;
-        const pbr = parseFloat(opt.dataset.pbr);
-        const pbrValue = (pbr !== undefined && pbr !== null && !isNaN(pbr)) ? pbr : 0;
-        const priseEnChargeAMU = (patientAssuranceProforma === 'amu_tns')
-            ? opt.dataset.priseEnChargeAmuTns !== 'false'
-            : opt.dataset.priseEnChargeAmu !== 'false';
-        const priseEnChargeCAC = opt.dataset.priseEnChargeCac !== 'false';
-
-        // 🔥 VÉRIFICATION DU STOCK
-        const stock = parseInt(opt.dataset.stock) || 0;
-        if (stock <= 0) {
-            alert(`❌ Le produit "${nom}" est en rupture de stock.`);
-            opt.selected = false;
-            continue;
-        }
-
-        // 🔥 VÉRIFICATION DE LA PÉREMPTION
-        const datePeremption = opt.dataset.datePeremption || '';
-        if (datePeremption) {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const perempDate = new Date(datePeremption);
-            perempDate.setHours(0, 0, 0, 0);
-
-            // Vérifier si la date est valide
-            if (!isNaN(perempDate.getTime())) {
-                if (perempDate < today) {
-                    alert(`❌ Le produit "${nom}" est PÉRIMÉ depuis le ${datePeremption}.\n\nImpossible de l'ajouter.`);
-                    opt.selected = false;
-                    continue;
-                }
-
-                const joursRestants = Math.ceil((perempDate - today) / (1000 * 60 * 60 * 24));
-                if (joursRestants <= 7 && joursRestants > 0) {
-                    if (!confirm(`⚠️ Attention ! Le produit "${nom}" expire dans ${joursRestants} jour(s) (${datePeremption}).\n\nVoulez-vous quand même l'ajouter ?`)) {
-                        opt.selected = false;
-                        continue;
-                    }
-                }
-            }
-        }
-
-        // ⭐ ENTENTE PRÉALABLE / TPC — mêmes vérifications bloquantes que
-        // ajouterProduit() dans pharma_vente.html, absentes jusqu'ici ici.
-        const statutProduit = (opt.dataset.statut || 'DIRECT').toUpperCase();
-        if (isAMU && statutProduit === 'EP') {
-            if (!confirm('⚠️ ENTENTE PRÉALABLE (EP)\n\nLe produit "' + nom + '" est sous Entente Préalable.\n\nAvez-vous reçu un accord écrit de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.')) {
-                opt.selected = false;
-                continue;
-            }
-        }
-        if (isAMU && statutProduit === 'TPC') {
-            if (!confirm('⚠️ TRAITEMENT DES PATHOLOGIES CHRONIQUES (TPC)\n\nLe produit "' + nom + '" concerne un Traitement des Pathologies Chroniques.\n\nAvez-vous reçu l\'accord TPC de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.')) {
-                opt.selected = false;
-                continue;
-            }
-        }
-
-        // ⭐ Non prise en charge AMU/CAC — même message que ajouterProduit().
-        let messageAlerteProduit = '';
-        if (isAMU && !priseEnChargeAMU && isCAC && !priseEnChargeCAC) {
-            messageAlerteProduit = `❌ Le produit "${nom}" n'est pris en charge ni par ${patientAssuranceProforma} (AMU) ni par ${assurance2Nom} (CAC).\n\nLe patient devra payer la totalité (${Math.round(prix * qte).toLocaleString('fr-FR')} FCFA).\n\nVoulez-vous quand même l'ajouter ?`;
-        } else if (isAMU && !priseEnChargeAMU && isCAC && priseEnChargeCAC) {
-            messageAlerteProduit = `ℹ️ Le produit "${nom}" n'est pas pris en charge par ${patientAssuranceProforma} (AMU).\n\nEn revanche, il est pris en charge par ${assurance2Nom} (CAC).\n\nVoulez-vous continuer ?`;
-        } else if (isAMU && priseEnChargeAMU && isCAC && !priseEnChargeCAC) {
-            messageAlerteProduit = `ℹ️ Le produit "${nom}" est pris en charge par ${patientAssuranceProforma} (AMU).\n\nIl n'est pas pris en charge par ${assurance2Nom} (CAC).\n\nVoulez-vous continuer ?`;
-        } else if (isAMU && !priseEnChargeAMU && !isCAC) {
-            messageAlerteProduit = `ℹ️ Le produit "${nom}" n'est pas pris en charge par ${patientAssuranceProforma} (AMU).\n\nLe patient devra payer la totalité (${Math.round(prix * qte).toLocaleString('fr-FR')} FCFA).\n\nVoulez-vous continuer ?`;
-        } else if (!isAMU && isCAC && !priseEnChargeCAC) {
-            messageAlerteProduit = `ℹ️ Le produit "${nom}" n'est pas pris en charge par ${assurance2Nom} (CAC).\n\nLe patient devra payer la totalité (${Math.round(prix * qte).toLocaleString('fr-FR')} FCFA).\n\nVoulez-vous continuer ?`;
-        }
-        if (messageAlerteProduit && !confirm(messageAlerteProduit)) {
-            opt.selected = false;
-            continue;
-        }
-
-        if (prix > 0) {
-            ajouterAuPanierComplet(nom, 'produit', prix, pbrValue, qte, priseEnChargeAMU, priseEnChargeCAC);
-            added++;
-        }
+        const produit = {
+            nom: opt.dataset.nom || opt.text.split(' - ')[0],
+            prix_vente: parseFloat(opt.dataset.prix) || 0,
+            pbr: parseFloat(opt.dataset.pbr),
+            quantite_stock: parseInt(opt.dataset.stock) || 0,
+            date_peremption: opt.dataset.datePeremption || '',
+            prise_en_charge_amu: opt.dataset.priseEnChargeAmu !== 'false',
+            prise_en_charge_amu_tns: opt.dataset.priseEnChargeAmuTns !== 'false',
+            prise_en_charge_cac: opt.dataset.priseEnChargeCac !== 'false',
+            statut: opt.dataset.statut || 'DIRECT',
+        };
+        if (validerEtAjouterProduitProforma(produit, qte, isAMU, isCAC, patientAssuranceProforma)) added++;
         opt.selected = false;
     }
-    
+
     if (added === 0) {
         alert('Veuillez sélectionner au moins un article valide dans les listes');
     }
 }
+
+// ⭐ Cœur de la vérification/ajout d'un ACTE — EP/prise en charge inclus,
+// pour qu'un acte ajouté par SCAN (voir ajouterArticleParScan) soit vérifié
+// EXACTEMENT comme un acte choisi dans la liste (même fonction, deux
+// points d'entrée). `acte` : {nom, prix, pbr, prise_en_charge_amu,
+// prise_en_charge_amu_tns, prise_en_charge_cac, statut}. Retourne true si
+// ajouté.
+function validerEtAjouterActeProforma(acte, qte, isAMU, isCAC, patientAssuranceProforma) {
+    const nom = acte.nom;
+    const prix = acte.prix || 0;
+    const pbrValue = (acte.pbr !== undefined && acte.pbr !== null && !isNaN(acte.pbr)) ? acte.pbr : 0;
+    const priseEnChargeAMU = (patientAssuranceProforma === 'amu_tns')
+        ? acte.prise_en_charge_amu_tns !== false
+        : acte.prise_en_charge_amu !== false;
+    const priseEnChargeCAC = acte.prise_en_charge_cac !== false;
+    const statutActe = (acte.statut || 'DIRECT').toUpperCase();
+
+    // ⭐ ENTENTE PRÉALABLE (les actes n'ont pas de statut TPC).
+    if (isAMU && statutActe === 'EP') {
+        if (!confirm('⚠️ ENTENTE PRÉALABLE (EP)\n\nL\'acte "' + nom + '" est sous Entente Préalable.\n\nAvez-vous reçu un accord écrit de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.')) {
+            return false;
+        }
+    }
+
+    let infoMessageActe = '';
+    if (!priseEnChargeAMU && !priseEnChargeCAC && (isAMU || isCAC)) {
+        infoMessageActe = `⚠️ ACTE NON PRIS EN CHARGE PAR LES ASSURANCES\n\nL'acte "${nom}" n'est pas pris en charge par les assurances du patient.\n\nLe patient devra payer la totalité du montant : ${Math.round(prix * qte).toLocaleString('fr-FR')} FCFA\n\nVoulez-vous ajouter cet acte au panier ?`;
+    } else if (!priseEnChargeAMU && priseEnChargeCAC && isAMU && isCAC) {
+        infoMessageActe = `Pris en charge par ${assurance2Nom} (CAC) mais pas par ${patientAssuranceProforma} (AMU).\n\nL'assurance complémentaire prendra le relais sur le reste à charge.`;
+    } else if (priseEnChargeAMU && !priseEnChargeCAC && isAMU && isCAC) {
+        infoMessageActe = `Pris en charge par ${patientAssuranceProforma} (AMU) mais pas par ${assurance2Nom} (CAC).\n\nLe patient devra payer la différence après l'AMU.`;
+    } else if (!priseEnChargeAMU && isAMU && !isCAC) {
+        infoMessageActe = `L'acte "${nom}" n'est pas pris en charge par ${patientAssuranceProforma} (AMU).\n\nLe patient n'a pas d'assurance complémentaire, il devra payer la totalité.`;
+    } else if (!priseEnChargeCAC && isCAC && !isAMU) {
+        infoMessageActe = `L'acte "${nom}" n'est pas pris en charge par ${assurance2Nom} (CAC).\n\nLe patient n'a pas d'assurance principale.`;
+    }
+    if (infoMessageActe && !confirm(infoMessageActe)) {
+        return false;
+    }
+
+    if (prix > 0) {
+        ajouterAuPanierComplet(nom, 'acte', prix, pbrValue, qte, priseEnChargeAMU, priseEnChargeCAC);
+        return true;
+    }
+    return false;
+}
+
+// ⭐ Cœur de la vérification/ajout d'un PRODUIT — stock/péremption/EP/TPC
+// inclus, même principe que validerEtAjouterActeProforma() ci-dessus.
+// `produit` : {nom, prix_vente, pbr, quantite_stock, date_peremption,
+// prise_en_charge_amu, prise_en_charge_amu_tns, prise_en_charge_cac,
+// statut}.
+function validerEtAjouterProduitProforma(produit, qte, isAMU, isCAC, patientAssuranceProforma) {
+    const nom = produit.nom;
+    const prix = produit.prix_vente || 0;
+    const pbrValue = (produit.pbr !== undefined && produit.pbr !== null && !isNaN(produit.pbr)) ? produit.pbr : 0;
+    const priseEnChargeAMU = (patientAssuranceProforma === 'amu_tns')
+        ? produit.prise_en_charge_amu_tns !== false
+        : produit.prise_en_charge_amu !== false;
+    const priseEnChargeCAC = produit.prise_en_charge_cac !== false;
+
+    // 🔥 VÉRIFICATION DU STOCK
+    const stock = produit.quantite_stock || 0;
+    if (stock <= 0) {
+        alert(`❌ Le produit "${nom}" est en rupture de stock.`);
+        return false;
+    }
+
+    // 🔥 VÉRIFICATION DE LA PÉREMPTION
+    const datePeremption = produit.date_peremption || '';
+    if (datePeremption) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const perempDate = new Date(datePeremption);
+        perempDate.setHours(0, 0, 0, 0);
+
+        if (!isNaN(perempDate.getTime())) {
+            if (perempDate < today) {
+                alert(`❌ Le produit "${nom}" est PÉRIMÉ depuis le ${datePeremption}.\n\nImpossible de l'ajouter.`);
+                return false;
+            }
+            const joursRestants = Math.ceil((perempDate - today) / (1000 * 60 * 60 * 24));
+            if (joursRestants <= 7 && joursRestants > 0) {
+                if (!confirm(`⚠️ Attention ! Le produit "${nom}" expire dans ${joursRestants} jour(s) (${datePeremption}).\n\nVoulez-vous quand même l'ajouter ?`)) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    // ⭐ ENTENTE PRÉALABLE / TPC.
+    const statutProduit = (produit.statut || 'DIRECT').toUpperCase();
+    if (isAMU && statutProduit === 'EP') {
+        if (!confirm('⚠️ ENTENTE PRÉALABLE (EP)\n\nLe produit "' + nom + '" est sous Entente Préalable.\n\nAvez-vous reçu un accord écrit de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.')) {
+            return false;
+        }
+    }
+    if (isAMU && statutProduit === 'TPC') {
+        if (!confirm('⚠️ TRAITEMENT DES PATHOLOGIES CHRONIQUES (TPC)\n\nLe produit "' + nom + '" concerne un Traitement des Pathologies Chroniques.\n\nAvez-vous reçu l\'accord TPC de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.')) {
+            return false;
+        }
+    }
+
+    let messageAlerteProduit = '';
+    if (isAMU && !priseEnChargeAMU && isCAC && !priseEnChargeCAC) {
+        messageAlerteProduit = `❌ Le produit "${nom}" n'est pris en charge ni par ${patientAssuranceProforma} (AMU) ni par ${assurance2Nom} (CAC).\n\nLe patient devra payer la totalité (${Math.round(prix * qte).toLocaleString('fr-FR')} FCFA).\n\nVoulez-vous quand même l'ajouter ?`;
+    } else if (isAMU && !priseEnChargeAMU && isCAC && priseEnChargeCAC) {
+        messageAlerteProduit = `ℹ️ Le produit "${nom}" n'est pas pris en charge par ${patientAssuranceProforma} (AMU).\n\nEn revanche, il est pris en charge par ${assurance2Nom} (CAC).\n\nVoulez-vous continuer ?`;
+    } else if (isAMU && priseEnChargeAMU && isCAC && !priseEnChargeCAC) {
+        messageAlerteProduit = `ℹ️ Le produit "${nom}" est pris en charge par ${patientAssuranceProforma} (AMU).\n\nIl n'est pas pris en charge par ${assurance2Nom} (CAC).\n\nVoulez-vous continuer ?`;
+    } else if (isAMU && !priseEnChargeAMU && !isCAC) {
+        messageAlerteProduit = `ℹ️ Le produit "${nom}" n'est pas pris en charge par ${patientAssuranceProforma} (AMU).\n\nLe patient devra payer la totalité (${Math.round(prix * qte).toLocaleString('fr-FR')} FCFA).\n\nVoulez-vous continuer ?`;
+    } else if (!isAMU && isCAC && !priseEnChargeCAC) {
+        messageAlerteProduit = `ℹ️ Le produit "${nom}" n'est pas pris en charge par ${assurance2Nom} (CAC).\n\nLe patient devra payer la totalité (${Math.round(prix * qte).toLocaleString('fr-FR')} FCFA).\n\nVoulez-vous continuer ?`;
+    }
+    if (messageAlerteProduit && !confirm(messageAlerteProduit)) {
+        return false;
+    }
+
+    if (prix > 0) {
+        ajouterAuPanierComplet(nom, 'produit', prix, pbrValue, qte, priseEnChargeAMU, priseEnChargeCAC);
+        return true;
+    }
+    return false;
+}
+
+// ⭐ Scan code-barres — voir champScannerProforma plus bas. Résout le code
+// -> nom via /api/codes-barres/resoudre, puis recherche ce nom via la MÊME
+// route que la recherche manuelle (/api/actes ou /api/produits/search)
+// pour récupérer un article déjà entièrement normalisé — aucune logique
+// dupliquée, toujours à jour. Passe ensuite par validerEtAjouterActeProforma/
+// validerEtAjouterProduitProforma, donc les MÊMES vérifications s'appliquent.
+function ajouterArticleParScan(code) {
+    const qte = parseInt(document.getElementById('quantiteArticle').value) || 1;
+    const patientAssuranceProforma = document.getElementById('assuranceNom').value;
+    const isAMU = patientAssuranceProforma && patientAssuranceProforma !== '' && patientAssuranceProforma !== 'Non assuré';
+    const isCAC = assurance2Active && assurance2Nom && assurance2Nom !== 'Aucune';
+
+    fetch('/api/codes-barres/resoudre?code=' + encodeURIComponent(code))
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { afficherAlerteScanProforma(data.error || 'Code non reconnu', true); return; }
+            if (data.type_article === 'acte') {
+                return fetch('/api/actes?search=' + encodeURIComponent(data.nom_article) + '&limit=20')
+                    .then(r => r.json())
+                    .then(res => {
+                        const match = (res.data || []).find(a => a.nom === data.nom_article);
+                        if (!match) { afficherAlerteScanProforma(`"${data.nom_article}" introuvable dans le catalogue.`, true); return; }
+                        const ajoute = validerEtAjouterActeProforma(match, qte, isAMU, isCAC, patientAssuranceProforma);
+                        afficherAlerteScanProforma(ajoute ? `✅ "${match.nom}" ajouté au panier.` : `"${match.nom}" non ajouté.`, !ajoute);
+                    });
+            } else {
+                return fetch('/api/produits/search?search=' + encodeURIComponent(data.nom_article) + '&limit=20')
+                    .then(r => r.json())
+                    .then(res => {
+                        const match = (res.data || []).find(p => p.nom === data.nom_article);
+                        if (!match) { afficherAlerteScanProforma(`"${data.nom_article}" introuvable dans le catalogue.`, true); return; }
+                        const ajoute = validerEtAjouterProduitProforma(match, qte, isAMU, isCAC, patientAssuranceProforma);
+                        afficherAlerteScanProforma(ajoute ? `✅ "${match.nom}" ajouté au panier.` : `"${match.nom}" non ajouté.`, !ajoute);
+                    });
+            }
+        })
+        .catch(e => afficherAlerteScanProforma('Erreur de scan : ' + e, true));
+}
+
+function afficherAlerteScanProforma(message, estErreur) {
+    const el = document.getElementById('scanStatutProforma');
+    if (!el) return;
+    el.textContent = message;
+    el.className = 'small mt-1 ' + (estErreur ? 'text-danger' : 'text-success');
+    clearTimeout(window._scanStatutProformaTimeout);
+    window._scanStatutProformaTimeout = setTimeout(() => { el.textContent = ''; }, 4000);
+}
+
+(function() {
+    const champ = document.getElementById('champScannerProforma');
+    if (!champ) return;
+    champ.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        const code = champ.value.trim();
+        champ.value = '';
+        if (code) ajouterArticleParScan(code);
+    });
+})();
 function ajouterArticlePersonnalise() {
     const nom = prompt('Nom de l\'article :');
     if (!nom) return;

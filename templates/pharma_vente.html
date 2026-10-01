@@ -90,6 +90,20 @@
                     </div>
                 </div>
 
+                <!-- ⭐ Scan code-barres (douchette USB/Bluetooth, ou caméra via une
+                     app de scan qui "tape" le code ici) — voir
+                     ajouterProduitParScan()/CodeBarreArticle. Le champ reste
+                     focalisé en permanence (la douchette tape comme un clavier,
+                     il faut que la frappe arrive ici et pas ailleurs). -->
+                <div class="row mt-2">
+                    <div class="col-12">
+                        <label class="form-label mb-1"><i class="fas fa-barcode"></i> Scanner un code-barres</label>
+                        <input type="text" class="form-control" id="champScannerProduit"
+                               placeholder="Cliquez ici puis scannez..." autocomplete="off">
+                        <div id="scanStatutProduit" class="small mt-1"></div>
+                    </div>
+                </div>
+
                 <hr>
 
                 <div class="row mt-3">
@@ -1139,47 +1153,80 @@ function ajouterProduit() {
         return;
     }
 
-    const produitNom = selectedOption.getAttribute('data-nom');
-    const produitPrix = parseFloat(selectedOption.getAttribute('data-prix'));
-    const produitPBR = parseFloat(selectedOption.getAttribute('data-pbr')) || 0;
-    const produitStock = parseInt(selectedOption.getAttribute('data-stock'));
-
-    // 🔥 Récupération robuste des attributs
-    // ⭐ AMU-TNS : panier de soins distinct de l'AMU-CNSS/INAM générique —
-    // si le patient sélectionné est assuré AMU-TNS, on lit le flag TNS
-    // dédié au lieu du flag générique, une fois pour toutes ici (tout le
-    // reste du code continue de lire priseEnChargeAMU / item.prise_en_charge_amu
-    // sans aucun changement).
-    let rawAMU = (patientAssurance === 'amu_tns')
-        ? selectedOption.getAttribute('data-prise-en-charge-amu-tns')
-        : selectedOption.getAttribute('data-prise-en-charge-amu');
-    let priseEnChargeAMU;
-    if (rawAMU === null || rawAMU === undefined || rawAMU === '') {
-        priseEnChargeAMU = true;
-    } else {
-        priseEnChargeAMU = rawAMU === 'true' || rawAMU === 'True' || rawAMU === 'TRUE';
-    }
-
-    let rawCAC = selectedOption.getAttribute('data-prise-en-charge-cac');
-    let priseEnChargeCAC;
-    if (rawCAC === null || rawCAC === undefined || rawCAC === '') {
-        priseEnChargeCAC = true;
-    } else {
-        priseEnChargeCAC = rawCAC === 'true' || rawCAC === 'True' || rawCAC === 'TRUE';
-    }
-
-    const commentaireAMU = selectedOption.getAttribute('data-commentaire-amu') || '';
-    const commentaireCAC = selectedOption.getAttribute('data-commentaire-cac') || '';
-    const datePeremption = selectedOption.getAttribute('data-date-peremption') || '';
-
-
     let quantite = parseInt(document.getElementById('quantite').value);
     if (isNaN(quantite) || quantite < 1) quantite = 1;
+
+    // ⭐ AMU-TNS : panier de soins distinct de l'AMU-CNSS/INAM générique —
+    // si le patient sélectionné est assuré AMU-TNS, on lit le flag TNS
+    // dédié au lieu du flag générique.
+    const rawAMU = (patientAssurance === 'amu_tns')
+        ? selectedOption.getAttribute('data-prise-en-charge-amu-tns')
+        : selectedOption.getAttribute('data-prise-en-charge-amu');
+
+    const ok = ajouterProduitAuPanier({
+        id: parseInt(produitId),
+        nom: selectedOption.getAttribute('data-nom'),
+        prix: parseFloat(selectedOption.getAttribute('data-prix')),
+        pbr: parseFloat(selectedOption.getAttribute('data-pbr')) || 0,
+        stock: parseInt(selectedOption.getAttribute('data-stock')),
+        statut: selectedOption.getAttribute('data-statut') || 'direct',
+        date_peremption: selectedOption.getAttribute('data-date-peremption') || '',
+        prise_en_charge_amu_raw: rawAMU,
+        prise_en_charge_cac_raw: selectedOption.getAttribute('data-prise-en-charge-cac'),
+        commentaire_amu: selectedOption.getAttribute('data-commentaire-amu') || '',
+        commentaire_cac: selectedOption.getAttribute('data-commentaire-cac') || '',
+    }, quantite);
+
+    if (!ok) return;
+
+    document.getElementById('produitSelect').selectedIndex = 0;
+    document.getElementById('quantite').value = '1';
+
+    const btn = document.querySelector('.btn-success');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-check"></i> Ajouté !';
+    setTimeout(() => {
+        btn.innerHTML = originalText;
+    }, 1000);
+}
+
+// ⭐ Cœur de l'ajout au panier — stock/péremption/EP/TPC/assurance inclus,
+// pour qu'un produit ajouté par SCAN (voir ajouterProduitParScan) soit
+// vérifié EXACTEMENT comme un produit choisi à la main dans le menu
+// déroulant (même fonction, deux points d'entrée). `produit` : {id, nom,
+// prix, pbr, stock, statut, date_peremption, prise_en_charge_amu_raw,
+// prise_en_charge_cac_raw, commentaire_amu, commentaire_cac}. Retourne
+// true si l'ajout a eu lieu (pour que l'appelant sache s'il doit réagir :
+// réinitialiser le formulaire, refocaliser le scanner...).
+function ajouterProduitAuPanier(produit, quantite) {
+    const produitId = produit.id;
+    const produitNom = produit.nom;
+    const produitPrix = produit.prix;
+    const produitPBR = produit.pbr;
+    const produitStock = produit.stock;
+
+    const normaliserBool = (raw) => {
+        if (raw === null || raw === undefined || raw === '') return true;
+        if (typeof raw === 'boolean') return raw;
+        const s = String(raw).toLowerCase();
+        return s === 'true' || s === 'oui' || s === 'yes' || s === '1' || s === 'vrai';
+    };
+    const priseEnChargeAMU = normaliserBool(produit.prise_en_charge_amu_raw);
+    const priseEnChargeCAC = normaliserBool(produit.prise_en_charge_cac_raw);
+
+    const commentaireAMU = produit.commentaire_amu || '';
+    const commentaireCAC = produit.commentaire_cac || '';
+    const datePeremption = produit.date_peremption || '';
+
+    if (isNaN(produitPrix) || !produitNom) {
+        alert('Erreur : données du produit invalides');
+        return false;
+    }
 
     // Vérification du stock
     if (quantite > produitStock) {
         alert(`Stock insuffisant ! Stock disponible: ${produitStock}`);
-        return;
+        return false;
     }
 
     // Vérification de la péremption
@@ -1191,13 +1238,13 @@ function ajouterProduit() {
 
         if (perempDate < today) {
             alert(`❌ Le produit "${produitNom}" est PÉRIMÉ depuis le ${datePeremption}.\n\nImpossible de l'ajouter au panier.`);
-            return;
+            return false;
         }
 
         const joursRestants = Math.ceil((perempDate - today) / (1000 * 60 * 60 * 24));
         if (joursRestants <= 7 && joursRestants > 0) {
             if (!confirm(`⚠️ Attention ! Le produit "${produitNom}" expire dans ${joursRestants} jour(s) (${datePeremption}).\n\nVoulez-vous quand même l'ajouter au panier ?`)) {
-                return;
+                return false;
             }
         }
     }
@@ -1217,29 +1264,22 @@ function ajouterProduit() {
     const isAMU = patientAssurance && patientAssurance !== 'non_assure';
     const isCAC = assurance2Active && patientAssurance2 && patientAssurance2 !== 'Aucune';
 
-    // ============================================================
-    // 🔥 AJOUTER ICI LES VÉRIFICATIONS EP ET TPC
-    // ============================================================
-
     // Récupérer le statut du produit
-    let statutProduit = selectedOption.getAttribute('data-statut') || 'direct';
-    statutProduit = statutProduit.toUpperCase().trim();
-
+    let statutProduit = (produit.statut || 'direct').toUpperCase().trim();
 
     // 🔥 UNIQUEMENT SI PATIENT ASSURÉ ET STATUT EP
     if (isAMU && statutProduit === 'EP') {
         if (!confirm('⚠️ ENTENTE PRÉALABLE (EP)\n\nLe produit "' + produitNom + '" est sous Entente Préalable.\n\nAvez-vous reçu un accord écrit de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.')) {
-            return;  // Bloque l'ajout
+            return false;
         }
     }
 
     // 🔥 UNIQUEMENT SI PATIENT ASSURÉ ET STATUT TPC
     if (isAMU && statutProduit === 'TPC') {
         if (!confirm('⚠️ TRAITEMENT DES PATHOLOGIES CHRONIQUES (TPC)\n\nLe produit "' + produitNom + '" concerne un Traitement des Pathologies Chroniques.\n\nAvez-vous reçu l\'accord TPC de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.')) {
-            return;  // Bloque l'ajout
+            return false;
         }
     }
-
 
     let messageAlerte = '';
 
@@ -1258,7 +1298,7 @@ function ajouterProduit() {
 
     if (messageAlerte) {
         if (!confirm(messageAlerte)) {
-            return;
+            return false;
         }
     }
 
@@ -1269,7 +1309,7 @@ function ajouterProduit() {
         const nouvelleQte = panier[indexExistant].quantite + quantite;
         if (nouvelleQte > panier[indexExistant].stock_max) {
             alert(`Stock maximum disponible pour ${produitNom}: ${panier[indexExistant].stock_max}`);
-            return;
+            return false;
         }
         panier[indexExistant].quantite = nouvelleQte;
         panier[indexExistant].total = panier[indexExistant].prix * nouvelleQte;
@@ -1299,16 +1339,85 @@ function ajouterProduit() {
     }
 
     afficherPanier();
-    document.getElementById('produitSelect').selectedIndex = 0;
-    document.getElementById('quantite').value = '1';
-
-    const btn = document.querySelector('.btn-success');
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<i class="fas fa-check"></i> Ajouté !';
-    setTimeout(() => {
-        btn.innerHTML = originalText;
-    }, 1000);
+    return true;
 }
+
+// ⭐ Scan code-barres (douchette USB/Bluetooth ou caméra téléphone) —
+// voir champScanner plus bas. Résout le code -> nom via
+// /api/codes-barres/resoudre, puis recherche ce nom via la MÊME route que
+// la recherche manuelle (/api/produits/search) pour récupérer un produit
+// déjà entièrement normalisé (prix/pbr/stock/péremption/statut) — aucune
+// logique dupliquée, et toujours à jour (pas de prix figé au moment où le
+// code a été généré). Passe ensuite par ajouterProduitAuPanier(), donc les
+// MÊMES vérifications stock/péremption/EP/TPC/assurance s'appliquent.
+function ajouterProduitParScan(code) {
+    fetch('/api/codes-barres/resoudre?code=' + encodeURIComponent(code))
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { afficherAlerteScan(data.error || 'Code non reconnu', true); return; }
+            if (data.type_article !== 'produit') {
+                afficherAlerteScan(`"${data.nom_article}" est un ACTE, pas un produit — scannez-le depuis la page Actes/Vente.`, true);
+                return;
+            }
+            return fetch('/api/produits/search?search=' + encodeURIComponent(data.nom_article) + '&limit=20')
+                .then(r => r.json())
+                .then(res => {
+                    const match = (res.data || []).find(p => p.nom === data.nom_article);
+                    if (!match) {
+                        afficherAlerteScan(`"${data.nom_article}" introuvable dans le catalogue — a peut-être été supprimé ou renommé.`, true);
+                        return;
+                    }
+                    let quantite = parseInt(document.getElementById('quantite').value);
+                    if (isNaN(quantite) || quantite < 1) quantite = 1;
+                    const ok = ajouterProduitAuPanier({
+                        id: match.id, nom: match.nom, prix: match.prix_vente ?? match.prix,
+                        pbr: match.pbr || 0, stock: match.quantite_stock ?? match.stock,
+                        statut: match.statut || 'direct', date_peremption: match.date_peremption || '',
+                        prise_en_charge_amu_raw: (patientAssurance === 'amu_tns') ? match.prise_en_charge_amu_tns : match.prise_en_charge_amu,
+                        prise_en_charge_cac_raw: match.prise_en_charge_cac,
+                        commentaire_amu: match.commentaire_amu || '', commentaire_cac: match.commentaire_cac || '',
+                    }, quantite);
+                    if (ok) {
+                        afficherAlerteScan(`✅ "${match.nom}" ajouté au panier.`, false);
+                        document.getElementById('quantite').value = '1';
+                    }
+                });
+        })
+        .catch(e => afficherAlerteScan('Erreur de scan : ' + e, true));
+}
+
+function afficherAlerteScan(message, estErreur) {
+    const el = document.getElementById('scanStatutProduit');
+    if (!el) return;
+    el.textContent = message;
+    el.className = 'small mt-1 ' + (estErreur ? 'text-danger' : 'text-success');
+    clearTimeout(window._scanStatutProduitTimeout);
+    window._scanStatutProduitTimeout = setTimeout(() => { el.textContent = ''; }, 4000);
+}
+
+// ⭐ Champ scanner — même mécanisme que le champ QR de la page de connexion
+// (index.html) : une douchette USB/Bluetooth "tape" le code comme un
+// clavier, puis envoie Entrée. Le champ reste focalisé en permanence pour
+// que la frappe arrive toujours ici, même après avoir cliqué ailleurs.
+(function() {
+    const champ = document.getElementById('champScannerProduit');
+    if (!champ) return;
+    champ.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        const code = champ.value.trim();
+        champ.value = '';
+        if (code) ajouterProduitParScan(code);
+    });
+    const refocaliser = () => { if (document.activeElement !== champ) champ.focus(); };
+    refocaliser();
+    document.addEventListener('click', function(e) {
+        // Ne vole pas le focus d'un AUTRE champ de saisie (recherche,
+        // quantité...) : seulement quand on clique "dans le vide".
+        if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) refocaliser();
+    });
+})();
+
 function modifierPrix(index, nouveauPrix) {
     const prix = parseFloat(nouveauPrix);
     if (isNaN(prix) || prix <= 0) {

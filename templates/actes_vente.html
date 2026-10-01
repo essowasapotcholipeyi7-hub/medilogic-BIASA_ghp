@@ -198,7 +198,19 @@
                         </button>
                     </div>
                 </div>
-                
+
+                <!-- ⭐ Scan code-barres (douchette USB/Bluetooth, ou caméra via une
+                     app de scan qui "tape" le code ici) — voir
+                     ajouterActeParScan()/CodeBarreArticle. -->
+                <div class="row mt-2">
+                    <div class="col-12">
+                        <label class="form-label mb-1"><i class="fas fa-barcode"></i> Scanner un code-barres</label>
+                        <input type="text" class="form-control" id="champScannerActe"
+                               placeholder="Cliquez ici puis scannez..." autocomplete="off">
+                        <div id="scanStatutActe" class="small mt-1"></div>
+                    </div>
+                </div>
+
                 <hr>
 
                 <!-- ⭐ Bandeau de finalisation d'une vente en attente — visible
@@ -1047,35 +1059,13 @@ function definirMedecinDuJour() {
 function ajouterActe() {
     let select = document.getElementById('acteSelect');
     let selectedIndex = select.selectedIndex;
-    
+
     if (selectedIndex === 0 || !select.value) {
         alert('Veuillez sélectionner un acte');
         return;
     }
-    
-    let selectedOption = select.options[selectedIndex];
-    let acteId = select.value;
-    let acteNom = selectedOption.getAttribute('data-nom');
-    let actePrix = parseFloat(selectedOption.getAttribute('data-prix'));
-    let actePBR = parseFloat(selectedOption.getAttribute('data-pbr')) || actePrix;
 
-    // ⭐ Tarif nuit/férié/dimanche (Clinique Valeo) : bascule le prix si le
-    // flag serveur est actif ET que CET acte a un prix nuit renseigné —
-    // sans quoi (tout le reste du catalogue) actePrix reste inchangé. Le
-    // PBR ne change pas nuit/jour (confirmé sur les barèmes fournis), donc
-    // pas de "PBR nuit" séparé. Seul point d'injection nécessaire : le
-    // reste du panier (afficherPanier/calculerTotal/finaliserVente)
-    // réutilise item.prix sans jamais relire le DOM.
-    let acteEnTarifNuit = false;
-    if (TARIF_NUIT_ACTIF) {
-        const prixNuitRaw = selectedOption.getAttribute('data-prix-nuit');
-        const prixNuit = prixNuitRaw ? parseFloat(prixNuitRaw) : 0;
-        if (prixNuit > 0) {
-            actePrix = prixNuit;
-            acteEnTarifNuit = true;
-            showToastActes(`🌙 Tarif nuit appliqué pour "${acteNom}" : ${prixNuit} FCFA`, 'info');
-        }
-    }
+    let selectedOption = select.options[selectedIndex];
 
     // ⭐ Part Médecin : cet acte a-t-il un taux de rétrocession configuré
     // (voir data-taux-medecin, /taux-part-medecin) ? Si oui, un choix
@@ -1087,16 +1077,18 @@ function ajouterActe() {
     // qu'ajouterActeAuPanier() sache si elle doit mettre à jour une ligne
     // déjà présente au panier, y compris pour la ramener explicitement à
     // "Aucun médecin". medecinId/medecinNom restent null pour tout le
-    // reste du catalogue (comportement inchangé).
+    // reste du catalogue (comportement inchangé). Ce choix reste lu ici
+    // (champ UI, pas une propriété de l'acte) même pour un ajout par scan.
     let medecinId = null;
     let medecinNom = null;
     let medecinDecide = false;
     const tauxMedecinRaw = selectedOption.getAttribute('data-taux-medecin');
+    const acteNomPourMedecin = selectedOption.getAttribute('data-nom');
     if (tauxMedecinRaw) {
         const medecinSelect = document.getElementById('medecinRealisateurSelect');
         const valeurChoisie = medecinSelect ? medecinSelect.value : '';
         if (!valeurChoisie) {
-            alert(`Veuillez indiquer qui a réalisé "${acteNom}" — un médecin, ou "Aucun médecin" si la part médecin ne doit pas s'appliquer à cette vente (taux de rétrocession configuré pour cet acte).`);
+            alert(`Veuillez indiquer qui a réalisé "${acteNomPourMedecin}" — un médecin, ou "Aucun médecin" si la part médecin ne doit pas s'appliquer à cette vente (taux de rétrocession configuré pour cet acte).`);
             if (medecinSelect) medecinSelect.focus();
             return;
         }
@@ -1105,77 +1097,92 @@ function ajouterActe() {
             medecinId = valeurChoisie;
             medecinNom = medecinSelect.options[medecinSelect.selectedIndex].textContent.trim();
         }
-        // valeurChoisie === 'aucun' -> medecinId/medecinNom restent null,
-        // c'est le choix explicite "pas de part médecin sur cette vente".
     }
 
-    // ⭐ Recettes par service (patron, 2026-09-30) : jamais obligatoire
-    // (contrairement au médecin ci-dessus) — vide -> résolution côté
-    // serveur (classification manuelle puis détection automatique). Voir
-    // preRemplirServiceActe().
     const serviceActeSelect = document.getElementById('serviceActeSelect');
     const serviceId = serviceActeSelect ? (serviceActeSelect.value || null) : null;
 
-    // ⭐ Lu tôt pour la résolution AMU-TNS ci-dessous (déclaré à nouveau,
-    // sans réaffectation, plus bas où le reste de la logique CAC en a besoin)
+    let quantite = parseInt(document.getElementById('quantite').value);
+    if (isNaN(quantite) || quantite < 1) quantite = 1;
+
+    ajouterActeDepuisDonnees({
+        id: select.value,
+        nom: selectedOption.getAttribute('data-nom'),
+        prix: parseFloat(selectedOption.getAttribute('data-prix')),
+        pbr: parseFloat(selectedOption.getAttribute('data-pbr')) || parseFloat(selectedOption.getAttribute('data-prix')),
+        prix_nuit: selectedOption.getAttribute('data-prix-nuit') ? parseFloat(selectedOption.getAttribute('data-prix-nuit')) : 0,
+        statut: selectedOption.getAttribute('data-statut') || 'direct',
+        prise_en_charge_amu_raw: selectedOption.getAttribute('data-prise-en-charge-amu'),
+        prise_en_charge_amu_tns_raw: selectedOption.getAttribute('data-prise-en-charge-amu-tns'),
+        prise_en_charge_cac_raw: selectedOption.getAttribute('data-prise-en-charge-cac'),
+        commentaire_amu: selectedOption.getAttribute('data-commentaire-amu') || '',
+        commentaire_cac: selectedOption.getAttribute('data-commentaire-cac') || '',
+    }, quantite, medecinId, medecinNom, medecinDecide, serviceId);
+}
+
+// ⭐ Cœur de l'ajout au panier — tarif nuit/EP/prise en charge inclus, pour
+// qu'un acte ajouté par SCAN (voir ajouterActeParScan) soit vérifié
+// EXACTEMENT comme un acte choisi à la main (même fonction, deux points
+// d'entrée). `acte` : {id, nom, prix, pbr, prix_nuit, statut,
+// prise_en_charge_amu_raw, prise_en_charge_amu_tns_raw,
+// prise_en_charge_cac_raw, commentaire_amu, commentaire_cac}. Le choix du
+// médecin réalisateur et du service restent des champs UI (medecinId/
+// medecinNom/medecinDecide/serviceId), lus par l'appelant quel que soit le
+// point d'entrée — ce ne sont pas des propriétés de l'acte lui-même.
+function ajouterActeDepuisDonnees(acte, quantite, medecinId, medecinNom, medecinDecide, serviceId) {
+    let acteId = acte.id;
+    let acteNom = acte.nom;
+    let actePrix = acte.prix;
+    let actePBR = acte.pbr || actePrix;
+
+    // ⭐ Tarif nuit/férié/dimanche (Clinique Valeo) : bascule le prix si le
+    // flag serveur est actif ET que CET acte a un prix nuit renseigné. Le
+    // PBR ne change pas nuit/jour (confirmé sur les barèmes fournis).
+    if (TARIF_NUIT_ACTIF && acte.prix_nuit > 0) {
+        actePrix = acte.prix_nuit;
+        showToastActes(`🌙 Tarif nuit appliqué pour "${acteNom}" : ${acte.prix_nuit} FCFA`, 'info');
+    }
+
     const patientAssuranceActe = sessionStorage.getItem('selectedPatientAssurance');
 
-    // 🔥 Récupérer les attributs
-    let priseEnChargeAMU = selectedOption.getAttribute('data-prise-en-charge-amu');
-    let commentaireAMU = selectedOption.getAttribute('data-commentaire-amu') || '';
-    let priseEnChargeCAC = selectedOption.getAttribute('data-prise-en-charge-cac');
-    let commentaireCAC = selectedOption.getAttribute('data-commentaire-cac') || '';
+    let priseEnChargeAMU = acte.prise_en_charge_amu_raw;
+    let commentaireAMU = acte.commentaire_amu || '';
+    let priseEnChargeCAC = acte.prise_en_charge_cac_raw;
+    let commentaireCAC = acte.commentaire_cac || '';
 
-    // 🔥 Convertir en booléen
-    priseEnChargeAMU = priseEnChargeAMU ? priseEnChargeAMU.toLowerCase() === 'true' : true;
-    priseEnChargeCAC = priseEnChargeCAC ? priseEnChargeCAC.toLowerCase() === 'true' : true;
+    priseEnChargeAMU = (priseEnChargeAMU === null || priseEnChargeAMU === undefined || priseEnChargeAMU === '')
+        ? true : (typeof priseEnChargeAMU === 'boolean' ? priseEnChargeAMU : String(priseEnChargeAMU).toLowerCase() === 'true');
+    priseEnChargeCAC = (priseEnChargeCAC === null || priseEnChargeCAC === undefined || priseEnChargeCAC === '')
+        ? true : (typeof priseEnChargeCAC === 'boolean' ? priseEnChargeCAC : String(priseEnChargeCAC).toLowerCase() === 'true');
 
-    // ⭐ AMU-TNS : panier de soins distinct de l'AMU-CNSS/INAM générique
-    // ci-dessus — si le patient sélectionné est assuré AMU-TNS, on résout
-    // priseEnChargeAMU depuis le flag TNS dédié (colonne "AMU-TNS" du
-    // Sheet) au lieu du flag générique, une fois pour toutes ici : tout le
-    // reste du code (calcul du panier, messages, PBR...) continue de lire
-    // priseEnChargeAMU/item.prise_en_charge_amu sans aucun changement.
+    // ⭐ AMU-TNS : panier de soins distinct de l'AMU-CNSS/INAM générique —
+    // si le patient sélectionné est assuré AMU-TNS, on résout
+    // priseEnChargeAMU depuis le flag TNS dédié au lieu du flag générique.
     if (patientAssuranceActe === 'amu_tns') {
-        let priseEnChargeAMUTNS = selectedOption.getAttribute('data-prise-en-charge-amu-tns');
-        priseEnChargeAMU = priseEnChargeAMUTNS ? priseEnChargeAMUTNS.toLowerCase() === 'true' : true;
+        let raw = acte.prise_en_charge_amu_tns_raw;
+        priseEnChargeAMU = (raw === null || raw === undefined || raw === '')
+            ? true : (typeof raw === 'boolean' ? raw : String(raw).toLowerCase() === 'true');
     }
 
-    let quantite = parseInt(document.getElementById('quantite').value);
-    
-    if (isNaN(quantite) || quantite < 1) {
-        quantite = 1;
-    }
-    
     if (isNaN(actePrix) || !acteNom) {
         alert('Erreur: Données de l\'acte invalides');
         return;
     }
 
-    
     // ⭐ FIX : le taux AMU à 90% de P160 ne doit s'appliquer QU'À P160, pas
-    // à tout le panier. Ce bloc écrasait auparavant le champ général
-    // "Taux AMU (%)" (#tauxVente) — utilisé par calculerTotal()/
-    // finaliserVente() pour TOUS les articles du panier — dès qu'un P160
-    // était ajouté, faisant alors rembourser à tort les autres actes du
-    // même panier à 90% au lieu de 80%. Le champ général reste donc
-    // maintenant toujours au taux normal (80%, ou la valeur que le
-    // personnel a saisie manuellement pour un cas exceptionnel) ; le 90%
-    // de P160 est appliqué uniquement en interne, article par article,
-    // par tauxAMUPourArticle() (voir calculerTotal()/finaliserVente()).
+    // à tout le panier — voir tauxAMUPourArticle() (calculerTotal()/
+    // finaliserVente()), appliqué article par article.
     if (acteNom && acteNom.includes('P160')) {
         console.log('🏥 Acte P160 détecté - remboursé à 90% (les autres articles du panier restent à leur taux habituel)');
     }
 
-    // 🔥 VÉRIFIER SI LE PATIENT EST ASSURÉ
     const patientAssurance = sessionStorage.getItem('selectedPatientAssurance');
     const assurance2Active = document.getElementById('toggleAssurance2')?.checked || false;
     const patientAssurance2 = sessionStorage.getItem('selectedPatientAssurance2') || '';
-    const patientNom = sessionStorage.getItem('selectedPatientName') || 'Patient';
-    
+
     let isAMU = patientAssurance && patientAssurance !== 'non_assure';
     let isCAC = assurance2Active && patientAssurance2 && patientAssurance2 !== 'Aucune';
-    
+
     // 🔥 SI LE PATIENT N'EST PAS ASSURÉ → AJOUT DIRECT
     if (!isAMU && !isCAC) {
         ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,
@@ -1184,10 +1191,7 @@ function ajouterActe() {
         return;
     }
 
-    // Récupérer le statut de l'acte
-    let statutActe = selectedOption.getAttribute('data-statut') || 'direct';
-    statutActe = statutActe.toUpperCase().trim();
-
+    let statutActe = (acte.statut || 'direct').toUpperCase().trim();
 
     // 🔥 UNIQUEMENT SI PATIENT ASSURÉ ET STATUT EP
     if (isAMU && statutActe === 'EP') {
@@ -1196,32 +1200,8 @@ function ajouterActe() {
         }
     }
 
-    
-    // 🔥 SI LE PATIENT EST ASSURÉ → VÉRIFICATION
-    let message = '';
-    let bloquer = false;
     let infoMessage = '';
-    
-    // Vérification AMU
-    if (isAMU && !priseEnChargeAMU) {
-        message += `❌ NON PRIS EN CHARGE PAR L'ASSURANCE PRINCIPALE\n`;
-        message += `L'acte "${acteNom}" n'est pas pris en charge par ${patientAssurance}.\n`;
-        if (commentaireAMU) {
-            message += ` ${commentaireAMU}\n`;
-        }
-        message += `\n`;
-    }
-    
-    // Vérification CAC
-    if (isCAC && !priseEnChargeCAC) {
-        message += `❌ NON PRIS EN CHARGE PAR L'ASSURANCE COMPLÉMENTAIRE\n`;
-        message += `L'acte "${acteNom}" n'est pas pris en charge par ${patientAssurance2}.\n`;
-        if (commentaireCAC) {
-            message += ` ${commentaireCAC}\n`;
-        }
-        message += `\n`;
-    }
-    
+
     // Cas 1: Les DEUX ne sont pas pris en charge
     if (!priseEnChargeAMU && !priseEnChargeCAC && (isAMU || isCAC)) {
         infoMessage = `⚠️ ACTE NON PRIS EN CHARGE PAR LES ASSURANCES\n\n`;
@@ -1245,19 +1225,108 @@ function ajouterActe() {
     else if (!priseEnChargeCAC && isCAC && !isAMU) {
         infoMessage = `L'acte n'est pas pris en charge par ${patientAssurance2} (CAC).\n\nLe patient n'a pas d'assurance principale.`;
     }
-    
-    // 🔥 AFFICHER LE MESSAGE ET DEMANDER CONFIRMATION
+
     if (infoMessage) {
         if (!confirm(infoMessage)) {
             return;  // L'utilisateur annule
         }
     }
-    
+
     // ✅ TOUT EST OK → AJOUT
     ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,
                        priseEnChargeAMU, commentaireAMU, priseEnChargeCAC, commentaireCAC,
                        medecinId, medecinNom, medecinDecide, serviceId);
 }
+
+// ⭐ Scan code-barres — voir champScannerActe plus bas. Résout le code ->
+// nom via /api/codes-barres/resoudre, puis recherche ce nom via la MÊME
+// route que la recherche manuelle (/api/actes) pour récupérer un acte déjà
+// entièrement normalisé (prix/pbr/statut/part médecin) — aucune logique
+// dupliquée, toujours à jour. Passe ensuite par ajouterActeDepuisDonnees(),
+// donc les MÊMES vérifications EP/prise en charge s'appliquent. Le choix
+// du médecin réalisateur (si cet acte en exige un) reste demandé via le
+// sélecteur de la page, comme pour un ajout manuel.
+function ajouterActeParScan(code) {
+    fetch('/api/codes-barres/resoudre?code=' + encodeURIComponent(code))
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { afficherAlerteScanActe(data.error || 'Code non reconnu', true); return; }
+            if (data.type_article !== 'acte') {
+                afficherAlerteScanActe(`"${data.nom_article}" est un PRODUIT, pas un acte — scannez-le depuis la Pharmacie.`, true);
+                return;
+            }
+            return fetch('/api/actes?search=' + encodeURIComponent(data.nom_article) + '&limit=20')
+                .then(r => r.json())
+                .then(res => {
+                    const match = (res.data || []).find(a => a.nom === data.nom_article);
+                    if (!match) {
+                        afficherAlerteScanActe(`"${data.nom_article}" introuvable dans le catalogue — a peut-être été supprimé ou renommé.`, true);
+                        return;
+                    }
+
+                    let medecinId = null, medecinNom = null, medecinDecide = false;
+                    if (match.taux_medecin) {
+                        const medecinSelect = document.getElementById('medecinRealisateurSelect');
+                        const valeurChoisie = medecinSelect ? medecinSelect.value : '';
+                        if (!valeurChoisie) {
+                            alert(`Veuillez indiquer qui a réalisé "${match.nom}" avant de le scanner — un médecin, ou "Aucun médecin".`);
+                            if (medecinSelect) medecinSelect.focus();
+                            return;
+                        }
+                        medecinDecide = true;
+                        if (valeurChoisie !== 'aucun') {
+                            medecinId = valeurChoisie;
+                            medecinNom = medecinSelect.options[medecinSelect.selectedIndex].textContent.trim();
+                        }
+                    }
+                    const serviceActeSelect = document.getElementById('serviceActeSelect');
+                    const serviceId = serviceActeSelect ? (serviceActeSelect.value || null) : null;
+
+                    let quantite = parseInt(document.getElementById('quantite').value);
+                    if (isNaN(quantite) || quantite < 1) quantite = 1;
+
+                    ajouterActeDepuisDonnees({
+                        id: match.id, nom: match.nom, prix: match.prix, pbr: match.pbr,
+                        prix_nuit: match.prix_nuit || 0, statut: match.statut || 'direct',
+                        prise_en_charge_amu_raw: match.prise_en_charge_amu,
+                        prise_en_charge_amu_tns_raw: match.prise_en_charge_amu_tns,
+                        prise_en_charge_cac_raw: match.prise_en_charge_cac,
+                        commentaire_amu: match.commentaire_amu || '', commentaire_cac: match.commentaire_cac || '',
+                    }, quantite, medecinId, medecinNom, medecinDecide, serviceId);
+                    afficherAlerteScanActe(`✅ "${match.nom}" ajouté au panier.`, false);
+                });
+        })
+        .catch(e => afficherAlerteScanActe('Erreur de scan : ' + e, true));
+}
+
+function afficherAlerteScanActe(message, estErreur) {
+    const el = document.getElementById('scanStatutActe');
+    if (!el) return;
+    el.textContent = message;
+    el.className = 'small mt-1 ' + (estErreur ? 'text-danger' : 'text-success');
+    clearTimeout(window._scanStatutActeTimeout);
+    window._scanStatutActeTimeout = setTimeout(() => { el.textContent = ''; }, 4000);
+}
+
+// ⭐ Champ scanner — même mécanisme que le champ QR de la page de connexion
+// (index.html) : une douchette USB/Bluetooth "tape" le code comme un
+// clavier, puis envoie Entrée.
+(function() {
+    const champ = document.getElementById('champScannerActe');
+    if (!champ) return;
+    champ.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        const code = champ.value.trim();
+        champ.value = '';
+        if (code) ajouterActeParScan(code);
+    });
+    const refocaliser = () => { if (document.activeElement !== champ) champ.focus(); };
+    refocaliser();
+    document.addEventListener('click', function(e) {
+        if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) refocaliser();
+    });
+})();
 
 // 🔥 FONCTION POUR AJOUTER L'ACTE AU PANIER
 function ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,

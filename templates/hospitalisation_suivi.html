@@ -360,6 +360,19 @@
 {% endif %}
 
 {% if hospit.statut != 'facturee' %}
+<!-- ⭐ Scan code-barres (douchette USB/Bluetooth, ou caméra via une app de
+     scan qui "tape" le code ici) — partagé acte/médicament : le type
+     (acte ou produit) vient du code lui-même, voir ajouterSoinParScan()/
+     CodeBarreArticle. Ne soumet PAS directement (une date de prestation
+     reste obligatoire) : pré-remplit la sélection, comme un clic manuel
+     sur un résultat de recherche. -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <label class="form-label mb-1"><i class="fas fa-barcode"></i> Scanner un code-barres (acte ou médicament)</label>
+        <input type="text" class="form-control" id="champScannerSoin" placeholder="Cliquez ici puis scannez..." autocomplete="off">
+        <div id="scanStatutSoin" class="small mt-1"></div>
+    </div>
+</div>
 <div class="row g-3 mb-3">
     <div class="col-md-6">
         <div class="card h-100">
@@ -680,6 +693,65 @@ function choisirProduit(p) {
     }
     document.getElementById('produitChoisiBloc').style.display = '';
 }
+
+// ⭐ Scan code-barres — résout le code -> nom via /api/codes-barres/resoudre,
+// puis recherche ce nom via la MÊME route que la recherche manuelle
+// (/api/actes ou /api/produits) pour récupérer un article déjà entièrement
+// normalisé, et le pré-remplit via choisirActe()/choisirProduit() — EXACTEMENT
+// comme un clic sur un résultat de recherche manuelle (même vérification
+// péremption déjà incluse dans choisirProduit()). Ne clique PAS "Ajouter"
+// à la place de l'utilisateur : la date de prestation reste à choisir.
+function ajouterSoinParScan(code) {
+    fetch('/api/codes-barres/resoudre?code=' + encodeURIComponent(code))
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { afficherAlerteScanSoin(data.error || 'Code non reconnu', true); return; }
+            if (data.type_article === 'acte') {
+                return fetch('/api/actes?search=' + encodeURIComponent(data.nom_article) + '&limit=20')
+                    .then(r => r.json())
+                    .then(res => {
+                        const match = (res.data || []).find(a => a.nom === data.nom_article);
+                        if (!match) { afficherAlerteScanSoin(`"${data.nom_article}" introuvable dans le catalogue.`, true); return; }
+                        choisirActe(match);
+                        afficherAlerteScanSoin(`✅ "${match.nom}" sélectionné — vérifiez la date puis cliquez sur Ajouter.`, false);
+                    });
+            } else {
+                return chargerProduits().then(liste => {
+                    const match = liste.find(p => p.nom === data.nom_article);
+                    if (!match) { afficherAlerteScanSoin(`"${data.nom_article}" introuvable dans le catalogue.`, true); return; }
+                    choisirProduit(match);
+                    afficherAlerteScanSoin(`✅ "${match.nom}" sélectionné — vérifiez la date puis cliquez sur Ajouter.`, false);
+                });
+            }
+        })
+        .catch(e => afficherAlerteScanSoin('Erreur de scan : ' + e, true));
+}
+
+function afficherAlerteScanSoin(message, estErreur) {
+    const el = document.getElementById('scanStatutSoin');
+    if (!el) return;
+    el.textContent = message;
+    el.className = 'small mt-1 ' + (estErreur ? 'text-danger' : 'text-success');
+    clearTimeout(window._scanStatutSoinTimeout);
+    window._scanStatutSoinTimeout = setTimeout(() => { el.textContent = ''; }, 5000);
+}
+
+(function() {
+    const champ = document.getElementById('champScannerSoin');
+    if (!champ) return;
+    champ.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        const code = champ.value.trim();
+        champ.value = '';
+        if (code) ajouterSoinParScan(code);
+    });
+    const refocaliser = () => { if (document.activeElement !== champ) champ.focus(); };
+    refocaliser();
+    document.addEventListener('click', function(e) {
+        if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) refocaliser();
+    });
+})();
 
 // ===================== AJOUT D'UN SOIN =====================
 function ajouterSoin(type, confirmerDoublon) {
