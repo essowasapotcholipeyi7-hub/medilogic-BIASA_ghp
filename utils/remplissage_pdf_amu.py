@@ -28,7 +28,9 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 AMU_CNSS_PDF = 'static/documents/amu_cnss/demande_entente_prealable.pdf'
 AMU_INAM_PDF = 'static/documents/amu_inam/demande_entente_prealable.pdf'
 
-FONT = 'Helvetica'
+FONT = 'Helvetica-Bold'  # ⭐ gras — patron : "je veux que le texte saisi soit
+                         # affiché en gras pour mettre la différence avec le
+                         # texte existant [imprimé sur la fiche]".
 FONT_SIZE = 11      # ⭐ augmenté (était 10) — patron : "augmente un peu la
                      # police du texte pour que ça soit même chose que ce
                      # qui est sur la fiche déjà".
@@ -81,6 +83,43 @@ def _texte(c, hauteur, x, top, valeur, taille=None, largeur_max=None):
     valeur, taille_effective = _ajuster_pour_largeur(str(valeur), largeur_max, taille_effective)
     c.setFont(FONT, taille_effective)
     c.drawString(x, hauteur - top, valeur)
+    c.setFont(FONT, FONT_SIZE)
+
+
+def _texte_centree(c, hauteur, x0, x1, top, valeur, taille=None):
+    """Comme _texte, mais centre `valeur` dans la case [x0, x1] au lieu de
+    partir d'un coin gauche fixe — utilisé pour les cases jour/mois/année
+    de la "Date de la prescription" (gabarit CNSS), qui a déjà ses propres
+    barres obliques imprimées : on ne dessine jamais de "/" nous-mêmes,
+    seulement les chiffres à l'intérieur de chaque case."""
+    if not valeur:
+        return
+    taille_effective = taille or FONT_SIZE
+    valeur, taille_effective = _ajuster_pour_largeur(str(valeur), x1 - x0, taille_effective)
+    largeur_texte = stringWidth(valeur, FONT, taille_effective)
+    c.setFont(FONT, taille_effective)
+    c.drawString(x0 + max(0, (x1 - x0 - largeur_texte) / 2), hauteur - top, valeur)
+    c.setFont(FONT, FONT_SIZE)
+
+
+def _texte_cases(c, hauteur, top, cases, valeur, taille=10):
+    """⭐ N° AMU / Code formation sanitaire / Code prescripteur (gabarit
+    CNSS) sont imprimés en cases séparées par des "/" (ex:
+    "/..../..../..../"). Écrire la valeur comme une suite continue (ancien
+    code) la fait traverser ces barres imprimées — vécu en prod (patron :
+    "on a mis des slash à l'endroit où il faut saisir, fait en sorte que
+    ça respecte ça"). On écrit donc un caractère par case, centré dans la
+    zone pointillée de chaque case, jamais par-dessus un "/" imprimé.
+    `cases` : liste ordonnée de (x_debut, x_fin) de chaque case."""
+    if not valeur:
+        return
+    c.setFont(FONT, taille)
+    y = hauteur - top
+    for ch, (x0, x1) in zip(str(valeur), cases):
+        if ch == ' ':
+            continue
+        largeur_car = stringWidth(ch, FONT, taille)
+        c.drawString(x0 + max(0, (x1 - x0 - largeur_car) / 2), y, ch)
     c.setFont(FONT, FONT_SIZE)
 
 
@@ -142,6 +181,22 @@ def _ligne_motif(l):
     return (l or {}).get('motif', '')
 
 
+# ⭐ Cases séparées par des "/" imprimés sur le gabarit CNSS — une case par
+# caractère, jamais une suite continue qui traverserait un "/" (voir
+# _texte_cases). Calibrées sur le PDF original (pdfplumber, chars()).
+CNSS_CASES_NUMERO_AMU = [
+    (95, 109), (113, 126), (130, 144), (148, 161), (165, 178), (182, 196), (200, 213),  # 1er groupe (7 cases)
+    (255, 268), (272, 285), (289, 303), (307, 320), (324, 338), (341, 355), (359, 372), (376, 393), (397, 410), (414, 428),  # 2e groupe (10 cases, si N° AMU plus long)
+]
+CNSS_CASES_CODE_FORMATION_SANITAIRE = [(180, 194), (197, 211), (215, 228), (232, 246), (250, 263), (267, 280)]
+CNSS_CASES_CODE_PRESCRIPTEUR = [(419, 433), (437, 450), (454, 468), (471, 485), (489, 502), (506, 520), (523, 540)]
+# Case "Date de la prescription" : jour / mois / "20"+année déjà imprimés
+# avec leurs propres "/" — on ne dessine que les chiffres, dans la case.
+CNSS_ZONE_JOUR = (381, 404)
+CNSS_ZONE_MOIS = (409, 439)
+CNSS_ZONE_ANNEE = (457, 473)
+
+
 def remplir_ep_cnss(demande, patient, medecin, code_formation_sanitaire):
     """demande: DemandeEntentePrealable ; patient: Patient ; medecin: Medecin.
     Retourne les bytes du PDF (2 pages, page 2 = encart contact imprimé
@@ -155,16 +210,19 @@ def remplir_ep_cnss(demande, patient, medecin, code_formation_sanitaire):
 
     def dessiner(c, h):
         nom_complet = f"{patient.nom} {patient.prenom}".strip()
-        _texte(c, h, 95, 118, patient.numero_assure or '', largeur_max=390)
-        _texte(c, h, 132, 139, nom_complet, largeur_max=220)
-        _texte(c, h, 430, 139, patient.telephone or '', largeur_max=130)
+        _texte_cases(c, h, 116.5, CNSS_CASES_NUMERO_AMU, patient.numero_assure or '')
+        # ⭐ Légèrement décollé des pointillés (patron) — baseline relevée
+        # d'un cran de plus que la ligne imprimée.
+        _texte(c, h, 132, 137, nom_complet, largeur_max=220)
+        _texte(c, h, 430, 137, patient.telephone or '', largeur_max=130)
 
-        _texte(c, h, 180, 182.5, code_formation_sanitaire or '', largeur_max=115)
-        _texte(c, h, 419, 181, medecin.code_prescripteur or '', largeur_max=140)
-        _texte(c, h, 97, 206, medecin.telephone or '', largeur_max=140)
+        _texte_cases(c, h, 180.5, CNSS_CASES_CODE_FORMATION_SANITAIRE, code_formation_sanitaire or '')
+        _texte_cases(c, h, 179, CNSS_CASES_CODE_PRESCRIPTEUR, medecin.code_prescripteur or '')
+        _texte(c, h, 97, 204, medecin.telephone or '', largeur_max=140)
         d = demande.date_prescription or date.today()
-        _texte(c, h, 384, 206, d.strftime('%d/%m'), largeur_max=35)
-        _texte(c, h, 463, 206, str(d.year)[-2:], largeur_max=25)
+        _texte_centree(c, h, *CNSS_ZONE_JOUR, 204, d.strftime('%d'), taille=FONT_SIZE_TABLE)
+        _texte_centree(c, h, *CNSS_ZONE_MOIS, 204, d.strftime('%m'), taille=FONT_SIZE_TABLE)
+        _texte_centree(c, h, *CNSS_ZONE_ANNEE, 204, str(d.year)[-2:], taille=FONT_SIZE_TABLE)
 
         # Tableau "Actes" — N°(27.5-50.2) | Acte(50.2-198.3) | Motif(198.3-361.0)
         if demande.inclure_actes:
@@ -195,7 +253,7 @@ def remplir_ep_cnss(demande, patient, medecin, code_formation_sanitaire):
                 # ⭐ Une seule ligne de pointillés disponible ici (contrairement
                 # à l'INAM qui en a deux) : rétrécit/tronque, pas de retour
                 # à la ligne possible.
-                _texte(c, h, 212, 719, demande.hospit_categorie_autre_precision or '', taille=9, largeur_max=80)
+                _texte(c, h, 212, 717, demande.hospit_categorie_autre_precision or '', taille=9, largeur_max=80)
 
     page1.merge_page(_overlay(largeur, hauteur, dessiner))
 
