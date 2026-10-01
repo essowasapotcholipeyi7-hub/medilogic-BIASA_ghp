@@ -159,7 +159,8 @@
       data-prix="{{ hospit.chambre_prix or '' }}"
       data-pbr="{{ hospit.chambre_pbr or '' }}"
       data-amu="{{ 1 if hospit.chambre_prise_en_charge_amu else 0 }}"
-      data-cac="{{ 1 if hospit.chambre_prise_en_charge_cac else 0 }}"></span>
+      data-cac="{{ 1 if hospit.chambre_prise_en_charge_cac else 0 }}"
+      data-categorie="{{ hospit.chambre_categorie_amu or '' }}"></span>
 <!-- ⭐ Tarif de chambre du séjour — choisi ici pour être PROJETÉ (tarif x
      nombre_jours) dans "Solde en cours" et la répartition assurance
      ci-dessus, mis à jour automatiquement à chaque chargement de page (donc
@@ -199,6 +200,17 @@
                 </div>
                 <div id="chambreTarifChoisieBloc" style="display:none;" class="p-2 border rounded bg-light">
                     <strong id="chambreTarifChoisieNom"></strong> — <span id="chambreTarifChoisiePrix"></span> FCFA/jour
+                </div>
+                <!-- ⭐ Grille officielle AMU (Phase 2) — voir commentaire équivalent
+                     sur la modale de clôture plus bas. -->
+                <div id="chambreTarifCategorieBloc" style="display:none;" class="mt-2">
+                    <label class="form-label mb-0 small">Catégorie officielle de salle (grille AMU)</label>
+                    <select class="form-select form-select-sm" id="chambreTarifCategorie">
+                        <option value="">-- à préciser --</option>
+                        {% for cle, libelle in categories_salle_amu %}
+                        <option value="{{ cle }}">{{ libelle }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
             </div>
             <div class="modal-footer">
@@ -307,6 +319,20 @@
                 <div id="chambreChoisieBloc" style="display:none;" class="mb-2 p-2 border rounded bg-light">
                     <strong id="chambreChoisieNom"></strong> — <span id="chambreChoisiePrix"></span> FCFA/jour
                     <button type="button" class="btn btn-sm btn-link text-danger p-0 float-end" onclick="viderChambreChoisie()">Retirer</button>
+                </div>
+                <!-- ⭐ Grille officielle AMU (Phase 2) — affiché seulement pour un acte
+                     P160 : catégorie officielle de salle, pour calculer le PBR par
+                     palier depuis la grille (utils/grille_amu_hospitalisation.py) au
+                     lieu de deviner par le nom. Mémorisé pour ce nom d'acte, voir
+                     CorrespondanceSalleAmu. -->
+                <div id="chambreCategorieBloc" style="display:none;" class="mb-2">
+                    <label class="form-label mb-0 small">Catégorie officielle de salle (grille AMU)</label>
+                    <select class="form-select form-select-sm" id="chambreCategorie">
+                        <option value="">-- à préciser --</option>
+                        {% for cle, libelle in categories_salle_amu %}
+                        <option value="{{ cle }}">{{ libelle }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
 
                 {% if patient_amu_ep %}
@@ -509,6 +535,7 @@ const CHAMBRE_TARIF_INITIALE = (CHAMBRE_TARIF_DATA && CHAMBRE_TARIF_DATA.dataset
     pbr: parseFloat(CHAMBRE_TARIF_DATA.dataset.pbr || CHAMBRE_TARIF_DATA.dataset.prix),
     prise_en_charge_amu: CHAMBRE_TARIF_DATA.dataset.amu === '1',
     prise_en_charge_cac: CHAMBRE_TARIF_DATA.dataset.cac === '1',
+    categorie_salle: CHAMBRE_TARIF_DATA.dataset.categorie || null,
 } : null;
 let acteChoisi = null;
 let produitChoisi = null;
@@ -796,12 +823,32 @@ function toggleAssuranceHospit(champ, valeur) {
 let chambreTarifChoisie = null;
 let debounceChambreTarif = null;
 
+// ⭐ Grille officielle AMU (Phase 2) : affiche le menu "catégorie de
+// salle" seulement pour un acte P160 (hospitalisation), pré-rempli avec la
+// correspondance déjà connue pour ce nom (categorie_salle_connue, voir
+// CorrespondanceSalleAmu/app.py) ou avec celle déjà choisie pour CE séjour
+// si c'est le même acte — sinon laissé à "-- à préciser --".
+function afficherCategorieSalle(acte, selectId, blocId, categorieDejaChoisie) {
+    const bloc = document.getElementById(blocId);
+    const select = document.getElementById(selectId);
+    if (!bloc || !select) return;
+    if (!acte || !acte.nom || !acte.nom.includes('P160')) {
+        bloc.style.display = 'none';
+        select.value = '';
+        return;
+    }
+    bloc.style.display = '';
+    const dejaChoisiePourCetActe = (categorieDejaChoisie && CHAMBRE_TARIF_INITIALE && CHAMBRE_TARIF_INITIALE.nom === acte.nom) ? categorieDejaChoisie : '';
+    select.value = acte.categorie_salle_connue || acte.categorie_salle || dejaChoisiePourCetActe || '';
+}
+
 function ouvrirModalChambreTarif() {
     const modalEl = document.getElementById('modalChambreTarif');
     if (!modalEl) return;
     chambreTarifChoisie = null;
     document.getElementById('chambreTarifSearch').value = '';
     document.getElementById('chambreTarifChoisieBloc').style.display = 'none';
+    document.getElementById('chambreTarifCategorieBloc').style.display = 'none';
     new bootstrap.Modal(modalEl).show();
 }
 
@@ -835,6 +882,7 @@ function choisirChambreTarif(a) {
     document.getElementById('chambreTarifChoisieBloc').style.display = '';
     document.getElementById('chambreTarifResultats').style.display = 'none';
     document.getElementById('chambreTarifSearch').value = a.nom;
+    afficherCategorieSalle(a, 'chambreTarifCategorie', 'chambreTarifCategorieBloc', CHAMBRE_TARIF_INITIALE && CHAMBRE_TARIF_INITIALE.categorie_salle);
 }
 
 function enregistrerChambreTarif() {
@@ -848,6 +896,7 @@ function enregistrerChambreTarif() {
             pbr: chambreTarifChoisie.pbr,
             prise_en_charge_amu: chambreTarifChoisie.prise_en_charge_amu !== false,
             prise_en_charge_cac: chambreTarifChoisie.prise_en_charge_cac !== false,
+            categorie_salle: document.getElementById('chambreTarifCategorie')?.value || null,
         })
     })
     .then(r => r.json())
@@ -918,12 +967,14 @@ function choisirChambre(a) {
     document.getElementById('chambreChoisieBloc').style.display = '';
     document.getElementById('chambreResultats').style.display = 'none';
     document.getElementById('chambreSearch').value = a.nom;
+    afficherCategorieSalle(a, 'chambreCategorie', 'chambreCategorieBloc', CHAMBRE_TARIF_INITIALE && CHAMBRE_TARIF_INITIALE.categorie_salle);
 }
 
 function viderChambreChoisie() {
     chambreChoisie = null;
     document.getElementById('chambreSearch').value = '';
     document.getElementById('chambreChoisieBloc').style.display = 'none';
+    document.getElementById('chambreCategorieBloc').style.display = 'none';
 }
 
 function cloturerSejour() {
@@ -948,6 +999,7 @@ function cloturerSejour() {
             pbr: chambreChoisie.pbr,
             prise_en_charge_amu: chambreChoisie.prise_en_charge_amu !== false,
             prise_en_charge_cac: chambreChoisie.prise_en_charge_cac !== false,
+            categorie_salle: document.getElementById('chambreCategorie')?.value || null,
         };
     }
 

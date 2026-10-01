@@ -18,6 +18,7 @@ from datetime import timedelta
 # ⭐ Import différé (pas de circularité : models.py n'importe jamais ce
 # module) — utilisé uniquement par charger_pbr_complementaires() ci-dessous.
 from models import PbrComplementaire
+from utils.grille_amu_hospitalisation import pbr_officiel_p160
 
 # Suffixe (normalisé) -> palier 1/2/3. Plusieurs variantes tolérées
 # (accents/orthographe observés dans le catalogue réel).
@@ -107,18 +108,63 @@ def repartir_jours(nb_jours):
     return [(palier, jours) for palier, jours in tranches if jours > 0]
 
 
-def construire_lignes_chambre(acte_choisi, nb_jours, date_entree, tous_les_actes, patient_assure):
+def _lignes_palier_depuis_grille(acte_choisi, nb_jours, date_entree, niveau_soins, categorie_salle):
+    """Construit les lignes par palier à partir de la grille officielle AMU
+    (utils/grille_amu_hospitalisation.py) au lieu de deviner par le nom dans
+    le catalogue Sheets de la structure — prix clinique CONSTANT sur les 3
+    paliers (celui d'`acte_choisi`, comme déjà le cas avec l'ancien
+    mécanisme), seul le PBR change par palier. Retourne None si la grille
+    n'a pas ce niveau/cette catégorie (niveau 1 non couvert, ou
+    salle_commune_10_12 au niveau 2) — l'appelant se replie alors sur
+    l'ancien mécanisme (détection par nom)."""
+    prix = float(acte_choisi.get('prix') or 0)
+    lignes = []
+    curseur = date_entree
+    for palier, jours in repartir_jours(nb_jours):
+        pbr = pbr_officiel_p160(niveau_soins, categorie_salle, palier)
+        if pbr is None:
+            return None
+        lignes.append({
+            'nom': acte_choisi.get('nom'),
+            'reference_id': acte_choisi.get('id') or acte_choisi.get('ID'),
+            'prix': prix,
+            'pbr': float(pbr),
+            'quantite': jours,
+            'date_prestation': curseur,
+            'date_fin_prestation': curseur + timedelta(days=jours - 1),
+        })
+        curseur = curseur + timedelta(days=jours)
+    return lignes
+
+
+def construire_lignes_chambre(acte_choisi, nb_jours, date_entree, tous_les_actes, patient_assure,
+                               niveau_soins=None, categorie_salle=None):
     """Construit les lignes SoinHospitalisation (sous forme de dicts prêts
     à insérer) pour un acte "chambre" avec `nb_jours` jours facturés.
 
-    - Patient non assuré, séjour <= 7 jours, ou pas de groupe de paliers
-      détecté pour cet acte -> une seule ligne, au prix de `acte_choisi`.
-    - Sinon -> jusqu'à 3 lignes, une par palier réellement traversé, prix/pbr
-      pris sur l'acte sœur du palier correspondant, chacune datée sur sa
-      propre période (date_prestation -> date_fin_prestation)."""
-    groupe = None if not patient_assure or nb_jours <= 7 else detecter_groupe_palier(
-        acte_choisi.get('nom'), tous_les_actes
-    )
+    - Patient non assuré, séjour <= 7 jours -> une seule ligne, au prix de
+      `acte_choisi`.
+    - Sinon, si `niveau_soins` et `categorie_salle` sont fournis (voir
+      CorrespondanceSalleAmu, models.py) -> jusqu'à 3 lignes dont le PBR
+      vient de la grille officielle AMU (prix clinique inchangé).
+    - Sinon, si un groupe de paliers est détecté par nom dans le catalogue
+      de la structure -> jusqu'à 3 lignes, prix/pbr pris sur l'acte sœur du
+      palier correspondant (ancien mécanisme, inchangé).
+    - Sinon -> une seule ligne, au prix de `acte_choisi`.
+    Chaque ligne par palier est datée sur sa propre période
+    (date_prestation -> date_fin_prestation)."""
+    lignes_grille = None
+    groupe = None
+    if patient_assure and nb_jours > 7:
+        if niveau_soins and categorie_salle:
+            lignes_grille = _lignes_palier_depuis_grille(
+                acte_choisi, nb_jours, date_entree, niveau_soins, categorie_salle
+            )
+        if lignes_grille is None:
+            groupe = detecter_groupe_palier(acte_choisi.get('nom'), tous_les_actes)
+
+    if lignes_grille is not None:
+        return lignes_grille
 
     if not groupe:
         # ⭐ Pas de répartition réelle par palier ici : si le patient n'est

@@ -2569,6 +2569,13 @@ class Hospitalisation(db.Model):
     chambre_pbr = db.Column(db.Numeric)
     chambre_prise_en_charge_amu = db.Column(db.Boolean, default=True)
     chambre_prise_en_charge_cac = db.Column(db.Boolean, default=True)
+    # ⭐ Catégorie officielle de salle AMU (observation/cabine/salle_commune_
+    # 3_6/.../reanimation — voir utils/grille_amu_hospitalisation.py),
+    # choisie au moment où le tarif de chambre est défini (pas de page de
+    # configuration séparée) — sert à calculer le PBR par palier depuis la
+    # grille officielle au lieu de deviner par le nom dans le catalogue
+    # Sheets. NULL tant que non précisée (repli sur l'ancien mécanisme).
+    chambre_categorie_amu = db.Column(db.String(40))
     # Snapshot de l'assurance du patient au moment de l'admission (même
     # schéma que Proforma/Vente) — éditable ligne par ligne à la conversion.
     assurance_nom = db.Column(db.String(255))
@@ -2797,6 +2804,43 @@ class ParametrageAmuCnss(db.Model):
             db.session.add(param)
             db.session.commit()
         return param
+
+
+# ⭐ Mémorise, par structure, à quelle catégorie officielle de salle AMU
+# (voir CATEGORIES_SALLE_AMU, utils/grille_amu_hospitalisation.py) un acte
+# "chambre" du catalogue correspond — PAS une page de configuration
+# séparée : rempli automatiquement la première fois qu'une chambre donnée
+# est choisie (voir api_definir_chambre_tarif_hospitalisation /
+# api_sortie_hospitalisation, app.py), pré-remplit ensuite le choix pour
+# toutes les prochaines fois que ce même nom d'acte est utilisé. Sert à
+# calculer le PBR par palier (P160) depuis la grille officielle au lieu de
+# deviner par le nom dans le catalogue Sheets de la structure.
+class CorrespondanceSalleAmu(db.Model):
+    __tablename__ = 'correspondance_salle_amu'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    nom_acte = db.Column(db.String(255), nullable=False)
+    categorie_salle = db.Column(db.String(40), nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @classmethod
+    def memoriser(cls, structure_id, nom_acte, categorie_salle):
+        if not nom_acte or not categorie_salle:
+            return
+        entree = cls.query.filter_by(structure_id=structure_id, nom_acte=nom_acte).first()
+        if not entree:
+            entree = cls(structure_id=structure_id, nom_acte=nom_acte)
+            db.session.add(entree)
+        entree.categorie_salle = categorie_salle
+
+    @classmethod
+    def connues_pour(cls, structure_id):
+        """{nom_acte: categorie_salle} pour toute la structure — utilisé par
+        /api/actes pour pré-remplir le menu de chaque résultat de recherche."""
+        return {
+            e.nom_acte: e.categorie_salle
+            for e in cls.query.filter_by(structure_id=structure_id).all()
+        }
 
 
 # ⭐ Champs propres au formulaire INAM ("Régime", "Type") — les champs déjà

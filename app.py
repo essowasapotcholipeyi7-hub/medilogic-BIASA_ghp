@@ -16,7 +16,7 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient, FaqQuestion, FaqQuestionUtilisateur, JourFerie, TauxPartMedecin, PrestationMedecin, PeriodePartMedecin, MedecinDuJour, ParametrageService, ClassificationServiceActe, RecetteService
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, CorrespondanceSalleAmu, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient, FaqQuestion, FaqQuestionUtilisateur, JourFerie, TauxPartMedecin, PrestationMedecin, PeriodePartMedecin, MedecinDuJour, ParametrageService, ClassificationServiceActe, RecetteService
 from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from utils.onglets_recherchables import onglets_recherchables
@@ -29,7 +29,7 @@ from services.facturation_amu_service import generer_lignes_facture_amu_cnss, ch
 from utils.categories_amu_cnss import CATEGORIES_AMU_CNSS, CATEGORIES_AMU_CNSS_DICT
 from utils.categories_amu_inam import CATEGORIES_AMU_INAM, CATEGORIES_AMU_INAM_PLATES, CATEGORIES_AMU_INAM_DICT, REGIMES_AMU_INAM
 from utils.nombres_lettres import montant_en_lettres_fcfa
-from utils.grille_amu_hospitalisation import acte_virtuel_o101
+from utils.grille_amu_hospitalisation import acte_virtuel_o101, CATEGORIES_SALLE_AMU
 
 # ⭐ Numéro WhatsApp de l'éditeur (Togo, +228) pour l'envoi du reçu
 # d'abonnement — voir admin_finances.html.
@@ -13428,6 +13428,13 @@ def api_get_actes():
         # structure. Voir services/service_acte_service.py.
         parametrage_service = ParametrageService.get_ou_creer(structure_id)
         services_liste = charger_services(structure_id) if parametrage_service.choix_service_actif else []
+
+        # ⭐ Grille officielle AMU (Phase 2) : catégorie de salle déjà connue
+        # pour chaque nom d'acte "chambre" (voir CorrespondanceSalleAmu) —
+        # pré-remplit le menu côté hospitalisation_suivi.html sans qu'il
+        # faille la redemander à chaque fois que le même nom est utilisé.
+        categories_salle_connues = CorrespondanceSalleAmu.connues_pour(structure_id)
+
         classification_service = {}
         if parametrage_service.choix_service_actif:
             for l in ClassificationServiceActe.query.filter_by(structure_id=structure_id).all():
@@ -13559,6 +13566,7 @@ def api_get_actes():
                         classification_service.get(str(acte_nom).strip())
                         or (deviner_service_acte(str(acte_nom).strip(), services_liste) or {}).get('id')
                     ) if parametrage_service.choix_service_actif else None,
+                    'categorie_salle_connue': categories_salle_connues.get(str(acte_nom).strip()),
                 })
         
         return jsonify({
@@ -17409,7 +17417,13 @@ def page_hospitalisation_suivi(hospit_id):
             'prix': float(hospit.chambre_prix or 0), 'pbr': float(hospit.chambre_pbr or hospit.chambre_prix or 0),
         }
         tous_les_actes = sheets_helper.get_all_records('actes', use_prefix=True)
-        for l in construire_lignes_chambre(acte_choisi, hospit.nombre_jours, hospit.date_entree, tous_les_actes, hospit.est_assure_amu):
+        # ⭐ Grille officielle AMU (Phase 2) : si ce tarif de chambre a une
+        # correspondance de salle connue (voir CorrespondanceSalleAmu), le
+        # PBR par palier vient de la grille au lieu d'être deviné par nom —
+        # voir construire_lignes_chambre()/utils/grille_amu_hospitalisation.py.
+        niveau_soins_hospit = ParametrageAmuCnss.get_ou_creer(structure_id).niveau_soins
+        for l in construire_lignes_chambre(acte_choisi, hospit.nombre_jours, hospit.date_entree, tous_les_actes, hospit.est_assure_amu,
+                                            niveau_soins=niveau_soins_hospit, categorie_salle=hospit.chambre_categorie_amu):
             lignes_chambre_projetees.append(SimpleNamespace(
                 nom=l['nom'], prix=l['prix'], pbr=l['pbr'], quantite=l['quantite'],
                 prise_en_charge_amu=hospit.chambre_prise_en_charge_amu,
@@ -17468,7 +17482,8 @@ def page_hospitalisation_suivi(hospit_id):
                             taux_part_medecin_par_acte=taux_part_medecin_par_acte,
                             toujours_demander_medecin_par_acte=toujours_demander_medecin_par_acte,
                             medecins_liste=medecins_liste, medecin_du_jour=medecin_du_jour,
-                            services_liste=services_liste)
+                            services_liste=services_liste,
+                            categories_salle_amu=CATEGORIES_SALLE_AMU)
 
 
 @app.route('/api/hospitalisation/<int:hospit_id>/assurance', methods=['POST'])
@@ -17589,6 +17604,7 @@ def api_definir_chambre_tarif_hospitalisation(hospit_id):
             hospit.chambre_pbr = None
             hospit.chambre_prise_en_charge_amu = True
             hospit.chambre_prise_en_charge_cac = True
+            hospit.chambre_categorie_amu = None
         else:
             nom = data.get('nom')
             prix = data.get('prix')
@@ -17600,6 +17616,13 @@ def api_definir_chambre_tarif_hospitalisation(hospit_id):
             hospit.chambre_pbr = float(data.get('pbr') or prix or 0)
             hospit.chambre_prise_en_charge_amu = bool(data.get('prise_en_charge_amu', True))
             hospit.chambre_prise_en_charge_cac = bool(data.get('prise_en_charge_cac', True))
+            # ⭐ Grille officielle AMU (Phase 2) : catégorie de salle choisie
+            # ici (ou déjà connue pour ce nom, voir CorrespondanceSalleAmu) —
+            # mémorisée pour les prochaines fois que ce nom est utilisé.
+            categorie_salle = data.get('categorie_salle') or None
+            if categorie_salle:
+                hospit.chambre_categorie_amu = categorie_salle
+                CorrespondanceSalleAmu.memoriser(structure_id, nom, categorie_salle)
         db.session.commit()
         return jsonify({'success': True})
     except Exception as e:
@@ -17818,7 +17841,19 @@ def api_sortie_hospitalisation(hospit_id):
                 'id': chambre.get('reference_id'), 'nom': chambre.get('nom'),
                 'prix': float(chambre.get('prix') or 0), 'pbr': float(chambre.get('pbr') or chambre.get('prix') or 0),
             }
-            for l in construire_lignes_chambre(acte_choisi, nb_jours, hospit.date_entree, tous_les_actes, patient_assure):
+            # ⭐ Grille officielle AMU (Phase 2) : catégorie de salle choisie
+            # au moment de la clôture (ou déjà mémorisée pour ce nom d'acte,
+            # voir CorrespondanceSalleAmu) -> PBR par palier depuis la grille
+            # au lieu d'être deviné par nom. Mémorisée pour les prochaines
+            # fois que ce même nom de chambre est utilisé par la structure.
+            categorie_salle = chambre.get('categorie_salle') or None
+            if categorie_salle:
+                hospit.chambre_categorie_amu = categorie_salle
+                CorrespondanceSalleAmu.memoriser(structure_id, chambre.get('nom'), categorie_salle)
+            niveau_soins_hospit = ParametrageAmuCnss.get_ou_creer(structure_id).niveau_soins
+            for l in construire_lignes_chambre(acte_choisi, nb_jours, hospit.date_entree, tous_les_actes, patient_assure,
+                                                niveau_soins=niveau_soins_hospit,
+                                                categorie_salle=categorie_salle or hospit.chambre_categorie_amu):
                 soin = SoinHospitalisation(
                     hospitalisation_id=hospit_id, structure_id=structure_id, type='acte',
                     reference_id=l['reference_id'], nom=l['nom'], prix=l['prix'], pbr=l['pbr'],
