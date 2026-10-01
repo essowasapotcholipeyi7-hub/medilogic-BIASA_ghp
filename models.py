@@ -1473,6 +1473,12 @@ class Medecin(db.Model):
     sous_specialite = db.Column(db.String(100))
     numero_ordre = db.Column(db.String(50))  # Numéro d'inscription à l'ordre
     annees_experience = db.Column(db.Integer)
+    # ⭐ Code prescripteur AMU (CNSS/INAM/TNS) — patron : "il va falloir
+    # qu'on ajoute dans la table des medecin code prescripteur". Même code
+    # pour les 3 régimes (contrairement au code formation sanitaire,
+    # propre à la structure — voir ParametrageAmuCnss.code_prestataire) :
+    # réutilisé tel quel pour pré-remplir l'Entente Préalable.
+    code_prescripteur = db.Column(db.String(50))
     
     # Honoraires
     honoraire_consultation = db.Column(db.Float, default=0)
@@ -3138,6 +3144,39 @@ class DemandeExamen(db.Model):
     source_model = db.Column(db.String(30))     # 'AnalyseDemande'
     source_id = db.Column(db.Integer)
     source_synced_at = db.Column(db.DateTime)
+
+
+# ⭐ Entente Préalable AMU, remplie depuis l'appli puis imprimée par-dessus
+# le PDF officiel (jamais recréé — voir utils/remplissage_pdf_amu.py) —
+# patron : "permettre qu'on remplisse une entente préalable directement là
+# et imprimer". Workflow à 2 temps : la secrétaire/caisse saisit
+# (statut='en_attente'), un médecin doit vérifier et approuver avant que
+# l'impression ne soit autorisée — jamais l'inverse.
+class DemandeEntentePrealable(db.Model):
+    __tablename__ = 'demandes_entente_prealable'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    patient_id = db.Column(db.Integer, nullable=False)
+    medecin_id = db.Column(db.Integer, nullable=False)
+    # 'amu_cnss' | 'amu_inam' | 'amu_tns' — détermine quel PDF remplir
+    # (amu_cnss et amu_tns partagent le même gabarit CNSS, voir
+    # utils/remplissage_pdf_amu.py).
+    type_amu = db.Column(db.String(20), nullable=False)
+    # Lignes "motif" : [{type: 'acte'|'produit', nom, saisie_manuelle}, ...]
+    # — JSON car longueur variable (3-4 lignes selon le gabarit) et ne sert
+    # qu'à reconstituer l'impression, jamais interrogé en SQL.
+    lignes_motif = db.Column(db.JSON, nullable=False)
+    numero_feuille_soins = db.Column(db.String(50))  # INAM uniquement
+    date_prescription = db.Column(db.Date, nullable=False)
+    statut = db.Column(db.String(20), default='en_attente')  # en_attente | approuvee | refusee
+    cree_par_id = db.Column(db.Integer)
+    cree_par_nom = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    approuve_par_id = db.Column(db.Integer)
+    approuve_par_nom = db.Column(db.String(255))
+    approuve_le = db.Column(db.DateTime)
+    motif_refus = db.Column(db.String(500))
+    imprime_le = db.Column(db.DateTime)  # dernière impression, informatif
 
 
 # ⭐ Modèle de résultat (Word/Excel) réutilisable — le laborantin/radiologue

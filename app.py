@@ -36,7 +36,8 @@ from utils.grille_amu_hospitalisation import acte_virtuel_o101, CATEGORIES_SALLE
 ABONNEMENT_WHATSAPP_NUMERO = "22893850013"
 MOYENS_PAIEMENT_LABELS = {'mixx': 'Mixx by Yas', 'moov': 'Moov Money'}
 from models import RendezVous
-from models import Medecin, Patient, Structure
+from models import Medecin, Patient, Structure, DemandeEntentePrealable
+from utils.remplissage_pdf_amu import remplir_entente_prealable
 from datetime import datetime, date, timedelta
 from routes.protocoles_routes import protocoles_bp
 from routes.journal_routes import journal_bp
@@ -808,6 +809,177 @@ def page_amu_supports(type_amu):
     if not config:
         return "Catégorie AMU inconnue", 404
     return render_template('amu_supports.html', config=config, type_amu=type_amu)
+
+
+# ⭐ Entente Préalable AMU — remplie depuis l'appli, imprimée par-dessus le
+# PDF officiel (utils/remplissage_pdf_amu.py, jamais modifié). Workflow :
+# secrétaire/caisse saisit (en_attente) → un médecin vérifie et approuve →
+# seulement alors l'impression est débloquée. Voir plan de session
+# "Entente Préalable (EP)" pour le détail du calibrage PDF.
+TYPE_AMU_LABELS = {'amu_cnss': 'AMU-CNSS', 'amu_inam': 'AMU-INAM', 'amu_tns': 'AMU-TNS'}
+
+
+@app.route('/amu/entente-prealable')
+@login_required
+def page_amu_entente_prealable():
+    if not a_acces('entente_prealable'):
+        flash('Accès non autorisé', 'danger')
+        return redirect(url_for('dashboard'))
+    structure_id = session.get('structure_id')
+    medecins_liste = [
+        {'id': m.id, 'nom_complet': m.get_nom_complet()}
+        for m in Medecin.query.filter_by(structure_id=structure_id, actif=True).order_by(Medecin.nom).all()
+    ]
+    demandes = DemandeEntentePrealable.query.filter_by(structure_id=structure_id) \
+        .order_by(DemandeEntentePrealable.created_at.desc()).limit(100).all()
+    patients_par_id = {}
+    medecins_par_id = {m['id']: m['nom_complet'] for m in medecins_liste}
+    if demandes:
+        patients = Patient.query.filter(
+            Patient.id.in_([d.patient_id for d in demandes]), Patient.structure_id == structure_id
+        ).all()
+        patients_par_id = {p.id: p for p in dechiffrer_patients_orm(patients)}
+    peut_approuver = session.get('role') in ('medecin', 'admin') or session.get('is_admin')
+    return render_template(
+        'amu_entente_prealable.html',
+        medecins_liste=medecins_liste,
+        demandes=demandes,
+        patients_par_id=patients_par_id,
+        medecins_par_id=medecins_par_id,
+        type_amu_labels=TYPE_AMU_LABELS,
+        peut_approuver=peut_approuver,
+    )
+
+
+@app.route('/api/amu/entente-prealable/patients')
+@login_required
+def api_amu_ep_patients():
+    """Recherche de patients AMU pour l'auto-remplissage — filtrée aux 3
+    régimes AMU (seuls concernés par l'Entente Préalable), contrairement à
+    /api/patients/liste qui liste tout le monde."""
+    structure_id = session.get('structure_id')
+    q = (request.args.get('search') or '').strip().lower()
+    if len(q) < 2:
+        return jsonify({'data': []})
+    patients = Patient.query.filter(
+        Patient.structure_id == structure_id,
+        Patient.type_assurance.in_(list(TYPE_AMU_LABELS.keys())),
+    ).all()
+    patients = dechiffrer_patients_orm(patients)
+    resultats = [
+        p for p in patients
+        if q in (p.nom or '').lower() or q in (p.prenom or '').lower() or q in (p.telephone or '')
+    ][:20]
+    return jsonify({'data': [
+        {
+            'id': p.id, 'nom': p.nom, 'prenom': p.prenom, 'telephone': p.telephone,
+            'numero_assure': p.numero_assure, 'type_assurance': p.type_assurance,
+        } for p in resultats
+    ]})
+
+
+@app.route('/api/amu/entente-prealable', methods=['POST'])
+@login_required
+def api_amu_ep_creer():
+    if not a_acces('entente_prealable'):
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    structure_id = session.get('structure_id')
+    data = request.json or {}
+
+    patient = Patient.query.filter_by(id=data.get('patient_id'), structure_id=structure_id).first()
+    medecin = Medecin.query.filter_by(id=data.get('medecin_id'), structure_id=structure_id).first()
+    if not patient or not medecin:
+        return jsonify({'success': False, 'error': 'Patient ou médecin introuvable'}), 400
+    if patient.type_assurance not in TYPE_AMU_LABELS:
+        return jsonify({'success': False, 'error': "Ce patient n'a pas d'assurance AMU"}), 400
+
+    lignes_motif = data.get('lignes_motif') or []
+    if not lignes_motif:
+        return jsonify({'success': False, 'error': 'Au moins une ligne (acte ou produit) est requise'}), 400
+    # ⭐ Jamais plus de lignes que ce que la fiche physique peut accueillir
+    # (patron : "ne jamais modifier la structure des fiches") — 3 actes +
+    # 4 médicaments pour le gabarit CNSS/TNS, 3 + 3 pour l'INAM.
+    max_actes = 3
+    max_produits = 4 if patient.type_assurance != 'amu_inam' else 3
+    actes = [l for l in lignes_motif if l.get('type') == 'acte'][:max_actes]
+    produits = [l for l in lignes_motif if l.get('type') == 'produit'][:max_produits]
+
+    try:
+        date_prescription = datetime.strptime(data.get('date_prescription'), '%Y-%m-%d').date()
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'Date de prescription invalide'}), 400
+
+    demande = DemandeEntentePrealable(
+        structure_id=structure_id,
+        patient_id=patient.id,
+        medecin_id=medecin.id,
+        type_amu=patient.type_assurance,
+        lignes_motif=actes + produits,
+        numero_feuille_soins=(data.get('numero_feuille_soins') or '').strip() or None,
+        date_prescription=date_prescription,
+        cree_par_id=session.get('user_id'),
+        cree_par_nom=session.get('user_name'),
+    )
+    db.session.add(demande)
+    db.session.commit()
+    return jsonify({'success': True, 'id': demande.id})
+
+
+@app.route('/api/amu/entente-prealable/<int:demande_id>/approuver', methods=['POST'])
+@login_required
+def api_amu_ep_approuver(demande_id):
+    if not (session.get('role') in ('medecin', 'admin') or session.get('is_admin')):
+        return jsonify({'success': False, 'error': 'Réservé au médecin'}), 403
+    demande = DemandeEntentePrealable.query.filter_by(
+        id=demande_id, structure_id=session.get('structure_id')
+    ).first_or_404()
+    demande.statut = 'approuvee'
+    demande.approuve_par_id = session.get('user_id')
+    demande.approuve_par_nom = session.get('user_name')
+    demande.approuve_le = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+@app.route('/api/amu/entente-prealable/<int:demande_id>/refuser', methods=['POST'])
+@login_required
+def api_amu_ep_refuser(demande_id):
+    if not (session.get('role') in ('medecin', 'admin') or session.get('is_admin')):
+        return jsonify({'success': False, 'error': 'Réservé au médecin'}), 403
+    demande = DemandeEntentePrealable.query.filter_by(
+        id=demande_id, structure_id=session.get('structure_id')
+    ).first_or_404()
+    data = request.json or {}
+    demande.statut = 'refusee'
+    demande.motif_refus = (data.get('motif_refus') or '').strip() or None
+    demande.approuve_par_id = session.get('user_id')
+    demande.approuve_par_nom = session.get('user_name')
+    demande.approuve_le = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+@app.route('/amu/entente-prealable/<int:demande_id>/imprimer')
+@login_required
+def page_amu_ep_imprimer(demande_id):
+    structure_id = session.get('structure_id')
+    demande = DemandeEntentePrealable.query.filter_by(id=demande_id, structure_id=structure_id).first_or_404()
+    if demande.statut != 'approuvee':
+        flash("Cette Entente Préalable doit d'abord être approuvée par un médecin avant impression", 'warning')
+        return redirect(url_for('page_amu_entente_prealable'))
+
+    patient = dechiffrer_patients_orm(
+        Patient.query.filter_by(id=demande.patient_id, structure_id=structure_id).all()
+    )[0]
+    medecin = Medecin.query.filter_by(id=demande.medecin_id, structure_id=structure_id).first()
+    code_formation_sanitaire = ParametrageAmuCnss.get_ou_creer(structure_id).code_prestataire
+
+    pdf_bytes = remplir_entente_prealable(demande, patient, medecin, code_formation_sanitaire)
+    demande.imprime_le = datetime.utcnow()
+    db.session.commit()
+    return Response(pdf_bytes, mimetype='application/pdf', headers={
+        'Content-Disposition': f'inline; filename=entente_prealable_{demande.id}.pdf'
+    })
 
 
 @app.route('/api/faq/poser', methods=['POST'])

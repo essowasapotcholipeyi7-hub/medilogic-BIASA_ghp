@@ -1,0 +1,353 @@
+{% extends "base.html" %}
+
+{% block title %}Entente Préalable AMU{% endblock %}
+
+{% block extra_css %}
+<style>
+    .amu-hero {
+        background: linear-gradient(135deg, #0A3D5C, #0E9D67);
+        color: white;
+        border-radius: 14px;
+        padding: 24px 28px;
+        margin-bottom: 22px;
+    }
+    .amu-hero h4 { font-weight: 700; margin-bottom: 4px; }
+    .amu-hero p { opacity: .9; margin-bottom: 0; }
+
+    .ep-card {
+        border: 1px solid #e3e8ec;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+        background: white;
+    }
+    .ep-card h6 { font-weight: 700; color: #0A3D5C; margin-bottom: 14px; }
+
+    #patientResultats, #motifResultats {
+        position: relative;
+        z-index: 20;
+        max-height: 220px;
+        overflow-y: auto;
+        border: 1px solid #e3e8ec;
+        border-radius: 8px;
+        background: white;
+        box-shadow: 0 6px 18px rgba(0,0,0,.08);
+        display: none;
+    }
+    .ep-ligne-motif {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 6px 10px; border: 1px solid #e3e8ec; border-radius: 8px; margin-bottom: 6px;
+        font-size: 13px;
+    }
+    .ep-badge-statut { font-size: 11px; padding: 4px 10px; border-radius: 999px; font-weight: 600; }
+    .ep-badge-en_attente { background: #FCEEE0; color: #92400E; }
+    .ep-badge-approuvee { background: #E7F6EE; color: #0B7C52; }
+    .ep-badge-refusee { background: #FDECEC; color: #B42318; }
+
+    table.ep-historique th { font-size: 12px; text-transform: uppercase; color: #51636D; white-space: nowrap; }
+    table.ep-historique td { font-size: 13px; vertical-align: middle; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    <div class="amu-hero">
+        <h4><i class="fas fa-file-medical me-2"></i>Entente Préalable AMU</h4>
+        <p>Remplir une demande, la faire approuver par un médecin, puis l'imprimer pour le patient.</p>
+    </div>
+
+    <div class="ep-card">
+        <h6><i class="fas fa-plus-circle me-1"></i>Nouvelle demande</h6>
+        <form id="formEp">
+            <div class="row g-3">
+                <div class="col-md-6 position-relative">
+                    <label class="form-label small fw-semibold">Patient (assuré AMU)</label>
+                    <input type="text" class="form-control" id="patientSearch" placeholder="Rechercher nom, prénom ou téléphone..." autocomplete="off">
+                    <div id="patientResultats"></div>
+                    <div id="patientChoisiBloc" class="mt-2 small text-muted" style="display:none;"></div>
+                    <input type="hidden" id="patientId">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label small fw-semibold">Médecin prescripteur</label>
+                    <select class="form-control" id="medecinId" required>
+                        <option value="">— Choisir —</option>
+                        {% for m in medecins_liste %}
+                        <option value="{{ m.id }}">{{ m.nom_complet }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-semibold">Date de prescription</label>
+                    <input type="date" class="form-control" id="datePrescription" required>
+                </div>
+                <div class="col-md-4" id="feuilleSoinsWrapper" style="display:none;">
+                    <label class="form-label small fw-semibold">N° Feuille de soins (INAM)</label>
+                    <input type="text" class="form-control" id="numeroFeuilleSoins">
+                </div>
+            </div>
+
+            <hr class="my-3">
+
+            <label class="form-label small fw-semibold">Motif de la demande (actes et/ou produits)</label>
+            <div class="row g-2 align-items-start">
+                <div class="col-md-8 position-relative">
+                    <input type="text" class="form-control" id="motifSearch" placeholder="Rechercher un acte ou un produit dans le tableau tarifaire..." autocomplete="off">
+                    <div id="motifResultats"></div>
+                </div>
+                <div class="col-md-2">
+                    <select class="form-control" id="motifSaisieManuelleType">
+                        <option value="acte">Acte</option>
+                        <option value="produit">Produit</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="button" class="btn btn-outline-secondary w-100" onclick="ajouterMotifManuel()">
+                        <i class="fas fa-pen me-1"></i>Saisie manuelle
+                    </button>
+                </div>
+            </div>
+            <div class="small text-muted mt-1">
+                Si l'acte/produit n'existe pas dans le tableau tarifaire, tapez son nom dans le champ ci-dessus puis cliquez "Saisie manuelle".
+            </div>
+
+            <div id="lignesMotifListe" class="mt-3"></div>
+
+            <button type="submit" class="btn btn-primary mt-3">
+                <i class="fas fa-save me-1"></i>Enregistrer la demande
+            </button>
+        </form>
+    </div>
+
+    {% if peut_approuver %}
+    <div class="ep-card" id="blocAApprouver">
+        <h6><i class="fas fa-user-md me-1"></i>En attente de validation médecin</h6>
+        <div id="listeAApprouver" class="text-muted small">Chargement…</div>
+    </div>
+    {% endif %}
+
+    <div class="ep-card">
+        <h6><i class="fas fa-history me-1"></i>Historique</h6>
+        <div class="table-responsive">
+            <table class="table table-sm ep-historique">
+                <thead>
+                    <tr>
+                        <th>Date création</th>
+                        <th>Patient</th>
+                        <th>Médecin</th>
+                        <th>Régime</th>
+                        <th>Statut</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for d in demandes %}
+                    {% set p = patients_par_id.get(d.patient_id) %}
+                    <tr>
+                        <td>{{ d.created_at.strftime('%d/%m/%Y %H:%M') if d.created_at else '' }}</td>
+                        <td>{{ (p.nom + ' ' + p.prenom) if p else ('Patient #' ~ d.patient_id) }}</td>
+                        <td>{{ medecins_par_id.get(d.medecin_id, '—') }}</td>
+                        <td>{{ type_amu_labels.get(d.type_amu, d.type_amu) }}</td>
+                        <td><span class="ep-badge-statut ep-badge-{{ d.statut }}">
+                            {{ {'en_attente': 'En attente', 'approuvee': 'Approuvée', 'refusee': 'Refusée'}.get(d.statut, d.statut) }}
+                        </span></td>
+                        <td>
+                            {% if d.statut == 'approuvee' %}
+                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('page_amu_ep_imprimer', demande_id=d.id) }}" target="_blank">
+                                <i class="fas fa-print"></i> Imprimer
+                            </a>
+                            {% elif d.statut == 'refusee' %}
+                            <span class="small text-danger">{{ d.motif_refus or 'Refusée' }}</span>
+                            {% elif d.statut == 'en_attente' and peut_approuver %}
+                            <button type="button" class="btn btn-sm btn-success" onclick="approuverDemande({{ d.id }})">
+                                <i class="fas fa-check"></i> Approuver
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="refuserDemande({{ d.id }})">
+                                <i class="fas fa-times"></i> Refuser
+                            </button>
+                            {% else %}
+                            <span class="small text-muted">En attente du médecin</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6" class="text-muted text-center py-3">Aucune demande pour le moment.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+const PEUT_APPROUVER = {{ 'true' if peut_approuver else 'false' }};
+let patientChoisi = null;
+let lignesMotif = [];
+let debouncePatient = null;
+let debounceMotif = null;
+
+// ===================== RECHERCHE PATIENT =====================
+document.getElementById('patientSearch').addEventListener('input', function() {
+    const q = this.value.trim();
+    clearTimeout(debouncePatient);
+    patientChoisi = null;
+    document.getElementById('patientId').value = '';
+    document.getElementById('feuilleSoinsWrapper').style.display = 'none';
+    if (q.length < 2) { document.getElementById('patientResultats').style.display = 'none'; return; }
+    debouncePatient = setTimeout(() => {
+        fetch('/api/amu/entente-prealable/patients?search=' + encodeURIComponent(q))
+            .then(r => r.json())
+            .then(data => {
+                const box = document.getElementById('patientResultats');
+                const liste = data.data || [];
+                if (!liste.length) {
+                    box.innerHTML = '<div class="list-group-item text-muted small p-2">Aucun patient AMU trouvé</div>';
+                    box.style.display = 'block';
+                    return;
+                }
+                box.innerHTML = liste.map(p => `
+                    <a href="#" class="list-group-item list-group-item-action p-2" onclick='choisirPatient(${JSON.stringify(p).replace(/'/g, "&apos;")}); return false;'>
+                        <strong>${p.nom} ${p.prenom}</strong> — ${p.telephone || ''} <span class="text-muted">(${p.type_assurance})</span>
+                    </a>`).join('');
+                box.style.display = 'block';
+            });
+    }, 300);
+});
+
+function choisirPatient(p) {
+    patientChoisi = p;
+    document.getElementById('patientId').value = p.id;
+    document.getElementById('patientSearch').value = p.nom + ' ' + p.prenom;
+    document.getElementById('patientResultats').style.display = 'none';
+    const bloc = document.getElementById('patientChoisiBloc');
+    bloc.style.display = '';
+    bloc.innerHTML = `N° AMU : <strong>${p.numero_assure || '—'}</strong> · Tél : ${p.telephone || '—'} · Régime : <strong>${p.type_assurance}</strong>`;
+    document.getElementById('feuilleSoinsWrapper').style.display = (p.type_assurance === 'amu_inam') ? '' : 'none';
+}
+
+// ===================== RECHERCHE MOTIF (acte ou produit) =====================
+document.getElementById('motifSearch').addEventListener('input', function() {
+    const q = this.value.trim();
+    clearTimeout(debounceMotif);
+    if (q.length < 2) { document.getElementById('motifResultats').style.display = 'none'; return; }
+    debounceMotif = setTimeout(() => {
+        Promise.all([
+            fetch('/api/actes?search=' + encodeURIComponent(q) + '&limit=10').then(r => r.json()).catch(() => ({data: []})),
+            fetch('/api/produits/search?search=' + encodeURIComponent(q) + '&limit=10').then(r => r.json()).catch(() => ({data: []})),
+        ]).then(([actes, produits]) => {
+            const liste = [
+                ...(actes.data || []).map(a => ({type: 'acte', nom: a.nom})),
+                ...(produits.data || []).map(p => ({type: 'produit', nom: p.nom})),
+            ];
+            const box = document.getElementById('motifResultats');
+            if (!liste.length) {
+                box.innerHTML = '<div class="list-group-item text-muted small p-2">Aucun résultat — utilisez "Saisie manuelle"</div>';
+                box.style.display = 'block';
+                return;
+            }
+            box.innerHTML = liste.map(l => `
+                <a href="#" class="list-group-item list-group-item-action p-2" onclick='ajouterLigneMotif(${JSON.stringify(l).replace(/'/g, "&apos;")}); return false;'>
+                    <span class="badge bg-secondary me-1">${l.type}</span>${l.nom}
+                </a>`).join('');
+            box.style.display = 'block';
+        });
+    }, 300);
+});
+
+function ajouterMotifManuel() {
+    const nom = document.getElementById('motifSearch').value.trim();
+    if (!nom) return;
+    const type = document.getElementById('motifSaisieManuelleType').value;
+    ajouterLigneMotif({type, nom, saisie_manuelle: true});
+}
+
+function ajouterLigneMotif(ligne) {
+    const maxActes = (patientChoisi && patientChoisi.type_assurance === 'amu_inam') ? 3 : 3;
+    const maxProduits = (patientChoisi && patientChoisi.type_assurance === 'amu_inam') ? 3 : 4;
+    const compteActes = lignesMotif.filter(l => l.type === 'acte').length;
+    const compteProduits = lignesMotif.filter(l => l.type === 'produit').length;
+    if (ligne.type === 'acte' && compteActes >= maxActes) {
+        alert('Maximum ' + maxActes + ' actes sur cette fiche.'); return;
+    }
+    if (ligne.type === 'produit' && compteProduits >= maxProduits) {
+        alert('Maximum ' + maxProduits + ' produits sur cette fiche.'); return;
+    }
+    lignesMotif.push(ligne);
+    document.getElementById('motifSearch').value = '';
+    document.getElementById('motifResultats').style.display = 'none';
+    rendreLignesMotif();
+}
+
+function retirerLigneMotif(index) {
+    lignesMotif.splice(index, 1);
+    rendreLignesMotif();
+}
+
+function rendreLignesMotif() {
+    const el = document.getElementById('lignesMotifListe');
+    if (!lignesMotif.length) { el.innerHTML = '<div class="text-muted small">Aucune ligne ajoutée.</div>'; return; }
+    el.innerHTML = lignesMotif.map((l, i) => `
+        <div class="ep-ligne-motif">
+            <span><span class="badge bg-secondary me-2">${l.type}</span>${l.nom}${l.saisie_manuelle ? ' <span class="text-muted">(saisie manuelle)</span>' : ''}</span>
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="retirerLigneMotif(${i})"><i class="fas fa-times"></i></button>
+        </div>`).join('');
+}
+rendreLignesMotif();
+
+// ===================== SOUMISSION =====================
+document.getElementById('formEp').addEventListener('submit', function(e) {
+    e.preventDefault();
+    if (!document.getElementById('patientId').value) { alert('Choisissez un patient AMU.'); return; }
+    if (!document.getElementById('medecinId').value) { alert('Choisissez un médecin.'); return; }
+    if (!document.getElementById('datePrescription').value) { alert('Indiquez la date de prescription.'); return; }
+    if (!lignesMotif.length) { alert('Ajoutez au moins un acte ou produit.'); return; }
+
+    fetch('/api/amu/entente-prealable', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            patient_id: parseInt(document.getElementById('patientId').value),
+            medecin_id: parseInt(document.getElementById('medecinId').value),
+            date_prescription: document.getElementById('datePrescription').value,
+            numero_feuille_soins: document.getElementById('numeroFeuilleSoins').value,
+            lignes_motif: lignesMotif,
+        }),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.error || 'Erreur lors de l\'enregistrement');
+        }
+    });
+});
+
+// ===================== FILE D'ATTENTE MÉDECIN =====================
+{% if peut_approuver %}
+// ⭐ Pas de nouvel appel réseau : le compte est déjà connu côté serveur
+// (même liste que le tableau Historique plus bas, filtrée ici seulement
+// pour le petit résumé en haut de page).
+(function() {
+    const enAttente = {{ demandes|selectattr('statut', 'equalto', 'en_attente')|list|length }};
+    const box = document.getElementById('listeAApprouver');
+    box.innerHTML = enAttente === 0
+        ? 'Aucune demande en attente.'
+        : `${enAttente} demande(s) en attente — voir le tableau Historique ci-dessous, bouton Approuver/Refuser sur chaque ligne.`;
+})();
+
+function approuverDemande(id) {
+    fetch(`/api/amu/entente-prealable/${id}/approuver`, {method: 'POST'})
+        .then(r => r.json())
+        .then(data => { if (data.success) location.reload(); else alert(data.error || 'Erreur'); });
+}
+function refuserDemande(id) {
+    const motif = prompt('Motif du refus (optionnel) :');
+    fetch(`/api/amu/entente-prealable/${id}/refuser`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({motif_refus: motif || ''}),
+    }).then(r => r.json()).then(data => { if (data.success) location.reload(); else alert(data.error || 'Erreur'); });
+}
+{% endif %}
+</script>
+{% endblock %}

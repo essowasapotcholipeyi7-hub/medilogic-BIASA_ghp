@@ -32,6 +32,7 @@ PERMISSIONS = {
     'demandes_laboratoire': 'Demandes de laboratoire',
     'demandes_radiologie': 'Demandes de radiologie',
     'patients_externes': 'Patients externes & prescripteurs',
+    'entente_prealable': 'Entente Préalable AMU',
 }
 
 # Rôles ayant accès par défaut à chaque section, sans octroi nécessaire.
@@ -62,6 +63,10 @@ ROLES_PAR_DEFAUT = {
     'demandes_laboratoire': {'admin', 'medecin'},
     'demandes_radiologie':  {'admin', 'medecin'},
     'patients_externes':    {'admin', 'secretaire', 'caissier'},
+    # ⭐ Saisie par secrétaire/caisse, approbation réservée au médecin/admin
+    # dans la route elle-même (voir app.py api_amu_ep_approuver) — cette
+    # clé ne gère que qui peut OUVRIR le module, pas qui peut approuver.
+    'entente_prealable':    {'admin', 'secretaire', 'caissier', 'medecin', 'gestionnaire'},
 }
 
 
