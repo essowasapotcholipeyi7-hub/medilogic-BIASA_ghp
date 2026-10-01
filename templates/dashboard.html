@@ -279,6 +279,20 @@
                         <option value="A4">Format A4</option>
                     </select>
                 </div>
+                <!-- 🔥 Choix détaillée/cumulée (pris en compte uniquement pour les
+                     boutons Facture Patient/Structure) : la cumulée ne montre qu'un
+                     total par catégorie (Consultation, Actes médicaux, Chirurgie,
+                     Séjours hospitaliers, Pharmacie) sans le détail article par
+                     article. Même mécanisme que l'historique des ventes. -->
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Type de facture</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="modeDetailDashboard" id="modeDetailDashboardComplet" autocomplete="off" checked onchange="modeDetailDashboard='complet'">
+                        <label class="btn btn-outline-secondary btn-sm" for="modeDetailDashboardComplet">Détaillée</label>
+                        <input type="radio" class="btn-check" name="modeDetailDashboard" id="modeDetailDashboardCumule" autocomplete="off" onchange="modeDetailDashboard='cumule'">
+                        <label class="btn btn-outline-secondary btn-sm" for="modeDetailDashboardCumule">Cumulée (par catégorie)</label>
+                    </div>
+                </div>
                 <div class="row g-2" id="printOptions"></div>
             </div>
         </div>
@@ -288,11 +302,14 @@
 <script>
 let currentVenteId = null;
 let currentVenteType = null;
+let modeDetailDashboard = 'complet'; // 'complet' ou 'cumule' — pris en compte uniquement par les boutons Facture
 
 function reimprimer(venteId, type) {
     currentVenteId = venteId;
     currentVenteType = type;
-    
+    modeDetailDashboard = 'complet';
+    document.getElementById('modeDetailDashboardComplet').checked = true;
+
     const options = [
         { label: 'Reçu Patient', action: 'recu_client', class: 'btn-outline-primary' },
         { label: 'Reçu Structure (copie)', action: 'recu_structure', class: 'btn-outline-secondary' },
@@ -327,9 +344,9 @@ function printDocument(action) {
         bootstrap.Modal.getInstance(document.getElementById('printModal')).hide();
         return;
     } else if (action === 'facture_client') {
-        url = `/facture/${currentVenteId}/${currentVenteType}?format=${format}`;
+        url = `/facture/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`;
     } else if (action === 'facture_structure') {
-        url = `/facture_structure/${currentVenteId}/${currentVenteType}?format=${format}`;
+        url = `/facture_structure/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`;
     } else if (action === 'les_deux') {
         window.open(`/recu/${currentVenteId}/${currentVenteType}?format=${format}`, '_blank');
         window.open(`/recu_structure/${currentVenteId}/${currentVenteType}?format=${format}`, '_blank');
