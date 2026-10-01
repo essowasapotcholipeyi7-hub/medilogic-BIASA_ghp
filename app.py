@@ -3339,6 +3339,14 @@ def facture(vente_id, type):
                 taux_modifie = True
         
         # Récupérer les articles
+        # ⭐ FIX : une vente 'mixte' (actes + produits, typique d'une
+        # hospitalisation : chambre/actes + médicaments) ne construisait
+        # QUE les actes ici (aucune branche 'mixte', contrairement à recu()
+        # qui la gère déjà) — tous les produits (pharmacie) disparaissaient
+        # silencieusement de la Facture Patient, même en détail complet.
+        # Repéré en testant le reçu cumulé sur une vraie vente mixte
+        # (hospitalisation) : la catégorie Pharmacie restait vide alors que
+        # la vente contenait bien un médicament.
         if type_bd == 'pharmacie' or type_bd == 'pharma':
             produits_data = v.get('produits', [])
             if isinstance(produits_data, str):
@@ -3352,6 +3360,18 @@ def facture(vente_id, type):
                     'type': 'produit'
                 })
         else:
+            if type_bd == 'mixte':
+                produits_data = v.get('produits', [])
+                if isinstance(produits_data, str):
+                    produits_data = json.loads(produits_data)
+                for p in produits_data:
+                    articles.append({
+                        'nom': p.get('nom', 'Produit'),
+                        'quantite': int(p.get('quantite', 1)),
+                        'prix_unitaire': float(p.get('prix_reel', p.get('prix', 0))),
+                        'total': float(p.get('total') or 0),
+                        'type': 'produit'
+                    })
             actes_data = v.get('actes', [])
             if isinstance(actes_data, str):
                 actes_data = json.loads(actes_data)
@@ -3558,6 +3578,9 @@ def facture_structure(vente_id, type):
                 taux_modifie = True
         
         # Récupérer les articles
+        # ⭐ FIX : voir le même correctif dans facture() — une vente
+        # 'mixte' ne construisait que les actes, les produits (pharmacie)
+        # disparaissaient silencieusement de la Facture Structure.
         if type_bd == 'pharmacie' or type_bd == 'pharma':
             produits_data = v.get('produits', [])
             if isinstance(produits_data, str):
@@ -3571,6 +3594,18 @@ def facture_structure(vente_id, type):
                     'type': 'produit'
                 })
         else:
+            if type_bd == 'mixte':
+                produits_data = v.get('produits', [])
+                if isinstance(produits_data, str):
+                    produits_data = json.loads(produits_data)
+                for p in produits_data:
+                    articles.append({
+                        'nom': p.get('nom', 'Produit'),
+                        'quantite': int(p.get('quantite', 1)),
+                        'prix_unitaire': float(p.get('prix_reel', p.get('prix', 0))),
+                        'total': float(p.get('total') or 0),
+                        'type': 'produit'
+                    })
             actes_data = v.get('actes', [])
             if isinstance(actes_data, str):
                 actes_data = json.loads(actes_data)
@@ -4419,6 +4454,9 @@ def recu_structure(vente_id, type):
                 taux_modifie = True
         
         # Récupérer les articles
+        # ⭐ FIX : voir le même correctif dans facture() — une vente
+        # 'mixte' ne construisait que les actes, les produits (pharmacie)
+        # disparaissaient silencieusement du Reçu Structure.
         if type_bd == 'pharmacie' or type_bd == 'pharma':
             produits_data = v.get('produits', [])
             if isinstance(produits_data, str):
@@ -4431,6 +4469,17 @@ def recu_structure(vente_id, type):
                     'total': float(p.get('total') or 0)
                 })
         else:
+            if type_bd == 'mixte':
+                produits_data = v.get('produits', [])
+                if isinstance(produits_data, str):
+                    produits_data = json.loads(produits_data)
+                for p in produits_data:
+                    articles.append({
+                        'nom': p.get('nom', 'Produit'),
+                        'quantite': int(p.get('quantite', 1)),
+                        'prix_unitaire': float(p.get('prix_reel', p.get('prix', 0))),
+                        'total': float(p.get('total') or 0)
+                    })
             actes_data = v.get('actes', [])
             if isinstance(actes_data, str):
                 actes_data = json.loads(actes_data)
@@ -4441,7 +4490,7 @@ def recu_structure(vente_id, type):
                     'prix_unitaire': float(a.get('prix') or 0),
                     'total': float(a.get('total') or 0)
                 })
-    
+
     # Gestion des assurances
     assurance_text = type_assurance
     if type_assurance == 'amu_cnss':
