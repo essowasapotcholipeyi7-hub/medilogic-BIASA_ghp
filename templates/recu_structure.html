@@ -411,15 +411,17 @@
                 <table class="table-cumul" style="width:100%; font-size:11px; border:1px solid #ddd; border-collapse:collapse;">
                     <thead>
                         <tr style="background:#f1f1f1;">
-                            <th style="padding:5px; text-align:left; width:65%;">Catégorie</th>
-                            <th style="padding:5px; text-align:right; width:35%;">Total</th>
+                            <th style="padding:5px; text-align:left; width:55%;">Catégorie</th>
+                            <th style="padding:5px; text-align:center; width:15%;">Qté</th>
+                            <th style="padding:5px; text-align:right; width:30%;">Total</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for ligne in cumul_categories %}
                         <tr>
                             <td style="padding:4px;">{{ ligne.nom }}</td>
-                            <td style="text-align:right;">{{ ligne.total|round(0)|int }} F</td>
+                            <td style="text-align:center;">{{ ligne.quantite|round(0)|int }}</td>
+                            <td style="text-align:right;"><strong>{{ ligne.total|round(0)|int }} F</strong></td>
                         </tr>
                         {% endfor %}
                     </tbody>

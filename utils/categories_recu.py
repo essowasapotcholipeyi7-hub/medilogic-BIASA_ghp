@@ -62,9 +62,22 @@ def classifier_article_categorie(nom_article, type_article, classification_map):
 
 
 def cumuler_articles_par_categorie(articles, classification_map):
-    """Regroupe une liste d'articles (dicts avec 'nom'/'type'/'prix*'/'quantite')
-    en totaux par catégorie, dans l'ordre d'ORDRE_CATEGORIES_RECU. Ne renvoie
-    que les catégories ayant un total non nul.
+    """Regroupe une liste d'articles (dicts avec 'nom'/'type'/'prix*'/
+    'quantite') en totaux par catégorie, dans l'ordre d'ORDRE_CATEGORIES_RECU.
+    Ne renvoie que les catégories ayant un total non nul.
+
+    Chaque ligne renvoyée porte, en plus de 'nom'/'total' :
+    - 'quantite' : somme des quantités des articles de la catégorie (ex. 3
+      jours de chambre + 1 consultation comptent pour une quantité globale
+      de la catégorie "Séjours hospitaliers").
+
+    ⭐ Pas de "prix unitaire" ni de "PBR" par catégorie : patron, en
+    testant — "si on met quantité 20 [en Pharmacie], on va mettre le pbr
+    de quel médicament ?" — dès que plusieurs articles à prix/PBR
+    différents sont fusionnés dans une même catégorie, un seul chiffre par
+    unité n'a plus de sens réel (une moyenne pondérée induirait en erreur).
+    Seuls Qté et Total (des sommes, donc toujours valides) sont cumulables
+    proprement.
     """
     totaux = {}
     for article in articles:
@@ -75,14 +88,24 @@ def cumuler_articles_par_categorie(articles, classification_map):
         prix = article.get('prix_unitaire', article.get('prix', article.get('prix_reel', article.get('prix_vente', 0))))
         quantite = article.get('quantite', 1)
         try:
-            total_ligne = float(prix or 0) * float(quantite or 1)
+            prix = float(prix or 0)
         except (TypeError, ValueError):
-            total_ligne = 0
+            prix = 0
+        try:
+            quantite = float(quantite or 1)
+        except (TypeError, ValueError):
+            quantite = 1
+        total_ligne = prix * quantite
 
-        totaux[categorie] = totaux.get(categorie, 0) + total_ligne
+        entree = totaux.setdefault(categorie, {'quantite': 0.0, 'total': 0.0})
+        entree['quantite'] += quantite
+        entree['total'] += total_ligne
 
-    cumul = [{'nom': cat, 'total': totaux[cat]} for cat in ORDRE_CATEGORIES_RECU if totaux.get(cat)]
-    for categorie, total in totaux.items():
-        if categorie not in ORDRE_CATEGORIES_RECU and total:
-            cumul.append({'nom': categorie, 'total': total})
+    cumul = [
+        {'nom': cat, 'quantite': totaux[cat]['quantite'], 'total': totaux[cat]['total']}
+        for cat in ORDRE_CATEGORIES_RECU if totaux.get(cat, {}).get('total')
+    ]
+    for categorie, valeurs in totaux.items():
+        if categorie not in ORDRE_CATEGORIES_RECU and valeurs['total']:
+            cumul.append({'nom': categorie, 'quantite': valeurs['quantite'], 'total': valeurs['total']})
     return cumul

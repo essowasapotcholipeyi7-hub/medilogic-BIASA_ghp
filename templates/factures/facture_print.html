@@ -642,15 +642,17 @@
         <table class="table-cumul">
             <thead>
                 <tr>
-                    <th style="width: 65%; text-align: left;">Catégorie</th>
-                    <th style="width: 35%; text-align: right;">Total</th>
+                    <th style="width: 55%; text-align: left;">Catégorie</th>
+                    <th style="width: 15%; text-align: center;">Qté</th>
+                    <th style="width: 30%; text-align: right;">Total</th>
                 </tr>
             </thead>
             <tbody>
                 {% for ligne in cumul_categories %}
                 <tr>
                     <td>{{ ligne.nom }}</td>
-                    <td>{{ ligne.total|round(0)|int }} F</td>
+                    <td style="text-align: center;">{{ ligne.quantite|round(0)|int }}</td>
+                    <td style="text-align: right;"><strong>{{ ligne.total|round(0)|int }} F</strong></td>
                 </tr>
                 {% endfor %}
             </tbody>

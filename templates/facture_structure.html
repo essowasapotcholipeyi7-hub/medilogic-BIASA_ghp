@@ -408,15 +408,17 @@
                 <table class="table-cumul" style="width:100%; border:1px solid #000; border-collapse: collapse; font-size: 12px;">
                     <thead>
                         <tr style="background-color: #ddd;">
-                            <th style="border:1px solid #000; padding: 5px; text-align:left; width: 65%;">Catégorie</th>
-                            <th style="border:1px solid #000; padding: 5px; text-align:right; width: 35%;">Total</th>
+                            <th style="border:1px solid #000; padding: 5px; text-align:left; width: 55%;">Catégorie</th>
+                            <th style="border:1px solid #000; padding: 5px; text-align:center; width: 15%;">Qté</th>
+                            <th style="border:1px solid #000; padding: 5px; text-align:right; width: 30%;">Total</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for ligne in cumul_categories %}
                         <tr>
                             <td style="border:1px solid #000; padding: 5px;">{{ ligne.nom }}</td>
-                            <td style="border:1px solid #000; padding: 5px;">{{ ligne.total|round(0)|int }}</td>
+                            <td style="border:1px solid #000; padding: 5px; text-align:center;">{{ ligne.quantite|round(0)|int }}</td>
+                            <td style="border:1px solid #000; padding: 5px; text-align:right;"><strong>{{ ligne.total|round(0)|int }}</strong></td>
                         </tr>
                         {% endfor %}
                     </tbody>

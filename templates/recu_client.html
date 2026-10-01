@@ -437,13 +437,15 @@
     <thead>
         <tr style="background:#f8f9fa; border-bottom: 2px solid #dee2e6;">
             <th style="padding:4px; text-align:left; width:65%;">Catégorie</th>
-            <th style="padding:4px; text-align:right; width:35%;">Total</th>
+            <th style="padding:4px; text-align:center; width:15%;">Qté</th>
+            <th style="padding:4px; text-align:right; width:20%;">Total</th>
         </tr>
     </thead>
     <tbody>
         {% for ligne in cumul_categories %}
         <tr style="border-bottom:1px solid #eee;">
             <td style="padding:4px; font-size:9px;">{{ ligne.nom }}</td>
+            <td style="text-align:center; font-size:9px;">{{ ligne.quantite|round(0)|int }}</td>
             <td style="text-align:right; font-weight:600; font-size:9px;">{{ ligne.total|round(0)|int }} F</td>
         </tr>
         {% endfor %}
