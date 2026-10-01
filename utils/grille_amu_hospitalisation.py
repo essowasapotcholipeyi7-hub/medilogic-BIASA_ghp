@@ -53,6 +53,13 @@ TAUX_AMU_O101 = 100
 # (cabine, salle commune...). Voir app.py, routes chambre_tarif/sortie.
 JOURS_MAX_OBSERVATION = 3
 
+# Au-delà de ce nombre de jours, un acte P160 (hospitalisation) doit être
+# facturé avec la dégression par palier (1ère semaine / 8e-14e jour / 15e
+# jour et plus) — voir construire_lignes_chambre(),
+# services/hospitalisation_service.py. En dessous ou à ce seuil, une seule
+# ligne au PBR plat est exacte (aucun palier n'est traversé).
+JOURS_MAX_SANS_PALIER = 7
+
 # Catégories canoniques de salle — libellé affiché dans la future page de
 # correspondance (Phase 2).
 CATEGORIES_SALLE_AMU = [
@@ -95,6 +102,33 @@ def erreur_duree_observation(categorie_salle, nb_jours):
             f"({nb_jours} jours ici). Choisissez une autre catégorie de salle si le séjour est plus long."
         )
     return None
+
+
+def erreur_p160_quantite_hors_hospitalisation(nom, quantite, prise_en_charge_amu, est_assure_amu):
+    """None si rien ne cloche, sinon le message d'erreur à renvoyer.
+
+    Vendre directement (vente d'actes, conversion de proforma...) un acte
+    "chambre" P160 avec plus de JOURS_MAX_SANS_PALIER jours calcule le PBR
+    à plat (pbr_unitaire x quantité) — faux dès qu'un patient assuré AMU
+    franchit un palier (1ère semaine / 8e-14e jour / 15e jour et plus), qui
+    doit dégresser le PBR jour par jour (voir construire_lignes_chambre,
+    services/hospitalisation_service.py). Bloqué UNIQUEMENT quand ça
+    fausserait réellement un remboursement AMU (patient assuré AMU, acte
+    pris en charge AMU) — sans ça, par exemple un patient non assuré payant
+    cash une chambre 15 jours n'a aucune ambiguïté de PBR à régler, le prix
+    clinique restant constant quel que soit le palier."""
+    if not (nom and 'P160' in nom):
+        return None
+    if not quantite or quantite <= JOURS_MAX_SANS_PALIER:
+        return None
+    if not (prise_en_charge_amu and est_assure_amu):
+        return None
+    return (
+        f"\"{nom}\" est un tarif d'hospitalisation (P160) vendu ici avec {quantite} jours. "
+        f"Au-delà de {JOURS_MAX_SANS_PALIER} jours, le remboursement AMU doit être calculé par palier "
+        f"dégressif (1ère semaine / 8e-14e jour / 15e jour et plus) — utilisez le module Hospitalisation "
+        f"pour ce séjour, pas la vente directe d'actes."
+    )
 
 
 def pbr_officiel_p160(niveau, categorie_salle, palier):

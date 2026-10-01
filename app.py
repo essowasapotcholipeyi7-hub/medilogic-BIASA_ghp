@@ -29,7 +29,7 @@ from services.facturation_amu_service import generer_lignes_facture_amu_cnss, ch
 from utils.categories_amu_cnss import CATEGORIES_AMU_CNSS, CATEGORIES_AMU_CNSS_DICT
 from utils.categories_amu_inam import CATEGORIES_AMU_INAM, CATEGORIES_AMU_INAM_PLATES, CATEGORIES_AMU_INAM_DICT, REGIMES_AMU_INAM
 from utils.nombres_lettres import montant_en_lettres_fcfa
-from utils.grille_amu_hospitalisation import acte_virtuel_o101, CATEGORIES_SALLE_AMU, erreur_duree_observation
+from utils.grille_amu_hospitalisation import acte_virtuel_o101, CATEGORIES_SALLE_AMU, erreur_duree_observation, erreur_p160_quantite_hors_hospitalisation
 
 # ⭐ Numéro WhatsApp de l'éditeur (Togo, +228) pour l'envoi du reçu
 # d'abonnement — voir admin_finances.html.
@@ -10005,7 +10005,21 @@ def api_add_acte_vente():
 
             if 'statut' not in acte:
                 acte['statut'] = 'direct'  # 🔥 AJOUT
-        
+
+        # ⭐ Un acte "chambre" P160 vendu ici (pas via le module
+        # Hospitalisation) avec plus de JOURS_MAX_SANS_PALIER jours calcule
+        # le PBR à plat (pbr x quantité) — faux dès qu'un patient AMU
+        # franchit un palier dégressif. Bloqué uniquement quand ça
+        # fausserait réellement un remboursement AMU (patron, 2026-10-01) —
+        # voir utils/grille_amu_hospitalisation.py.
+        est_assure_amu_vente = bool(assurance_principale_active) and str(data.get('assurance_nom', '')).lower().startswith('amu') and taux_assurance > 0
+        for acte in actes_data:
+            erreur_p160 = erreur_p160_quantite_hors_hospitalisation(
+                acte.get('nom'), acte.get('quantite'), acte.get('prise_en_charge_amu', True), est_assure_amu_vente
+            )
+            if erreur_p160:
+                return jsonify({'success': False, 'error': erreur_p160}), 400
+
         # 🔥 Construire l'objet assurances pour le JSONB
         assurances_data = {
             'principale': {
@@ -16461,6 +16475,19 @@ def api_convertir_proforma():
             assurance_principale_active = proforma.get('assurance_principale_active', True)
         est_assure = bool(assurance_nom) and assurance_nom != 'Non assuré' and assurance_principale_active
         taux_assurance = float(data.get('taux_assurance', proforma.get('taux_assurance', 0)) or 0) if assurance_principale_active else 0
+
+        # ⭐ Même garde-fou que la vente directe d'actes (api_add_acte_vente) :
+        # un acte "chambre" P160 avec plus de JOURS_MAX_SANS_PALIER jours
+        # calcule le PBR à plat ici aussi — faux dès qu'un patient AMU
+        # franchit un palier dégressif. Voir
+        # utils/grille_amu_hospitalisation.py.
+        est_assure_amu_conversion = est_assure and str(assurance_nom).lower().startswith('amu') and taux_assurance > 0
+        for a in articles:
+            erreur_p160 = erreur_p160_quantite_hors_hospitalisation(
+                a.get('nom'), a.get('quantite'), a.get('prise_en_charge_amu', True), est_assure_amu_conversion
+            )
+            if erreur_p160:
+                return jsonify({'success': False, 'error': erreur_p160}), 400
 
         assurance2_active = data.get('assurance2_active')
         if assurance2_active is None:

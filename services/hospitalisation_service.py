@@ -18,7 +18,7 @@ from datetime import timedelta
 # ⭐ Import différé (pas de circularité : models.py n'importe jamais ce
 # module) — utilisé uniquement par charger_pbr_complementaires() ci-dessous.
 from models import PbrComplementaire
-from utils.grille_amu_hospitalisation import pbr_officiel_p160
+from utils.grille_amu_hospitalisation import pbr_officiel_p160, JOURS_MAX_SANS_PALIER
 
 # Suffixe (normalisé) -> palier 1/2/3. Plusieurs variantes tolérées
 # (accents/orthographe observés dans le catalogue réel).
@@ -155,7 +155,7 @@ def construire_lignes_chambre(acte_choisi, nb_jours, date_entree, tous_les_actes
     (date_prestation -> date_fin_prestation)."""
     lignes_grille = None
     groupe = None
-    if patient_assure and nb_jours > 7:
+    if patient_assure and nb_jours > JOURS_MAX_SANS_PALIER:
         if niveau_soins and categorie_salle:
             lignes_grille = _lignes_palier_depuis_grille(
                 acte_choisi, nb_jours, date_entree, niveau_soins, categorie_salle
