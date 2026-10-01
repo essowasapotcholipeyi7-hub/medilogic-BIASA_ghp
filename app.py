@@ -19575,11 +19575,29 @@ def facture_print(facture_id):
             if p_societe:
                 f['societe_assurance2'] = p_societe[0].get('societe_assurance2')
 
+    # Reçu cumulé (sans détail des articles, juste un total par catégorie :
+    # Consultation / Actes médicaux / Chirurgie / Séjours hospitaliers /
+    # Pharmacie) — uniquement accessible depuis l'historique des factures.
+    mode_detail = request.args.get('detail', 'complet')
+    if mode_detail not in ('complet', 'cumule'):
+        mode_detail = 'complet'
+
+    cumul_categories = []
+    if mode_detail == 'cumule':
+        from utils.categories_recu import cumuler_articles_par_categorie
+        classification_rows = ClassificationAmuCnss.query.filter_by(structure_id=structure_id).all()
+        classification_map = {}
+        for row in classification_rows:
+            classification_map.setdefault(row.nom_acte, row.categorie)
+        cumul_categories = cumuler_articles_par_categorie(articles, classification_map)
+
     return render_template('factures/facture_print.html',
                          facture=f,
                          articles=articles,
                          paiements=paiements_list,
                          structure=structure_info,
+                         mode_detail=mode_detail,
+                         cumul_categories=cumul_categories,
                          date_actuelle=datetime.now().strftime('%d/%m/%Y %H:%M'))
 
 

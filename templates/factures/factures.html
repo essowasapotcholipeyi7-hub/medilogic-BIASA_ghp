@@ -176,6 +176,20 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <!-- 🔥 Choix détaillée/cumulée : uniquement proposé depuis l'historique
+                     (facture déjà soldée) — intérêt principal en cas d'hospitalisation
+                     avec beaucoup d'actes/médicaments, où un cumul par catégorie
+                     (Consultation, Actes médicaux, Chirurgie, Séjours hospitaliers,
+                     Pharmacie) est plus lisible qu'un détail article par article. -->
+                <div id="modeDetailChoice" class="mb-3 d-none">
+                    <label class="form-label small text-muted mb-2">Type de document</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="modeDetail" id="modeDetailComplet" autocomplete="off" checked onchange="modeDetailImpression='complet'">
+                        <label class="btn btn-outline-secondary btn-sm" for="modeDetailComplet">Détaillée</label>
+                        <input type="radio" class="btn-check" name="modeDetail" id="modeDetailCumule" autocomplete="off" onchange="modeDetailImpression='cumule'">
+                        <label class="btn btn-outline-secondary btn-sm" for="modeDetailCumule">Cumulée (par catégorie)</label>
+                    </div>
+                </div>
                 <div class="d-grid gap-3">
                     <button class="btn btn-outline-secondary btn-lg p-3" onclick="imprimerDocument('80mm')">
                         <i class="fas fa-receipt fa-2x d-block mb-2"></i>
@@ -227,6 +241,7 @@ let facturesData = [];
 let facturesFiltrees = [];
 let documentAImprimer = null;
 let typeDocumentAImprimer = null; // 'facture' ou 'recu_paiement'
+let modeDetailImpression = 'complet'; // 'complet' ou 'cumule' (choix proposé uniquement depuis l'historique)
 
 // Variables de pagination
 let pageActuelle = 1;
@@ -615,6 +630,15 @@ function confirmerPaiement() {
 function ouvrirChoixFormat(documentId, type) {
     documentAImprimer = documentId;
     typeDocumentAImprimer = type || 'facture';
+    modeDetailImpression = 'complet';
+
+    const choixDetail = document.getElementById('modeDetailChoice');
+    const afficherChoixDetail = vueActuelle === 'historique' && typeDocumentAImprimer === 'facture';
+    choixDetail.classList.toggle('d-none', !afficherChoixDetail);
+    if (afficherChoixDetail) {
+        document.getElementById('modeDetailComplet').checked = true;
+    }
+
     new bootstrap.Modal(document.getElementById('printFormatModal')).show();
 }
 
@@ -622,6 +646,8 @@ function ouvrirChoixFormat(documentId, type) {
 function ouvrirChoixFormatRecu(paiementId) {
     documentAImprimer = paiementId;
     typeDocumentAImprimer = 'recu_paiement';
+    modeDetailImpression = 'complet';
+    document.getElementById('modeDetailChoice').classList.add('d-none');
     new bootstrap.Modal(document.getElementById('printFormatModal')).show();
 }
 
@@ -631,21 +657,22 @@ function imprimerDocument(format) {
         alert('Aucun document à imprimer');
         return;
     }
-    
+
     bootstrap.Modal.getInstance(document.getElementById('printFormatModal')).hide();
-    
+
     let url = '';
     if (typeDocumentAImprimer === 'facture') {
-        url = `/facture/print/${documentAImprimer}?format=${format}`;
+        url = `/facture/print/${documentAImprimer}?format=${format}&detail=${modeDetailImpression}`;
     } else if (typeDocumentAImprimer === 'recu_paiement') {
         url = `/facture/recu_paiement/${documentAImprimer}?format=${format}`;
     }
-    
+
     window.open(url, '_blank');
-    
+
     // Réinitialiser
     documentAImprimer = null;
     typeDocumentAImprimer = null;
+    modeDetailImpression = 'complet';
 }
 
 // ========== IMPRIMER REÇU (ancienne méthode, conservée pour compatibilité) ==========

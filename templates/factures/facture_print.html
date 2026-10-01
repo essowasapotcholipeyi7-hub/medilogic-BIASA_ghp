@@ -8,6 +8,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- html2pdf pour l'export PDF -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- JsBarcode pour le code-barres de la facture -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
     
     <style>
         /* ============================================
@@ -92,7 +94,24 @@
             align-items: center;
             gap: 5px;
         }
-        
+
+        .recu-header .badge-mode {
+            font-size: 10px;
+            font-weight: normal;
+            opacity: 0.85;
+            margin-top: 3px;
+        }
+
+        /* Code-barres */
+        .barcode-container {
+            text-align: center;
+            margin: 10px 0 14px 0;
+        }
+
+        .barcode-container svg {
+            max-width: 100%;
+        }
+
         /* Tableau */
         table {
             width: 100%;
@@ -126,7 +145,24 @@
         table td:nth-child(4) {
             text-align: right;
         }
-        
+
+        table tbody tr:nth-child(even) {
+            background: #f7f8fa;
+        }
+
+        /* Tableau cumulé (reçu sans détail des articles, un total par
+           catégorie : Consultation / Actes médicaux / Chirurgie /
+           Séjours hospitaliers / Pharmacie) */
+        table.table-cumul td:first-child {
+            font-weight: bold;
+            color: #1a2a6c;
+        }
+
+        table.table-cumul td:last-child {
+            font-weight: bold;
+            text-align: right;
+        }
+
         /* Totaux */
         .totaux {
             margin: 10px 0;
@@ -345,7 +381,15 @@
                 font-size: 6px !important;
                 padding: 2px 2px !important;
             }
-            
+
+            table tbody tr:nth-child(even) {
+                background: white !important;
+            }
+
+            table.table-cumul td:first-child {
+                color: black !important;
+            }
+
             .totaux {
                 border-top: 1px solid black !important;
                 padding-top: 5px !important;
@@ -527,7 +571,12 @@
                     <img id="structureLogo" src="" alt="Logo" style="display:none;">
                     <h1 id="structureNom">{{ structure.nom if structure else 'Hopital' }}</h1>
                 </div>
-                <div class="badge-rdv">FACTURE</div>
+                <div style="text-align: right;">
+                    <div class="badge-rdv">FACTURE</div>
+                    {% if mode_detail == 'cumule' %}
+                    <div class="badge-mode">Récapitulatif par catégorie</div>
+                    {% endif %}
+                </div>
             </div>
             <div class="sub-info" id="structureInfos">
                 <span id="structureAdresse"></span>
@@ -540,6 +589,11 @@
         <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 12px;">
             <span><strong>N° :</strong> {{ facture.numero_facture }}</span>
             <span><strong>Date :</strong> {{ date_actuelle }}</span>
+        </div>
+
+        <!-- Code-barres -->
+        <div class="barcode-container">
+            <svg id="codeBarreFacture"></svg>
         </div>
 
         <!-- Infos patient -->
@@ -556,6 +610,25 @@
             {% endif %}
         </div>
 
+        {% if mode_detail == 'cumule' %}
+        <!-- Récapitulatif par catégorie (sans détail des articles) -->
+        <table class="table-cumul">
+            <thead>
+                <tr>
+                    <th style="width: 65%; text-align: left;">Catégorie</th>
+                    <th style="width: 35%; text-align: right;">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ligne in cumul_categories %}
+                <tr>
+                    <td>{{ ligne.nom }}</td>
+                    <td>{{ ligne.total|round(0)|int }} F</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
         <!-- Articles -->
         <table>
             <thead>
@@ -589,6 +662,7 @@
                 {% endfor %}
             </tbody>
         </table>
+        {% endif %}
 
         <!-- Totaux -->
         <div class="totaux">
@@ -730,7 +804,26 @@
             img.style.display = 'inline-block';
         }
     }
-    
+
+    // ============================================================
+    // CODE-BARRES
+    // ============================================================
+
+    function genererCodeBarre() {
+        if (!window.JsBarcode) return;
+        try {
+            JsBarcode("#codeBarreFacture", "FACT-{{ facture.numero_facture }}", {
+                format: "CODE128",
+                width: 1.4,
+                height: 36,
+                fontSize: 11,
+                margin: 4
+            });
+        } catch (e) {
+            console.warn('Code-barres non généré :', e);
+        }
+    }
+
     // ============================================================
     // TÉLÉCHARGER PDF
     // ============================================================
@@ -738,10 +831,11 @@
     function telechargerPDF() {
         const element = document.getElementById('factureContenu');
         const format = '{{ request.args.get("format", "80mm") }}';
-        
+        const suffixeMode = '{{ "_cumulee" if mode_detail == "cumule" else "" }}';
+
         const opt = {
             margin: format === '80mm' ? [0.15, 0.15, 0.15, 0.15] : [0.5, 0.5, 0.5, 0.5],
-            filename: 'facture_{{ facture.numero_facture }}.pdf',
+            filename: 'facture_{{ facture.numero_facture }}' + suffixeMode + '.pdf',
             image: { type: 'jpeg', quality: 0.98 },
             html2canvas: { 
                 scale: 2,
@@ -786,7 +880,8 @@
     
     document.addEventListener('DOMContentLoaded', function() {
         chargerInfosStructure();
-        
+        genererCodeBarre();
+
         {% if request.args.get('print', 'false') == 'true' %}
         setTimeout(function() {
             window.print();
