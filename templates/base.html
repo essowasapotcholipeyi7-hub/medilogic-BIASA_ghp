@@ -2718,12 +2718,12 @@
 
         <!-- ===== BANNIÈRE ABONNEMENT SSOFTONEV10 (jaune/rouge/bloqué) ===== -->
         {% set _ab_banner = abonnement() %}
-        {% if _ab_banner.niveau_alerte in ('jaune', 'rouge') %}
+        {% if not (cacher_navigation is defined and cacher_navigation) and _ab_banner.niveau_alerte in ('jaune', 'rouge') %}
         <div class="alert {{ 'alert-warning' if _ab_banner.niveau_alerte == 'jaune' else 'alert-danger' }} d-flex align-items-center justify-content-between shadow-sm mb-2" role="alert">
             <span><i class="fas fa-triangle-exclamation me-2"></i>{{ _ab_banner.message }}</span>
             <a href="{{ url_for('page_depenses_saisie') }}" class="btn btn-sm btn-dark">Régulariser maintenant</a>
         </div>
-        {% elif _ab_banner.bloque_effectif %}
+        {% elif not (cacher_navigation is defined and cacher_navigation) and _ab_banner.bloque_effectif %}
         <div class="alert alert-danger d-flex align-items-center justify-content-between shadow-sm mb-2" role="alert">
             <span><i class="fas fa-lock me-2"></i>{{ _ab_banner.message }}</span>
             <a href="{{ url_for('page_depenses_saisie') }}" class="btn btn-sm btn-dark">Régulariser maintenant</a>
