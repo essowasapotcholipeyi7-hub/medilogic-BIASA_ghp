@@ -2513,6 +2513,16 @@
                 <a class="menu-item" href="{{ url_for('page_amu_supports', type_amu='inam') }}">
                     Support AMU INAM
                 </a>
+                <!-- ⭐ Accès direct en plus de sa présence dans les deux pages
+                     de supports (patron, 2026-10-01 : "je ne voulais pas
+                     qu'on entre dans les supports avant de voir les regles...
+                     affiche cette fiche physiquement aussi comme sous onglet
+                     apres les supports") — ouvre le PDF directement, sans
+                     passer par la page de liste. Même fichier que celui
+                     d'AMU-CNSS (règles identiques CNSS/INAM). -->
+                <a class="menu-item" href="{{ url_for('static', filename='documents/amu_cnss/regles_delivrance_soins_amu.pdf') }}" target="_blank" rel="noopener">
+                    Règles de délivrance de soins AMU
+                </a>
             </div>
         </li>
         {% endif %}
