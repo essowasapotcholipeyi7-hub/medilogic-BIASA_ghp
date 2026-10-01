@@ -784,7 +784,12 @@ AMU_SUPPORTS = {
         'sous_titre': '',
         'dossier': 'amu_inam',
         'fichiers': [
+            # ⭐ Complété par le patron (2026-10-01, dossier Téléchargements\INAM)
+            # — équivalents INAM des formulaires CNSS déjà listés ci-dessus.
+            {'nom': 'demande_entente_prealable.pdf', 'libelle': "Demande d'entente préalable"},
             {'nom': 'facture_recapitulative_inam.pdf', 'libelle': 'Facture récapitulative INAM'},
+            {'nom': 'fiche_identification_patients_tpc.pdf', 'libelle': "Fiche d'identification des patients TPC"},
+            {'nom': 'fiche_rectification_tpc.pdf', 'libelle': 'Fiche de rectification de TPC'},
             # ⭐ Mêmes règles de délivrance que l'AMU-CNSS (patron, 2026-10-01 :
             # "les regles de délivrances des soins amu inam et amu cnss c'est
             # les memes regles, il faut ramener les regles à coté des
