@@ -210,6 +210,18 @@
     <div class="no-print">
         <button class="btn-print" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
         <button class="btn-pdf" onclick="telechargerPDF()"><i class="fas fa-file-pdf"></i> PDF</button>
+        {% if ep_liee %}
+        <!-- ⭐ Patron : "cette demande [...] doit être accompagnée de billet
+             d'hospitalisation [...] et vice versa" -->
+        <a class="btn-print" style="background:#0A3D5C;" href="{{ url_for('page_amu_entente_prealable') }}" target="_blank">
+            <i class="fas fa-file-medical"></i> Voir l'Entente Préalable
+        </a>
+        {% if ep_liee.statut == 'approuvee' %}
+        <a class="btn-print" style="background:#0E9D67;" href="{{ url_for('page_amu_ep_imprimer', demande_id=ep_liee.id) }}" target="_blank">
+            <i class="fas fa-print"></i> Imprimer l'EP
+        </a>
+        {% endif %}
+        {% endif %}
         <button class="btn-back" onclick="window.close()"><i class="fas fa-times"></i> Fermer</button>
     </div>
 

@@ -343,11 +343,32 @@
                          Hospitalisation déjà présélectionnés (patron, 2026-10-01 :
                          "depuis la page hospitalisation qu'on puisse demander
                          entente préalable vu qu'il faut ça toujours") — voir
-                         page_amu_entente_prealable (app.py, ?patient_id&hospit=1). -->
+                         page_amu_entente_prealable (app.py, ?patient_id&hospit=1).
+                         ?hospitalisation_id= en plus (patron : "on va faire une
+                         liaison entre hospitalisation [et l'EP]") lie la future
+                         demande à CE séjour précis et reprend sa date d'entrée. -->
                     {% if a_acces('entente_prealable') %}
-                    <a class="btn btn-sm btn-warning ms-2" href="{{ url_for('page_amu_entente_prealable', patient_id=hospit.patient_id, hospit=1) }}" target="_blank">
-                        <i class="fas fa-file-medical"></i> Demander l'Entente Préalable
-                    </a>
+                        {% if ep_liee %}
+                        <a class="btn btn-sm btn-warning ms-2" href="{{ url_for('page_amu_entente_prealable') }}" target="_blank">
+                            <i class="fas fa-file-medical"></i> Entente Préalable
+                            <span class="badge bg-dark ms-1">{{ {'en_attente': 'En attente', 'approuvee': 'Approuvée', 'refusee': 'Refusée'}.get(ep_liee.statut, ep_liee.statut) }}</span>
+                        </a>
+                        {% if ep_liee.statut == 'approuvee' %}
+                        <a class="btn btn-sm btn-outline-primary ms-1" href="{{ url_for('page_amu_ep_imprimer', demande_id=ep_liee.id) }}" target="_blank">
+                            <i class="fas fa-print"></i> Imprimer l'EP
+                        </a>
+                        {% endif %}
+                        {% if ep_date_ecart %}
+                        <div class="small text-danger mt-1">
+                            <i class="fas fa-exclamation-circle"></i>
+                            La date d'admission de l'EP ({{ ep_liee.hospit_date_admission.strftime('%d/%m/%Y') }}) ne correspond pas à la date d'entrée de ce séjour ({{ hospit.date_entree.strftime('%d/%m/%Y') }}) — vérifiez et ajustez si besoin.
+                        </div>
+                        {% endif %}
+                        {% else %}
+                        <a class="btn btn-sm btn-warning ms-2" href="{{ url_for('page_amu_entente_prealable', patient_id=hospit.patient_id, hospit=1, hospitalisation_id=hospit.id) }}" target="_blank">
+                            <i class="fas fa-file-medical"></i> Demander l'Entente Préalable
+                        </a>
+                        {% endif %}
                     {% endif %}
                     <div class="form-check mt-2">
                         <input class="form-check-input" type="checkbox" id="epConfirme">

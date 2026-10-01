@@ -3199,6 +3199,23 @@ class DemandeEntentePrealable(db.Model):
     approuve_le = db.Column(db.DateTime)
     motif_refus = db.Column(db.String(500))
     imprime_le = db.Column(db.DateTime)  # dernière impression, informatif
+    # ⭐ Lien EP <-> Hospitalisation (patron, 2026-10-01 : "on va faire une
+    # liaison entre hospitalisation [et l'EP]") — posé automatiquement dans
+    # un sens ou dans l'autre selon lequel des deux est créé en premier
+    # (voir page_amu_entente_prealable/api_creer_hospitalisation dans
+    # app.py), jamais par saisie manuelle. Pas de contrainte FK (comme
+    # patient_id/medecin_id ci-dessus, même style dans tout ce modèle) —
+    # sert à retrouver hospit.date_entree/date_sortie pour la synchro des
+    # dates et le lien vers le billet d'hospitalisation.
+    hospitalisation_id = db.Column(db.Integer)
+    # ⭐ "Pré-accord" (fait à l'entrée, durée probable) -> "demande
+    # définitive" (faite à la sortie, durée réelle en nuitées) — patron :
+    # "ces demandes actuellement correspondent au pré-accord [...] à la
+    # sortie on fait une demande définitive". Non-null = la durée réelle a
+    # été calculée et écrite dans hospit_duree_sejour (remplace la durée
+    # probable). Pas de nouveau cycle d'approbation médecin pour ce passage
+    # pré-accord -> définitive, seulement pour inclure_hospitalisation=True.
+    definitive_le = db.Column(db.DateTime)
 
 
 # ⭐ Modèle de résultat (Word/Excel) réutilisable — le laborantin/radiologue

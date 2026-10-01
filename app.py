@@ -841,6 +841,20 @@ def page_amu_entente_prealable():
         patients_par_id = {p.id: p for p in dechiffrer_patients_orm(patients)}
     peut_approuver = session.get('role') in ('medecin', 'admin') or session.get('is_admin')
 
+    # ⭐ Hospitalisations liées (patron, 2026-10-01 : "on va faire une
+    # liaison entre hospitalisation [et l'EP]") — chargées en lot pour
+    # afficher la date d'entrée/sortie réelle dans Détails, détecter un
+    # écart de date d'admission à signaler, et activer le bouton "Faire la
+    # demande définitive" / "Imprimer le billet".
+    hospit_ids = [d.hospitalisation_id for d in demandes if d.hospitalisation_id]
+    hospitalisations_par_id = {}
+    if hospit_ids:
+        hospitalisations_par_id = {
+            h.id: h for h in Hospitalisation.query.filter(
+                Hospitalisation.id.in_(hospit_ids), Hospitalisation.structure_id == structure_id
+            ).all()
+        }
+
     # ⭐ Détail complet de chaque demande en JSON pour le bouton "Détails"
     # (patron : "un bouton de detail pour que le médecin vérifie ce qui a
     # été saisi avant de valider") et pour pré-remplir le formulaire quand
@@ -850,6 +864,10 @@ def page_amu_entente_prealable():
     demandes_detail = []
     for d in demandes:
         p = patients_par_id.get(d.patient_id)
+        hospit_liee = hospitalisations_par_id.get(d.hospitalisation_id)
+        peut_faire_definitive = bool(
+            d.statut == 'approuvee' and d.inclure_hospitalisation and d.imprime_le and not d.definitive_le
+        )
         demandes_detail.append({
             'id': d.id,
             'statut': d.statut,
@@ -873,13 +891,22 @@ def page_amu_entente_prealable():
             'hospit_duree_sejour': d.hospit_duree_sejour or '',
             'cree_par_nom': d.cree_par_nom or '',
             'motif_refus': d.motif_refus or '',
+            'hospitalisation_id': d.hospitalisation_id,
+            'hospitalisation_date_entree': hospit_liee.date_entree.strftime('%Y-%m-%d') if hospit_liee and hospit_liee.date_entree else '',
+            'hospitalisation_date_sortie': hospit_liee.date_sortie.strftime('%Y-%m-%d') if hospit_liee and hospit_liee.date_sortie else '',
+            'definitive_le': d.definitive_le.strftime('%d/%m/%Y %H:%M') if d.definitive_le else '',
+            'peut_faire_definitive': peut_faire_definitive,
         })
 
     # ⭐ Pré-remplissage depuis la page Hospitalisation (patron : "fait en
     # sorte que depuis la page hospitalisation qu'on puisse demander
     # entente préalable vu qu'il faut ça toujours pour l'hospitalisation")
     # — ?patient_id=X présélectionne le patient, ?hospit=1 coche d'office
-    # la case Hospitalisation du formulaire.
+    # la case Hospitalisation du formulaire. ?hospitalisation_id=X (ajouté
+    # pour la liaison EP<->Hospitalisation) lie la future demande à cette
+    # hospitalisation précise et reprend sa date d'entrée telle quelle
+    # (patron : "que cette date d'hospitalisation soit récupérée en même
+    # temps").
     patient_prerempli = None
     patient_id_param = request.args.get('patient_id', type=int)
     if patient_id_param:
@@ -891,6 +918,15 @@ def page_amu_entente_prealable():
                 'numero_assure': p.numero_assure, 'type_assurance': p.type_assurance,
             }
 
+    hospitalisation_id_param = request.args.get('hospitalisation_id', type=int)
+    hospit_date_admission_prerempli = ''
+    if hospitalisation_id_param:
+        h = Hospitalisation.query.filter_by(id=hospitalisation_id_param, structure_id=structure_id).first()
+        if h and (not patient_id_param or h.patient_id == patient_id_param):
+            hospit_date_admission_prerempli = h.date_entree.strftime('%Y-%m-%d') if h.date_entree else ''
+        else:
+            hospitalisation_id_param = None
+
     return render_template(
         'amu_entente_prealable.html',
         medecins_liste=medecins_liste,
@@ -899,9 +935,12 @@ def page_amu_entente_prealable():
         medecins_par_id=medecins_par_id,
         demandes_detail=demandes_detail,
         type_amu_labels=TYPE_AMU_LABELS,
+        categories_salle_amu=CATEGORIES_SALLE_AMU,
         peut_approuver=peut_approuver,
         patient_prerempli=patient_prerempli,
         hospit_prerempli=request.args.get('hospit') == '1',
+        hospitalisation_id_prerempli=hospitalisation_id_param,
+        hospit_date_admission_prerempli=hospit_date_admission_prerempli,
     )
 
 
@@ -997,6 +1036,20 @@ def _valider_champs_ep(data, structure_id):
     except (TypeError, ValueError):
         return None, ('Date de prescription invalide', 400)
 
+    # ⭐ Lien EP <-> Hospitalisation (patron : "on va faire une liaison
+    # entre hospitalisation [et l'EP]") — posé quand l'EP est créée depuis
+    # la page Hospitalisation (voir page_amu_entente_prealable,
+    # ?hospitalisation_id=). Revalidé ici (même patient + structure) pour
+    # ne jamais lier une EP à l'hospitalisation d'un autre patient. Ignoré
+    # silencieusement si invalide plutôt que de bloquer l'enregistrement.
+    hospitalisation_id = None
+    if inclure_hospitalisation and data.get('hospitalisation_id'):
+        h = Hospitalisation.query.filter_by(
+            id=data.get('hospitalisation_id'), structure_id=structure_id, patient_id=patient.id
+        ).first()
+        if h:
+            hospitalisation_id = h.id
+
     return {
         'patient_id': patient.id,
         'medecin_id': medecin.id,
@@ -1012,6 +1065,7 @@ def _valider_champs_ep(data, structure_id):
         'hospit_categorie_salle': data.get('hospit_categorie_salle') if inclure_hospitalisation else None,
         'hospit_categorie_autre_precision': (data.get('hospit_categorie_autre_precision') or '').strip() or None if inclure_hospitalisation else None,
         'hospit_duree_sejour': (data.get('hospit_duree_sejour') or '').strip() or None if inclure_hospitalisation else None,
+        'hospitalisation_id': hospitalisation_id,
     }, None
 
 
@@ -1053,6 +1107,11 @@ def api_amu_ep_modifier(demande_id):
     champs, erreur = _valider_champs_ep(request.json or {}, structure_id)
     if erreur:
         return jsonify({'success': False, 'error': erreur[0]}), erreur[1]
+    # ⭐ Le lien hospitalisation_id se pose automatiquement à la création
+    # (jamais depuis le formulaire de modification, qui ne l'envoie pas) —
+    # ne jamais l'écraser ici, sinon toute modification déferait la
+    # liaison EP <-> Hospitalisation déjà établie.
+    champs.pop('hospitalisation_id', None)
     for cle, valeur in champs.items():
         setattr(demande, cle, valeur)
     db.session.commit()
@@ -1114,6 +1173,55 @@ def page_amu_ep_imprimer(demande_id):
     return Response(pdf_bytes, mimetype='application/pdf', headers={
         'Content-Disposition': f'inline; filename=entente_prealable_{demande.id}.pdf'
     })
+
+
+@app.route('/api/amu/entente-prealable/<int:demande_id>/definitive', methods=['POST'])
+@login_required
+def api_amu_ep_definitive(demande_id):
+    """⭐ Passage du "pré-accord" (fait à l'entrée, durée probable) à la
+    "demande définitive" (faite à la sortie, durée réelle) — patron,
+    2026-10-01 : "à la sortie on fait une demande définitive [...] on
+    connaît bien le nombre de jour exact du séjour". Ne rouvre PAS un
+    cycle d'approbation médecin : on recalcule juste hospit_duree_sejour
+    avec le nombre réel de nuitées (date_sortie - date_entree) et on
+    marque definitive_le. Si l'hospitalisation liée a déjà sa propre
+    date_sortie (clôturée normalement dans le module Hospitalisation), on
+    la réutilise telle quelle ; sinon on prend celle saisie ici et on
+    l'écrit AUSSI sur l'hospitalisation liée (patron : "qu'on est pas à
+    remplir les choses doublement") — on ne touche jamais hospit.statut
+    ni ne déclenche la facturation chambre ici, ça reste le rôle de
+    /api/hospitalisation/<id>/sortie."""
+    if not a_acces('entente_prealable'):
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    structure_id = session.get('structure_id')
+    demande = DemandeEntentePrealable.query.filter_by(id=demande_id, structure_id=structure_id).first_or_404()
+    if demande.statut != 'approuvee' or not demande.inclure_hospitalisation:
+        return jsonify({'success': False, 'error': "Seule une Entente Préalable d'hospitalisation déjà approuvée peut avoir une demande définitive"}), 400
+    if not demande.imprime_le:
+        return jsonify({'success': False, 'error': "Imprimez d'abord le pré-accord avant de faire la demande définitive"}), 400
+
+    hospit = Hospitalisation.query.filter_by(
+        id=demande.hospitalisation_id, structure_id=structure_id
+    ).first() if demande.hospitalisation_id else None
+    date_entree_ref = hospit.date_entree if hospit else demande.hospit_date_admission
+
+    date_sortie = hospit.date_sortie if hospit else None
+    if not date_sortie:
+        data = request.json or {}
+        try:
+            date_sortie = datetime.strptime(data.get('date_sortie'), '%Y-%m-%d').date()
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'Date de sortie invalide'}), 400
+        if date_entree_ref and date_sortie < date_entree_ref:
+            return jsonify({'success': False, 'error': "La date de sortie ne peut pas précéder la date d'entrée"}), 400
+        if hospit and not hospit.date_sortie:
+            hospit.date_sortie = date_sortie
+
+    nb_nuitees = max((date_sortie - date_entree_ref).days, 0) if date_entree_ref else 0
+    demande.hospit_duree_sejour = f"{nb_nuitees} nuitée(s)"
+    demande.definitive_le = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'success': True, 'nombre_nuitees': nb_nuitees})
 
 
 @app.route('/api/faq/poser', methods=['POST'])
@@ -17807,9 +17915,28 @@ def api_creer_hospitalisation():
             return jsonify({'success': False, 'error': 'Patient introuvable'}), 404
         dechiffrer_patients_orm([patient])
 
+        # ⭐ Liaison EP <-> Hospitalisation, sens "EP faite avant
+        # l'hospitalisation" (patron, 2026-10-01 : "si on a fait l'EP avant
+        # de remplir l'hospitalisation, que la date qu'on a mise là vienne
+        # de l'autre côté aussi"). Si ce patient a déjà une EP hospit. non
+        # encore liée, et qu'aucune date d'entrée n'a été saisie à la main
+        # ici, on reprend celle de l'EP — sinon (date saisie explicitement)
+        # on la laisse telle quelle, la liaison se fait quand même mais un
+        # éventuel écart reste visible côté EP (Détails).
+        ep_a_lier = DemandeEntentePrealable.query.filter(
+            DemandeEntentePrealable.structure_id == structure_id,
+            DemandeEntentePrealable.patient_id == patient.id,
+            DemandeEntentePrealable.inclure_hospitalisation == True,
+            DemandeEntentePrealable.hospitalisation_id.is_(None),
+            DemandeEntentePrealable.statut != 'refusee',
+        ).order_by(DemandeEntentePrealable.created_at.desc()).first()
+
         date_entree_str = data.get('date_entree')
         try:
-            date_entree = datetime.strptime(date_entree_str, '%Y-%m-%d').date() if date_entree_str else date.today()
+            if not date_entree_str and ep_a_lier and ep_a_lier.hospit_date_admission:
+                date_entree = ep_a_lier.hospit_date_admission
+            else:
+                date_entree = datetime.strptime(date_entree_str, '%Y-%m-%d').date() if date_entree_str else date.today()
         except ValueError:
             return jsonify({'success': False, 'error': "Date d'entrée invalide"}), 400
 
@@ -17875,6 +18002,10 @@ def api_creer_hospitalisation():
         db.session.add(hospit)
         db.session.commit()
 
+        if ep_a_lier:
+            ep_a_lier.hospitalisation_id = hospit.id
+            db.session.commit()
+
         return jsonify({'success': True, 'hospitalisation_id': hospit.id, 'numero_local': numero_local})
     except Exception as e:
         db.session.rollback()
@@ -17910,6 +18041,19 @@ def page_hospitalisation_suivi(hospit_id):
     patient_amu_ep = (
         patient_a_amu and str(hospit.assurance_nom).lower().startswith('amu')
         and hospit.chambre_categorie_amu != 'observation'
+    )
+
+    # ⭐ Liaison EP <-> Hospitalisation (patron, 2026-10-01) — si une EP est
+    # déjà liée à ce séjour, on affiche son statut/lien au lieu de proposer
+    # d'en redemander une ; un écart entre sa date d'admission et la vraie
+    # date d'entrée du séjour (ex: date d'entrée corrigée après coup côté
+    # Hospitalisation) est signalé plutôt que silencieusement ignoré.
+    ep_liee = DemandeEntentePrealable.query.filter_by(
+        hospitalisation_id=hospit.id, structure_id=structure_id
+    ).order_by(DemandeEntentePrealable.created_at.desc()).first()
+    ep_date_ecart = bool(
+        ep_liee and ep_liee.hospit_date_admission and hospit.date_entree
+        and ep_liee.hospit_date_admission != hospit.date_entree
     )
 
     # ⭐ Aperçu "part patient / part assurance" pendant le séjour (avant même
@@ -18013,6 +18157,7 @@ def page_hospitalisation_suivi(hospit_id):
 
     return render_template('hospitalisation_suivi.html', hospit=hospit, soins=soins, solde_en_cours=solde_en_cours,
                             patient_a_amu=patient_a_amu, patient_a_cac=patient_a_cac, patient_amu_ep=patient_amu_ep,
+                            ep_liee=ep_liee, ep_date_ecart=ep_date_ecart,
                             repartition=repartition, ligne_chambre_projetee=ligne_chambre_projetee,
                             montant_pbr_defaut=montant_pbr_defaut, montant_pbr_alternatif=montant_pbr_alternatif,
                             taux_tva=taux_tva,
@@ -18636,10 +18781,18 @@ def hospitalisation_billet(hospit_id):
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
 
+    # ⭐ Patron : "cette demande [...] doit être accompagnée de billet
+    # d'hospitalisation [...] et vice versa" — lien retour vers l'Entente
+    # Préalable liée à ce séjour, si elle existe.
+    ep_liee = DemandeEntentePrealable.query.filter_by(
+        hospitalisation_id=hospit.id, structure_id=structure_id
+    ).order_by(DemandeEntentePrealable.created_at.desc()).first()
+
     return render_template('hospitalisation_billet.html', hospit=hospit, a_amu=a_amu, a_cac=a_cac,
                             structure_nom=structure_info.get('nom', 'SSoftOneV10'),
                             structure_adresse=structure_info.get('adresse', ''),
-                            structure_telephone=structure_info.get('telephone', ''))
+                            structure_telephone=structure_info.get('telephone', ''),
+                            ep_liee=ep_liee)
 
 
 @app.route('/hospitalisation/<int:hospit_id>/releve')

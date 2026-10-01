@@ -95,9 +95,20 @@
                     <div id="patientResultats"></div>
                     <div id="patientChoisiBloc" class="mt-2 small text-muted" style="display:none;"></div>
                     <input type="hidden" id="patientId">
+                    <input type="hidden" id="hospitalisationId">
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label small fw-semibold">Médecin prescripteur</label>
+                    <label class="form-label small fw-semibold d-flex justify-content-between align-items-center">
+                        Médecin prescripteur
+                        <!-- ⭐ Patron : "depuis l'espace de création d'EP on doit pouvoir
+                             accéder à l'onglet où on crée les médecins [...] pour en créer
+                             s'il y en avait pas" -->
+                        {% if a_acces('medecins_activites') %}
+                        <a href="{{ url_for('gestion_medecins') }}" target="_blank" class="small">
+                            <i class="fas fa-user-md"></i> Gérer les médecins
+                        </a>
+                        {% endif %}
+                    </label>
                     <select class="form-control" id="medecinId" required>
                         <option value="">— Choisir —</option>
                         {% for m in medecins_liste %}
@@ -190,7 +201,19 @@
                                 <input class="form-check-input" type="radio" name="hospitCategorie" id="hospitCatAutre" value="autre" onchange="toggleHospitAutre()">
                                 <label class="form-check-label" for="hospitCatAutre">Autre — préciser</label>
                             </div>
-                            <input type="text" class="form-control mt-1" id="hospitCategorieAutrePrecision" placeholder="Catégorie attribuée..." style="display:none;">
+                            <!-- ⭐ Patron : "si on coche non pour préciser autre chose,
+                                 qu'on ait la possibilité de choisir la chambre qui
+                                 correspond vu qu'on a ça en base" — mêmes catégories
+                                 AMU que la page Hospitalisation (CATEGORIES_SALLE_AMU),
+                                 pas de texte libre. -->
+                            <select class="form-control mt-1" id="hospitCategorieAutrePrecision" style="display:none;">
+                                <option value="">— Choisir —</option>
+                                {% for cle, libelle in categories_salle_amu %}
+                                {% if cle != 'cabine' %}
+                                <option value="{{ libelle }}">{{ libelle }}</option>
+                                {% endif %}
+                                {% endfor %}
+                            </select>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label small">Durée probable du séjour</label>
@@ -246,7 +269,8 @@
                         </td>
                         <td><span class="ep-badge-statut ep-badge-{{ d.statut }}">
                             {{ {'en_attente': 'En attente', 'approuvee': 'Approuvée', 'refusee': 'Refusée'}.get(d.statut, d.statut) }}
-                        </span></td>
+                        </span>
+                        {% if d.definitive_le %}<span class="badge bg-dark">Définitive</span>{% endif %}</td>
                         <td>
                             <button type="button" class="btn btn-sm btn-outline-secondary" onclick="voirDetails({{ d.id }})">
                                 <i class="fas fa-eye"></i> Détails
@@ -255,6 +279,21 @@
                             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('page_amu_ep_imprimer', demande_id=d.id) }}" target="_blank">
                                 <i class="fas fa-print"></i> Imprimer
                             </a>
+                            {% if d.hospitalisation_id %}
+                            <a class="btn btn-sm btn-outline-dark" href="{{ url_for('hospitalisation_billet', hospit_id=d.hospitalisation_id) }}" target="_blank">
+                                <i class="fas fa-receipt"></i> Billet
+                            </a>
+                            {% endif %}
+                            <!-- ⭐ Patron : "après validation de l'EP par le médecin, et après
+                                 l'impression, ça part dans faire demande définitive [...] il y a
+                                 un bouton sur la demande concernée, on clique et on remplit ça" —
+                                 uniquement hospitalisation, après le premier pré-accord imprimé,
+                                 une seule fois (pas déjà définitive). -->
+                            {% if d.inclure_hospitalisation and d.imprime_le and not d.definitive_le %}
+                            <button type="button" class="btn btn-sm btn-outline-info" onclick="ouvrirDefinitive({{ d.id }})">
+                                <i class="fas fa-flag-checkered"></i> Demande définitive
+                            </button>
+                            {% endif %}
                             {% elif d.statut == 'refusee' %}
                             <span class="small text-danger">{{ d.motif_refus or 'Refusée' }}</span>
                             {% elif d.statut == 'en_attente' and peut_approuver %}
@@ -297,11 +336,40 @@
             </div>
         </div>
     </div>
+
+    <!-- ⭐ Demande définitive (patron : "à la sortie on fait une demande
+         définitive [...] on connaît bien le nombre de jour exact") -->
+    <div class="modal fade" id="modalDefinitiveEp" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-flag-checkered me-1"></i>Demande définitive</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small text-muted">Date d'admission : <strong id="definitiveDateEntree"></strong></p>
+                    <div id="definitiveDateSortieWrapper">
+                        <label class="form-label small fw-semibold">Date de sortie</label>
+                        <input type="date" class="form-control" id="definitiveDateSortie" oninput="majNuiteesDefinitive()">
+                    </div>
+                    <p id="definitiveDateSortieFixe" class="small text-muted" style="display:none;"></p>
+                    <p class="mt-2">Nombre de nuitées : <strong id="definitiveNuitees">—</strong></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" onclick="soumettreDefinitive()">
+                        <i class="fas fa-save me-1"></i>Valider la demande définitive
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
 const PATIENT_PREREMPLI = {{ patient_prerempli|tojson|safe if patient_prerempli else 'null' }};
 const HOSPIT_PREREMPLI = {{ 'true' if hospit_prerempli else 'false' }};
+const HOSPITALISATION_ID_PREREMPLI = {{ hospitalisation_id_prerempli|tojson|safe if hospitalisation_id_prerempli else 'null' }};
+const HOSPIT_DATE_ADMISSION_PREREMPLI = {{ hospit_date_admission_prerempli|tojson|safe if hospit_date_admission_prerempli else 'null' }};
 const DEMANDES_DETAIL = {{ demandes_detail|tojson|safe }};
 let demandeEnEditionId = null;
 
@@ -482,15 +550,19 @@ function voirDetails(id) {
         html += `<p class="mb-1"><strong>Produits / Médicaments</strong></p><ul>${produits.map(l => `<li>${l.nom} — <em>${l.motif || 'aucun motif renseigné'}</em></li>`).join('') || '<li class="text-muted">Aucun</li>'}</ul>`;
     }
     if (d.inclure_hospitalisation) {
-        html += `<p class="mb-1"><strong>Hospitalisation</strong></p>
+        const ecart = d.hospitalisation_date_entree && d.hospit_date_admission && d.hospitalisation_date_entree !== d.hospit_date_admission;
+        html += `<p class="mb-1"><strong>Hospitalisation</strong> ${d.definitive_le ? '<span class="badge bg-dark">Définitive</span>' : '<span class="badge bg-secondary">Pré-accord</span>'}</p>
             <ul>
-                <li>Date d'admission : ${d.hospit_date_admission || '—'}</li>
+                <li>Date d'admission (EP) : ${d.hospit_date_admission || '—'}</li>
+                ${d.hospitalisation_id ? `<li>Date d'entrée (séjour lié) : ${d.hospitalisation_date_entree || '—'}${d.hospitalisation_date_sortie ? ' · Date de sortie : ' + d.hospitalisation_date_sortie : ''}</li>` : ''}
                 <li>Motif : ${d.hospit_motif || '—'}</li>
                 <li>Catégorie de salle : ${d.hospit_categorie_salle === 'autre' ? ('Autre — ' + (d.hospit_categorie_autre_precision || 'non précisé')) : 'Cabine ventilée à 2 lits'}</li>
-                <li>Durée probable du séjour : ${d.hospit_duree_sejour || '—'}</li>
-            </ul>`;
+                <li>Durée ${d.definitive_le ? 'réelle' : 'probable'} du séjour : ${d.hospit_duree_sejour || '—'}</li>
+            </ul>
+            ${ecart ? `<p class="small text-danger"><i class="fas fa-exclamation-circle"></i> La date d'admission de l'EP ne correspond pas à la date d'entrée du séjour lié — vérifiez et ajustez si besoin.</p>` : ''}
+            ${d.hospitalisation_id ? `<a class="btn btn-sm btn-outline-dark" href="/hospitalisation/${d.hospitalisation_id}/billet" target="_blank"><i class="fas fa-receipt"></i> Imprimer le billet d'hospitalisation</a>` : ''}`;
     }
-    html += `<p class="small text-muted mb-0">Créée par ${d.cree_par_nom || '—'}</p>`;
+    html += `<p class="small text-muted mb-0 mt-2">Créée par ${d.cree_par_nom || '—'}</p>`;
     if (d.motif_refus) html += `<p class="small text-danger">Motif du refus : ${d.motif_refus}</p>`;
 
     document.getElementById('detailsEpBody').innerHTML = html;
@@ -524,6 +596,7 @@ function modifierDemande(id) {
 
     document.getElementById('chkHospitalisation').checked = d.inclure_hospitalisation;
     toggleSection('Hospitalisation');
+    document.getElementById('hospitalisationId').value = d.hospitalisation_id || '';
     document.getElementById('hospitDateAdmission').value = d.hospit_date_admission;
     document.getElementById('hospitMotif').value = d.hospit_motif;
     document.getElementById('hospitDureeSejour').value = d.hospit_duree_sejour;
@@ -542,6 +615,7 @@ function annulerEdition() {
     document.getElementById('formEp').reset();
     patientChoisi = null;
     document.getElementById('patientId').value = '';
+    document.getElementById('hospitalisationId').value = '';
     document.getElementById('patientChoisiBloc').style.display = 'none';
     lignesActes = []; lignesProduits = [];
     rendreLignes('acte'); rendreLignes('produit');
@@ -549,6 +623,60 @@ function annulerEdition() {
     const btn = document.querySelector('#formEp button[type="submit"]');
     btn.innerHTML = '<i class="fas fa-save me-1"></i>Enregistrer la demande';
     document.getElementById('annulerEditionBtn').style.display = 'none';
+}
+
+// ===================== DEMANDE DÉFINITIVE (hospitalisation) =====================
+// ⭐ Patron : "à la sortie on fait une demande définitive [...] on
+// connaît bien le nombre de jour exact du séjour [...] dès que cette
+// date [de sortie] est remplie ça calcule le nombre de nuit". Si le
+// séjour lié a déjà sa propre date de sortie (clôturée normalement dans
+// Hospitalisation), on la reprend telle quelle (pas de ressaisie,
+// patron : "qu'on est pas à remplir les choses doublement") ; sinon on
+// la saisit ici et elle sera aussi écrite sur le séjour lié.
+let definitiveEpId = null;
+function ouvrirDefinitive(id) {
+    const d = DEMANDES_DETAIL.find(x => x.id === id);
+    if (!d) return;
+    definitiveEpId = id;
+    const dateEntree = d.hospitalisation_date_entree || d.hospit_date_admission;
+    document.getElementById('definitiveDateEntree').textContent = dateEntree || '—';
+
+    if (d.hospitalisation_date_sortie) {
+        document.getElementById('definitiveDateSortieWrapper').style.display = 'none';
+        document.getElementById('definitiveDateSortieFixe').style.display = '';
+        document.getElementById('definitiveDateSortieFixe').textContent = 'Date de sortie (déjà enregistrée dans Hospitalisation) : ' + d.hospitalisation_date_sortie;
+        document.getElementById('definitiveNuitees').textContent = calculerNuitees(dateEntree, d.hospitalisation_date_sortie);
+    } else {
+        document.getElementById('definitiveDateSortieWrapper').style.display = '';
+        document.getElementById('definitiveDateSortieFixe').style.display = 'none';
+        document.getElementById('definitiveDateSortie').value = '';
+        document.getElementById('definitiveNuitees').textContent = '—';
+    }
+    new bootstrap.Modal(document.getElementById('modalDefinitiveEp')).show();
+}
+function calculerNuitees(dateEntree, dateSortie) {
+    if (!dateEntree || !dateSortie) return '—';
+    const nb = Math.round((new Date(dateSortie) - new Date(dateEntree)) / 86400000);
+    return (nb >= 0 ? nb : 0) + ' nuitée(s)';
+}
+function majNuiteesDefinitive() {
+    const d = DEMANDES_DETAIL.find(x => x.id === definitiveEpId);
+    const dateEntree = d.hospitalisation_date_entree || d.hospit_date_admission;
+    document.getElementById('definitiveNuitees').textContent = calculerNuitees(dateEntree, document.getElementById('definitiveDateSortie').value);
+}
+function soumettreDefinitive() {
+    const d = DEMANDES_DETAIL.find(x => x.id === definitiveEpId);
+    const payload = {};
+    if (!d.hospitalisation_date_sortie) {
+        const dateSortie = document.getElementById('definitiveDateSortie').value;
+        if (!dateSortie) { alert('Indiquez la date de sortie.'); return; }
+        payload.date_sortie = dateSortie;
+    }
+    fetch(`/api/amu/entente-prealable/${definitiveEpId}/definitive`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+    }).then(r => r.json()).then(data => {
+        if (data.success) location.reload(); else alert(data.error || 'Erreur');
+    });
 }
 
 // ===================== SOUMISSION =====================
@@ -584,6 +712,7 @@ document.getElementById('formEp').addEventListener('submit', function(e) {
             inclure_produits: inclureProduits,
             inclure_hospitalisation: inclureHospitalisation,
             lignes_motif: [...lignesActes, ...lignesProduits],
+            hospitalisation_id: document.getElementById('hospitalisationId').value || null,
             hospit_date_admission: document.getElementById('hospitDateAdmission').value,
             hospit_motif: document.getElementById('hospitMotif').value,
             hospit_categorie_salle: document.querySelector('input[name="hospitCategorie"]:checked').value,
@@ -630,11 +759,20 @@ rendreLignes('produit');
 toggleHospitAutre();
 
 // ⭐ Pré-remplissage depuis la page Hospitalisation (patron, 2026-10-01) —
-// voir page_amu_entente_prealable (app.py), ?patient_id=&hospit=1.
+// voir page_amu_entente_prealable (app.py), ?patient_id=&hospit=1. Le
+// ?hospitalisation_id= lie la demande à ce séjour précis et reprend sa
+// date d'entrée telle quelle (patron : "que cette date d'hospitalisation
+// soit récupérée en même temps") — pas de ressaisie.
 if (PATIENT_PREREMPLI) { appliquerPatient(PATIENT_PREREMPLI); }
 if (HOSPIT_PREREMPLI) {
     document.getElementById('chkHospitalisation').checked = true;
     toggleSection('Hospitalisation');
+}
+if (HOSPITALISATION_ID_PREREMPLI) {
+    document.getElementById('hospitalisationId').value = HOSPITALISATION_ID_PREREMPLI;
+    if (HOSPIT_DATE_ADMISSION_PREREMPLI) {
+        document.getElementById('hospitDateAdmission').value = HOSPIT_DATE_ADMISSION_PREREMPLI;
+    }
 }
 </script>
 {% endblock %}
