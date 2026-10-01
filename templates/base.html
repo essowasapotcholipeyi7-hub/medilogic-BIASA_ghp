@@ -1281,19 +1281,29 @@
         display: none !important;
     }
 
+    /* ⭐⭐ Renforcé en !important : une carte Bootstrap avec sa propre classe
+       utilitaire (ex. "shadow-lg") a elle-même !important et gagnait contre
+       ces règles (ombre + coins arrondis visibles à l'impression, "donnant
+       une limite nette du contenu" — patron, sur reçu/facture). border-radius
+       n'était pas du tout réinitialisé non plus. */
     .card {
-        box-shadow: none;
-        border: 1px solid #ddd;
-        margin: 0;
-        padding: 0;
-        transform: none;
+        box-shadow: none !important;
+        border: 1px solid #ddd !important;
+        border-radius: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        transform: none !important;
+    }
+
+    .card-body {
+        border-radius: 0 !important;
     }
 
     .container {
-        padding: 0;
-        margin: 0;
-        width: 100%;
-        max-width: 100%;
+        padding: 0 !important;
+        margin: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
     }
 
     /* ⭐ .main-content a overflow-y:auto + max-height:100vh en écran normal

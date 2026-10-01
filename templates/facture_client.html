@@ -82,17 +82,30 @@
             max-height: 40px !important;
             filter: grayscale(100%) contrast(150%) brightness(80%) !important;
             -webkit-filter: grayscale(100%) contrast(150%) brightness(80%) !important;
-        }        
+        }
         i, .fas, .far, .fab {
             display: none !important;
         }
-        
+
         /* Cacher le bloc des totaux colorés */
         .bg-light, .bg-warning, .bg-danger {
             background: white !important;
         }
+
+        /* ⭐ En-tête bleu sombre forcé en noir pur sur le ticket 80mm (même
+           convention que factures/facture_print.html) : le reste du bloc
+           ci-dessus force déjà tout en noir/gras via "* {color:black}", mais
+           le FOND bleu lui-même doit rester visible (texte blanc dessus). */
+        .recu-header {
+            background: black !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        .recu-header * {
+            color: white !important;
+        }
     }
-    
+
     @media screen {
         body {
             background: #e9ecef;
@@ -111,6 +124,42 @@
             size: A4;
             margin: 10mm;
         }
+
+        /* ⭐⭐ La carte Bootstrap (ombre, coins arrondis, colonne centrée
+           col-md-8) restait visible à l'impression A4 - "ça ne cadre pas
+           bien, ça laisse l'espace avec une ombre en arrière donnant une
+           limite nette du contenu" (patron). Même motif de reset que
+           templates/factures/facture_print.html, qui n'a jamais eu ce
+           problème car il n'utilise pas la carte Bootstrap. */
+        body {
+            background: white !important;
+            padding: 0 !important;
+        }
+        .row.justify-content-center {
+            margin: 0 !important;
+        }
+        .col-md-8 {
+            width: 100% !important;
+            max-width: 100% !important;
+            flex: 0 0 100% !important;
+            padding: 0 !important;
+        }
+        .card {
+            box-shadow: none !important;
+            border: none !important;
+            border-radius: 0 !important;
+            margin: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+        }
+        .no-print {
+            display: none !important;
+        }
+        .recu-header {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            background: #1a2a6c !important;
+        }
     }
 </style>
 {% endif %}
@@ -125,6 +174,95 @@
         font-weight: bold;
         text-align: right;
     }
+
+    /* ⭐ En-tête bleu sombre de marque (même classe/charte que
+       templates/factures/facture_print.html, templates/rh/bulletin_paie.html
+       etc.) remplace le dégradé violet précédent, qui ne s'imprimait pas
+       (fond non forcé -> navigateur l'omet par défaut à l'impression) et ne
+       correspondait pas à l'entête utilisée partout ailleurs dans l'appli. */
+    .recu-header {
+        background: #1a2a6c;
+        padding: 20px 30px;
+        color: white;
+        margin: -20px -20px 20px -20px;
+    }
+    .recu-header .top-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    .recu-header .logo-area {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+    .recu-header .logo-area img {
+        max-height: 50px;
+        max-width: 100px;
+        object-fit: contain;
+        background: white;
+        padding: 4px;
+        border-radius: 6px;
+    }
+    .recu-header .logo-area h1 {
+        font-size: 18px;
+        font-weight: 600;
+        margin: 0;
+        color: white;
+    }
+    .recu-header .infos-droite {
+        text-align: right;
+    }
+    .recu-header .badge-rdv {
+        display: inline-block;
+        background: rgba(255,255,255,0.15);
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        border: 1px solid rgba(255,255,255,0.2);
+    }
+    .recu-header .badge-mode {
+        font-size: 11px;
+        opacity: 0.9;
+        margin-top: 2px;
+    }
+    .recu-header .sub-info {
+        margin-top: 8px;
+        font-size: 11px;
+        opacity: 0.9;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 16px;
+    }
+
+    /* ⭐ Classe ajoutée/retirée sur #pdfWrapper juste avant/après la capture
+       html2canvas (telechargerPDF ci-dessous) - html2canvas peint le DOM tel
+       qu'affiché à l'écran, sans jamais appliquer les règles @media print :
+       sans ça, le PDF téléchargé gardait l'ombre/les coins arrondis ET
+       restait étroit (la colonne Bootstrap .col-md-8 le contraignait encore
+       même avec la carte elle-même remise à plat) — patron : "ce pdf ne
+       prend pas bien". Reset sur TOUTE la chaîne (colonne + carte), comme
+       @media print A4 ci-dessus, appliqué ici en dur via le sélecteur
+       ancêtre #pdfWrapper.pdf-export-mode. */
+    #pdfWrapper.pdf-export-mode {
+        margin: 0 !important;
+    }
+    #pdfWrapper.pdf-export-mode .col-md-8 {
+        width: 100% !important;
+        max-width: 100% !important;
+        flex: 0 0 100% !important;
+        padding: 0 !important;
+    }
+    #pdfWrapper.pdf-export-mode .card {
+        box-shadow: none !important;
+        border: none !important;
+        border-radius: 0 !important;
+        margin: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+    }
 </style>
 {% endblock %}
 
@@ -136,50 +274,52 @@
      est True), et affichaient leur contenu réservé à l'A4 même en
      80mm (ticket). Redéfinie ici, dans la bonne portée. -->
 {% set format = request.args.get('format', 'A4') %}
-<div class="row justify-content-center">
+<div class="row justify-content-center" id="pdfWrapper">
     <div class="col-md-8">
         <div class="card shadow-lg" id="factureContenu">
             <div class="card-body" style="font-family: 'Segoe UI', Arial, sans-serif;">
 
-                <!-- En-tête professionnel -->
-                <div class="row" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; margin: -20px -20px 20px -20px; padding: 20px; border-radius: 10px 10px 0 0;">
-                    <div class="col-7">
-                        <div class="d-flex align-items-center gap-3">
+                <!-- En-tête de marque (bleu sombre, même charte que le reste
+                     de l'app — patron : "aussi sur l'impression je veux
+                     l'entete bleue sombre") -->
+                <div class="recu-header">
+                    <div class="top-row">
+                        <div class="logo-area">
                             {% if structure_logo %}
-                            <img src="{{ structure_logo }}" alt="Logo" style="max-height: 80px; max-width: 150px; background: white; padding: 5px; border-radius: 8px;">
+                            <img src="{{ structure_logo }}" alt="Logo">
                             {% endif %}
                             <div>
-                                <h2 style="margin: 0;">{{ structure_nom or "SSoftone V10" }}</h2>
+                                <h1>{{ structure_nom or "SSoftone V10" }}</h1>
                                 {% if structure_entete_a4 and format != '80mm' %}
                                 <!-- ⭐ Texte d'en-tête A4 (spécialités/labo...) — jamais sur
                                      80mm (ticket de caisse), voir structure_entete_a4 (app.py). -->
                                 <p style="margin: 2px 0 0 0; font-size: 10px; opacity: 0.9; white-space: pre-line;">{{ structure_entete_a4 }}</p>
                                 {% endif %}
-                                <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.9;">
-                                    <i class="fas fa-map-marker-alt"></i> {{ structure_adresse or "" }}<br>
-                                    <i class="fas fa-phone"></i> {{ structure_telephone or "" }} |
-                                    <i class="fas fa-envelope"></i> {{ structure_email or "" }}
-                                </p>
                             </div>
                         </div>
+                        <div class="infos-droite">
+                            <div class="badge-rdv">FACTURE</div>
+                            <!-- ⭐ Précise le type de vente (pharmacie/actes/mixte) dans
+                                 l'en-tête, pour distinguer une facture pharmacie d'une
+                                 facture d'actes d'un coup d'œil. -->
+                            {% if type_vente == 'pharmacie' or type_vente == 'pharma' %}
+                            <div class="badge-mode">PHARMACIE</div>
+                            {% elif type_vente == 'mixte' %}
+                            <div class="badge-mode">ACTES & PHARMACIE</div>
+                            {% elif type_vente == 'actes' %}
+                            <div class="badge-mode">ACTES MÉDICAUX</div>
+                            {% endif %}
+                            {% if mode_detail == 'cumule' %}
+                            <div class="badge-mode">Récapitulatif par catégorie</div>
+                            {% endif %}
+                            <div style="margin-top: 6px; font-size: 13px;">N° {{ "%06d" % numero_local_vente }}</div>
+                            <div style="font-size: 12px;">Date: {{ date_actuelle or "" }}</div>
+                        </div>
                     </div>
-                    <div class="col-5 text-end">
-                        <h1 style="font-size: 18px; margin: 0;">FACTURE</h1>
-                        <!-- ⭐ Précise le type de vente (pharmacie/actes/mixte) dans
-                             l'en-tête, pour distinguer une facture pharmacie d'une
-                             facture d'actes d'un coup d'œil. -->
-                        {% if type_vente == 'pharmacie' or type_vente == 'pharma' %}
-                        <p style="margin: 1px 0 0 0; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;">PHARMACIE</p>
-                        {% elif type_vente == 'mixte' %}
-                        <p style="margin: 1px 0 0 0; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;">ACTES & PHARMACIE</p>
-                        {% elif type_vente == 'actes' %}
-                        <p style="margin: 1px 0 0 0; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;">ACTES MÉDICAUX</p>
-                        {% endif %}
-                        {% if mode_detail == 'cumule' %}
-                        <p style="margin: 1px 0 0 0; font-size: 11px; opacity: 0.9;">Récapitulatif par catégorie</p>
-                        {% endif %}
-                        <p style="margin: 5px 0 0 0;">N° {{ "%06d" % numero_local_vente }}</p>
-                        <p>Date: {{ date_actuelle or "" }}</p>
+                    <div class="sub-info">
+                        {% if structure_adresse %}<span>{{ structure_adresse }}</span>{% endif %}
+                        {% if structure_telephone %}<span>Tel: {{ structure_telephone }}</span>{% endif %}
+                        {% if structure_email %}<span>Email: {{ structure_email }}</span>{% endif %}
                     </div>
                 </div>
 
@@ -367,15 +507,27 @@ function telechargerPDF() {
     const element = document.getElementById('factureContenu');
     const nomFichier = '{{ nom_fichier }}' || `facture_${Date.now()}`;
     const format = '{{ request.args.get("format", "A4") }}';
-    
+
+    // ⭐ html2canvas peint le DOM tel qu'affiché à l'écran (ombre, coins
+    // arrondis, colonne Bootstrap étroite et centrée) — jamais les règles
+    // @media print. On bascule donc temporairement la carte dans un état
+    // "page propre" (voir .pdf-export-mode, extra_css) avant la capture,
+    // puis on restaure l'affichage normal juste après.
+    document.getElementById('pdfWrapper').classList.add('pdf-export-mode');
+
     const opt = {
-        margin: [0.5, 0.5, 0.5, 0.5],
+        margin: format === '80mm' ? [0.15, 0.15, 0.15, 0.15] : [0.4, 0.4, 0.4, 0.4],
         filename: `${nomFichier}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2 },
-        jsPDF: { unit: 'in', format: format === '80mm' ? [2.8346, 11.6929] : 'a4', orientation: 'portrait' }
+        html2canvas: { scale: 2, useCORS: true, logging: false },
+        jsPDF: { unit: 'in', format: format === '80mm' ? [2.8346, 11.6929] : 'a4', orientation: 'portrait' },
+        pagebreak: { mode: 'avoid-all' }
     };
-    html2pdf().set(opt).from(element).save();
+    html2pdf().set(opt).from(element).save().then(function() {
+        document.getElementById('pdfWrapper').classList.remove('pdf-export-mode');
+    }).catch(function() {
+        document.getElementById('pdfWrapper').classList.remove('pdf-export-mode');
+    });
 }
 
 function fermerOuRediriger() {
