@@ -332,6 +332,22 @@
                         <option value="A4">A4</option>
                     </select>
                 </div>
+                <!-- 🔥 Choix détaillée/cumulée (uniquement pris en compte pour les
+                     boutons "Facture") : la cumulée ne montre qu'un total par
+                     catégorie (Consultation, Actes médicaux, Chirurgie, Séjours
+                     hospitaliers, Pharmacie) sans le détail article par article —
+                     intérêt principal pour une hospitalisation avec beaucoup
+                     d'actes/médicaments. Même mécanisme que la page Factures
+                     clients & Créances, étendu ici à toutes les ventes. -->
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Type de facture</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="modeDetailVente" id="modeDetailVenteComplet" autocomplete="off" checked onchange="modeDetailVente='complet'">
+                        <label class="btn btn-outline-secondary btn-sm" for="modeDetailVenteComplet">Détaillée</label>
+                        <input type="radio" class="btn-check" name="modeDetailVente" id="modeDetailVenteCumule" autocomplete="off" onchange="modeDetailVente='cumule'">
+                        <label class="btn btn-outline-secondary btn-sm" for="modeDetailVenteCumule">Cumulée (par catégorie)</label>
+                    </div>
+                </div>
                 <div class="d-grid gap-2">
                     <button class="btn btn-outline-primary" onclick="printDocument('recu_client')">
                         <i class="fas fa-receipt"></i> Reçu Patient
@@ -363,6 +379,7 @@ let ventesFiltrees = [];
 let currentPage = 1;
 let rowsPerPage = 10;
 let currentVenteId = null;
+let modeDetailVente = 'complet'; // 'complet' ou 'cumule' — pris en compte uniquement par les boutons Facture
 let currentVenteType = null;
 let periodeStatsCourante = 'tous';
 let searchGlobalActuel = '';
@@ -1160,21 +1177,23 @@ function changerPeriodeFiltre() {
 function reimprimer(venteId, type) {
     currentVenteId = venteId;
     currentVenteType = type;
+    modeDetailVente = 'complet';
+    document.getElementById('modeDetailVenteComplet').checked = true;
     new bootstrap.Modal(document.getElementById('documentModal')).show();
 }
 
 function printDocument(docType) {
     var format = document.getElementById('printFormat').value;
     var url = '';
-    
+
     if (docType === 'recu_client') {
         url = '/recu/' + currentVenteId + '/' + currentVenteType + '?format=' + format;
     } else if (docType === 'recu_structure') {
         url = '/recu_structure/' + currentVenteId + '/' + currentVenteType + '?format=' + format;
     } else if (docType === 'facture_client') {
-        url = '/facture/' + currentVenteId + '/' + currentVenteType + '?format=' + format;
+        url = '/facture/' + currentVenteId + '/' + currentVenteType + '?format=' + format + '&detail=' + modeDetailVente;
     } else if (docType === 'facture_structure') {
-        url = '/facture_structure/' + currentVenteId + '/' + currentVenteType + '?format=' + format;
+        url = '/facture_structure/' + currentVenteId + '/' + currentVenteType + '?format=' + format + '&detail=' + modeDetailVente;
     } else if (docType === 'les_deux') {
         window.open('/recu/' + currentVenteId + '/' + currentVenteType + '?format=' + format, '_blank');
         window.open('/recu_structure/' + currentVenteId + '/' + currentVenteType + '?format=' + format, '_blank');

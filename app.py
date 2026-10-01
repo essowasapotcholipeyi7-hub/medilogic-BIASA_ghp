@@ -3348,7 +3348,8 @@ def facture(vente_id, type):
                     'nom': p.get('nom', 'Produit'),
                     'quantite': int(p.get('quantite', 1)),
                     'prix_unitaire': float(p.get('prix_reel', p.get('prix', 0))),
-                    'total': float(p.get('total') or 0)
+                    'total': float(p.get('total') or 0),
+                    'type': 'produit'
                 })
         else:
             actes_data = v.get('actes', [])
@@ -3359,9 +3360,10 @@ def facture(vente_id, type):
                     'nom': a.get('nom', 'Acte'),
                     'quantite': int(a.get('quantite', 1)),
                     'prix_unitaire': float(a.get('prix') or 0),
-                    'total': float(a.get('total') or 0)
+                    'total': float(a.get('total') or 0),
+                    'type': 'acte'
                 })
-    
+
     # Gestion des assurances
     assurance_text = type_assurance
     if type_assurance == 'amu_cnss':
@@ -3372,20 +3374,40 @@ def facture(vente_id, type):
         assurance_text = 'AMU-TNS'
     elif type_assurance == 'non_assure':
         assurance_text = 'Non assuré'
-    
+
     # Déterminer si l'assurance complémentaire a été appliquée
     assurance2_appliquee = False
     if assurance2_nom and assurance2_nom != '' and assurance2_nom != 'Aucune' and prise_en_charge2 > 0:
         assurance2_appliquee = True
-    
+
     patient_nom_clean = patient_nom.replace(' ', '_').replace("'", "").replace('é', 'e').replace('è', 'e').replace('ê', 'e').replace('à', 'a').replace('ç', 'c')
     nom_fichier = f"facture_client_{patient_nom_clean}_{vente_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    
+
+    # Reçu cumulé (sans détail des articles, un total par catégorie :
+    # Consultation / Actes médicaux / Chirurgie / Séjours hospitaliers /
+    # Pharmacie) — même mécanisme que factures/facture_print.html, demandé
+    # ici depuis l'historique des ventes (pas seulement les factures de
+    # créance).
+    mode_detail = request.args.get('detail', 'complet')
+    if mode_detail not in ('complet', 'cumule'):
+        mode_detail = 'complet'
+
+    cumul_categories = []
+    if mode_detail == 'cumule':
+        from utils.categories_recu import cumuler_articles_par_categorie
+        classification_rows = ClassificationAmuCnss.query.filter_by(structure_id=structure_id).all()
+        classification_map = {}
+        for row in classification_rows:
+            classification_map.setdefault(row.nom_acte, row.categorie)
+        cumul_categories = cumuler_articles_par_categorie(articles, classification_map)
+
     return render_template('facture_client.html',
                          vente_id=vente_id,
                          numero_local_vente=numero_local_vente,
                          type_vente=type_bd,
                          articles=articles,
+                         mode_detail=mode_detail,
+                         cumul_categories=cumul_categories,
                          sous_total=sous_total,
                          taux_assurance=taux_assurance,
                          prise_en_charge=prise_en_charge,
@@ -3545,7 +3567,8 @@ def facture_structure(vente_id, type):
                     'nom': p.get('nom', 'Produit'),
                     'quantite': int(p.get('quantite', 1)),
                     'prix_unitaire': float(p.get('prix_reel', p.get('prix', 0))),
-                    'total': float(p.get('total') or 0)
+                    'total': float(p.get('total') or 0),
+                    'type': 'produit'
                 })
         else:
             actes_data = v.get('actes', [])
@@ -3556,9 +3579,10 @@ def facture_structure(vente_id, type):
                     'nom': a.get('nom', 'Acte'),
                     'quantite': int(a.get('quantite', 1)),
                     'prix_unitaire': float(a.get('prix') or 0),
-                    'total': float(a.get('total') or 0)
+                    'total': float(a.get('total') or 0),
+                    'type': 'acte'
                 })
-    
+
     # Gestion des assurances
     assurance_text = type_assurance
     if type_assurance == 'amu_cnss':
@@ -3569,20 +3593,36 @@ def facture_structure(vente_id, type):
         assurance_text = 'AMU-TNS'
     elif type_assurance == 'non_assure':
         assurance_text = 'Non assuré'
-    
+
     # Déterminer si l'assurance complémentaire a été appliquée
     assurance2_appliquee = False
     if assurance2_nom and assurance2_nom != '' and assurance2_nom != 'Aucune' and prise_en_charge2 > 0:
         assurance2_appliquee = True
-    
+
     patient_nom_clean = patient_nom.replace(' ', '_').replace("'", "").replace('é', 'e').replace('è', 'e').replace('ê', 'e').replace('à', 'a').replace('ç', 'c')
     nom_fichier = f"facture_structure_{patient_nom_clean}_{vente_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    
+
+    # Reçu cumulé — voir le même bloc dans facture() ci-dessus.
+    mode_detail = request.args.get('detail', 'complet')
+    if mode_detail not in ('complet', 'cumule'):
+        mode_detail = 'complet'
+
+    cumul_categories = []
+    if mode_detail == 'cumule':
+        from utils.categories_recu import cumuler_articles_par_categorie
+        classification_rows = ClassificationAmuCnss.query.filter_by(structure_id=structure_id).all()
+        classification_map = {}
+        for row in classification_rows:
+            classification_map.setdefault(row.nom_acte, row.categorie)
+        cumul_categories = cumuler_articles_par_categorie(articles, classification_map)
+
     return render_template('facture_structure.html',
                          vente_id=vente_id,
                          numero_local_vente=numero_local_vente,
                          type_vente=type_bd,
                          articles=articles,
+                         mode_detail=mode_detail,
+                         cumul_categories=cumul_categories,
                          sous_total=sous_total,
                          taux_assurance=taux_assurance,
                          prise_en_charge=prise_en_charge,

@@ -114,6 +114,18 @@
     }
 </style>
 {% endif %}
+<style>
+    /* Récapitulatif par catégorie (sans détail des articles) — voir
+       templates/factures/facture_print.html pour le même motif. */
+    table.table-cumul td:first-child {
+        font-weight: bold;
+        color: #495796;
+    }
+    table.table-cumul td:last-child {
+        font-weight: bold;
+        text-align: right;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -159,6 +171,9 @@
                         <p style="margin: 1px 0 0 0; font-weight: 600; font-size: 12px; letter-spacing: 0.5px;">ACTES & PHARMACIE</p>
                         {% elif type_vente == 'actes' %}
                         <p style="margin: 1px 0 0 0; font-weight: 600; font-size: 12px; letter-spacing: 0.5px;">ACTES MÉDICAUX</p>
+                        {% endif %}
+                        {% if mode_detail == 'cumule' %}
+                        <p style="margin: 1px 0 0 0; font-size: 11px; opacity: 0.9;">Récapitulatif par catégorie</p>
                         {% endif %}
                         <p>N° {{ "%06d" % numero_local_vente }} | {{ date_actuelle or "" }}</p>
                     </div>
@@ -223,6 +238,25 @@
     </div>
 </div>
 
+                {% if mode_detail == 'cumule' %}
+                <!-- Récapitulatif par catégorie (sans détail des articles) -->
+                <table class="table-cumul" style="width:100%; border:1px solid #000; border-collapse: collapse; font-size: 12px;">
+                    <thead>
+                        <tr style="background-color: #ddd;">
+                            <th style="border:1px solid #000; padding: 5px; text-align:left; width: 65%;">Catégorie</th>
+                            <th style="border:1px solid #000; padding: 5px; text-align:right; width: 35%;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ligne in cumul_categories %}
+                        <tr>
+                            <td style="border:1px solid #000; padding: 5px;">{{ ligne.nom }}</td>
+                            <td style="border:1px solid #000; padding: 5px;">{{ ligne.total|round(0)|int }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
                 <!-- ===== TABLEAU DES ARTICLES ===== -->
                 <table style="width:100%; border:1px solid #000; border-collapse: collapse; font-size: 12px;">
                     <thead>
@@ -244,6 +278,7 @@
                         {% endfor %}
                     </tbody>
                 </table>
+                {% endif %}
 
 <!-- ===== TOTAUX AVEC DOUBLE ASSURANCE ===== -->
 {% set sous_total_val = sous_total|default(0) %}

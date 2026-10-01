@@ -114,6 +114,18 @@
     }
 </style>
 {% endif %}
+<style>
+    /* Récapitulatif par catégorie (sans détail des articles) — voir
+       templates/factures/facture_print.html pour le même motif. */
+    table.table-cumul td:first-child {
+        font-weight: bold;
+        color: #495796;
+    }
+    table.table-cumul td:last-child {
+        font-weight: bold;
+        text-align: right;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -163,6 +175,9 @@
                         {% elif type_vente == 'actes' %}
                         <p style="margin: 1px 0 0 0; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;">ACTES MÉDICAUX</p>
                         {% endif %}
+                        {% if mode_detail == 'cumule' %}
+                        <p style="margin: 1px 0 0 0; font-size: 11px; opacity: 0.9;">Récapitulatif par catégorie</p>
+                        {% endif %}
                         <p style="margin: 5px 0 0 0;">N° {{ "%06d" % numero_local_vente }}</p>
                         <p>Date: {{ date_actuelle or "" }}</p>
                     </div>
@@ -209,6 +224,25 @@
     <strong>Paiement :</strong> {{ mode_paiement }}<br>
 </div>
 
+                {% if mode_detail == 'cumule' %}
+                <!-- Récapitulatif par catégorie (sans détail des articles) -->
+                <table class="table-cumul" style="width:100%; border-collapse: collapse; margin: 20px 0;">
+                    <thead>
+                        <tr style="background: #f8f9fa;">
+                            <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6; width: 65%;">Catégorie</th>
+                            <th style="padding: 12px; text-align: right; border-bottom: 2px solid #dee2e6; width: 35%;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ligne in cumul_categories %}
+                        <tr style="border-bottom: 1px solid #dee2e6;">
+                            <td style="padding: 10px;">{{ ligne.nom }}</td>
+                            <td style="padding: 10px;">{{ ligne.total|round(0)|int }} FCFA</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
                 <!-- Détails facture -->
                 <table style="width:100%; border-collapse: collapse; margin: 20px 0;">
                     <thead>
@@ -230,6 +264,7 @@
                         {% endfor %}
                     </tbody>
                 </table>
+                {% endif %}
 
 <!-- ===== TOTAUX AVEC DOUBLE ASSURANCE ===== -->
 <div style="margin-top:10px;">
