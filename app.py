@@ -40,6 +40,7 @@ from models import Medecin, Patient, Structure, DemandeEntentePrealable
 from utils.remplissage_pdf_amu import remplir_entente_prealable
 from models import DemandeTpc, MedicamentTpcMemorise, LieuResidenceMemorise
 from utils.remplissage_pdf_tpc import remplir_tpc
+from utils.codes_ald import CODES_ALD
 from datetime import datetime, date, timedelta
 from routes.protocoles_routes import protocoles_bp
 from routes.journal_routes import journal_bp
@@ -1324,6 +1325,7 @@ def page_amu_tpc():
         peut_approuver=peut_approuver,
         medicaments_memorises=MedicamentTpcMemorise.connues_pour(structure_id),
         lieux_residence_memorises=LieuResidenceMemorise.connues_pour(structure_id),
+        codes_ald=CODES_ALD,
     )
 
 

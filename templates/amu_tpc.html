@@ -306,6 +306,11 @@
 <script>
 const DEMANDES_DETAIL = {{ demandes_detail|tojson|safe }};
 const TYPE_AMU_LABELS_JS = {{ type_amu_labels|tojson|safe }};
+// ⭐ Référentiel des codes ALD fourni par le patron (2026-10-02) — voir
+// utils/codes_ald.py. Recherche par nom de l'affection, le code_ald se
+// remplit automatiquement (patron : "c'est le code seulement on veut
+// dans la colonne même si la recherche se fait par nom de l'affection").
+const CODES_ALD = {{ codes_ald|tojson|safe }};
 let demandeEnEditionTpcId = null;
 let patientChoisiTpc = null;
 let lignesAld = [];
@@ -487,11 +492,42 @@ function retirerLigneAld(i) { lignesAld.splice(i, 1); rendreLignesAld(); }
 function majLigneAld(i, champ, valeur) { lignesAld[i][champ] = valeur; }
 function rendreLignesAld() {
     document.getElementById('lignesAld').innerHTML = lignesAld.map((l, i) => `
-        <div class="tpc-ligne">
-            <input type="text" placeholder="Affection" value="${escapeHtml(l.affection)}" oninput="majLigneAld(${i}, 'affection', this.value)">
+        <div class="tpc-ligne position-relative">
+            <div style="flex:1; min-width:200px; position:relative;">
+                <input type="text" placeholder="Affection — recherchez par nom..." style="width:100%;"
+                       value="${escapeHtml(l.affection)}"
+                       oninput="majLigneAld(${i}, 'affection', this.value); rechercherAld(${i}, this.value)"
+                       onblur="setTimeout(() => { const r = document.getElementById('resultatsAld${i}'); if (r) r.style.display = 'none'; }, 200)">
+                <div id="resultatsAld${i}" class="ep-motif-resultats" style="display:none;"></div>
+            </div>
             <input type="text" placeholder="Code ALD" style="max-width:120px;" value="${escapeHtml(l.code_ald)}" oninput="majLigneAld(${i}, 'code_ald', this.value)">
             <button type="button" class="btn btn-sm btn-outline-danger" onclick="retirerLigneAld(${i})"><i class="fas fa-times"></i></button>
         </div>`).join('');
+}
+// ⭐ Recherche dans le référentiel ALD (patron : "la recherche se fait par
+// nom de l'affection") — sélectionner un résultat remplit le nom ET le
+// code ALD de la ligne, sans reconstruire toute la liste (perdrait le
+// focus en cours de frappe sur une autre ligne).
+function rechercherAld(i, texte) {
+    const box = document.getElementById('resultatsAld' + i);
+    const q = texte.trim().toLowerCase();
+    if (q.length < 2) { box.style.display = 'none'; return; }
+    const resultats = CODES_ALD.filter(e => e.affection.toLowerCase().includes(q)).slice(0, 12);
+    if (!resultats.length) {
+        box.innerHTML = '<div class="list-group-item text-muted small p-2">Aucune correspondance — saisie libre possible</div>';
+        box.style.display = 'block';
+        return;
+    }
+    box.innerHTML = resultats.map(e => `
+        <a href="#" class="list-group-item list-group-item-action p-2" onmousedown='choisirAld(${i}, ${escapeHtml(JSON.stringify(e))}); return false;'>
+            ${escapeHtml(e.affection)} <span class="badge bg-light text-dark">${escapeHtml(e.code_ald)}</span>
+        </a>`).join('');
+    box.style.display = 'block';
+}
+function choisirAld(i, entree) {
+    lignesAld[i].affection = entree.affection;
+    lignesAld[i].code_ald = entree.code_ald;
+    rendreLignesAld();
 }
 
 // ===================== LIGNES EXAMENS PARACLINIQUES =====================
