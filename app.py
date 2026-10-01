@@ -119,7 +119,7 @@ SEUIL_RESONDAGE_DB_SECONDES = 60
 @app.before_request
 def _absorber_reveil_neon():
     import time
-    if request.endpoint == 'static':
+    if request.endpoint in (None, 'static', 'health'):
         return
     maintenant = time.time()
     if maintenant - _dernier_sondage_db_ok[0] < SEUIL_RESONDAGE_DB_SECONDES:
@@ -134,9 +134,23 @@ def _absorber_reveil_neon():
             db.session.rollback()
             if tentative < 2:
                 time.sleep(0.8 * (tentative + 1))
-    # Après 3 échecs, la requête suit son cours normalement — si Neon est
-    # réellement injoignable (pas juste en train de se réveiller), la route
-    # affichera l'erreur habituelle, jamais masquée indéfiniment.
+    # ⭐ Toujours en échec après 3 tentatives : incident réel vécu côté GHP
+    # le 2026-09-30 (réveil du compute Neon resté bloqué ~45 min au lieu de
+    # quelques secondes) — un 500 brut en pleine démo donne l'impression
+    # que tout est cassé. On affiche à la place une page qui dit clairement
+    # "reconnexion en cours" et se rafraîchit toute seule (ou l'équivalent
+    # JSON pour les appels /api/...), plutôt que de laisser la route réelle
+    # planter avec une erreur générique. Dès que la base répond de nouveau,
+    # le prochain sondage (ci-dessus) réussit et tout redevient normal.
+    accept = request.headers.get('Accept', '')
+    veut_json = request.path.startswith('/api/') or 'application/json' in accept
+    if veut_json:
+        return jsonify({
+            'success': False,
+            'erreur': 'reconnexion_en_cours',
+            'message': "Reconnexion à la base de données en cours, réessayez dans un instant."
+        }), 503
+    return render_template('reconnexion.html'), 503
 
 
 # ⭐ a_acces() (utils/permissions.py) utilisable directement dans les

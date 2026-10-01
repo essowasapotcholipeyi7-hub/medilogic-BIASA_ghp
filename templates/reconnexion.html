@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reconnexion en cours...</title>
+    <meta http-equiv="refresh" content="5">
+    <style>
+        body {
+            font-family: -apple-system, 'Segoe UI', Arial, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            text-align: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .box { max-width: 420px; }
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid #334155;
+            border-top-color: #38bdf8;
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        h1 { font-size: 1.25rem; margin-bottom: 8px; }
+        p { color: #94a3b8; font-size: 0.95rem; line-height: 1.5; }
+        button {
+            margin-top: 16px;
+            background: #38bdf8;
+            color: #0f172a;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.95rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <div class="spinner"></div>
+        <h1>Reconnexion au serveur en cours...</h1>
+        <p>Le service redémarre après une période d'inactivité. Cette page se rafraîchit automatiquement dans quelques secondes.</p>
+        <button onclick="location.reload()">Réessayer maintenant</button>
+    </div>
+</body>
+</html>
