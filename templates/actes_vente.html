@@ -1197,6 +1197,14 @@ function ajouterActeDepuisDonnees(acte, quantite, medecinId, medecinNom, medecin
     // 🔥 UNIQUEMENT SI PATIENT ASSURÉ ET STATUT EP
     if (isAMU && statutActe === 'EP') {
         if (!confirm('⚠️ ENTENTE PRÉALABLE (EP)\n\nL\'acte "' + acteNom + '" est sous Entente Préalable.\n\nAvez-vous reçu un accord écrit de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.')) {
+            // ⭐ Patron : "si on sélectionne un acte [...] qui nécessite une EP
+            // que ça nous propose si on veut remplir l'EP [...] et que le
+            // patient [...] ses identifiants soient remplis en même temps
+            // avec son régime d'amu" — patient_id suffit : la page EP
+            // pré-remplit déjà le régime depuis patient.type_assurance.
+            if (confirm("Voulez-vous remplir l'Entente Préalable maintenant pour ce patient ?")) {
+                window.open('/amu/entente-prealable?patient_id=' + patientId, '_blank');
+            }
             return;  // Bloque l'ajout
         }
     }
