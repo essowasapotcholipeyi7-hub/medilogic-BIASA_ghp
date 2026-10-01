@@ -1402,12 +1402,29 @@ function afficherAlerteScan(message, estErreur) {
 (function() {
     const champ = document.getElementById('champScannerProduit');
     if (!champ) return;
-    champ.addEventListener('keydown', function(e) {
-        if (e.key !== 'Enter') return;
-        e.preventDefault();
+    let debounceScanProduit = null;
+    const soumettreScanProduit = () => {
+        clearTimeout(debounceScanProduit);
         const code = champ.value.trim();
         champ.value = '';
         if (code) ajouterProduitParScan(code);
+    };
+    champ.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        soumettreScanProduit();
+    });
+    // ⭐ Certaines douchettes/apps de scan n'envoient PAS de touche Entrée
+    // après le code (réglage absent ou différent selon l'appareil) — sans
+    // ce filet de sécurité, il fallait cliquer manuellement pour valider
+    // (signalé par le patron). Dès que la frappe s'arrête pendant 500ms
+    // (un scan complet prend quelques dizaines de ms, largement écoulées ;
+    // une saisie manuelle n'est interrompue que si on marque une vraie
+    // pause), on valide automatiquement.
+    champ.addEventListener('input', function() {
+        clearTimeout(debounceScanProduit);
+        if (champ.value.trim().length < 4) return;
+        debounceScanProduit = setTimeout(soumettreScanProduit, 500);
     });
     const refocaliser = () => { if (document.activeElement !== champ) champ.focus(); };
     refocaliser();
