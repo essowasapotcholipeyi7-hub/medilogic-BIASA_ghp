@@ -1253,11 +1253,30 @@
        ne suffisait pas, <body> lui-même forçait déjà au moins une page
        pleine avant même d'arriver à .app-wrapper. Patron, après le premier
        correctif : "ça affiche toujours deux pages à imprimer". */
+    /* ⭐⭐ La photo de fond (body { background: url(...) !important }, tout en
+       haut de ce fichier) gagnait toujours contre cette règle faute de
+       !important ici — sur TOUTE page imprimée de l'appli, pas seulement
+       reçu/facture. Combinée au fond blanc translucide + flou de
+       .main-content ci-dessous (backdrop-filter), elle transparaissait en
+       bas de page comme une "ombre" derrière le contenu — patron : "le
+       bord du bas il y a toujours l'ombre derriere". */
     body {
-        background: white;
+        background: white !important;
         margin: 0;
         padding: 0;
         min-height: 0 !important;
+    }
+
+    /* ⭐⭐ .main-content a son propre box-shadow + fond translucide flouté
+       (backdrop-filter) pour l'effet "verre dépoli" à l'écran — jamais
+       réinitialisés pour l'impression, d'où l'ombre persistante même après
+       avoir aplati .card/.container. */
+    .main-content {
+        box-shadow: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        background: white !important;
+        border-radius: 0 !important;
     }
 
     /* ⭐ Cacher le watermark sur toutes les impressions */

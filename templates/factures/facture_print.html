@@ -342,23 +342,35 @@
                 border-color: black !important;
             }
             
+            /* ⭐ Pas besoin de la bande bleu sombre sur le ticket 80mm (patron :
+               "on a pas besoin de l'entete bleue sombre sur les impression
+               de format ticket 80mm") — redevient du texte simple en noir,
+               comme le reste du ticket, sans bande de couleur ni padding
+               qui prend de la place sur un petit rouleau. */
             .recu-header {
-                background: black !important;
-                -webkit-print-color-adjust: exact !important;
-                print-color-adjust: exact !important;
+                background: white !important;
+                color: black !important;
+                padding: 3px 0 !important;
+                margin: 0 0 5px 0 !important;
             }
-            
+
             .recu-header .logo-area h1 {
-                color: white !important;
+                color: black !important;
             }
-            
+
             .recu-header .badge-rdv {
-                color: white !important;
-                border-color: white !important;
+                background: transparent !important;
+                color: black !important;
+                border: none !important;
+                padding: 0 !important;
             }
-            
+
             .recu-header .sub-info span {
-                color: white !important;
+                color: black !important;
+            }
+
+            .recu-header .logo-area img {
+                background: transparent !important;
             }
             
             /* Tableaux en noir */
@@ -509,6 +521,20 @@
                 print-color-adjust: exact !important;
                 color-adjust: exact !important;
                 background: #1a2a6c !important;
+            }
+
+            /* ⭐ Patron : "trop de couleur sur les impressions reçu et
+               factures, laisse l'entete seule en couleur bleue sombre...
+               et le net à payer en rouge, le reste en noir pure, c'est
+               plus jolie comme xa". */
+            body, div, p, span, strong, b, td, th, li, h1, h2, h3, h4, h5, h6 {
+                color: black !important;
+            }
+            .recu-header, .recu-header * {
+                color: white !important;
+            }
+            .ligne.total, .ligne.total span {
+                color: #dc3545 !important;
             }
         }
         

@@ -92,18 +92,6 @@
             background: white !important;
         }
 
-        /* ⭐ En-tête bleu sombre forcé en noir pur sur le ticket 80mm (même
-           convention que factures/facture_print.html) : le reste du bloc
-           ci-dessus force déjà tout en noir/gras via "* {color:black}", mais
-           le FOND bleu lui-même doit rester visible (texte blanc dessus). */
-        .recu-header {
-            background: black !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-        }
-        .recu-header * {
-            color: white !important;
-        }
     }
 
     @media screen {
@@ -159,6 +147,23 @@
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
             background: #1a2a6c !important;
+        }
+
+        /* ⭐ Patron : "trop de couleur sur les impressions reçu et factures,
+           laisse l'entete seule en couleur bleue sombre... et le net à
+           payer en rouge, le reste en noir pure, c'est plus jolie comme xa"
+           — tout le texte repasse en noir (prise en charge, badges
+           "exceptionnel", catégories du récapitulatif...), sauf l'en-tête
+           (reste blanc sur fond bleu) et le montant net à payer (reste
+           rouge). */
+        body, div, p, span, strong, b, td, th, li, h1, h2, h3, h4, h5, h6 {
+            color: black !important;
+        }
+        .recu-header, .recu-header * {
+            color: white !important;
+        }
+        .montant-net-a-payer {
+            color: #dc3545 !important;
         }
     }
 </style>
@@ -279,6 +284,46 @@
         <div class="card shadow-lg" id="factureContenu">
             <div class="card-body" style="font-family: 'Segoe UI', Arial, sans-serif;">
 
+                {% if format == '80mm' %}
+                <!-- ⭐ Ticket 80mm : ancien en-tête d'origine, inchangé
+                     (patron : "remet l'ancien format ticket à sa place en
+                     tenant juste compte detaille et cumulé") — seul le
+                     bandeau bleu sombre ajouté pour l'A4 ne s'applique pas
+                     ici, le ticket garde exactement sa mise en page
+                     d'avant. -->
+                <div class="row" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; margin: -20px -20px 20px -20px; padding: 20px; border-radius: 10px 10px 0 0;">
+                    <div class="col-7">
+                        <div class="d-flex align-items-center gap-3">
+                            {% if structure_logo %}
+                            <img src="{{ structure_logo }}" alt="Logo" style="max-height: 80px; max-width: 150px; background: white; padding: 5px; border-radius: 8px;">
+                            {% endif %}
+                            <div>
+                                <h2 style="margin: 0;">{{ structure_nom or "SSoftone V10" }}</h2>
+                                <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.9;">
+                                    <i class="fas fa-map-marker-alt"></i> {{ structure_adresse or "" }}<br>
+                                    <i class="fas fa-phone"></i> {{ structure_telephone or "" }} |
+                                    <i class="fas fa-envelope"></i> {{ structure_email or "" }}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-5 text-end">
+                        <h1 style="font-size: 18px; margin: 0;">FACTURE</h1>
+                        {% if type_vente == 'pharmacie' or type_vente == 'pharma' %}
+                        <p style="margin: 1px 0 0 0; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;">PHARMACIE</p>
+                        {% elif type_vente == 'mixte' %}
+                        <p style="margin: 1px 0 0 0; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;">ACTES & PHARMACIE</p>
+                        {% elif type_vente == 'actes' %}
+                        <p style="margin: 1px 0 0 0; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;">ACTES MÉDICAUX</p>
+                        {% endif %}
+                        {% if mode_detail == 'cumule' %}
+                        <p style="margin: 1px 0 0 0; font-size: 11px; opacity: 0.9;">Récapitulatif par catégorie</p>
+                        {% endif %}
+                        <p style="margin: 5px 0 0 0;">N° {{ "%06d" % numero_local_vente }}</p>
+                        <p>Date: {{ date_actuelle or "" }}</p>
+                    </div>
+                </div>
+                {% else %}
                 <!-- En-tête de marque (bleu sombre, même charte que le reste
                      de l'app — patron : "aussi sur l'impression je veux
                      l'entete bleue sombre") -->
@@ -290,9 +335,8 @@
                             {% endif %}
                             <div>
                                 <h1>{{ structure_nom or "SSoftone V10" }}</h1>
-                                {% if structure_entete_a4 and format != '80mm' %}
-                                <!-- ⭐ Texte d'en-tête A4 (spécialités/labo...) — jamais sur
-                                     80mm (ticket de caisse), voir structure_entete_a4 (app.py). -->
+                                {% if structure_entete_a4 %}
+                                <!-- ⭐ Texte d'en-tête A4 (spécialités/labo...). -->
                                 <p style="margin: 2px 0 0 0; font-size: 10px; opacity: 0.9; white-space: pre-line;">{{ structure_entete_a4 }}</p>
                                 {% endif %}
                             </div>
@@ -322,6 +366,7 @@
                         {% if structure_email %}<span>Email: {{ structure_email }}</span>{% endif %}
                     </div>
                 </div>
+                {% endif %}
 
 <!-- ===== INFOS PATIENT AVEC DOUBLE ASSURANCE ===== -->
 <div class="mb-3">
@@ -463,7 +508,7 @@
     
     <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:8px; padding-top:8px; border-top:2px solid #ddd;">
         <span>NET À PAYER :</span>
-        <span style="color:#dc3545;">{{ net_a_payer|default(0)|round(0)|int }} FCFA</span>
+        <span class="montant-net-a-payer" style="color:#dc3545;">{{ net_a_payer|default(0)|round(0)|int }} FCFA</span>
     </div>
 </div>
                 <!-- Mode de paiement -->

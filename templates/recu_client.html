@@ -134,16 +134,6 @@
             display: none !important;
         }
 
-        /* ⭐ En-tête bleu sombre forcé en noir pur sur le ticket 80mm (même
-           convention que factures/facture_print.html). */
-        .recu-header {
-            background: black !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-        }
-        .recu-header * {
-            color: white !important;
-        }
     }
 
     @media screen {
@@ -197,6 +187,18 @@
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
             background: #1a2a6c !important;
+        }
+
+        /* ⭐ Patron : "trop de couleur... laisse l'entete seule en bleu
+           sombre... et le net à payer en rouge, le reste en noir pure". */
+        body, div, p, span, strong, b, td, th, li, h1, h2, h3, h4, h5, h6 {
+            color: black !important;
+        }
+        .recu-header, .recu-header * {
+            color: white !important;
+        }
+        .montant-net-a-payer {
+            color: #dc3545 !important;
         }
     }
 </style>
@@ -295,6 +297,42 @@
     <div class="col-md-6">
         <div class="card" id="recuContenu">
             <div class="card-body" style="font-family: 'Segoe UI', Arial, sans-serif;">
+                {% if format == '80mm' %}
+                <!-- ⭐ Ticket 80mm : ancien en-tête d'origine, inchangé
+                     (patron : "remet l'ancien format ticket à sa place en
+                     tenant juste compte detaille et cumulé"). -->
+                <div class="row" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; margin: -20px -20px 15px -20px; padding: 15px; border-radius: 10px 10px 0 0;">
+                    <div class="col-7">
+                        <div class="d-flex align-items-center gap-3">
+                            {% if structure_logo %}
+                            <img src="{{ structure_logo }}" alt="Logo" style="max-height: 60px; max-width: 120px; background: white; padding: 4px; border-radius: 6px;">
+                            {% endif %}
+                            <div>
+                                <h4 style="margin: 0; font-size: 14px;">{{ structure_nom or "SSoftone v10" }}</h4>
+                                <p style="margin: 3px 0 0 0; font-size: 9px; opacity: 0.9; white-space: pre-line;">
+                                    {{ structure_adresse or "" }}
+                                    Tél: {{ structure_telephone or "" }} | Email: {{ structure_email or "" }}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-5 text-end">
+                        <h2 style="font-size: 14px; margin: 0;">REÇU</h2>
+                        {% if mode_detail == 'cumule' %}
+                        <p style="margin: 1px 0 0 0; font-size: 9px; opacity: 0.9;">Récapitulatif par catégorie</p>
+                        {% endif %}
+                        {% if type_vente == 'pharmacie' or type_vente == 'pharma' %}
+                        <p style="margin: 1px 0 0 0; font-size: 10px; font-weight: 600; letter-spacing: 0.5px;">PHARMACIE</p>
+                        {% elif type_vente == 'mixte' %}
+                        <p style="margin: 1px 0 0 0; font-size: 10px; font-weight: 600; letter-spacing: 0.5px;">ACTES & PHARMACIE</p>
+                        {% elif type_vente == 'actes' %}
+                        <p style="margin: 1px 0 0 0; font-size: 10px; font-weight: 600; letter-spacing: 0.5px;">ACTES MÉDICAUX</p>
+                        {% endif %}
+                        <p style="margin: 2px 0 0 0; font-size: 10px;">N° {{ "%06d" % numero_local_vente }}</p>
+                        <p style="font-size: 9px;">Date: {{ date_actuelle or "" }}</p>
+                    </div>
+                </div>
+                {% else %}
                 <!-- En-tête de marque (bleu sombre, même charte que le reste
                      de l'app — patron : "aussi sur l'impression je veux
                      l'entete bleue sombre") -->
@@ -306,9 +344,8 @@
                             {% endif %}
                             <div>
                                 <h1>{{ structure_nom or "SSoftone v10" }}</h1>
-                                {% if structure_entete_a4 and format != '80mm' %}
-                                <!-- ⭐ Texte d'en-tête A4 (spécialités/labo...) — jamais sur
-                                     80mm (ticket de caisse), voir structure_entete_a4 (app.py). -->
+                                {% if structure_entete_a4 %}
+                                <!-- ⭐ Texte d'en-tête A4 (spécialités/labo...). -->
                                 <p style="margin: 2px 0 0 0; font-size: 8px; opacity: 0.9; white-space: pre-line;">{{ structure_entete_a4 }}</p>
                                 {% endif %}
                             </div>
@@ -337,6 +374,7 @@
                         Tél: {{ structure_telephone or "" }} | Email: {{ structure_email or "" }}
                     </div>
                 </div>
+                {% endif %}
 
 <!-- INFOS PATIENT -->
 <div style="font-size: 9px; margin-bottom: 8px; padding: 4px 8px; background: #f8f9fa; border-radius: 4px;">
@@ -530,7 +568,7 @@
     <!-- NET À PAYER -->
     <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:6px; padding-top:6px; border-top:2px solid #ddd;">
         <span>NET À PAYER :</span>
-        <span style="color:#dc3545;">{{ net_a_payer|default(0)|round(0)|int }} FCFA</span>
+        <span class="montant-net-a-payer" style="color:#dc3545;">{{ net_a_payer|default(0)|round(0)|int }} FCFA</span>
     </div>
     
     <!-- PAIEMENT -->
