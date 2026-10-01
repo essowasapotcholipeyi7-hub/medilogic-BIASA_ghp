@@ -38,6 +38,8 @@ MOYENS_PAIEMENT_LABELS = {'mixx': 'Mixx by Yas', 'moov': 'Moov Money'}
 from models import RendezVous
 from models import Medecin, Patient, Structure, DemandeEntentePrealable
 from utils.remplissage_pdf_amu import remplir_entente_prealable
+from models import DemandeTpc, MedicamentTpcMemorise, LieuResidenceMemorise
+from utils.remplissage_pdf_tpc import remplir_tpc
 from datetime import datetime, date, timedelta
 from routes.protocoles_routes import protocoles_bp
 from routes.journal_routes import journal_bp
@@ -1240,6 +1242,421 @@ def api_amu_ep_definitive(demande_id):
     demande.definitive_le = datetime.utcnow()
     db.session.commit()
     return jsonify({'success': True, 'nombre_nuitees': nb_nuitees})
+
+
+# ============================================================
+# TPC (Traitement des Pathologies Chroniques) — même principe que l'EP
+# ci-dessus (patron, 2026-10-01 : "attaque les TPC, même logique que les
+# EP"). Voir DemandeTpc (models.py) pour le cycle de vie identification ->
+# renouvellement -> modification/rectification, et
+# utils/remplissage_pdf_tpc.py pour le remplissage des fiches. La
+# recherche de patients AMU réutilise telle quelle
+# /api/amu/entente-prealable/patients (même filtre régime exact) — pas de
+# duplication pour un besoin identique.
+# ============================================================
+
+@app.route('/amu/tpc')
+@login_required
+def page_amu_tpc():
+    if not a_acces('tpc'):
+        flash('Accès non autorisé', 'danger')
+        return redirect(url_for('dashboard'))
+    structure_id = session.get('structure_id')
+    medecins_liste = [
+        {'id': m.id, 'nom_complet': m.get_nom_complet()}
+        for m in Medecin.query.filter_by(structure_id=structure_id, actif=True).order_by(Medecin.nom).all()
+    ]
+    demandes = DemandeTpc.query.filter_by(structure_id=structure_id) \
+        .order_by(DemandeTpc.created_at.desc()).limit(200).all()
+    patients_par_id = {}
+    medecins_par_id = {m['id']: m['nom_complet'] for m in medecins_liste}
+    if demandes:
+        patients = Patient.query.filter(
+            Patient.id.in_([d.patient_id for d in demandes]), Patient.structure_id == structure_id
+        ).all()
+        patients_par_id = {p.id: p for p in dechiffrer_patients_orm(patients)}
+    peut_approuver = session.get('role') in ('medecin', 'admin') or session.get('is_admin')
+
+    demandes_detail = []
+    for d in demandes:
+        p = patients_par_id.get(d.patient_id)
+        demandes_detail.append({
+            'id': d.id,
+            'statut': d.statut,
+            'type_amu': d.type_amu,
+            'type_demande': d.type_demande,
+            'dossier_id': d.dossier_id,
+            'date_prescription': d.date_prescription.strftime('%Y-%m-%d') if d.date_prescription else '',
+            'medecin_id': d.medecin_id,
+            'medecin_nom': medecins_par_id.get(d.medecin_id, '—'),
+            'patient': {
+                'id': p.id, 'nom': p.nom, 'prenom': p.prenom, 'telephone': p.telephone,
+                'numero_assure': p.numero_assure, 'type_assurance': p.type_assurance,
+            } if p else None,
+            'ville_residence': d.ville_residence or '',
+            'sexe': d.sexe or '',
+            'profession': d.profession or '',
+            'affections_ald': d.affections_ald or [],
+            'poids': d.poids or '', 'taille': d.taille or '', 'imc': d.imc or '',
+            'ta_bg': d.ta_bg or '', 'ta_bd': d.ta_bd or '', 'etat_general': d.etat_general or '',
+            'resume_examen_physique': d.resume_examen_physique or '', 'autres_examen': d.autres_examen or '',
+            'examens_paracliniques': d.examens_paracliniques or [],
+            'traitements': d.traitements or [],
+            'comorbidites': d.comorbidites or [],
+            'date_prochain_rdv': d.date_prochain_rdv.strftime('%Y-%m-%d') if d.date_prochain_rdv else '',
+            'traitement_a_renouveler': d.traitement_a_renouveler,
+            'motif_modification': d.motif_modification or '',
+            'resultats_examens_effectues': d.resultats_examens_effectues or '',
+            'numero_ancien_tpc': d.numero_ancien_tpc or '',
+            'cree_par_nom': d.cree_par_nom or '',
+            'motif_refus': d.motif_refus or '',
+            'imprime_le': bool(d.imprime_le),
+        })
+
+    return render_template(
+        'amu_tpc.html',
+        medecins_liste=medecins_liste,
+        demandes=demandes,
+        patients_par_id=patients_par_id,
+        medecins_par_id=medecins_par_id,
+        demandes_detail=demandes_detail,
+        type_amu_labels=TYPE_AMU_LABELS,
+        peut_approuver=peut_approuver,
+        medicaments_memorises=MedicamentTpcMemorise.connues_pour(structure_id),
+        lieux_residence_memorises=LieuResidenceMemorise.connues_pour(structure_id),
+    )
+
+
+@app.route('/api/amu/tpc/dossiers')
+@login_required
+def api_amu_tpc_dossiers():
+    """Recherche des dossiers TPC "identification" déjà existants pour un
+    patient — patron : "il suffit qu'on cherche son dossier et choisisse
+    renouvellement" — alimente le sélecteur de dossier pour le
+    renouvellement/la modification."""
+    if not a_acces('tpc'):
+        return jsonify({'data': [], 'error': 'Accès non autorisé'}), 403
+    structure_id = session.get('structure_id')
+    patient_id = request.args.get('patient_id', type=int)
+    if not patient_id:
+        return jsonify({'data': []})
+    # ⭐ 'identification' (CNSS/TNS) OU 'rectification' ayant elle-même
+    # démarré un dossier (INAM, dossier_id == son propre id — voir
+    # api_amu_tpc_creer) : une 2e rectification du même patient peut ainsi
+    # se rattacher à la précédente pour garder l'historique.
+    dossiers = DemandeTpc.query.filter(
+        DemandeTpc.structure_id == structure_id, DemandeTpc.patient_id == patient_id,
+        db.or_(DemandeTpc.type_demande == 'identification',
+               db.and_(DemandeTpc.type_demande == 'rectification', DemandeTpc.dossier_id == DemandeTpc.id)),
+    ).order_by(DemandeTpc.created_at.desc()).all()
+    return jsonify({'data': [
+        {
+            'id': d.id, 'statut': d.statut, 'type_amu': d.type_amu, 'medecin_id': d.medecin_id,
+            'date_prescription': d.date_prescription.strftime('%d/%m/%Y') if d.date_prescription else '',
+            'affections': ', '.join(a.get('affection', '') for a in (d.affections_ald or []) if a.get('affection')),
+        } for d in dossiers
+    ]})
+
+
+@app.route('/api/amu/tpc/dossier/<int:dossier_id>')
+@login_required
+def api_amu_tpc_dossier_detail(dossier_id):
+    """Détail d'un dossier pour pré-remplir renouvellement/modification —
+    le traitement proposé par défaut est celui de la demande la PLUS
+    RÉCENTE du dossier (identification ou dernière modification/
+    renouvellement), pas toujours l'identification d'origine, pour
+    refléter le traitement réellement en cours. Renvoie aussi
+    l'historique complet (patron : "on doit voir l'historique des
+    renouvellements/modifications aussi")."""
+    if not a_acces('tpc'):
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    structure_id = session.get('structure_id')
+    # ⭐ 'identification' (CNSS/TNS) ou 'rectification' racine (INAM, voir
+    # api_amu_tpc_dossiers ci-dessus) — jamais un dossier_id qui ne pointe
+    # pas vers lui-même, pour ne jamais ouvrir le détail d'une simple
+    # ligne d'historique comme si c'était le dossier racine.
+    dossier = DemandeTpc.query.filter(
+        DemandeTpc.id == dossier_id, DemandeTpc.structure_id == structure_id, DemandeTpc.dossier_id == dossier_id,
+        DemandeTpc.type_demande.in_(['identification', 'rectification']),
+    ).first_or_404()
+    toutes = DemandeTpc.query.filter_by(structure_id=structure_id, dossier_id=dossier_id) \
+        .order_by(DemandeTpc.created_at.desc()).all()
+    dernier = toutes[0] if toutes else dossier
+    historique = [d for d in toutes if d.id != dossier_id]
+
+    return jsonify({
+        'success': True,
+        'dossier': {
+            'id': dossier.id, 'patient_id': dossier.patient_id, 'medecin_id': dossier.medecin_id,
+            'type_amu': dossier.type_amu, 'ville_residence': dernier.ville_residence or dossier.ville_residence or '',
+            'affections_ald': dossier.affections_ald or [], 'traitements': dernier.traitements or [],
+        },
+        'historique': [
+            {
+                'id': d.id, 'type_demande': d.type_demande, 'statut': d.statut,
+                'date_prescription': d.date_prescription.strftime('%d/%m/%Y') if d.date_prescription else '',
+                'motif_modification': d.motif_modification or '', 'motif_refus': d.motif_refus or '',
+                'imprime_le': bool(d.imprime_le),
+            } for d in historique
+        ],
+    })
+
+
+def _valider_champs_tpc(data, structure_id):
+    """Validation partagée création/modification TPC — même esprit que
+    _valider_champs_ep ci-dessus. Les champs attendus diffèrent largement
+    selon type_demande (voir DemandeTpc) : identification = examen
+    clinique complet ; renouvellement = juste la reconduction du
+    traitement ; modification/rectification = motif obligatoire +
+    nouveau traitement."""
+    patient = Patient.query.filter_by(id=data.get('patient_id'), structure_id=structure_id).first()
+    medecin = Medecin.query.filter_by(id=data.get('medecin_id'), structure_id=structure_id).first()
+    if not patient or not medecin:
+        return None, ('Patient ou médecin introuvable', 400)
+
+    type_amu = data.get('type_amu')
+    if type_amu not in ('amu_cnss', 'amu_tns', 'amu_inam'):
+        return None, ('Régime AMU invalide (CNSS, TNS ou INAM)', 400)
+    if patient.type_assurance != type_amu:
+        return None, (f"Ce patient n'est pas assuré {TYPE_AMU_LABELS.get(type_amu, type_amu)}", 400)
+
+    type_demande = data.get('type_demande')
+    # ⭐ Fiche d'identification INAM (grille d'examen détaillée) pas encore
+    # disponible dans l'application — voir utils/remplissage_pdf_tpc.py.
+    # Leur renouvellement se fait sur cette même fiche (patron), donc pas
+    # disponible non plus tant qu'elle n'est pas implémentée.
+    if type_amu == 'amu_inam':
+        types_valides = ('rectification',)
+    else:
+        types_valides = ('identification', 'renouvellement', 'modification')
+    if type_demande not in types_valides:
+        if type_amu == 'amu_inam' and type_demande in ('identification', 'renouvellement'):
+            return None, ("La fiche d'identification TPC INAM n'est pas encore disponible dans l'application.", 400)
+        return None, ('Type de demande TPC invalide', 400)
+
+    try:
+        date_prescription = datetime.strptime(data.get('date_prescription'), '%Y-%m-%d').date()
+    except (TypeError, ValueError):
+        return None, ('Date de prescription invalide', 400)
+
+    # ⭐ Renouvellement/modification pointent vers un dossier "identification"
+    # existant DE CE PATIENT — jamais un autre patient (revalidé ici, pas
+    # seulement côté recherche). La rectification INAM est un cas à part :
+    # l'identification TPC INAM n'étant pas encore implémentée (voir
+    # utils/remplissage_pdf_tpc.py), il n'existe jamais de dossier
+    # "identification" à rattacher — le patient a son TPC d'origine
+    # ailleurs (papier/INAM directement), référencé en texte libre via
+    # numero_ancien_tpc. Si un dossier_id est quand même fourni (2e
+    # rectification du même patient, choisie dans l'historique), on le
+    # rattache ; sinon la rectification démarre son propre "dossier".
+    dossier_id = None
+    if type_demande in ('renouvellement', 'modification'):
+        dossier = DemandeTpc.query.filter_by(
+            id=data.get('dossier_id'), structure_id=structure_id, patient_id=patient.id, type_demande='identification'
+        ).first()
+        if not dossier:
+            return None, ('Dossier TPC introuvable pour ce patient — faites la fiche d\'identification en premier', 400)
+        dossier_id = dossier.id
+    elif type_demande == 'rectification' and data.get('dossier_id'):
+        dossier = DemandeTpc.query.filter_by(
+            id=data.get('dossier_id'), structure_id=structure_id, patient_id=patient.id,
+        ).filter(DemandeTpc.type_demande.in_(['identification', 'rectification'])).first()
+        if dossier:
+            dossier_id = dossier.id
+
+    traitements = [
+        {'code_ald': (l.get('code_ald') or '').strip(), 'medicament': (l.get('medicament') or '').strip(),
+         'forme_dosage': (l.get('forme_dosage') or '').strip(), 'posologie': (l.get('posologie') or '').strip(),
+         'duree': (l.get('duree') or '').strip()}
+        for l in (data.get('traitements') or []) if (l.get('medicament') or '').strip()
+    ]
+    max_traitements = {'identification': 6, 'renouvellement': 4, 'modification': 6, 'rectification': 10}.get(type_demande, 6)
+    traitements = traitements[:max_traitements]
+    if not traitements:
+        return None, ('Ajoutez au moins un médicament', 400)
+
+    champs = {
+        'patient_id': patient.id, 'medecin_id': medecin.id, 'type_amu': type_amu,
+        'type_demande': type_demande, 'dossier_id': dossier_id,
+        'date_prescription': date_prescription, 'traitements': traitements,
+    }
+
+    if type_demande == 'identification':
+        affections = [
+            {'affection': (a.get('affection') or '').strip(), 'code_ald': (a.get('code_ald') or '').strip()}
+            for a in (data.get('affections_ald') or []) if (a.get('affection') or '').strip()
+        ][:4]
+        if not affections:
+            return None, ('Indiquez au moins une affection de longue durée (ALD)', 400)
+        examens = [
+            {'examen': (e.get('examen') or '').strip(), 'date': (e.get('date') or '').strip(), 'resultat': (e.get('resultat') or '').strip()}
+            for e in (data.get('examens_paracliniques') or []) if (e.get('examen') or '').strip()
+        ][:14]
+        comorbidites = [c.strip() for c in (data.get('comorbidites') or []) if c and c.strip()][:3]
+        date_rdv = None
+        if data.get('date_prochain_rdv'):
+            try:
+                date_rdv = datetime.strptime(data.get('date_prochain_rdv'), '%Y-%m-%d').date()
+            except (TypeError, ValueError):
+                date_rdv = None
+        champs.update({
+            'ville_residence': (data.get('ville_residence') or '').strip() or None,
+            'sexe': (data.get('sexe') or '').strip() or None,
+            'profession': (data.get('profession') or '').strip() or None,
+            'affections_ald': affections,
+            'poids': (data.get('poids') or '').strip() or None,
+            'taille': (data.get('taille') or '').strip() or None,
+            'imc': (data.get('imc') or '').strip() or None,
+            'ta_bg': (data.get('ta_bg') or '').strip() or None,
+            'ta_bd': (data.get('ta_bd') or '').strip() or None,
+            'etat_general': (data.get('etat_general') or '').strip() or None,
+            'resume_examen_physique': (data.get('resume_examen_physique') or '').strip() or None,
+            'autres_examen': (data.get('autres_examen') or '').strip() or None,
+            'examens_paracliniques': examens or None,
+            'comorbidites': comorbidites or None,
+            'date_prochain_rdv': date_rdv,
+        })
+    elif type_demande == 'renouvellement':
+        a_renouveler = data.get('traitement_a_renouveler')
+        champs['traitement_a_renouveler'] = bool(a_renouveler) if a_renouveler is not None else None
+        champs['ville_residence'] = (data.get('ville_residence') or '').strip() or None
+    else:  # modification (CNSS/TNS) / rectification (INAM)
+        motif = (data.get('motif_modification') or '').strip()
+        if not motif:
+            return None, ('Le motif de la modification est obligatoire', 400)
+        champs['motif_modification'] = motif
+        champs['resultats_examens_effectues'] = (data.get('resultats_examens_effectues') or '').strip() or None
+        champs['ville_residence'] = (data.get('ville_residence') or '').strip() or None
+        if type_demande == 'rectification':
+            champs['numero_ancien_tpc'] = (data.get('numero_ancien_tpc') or '').strip() or None
+
+    return champs, None
+
+
+@app.route('/api/amu/tpc', methods=['POST'])
+@login_required
+def api_amu_tpc_creer():
+    if not a_acces('tpc'):
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    structure_id = session.get('structure_id')
+    champs, erreur = _valider_champs_tpc(request.json or {}, structure_id)
+    if erreur:
+        return jsonify({'success': False, 'error': erreur[0]}), erreur[1]
+
+    demande = DemandeTpc(
+        structure_id=structure_id,
+        cree_par_id=session.get('user_id'),
+        cree_par_nom=session.get('user_name'),
+        **champs,
+    )
+    db.session.add(demande)
+    db.session.flush()  # ⭐ obtenir demande.id avant le commit, pour l'auto-référence dossier_id ci-dessous
+    # ⭐ Une identification démarre toujours son propre dossier. Une
+    # rectification INAM sans dossier_id (premier passage, pas de fiche
+    # d'identification dans l'appli) démarre aussi le sien, pour que
+    # d'éventuelles rectifications suivantes du même patient puissent s'y
+    # rattacher comme historique (voir _valider_champs_tpc).
+    if demande.type_demande == 'identification' or (demande.type_demande == 'rectification' and not demande.dossier_id):
+        demande.dossier_id = demande.id
+
+    # ⭐ Mémorisation pour suggestion rapide la prochaine fois (patron :
+    # "souvent c'est des médicaments qui ne sont pas dans la base [...]
+    # qu'on le propose la prochaine fois" + lieu de résidence).
+    for ligne in (demande.traitements or []):
+        if ligne.get('medicament'):
+            MedicamentTpcMemorise.memoriser(structure_id, ligne['medicament'])
+    if demande.ville_residence:
+        LieuResidenceMemorise.memoriser(structure_id, demande.ville_residence)
+
+    db.session.commit()
+    return jsonify({'success': True, 'id': demande.id})
+
+
+@app.route('/api/amu/tpc/<int:demande_id>/modifier', methods=['POST'])
+@login_required
+def api_amu_tpc_modifier(demande_id):
+    if not (session.get('role') in ('medecin', 'admin') or session.get('is_admin')):
+        return jsonify({'success': False, 'error': 'Réservé au médecin'}), 403
+    structure_id = session.get('structure_id')
+    demande = DemandeTpc.query.filter_by(id=demande_id, structure_id=structure_id).first_or_404()
+    if demande.statut != 'en_attente':
+        return jsonify({'success': False, 'error': 'Seule une demande en attente peut être modifiée'}), 400
+
+    champs, erreur = _valider_champs_tpc(request.json or {}, structure_id)
+    if erreur:
+        return jsonify({'success': False, 'error': erreur[0]}), erreur[1]
+    if champs.get('patient_id') != demande.patient_id:
+        return jsonify({'success': False, 'error': 'Le patient ne peut pas être changé après création'}), 400
+    # ⭐ Jamais changés depuis le formulaire de modification (comme
+    # hospitalisation_id sur l'EP) : le type de demande et le dossier
+    # d'origine sont fixés à la création.
+    champs.pop('type_demande', None)
+    champs.pop('dossier_id', None)
+    for cle, valeur in champs.items():
+        setattr(demande, cle, valeur)
+    db.session.commit()
+    return jsonify({'success': True, 'id': demande.id})
+
+
+@app.route('/api/amu/tpc/<int:demande_id>/approuver', methods=['POST'])
+@login_required
+def api_amu_tpc_approuver(demande_id):
+    if not (session.get('role') in ('medecin', 'admin') or session.get('is_admin')):
+        return jsonify({'success': False, 'error': 'Réservé au médecin'}), 403
+    demande = DemandeTpc.query.filter_by(id=demande_id, structure_id=session.get('structure_id')).first_or_404()
+    demande.statut = 'approuvee'
+    demande.approuve_par_id = session.get('user_id')
+    demande.approuve_par_nom = session.get('user_name')
+    demande.approuve_le = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+@app.route('/api/amu/tpc/<int:demande_id>/refuser', methods=['POST'])
+@login_required
+def api_amu_tpc_refuser(demande_id):
+    if not (session.get('role') in ('medecin', 'admin') or session.get('is_admin')):
+        return jsonify({'success': False, 'error': 'Réservé au médecin'}), 403
+    demande = DemandeTpc.query.filter_by(id=demande_id, structure_id=session.get('structure_id')).first_or_404()
+    data = request.json or {}
+    demande.statut = 'refusee'
+    demande.motif_refus = (data.get('motif_refus') or '').strip() or None
+    demande.approuve_par_id = session.get('user_id')
+    demande.approuve_par_nom = session.get('user_name')
+    demande.approuve_le = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+@app.route('/amu/tpc/<int:demande_id>/imprimer')
+@login_required
+def page_amu_tpc_imprimer(demande_id):
+    if not a_acces('tpc'):
+        flash('Accès non autorisé', 'danger')
+        return redirect(url_for('dashboard'))
+    structure_id = session.get('structure_id')
+    demande = DemandeTpc.query.filter_by(id=demande_id, structure_id=structure_id).first_or_404()
+    if demande.statut != 'approuvee':
+        flash("Cette demande TPC doit d'abord être approuvée par un médecin avant impression", 'warning')
+        return redirect(url_for('page_amu_tpc'))
+
+    patient = dechiffrer_patients_orm(
+        Patient.query.filter_by(id=demande.patient_id, structure_id=structure_id).all()
+    )[0]
+    medecin = Medecin.query.filter_by(id=demande.medecin_id, structure_id=structure_id).first()
+    code_formation_sanitaire = ParametrageAmuCnss.get_ou_creer(structure_id).code_prestataire
+
+    try:
+        pdf_bytes = remplir_tpc(demande, patient, medecin, code_formation_sanitaire)
+    except NotImplementedError as e:
+        flash(str(e), 'warning')
+        return redirect(url_for('page_amu_tpc'))
+
+    demande.imprime_le = datetime.utcnow()
+    db.session.commit()
+    return Response(pdf_bytes, mimetype='application/pdf', headers={
+        'Content-Disposition': f'inline; filename=tpc_{demande.type_demande}_{demande.id}.pdf'
+    })
 
 
 @app.route('/api/faq/poser', methods=['POST'])
@@ -20056,6 +20473,11 @@ def page_parametrage_amu_cnss():
         # ⭐ Sigle utilisé dans le numéro de facture recap AMU (CNSS/TNS/
         # INAM) — voir formater_numero_facture_amu.
         parametrage.sigle = request.form.get('sigle', '').strip()[:20]
+        # ⭐ Dépôt EP/TPC (patron : "numéro vert c'est 8323 avec possibilité
+        # de modifier ça") — affichés sur l'impression EP/TPC, jamais codés
+        # en dur dans les templates.
+        parametrage.whatsapp_depot = request.form.get('whatsapp_depot', '').strip()[:20]
+        parametrage.numero_vert = request.form.get('numero_vert', '').strip()[:20]
         db.session.commit()
         flash('Paramètres AMU-CNSS enregistrés', 'success')
         return redirect(url_for('page_parametrage_amu_cnss'))
@@ -20313,6 +20735,8 @@ def page_parametrage_amu_inam():
         regime = request.form.get('regime', '')
         parametrage.regime = regime if regime in ('ramo', 'school_amu', 'wezou', 'autres') else None
         parametrage.type_etablissement = request.form.get('type_etablissement', '').strip()
+        parametrage.whatsapp_depot = request.form.get('whatsapp_depot', '').strip()[:20]
+        parametrage.numero_vert = request.form.get('numero_vert', '').strip()[:20]
         db.session.commit()
         flash('Paramètres AMU-INAM enregistrés', 'success')
         return redirect(url_for('page_parametrage_amu_inam'))

@@ -1,0 +1,719 @@
+{% extends "base.html" %}
+
+{% block title %}TPC — Traitement des Pathologies Chroniques{% endblock %}
+
+{% block extra_css %}
+<style>
+    .tpc-hero {
+        background: linear-gradient(135deg, #0A3D5C, #7C3AED);
+        color: white;
+        border-radius: 14px;
+        padding: 24px 28px;
+        margin-bottom: 22px;
+    }
+    .tpc-hero h4 { font-weight: 700; margin-bottom: 4px; }
+    .tpc-hero p { opacity: .9; margin-bottom: 0; }
+
+    .tpc-card {
+        border: 1px solid #e3e8ec;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+        background: white;
+    }
+    .tpc-card h6 { font-weight: 700; color: #0A3D5C; margin-bottom: 14px; }
+
+    #patientResultats, #dossierResultats {
+        position: relative;
+        z-index: 20;
+        max-height: 220px;
+        overflow-y: auto;
+        border: 1px solid #e3e8ec;
+        border-radius: 8px;
+        background: white;
+        box-shadow: 0 6px 18px rgba(0,0,0,.08);
+        display: none;
+    }
+    .tpc-ligne {
+        display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+        padding: 8px 10px; border: 1px solid #e3e8ec; border-radius: 8px; margin-bottom: 6px;
+        font-size: 13px;
+    }
+    .tpc-ligne input { flex: 1; min-width: 100px; font-size: 13px; padding: 4px 8px; }
+
+    .tpc-badge-statut { font-size: 11px; padding: 4px 10px; border-radius: 999px; font-weight: 600; }
+    .tpc-badge-en_attente { background: #FCEEE0; color: #92400E; }
+    .tpc-badge-approuvee { background: #E7F6EE; color: #0B7C52; }
+    .tpc-badge-refusee { background: #FDECEC; color: #B42318; }
+    .tpc-badge-type { font-size: 10px; padding: 2px 8px; border-radius: 999px; background: #EEF3F5; color: #0A3D5C; margin-right: 3px; }
+
+    table.tpc-historique th { font-size: 12px; text-transform: uppercase; color: #51636D; white-space: nowrap; }
+    table.tpc-historique td { font-size: 13px; vertical-align: middle; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    <div class="tpc-hero">
+        <h4><i class="fas fa-prescription-bottle-medical me-2"></i>TPC — Traitement des Pathologies Chroniques</h4>
+        <p>Identification, renouvellement et modification du TPC — validés par un médecin, imprimés pour le patient.</p>
+    </div>
+
+    <div class="tpc-card">
+        <h6><i class="fas fa-plus-circle me-1"></i>Nouvelle demande</h6>
+        <form id="formTpc">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label small fw-semibold">Régime AMU</label>
+                    <select class="form-control" id="typeAmu" required onchange="changerRegime()">
+                        <option value="">— Choisir —</option>
+                        <option value="amu_cnss">AMU-CNSS</option>
+                        <option value="amu_tns">AMU-TNS</option>
+                        <option value="amu_inam">AMU-INAM</option>
+                    </select>
+                </div>
+                <div class="col-md-5 position-relative">
+                    <label class="form-label small fw-semibold">Patient (assuré de ce régime)</label>
+                    <input type="text" class="form-control" id="patientSearch" placeholder="Choisissez d'abord le régime..." autocomplete="off" disabled>
+                    <div id="patientResultats"></div>
+                    <div id="patientChoisiBloc" class="mt-2 small text-muted" style="display:none;"></div>
+                    <input type="hidden" id="patientId">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-semibold d-flex justify-content-between align-items-center">
+                        Médecin prescripteur
+                        {% if a_acces('medecins_activites') %}
+                        <a href="{{ url_for('gestion_medecins') }}" target="_blank" class="small"><i class="fas fa-user-md"></i> Gérer les médecins</a>
+                        {% endif %}
+                    </label>
+                    <select class="form-control" id="medecinId" required>
+                        <option value="">— Choisir —</option>
+                        {% for m in medecins_liste %}
+                        <option value="{{ m.id }}">{{ m.nom_complet }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label small fw-semibold">Type de demande</label>
+                    <select class="form-control" id="typeDemande" disabled onchange="changerTypeDemande()">
+                        <option value="">Choisissez d'abord le régime...</option>
+                    </select>
+                </div>
+                <div class="col-md-4" id="dossierWrapper" style="display:none;">
+                    <label class="form-label small fw-semibold">Dossier TPC du patient</label>
+                    <select class="form-control" id="dossierId" onchange="choisirDossier()">
+                        <option value="">— Choisir le dossier d'identification —</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-semibold">Date de prescription</label>
+                    <input type="date" class="form-control" id="datePrescription" required>
+                </div>
+            </div>
+
+            <hr class="my-3">
+
+            <!-- ===== HISTORIQUE DU DOSSIER CHOISI ===== -->
+            <div id="historiqueDossierBloc" style="display:none;" class="alert alert-light border mb-3">
+                <strong>Historique de ce dossier :</strong>
+                <div id="historiqueDossierListe" class="small mt-1"></div>
+            </div>
+
+            <!-- ===== IDENTIFICATION ===== -->
+            <div id="sectionIdentification" style="display:none;">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label small">Ville de résidence</label>
+                        <input type="text" class="form-control" id="villeResidence" list="listeLieuxResidence">
+                        <datalist id="listeLieuxResidence">
+                            {% for v in lieux_residence_memorises %}<option value="{{ v }}">{% endfor %}
+                        </datalist>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Sexe</label>
+                        <select class="form-control" id="sexe">
+                            <option value="">—</option>
+                            <option value="Masculin">Masculin</option>
+                            <option value="Féminin">Féminin</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Profession</label>
+                        <input type="text" class="form-control" id="profession">
+                    </div>
+                </div>
+
+                <label class="form-label small fw-semibold mt-3 mb-1">Affection(s) de longue durée (ALD) et code(s)</label>
+                <div id="lignesAld"></div>
+                <button type="button" class="btn btn-sm btn-outline-secondary mb-3" onclick="ajouterLigneAld()"><i class="fas fa-plus"></i> Ajouter une ALD</button>
+
+                <div class="row g-3">
+                    <div class="col-md-2"><label class="form-label small">Poids (Kg)</label><input type="text" class="form-control" id="poids"></div>
+                    <div class="col-md-2"><label class="form-label small">Taille (m)</label><input type="text" class="form-control" id="taille"></div>
+                    <div class="col-md-2"><label class="form-label small">IMC</label><input type="text" class="form-control" id="imc"></div>
+                    <div class="col-md-2"><label class="form-label small">TA — BG</label><input type="text" class="form-control" id="taBg"></div>
+                    <div class="col-md-2"><label class="form-label small">TA — BD</label><input type="text" class="form-control" id="taBd"></div>
+                    <div class="col-md-2"><label class="form-label small">Prochain RDV</label><input type="date" class="form-control" id="dateProchainRdv"></div>
+                </div>
+                <div class="mt-2">
+                    <label class="form-label small">État général</label>
+                    <input type="text" class="form-control" id="etatGeneral">
+                </div>
+                <div class="mt-2">
+                    <label class="form-label small">Résumé de l'examen physique (appareil(s) cible(s) de(s) ALD)</label>
+                    <textarea class="form-control" id="resumeExamenPhysique" rows="3"></textarea>
+                </div>
+                <div class="mt-2 mb-3">
+                    <label class="form-label small">Autres</label>
+                    <textarea class="form-control" id="autresExamen" rows="2"></textarea>
+                </div>
+
+                <label class="form-label small fw-semibold mb-1">Examens paracliniques (joindre les copies des résultats à l'impression)</label>
+                <div id="lignesExamens"></div>
+                <button type="button" class="btn btn-sm btn-outline-secondary mb-3" onclick="ajouterLigneExamen()"><i class="fas fa-plus"></i> Ajouter un examen</button>
+
+                <label class="form-label small fw-semibold mb-1">Comorbidités</label>
+                <div class="row g-2 mb-3">
+                    <div class="col-md-4"><input type="text" class="form-control" id="comorbidite0" placeholder="1."></div>
+                    <div class="col-md-4"><input type="text" class="form-control" id="comorbidite1" placeholder="2."></div>
+                    <div class="col-md-4"><input type="text" class="form-control" id="comorbidite2" placeholder="3."></div>
+                </div>
+            </div>
+
+            <!-- ===== RENOUVELLEMENT ===== -->
+            <div id="sectionRenouvellement" style="display:none;" class="mb-3">
+                <label class="form-label small fw-semibold d-block">Traitement à renouveler</label>
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="aRenouveler" id="aRenouvelerOui" value="oui" checked>
+                    <label class="form-check-label" for="aRenouvelerOui">OUI</label>
+                </div>
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="aRenouveler" id="aRenouvelerNon" value="non">
+                    <label class="form-check-label" for="aRenouvelerNon">NON</label>
+                </div>
+            </div>
+
+            <!-- ===== MODIFICATION / RECTIFICATION ===== -->
+            <div id="sectionModification" style="display:none;" class="mb-3">
+                <!-- ⭐ INAM uniquement : TPC d'origine souvent identifié hors
+                     de l'app (pas de fiche d'identification INAM ici) —
+                     texte libre, jamais un lien vers un dossier interne. -->
+                <div id="numeroAncienTpcWrapper" class="mb-2" style="display:none;">
+                    <label class="form-label small">N° Ancien TPC</label>
+                    <input type="text" class="form-control" id="numeroAncienTpc">
+                </div>
+                <label class="form-label small fw-semibold">Motif de la modification <span class="text-danger">*</span></label>
+                <textarea class="form-control" id="motifModification" rows="2" list="listeMotifsModification"></textarea>
+                <datalist id="listeMotifsModification"></datalist>
+                <label class="form-label small fw-semibold mt-2">Résultats des examens effectués</label>
+                <textarea class="form-control" id="resultatsExamensEffectues" rows="2"></textarea>
+            </div>
+
+            <!-- ===== TRAITEMENT (commun identification / renouvellement / modification) ===== -->
+            <div id="sectionTraitement" style="display:none;">
+                <label class="form-label small fw-semibold mb-1">Traitement (médicaments des ALD)</label>
+                <div id="lignesTraitements"></div>
+                <button type="button" class="btn btn-sm btn-outline-secondary mb-3" onclick="ajouterLigneTraitement()"><i class="fas fa-plus"></i> Ajouter un médicament</button>
+                <datalist id="listeMedicaments">
+                    {% for m in medicaments_memorises %}<option value="{{ m }}">{% endfor %}
+                </datalist>
+            </div>
+
+            <button type="submit" class="btn btn-primary mt-3" id="btnSubmitTpc" style="display:none;">
+                <i class="fas fa-save me-1"></i>Enregistrer la demande
+            </button>
+            <button type="button" id="annulerEditionTpcBtn" class="btn btn-outline-secondary mt-3" style="display:none;" onclick="annulerEditionTpc()">
+                Annuler la modification
+            </button>
+        </form>
+    </div>
+
+    <div class="tpc-card">
+        <h6><i class="fas fa-history me-1"></i>Historique</h6>
+        <div class="table-responsive">
+            <table class="table table-sm tpc-historique">
+                <thead>
+                    <tr>
+                        <th>Date création</th>
+                        <th>Patient</th>
+                        <th>Médecin</th>
+                        <th>Régime</th>
+                        <th>Type</th>
+                        <th>Statut</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for d in demandes %}
+                    {% set p = patients_par_id.get(d.patient_id) %}
+                    <tr>
+                        <td>{{ d.created_at.strftime('%d/%m/%Y %H:%M') if d.created_at else '' }}</td>
+                        <td>{{ (p.nom + ' ' + p.prenom) if p else ('Patient #' ~ d.patient_id) }}</td>
+                        <td>{{ medecins_par_id.get(d.medecin_id, '—') }}</td>
+                        <td>{{ type_amu_labels.get(d.type_amu, d.type_amu) }}</td>
+                        <td><span class="tpc-badge-type">{{ {'identification': 'Identification', 'renouvellement': 'Renouvellement', 'modification': 'Modification', 'rectification': 'Rectification'}.get(d.type_demande, d.type_demande) }}</span></td>
+                        <td><span class="tpc-badge-statut tpc-badge-{{ d.statut }}">
+                            {{ {'en_attente': 'En attente', 'approuvee': 'Approuvée', 'refusee': 'Refusée'}.get(d.statut, d.statut) }}
+                        </span></td>
+                        <td>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="voirDetailsTpc({{ d.id }})">
+                                <i class="fas fa-eye"></i> Détails
+                            </button>
+                            {% if d.statut == 'approuvee' %}
+                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('page_amu_tpc_imprimer', demande_id=d.id) }}" target="_blank">
+                                <i class="fas fa-print"></i> Imprimer
+                            </a>
+                            {% elif d.statut == 'refusee' %}
+                            <span class="small text-danger">{{ d.motif_refus or 'Refusée' }}</span>
+                            {% elif d.statut == 'en_attente' and peut_approuver %}
+                            <button type="button" class="btn btn-sm btn-outline-warning" onclick="modifierDemandeTpc({{ d.id }})">
+                                <i class="fas fa-pen"></i> Modifier
+                            </button>
+                            <button type="button" class="btn btn-sm btn-success" onclick="approuverDemandeTpc({{ d.id }})">
+                                <i class="fas fa-check"></i> Approuver
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="refuserDemandeTpc({{ d.id }})">
+                                <i class="fas fa-times"></i> Refuser
+                            </button>
+                            {% else %}
+                            <span class="small text-muted">En attente du médecin</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="7" class="text-muted text-center py-3">Aucune demande pour le moment.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="modal fade" id="modalDetailsTpc" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-eye me-1"></i>Détail de la demande</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="detailsTpcBody"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const DEMANDES_DETAIL = {{ demandes_detail|tojson|safe }};
+const TYPE_AMU_LABELS_JS = {{ type_amu_labels|tojson|safe }};
+let demandeEnEditionTpcId = null;
+let patientChoisiTpc = null;
+let lignesAld = [];
+let lignesExamens = [];
+let lignesTraitements = [];
+let dossierActuel = null;
+let debouncePatientTpc = null;
+
+function escapeHtml(valeur) {
+    return String(valeur ?? '').replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+}
+
+// ===================== RÉGIME → TYPE DE DEMANDE =====================
+const TYPES_DEMANDE_PAR_REGIME = {
+    amu_cnss: [['identification', 'Identification'], ['renouvellement', 'Renouvellement'], ['modification', 'Modification']],
+    amu_tns: [['identification', 'Identification'], ['renouvellement', 'Renouvellement'], ['modification', 'Modification']],
+    amu_inam: [['rectification', 'Rectification']],
+};
+
+function changerRegime() {
+    const regime = document.getElementById('typeAmu').value;
+    patientChoisiTpc = null;
+    document.getElementById('patientId').value = '';
+    document.getElementById('patientSearch').value = '';
+    document.getElementById('patientChoisiBloc').style.display = 'none';
+    document.getElementById('patientResultats').style.display = 'none';
+    const champ = document.getElementById('patientSearch');
+    champ.disabled = !regime;
+    champ.placeholder = regime ? "Rechercher nom, prénom ou téléphone..." : "Choisissez d'abord le régime...";
+
+    const selectType = document.getElementById('typeDemande');
+    selectType.disabled = !regime;
+    if (!regime) {
+        selectType.innerHTML = '<option value="">Choisissez d\'abord le régime...</option>';
+    } else {
+        selectType.innerHTML = '<option value="">— Choisir —</option>' +
+            TYPES_DEMANDE_PAR_REGIME[regime].map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+        if (regime === 'amu_inam') {
+            selectType.innerHTML += '<option value="identification" disabled>Identification (bientôt disponible)</option>';
+        }
+    }
+    changerTypeDemande();
+}
+
+function changerTypeDemande() {
+    const type = document.getElementById('typeDemande').value;
+    // ⭐ La rectification INAM n'exige pas de dossier existant (identification
+    // TPC INAM pas encore disponible — le TPC d'origine est souvent
+    // identifié hors de l'app) : sélecteur de dossier affiché mais
+    // optionnel (sert seulement à rattacher une 2e rectification du même
+    // patient à l'historique de la 1ère), jamais bloquant à la soumission.
+    document.getElementById('dossierWrapper').style.display = (type === 'renouvellement' || type === 'modification' || type === 'rectification') ? '' : 'none';
+    document.getElementById('numeroAncienTpcWrapper').style.display = (type === 'rectification') ? '' : 'none';
+    if (type === 'rectification') {
+        document.getElementById('dossierId').innerHTML = '<option value="">(optionnel) — Rattacher à une rectification précédente —</option>';
+    }
+    document.getElementById('historiqueDossierBloc').style.display = 'none';
+    if (type !== 'rectification') {
+        document.getElementById('dossierId').innerHTML = '<option value="">— Choisir le dossier d\'identification —</option>';
+    }
+    dossierActuel = null;
+
+    document.getElementById('sectionIdentification').style.display = (type === 'identification') ? '' : 'none';
+    document.getElementById('sectionRenouvellement').style.display = (type === 'renouvellement') ? '' : 'none';
+    document.getElementById('sectionModification').style.display = (type === 'modification' || type === 'rectification') ? '' : 'none';
+    document.getElementById('sectionTraitement').style.display = type ? '' : 'none';
+    document.getElementById('btnSubmitTpc').style.display = type ? '' : 'none';
+
+    if (type && type !== 'identification' && document.getElementById('patientId').value) {
+        chargerDossiersPatient();
+    }
+    if (type === 'identification' && !lignesAld.length) ajouterLigneAld();
+    if (type === 'identification' && !lignesExamens.length) ajouterLigneExamen();
+    if (!lignesTraitements.length) ajouterLigneTraitement();
+}
+
+// ===================== PATIENT =====================
+// ⭐ Ne jamais appeler changerRegime() ici (même bug déjà vécu sur l'EP) :
+// elle efface patientChoisiTpc/patientId/patientSearch, ce qui annulerait
+// la sélection qu'on est justement en train de poser. On met à jour
+// seulement ce qui dépend du régime, à la main.
+function appliquerPatientTpc(p) {
+    document.getElementById('typeAmu').value = p.type_assurance;
+    document.getElementById('patientSearch').disabled = false;
+    patientChoisiTpc = p;
+    document.getElementById('patientId').value = p.id;
+    document.getElementById('patientSearch').value = p.nom + ' ' + p.prenom;
+    document.getElementById('patientResultats').style.display = 'none';
+    const bloc = document.getElementById('patientChoisiBloc');
+    bloc.style.display = '';
+    bloc.innerHTML = `N° AMU : <strong>${escapeHtml(p.numero_assure) || '—'}</strong> · Tél : ${escapeHtml(p.telephone) || '—'}`;
+
+    document.getElementById('typeDemande').disabled = false;
+    document.getElementById('typeDemande').innerHTML = '<option value="">— Choisir —</option>' +
+        TYPES_DEMANDE_PAR_REGIME[p.type_assurance].map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+}
+
+document.getElementById('patientSearch').addEventListener('input', function() {
+    const q = this.value.trim();
+    const regime = document.getElementById('typeAmu').value;
+    clearTimeout(debouncePatientTpc);
+    patientChoisiTpc = null;
+    document.getElementById('patientId').value = '';
+    if (!regime || q.length < 2) { document.getElementById('patientResultats').style.display = 'none'; return; }
+    debouncePatientTpc = setTimeout(() => {
+        fetch('/api/amu/entente-prealable/patients?type_amu=' + encodeURIComponent(regime) + '&search=' + encodeURIComponent(q))
+            .then(r => r.json())
+            .then(data => {
+                const box = document.getElementById('patientResultats');
+                const liste = data.data || [];
+                if (!liste.length) {
+                    box.innerHTML = '<div class="list-group-item text-muted small p-2">Aucun patient AMU trouvé</div>';
+                    box.style.display = 'block';
+                    return;
+                }
+                box.innerHTML = liste.map(p => `
+                    <a href="#" class="list-group-item list-group-item-action p-2" onclick='appliquerPatientTpc(${escapeHtml(JSON.stringify(p))}); return false;'>
+                        <strong>${escapeHtml(p.nom)} ${escapeHtml(p.prenom)}</strong> — ${escapeHtml(p.telephone)} <span class="text-muted">(${escapeHtml(p.type_assurance)})</span>
+                    </a>`).join('');
+                box.style.display = 'block';
+            });
+    }, 300);
+});
+
+// ===================== DOSSIER (renouvellement / modification) =====================
+function chargerDossiersPatient() {
+    const patientId = document.getElementById('patientId').value;
+    if (!patientId) return;
+    fetch('/api/amu/tpc/dossiers?patient_id=' + patientId)
+        .then(r => r.json())
+        .then(data => {
+            const liste = data.data || [];
+            const select = document.getElementById('dossierId');
+            if (!liste.length) {
+                select.innerHTML = '<option value="">Aucun dossier d\'identification trouvé pour ce patient</option>';
+                return;
+            }
+            select.innerHTML = '<option value="">— Choisir le dossier d\'identification —</option>' +
+                liste.map(d => `<option value="${d.id}">#${d.id} — ${escapeHtml(d.affections) || 'sans ALD'} (${d.date_prescription})</option>`).join('');
+        });
+}
+
+function choisirDossier() {
+    const dossierId = document.getElementById('dossierId').value;
+    if (!dossierId) { dossierActuel = null; document.getElementById('historiqueDossierBloc').style.display = 'none'; return; }
+    fetch('/api/amu/tpc/dossier/' + dossierId)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { alert(data.error || 'Erreur'); return; }
+            dossierActuel = data.dossier;
+            document.getElementById('medecinId').value = data.dossier.medecin_id;
+            lignesTraitements = (data.dossier.traitements || []).map(l => ({...l}));
+            rendreLignesTraitements();
+
+            const hist = data.historique || [];
+            const blocHist = document.getElementById('historiqueDossierBloc');
+            if (hist.length) {
+                document.getElementById('historiqueDossierListe').innerHTML = hist.map(h => `
+                    <div>${h.date_prescription} — ${escapeHtml({'renouvellement':'Renouvellement','modification':'Modification','rectification':'Rectification'}[h.type_demande] || h.type_demande)}
+                    <span class="tpc-badge-statut tpc-badge-${h.statut}">${escapeHtml({'en_attente':'En attente','approuvee':'Approuvée','refusee':'Refusée'}[h.statut] || h.statut)}</span>
+                    ${h.motif_modification ? ' — <em>' + escapeHtml(h.motif_modification) + '</em>' : ''}</div>
+                `).join('');
+                blocHist.style.display = '';
+            } else {
+                blocHist.style.display = 'none';
+            }
+        });
+}
+
+// ===================== LIGNES ALD =====================
+function ajouterLigneAld() {
+    if (lignesAld.length >= 4) { alert('Maximum 4 ALD sur cette fiche.'); return; }
+    lignesAld.push({affection: '', code_ald: ''});
+    rendreLignesAld();
+}
+function retirerLigneAld(i) { lignesAld.splice(i, 1); rendreLignesAld(); }
+function majLigneAld(i, champ, valeur) { lignesAld[i][champ] = valeur; }
+function rendreLignesAld() {
+    document.getElementById('lignesAld').innerHTML = lignesAld.map((l, i) => `
+        <div class="tpc-ligne">
+            <input type="text" placeholder="Affection" value="${escapeHtml(l.affection)}" oninput="majLigneAld(${i}, 'affection', this.value)">
+            <input type="text" placeholder="Code ALD" style="max-width:120px;" value="${escapeHtml(l.code_ald)}" oninput="majLigneAld(${i}, 'code_ald', this.value)">
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="retirerLigneAld(${i})"><i class="fas fa-times"></i></button>
+        </div>`).join('');
+}
+
+// ===================== LIGNES EXAMENS PARACLINIQUES =====================
+function ajouterLigneExamen() {
+    if (lignesExamens.length >= 14) { alert('Maximum 14 examens sur cette fiche.'); return; }
+    lignesExamens.push({examen: '', date: '', resultat: ''});
+    rendreLignesExamens();
+}
+function retirerLigneExamen(i) { lignesExamens.splice(i, 1); rendreLignesExamens(); }
+function majLigneExamen(i, champ, valeur) { lignesExamens[i][champ] = valeur; }
+function rendreLignesExamens() {
+    document.getElementById('lignesExamens').innerHTML = lignesExamens.map((l, i) => `
+        <div class="tpc-ligne">
+            <input type="text" placeholder="Examen" value="${escapeHtml(l.examen)}" oninput="majLigneExamen(${i}, 'examen', this.value)">
+            <input type="text" placeholder="Date" style="max-width:110px;" value="${escapeHtml(l.date)}" oninput="majLigneExamen(${i}, 'date', this.value)">
+            <input type="text" placeholder="Résultat" value="${escapeHtml(l.resultat)}" oninput="majLigneExamen(${i}, 'resultat', this.value)">
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="retirerLigneExamen(${i})"><i class="fas fa-times"></i></button>
+        </div>`).join('');
+}
+
+// ===================== LIGNES TRAITEMENTS =====================
+function ajouterLigneTraitement() {
+    const type = document.getElementById('typeDemande').value;
+    const max = type === 'renouvellement' ? 4 : (type === 'rectification' ? 10 : 6);
+    if (lignesTraitements.length >= max) { alert('Maximum ' + max + ' médicaments sur cette fiche.'); return; }
+    lignesTraitements.push({code_ald: '', medicament: '', forme_dosage: '', posologie: '', duree: ''});
+    rendreLignesTraitements();
+}
+function retirerLigneTraitement(i) { lignesTraitements.splice(i, 1); rendreLignesTraitements(); }
+function majLigneTraitement(i, champ, valeur) { lignesTraitements[i][champ] = valeur; }
+function rendreLignesTraitements() {
+    document.getElementById('lignesTraitements').innerHTML = lignesTraitements.map((l, i) => `
+        <div class="tpc-ligne">
+            <input type="text" placeholder="Code ALD" style="max-width:90px;" value="${escapeHtml(l.code_ald)}" oninput="majLigneTraitement(${i}, 'code_ald', this.value)">
+            <input type="text" placeholder="Médicament" list="listeMedicaments" value="${escapeHtml(l.medicament)}" oninput="majLigneTraitement(${i}, 'medicament', this.value)">
+            <input type="text" placeholder="Forme et dosage" value="${escapeHtml(l.forme_dosage)}" oninput="majLigneTraitement(${i}, 'forme_dosage', this.value)">
+            <input type="text" placeholder="Posologie" value="${escapeHtml(l.posologie)}" oninput="majLigneTraitement(${i}, 'posologie', this.value)">
+            <input type="text" placeholder="Durée" style="max-width:100px;" value="${escapeHtml(l.duree)}" oninput="majLigneTraitement(${i}, 'duree', this.value)">
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="retirerLigneTraitement(${i})"><i class="fas fa-times"></i></button>
+        </div>`).join('');
+}
+
+// ===================== DÉTAILS =====================
+function voirDetailsTpc(id) {
+    const d = DEMANDES_DETAIL.find(x => x.id === id);
+    if (!d) return;
+    const p = d.patient;
+    const labelType = {'identification': 'Identification', 'renouvellement': 'Renouvellement', 'modification': 'Modification', 'rectification': 'Rectification'}[d.type_demande] || d.type_demande;
+    let html = `
+        <p><strong>Patient :</strong> ${p ? (escapeHtml(p.nom) + ' ' + escapeHtml(p.prenom)) : '—'}
+           ${p ? `(N° AMU : ${escapeHtml(p.numero_assure) || '—'})` : ''}</p>
+        <p><strong>Médecin prescripteur :</strong> ${escapeHtml(d.medecin_nom)}</p>
+        <p><strong>Régime :</strong> ${escapeHtml(TYPE_AMU_LABELS_JS[d.type_amu] || d.type_amu)}
+           &nbsp;·&nbsp; <strong>Type :</strong> ${escapeHtml(labelType)}
+           &nbsp;·&nbsp; <strong>Date de prescription :</strong> ${escapeHtml(d.date_prescription)}</p>`;
+
+    if (d.type_demande === 'identification') {
+        html += `<p class="mb-1"><strong>ALD</strong></p><ul>${(d.affections_ald || []).map(a => `<li>${escapeHtml(a.affection)} — ${escapeHtml(a.code_ald)}</li>`).join('') || '<li class="text-muted">Aucune</li>'}</ul>`;
+    }
+    if (d.motif_modification) {
+        html += `<p><strong>Motif :</strong> ${escapeHtml(d.motif_modification)}</p>`;
+    }
+    html += `<p class="mb-1"><strong>Traitement</strong></p><ul>${(d.traitements || []).map(l => `<li>${escapeHtml(l.medicament)} — ${escapeHtml(l.forme_dosage)}, ${escapeHtml(l.posologie)}, ${escapeHtml(l.duree)}</li>`).join('') || '<li class="text-muted">Aucun</li>'}</ul>`;
+    html += `<p class="small text-muted mb-0 mt-2">Créée par ${escapeHtml(d.cree_par_nom) || '—'}</p>`;
+    if (d.motif_refus) html += `<p class="small text-danger">Motif du refus : ${escapeHtml(d.motif_refus)}</p>`;
+
+    document.getElementById('detailsTpcBody').innerHTML = html;
+    new bootstrap.Modal(document.getElementById('modalDetailsTpc')).show();
+}
+
+// ===================== MODIFIER =====================
+function modifierDemandeTpc(id) {
+    const d = DEMANDES_DETAIL.find(x => x.id === id);
+    if (!d) return;
+    demandeEnEditionTpcId = id;
+
+    if (d.patient) appliquerPatientTpc(d.patient);
+    document.getElementById('medecinId').value = d.medecin_id;
+    document.getElementById('datePrescription').value = d.date_prescription;
+    document.getElementById('typeDemande').value = d.type_demande;
+    document.getElementById('typeDemande').disabled = true;
+    changerTypeDemande();
+
+    if (d.dossier_id && d.type_demande !== 'identification') {
+        document.getElementById('dossierId').innerHTML = `<option value="${d.dossier_id}">#${d.dossier_id}</option>`;
+        document.getElementById('dossierId').value = d.dossier_id;
+        document.getElementById('dossierId').disabled = true;
+    }
+
+    if (d.type_demande === 'identification') {
+        document.getElementById('villeResidence').value = d.ville_residence;
+        document.getElementById('sexe').value = d.sexe;
+        document.getElementById('profession').value = d.profession;
+        document.getElementById('poids').value = d.poids;
+        document.getElementById('taille').value = d.taille;
+        document.getElementById('imc').value = d.imc;
+        document.getElementById('taBg').value = d.ta_bg;
+        document.getElementById('taBd').value = d.ta_bd;
+        document.getElementById('etatGeneral').value = d.etat_general;
+        document.getElementById('resumeExamenPhysique').value = d.resume_examen_physique;
+        document.getElementById('autresExamen').value = d.autres_examen;
+        document.getElementById('dateProchainRdv').value = d.date_prochain_rdv;
+        lignesAld = (d.affections_ald || []).map(l => ({...l}));
+        rendreLignesAld();
+        lignesExamens = (d.examens_paracliniques || []).map(l => ({...l}));
+        rendreLignesExamens();
+        (d.comorbidites || []).forEach((c, i) => { const el = document.getElementById('comorbidite' + i); if (el) el.value = c; });
+    } else if (d.type_demande === 'renouvellement') {
+        document.getElementById('villeResidence') && (document.getElementById('villeResidence').value = d.ville_residence);
+        document.getElementById(d.traitement_a_renouveler === false ? 'aRenouvelerNon' : 'aRenouvelerOui').checked = true;
+    } else {
+        document.getElementById('motifModification').value = d.motif_modification;
+        document.getElementById('resultatsExamensEffectues').value = d.resultats_examens_effectues;
+        if (d.type_demande === 'rectification') {
+            document.getElementById('numeroAncienTpc').value = d.numero_ancien_tpc;
+        }
+    }
+    lignesTraitements = (d.traitements || []).map(l => ({...l}));
+    rendreLignesTraitements();
+
+    const btn = document.getElementById('btnSubmitTpc');
+    btn.innerHTML = '<i class="fas fa-save me-1"></i>Mettre à jour la demande';
+    document.getElementById('annulerEditionTpcBtn').style.display = '';
+    document.getElementById('formTpc').scrollIntoView({behavior: 'smooth'});
+}
+
+function annulerEditionTpc() {
+    demandeEnEditionTpcId = null;
+    document.getElementById('formTpc').reset();
+    document.getElementById('typeDemande').disabled = false;
+    document.getElementById('dossierId').disabled = false;
+    patientChoisiTpc = null;
+    document.getElementById('patientId').value = '';
+    document.getElementById('patientChoisiBloc').style.display = 'none';
+    lignesAld = []; lignesExamens = []; lignesTraitements = [];
+    rendreLignesAld(); rendreLignesExamens(); rendreLignesTraitements();
+    document.getElementById('sectionIdentification').style.display = 'none';
+    document.getElementById('sectionRenouvellement').style.display = 'none';
+    document.getElementById('sectionModification').style.display = 'none';
+    document.getElementById('sectionTraitement').style.display = 'none';
+    document.getElementById('btnSubmitTpc').style.display = 'none';
+    const btn = document.getElementById('btnSubmitTpc');
+    btn.innerHTML = '<i class="fas fa-save me-1"></i>Enregistrer la demande';
+    document.getElementById('annulerEditionTpcBtn').style.display = 'none';
+}
+
+// ===================== APPROUVER / REFUSER =====================
+function approuverDemandeTpc(id) {
+    fetch(`/api/amu/tpc/${id}/approuver`, {method: 'POST'})
+        .then(r => r.json())
+        .then(data => { if (data.success) location.reload(); else alert(data.error || 'Erreur'); });
+}
+function refuserDemandeTpc(id) {
+    const motif = prompt('Motif du refus (optionnel) :');
+    fetch(`/api/amu/tpc/${id}/refuser`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({motif_refus: motif || ''}),
+    }).then(r => r.json()).then(data => { if (data.success) location.reload(); else alert(data.error || 'Erreur'); });
+}
+
+// ===================== SOUMISSION =====================
+document.getElementById('formTpc').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const typeDemande = document.getElementById('typeDemande').value;
+    if (!document.getElementById('patientId').value) { alert('Choisissez un patient AMU.'); return; }
+    if (!document.getElementById('medecinId').value) { alert('Choisissez un médecin.'); return; }
+    if (!document.getElementById('datePrescription').value) { alert('Indiquez la date de prescription.'); return; }
+    if (!typeDemande) { alert('Choisissez le type de demande.'); return; }
+    if ((typeDemande === 'renouvellement' || typeDemande === 'modification') && !document.getElementById('dossierId').value) { alert('Choisissez le dossier TPC du patient.'); return; }
+    if ((typeDemande === 'modification' || typeDemande === 'rectification') && !document.getElementById('motifModification').value.trim()) {
+        alert('Le motif de la modification est obligatoire.'); return;
+    }
+    if (!lignesTraitements.filter(l => l.medicament).length) { alert('Ajoutez au moins un médicament.'); return; }
+    if (typeDemande === 'identification' && !lignesAld.filter(l => l.affection).length) { alert('Indiquez au moins une ALD.'); return; }
+
+    const payload = {
+        patient_id: parseInt(document.getElementById('patientId').value),
+        medecin_id: parseInt(document.getElementById('medecinId').value),
+        type_amu: document.getElementById('typeAmu').value,
+        type_demande: typeDemande,
+        dossier_id: document.getElementById('dossierId').value ? parseInt(document.getElementById('dossierId').value) : null,
+        date_prescription: document.getElementById('datePrescription').value,
+        traitements: lignesTraitements,
+    };
+    if (typeDemande === 'identification') {
+        Object.assign(payload, {
+            ville_residence: document.getElementById('villeResidence').value,
+            sexe: document.getElementById('sexe').value,
+            profession: document.getElementById('profession').value,
+            affections_ald: lignesAld,
+            poids: document.getElementById('poids').value,
+            taille: document.getElementById('taille').value,
+            imc: document.getElementById('imc').value,
+            ta_bg: document.getElementById('taBg').value,
+            ta_bd: document.getElementById('taBd').value,
+            etat_general: document.getElementById('etatGeneral').value,
+            resume_examen_physique: document.getElementById('resumeExamenPhysique').value,
+            autres_examen: document.getElementById('autresExamen').value,
+            examens_paracliniques: lignesExamens,
+            comorbidites: [0,1,2].map(i => document.getElementById('comorbidite' + i).value),
+            date_prochain_rdv: document.getElementById('dateProchainRdv').value,
+        });
+    } else if (typeDemande === 'renouvellement') {
+        payload.traitement_a_renouveler = document.querySelector('input[name="aRenouveler"]:checked').value === 'oui';
+    } else {
+        payload.motif_modification = document.getElementById('motifModification').value;
+        payload.resultats_examens_effectues = document.getElementById('resultatsExamensEffectues').value;
+        if (typeDemande === 'rectification') {
+            payload.numero_ancien_tpc = document.getElementById('numeroAncienTpc').value;
+        }
+    }
+
+    const url = demandeEnEditionTpcId ? `/api/amu/tpc/${demandeEnEditionTpcId}/modifier` : '/api/amu/tpc';
+    fetch(url, {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+    }).then(r => r.json()).then(data => {
+        if (data.success) location.reload(); else alert(data.error || 'Erreur lors de l\'enregistrement');
+    });
+});
+
+rendreLignesAld();
+rendreLignesExamens();
+rendreLignesTraitements();
+</script>
+{% endblock %}

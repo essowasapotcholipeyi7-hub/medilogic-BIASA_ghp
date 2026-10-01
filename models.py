@@ -2836,13 +2836,20 @@ class ParametrageAmuCnss(db.Model):
     # formater_numero_facture_amu) : "N° 000000001/AMU/<sigle>/<année>".
     # Commun aux deux assureurs, comme le reste de ce paramétrage.
     sigle = db.Column(db.String(20))
+    # ⭐ Dépôt EP/TPC par WhatsApp + numéro vert AMU (patron, 2026-10-01 :
+    # "le numéro c'est 71383919 [...] ce numéro est valable pour l'envoi
+    # des EP aussi [...] le numéro vert c'est 8323 avec possibilité de
+    # modifier ça") — éditables (page Paramétrage AMU), jamais codés en dur
+    # dans les templates d'impression EP/TPC.
+    whatsapp_depot = db.Column(db.String(20), default='71383919')
+    numero_vert = db.Column(db.String(20), default='8323')
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     @classmethod
     def get_ou_creer(cls, structure_id):
         param = cls.query.filter_by(structure_id=structure_id).first()
         if not param:
-            param = cls(structure_id=structure_id)
+            param = cls(structure_id=structure_id, whatsapp_depot='71383919', numero_vert='8323')
             db.session.add(param)
             db.session.commit()
         return param
@@ -2895,13 +2902,20 @@ class ParametrageAmuInam(db.Model):
     structure_id = db.Column(db.Integer, nullable=False, unique=True)
     regime = db.Column(db.String(20))  # 'ramo' | 'school_amu' | 'wezou' | 'autres'
     type_etablissement = db.Column(db.String(100))
+    # ⭐ Même principe que ParametrageAmuCnss.whatsapp_depot/numero_vert —
+    # patron : "leur numéro d'envoi des EP et TPC aussi est là, peux-tu
+    # permettre qu'on ajoute cela après [...] numéro vert c'est 8222".
+    # whatsapp_depot laissé vide par défaut : pas encore communiqué,
+    # éditable dès qu'il le sera.
+    whatsapp_depot = db.Column(db.String(20))
+    numero_vert = db.Column(db.String(20), default='8222')
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     @classmethod
     def get_ou_creer(cls, structure_id):
         param = cls.query.filter_by(structure_id=structure_id).first()
         if not param:
-            param = cls(structure_id=structure_id)
+            param = cls(structure_id=structure_id, numero_vert='8222')
             db.session.add(param)
             db.session.commit()
         return param
@@ -3216,6 +3230,175 @@ class DemandeEntentePrealable(db.Model):
     # probable). Pas de nouveau cycle d'approbation médecin pour ce passage
     # pré-accord -> définitive, seulement pour inclure_hospitalisation=True.
     definitive_le = db.Column(db.DateTime)
+
+
+# ⭐⭐ TPC (Traitement des Pathologies Chroniques) — même logique que l'EP
+# ci-dessus (patron, 2026-10-01 : "attaque les TPC, même logique que les
+# EP") : rempli par la secrétaire/caisse, vérifié et approuvé par un
+# médecin avant impression, jamais de modification des fiches PDF
+# originales (overlay uniquement, voir utils/remplissage_pdf_tpc.py).
+#
+# Contrairement à l'EP (1 seule étape), le TPC a un cycle de vie en 3
+# temps sur les fiches CNSS/TNS (2 sur INAM) :
+#   1. 'identification' — première demande, avec examen clinique complet,
+#      ALD(s) + code(s), traitement initial. C'est le "dossier" racine.
+#   2. 'renouvellement' — le patient revient, on cherche son dossier
+#      d'identification, on recopie son traitement (modifiable) et on
+#      réimprime avec une nouvelle date — PAS de nouveau cycle
+#      d'approbation obligatoire côté métier mais on garde le même
+#      workflow de validation médecin pour rester cohérent avec l'EP.
+#      INAM n'a pas de fiche dédiée : son renouvellement réutilise la
+#      fiche d'identification elle-même (patron : "leur renouvellement
+#      peut se faire sur la fiche d'identification tpc").
+#   3. 'modification' (CNSS/TNS) / 'rectification' (INAM) — changement de
+#      traitement en cours de route (ajustement posologie, changement ou
+#      ajout de médicament) : motif obligatoire, ne touche PAS
+#      l'identité patient/médecin sur la fiche officielle (même si rien
+#      n'empêche de les corriger dans l'appli, patron : "possibilité de
+#      modifier les informations du patient et du prescripteur pas de
+#      souci").
+# Chaque renouvellement/modification est une NOUVELLE ligne, liée au
+# dossier d'origine par `dossier_id` (le premier 'identification' a
+# dossier_id = son propre id une fois créé) — ça donne l'historique
+# complet par simple requête `dossier_id=X`, sans jamais écraser les
+# demandes précédentes (patron : "on doit voir l'historique des
+# renouvellements/modifications aussi").
+class DemandeTpc(db.Model):
+    __tablename__ = 'demandes_tpc'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    patient_id = db.Column(db.Integer, nullable=False)
+    medecin_id = db.Column(db.Integer, nullable=False)
+    type_amu = db.Column(db.String(20), nullable=False)  # 'amu_cnss' | 'amu_tns' | 'amu_inam'
+    type_demande = db.Column(db.String(20), nullable=False)  # identification | renouvellement | modification | rectification
+    # ⭐ Pointe vers la ligne 'identification' racine du dossier (vers
+    # elle-même pour l'identification elle-même) — jamais de contrainte FK
+    # (même style que patient_id/medecin_id partout ailleurs dans ce
+    # fichier), posé en code à la création.
+    dossier_id = db.Column(db.Integer)
+
+    # ⭐ I. Identité du patient — ville de résidence mémorisée pour
+    # suggestion rapide la prochaine fois (voir LieuResidenceMemorise),
+    # jamais un champ figé : certains patients changent de ville. sexe et
+    # profession n'existent pas sur Patient (non applicable à la majorité
+    # des autres modules) : saisis ici, propres au dossier TPC. L'âge n'est
+    # pas stocké, calculé à l'impression depuis patient.date_naissance.
+    ville_residence = db.Column(db.String(150))
+    sexe = db.Column(db.String(20))
+    profession = db.Column(db.String(150))
+
+    # ⭐ II. ALD(s) + code(s) — jusqu'à 4 lignes {affection, code_ald}.
+    # Codes en texte libre tant que le patron n'a pas fourni le fichier
+    # référentiel des codes ALD ("je vais préparer ce fichier [...] il
+    # faut le prévoir") — ce champ reste compatible avec une liste
+    # déroulante le jour où ce référentiel est chargé, sans migration.
+    affections_ald = db.Column(db.JSON)
+
+    # ⭐ III. Examen physique (identification uniquement)
+    poids = db.Column(db.String(20))
+    taille = db.Column(db.String(20))
+    imc = db.Column(db.String(20))
+    ta_bg = db.Column(db.String(20))
+    ta_bd = db.Column(db.String(20))
+    etat_general = db.Column(db.String(255))
+    resume_examen_physique = db.Column(db.Text)
+    autres_examen = db.Column(db.Text)
+
+    # ⭐ IV. Examens paracliniques — [{examen, date, resultat}], choisis
+    # parmi les résultats déjà enregistrés du patient (DemandeExamen /
+    # ResultatExamen) ou saisis à la main si l'examen n'y est pas.
+    examens_paracliniques = db.Column(db.JSON)
+
+    # ⭐ V. Traitements — [{code_ald, medicament, forme_dosage, posologie,
+    # duree}]. `medicament` vient soit du tableau tarifaire de la
+    # structure, soit de MedicamentTpcMemorise (médicaments hors tableau
+    # déjà prescrits une fois en TPC, proposés ensuite en saisie rapide —
+    # patron : "souvent c'est des médicaments qui ne sont pas dans la
+    # base [...] qu'on le propose la prochaine fois").
+    traitements = db.Column(db.JSON)
+
+    # ⭐ VI. Comorbidités — jusqu'à 3 lignes libres + date du prochain RDV.
+    comorbidites = db.Column(db.JSON)
+    date_prochain_rdv = db.Column(db.Date)
+
+    # ⭐ Renouvellement : "Traitement à renouveler : OUI/NON"
+    traitement_a_renouveler = db.Column(db.Boolean)
+
+    # ⭐ Modification (CNSS/TNS) / Rectification (INAM) — motif obligatoire
+    # (patron : "quand il s'agit d'une modification il faut forcément le
+    # motif de modification"), mémorisé pour suggestion rapide la
+    # prochaine fois comme la ville de résidence et les médicaments.
+    motif_modification = db.Column(db.Text)
+    resultats_examens_effectues = db.Column(db.Text)  # case "Résultats des examens effectués" (modif/rectif)
+    # ⭐ "N° Ancien TPC" (fiche de rectification INAM uniquement) — référence
+    # LIBRE d'un TPC déjà identifié par le passé, potentiellement hors de
+    # l'application (l'identification TPC INAM n'est pas encore implémentée,
+    # voir utils/remplissage_pdf_tpc.py) : jamais un lien vers un
+    # DemandeTpc.id comme dossier_id ci-dessus, une simple case texte de la
+    # fiche officielle.
+    numero_ancien_tpc = db.Column(db.String(100))
+
+    date_prescription = db.Column(db.Date, nullable=False)
+    statut = db.Column(db.String(20), default='en_attente')  # en_attente | approuvee | refusee
+    cree_par_id = db.Column(db.Integer)
+    cree_par_nom = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    approuve_par_id = db.Column(db.Integer)
+    approuve_par_nom = db.Column(db.String(255))
+    approuve_le = db.Column(db.DateTime)
+    motif_refus = db.Column(db.String(500))
+    imprime_le = db.Column(db.DateTime)
+
+
+# ⭐ Mémorisation de valeurs saisies à la main pour suggestion rapide la
+# prochaine fois — même principe que CorrespondanceSalleAmu.memoriser()
+# plus haut dans ce fichier, appliqué ici aux médicaments TPC hors
+# tableau tarifaire et aux lieux de résidence (patron, 2026-10-01 : voir
+# DemandeTpc ci-dessus pour le contexte complet de chaque usage).
+class MedicamentTpcMemorise(db.Model):
+    __tablename__ = 'medicaments_tpc_memorises'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    nom = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @staticmethod
+    def memoriser(structure_id, nom):
+        nom = (nom or '').strip()
+        if not nom:
+            return
+        existe = MedicamentTpcMemorise.query.filter_by(structure_id=structure_id).filter(
+            db.func.lower(MedicamentTpcMemorise.nom) == nom.lower()
+        ).first()
+        if not existe:
+            db.session.add(MedicamentTpcMemorise(structure_id=structure_id, nom=nom))
+
+    @staticmethod
+    def connues_pour(structure_id):
+        return [m.nom for m in MedicamentTpcMemorise.query.filter_by(structure_id=structure_id).order_by(MedicamentTpcMemorise.nom).all()]
+
+
+class LieuResidenceMemorise(db.Model):
+    __tablename__ = 'lieux_residence_memorises'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    valeur = db.Column(db.String(150), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @staticmethod
+    def memoriser(structure_id, valeur):
+        valeur = (valeur or '').strip()
+        if not valeur:
+            return
+        existe = LieuResidenceMemorise.query.filter_by(structure_id=structure_id).filter(
+            db.func.lower(LieuResidenceMemorise.valeur) == valeur.lower()
+        ).first()
+        if not existe:
+            db.session.add(LieuResidenceMemorise(structure_id=structure_id, valeur=valeur))
+
+    @staticmethod
+    def connues_pour(structure_id):
+        return [l.valeur for l in LieuResidenceMemorise.query.filter_by(structure_id=structure_id).order_by(LieuResidenceMemorise.valeur).all()]
 
 
 # ⭐ Modèle de résultat (Word/Excel) réutilisable — le laborantin/radiologue

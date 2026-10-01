@@ -33,6 +33,7 @@ PERMISSIONS = {
     'demandes_radiologie': 'Demandes de radiologie',
     'patients_externes': 'Patients externes & prescripteurs',
     'entente_prealable': 'Entente Préalable AMU',
+    'tpc': 'Traitement des Pathologies Chroniques (TPC)',
 }
 
 # Rôles ayant accès par défaut à chaque section, sans octroi nécessaire.
@@ -67,6 +68,7 @@ ROLES_PAR_DEFAUT = {
     # dans la route elle-même (voir app.py api_amu_ep_approuver) — cette
     # clé ne gère que qui peut OUVRIR le module, pas qui peut approuver.
     'entente_prealable':    {'admin', 'secretaire', 'caissier', 'medecin', 'gestionnaire'},
+    'tpc':                  {'admin', 'secretaire', 'caissier', 'medecin', 'gestionnaire'},
 }
 
 

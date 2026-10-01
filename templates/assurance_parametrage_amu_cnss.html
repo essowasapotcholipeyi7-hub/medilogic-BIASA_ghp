@@ -59,6 +59,20 @@
                 <small class="text-muted">Utilisé dans le numéro des factures recap AMU (CNSS/TNS/INAM) :
                     N° 000000001/AMU/<strong>{{ parametrage.sigle or 'SIGLE' }}</strong>/{{ now_year }}.</small>
             </div>
+            <!-- ⭐ Patron : "le numéro c'est 71383919, ce numéro est valable
+                 pour l'envoi des EP aussi [...] le numéro vert c'est 8323
+                 avec possibilité de modifier ça" — affichés sur les
+                 impressions EP/TPC CNSS/TNS. -->
+            <div class="mb-3">
+                <label class="form-label">Numéro WhatsApp de dépôt EP/TPC</label>
+                <input type="text" class="form-control" name="whatsapp_depot" maxlength="20"
+                       value="{{ parametrage.whatsapp_depot or '' }}">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Numéro vert AMU</label>
+                <input type="text" class="form-control" name="numero_vert" maxlength="20"
+                       value="{{ parametrage.numero_vert or '' }}">
+            </div>
             <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i> Enregistrer</button>
         </form>
     </div>

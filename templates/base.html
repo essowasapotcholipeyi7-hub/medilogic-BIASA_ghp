@@ -2532,6 +2532,13 @@
                     <i class="fas fa-file-medical"></i> Entente Préalable
                 </a>
                 {% endif %}
+                <!-- ⭐ TPC (patron, 2026-10-01 : "attaque les TPC, même
+                     logique que les EP") — voir page_amu_tpc (app.py). -->
+                {% if a_acces('tpc') %}
+                <a class="menu-item" href="{{ url_for('page_amu_tpc') }}">
+                    <i class="fas fa-prescription-bottle-medical"></i> TPC
+                </a>
+                {% endif %}
             </div>
         </li>
         {% endif %}
