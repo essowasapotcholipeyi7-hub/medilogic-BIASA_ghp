@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}{{ config.titre }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .amu-hero {
+        background: linear-gradient(135deg, #0A3D5C, #0E9D67);
+        color: white;
+        border-radius: 14px;
+        padding: 24px 28px;
+        margin-bottom: 22px;
+    }
+    .amu-hero h4 { font-weight: 700; margin-bottom: 4px; }
+    .amu-hero p { opacity: .9; margin-bottom: 0; }
+
+    .amu-doc-card {
+        border: 1px solid #e3e8ec;
+        border-radius: 12px;
+        padding: 16px 20px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 12px;
+        transition: box-shadow .15s ease;
+    }
+    .amu-doc-card:hover { box-shadow: 0 4px 14px rgba(8,43,65,0.08); }
+    .amu-doc-icon {
+        width: 44px; height: 44px; border-radius: 10px;
+        background: #FCEEE0; color: #B45309;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 20px; flex-shrink: 0;
+    }
+    .amu-doc-libelle { font-weight: 600; color: #0A3D5C; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    <div class="amu-hero">
+        <h4><i class="fas fa-file-shield me-2"></i>{{ config.titre }}</h4>
+        {% if config.sous_titre %}
+        <p>{{ config.sous_titre }}</p>
+        {% endif %}
+    </div>
+
+    {% if config.fichiers %}
+        {% for fichier in config.fichiers %}
+        <div class="amu-doc-card">
+            <div class="amu-doc-icon"><i class="fas fa-file-pdf"></i></div>
+            <div class="flex-grow-1 amu-doc-libelle">{{ fichier.libelle }}</div>
+            <!-- ⭐ Ces documents sont des formulaires à imprimer et utiliser
+                 (papier), pas juste à consulter — patron : "c'est pour
+                 qu'on puisse les imprimer et utiliser". "Voir/Imprimer"
+                 ouvre le PDF dans le visualiseur du navigateur (bouton
+                 imprimer intégré) ; "Télécharger" force l'enregistrement du
+                 fichier au lieu de l'ouvrir. -->
+            {% set url_fichier = url_for('static', filename='documents/' + config.dossier + '/' + fichier.nom) %}
+            <a class="btn btn-primary btn-sm me-2" href="{{ url_fichier }}" target="_blank" rel="noopener">
+                <i class="fas fa-print me-1"></i> Voir / Imprimer
+            </a>
+            <a class="btn btn-outline-primary btn-sm" href="{{ url_fichier }}" download>
+                <i class="fas fa-download me-1"></i> Télécharger
+            </a>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="text-muted">Aucun document disponible pour le moment.</div>
+    {% endif %}
+
+</div>
+{% endblock %}

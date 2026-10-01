@@ -757,6 +757,48 @@ def page_faq():
     return render_template('faq.html', questions=questions, mes_questions=mes_questions)
 
 
+# ⭐ Documents de référence AMU (CNSS/INAM), téléchargeables depuis l'onglet
+# "AMU" du menu — patron (2026-10-01) : "les supports, un seul est pour
+# l'inam le reste c'est pour amu cnss... pour l'inam il manque les
+# supports... apres je t'ajoute pour amu inam". Liste statique (fichiers
+# dans static/documents/) plutôt qu'en base : ce sont des documents de
+# référence fournis par la CNSS/l'INAM, pas des données de l'application.
+# AMU-TNS n'a pas sa propre catégorie : "les tns vont utiliser les memes
+# support que AMU CNSS" (même administration CNSS).
+AMU_SUPPORTS = {
+    'cnss': {
+        'titre': 'Supports AMU CNSS',
+        'sous_titre': "Valables aussi pour l'AMU-TNS (même administration CNSS)",
+        'dossier': 'amu_cnss',
+        'fichiers': [
+            {'nom': 'demande_entente_prealable.pdf', 'libelle': "Demande d'entente préalable"},
+            {'nom': 'facture_prestataires.pdf', 'libelle': 'Facture prestataires'},
+            {'nom': 'fiche_renouvellement_tpc.pdf', 'libelle': "Fiche de renouvellement TPC et mode d'utilisation"},
+            {'nom': 'fiche_identification_patients_chroniques.pdf', 'libelle': "Fiche d'identification des patients chroniques (TPC) et mode d'utilisation"},
+            {'nom': 'fiche_modification_tpc.pdf', 'libelle': "Fiche de modification TPC et mode d'utilisation"},
+            {'nom': 'regles_delivrance_soins_amu.pdf', 'libelle': 'Règles de délivrance de soins AMU'},
+        ],
+    },
+    'inam': {
+        'titre': 'Supports AMU INAM',
+        'sous_titre': '',
+        'dossier': 'amu_inam',
+        'fichiers': [
+            {'nom': 'facture_recapitulative_inam.pdf', 'libelle': 'Facture récapitulative INAM'},
+        ],
+    },
+}
+
+
+@app.route('/amu/supports/<type_amu>')
+@login_required
+def page_amu_supports(type_amu):
+    config = AMU_SUPPORTS.get(type_amu)
+    if not config:
+        return "Catégorie AMU inconnue", 404
+    return render_template('amu_supports.html', config=config, type_amu=type_amu)
+
+
 @app.route('/api/faq/poser', methods=['POST'])
 @login_required
 def api_faq_poser_question():

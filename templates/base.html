@@ -2490,12 +2490,28 @@
             <span class="nav-link-top">
                 AMU <i class="fas fa-chevron-down arrow"></i>
             </span>
+            <!-- ⭐ AMU-TNS + Supports (patron, 2026-10-01) : référentiel TNS
+                 ajouté à côté de CNSS/INAM, puis une section "Supports"
+                 séparée par un .menu-divider vers les documents
+                 téléchargeables (page_amu_supports) — AMU-TNS n'a pas sa
+                 propre page de supports, il réutilise ceux d'AMU-CNSS (même
+                 administration CNSS). -->
             <div class="mega-menu">
                 <a class="menu-item" href="https://referentiels.amu.tg/#/providers" target="_blank">
                     AMU-CNSS
                 </a>
                 <a class="menu-item" href="https://prestaplus.inam.tg/Vue/index.php" target="_blank">
                     AMU-INAM
+                </a>
+                <a class="menu-item" href="https://tns.cnss.tg" target="_blank">
+                    AMU-TNS
+                </a>
+                <div class="menu-divider"></div>
+                <a class="menu-item" href="{{ url_for('page_amu_supports', type_amu='cnss') }}">
+                    Support AMU CNSS
+                </a>
+                <a class="menu-item" href="{{ url_for('page_amu_supports', type_amu='inam') }}">
+                    Support AMU INAM
                 </a>
             </div>
         </li>
