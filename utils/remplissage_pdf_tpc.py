@@ -22,9 +22,21 @@ from pypdf import PdfReader, PdfWriter
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
 from utils.remplissage_pdf_amu import (
-    FONT, FONT_SIZE_TABLE,
+    FONT,
     _overlay, _ajuster_pour_largeur, _texte, _texte_centree, _texte_cases, _coche,
 )
+
+# ⭐ Tailles propres au TPC (patron, 2026-10-02 : "augmente un peu la
+# police et l'écriture en gras... fait que ce qu'on écrit ne se repose
+# pas directement sur les pointillés, tout ce que tu as fait pour EP") —
+# des constantes LOCALES à ce module plutôt que de relever
+# FONT_SIZE_TABLE partagé avec l'EP (déjà validé par le patron tel quel,
+# jamais y toucher ici). Le gras est déjà hérité de FONT ci-dessus
+# (Helvetica-Bold, voir utils/remplissage_pdf_amu.py) — rien à changer
+# pour ça, il s'applique déjà à tout le texte saisi.
+FONT_SIZE_TPC_IDENTITE = 11
+FONT_SIZE_TPC_TABLE = 11     # était 10 (FONT_SIZE_TABLE de l'EP)
+FONT_SIZE_TPC_BOITE = 10     # était 9
 
 AMU_CNSS_TPC_IDENTIFICATION_PDF = 'static/documents/amu_cnss/fiche_identification_patients_chroniques.pdf'
 AMU_CNSS_TPC_RENOUVELLEMENT_PDF = 'static/documents/amu_cnss/fiche_renouvellement_tpc.pdf'
@@ -32,7 +44,7 @@ AMU_CNSS_TPC_MODIFICATION_PDF = 'static/documents/amu_cnss/fiche_modification_tp
 AMU_INAM_TPC_RECTIFICATION_PDF = 'static/documents/amu_inam/fiche_rectification_tpc.pdf'
 
 
-def _texte_boite(c, hauteur, x0, x1, top0, top1, valeur, taille=9):
+def _texte_boite(c, hauteur, x0, x1, top0, top1, valeur, taille=FONT_SIZE_TPC_BOITE):
     """Texte libre multi-lignes dans une case rectangulaire (ex: "Motif de
     la modification", "Résultats des examens effectués") — coupe par mot à
     la largeur de la case, une ligne par rangée, tronque avec '…' sur la
@@ -118,62 +130,62 @@ def remplir_tpc_cnss_identification(demande, patient, medecin, code_formation_sa
             age = str(aujourd_hui.year - patient.date_naissance.year - (
                 (aujourd_hui.month, aujourd_hui.day) < (patient.date_naissance.month, patient.date_naissance.day)
             ))
-        _texte_cases(c, h, 151.0, CASES_IDENTIFICATION['numero_amu'], patient.numero_assure or '')
-        _texte(c, h, 136, 172.5, nom_complet, largeur_max=420)
-        _texte(c, h, 70.2, 190.3, demande.sexe or '', largeur_max=95)
-        _texte(c, h, 209.8, 190.3, age, largeur_max=60)
-        _texte(c, h, 350.2, 190.3, demande.profession or '', largeur_max=205)
-        _texte(c, h, 101, 209.0, patient.telephone or '', largeur_max=155)
-        _texte(c, h, 420, 209.0, demande.ville_residence or '', largeur_max=135)
+        _texte_cases(c, h, 149.0, CASES_IDENTIFICATION['numero_amu'], patient.numero_assure or '', taille=FONT_SIZE_TPC_IDENTITE)
+        _texte(c, h, 136, 170.5, nom_complet, largeur_max=420)
+        _texte(c, h, 70.2, 188.3, demande.sexe or '', largeur_max=95)
+        _texte(c, h, 209.8, 188.3, age, largeur_max=60)
+        _texte(c, h, 350.2, 188.3, demande.profession or '', largeur_max=205)
+        _texte(c, h, 101, 207.0, patient.telephone or '', largeur_max=155)
+        _texte(c, h, 420, 207.0, demande.ville_residence or '', largeur_max=135)
 
         y_rows = [295, 327, 359, 391]
         for ligne, y in zip((demande.affections_ald or [])[:4], y_rows):
-            _texte(c, h, 198, y, ligne.get('affection', ''), taille=FONT_SIZE_TABLE, largeur_max=265)
-            _texte(c, h, 470, y, ligne.get('code_ald', ''), taille=FONT_SIZE_TABLE, largeur_max=85)
+            _texte(c, h, 198, y, ligne.get('affection', ''), taille=FONT_SIZE_TPC_TABLE, largeur_max=265)
+            _texte(c, h, 470, y, ligne.get('code_ald', ''), taille=FONT_SIZE_TPC_TABLE, largeur_max=85)
 
-        _texte(c, h, 71.7, 450.5, demande.poids or '', largeur_max=40)
-        _texte(c, h, 213.1, 450.3, demande.taille or '', largeur_max=40)
-        _texte(c, h, 350.8, 450.3, demande.imc or '', largeur_max=55)
-        _texte(c, h, 148.3, 467.1, demande.ta_bg or '', largeur_max=75)
-        _texte(c, h, 274.4, 467.1, demande.ta_bd or '', largeur_max=35)
-        _texte(c, h, 107.2, 488.0, demande.etat_general or '', largeur_max=410)
-        _texte_boite(c, h, 31.2, 559.7, 524.0, 724.9, demande.resume_examen_physique or '', taille=9)
+        _texte(c, h, 71.7, 448.5, demande.poids or '', largeur_max=40)
+        _texte(c, h, 213.1, 448.3, demande.taille or '', largeur_max=40)
+        _texte(c, h, 350.8, 448.3, demande.imc or '', largeur_max=55)
+        _texte(c, h, 148.3, 465.1, demande.ta_bg or '', largeur_max=75)
+        _texte(c, h, 274.4, 465.1, demande.ta_bd or '', largeur_max=35)
+        _texte(c, h, 107.2, 486.0, demande.etat_general or '', largeur_max=410)
+        _texte_boite(c, h, 31.2, 559.7, 524.0, 724.9, demande.resume_examen_physique or '')
         # ⭐ "Autres :" a son propre texte de label sur la 1ère ligne de
         # pointillés (727.9) — y écrire par-dessus se superposait au mot
         # "Autres". On démarre donc sur la ligne pleine largeur suivante
         # (744.9), 3 lignes disponibles jusqu'à 792.9.
-        _texte_boite(c, h, 31.2, 559.7, 744.9, 792.9, demande.autres_examen or '', taille=9)
+        _texte_boite(c, h, 31.2, 559.7, 744.9, 792.9, demande.autres_examen or '')
 
     def dessiner_page2(c, h):
         y_rows = [94.5, 134.1, 175.8, 218.1, 259.8, 303.1, 344.8, 387.1, 428.8, 474.1, 517.8, 562.1, 603.8, 647.1]
         for ligne, y in zip((demande.examens_paracliniques or [])[:14], y_rows):
-            _texte(c, h, 36, y + 12, ligne.get('examen', ''), taille=FONT_SIZE_TABLE, largeur_max=105)
-            _texte(c, h, 151, y + 12, ligne.get('date', ''), taille=FONT_SIZE_TABLE, largeur_max=58)
-            _texte(c, h, 218, y + 12, ligne.get('resultat', ''), taille=FONT_SIZE_TABLE, largeur_max=340)
+            _texte(c, h, 36, y + 12, ligne.get('examen', ''), taille=FONT_SIZE_TPC_TABLE, largeur_max=105)
+            _texte(c, h, 151, y + 12, ligne.get('date', ''), taille=FONT_SIZE_TPC_TABLE, largeur_max=58)
+            _texte(c, h, 218, y + 12, ligne.get('resultat', ''), taille=FONT_SIZE_TPC_TABLE, largeur_max=340)
 
     def dessiner_page3(c, h):
         y_rows = [102.3, 159.5, 217.5, 274.5, 331.5, 390.5]
         for ligne, y in zip((demande.traitements or [])[:6], y_rows):
-            _texte(c, h, 38, y + 14, ligne.get('code_ald', ''), taille=FONT_SIZE_TABLE, largeur_max=80)
-            _texte(c, h, 124, y + 14, ligne.get('medicament', ''), taille=FONT_SIZE_TABLE, largeur_max=145)
-            _texte(c, h, 274, y + 14, ligne.get('forme_dosage', ''), taille=FONT_SIZE_TABLE, largeur_max=108)
-            _texte(c, h, 388, y + 14, ligne.get('posologie', ''), taille=FONT_SIZE_TABLE, largeur_max=84)
-            _texte(c, h, 478, y + 14, ligne.get('duree', ''), taille=FONT_SIZE_TABLE, largeur_max=78)
+            _texte(c, h, 38, y + 14, ligne.get('code_ald', ''), taille=FONT_SIZE_TPC_TABLE, largeur_max=80)
+            _texte(c, h, 124, y + 14, ligne.get('medicament', ''), taille=FONT_SIZE_TPC_TABLE, largeur_max=145)
+            _texte(c, h, 274, y + 14, ligne.get('forme_dosage', ''), taille=FONT_SIZE_TPC_TABLE, largeur_max=108)
+            _texte(c, h, 388, y + 14, ligne.get('posologie', ''), taille=FONT_SIZE_TPC_TABLE, largeur_max=84)
+            _texte(c, h, 478, y + 14, ligne.get('duree', ''), taille=FONT_SIZE_TPC_TABLE, largeur_max=78)
 
         comorbidites = demande.comorbidites or []
         x_comorb = [58.6, 208.5, 364.3]
         for i, x in enumerate(x_comorb):
             if i < len(comorbidites) and comorbidites[i]:
-                _texte(c, h, x + 12, 524.5, comorbidites[i], taille=9, largeur_max=105)
+                _texte(c, h, x + 12, 522.5, comorbidites[i], taille=FONT_SIZE_TPC_BOITE, largeur_max=105)
         if demande.date_prochain_rdv:
             d = demande.date_prochain_rdv
-            _texte_centree(c, h, 227.9, 290, 554.7, d.strftime('%d'), taille=FONT_SIZE_TABLE)
-            _texte_centree(c, h, 293, 335, 554.7, d.strftime('%m'), taille=FONT_SIZE_TABLE)
-            _texte_centree(c, h, 335, 359.1, 554.7, d.strftime('%y'), taille=FONT_SIZE_TABLE)
+            _texte_centree(c, h, 227.9, 269.4, 552.7, d.strftime('%d'), taille=FONT_SIZE_TPC_TABLE)
+            _texte_centree(c, h, 272.7, 317.2, 552.7, d.strftime('%m'), taille=FONT_SIZE_TPC_TABLE)
+            _texte_centree(c, h, 332.4, 359.1, 552.7, d.strftime('%y'), taille=FONT_SIZE_TPC_TABLE)
 
-        _texte_cases(c, h, 617.3, CASES_IDENTIFICATION['code_formation_sanitaire'], code_formation_sanitaire or '')
-        _texte_cases(c, h, 617.3, CASES_IDENTIFICATION['code_prescripteur'], medecin.code_prescripteur or '')
-        _texte(c, h, 101.8, 654.2, medecin.telephone or '', largeur_max=155)
+        _texte_cases(c, h, 615.3, CASES_IDENTIFICATION['code_formation_sanitaire'], code_formation_sanitaire or '', taille=FONT_SIZE_TPC_IDENTITE)
+        _texte_cases(c, h, 615.3, CASES_IDENTIFICATION['code_prescripteur'], medecin.code_prescripteur or '', taille=FONT_SIZE_TPC_IDENTITE)
+        _texte(c, h, 101.8, 652.2, medecin.telephone or '', largeur_max=155)
 
     for i, dessiner in enumerate([dessiner_page1, dessiner_page2, dessiner_page3]):
         pages[i].merge_page(_overlay(largeur, hauteur, dessiner))
@@ -193,10 +205,10 @@ def remplir_tpc_cnss_renouvellement(demande, patient, medecin, code_formation_sa
 
     def dessiner(c, h):
         nom_complet = f"{patient.nom} {patient.prenom}".strip()
-        _texte_cases(c, h, 141.5, CASES_RENOUVELLEMENT['numero_amu'], patient.numero_assure or '')
-        _texte(c, h, 160, 164.1, nom_complet, largeur_max=395)
-        _texte(c, h, 160, 193.6, patient.telephone or '', largeur_max=150)
-        _texte(c, h, 420.8, 193.6, demande.ville_residence or '', largeur_max=135)
+        _texte_cases(c, h, 139.5, CASES_RENOUVELLEMENT['numero_amu'], patient.numero_assure or '', taille=FONT_SIZE_TPC_IDENTITE)
+        _texte(c, h, 160, 162.1, nom_complet, largeur_max=395)
+        _texte(c, h, 160, 191.6, patient.telephone or '', largeur_max=150)
+        _texte(c, h, 420.8, 191.6, demande.ville_residence or '', largeur_max=135)
 
         if demande.traitement_a_renouveler is True:
             _coche(c, h, 377.1, 392.6, 239.5, 252.5)
@@ -205,19 +217,19 @@ def remplir_tpc_cnss_renouvellement(demande, patient, medecin, code_formation_sa
 
         y_rows = [359.6, 387.6, 415.3, 443.9]
         for ligne, y in zip((demande.traitements or [])[:4], y_rows):
-            _texte(c, h, 39, y + 14, ligne.get('code_ald', ''), taille=FONT_SIZE_TABLE, largeur_max=90)
-            _texte(c, h, 134, y + 14, ligne.get('medicament', ''), taille=FONT_SIZE_TABLE, largeur_max=150)
-            _texte(c, h, 291, y + 14, ligne.get('forme_dosage', ''), taille=FONT_SIZE_TABLE, largeur_max=100)
-            _texte(c, h, 397, y + 14, ligne.get('posologie', ''), taille=FONT_SIZE_TABLE, largeur_max=72)
-            _texte(c, h, 476, y + 14, ligne.get('duree', ''), taille=FONT_SIZE_TABLE, largeur_max=78)
+            _texte(c, h, 39, y + 14, ligne.get('code_ald', ''), taille=FONT_SIZE_TPC_TABLE, largeur_max=90)
+            _texte(c, h, 134, y + 14, ligne.get('medicament', ''), taille=FONT_SIZE_TPC_TABLE, largeur_max=150)
+            _texte(c, h, 291, y + 14, ligne.get('forme_dosage', ''), taille=FONT_SIZE_TPC_TABLE, largeur_max=100)
+            _texte(c, h, 397, y + 14, ligne.get('posologie', ''), taille=FONT_SIZE_TPC_TABLE, largeur_max=72)
+            _texte(c, h, 476, y + 14, ligne.get('duree', ''), taille=FONT_SIZE_TPC_TABLE, largeur_max=78)
 
-        _texte_cases(c, h, 535.3, CASES_RENOUVELLEMENT['code_formation_sanitaire'], code_formation_sanitaire or '')
-        _texte_cases(c, h, 535.6, CASES_RENOUVELLEMENT['code_prescripteur'], medecin.code_prescripteur or '')
-        _texte(c, h, 111.9, 563.9, medecin.telephone or '', largeur_max=235)
+        _texte_cases(c, h, 533.3, CASES_RENOUVELLEMENT['code_formation_sanitaire'], code_formation_sanitaire or '', taille=FONT_SIZE_TPC_IDENTITE)
+        _texte_cases(c, h, 533.6, CASES_RENOUVELLEMENT['code_prescripteur'], medecin.code_prescripteur or '', taille=FONT_SIZE_TPC_IDENTITE)
+        _texte(c, h, 111.9, 561.9, medecin.telephone or '', largeur_max=235)
         d = demande.date_prescription or date.today()
-        _texte_centree(c, h, 183.3, 207.3, 595.4, d.strftime('%d'), taille=FONT_SIZE_TABLE)
-        _texte_centree(c, h, 211.1, 241.8, 595.4, d.strftime('%m'), taille=FONT_SIZE_TABLE)
-        _texte_centree(c, h, 259.3, 276.3, 595.4, str(d.year)[-2:], taille=FONT_SIZE_TABLE)
+        _texte_centree(c, h, 183.3, 207.3, 593.4, d.strftime('%d'), taille=FONT_SIZE_TPC_TABLE)
+        _texte_centree(c, h, 211.1, 241.8, 593.4, d.strftime('%m'), taille=FONT_SIZE_TPC_TABLE)
+        _texte_centree(c, h, 259.3, 276.3, 593.4, str(d.year)[-2:], taille=FONT_SIZE_TPC_TABLE)
 
     page1.merge_page(_overlay(largeur, hauteur, dessiner))
     writer = PdfWriter()
@@ -235,29 +247,29 @@ def remplir_tpc_cnss_modification(demande, patient, medecin, code_formation_sani
 
     def dessiner(c, h):
         nom_complet = f"{patient.nom} {patient.prenom}".strip()
-        _texte_cases(c, h, 139.0, CASES_MODIFICATION['numero_amu'], patient.numero_assure or '')
-        _texte(c, h, 160, 162.6, nom_complet, largeur_max=395)
-        _texte(c, h, 160, 191.1, patient.telephone or '', largeur_max=150)
-        _texte(c, h, 420, 191.1, demande.ville_residence or '', largeur_max=135)
+        _texte_cases(c, h, 137.0, CASES_MODIFICATION['numero_amu'], patient.numero_assure or '', taille=FONT_SIZE_TPC_IDENTITE)
+        _texte(c, h, 160, 160.6, nom_complet, largeur_max=395)
+        _texte(c, h, 160, 189.1, patient.telephone or '', largeur_max=150)
+        _texte(c, h, 420, 189.1, demande.ville_residence or '', largeur_max=135)
 
-        _texte_boite(c, h, 38.3, 556.8, 260.7, 317.3, demande.motif_modification or '', taille=9)
-        _texte_boite(c, h, 38.3, 556.8, 354.3, 421.4, demande.resultats_examens_effectues or '', taille=9)
+        _texte_boite(c, h, 38.3, 556.8, 260.7, 317.3, demande.motif_modification or '')
+        _texte_boite(c, h, 38.3, 556.8, 354.3, 421.4, demande.resultats_examens_effectues or '')
 
         y_rows = [492.2, 512.9, 533.5, 554.1, 574.8, 595.4]
         for ligne, y in zip((demande.traitements or [])[:6], y_rows):
-            _texte(c, h, 39, y + 13, ligne.get('code_ald', ''), taille=FONT_SIZE_TABLE, largeur_max=64)
-            _texte(c, h, 107, y + 13, ligne.get('medicament', ''), taille=FONT_SIZE_TABLE, largeur_max=150)
-            _texte(c, h, 263, y + 13, ligne.get('forme_dosage', ''), taille=FONT_SIZE_TABLE, largeur_max=115)
-            _texte(c, h, 384, y + 13, ligne.get('posologie', ''), taille=FONT_SIZE_TABLE, largeur_max=88)
-            _texte(c, h, 476, y + 13, ligne.get('duree', ''), taille=FONT_SIZE_TABLE, largeur_max=78)
+            _texte(c, h, 39, y + 13, ligne.get('code_ald', ''), taille=FONT_SIZE_TPC_TABLE, largeur_max=64)
+            _texte(c, h, 107, y + 13, ligne.get('medicament', ''), taille=FONT_SIZE_TPC_TABLE, largeur_max=150)
+            _texte(c, h, 263, y + 13, ligne.get('forme_dosage', ''), taille=FONT_SIZE_TPC_TABLE, largeur_max=115)
+            _texte(c, h, 384, y + 13, ligne.get('posologie', ''), taille=FONT_SIZE_TPC_TABLE, largeur_max=88)
+            _texte(c, h, 476, y + 13, ligne.get('duree', ''), taille=FONT_SIZE_TPC_TABLE, largeur_max=78)
 
-        _texte_cases(c, h, 661.3, CASES_MODIFICATION['code_formation_sanitaire'], code_formation_sanitaire or '')
-        _texte_cases(c, h, 661.6, CASES_MODIFICATION['code_prescripteur'], medecin.code_prescripteur or '')
-        _texte(c, h, 106.5, 681.6, medecin.telephone or '', largeur_max=235)
+        _texte_cases(c, h, 659.3, CASES_MODIFICATION['code_formation_sanitaire'], code_formation_sanitaire or '', taille=FONT_SIZE_TPC_IDENTITE)
+        _texte_cases(c, h, 659.6, CASES_MODIFICATION['code_prescripteur'], medecin.code_prescripteur or '', taille=FONT_SIZE_TPC_IDENTITE)
+        _texte(c, h, 106.5, 679.6, medecin.telephone or '', largeur_max=235)
         d = demande.date_prescription or date.today()
-        _texte_centree(c, h, 444.0, 467.7, 702.9, d.strftime('%d'), taille=FONT_SIZE_TABLE)
-        _texte_centree(c, h, 471.5, 502.0, 702.9, d.strftime('%m'), taille=FONT_SIZE_TABLE)
-        _texte_centree(c, h, 519.4, 536.3, 702.9, str(d.year)[-2:], taille=FONT_SIZE_TABLE)
+        _texte_centree(c, h, 444.0, 467.7, 700.9, d.strftime('%d'), taille=FONT_SIZE_TPC_TABLE)
+        _texte_centree(c, h, 471.5, 502.0, 700.9, d.strftime('%m'), taille=FONT_SIZE_TPC_TABLE)
+        _texte_centree(c, h, 519.4, 536.3, 700.9, str(d.year)[-2:], taille=FONT_SIZE_TPC_TABLE)
 
     page1.merge_page(_overlay(largeur, hauteur, dessiner))
     writer = PdfWriter()
@@ -275,28 +287,28 @@ def remplir_tpc_inam_rectification(demande, patient, medecin, code_formation_san
 
     def dessiner(c, h):
         nom_complet = f"{patient.nom} {patient.prenom}".strip()
-        _texte(c, h, 172, 163.0, nom_complet, largeur_max=385)
-        _texte(c, h, 172, 186.4, patient.numero_assure or '', largeur_max=385)
-        _texte(c, h, 172, 209.8, patient.telephone or '', largeur_max=385)
-        _texte(c, h, 172, 227.0, demande.numero_ancien_tpc or '', largeur_max=385)
+        _texte(c, h, 172, 161.0, nom_complet, largeur_max=385)
+        _texte(c, h, 172, 184.4, patient.numero_assure or '', largeur_max=385)
+        _texte(c, h, 172, 207.8, patient.telephone or '', largeur_max=385)
+        _texte(c, h, 172, 225.0, demande.numero_ancien_tpc or '', largeur_max=385)
 
-        _texte_boite(c, h, 38.3, 557.0, 269.1, 373.1, demande.motif_modification or '', taille=9)
-        _texte_boite(c, h, 38.3, 557.0, 411.9, 527.6, demande.resultats_examens_effectues or '', taille=9)
+        _texte_boite(c, h, 38.3, 557.0, 269.1, 373.1, demande.motif_modification or '')
+        _texte_boite(c, h, 38.3, 557.0, 411.9, 527.6, demande.resultats_examens_effectues or '')
 
         lignes = demande.traitements or []
         resume = '; '.join(
             f"{l.get('medicament','')} ({l.get('forme_dosage','')}, {l.get('posologie','')}, {l.get('code_ald','')})".strip()
             for l in lignes if l.get('medicament')
         )
-        _texte_boite(c, h, 38.3, 557.0, 566.4, 666.7, resume, taille=9)
+        _texte_boite(c, h, 38.3, 557.0, 566.4, 666.7, resume)
 
-        _texte(c, h, 452, 708.9, code_formation_sanitaire or '', taille=9, largeur_max=95)
-        _texte(c, h, 408, 723.5, medecin.code_prescripteur or '', taille=9, largeur_max=135)
-        _texte(c, h, 417, 738.2, medecin.telephone or '', taille=9, largeur_max=125)
+        _texte(c, h, 452, 706.9, code_formation_sanitaire or '', taille=FONT_SIZE_TPC_BOITE, largeur_max=95)
+        _texte(c, h, 408, 721.5, medecin.code_prescripteur or '', taille=FONT_SIZE_TPC_BOITE, largeur_max=135)
+        _texte(c, h, 417, 736.2, medecin.telephone or '', taille=FONT_SIZE_TPC_BOITE, largeur_max=125)
         d = demande.date_prescription or date.today()
-        _texte_centree(c, h, 391.5, 419.4, 767.4, d.strftime('%d'), taille=9)
-        _texte_centree(c, h, 426.8, 484.6, 767.4, d.strftime('%m'), taille=9)
-        _texte_centree(c, h, 489.3, 533.8, 767.4, str(d.year), taille=9)
+        _texte_centree(c, h, 391.5, 419.4, 765.4, d.strftime('%d'), taille=FONT_SIZE_TPC_BOITE)
+        _texte_centree(c, h, 426.8, 484.6, 765.4, d.strftime('%m'), taille=FONT_SIZE_TPC_BOITE)
+        _texte_centree(c, h, 489.3, 533.8, 765.4, str(d.year), taille=FONT_SIZE_TPC_BOITE)
 
     page1.merge_page(_overlay(largeur, hauteur, dessiner))
     writer = PdfWriter()
