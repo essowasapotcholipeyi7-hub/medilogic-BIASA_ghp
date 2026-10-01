@@ -379,7 +379,8 @@
 <div class="card mb-3">
     <div class="card-body py-2">
         <label class="form-label mb-1" for="champScannerSoin"><i class="fas fa-barcode"></i> Scanner un code-barres (acte ou médicament)</label>
-        <input type="text" class="form-control" id="champScannerSoin" placeholder="Cliquez ici puis scannez..." autocomplete="off">
+        <input type="text" class="form-control" id="champScannerSoin" placeholder="Cliquez ici puis scannez..." autocomplete="off"
+               style="scroll-margin-top: 110px;">
         <div id="scanStatutSoin" class="small mt-1"></div>
     </div>
 </div>
@@ -777,23 +778,8 @@ function afficherAlerteScanSoin(message, estErreur) {
         if (champ.value.trim().length < 4) return;
         debounceScanSoin = setTimeout(soumettreScanSoin, 500);
     });
-    // ⭐ Patron (2026-10-02) : pas un centrage — "que ça monte un peu plus
-    // pour que les articles soient bien visibles dans le panier" : fait
-    // remonter le champ tout en haut de l'écran (sous le bandeau fixe,
-    // dont la hauteur réelle est mesurée pour ne jamais le cacher dessous)
-    // dès qu'il reçoit le focus, pour laisser un maximum de place en
-    // dessous aux cartes "Ajouter un acte/médicament".
-    const hauteurBandeauFixe = () => {
-        let h = 0;
-        document.querySelectorAll('.navbar, .top-nav').forEach(el => {
-            const pos = getComputedStyle(el).position;
-            if (pos === 'fixed' || pos === 'sticky') h += el.getBoundingClientRect().height;
-        });
-        return h || 100;
-    };
     champ.addEventListener('focus', function() {
-        const y = champ.getBoundingClientRect().top + window.scrollY - hauteurBandeauFixe() - 10;
-        window.scrollTo({ top: Math.max(y, 0), behavior: 'smooth' });
+        champ.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
     champ.focus();
 })();

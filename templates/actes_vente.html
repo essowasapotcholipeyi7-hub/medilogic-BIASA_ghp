@@ -206,7 +206,8 @@
                     <div class="col-12">
                         <label class="form-label mb-1" for="champScannerActe"><i class="fas fa-barcode"></i> Scanner un code-barres</label>
                         <input type="text" class="form-control" id="champScannerActe"
-                               placeholder="Cliquez ici puis scannez..." autocomplete="off">
+                               placeholder="Cliquez ici puis scannez..." autocomplete="off"
+                               style="scroll-margin-top: 110px;">
                         <div id="scanStatutActe" class="small mt-1"></div>
                     </div>
                 </div>
@@ -1342,23 +1343,8 @@ function afficherAlerteScanActe(message, estErreur) {
         if (champ.value.trim().length < 4) return;
         debounceScanActe = setTimeout(soumettreScanActe, 500);
     });
-    // ⭐ Patron (2026-10-02) : pas un centrage — "que ça monte un peu plus
-    // pour que les articles soient bien visibles dans le panier" : fait
-    // remonter le champ tout en haut de l'écran (sous le bandeau fixe,
-    // dont la hauteur réelle est mesurée pour ne jamais le cacher dessous)
-    // dès qu'il reçoit le focus, pour laisser un maximum de place en
-    // dessous au panier, où le résultat du scan s'affiche.
-    const hauteurBandeauFixe = () => {
-        let h = 0;
-        document.querySelectorAll('.navbar, .top-nav').forEach(el => {
-            const pos = getComputedStyle(el).position;
-            if (pos === 'fixed' || pos === 'sticky') h += el.getBoundingClientRect().height;
-        });
-        return h || 100;
-    };
     champ.addEventListener('focus', function() {
-        const y = champ.getBoundingClientRect().top + window.scrollY - hauteurBandeauFixe() - 10;
-        window.scrollTo({ top: Math.max(y, 0), behavior: 'smooth' });
+        champ.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
     champ.focus();
 })();
