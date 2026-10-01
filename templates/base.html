@@ -2204,7 +2204,7 @@
         {% if not _bloq %}
         <li class="nav-item nav-item-soins">
             <a class="nav-link-top" href="#" onclick="return false;">
-                Soins&actes&vente <i class="fas fa-chevron-down arrow"></i>
+                Actes <i class="fas fa-chevron-down arrow"></i>
             </a>
             <!-- ⭐ "large" (grille 2 colonnes) retirée — seul ce menu
                  l'utilisait, ce qui le désalignait visuellement de tous les
@@ -2340,21 +2340,6 @@
                     Finances&Caisse&Charges
                 </a>
                 {% endif %}
-                <!-- ⭐ Rétrocession au médecin réalisateur — patron : "un
-                     sous-onglet dans le menu horizontal dans finance".
-                     "Configurer les taux" déplacé dans Paramètres (patron :
-                     "je ne veux pas que xa soit touffu") — seul le paiement
-                     lui-même reste ici. -->
-                {% if a_acces('medecins_activites') and not onglet_cache('medecins_activites') and not _bloq %}
-                <a class="menu-item" href="{{ url_for('gestion_medecins') }}">
-                    Médecins &amp; Activités
-                </a>
-                {% endif %}
-                {% if not onglet_cache('part_medecin') and not _bloq and session.role in ['admin', 'secretaire', 'caissier', 'gestionnaire', 'comptable'] %}
-                <a class="menu-item" href="{{ url_for('page_part_medecin') }}">
-                    Part Médecin
-                </a>
-                {% endif %}
                 {% if a_acces('statistiques') and not onglet_cache('statistiques') and not _bloq %}
                 <a class="menu-item" href="{{ url_for('statistiques_ventes') }}">
                     Statistiques des ventes
@@ -2379,10 +2364,38 @@
                 {% endif %}
             </div>
         </li>
+
+        <!-- ⭐ Onglet "Médecins" — patron : "je trouve anormal qu'il y ait
+             Médecins & Activités dans Finances" (2026-10-01). Regroupe les 3
+             liens qui vivaient éparpillés (Finances, Paramètres) sous un seul
+             onglet dédié, comme c'était déjà le cas dans l'ex-menu latéral. -->
+        {% if a_acces('medecins_activites') and not onglet_cache('medecins_activites') and not _bloq %}
+        <li class="nav-item nav-item-medecins">
+            <span class="nav-link-top">
+                Médecins <i class="fas fa-chevron-down arrow"></i>
+            </span>
+            <div class="mega-menu">
+                <a class="menu-item" href="{{ url_for('gestion_medecins') }}">
+                    Médecins &amp; Activités
+                </a>
+                {% if not onglet_cache('part_medecin') and not _bloq and session.role in ['admin', 'secretaire', 'caissier', 'gestionnaire', 'comptable'] %}
+                <a class="menu-item" href="{{ url_for('page_part_medecin') }}">
+                    Part Médecin
+                </a>
+                {% endif %}
+                {% if session.is_admin or session.role == 'gestionnaire' %}
+                <a class="menu-item" href="{{ url_for('page_taux_part_medecin') }}">
+                    Configurer les taux
+                </a>
+                {% endif %}
+            </div>
+        </li>
+        {% endif %}
+
         {% if not onglet_cache('historique_ventes') and not _bloq %}
         <li class="nav-item nav-item-historique">
             <a class="nav-link-top" href="{{ url_for('historique_ventes') }}">
-                Historique des ventes
+                Historique
             </a>
         </li>
         {% endif %}
@@ -2392,7 +2405,7 @@
         {% if not onglet_cache('laboratoire_radiologie') and not _bloq %}
         <li class="nav-item nav-item-labo-radio">
             <span class="nav-link-top">
-                Laboratoire &amp; Radiologie <i class="fas fa-chevron-down arrow"></i>
+                Labo/Radio <i class="fas fa-chevron-down arrow"></i>
             </span>
             <div class="mega-menu">
                 {% if session.role == 'laborantin' or a_acces('demandes_laboratoire') %}
@@ -2439,7 +2452,7 @@
         {% if not _bloq %}
         <li class="nav-item nav-item-referentiels">
             <span class="nav-link-top">
-                Référentiels AMU <i class="fas fa-chevron-down arrow"></i>
+                AMU <i class="fas fa-chevron-down arrow"></i>
             </span>
             <div class="mega-menu">
                 <a class="menu-item" href="https://referentiels.amu.tg/#/providers" target="_blank">
@@ -2521,9 +2534,6 @@
                 </a>
                 {% endif %}
                 {% if session.is_admin or session.role == 'gestionnaire' %}
-                <a class="menu-item" href="{{ url_for('page_taux_part_medecin') }}">
-                    Taux Part Médecin
-                </a>
                 <a class="menu-item" href="{{ url_for('page_hospitalisation_configuration') }}">
                     Configuration des services
                 </a>
@@ -2558,16 +2568,11 @@
 
         {% endif %} {# fin restriction laborantin/radiologue #}
 
-        <!-- ⭐ Guide d'utilisation & FAQ — visibles à TOUS les rôles sans
-             exception dans sidebar_menu.html (placés hors de toute
-             restriction) mais absents du menu horizontal. Mêmes liens ici,
-             en dehors du bloc laborantin/radiologue ci-dessus, pour un
-             comportement identique. -->
-        <li class="nav-item">
-            <a class="nav-link-top" href="{{ url_for('guide_utilisation') }}">
-                <i class="fas fa-book-open"></i> Guide d'utilisation
-            </a>
-        </li>
+        <!-- ⭐ FAQ — visible à TOUS les rôles sans exception dans
+             sidebar_menu.html (placé hors de toute restriction). "Guide
+             d'utilisation" retiré d'ici (patron, 2026-10-01 : "pour avoir de
+             l'espace vu qu'il y a FAQ") — la page reste accessible par son
+             URL, juste plus listée dans ce menu déjà chargé. -->
         <li class="nav-item">
             <a class="nav-link-top" href="{{ url_for('page_faq') }}">
                 <i class="fas fa-circle-question"></i> FAQ
