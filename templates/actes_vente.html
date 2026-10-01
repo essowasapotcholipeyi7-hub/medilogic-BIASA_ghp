@@ -1311,6 +1311,11 @@ function afficherAlerteScanActe(message, estErreur) {
 // ⭐ Champ scanner — même mécanisme que le champ QR de la page de connexion
 // (index.html) : une douchette USB/Bluetooth "tape" le code comme un
 // clavier, puis envoie Entrée.
+// ⭐ Patron (2026-10-02) : le champ ne vole plus le focus sur CHAQUE clic
+// ailleurs sur la page (ça gênait les autres boutons/le tableau du
+// panier) — il reprend le focus seulement juste après un scan réussi,
+// pour enchaîner plusieurs scans sans recliquer, sans empêcher le reste
+// de la page d'être utilisable normalement entre deux scans.
 (function() {
     const champ = document.getElementById('champScannerActe');
     if (!champ) return;
@@ -1320,6 +1325,7 @@ function afficherAlerteScanActe(message, estErreur) {
         const code = champ.value.trim();
         champ.value = '';
         if (code) ajouterActeParScan(code);
+        champ.focus();
     };
     champ.addEventListener('keydown', function(e) {
         if (e.key !== 'Enter') return;
@@ -1336,11 +1342,15 @@ function afficherAlerteScanActe(message, estErreur) {
         if (champ.value.trim().length < 4) return;
         debounceScanActe = setTimeout(soumettreScanActe, 500);
     });
-    const refocaliser = () => { if (document.activeElement !== champ) champ.focus(); };
-    refocaliser();
-    document.addEventListener('click', function(e) {
-        if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) refocaliser();
+    // ⭐ Patron (2026-10-02) : "que ça scroll directement vers le haut pour
+    // que ce qu'on scanne trouve la place et s'affiche bien" — recentre le
+    // champ (et le message de confirmation juste en dessous) dans l'écran
+    // dès qu'il reçoit le focus, qu'on ait cliqué dedans ou qu'il se soit
+    // refocalisé tout seul après un scan.
+    champ.addEventListener('focus', function() {
+        champ.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
+    champ.focus();
 })();
 
 // 🔥 FONCTION POUR AJOUTER L'ACTE AU PANIER

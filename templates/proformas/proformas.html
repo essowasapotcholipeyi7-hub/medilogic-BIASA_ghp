@@ -1362,6 +1362,7 @@ function afficherAlerteScanProforma(message, estErreur) {
         const code = champ.value.trim();
         champ.value = '';
         if (code) ajouterArticleParScan(code);
+        champ.focus();
     };
     champ.addEventListener('keydown', function(e) {
         if (e.key !== 'Enter') return;
@@ -1377,6 +1378,14 @@ function afficherAlerteScanProforma(message, estErreur) {
         clearTimeout(debounceScanProforma);
         if (champ.value.trim().length < 4) return;
         debounceScanProforma = setTimeout(soumettreScanProforma, 500);
+    });
+    // ⭐ Patron (2026-10-02) : "que ça scroll directement vers le haut pour
+    // que ce qu'on scanne trouve la place et s'affiche bien" — recentre le
+    // champ (et le message de confirmation juste en dessous) dans l'écran
+    // dès qu'il reçoit le focus, qu'on ait cliqué dedans ou qu'il se soit
+    // refocalisé tout seul après un scan.
+    champ.addEventListener('focus', function() {
+        champ.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
 })();
 function ajouterArticlePersonnalise() {
