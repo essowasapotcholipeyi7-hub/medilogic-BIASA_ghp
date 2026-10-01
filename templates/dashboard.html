@@ -279,13 +279,13 @@
                         <option value="A4">Format A4</option>
                     </select>
                 </div>
-                <!-- 🔥 Choix détaillée/cumulée (pris en compte uniquement pour les
-                     boutons Facture Patient/Structure) : la cumulée ne montre qu'un
+                <!-- 🔥 Choix détaillée/cumulée (pris en compte par tous les
+                     boutons Reçu/Facture) : la cumulée ne montre qu'un
                      total par catégorie (Consultation, Actes médicaux, Chirurgie,
                      Séjours hospitaliers, Pharmacie) sans le détail article par
                      article. Même mécanisme que l'historique des ventes. -->
                 <div class="mb-3">
-                    <label class="form-label fw-semibold">Type de facture</label>
+                    <label class="form-label fw-semibold">Type de document</label>
                     <div class="btn-group w-100" role="group">
                         <input type="radio" class="btn-check" name="modeDetailDashboard" id="modeDetailDashboardComplet" autocomplete="off" checked onchange="modeDetailDashboard='complet'">
                         <label class="btn btn-outline-secondary btn-sm" for="modeDetailDashboardComplet">Détaillée</label>
@@ -335,12 +335,12 @@ function printDocument(action) {
     let url = '';
     
     if (action === 'recu_client') {
-        url = `/recu/${currentVenteId}/${currentVenteType}?format=${format}`;
+        url = `/recu/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`;
     } else if (action === 'recu_structure') {
-        url = `/recu_structure/${currentVenteId}/${currentVenteType}?format=${format}`;
+        url = `/recu_structure/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`;
     } else if (action === 'les_deux_recus') {
-        window.open(`/recu/${currentVenteId}/${currentVenteType}?format=${format}`, '_blank');
-        window.open(`/recu_structure/${currentVenteId}/${currentVenteType}?format=${format}`, '_blank');
+        window.open(`/recu/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`, '_blank');
+        window.open(`/recu_structure/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`, '_blank');
         bootstrap.Modal.getInstance(document.getElementById('printModal')).hide();
         return;
     } else if (action === 'facture_client') {
@@ -348,8 +348,8 @@ function printDocument(action) {
     } else if (action === 'facture_structure') {
         url = `/facture_structure/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`;
     } else if (action === 'les_deux') {
-        window.open(`/recu/${currentVenteId}/${currentVenteType}?format=${format}`, '_blank');
-        window.open(`/recu_structure/${currentVenteId}/${currentVenteType}?format=${format}`, '_blank');
+        window.open(`/recu/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`, '_blank');
+        window.open(`/recu_structure/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`, '_blank');
         bootstrap.Modal.getInstance(document.getElementById('printModal')).hide();
         return;
     }

@@ -157,6 +157,12 @@
     }
 </style>
 {% endif %}
+<style>
+    table.table-cumul td:first-child {
+        font-weight: bold;
+        color: #495796;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -194,6 +200,9 @@
                     </div>
                     <div class="col-5 text-end">
                         <h2 style="font-size: 14px; margin: 0;">REÇU</h2>
+                        {% if mode_detail == 'cumule' %}
+                        <p style="margin: 1px 0 0 0; font-size: 9px; opacity: 0.9;">Récapitulatif par catégorie</p>
+                        {% endif %}
                         <!-- ⭐ Précise le type de vente (pharmacie/actes/mixte) dans
                              l'en-tête, pour distinguer un reçu pharmacie d'un reçu
                              d'actes d'un coup d'œil. -->
@@ -264,6 +273,24 @@
      le 14/09) — sans cette colonne, deux lignes identiques sur un reçu à
      date unique paraissent suspectes pour l'assurance qui le contrôle.
      Absente pour une vente directe classique, aucun changement pour elle. -->
+{% if mode_detail == 'cumule' %}
+<table class="table-cumul" style="width:100%; border-collapse: collapse; font-size: 10px;">
+    <thead>
+        <tr style="background:#f8f9fa; border-bottom: 2px solid #dee2e6;">
+            <th style="padding:4px; text-align:left; width:65%;">Catégorie</th>
+            <th style="padding:4px; text-align:right; width:35%;">Total</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for ligne in cumul_categories %}
+        <tr style="border-bottom:1px solid #eee;">
+            <td style="padding:4px; font-size:9px;">{{ ligne.nom }}</td>
+            <td style="text-align:right; font-weight:600; font-size:9px;">{{ ligne.total|round(0)|int }} F</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
 <table style="width:100%; border-collapse: collapse; font-size: 10px;">
     <thead>
         <tr style="background:#f8f9fa; border-bottom: 2px solid #dee2e6;">
@@ -306,6 +333,7 @@
         {% endfor %}
     </tbody>
 </table>
+{% endif %}
 
 
                 <hr style="margin:6px 0;">

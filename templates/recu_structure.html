@@ -124,6 +124,12 @@
     }
 </style>
 {% endif %}
+<style>
+    table.table-cumul td:first-child {
+        font-weight: bold;
+        color: #495796;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -162,6 +168,9 @@
                     </div>
                     <div class="col-5 text-end">
                         <h1 style="font-size: 18px; margin: 0;">REÇU STRUCTURE</h1>
+                        {% if mode_detail == 'cumule' %}
+                        <p style="margin: 1px 0 0 0; font-size: 11px; opacity: 0.9;">Récapitulatif par catégorie</p>
+                        {% endif %}
                         <!-- ⭐ Précise le type de vente (pharmacie/actes/mixte). -->
                         {% if type_vente == 'pharmacie' or type_vente == 'pharma' %}
                         <p style="margin: 1px 0 0 0; font-weight: 600; font-size: 12px; letter-spacing: 0.5px;">PHARMACIE</p>
@@ -236,6 +245,25 @@
 </div>
 <hr>
 
+                {% if mode_detail == 'cumule' %}
+                <!-- Récapitulatif par catégorie (sans détail des articles) -->
+                <table class="table-cumul" style="width:100%; font-size:11px; border:1px solid #ddd; border-collapse:collapse;">
+                    <thead>
+                        <tr style="background:#f1f1f1;">
+                            <th style="padding:5px; text-align:left; width:65%;">Catégorie</th>
+                            <th style="padding:5px; text-align:right; width:35%;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ligne in cumul_categories %}
+                        <tr>
+                            <td style="padding:4px;">{{ ligne.nom }}</td>
+                            <td style="text-align:right;">{{ ligne.total|round(0)|int }} F</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
                 <!-- ===== TABLEAU DES ARTICLES ===== -->
                 <table style="width:100%; font-size:11px; border:1px solid #ddd; border-collapse:collapse;">
                     <thead>
@@ -257,6 +285,7 @@
                         {% endfor %}
                     </tbody>
                 </table>
+                {% endif %}
 
                 <!-- ===== TOTAUX AVEC DOUBLE ASSURANCE ===== -->
                 <div class="mt-2">

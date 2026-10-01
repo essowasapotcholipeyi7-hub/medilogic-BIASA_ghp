@@ -4292,11 +4292,28 @@ def recu(vente_id, type):
     # jamais ce champ, colonne absente, aucun changement visuel pour elle.
     a_dates_prestation = any(a.get('date_prestation_affichee') for a in articles)
 
+    # Reçu cumulé — même mécanisme que facture()/facture_structure() ;
+    # articles porte déjà 'type' ('acte'/'produit') ici, voir plus haut.
+    mode_detail = request.args.get('detail', 'complet')
+    if mode_detail not in ('complet', 'cumule'):
+        mode_detail = 'complet'
+
+    cumul_categories = []
+    if mode_detail == 'cumule':
+        from utils.categories_recu import cumuler_articles_par_categorie
+        classification_rows = ClassificationAmuCnss.query.filter_by(structure_id=structure_id).all()
+        classification_map = {}
+        for row in classification_rows:
+            classification_map.setdefault(row.nom_acte, row.categorie)
+        cumul_categories = cumuler_articles_par_categorie(articles, classification_map)
+
     return render_template('recu_client.html',
                          a_dates_prestation=a_dates_prestation,
                          vente_id=vente_id,
                          numero_local_vente=numero_local_vente,
                          type_vente=type_bd,
+                         mode_detail=mode_detail,
+                         cumul_categories=cumul_categories,
                          articles=articles,
                          sous_total=sous_total,
                          base_remboursement=base_remboursement,
@@ -4466,7 +4483,8 @@ def recu_structure(vente_id, type):
                     'nom': p.get('nom', 'Produit'),
                     'quantite': int(p.get('quantite', 1)),
                     'prix_unitaire': float(p.get('prix_reel', p.get('prix', 0))),
-                    'total': float(p.get('total') or 0)
+                    'total': float(p.get('total') or 0),
+                    'type': 'produit'
                 })
         else:
             if type_bd == 'mixte':
@@ -4478,7 +4496,8 @@ def recu_structure(vente_id, type):
                         'nom': p.get('nom', 'Produit'),
                         'quantite': int(p.get('quantite', 1)),
                         'prix_unitaire': float(p.get('prix_reel', p.get('prix', 0))),
-                        'total': float(p.get('total') or 0)
+                        'total': float(p.get('total') or 0),
+                        'type': 'produit'
                     })
             actes_data = v.get('actes', [])
             if isinstance(actes_data, str):
@@ -4488,7 +4507,8 @@ def recu_structure(vente_id, type):
                     'nom': a.get('nom', 'Acte'),
                     'quantite': int(a.get('quantite', 1)),
                     'prix_unitaire': float(a.get('prix') or 0),
-                    'total': float(a.get('total') or 0)
+                    'total': float(a.get('total') or 0),
+                    'type': 'acte'
                 })
 
     # Gestion des assurances
@@ -4509,11 +4529,27 @@ def recu_structure(vente_id, type):
     
     patient_nom_clean = patient_nom.replace(' ', '_').replace("'", "").replace('é', 'e').replace('è', 'e').replace('ê', 'e').replace('à', 'a').replace('ç', 'c')
     nom_fichier = f"recu_structure_{patient_nom_clean}_{vente_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    
+
+    # Reçu cumulé — même mécanisme que facture()/recu().
+    mode_detail = request.args.get('detail', 'complet')
+    if mode_detail not in ('complet', 'cumule'):
+        mode_detail = 'complet'
+
+    cumul_categories = []
+    if mode_detail == 'cumule':
+        from utils.categories_recu import cumuler_articles_par_categorie
+        classification_rows = ClassificationAmuCnss.query.filter_by(structure_id=structure_id).all()
+        classification_map = {}
+        for row in classification_rows:
+            classification_map.setdefault(row.nom_acte, row.categorie)
+        cumul_categories = cumuler_articles_par_categorie(articles, classification_map)
+
     return render_template('recu_structure.html',
                          vente_id=vente_id,
                          numero_local_vente=numero_local_vente,
                          type_vente=type_bd,
+                         mode_detail=mode_detail,
+                         cumul_categories=cumul_categories,
                          articles=articles,
                          sous_total=sous_total,
                          taux_assurance=taux_assurance,

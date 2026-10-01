@@ -332,15 +332,15 @@
                         <option value="A4">A4</option>
                     </select>
                 </div>
-                <!-- 🔥 Choix détaillée/cumulée (uniquement pris en compte pour les
-                     boutons "Facture") : la cumulée ne montre qu'un total par
-                     catégorie (Consultation, Actes médicaux, Chirurgie, Séjours
-                     hospitaliers, Pharmacie) sans le détail article par article —
-                     intérêt principal pour une hospitalisation avec beaucoup
-                     d'actes/médicaments. Même mécanisme que la page Factures
-                     clients & Créances, étendu ici à toutes les ventes. -->
+                <!-- 🔥 Choix détaillée/cumulée (pris en compte par les boutons Reçu
+                     ET Facture) : la cumulée ne montre qu'un total par catégorie
+                     (Consultation, Actes médicaux, Chirurgie, Séjours hospitaliers,
+                     Pharmacie) sans le détail article par article — intérêt
+                     principal pour une hospitalisation avec beaucoup d'actes/
+                     médicaments. Même mécanisme que la page Factures clients &
+                     Créances, étendu ici à toutes les ventes. -->
                 <div class="mb-3">
-                    <label class="form-label fw-semibold">Type de facture</label>
+                    <label class="form-label fw-semibold">Type de document</label>
                     <div class="btn-group w-100" role="group">
                         <input type="radio" class="btn-check" name="modeDetailVente" id="modeDetailVenteComplet" autocomplete="off" checked onchange="modeDetailVente='complet'">
                         <label class="btn btn-outline-secondary btn-sm" for="modeDetailVenteComplet">Détaillée</label>
@@ -1187,16 +1187,16 @@ function printDocument(docType) {
     var url = '';
 
     if (docType === 'recu_client') {
-        url = '/recu/' + currentVenteId + '/' + currentVenteType + '?format=' + format;
+        url = '/recu/' + currentVenteId + '/' + currentVenteType + '?format=' + format + '&detail=' + modeDetailVente;
     } else if (docType === 'recu_structure') {
-        url = '/recu_structure/' + currentVenteId + '/' + currentVenteType + '?format=' + format;
+        url = '/recu_structure/' + currentVenteId + '/' + currentVenteType + '?format=' + format + '&detail=' + modeDetailVente;
     } else if (docType === 'facture_client') {
         url = '/facture/' + currentVenteId + '/' + currentVenteType + '?format=' + format + '&detail=' + modeDetailVente;
     } else if (docType === 'facture_structure') {
         url = '/facture_structure/' + currentVenteId + '/' + currentVenteType + '?format=' + format + '&detail=' + modeDetailVente;
     } else if (docType === 'les_deux') {
-        window.open('/recu/' + currentVenteId + '/' + currentVenteType + '?format=' + format, '_blank');
-        window.open('/recu_structure/' + currentVenteId + '/' + currentVenteType + '?format=' + format, '_blank');
+        window.open('/recu/' + currentVenteId + '/' + currentVenteType + '?format=' + format + '&detail=' + modeDetailVente, '_blank');
+        window.open('/recu_structure/' + currentVenteId + '/' + currentVenteType + '?format=' + format + '&detail=' + modeDetailVente, '_blank');
         bootstrap.Modal.getInstance(document.getElementById('documentModal')).hide();
         return;
     }
