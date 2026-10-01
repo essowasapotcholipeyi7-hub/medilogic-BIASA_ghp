@@ -785,6 +785,12 @@ AMU_SUPPORTS = {
         'dossier': 'amu_inam',
         'fichiers': [
             {'nom': 'facture_recapitulative_inam.pdf', 'libelle': 'Facture récapitulative INAM'},
+            # ⭐ Mêmes règles de délivrance que l'AMU-CNSS (patron, 2026-10-01 :
+            # "les regles de délivrances des soins amu inam et amu cnss c'est
+            # les memes regles, il faut ramener les regles à coté des
+            # supports") — fichier dupliqué dans static/documents/amu_inam/
+            # (même contenu que amu_cnss/) pour rester simple côté template.
+            {'nom': 'regles_delivrance_soins_amu.pdf', 'libelle': 'Règles de délivrance de soins AMU'},
         ],
     },
 }
