@@ -23,7 +23,17 @@
     }
     .ep-card h6 { font-weight: 700; color: #0A3D5C; margin-bottom: 14px; }
 
-    #patientResultats, #motifResultats {
+    .ep-section-toggle {
+        border: 1px solid #e3e8ec;
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin-bottom: 14px;
+    }
+    .ep-section-toggle.active { border-color: #0E9D67; background: #F5FBF8; }
+    .ep-section-body { display: none; margin-top: 14px; padding-top: 14px; border-top: 1px dashed #e3e8ec; }
+    .ep-section-toggle.active .ep-section-body { display: block; }
+
+    #patientResultats, .ep-motif-resultats {
         position: relative;
         z-index: 20;
         max-height: 220px;
@@ -35,14 +45,18 @@
         display: none;
     }
     .ep-ligne-motif {
-        display: flex; align-items: center; justify-content: space-between;
-        padding: 6px 10px; border: 1px solid #e3e8ec; border-radius: 8px; margin-bottom: 6px;
+        display: flex; align-items: center; gap: 8px;
+        padding: 8px 10px; border: 1px solid #e3e8ec; border-radius: 8px; margin-bottom: 6px;
         font-size: 13px;
     }
+    .ep-ligne-motif .ep-ligne-nom { flex: 0 0 38%; }
+    .ep-ligne-motif input.ep-ligne-motif-input { flex: 1; font-size: 13px; padding: 4px 8px; }
+
     .ep-badge-statut { font-size: 11px; padding: 4px 10px; border-radius: 999px; font-weight: 600; }
     .ep-badge-en_attente { background: #FCEEE0; color: #92400E; }
     .ep-badge-approuvee { background: #E7F6EE; color: #0B7C52; }
     .ep-badge-refusee { background: #FDECEC; color: #B42318; }
+    .ep-badge-type { font-size: 10px; padding: 2px 8px; border-radius: 999px; background: #EEF3F5; color: #0A3D5C; margin-right: 3px; }
 
     table.ep-historique th { font-size: 12px; text-transform: uppercase; color: #51636D; white-space: nowrap; }
     table.ep-historique td { font-size: 13px; vertical-align: middle; }
@@ -68,13 +82,20 @@
                     <div id="patientChoisiBloc" class="mt-2 small text-muted" style="display:none;"></div>
                     <input type="hidden" id="patientId">
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-3">
                     <label class="form-label small fw-semibold">Médecin prescripteur</label>
                     <select class="form-control" id="medecinId" required>
                         <option value="">— Choisir —</option>
                         {% for m in medecins_liste %}
                         <option value="{{ m.id }}">{{ m.nom_complet }}</option>
                         {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-semibold">Régime AMU</label>
+                    <select class="form-control" id="typeAmu" required>
+                        <option value="amu_cnss">AMU-CNSS / AMU-TNS</option>
+                        <option value="amu_inam">AMU-INAM</option>
                     </select>
                 </div>
                 <div class="col-md-4">
@@ -89,29 +110,88 @@
 
             <hr class="my-3">
 
-            <label class="form-label small fw-semibold">Motif de la demande (actes et/ou produits)</label>
-            <div class="row g-2 align-items-start">
-                <div class="col-md-8 position-relative">
-                    <input type="text" class="form-control" id="motifSearch" placeholder="Rechercher un acte ou un produit dans le tableau tarifaire..." autocomplete="off">
-                    <div id="motifResultats"></div>
+            <label class="form-label small fw-semibold mb-2">
+                Type de demande — cochez tout ce qui s'applique (une même fiche peut couvrir les trois à la fois)
+            </label>
+
+            <!-- ===== ACTES ===== -->
+            <div class="ep-section-toggle" id="sectionActes">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="chkActes" onchange="toggleSection('Actes')">
+                    <label class="form-check-label fw-semibold" for="chkActes">Actes</label>
                 </div>
-                <div class="col-md-2">
-                    <select class="form-control" id="motifSaisieManuelleType">
-                        <option value="acte">Acte</option>
-                        <option value="produit">Produit</option>
-                    </select>
+                <div class="ep-section-body">
+                    <div class="row g-2 position-relative">
+                        <div class="col-md-10">
+                            <input type="text" class="form-control" id="acteSearch" placeholder="Rechercher un acte dans le tableau tarifaire..." autocomplete="off">
+                            <div id="acteResultats" class="ep-motif-resultats"></div>
+                        </div>
+                        <div class="col-md-2">
+                            <button type="button" class="btn btn-outline-secondary w-100" onclick="ajouterManuel('acte')">Saisie manuelle</button>
+                        </div>
+                    </div>
+                    <div id="lignesActesListe" class="mt-3"></div>
                 </div>
-                <div class="col-md-2">
-                    <button type="button" class="btn btn-outline-secondary w-100" onclick="ajouterMotifManuel()">
-                        <i class="fas fa-pen me-1"></i>Saisie manuelle
-                    </button>
-                </div>
-            </div>
-            <div class="small text-muted mt-1">
-                Si l'acte/produit n'existe pas dans le tableau tarifaire, tapez son nom dans le champ ci-dessus puis cliquez "Saisie manuelle".
             </div>
 
-            <div id="lignesMotifListe" class="mt-3"></div>
+            <!-- ===== PRODUITS ===== -->
+            <div class="ep-section-toggle" id="sectionProduits">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="chkProduits" onchange="toggleSection('Produits')">
+                    <label class="form-check-label fw-semibold" for="chkProduits">Produits / Médicaments</label>
+                </div>
+                <div class="ep-section-body">
+                    <div class="row g-2 position-relative">
+                        <div class="col-md-10">
+                            <input type="text" class="form-control" id="produitSearch" placeholder="Rechercher un produit dans le tableau tarifaire..." autocomplete="off">
+                            <div id="produitResultats" class="ep-motif-resultats"></div>
+                        </div>
+                        <div class="col-md-2">
+                            <button type="button" class="btn btn-outline-secondary w-100" onclick="ajouterManuel('produit')">Saisie manuelle</button>
+                        </div>
+                    </div>
+                    <div id="lignesProduitsListe" class="mt-3"></div>
+                </div>
+            </div>
+            <div class="small text-muted mb-3">
+                Si l'acte/produit n'existe pas dans le tableau tarifaire, tapez son nom dans le champ de recherche puis cliquez "Saisie manuelle". Une fois ajouté, remplissez le "Motif" sur la ligne.
+            </div>
+
+            <!-- ===== HOSPITALISATION ===== -->
+            <div class="ep-section-toggle" id="sectionHospitalisation">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="chkHospitalisation" onchange="toggleSection('Hospitalisation')">
+                    <label class="form-check-label fw-semibold" for="chkHospitalisation">Hospitalisation</label>
+                </div>
+                <div class="ep-section-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label small">Date d'admission</label>
+                            <input type="date" class="form-control" id="hospitDateAdmission">
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label small">Motif d'hospitalisation</label>
+                            <input type="text" class="form-control" id="hospitMotif">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small d-block">Catégorie de salle</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="hospitCategorie" id="hospitCatVentilee" value="cabine_ventilee" checked onchange="toggleHospitAutre()">
+                                <label class="form-check-label" for="hospitCatVentilee">Cabine ventilée à 2 lits (recommandée)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="hospitCategorie" id="hospitCatAutre" value="autre" onchange="toggleHospitAutre()">
+                                <label class="form-check-label" for="hospitCatAutre">Autre — préciser</label>
+                            </div>
+                            <input type="text" class="form-control mt-1" id="hospitCategorieAutrePrecision" placeholder="Catégorie attribuée..." style="display:none;">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Durée probable du séjour</label>
+                            <input type="text" class="form-control" id="hospitDureeSejour" placeholder="Ex : 5 jours">
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <button type="submit" class="btn btn-primary mt-3">
                 <i class="fas fa-save me-1"></i>Enregistrer la demande
@@ -122,7 +202,7 @@
     {% if peut_approuver %}
     <div class="ep-card" id="blocAApprouver">
         <h6><i class="fas fa-user-md me-1"></i>En attente de validation médecin</h6>
-        <div id="listeAApprouver" class="text-muted small">Chargement…</div>
+        <div id="listeAApprouver" class="text-muted small"></div>
     </div>
     {% endif %}
 
@@ -136,6 +216,7 @@
                         <th>Patient</th>
                         <th>Médecin</th>
                         <th>Régime</th>
+                        <th>Type</th>
                         <th>Statut</th>
                         <th>Actions</th>
                     </tr>
@@ -148,6 +229,11 @@
                         <td>{{ (p.nom + ' ' + p.prenom) if p else ('Patient #' ~ d.patient_id) }}</td>
                         <td>{{ medecins_par_id.get(d.medecin_id, '—') }}</td>
                         <td>{{ type_amu_labels.get(d.type_amu, d.type_amu) }}</td>
+                        <td>
+                            {% if d.inclure_actes %}<span class="ep-badge-type">Actes</span>{% endif %}
+                            {% if d.inclure_produits %}<span class="ep-badge-type">Produits</span>{% endif %}
+                            {% if d.inclure_hospitalisation %}<span class="ep-badge-type">Hospit.</span>{% endif %}
+                        </td>
                         <td><span class="ep-badge-statut ep-badge-{{ d.statut }}">
                             {{ {'en_attente': 'En attente', 'approuvee': 'Approuvée', 'refusee': 'Refusée'}.get(d.statut, d.statut) }}
                         </span></td>
@@ -171,7 +257,7 @@
                         </td>
                     </tr>
                     {% else %}
-                    <tr><td colspan="6" class="text-muted text-center py-3">Aucune demande pour le moment.</td></tr>
+                    <tr><td colspan="7" class="text-muted text-center py-3">Aucune demande pour le moment.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -180,13 +266,36 @@
 </div>
 
 <script>
-const PEUT_APPROUVER = {{ 'true' if peut_approuver else 'false' }};
+const PATIENT_PREREMPLI = {{ patient_prerempli|tojson|safe if patient_prerempli else 'null' }};
+const HOSPIT_PREREMPLI = {{ 'true' if hospit_prerempli else 'false' }};
+
 let patientChoisi = null;
-let lignesMotif = [];
-let debouncePatient = null;
-let debounceMotif = null;
+let lignesActes = [];
+let lignesProduits = [];
+let debouncePatient = null, debounceActe = null, debounceProduit = null;
+
+function toggleSection(nom) {
+    const chk = document.getElementById('chk' + nom);
+    document.getElementById('section' + nom).classList.toggle('active', chk.checked);
+}
+function toggleHospitAutre() {
+    document.getElementById('hospitCategorieAutrePrecision').style.display =
+        document.getElementById('hospitCatAutre').checked ? '' : 'none';
+}
 
 // ===================== RECHERCHE PATIENT =====================
+function appliquerPatient(p) {
+    patientChoisi = p;
+    document.getElementById('patientId').value = p.id;
+    document.getElementById('patientSearch').value = p.nom + ' ' + p.prenom;
+    document.getElementById('patientResultats').style.display = 'none';
+    const bloc = document.getElementById('patientChoisiBloc');
+    bloc.style.display = '';
+    bloc.innerHTML = `N° AMU : <strong>${p.numero_assure || '—'}</strong> · Tél : ${p.telephone || '—'} · Régime : <strong>${p.type_assurance}</strong>`;
+    document.getElementById('feuilleSoinsWrapper').style.display = (p.type_assurance === 'amu_inam') ? '' : 'none';
+    document.getElementById('typeAmu').value = (p.type_assurance === 'amu_inam') ? 'amu_inam' : 'amu_cnss';
+}
+
 document.getElementById('patientSearch').addEventListener('input', function() {
     const q = this.value.trim();
     clearTimeout(debouncePatient);
@@ -206,7 +315,7 @@ document.getElementById('patientSearch').addEventListener('input', function() {
                     return;
                 }
                 box.innerHTML = liste.map(p => `
-                    <a href="#" class="list-group-item list-group-item-action p-2" onclick='choisirPatient(${JSON.stringify(p).replace(/'/g, "&apos;")}); return false;'>
+                    <a href="#" class="list-group-item list-group-item-action p-2" onclick='appliquerPatient(${JSON.stringify(p).replace(/'/g, "&apos;")}); return false;'>
                         <strong>${p.nom} ${p.prenom}</strong> — ${p.telephone || ''} <span class="text-muted">(${p.type_assurance})</span>
                     </a>`).join('');
                 box.style.display = 'block';
@@ -214,93 +323,99 @@ document.getElementById('patientSearch').addEventListener('input', function() {
     }, 300);
 });
 
-function choisirPatient(p) {
-    patientChoisi = p;
-    document.getElementById('patientId').value = p.id;
-    document.getElementById('patientSearch').value = p.nom + ' ' + p.prenom;
-    document.getElementById('patientResultats').style.display = 'none';
-    const bloc = document.getElementById('patientChoisiBloc');
-    bloc.style.display = '';
-    bloc.innerHTML = `N° AMU : <strong>${p.numero_assure || '—'}</strong> · Tél : ${p.telephone || '—'} · Régime : <strong>${p.type_assurance}</strong>`;
-    document.getElementById('feuilleSoinsWrapper').style.display = (p.type_assurance === 'amu_inam') ? '' : 'none';
+// ===================== RECHERCHE ACTE / PRODUIT (séparées) =====================
+function brancherRecherche(inputId, resultId, url, type) {
+    let debounce;
+    document.getElementById(inputId).addEventListener('input', function() {
+        const q = this.value.trim();
+        clearTimeout(debounce);
+        if (q.length < 2) { document.getElementById(resultId).style.display = 'none'; return; }
+        debounce = setTimeout(() => {
+            fetch(url + encodeURIComponent(q) + '&limit=15')
+                .then(r => r.json())
+                .then(data => {
+                    const box = document.getElementById(resultId);
+                    const liste = data.data || [];
+                    if (!liste.length) {
+                        box.innerHTML = '<div class="list-group-item text-muted small p-2">Aucun résultat — utilisez "Saisie manuelle"</div>';
+                        box.style.display = 'block';
+                        return;
+                    }
+                    box.innerHTML = liste.map(l => `
+                        <a href="#" class="list-group-item list-group-item-action p-2" onclick='ajouterLigne(${JSON.stringify({type, nom: l.nom}).replace(/'/g, "&apos;")}); return false;'>
+                            ${l.nom}
+                        </a>`).join('');
+                    box.style.display = 'block';
+                });
+        }, 300);
+    });
 }
+brancherRecherche('acteSearch', 'acteResultats', '/api/actes?search=', 'acte');
+brancherRecherche('produitSearch', 'produitResultats', '/api/produits/search?search=', 'produit');
 
-// ===================== RECHERCHE MOTIF (acte ou produit) =====================
-document.getElementById('motifSearch').addEventListener('input', function() {
-    const q = this.value.trim();
-    clearTimeout(debounceMotif);
-    if (q.length < 2) { document.getElementById('motifResultats').style.display = 'none'; return; }
-    debounceMotif = setTimeout(() => {
-        Promise.all([
-            fetch('/api/actes?search=' + encodeURIComponent(q) + '&limit=10').then(r => r.json()).catch(() => ({data: []})),
-            fetch('/api/produits/search?search=' + encodeURIComponent(q) + '&limit=10').then(r => r.json()).catch(() => ({data: []})),
-        ]).then(([actes, produits]) => {
-            const liste = [
-                ...(actes.data || []).map(a => ({type: 'acte', nom: a.nom})),
-                ...(produits.data || []).map(p => ({type: 'produit', nom: p.nom})),
-            ];
-            const box = document.getElementById('motifResultats');
-            if (!liste.length) {
-                box.innerHTML = '<div class="list-group-item text-muted small p-2">Aucun résultat — utilisez "Saisie manuelle"</div>';
-                box.style.display = 'block';
-                return;
-            }
-            box.innerHTML = liste.map(l => `
-                <a href="#" class="list-group-item list-group-item-action p-2" onclick='ajouterLigneMotif(${JSON.stringify(l).replace(/'/g, "&apos;")}); return false;'>
-                    <span class="badge bg-secondary me-1">${l.type}</span>${l.nom}
-                </a>`).join('');
-            box.style.display = 'block';
-        });
-    }, 300);
-});
-
-function ajouterMotifManuel() {
-    const nom = document.getElementById('motifSearch').value.trim();
+function ajouterManuel(type) {
+    const inputId = type === 'acte' ? 'acteSearch' : 'produitSearch';
+    const nom = document.getElementById(inputId).value.trim();
     if (!nom) return;
-    const type = document.getElementById('motifSaisieManuelleType').value;
-    ajouterLigneMotif({type, nom, saisie_manuelle: true});
+    ajouterLigne({type, nom, saisie_manuelle: true});
 }
 
-function ajouterLigneMotif(ligne) {
-    const maxActes = (patientChoisi && patientChoisi.type_assurance === 'amu_inam') ? 3 : 3;
-    const maxProduits = (patientChoisi && patientChoisi.type_assurance === 'amu_inam') ? 3 : 4;
-    const compteActes = lignesMotif.filter(l => l.type === 'acte').length;
-    const compteProduits = lignesMotif.filter(l => l.type === 'produit').length;
-    if (ligne.type === 'acte' && compteActes >= maxActes) {
-        alert('Maximum ' + maxActes + ' actes sur cette fiche.'); return;
+function ajouterLigne(ligne) {
+    const estInam = document.getElementById('typeAmu').value === 'amu_inam';
+    const maxActes = 3;
+    const maxProduits = estInam ? 3 : 4;
+    if (ligne.type === 'acte') {
+        if (lignesActes.length >= maxActes) { alert('Maximum ' + maxActes + ' actes sur cette fiche.'); return; }
+        lignesActes.push({...ligne, motif: ''});
+        document.getElementById('acteSearch').value = '';
+        document.getElementById('acteResultats').style.display = 'none';
+        rendreLignes('acte');
+    } else {
+        if (lignesProduits.length >= maxProduits) { alert('Maximum ' + maxProduits + ' produits sur cette fiche.'); return; }
+        lignesProduits.push({...ligne, motif: ''});
+        document.getElementById('produitSearch').value = '';
+        document.getElementById('produitResultats').style.display = 'none';
+        rendreLignes('produit');
     }
-    if (ligne.type === 'produit' && compteProduits >= maxProduits) {
-        alert('Maximum ' + maxProduits + ' produits sur cette fiche.'); return;
-    }
-    lignesMotif.push(ligne);
-    document.getElementById('motifSearch').value = '';
-    document.getElementById('motifResultats').style.display = 'none';
-    rendreLignesMotif();
 }
 
-function retirerLigneMotif(index) {
-    lignesMotif.splice(index, 1);
-    rendreLignesMotif();
+function retirerLigne(type, index) {
+    (type === 'acte' ? lignesActes : lignesProduits).splice(index, 1);
+    rendreLignes(type);
 }
 
-function rendreLignesMotif() {
-    const el = document.getElementById('lignesMotifListe');
-    if (!lignesMotif.length) { el.innerHTML = '<div class="text-muted small">Aucune ligne ajoutée.</div>'; return; }
-    el.innerHTML = lignesMotif.map((l, i) => `
+function majMotifLigne(type, index, valeur) {
+    (type === 'acte' ? lignesActes : lignesProduits)[index].motif = valeur;
+}
+
+function rendreLignes(type) {
+    const lignes = type === 'acte' ? lignesActes : lignesProduits;
+    const el = document.getElementById(type === 'acte' ? 'lignesActesListe' : 'lignesProduitsListe');
+    if (!lignes.length) { el.innerHTML = '<div class="text-muted small">Aucune ligne ajoutée.</div>'; return; }
+    el.innerHTML = lignes.map((l, i) => `
         <div class="ep-ligne-motif">
-            <span><span class="badge bg-secondary me-2">${l.type}</span>${l.nom}${l.saisie_manuelle ? ' <span class="text-muted">(saisie manuelle)</span>' : ''}</span>
-            <button type="button" class="btn btn-sm btn-outline-danger" onclick="retirerLigneMotif(${i})"><i class="fas fa-times"></i></button>
+            <span class="ep-ligne-nom">${l.nom}${l.saisie_manuelle ? ' <span class="text-muted">(manuel)</span>' : ''}</span>
+            <input type="text" class="form-control ep-ligne-motif-input" placeholder="Motif ou indication..." value="${l.motif || ''}" oninput="majMotifLigne('${type}', ${i}, this.value)">
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="retirerLigne('${type}', ${i})"><i class="fas fa-times"></i></button>
         </div>`).join('');
 }
-rendreLignesMotif();
 
 // ===================== SOUMISSION =====================
 document.getElementById('formEp').addEventListener('submit', function(e) {
     e.preventDefault();
+    const inclureActes = document.getElementById('chkActes').checked;
+    const inclureProduits = document.getElementById('chkProduits').checked;
+    const inclureHospitalisation = document.getElementById('chkHospitalisation').checked;
+
     if (!document.getElementById('patientId').value) { alert('Choisissez un patient AMU.'); return; }
     if (!document.getElementById('medecinId').value) { alert('Choisissez un médecin.'); return; }
     if (!document.getElementById('datePrescription').value) { alert('Indiquez la date de prescription.'); return; }
-    if (!lignesMotif.length) { alert('Ajoutez au moins un acte ou produit.'); return; }
+    if (!inclureActes && !inclureProduits && !inclureHospitalisation) { alert('Cochez au moins un type de demande.'); return; }
+    if (inclureActes && !lignesActes.length) { alert('Ajoutez au moins un acte.'); return; }
+    if (inclureProduits && !lignesProduits.length) { alert('Ajoutez au moins un produit.'); return; }
+    if (inclureHospitalisation && (!document.getElementById('hospitDateAdmission').value || !document.getElementById('hospitMotif').value)) {
+        alert("Renseignez la date d'admission et le motif d'hospitalisation."); return;
+    }
 
     fetch('/api/amu/entente-prealable', {
         method: 'POST',
@@ -308,9 +423,18 @@ document.getElementById('formEp').addEventListener('submit', function(e) {
         body: JSON.stringify({
             patient_id: parseInt(document.getElementById('patientId').value),
             medecin_id: parseInt(document.getElementById('medecinId').value),
+            type_amu: document.getElementById('typeAmu').value,
             date_prescription: document.getElementById('datePrescription').value,
             numero_feuille_soins: document.getElementById('numeroFeuilleSoins').value,
-            lignes_motif: lignesMotif,
+            inclure_actes: inclureActes,
+            inclure_produits: inclureProduits,
+            inclure_hospitalisation: inclureHospitalisation,
+            lignes_motif: [...lignesActes, ...lignesProduits],
+            hospit_date_admission: document.getElementById('hospitDateAdmission').value,
+            hospit_motif: document.getElementById('hospitMotif').value,
+            hospit_categorie_salle: document.querySelector('input[name="hospitCategorie"]:checked').value,
+            hospit_categorie_autre_precision: document.getElementById('hospitCategorieAutrePrecision').value,
+            hospit_duree_sejour: document.getElementById('hospitDureeSejour').value,
         }),
     })
     .then(r => r.json())
@@ -325,9 +449,6 @@ document.getElementById('formEp').addEventListener('submit', function(e) {
 
 // ===================== FILE D'ATTENTE MÉDECIN =====================
 {% if peut_approuver %}
-// ⭐ Pas de nouvel appel réseau : le compte est déjà connu côté serveur
-// (même liste que le tableau Historique plus bas, filtrée ici seulement
-// pour le petit résumé en haut de page).
 (function() {
     const enAttente = {{ demandes|selectattr('statut', 'equalto', 'en_attente')|list|length }};
     const box = document.getElementById('listeAApprouver');
@@ -349,5 +470,17 @@ function refuserDemande(id) {
     }).then(r => r.json()).then(data => { if (data.success) location.reload(); else alert(data.error || 'Erreur'); });
 }
 {% endif %}
+
+rendreLignes('acte');
+rendreLignes('produit');
+toggleHospitAutre();
+
+// ⭐ Pré-remplissage depuis la page Hospitalisation (patron, 2026-10-01) —
+// voir page_amu_entente_prealable (app.py), ?patient_id=&hospit=1.
+if (PATIENT_PREREMPLI) { appliquerPatient(PATIENT_PREREMPLI); }
+if (HOSPIT_PREREMPLI) {
+    document.getElementById('chkHospitalisation').checked = true;
+    toggleSection('Hospitalisation');
+}
 </script>
 {% endblock %}

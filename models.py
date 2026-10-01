@@ -3158,16 +3158,38 @@ class DemandeEntentePrealable(db.Model):
     structure_id = db.Column(db.Integer, nullable=False)
     patient_id = db.Column(db.Integer, nullable=False)
     medecin_id = db.Column(db.Integer, nullable=False)
-    # 'amu_cnss' | 'amu_inam' | 'amu_tns' — détermine quel PDF remplir
-    # (amu_cnss et amu_tns partagent le même gabarit CNSS, voir
-    # utils/remplissage_pdf_amu.py).
+    # 'amu_cnss' | 'amu_inam' — CHOIX EXPLICITE dans le formulaire (patron :
+    # "on devrait avoir la possibilité de choisir EP inam ou cnss"), plus
+    # seulement déduit du patient — pré-rempli depuis patient.type_assurance
+    # mais modifiable. 'amu_tns' réutilise le gabarit 'amu_cnss' (même
+    # administration CNSS, voir utils/remplissage_pdf_amu.py) : jamais
+    # stocké tel quel ici.
     type_amu = db.Column(db.String(20), nullable=False)
-    # Lignes "motif" : [{type: 'acte'|'produit', nom, saisie_manuelle}, ...]
+    # ⭐ La fiche officielle contient 3 tableaux indépendants (Actes,
+    # Médicaments/Produits, Hospitalisation) — patron : "il peut arriver
+    # qu'on demande les trois en même temps". Chaque "inclure_*" active son
+    # tableau ; au moins un des trois doit être vrai (voir validation
+    # api_amu_ep_creer).
+    inclure_actes = db.Column(db.Boolean, default=False)
+    inclure_produits = db.Column(db.Boolean, default=False)
+    inclure_hospitalisation = db.Column(db.Boolean, default=False)
+    # Lignes "motif" : [{type: 'acte'|'produit', nom, motif, saisie_manuelle}]
     # — JSON car longueur variable (3-4 lignes selon le gabarit) et ne sert
-    # qu'à reconstituer l'impression, jamais interrogé en SQL.
-    lignes_motif = db.Column(db.JSON, nullable=False)
+    # qu'à reconstituer l'impression, jamais interrogé en SQL. 'motif' est
+    # la colonne "Motif ou indication" à côté de l'acte/produit sur la
+    # fiche — distincte du nom de l'acte lui-même.
+    lignes_motif = db.Column(db.JSON)
     numero_feuille_soins = db.Column(db.String(50))  # INAM uniquement
     date_prescription = db.Column(db.Date, nullable=False)
+    # ⭐ Tableau "Hospitalisation" de la fiche — rempli seulement si
+    # inclure_hospitalisation=True. categorie_salle : 'cabine_ventilee' (la
+    # case "Oui" cochée) ou 'autre' (case "Non" cochée + precision sur les
+    # pointillés "Si non, catégorie attribuée (préciser) : ...").
+    hospit_date_admission = db.Column(db.Date)
+    hospit_motif = db.Column(db.Text)
+    hospit_categorie_salle = db.Column(db.String(20))  # 'cabine_ventilee' | 'autre'
+    hospit_categorie_autre_precision = db.Column(db.String(255))
+    hospit_duree_sejour = db.Column(db.String(100))
     statut = db.Column(db.String(20), default='en_attente')  # en_attente | approuvee | refusee
     cree_par_id = db.Column(db.Integer)
     cree_par_nom = db.Column(db.String(255))

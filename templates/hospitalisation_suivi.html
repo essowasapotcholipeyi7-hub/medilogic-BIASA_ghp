@@ -339,6 +339,16 @@
                 <div id="blocEP" class="alert alert-warning mt-2">
                     <i class="fas fa-exclamation-triangle me-1"></i>
                     Patient assuré <strong>AMU</strong> : l'hospitalisation est soumise à <strong>Entente Préalable (EP)</strong>.
+                    <!-- ⭐ Raccourci direct vers le formulaire EP, patient et case
+                         Hospitalisation déjà présélectionnés (patron, 2026-10-01 :
+                         "depuis la page hospitalisation qu'on puisse demander
+                         entente préalable vu qu'il faut ça toujours") — voir
+                         page_amu_entente_prealable (app.py, ?patient_id&hospit=1). -->
+                    {% if a_acces('entente_prealable') %}
+                    <a class="btn btn-sm btn-warning ms-2" href="{{ url_for('page_amu_entente_prealable', patient_id=hospit.patient_id, hospit=1) }}" target="_blank">
+                        <i class="fas fa-file-medical"></i> Demander l'Entente Préalable
+                    </a>
+                    {% endif %}
                     <div class="form-check mt-2">
                         <input class="form-check-input" type="checkbox" id="epConfirme">
                         <label class="form-check-label" for="epConfirme">

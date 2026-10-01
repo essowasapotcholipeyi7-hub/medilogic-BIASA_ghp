@@ -840,6 +840,23 @@ def page_amu_entente_prealable():
         ).all()
         patients_par_id = {p.id: p for p in dechiffrer_patients_orm(patients)}
     peut_approuver = session.get('role') in ('medecin', 'admin') or session.get('is_admin')
+
+    # ⭐ Pré-remplissage depuis la page Hospitalisation (patron : "fait en
+    # sorte que depuis la page hospitalisation qu'on puisse demander
+    # entente préalable vu qu'il faut ça toujours pour l'hospitalisation")
+    # — ?patient_id=X présélectionne le patient, ?hospit=1 coche d'office
+    # la case Hospitalisation du formulaire.
+    patient_prerempli = None
+    patient_id_param = request.args.get('patient_id', type=int)
+    if patient_id_param:
+        p = Patient.query.filter_by(id=patient_id_param, structure_id=structure_id).first()
+        if p and p.type_assurance in TYPE_AMU_LABELS:
+            p = dechiffrer_patients_orm([p])[0]
+            patient_prerempli = {
+                'id': p.id, 'nom': p.nom, 'prenom': p.prenom, 'telephone': p.telephone,
+                'numero_assure': p.numero_assure, 'type_assurance': p.type_assurance,
+            }
+
     return render_template(
         'amu_entente_prealable.html',
         medecins_liste=medecins_liste,
@@ -848,6 +865,8 @@ def page_amu_entente_prealable():
         medecins_par_id=medecins_par_id,
         type_amu_labels=TYPE_AMU_LABELS,
         peut_approuver=peut_approuver,
+        patient_prerempli=patient_prerempli,
+        hospit_prerempli=request.args.get('hospit') == '1',
     )
 
 
@@ -893,16 +912,41 @@ def api_amu_ep_creer():
     if patient.type_assurance not in TYPE_AMU_LABELS:
         return jsonify({'success': False, 'error': "Ce patient n'a pas d'assurance AMU"}), 400
 
-    lignes_motif = data.get('lignes_motif') or []
-    if not lignes_motif:
-        return jsonify({'success': False, 'error': 'Au moins une ligne (acte ou produit) est requise'}), 400
+    # ⭐ Régime choisi EXPLICITEMENT dans le formulaire (patron : "on
+    # devrait avoir la possibilité de choisir EP inam ou cnss"), plus
+    # seulement déduit du patient — 'amu_tns' n'existe pas comme gabarit à
+    # part, il réutilise 'amu_cnss' (même administration CNSS).
+    type_amu = data.get('type_amu')
+    if type_amu not in ('amu_cnss', 'amu_inam'):
+        return jsonify({'success': False, 'error': 'Régime AMU invalide (CNSS ou INAM)'}), 400
+
+    inclure_actes = bool(data.get('inclure_actes'))
+    inclure_produits = bool(data.get('inclure_produits'))
+    inclure_hospitalisation = bool(data.get('inclure_hospitalisation'))
+    if not (inclure_actes or inclure_produits or inclure_hospitalisation):
+        return jsonify({'success': False, 'error': 'Cochez au moins un type de demande (Actes, Produits ou Hospitalisation)'}), 400
+
     # ⭐ Jamais plus de lignes que ce que la fiche physique peut accueillir
     # (patron : "ne jamais modifier la structure des fiches") — 3 actes +
     # 4 médicaments pour le gabarit CNSS/TNS, 3 + 3 pour l'INAM.
+    lignes_motif = data.get('lignes_motif') or []
     max_actes = 3
-    max_produits = 4 if patient.type_assurance != 'amu_inam' else 3
-    actes = [l for l in lignes_motif if l.get('type') == 'acte'][:max_actes]
-    produits = [l for l in lignes_motif if l.get('type') == 'produit'][:max_produits]
+    max_produits = 4 if type_amu != 'amu_inam' else 3
+    actes = [l for l in lignes_motif if l.get('type') == 'acte'][:max_actes] if inclure_actes else []
+    produits = [l for l in lignes_motif if l.get('type') == 'produit'][:max_produits] if inclure_produits else []
+    if inclure_actes and not actes:
+        return jsonify({'success': False, 'error': 'Ajoutez au moins un acte'}), 400
+    if inclure_produits and not produits:
+        return jsonify({'success': False, 'error': 'Ajoutez au moins un produit'}), 400
+
+    hospit_date_admission = None
+    if inclure_hospitalisation:
+        if not data.get('hospit_date_admission') or not data.get('hospit_motif') or not data.get('hospit_categorie_salle'):
+            return jsonify({'success': False, 'error': "Date d'admission, motif et catégorie de salle sont requis pour l'hospitalisation"}), 400
+        try:
+            hospit_date_admission = datetime.strptime(data.get('hospit_date_admission'), '%Y-%m-%d').date()
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': "Date d'admission invalide"}), 400
 
     try:
         date_prescription = datetime.strptime(data.get('date_prescription'), '%Y-%m-%d').date()
@@ -913,10 +957,18 @@ def api_amu_ep_creer():
         structure_id=structure_id,
         patient_id=patient.id,
         medecin_id=medecin.id,
-        type_amu=patient.type_assurance,
-        lignes_motif=actes + produits,
+        type_amu=type_amu,
+        inclure_actes=inclure_actes,
+        inclure_produits=inclure_produits,
+        inclure_hospitalisation=inclure_hospitalisation,
+        lignes_motif=(actes + produits) or None,
         numero_feuille_soins=(data.get('numero_feuille_soins') or '').strip() or None,
         date_prescription=date_prescription,
+        hospit_date_admission=hospit_date_admission,
+        hospit_motif=(data.get('hospit_motif') or '').strip() or None if inclure_hospitalisation else None,
+        hospit_categorie_salle=data.get('hospit_categorie_salle') if inclure_hospitalisation else None,
+        hospit_categorie_autre_precision=(data.get('hospit_categorie_autre_precision') or '').strip() or None if inclure_hospitalisation else None,
+        hospit_duree_sejour=(data.get('hospit_duree_sejour') or '').strip() or None if inclure_hospitalisation else None,
         cree_par_id=session.get('user_id'),
         cree_par_nom=session.get('user_name'),
     )
