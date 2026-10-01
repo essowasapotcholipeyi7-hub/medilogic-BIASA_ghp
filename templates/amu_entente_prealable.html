@@ -203,6 +203,9 @@
             <button type="submit" class="btn btn-primary mt-3">
                 <i class="fas fa-save me-1"></i>Enregistrer la demande
             </button>
+            <button type="button" id="annulerEditionBtn" class="btn btn-outline-secondary mt-3" style="display:none;" onclick="annulerEdition()">
+                Annuler la modification
+            </button>
         </form>
     </div>
 
@@ -245,6 +248,9 @@
                             {{ {'en_attente': 'En attente', 'approuvee': 'Approuvée', 'refusee': 'Refusée'}.get(d.statut, d.statut) }}
                         </span></td>
                         <td>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="voirDetails({{ d.id }})">
+                                <i class="fas fa-eye"></i> Détails
+                            </button>
                             {% if d.statut == 'approuvee' %}
                             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('page_amu_ep_imprimer', demande_id=d.id) }}" target="_blank">
                                 <i class="fas fa-print"></i> Imprimer
@@ -252,6 +258,13 @@
                             {% elif d.statut == 'refusee' %}
                             <span class="small text-danger">{{ d.motif_refus or 'Refusée' }}</span>
                             {% elif d.statut == 'en_attente' and peut_approuver %}
+                            <!-- ⭐ Patron : "n'oublie pas d'afficher un bouton de detail pour que
+                                 le médecin vérifie ce qui a été saisi avant de valider... et un
+                                 bouton à côté modifier pour que le médecin modifie si jamais
+                                 c'est pas bon" -->
+                            <button type="button" class="btn btn-sm btn-outline-warning" onclick="modifierDemande({{ d.id }})">
+                                <i class="fas fa-pen"></i> Modifier
+                            </button>
                             <button type="button" class="btn btn-sm btn-success" onclick="approuverDemande({{ d.id }})">
                                 <i class="fas fa-check"></i> Approuver
                             </button>
@@ -270,11 +283,27 @@
             </table>
         </div>
     </div>
+
+    <!-- ⭐ Détail d'une demande (patron : "un bouton de detail pour que le
+         médecin vérifie ce qui a été saisi avant de valider") -->
+    <div class="modal fade" id="modalDetailsEp" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-eye me-1"></i>Détail de la demande</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="detailsEpBody"></div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
 const PATIENT_PREREMPLI = {{ patient_prerempli|tojson|safe if patient_prerempli else 'null' }};
 const HOSPIT_PREREMPLI = {{ 'true' if hospit_prerempli else 'false' }};
+const DEMANDES_DETAIL = {{ demandes_detail|tojson|safe }};
+let demandeEnEditionId = null;
 
 let patientChoisi = null;
 let lignesActes = [];
@@ -431,6 +460,97 @@ function rendreLignes(type) {
         </div>`).join('');
 }
 
+// ===================== DÉTAILS =====================
+function voirDetails(id) {
+    const d = DEMANDES_DETAIL.find(x => x.id === id);
+    if (!d) return;
+    const p = d.patient;
+    let html = `
+        <p><strong>Patient :</strong> ${p ? (p.nom + ' ' + p.prenom) : '—'}
+           ${p ? `(N° AMU : ${p.numero_assure || '—'} · Tél : ${p.telephone || '—'})` : ''}</p>
+        <p><strong>Médecin prescripteur :</strong> ${d.medecin_nom}</p>
+        <p><strong>Régime :</strong> ${TYPE_AMU_LABELS_JS[d.type_amu] || d.type_amu}
+           &nbsp;·&nbsp; <strong>Date de prescription :</strong> ${d.date_prescription}
+           ${d.numero_feuille_soins ? `&nbsp;·&nbsp; <strong>N° Feuille de soins :</strong> ${d.numero_feuille_soins}` : ''}</p>`;
+
+    if (d.inclure_actes) {
+        const actes = d.lignes_motif.filter(l => l.type === 'acte');
+        html += `<p class="mb-1"><strong>Actes</strong></p><ul>${actes.map(l => `<li>${l.nom} — <em>${l.motif || 'aucun motif renseigné'}</em></li>`).join('') || '<li class="text-muted">Aucun</li>'}</ul>`;
+    }
+    if (d.inclure_produits) {
+        const produits = d.lignes_motif.filter(l => l.type === 'produit');
+        html += `<p class="mb-1"><strong>Produits / Médicaments</strong></p><ul>${produits.map(l => `<li>${l.nom} — <em>${l.motif || 'aucun motif renseigné'}</em></li>`).join('') || '<li class="text-muted">Aucun</li>'}</ul>`;
+    }
+    if (d.inclure_hospitalisation) {
+        html += `<p class="mb-1"><strong>Hospitalisation</strong></p>
+            <ul>
+                <li>Date d'admission : ${d.hospit_date_admission || '—'}</li>
+                <li>Motif : ${d.hospit_motif || '—'}</li>
+                <li>Catégorie de salle : ${d.hospit_categorie_salle === 'autre' ? ('Autre — ' + (d.hospit_categorie_autre_precision || 'non précisé')) : 'Cabine ventilée à 2 lits'}</li>
+                <li>Durée probable du séjour : ${d.hospit_duree_sejour || '—'}</li>
+            </ul>`;
+    }
+    html += `<p class="small text-muted mb-0">Créée par ${d.cree_par_nom || '—'}</p>`;
+    if (d.motif_refus) html += `<p class="small text-danger">Motif du refus : ${d.motif_refus}</p>`;
+
+    document.getElementById('detailsEpBody').innerHTML = html;
+    new bootstrap.Modal(document.getElementById('modalDetailsEp')).show();
+}
+const TYPE_AMU_LABELS_JS = {{ type_amu_labels|tojson|safe }};
+
+// ===================== MODIFIER (médecin) =====================
+// ⭐ Patron : "un bouton modifier pour que le médecin modifie si jamais
+// c'est pas bon" — recharge la demande dans le même formulaire que la
+// création, bascule la soumission en mode "mise à jour".
+function modifierDemande(id) {
+    const d = DEMANDES_DETAIL.find(x => x.id === id);
+    if (!d) return;
+    demandeEnEditionId = id;
+
+    if (d.patient) appliquerPatient(d.patient);
+    document.getElementById('medecinId').value = d.medecin_id;
+    document.getElementById('datePrescription').value = d.date_prescription;
+    document.getElementById('numeroFeuilleSoins').value = d.numero_feuille_soins;
+
+    document.getElementById('chkActes').checked = d.inclure_actes;
+    toggleSection('Actes');
+    lignesActes = d.lignes_motif.filter(l => l.type === 'acte');
+    rendreLignes('acte');
+
+    document.getElementById('chkProduits').checked = d.inclure_produits;
+    toggleSection('Produits');
+    lignesProduits = d.lignes_motif.filter(l => l.type === 'produit');
+    rendreLignes('produit');
+
+    document.getElementById('chkHospitalisation').checked = d.inclure_hospitalisation;
+    toggleSection('Hospitalisation');
+    document.getElementById('hospitDateAdmission').value = d.hospit_date_admission;
+    document.getElementById('hospitMotif').value = d.hospit_motif;
+    document.getElementById('hospitDureeSejour').value = d.hospit_duree_sejour;
+    document.getElementById(d.hospit_categorie_salle === 'autre' ? 'hospitCatAutre' : 'hospitCatVentilee').checked = true;
+    document.getElementById('hospitCategorieAutrePrecision').value = d.hospit_categorie_autre_precision;
+    toggleHospitAutre();
+
+    const btn = document.querySelector('#formEp button[type="submit"]');
+    btn.innerHTML = '<i class="fas fa-save me-1"></i>Mettre à jour la demande';
+    document.getElementById('annulerEditionBtn').style.display = '';
+    document.getElementById('formEp').scrollIntoView({behavior: 'smooth'});
+}
+
+function annulerEdition() {
+    demandeEnEditionId = null;
+    document.getElementById('formEp').reset();
+    patientChoisi = null;
+    document.getElementById('patientId').value = '';
+    document.getElementById('patientChoisiBloc').style.display = 'none';
+    lignesActes = []; lignesProduits = [];
+    rendreLignes('acte'); rendreLignes('produit');
+    ['sectionActes', 'sectionProduits', 'sectionHospitalisation'].forEach(id => document.getElementById(id).classList.remove('active'));
+    const btn = document.querySelector('#formEp button[type="submit"]');
+    btn.innerHTML = '<i class="fas fa-save me-1"></i>Enregistrer la demande';
+    document.getElementById('annulerEditionBtn').style.display = 'none';
+}
+
 // ===================== SOUMISSION =====================
 document.getElementById('formEp').addEventListener('submit', function(e) {
     e.preventDefault();
@@ -448,7 +568,10 @@ document.getElementById('formEp').addEventListener('submit', function(e) {
         alert("Renseignez la date d'admission et le motif d'hospitalisation."); return;
     }
 
-    fetch('/api/amu/entente-prealable', {
+    const url = demandeEnEditionId
+        ? `/api/amu/entente-prealable/${demandeEnEditionId}/modifier`
+        : '/api/amu/entente-prealable';
+    fetch(url, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({

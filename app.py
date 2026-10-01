@@ -841,6 +841,40 @@ def page_amu_entente_prealable():
         patients_par_id = {p.id: p for p in dechiffrer_patients_orm(patients)}
     peut_approuver = session.get('role') in ('medecin', 'admin') or session.get('is_admin')
 
+    # ⭐ Détail complet de chaque demande en JSON pour le bouton "Détails"
+    # (patron : "un bouton de detail pour que le médecin vérifie ce qui a
+    # été saisi avant de valider") et pour pré-remplir le formulaire quand
+    # on clique "Modifier" (patron : "un bouton modifier pour que le
+    # médecin modifie si jamais c'est pas bon") — tout ce dont le JS a
+    # besoin, sans requête supplémentaire au clic.
+    demandes_detail = []
+    for d in demandes:
+        p = patients_par_id.get(d.patient_id)
+        demandes_detail.append({
+            'id': d.id,
+            'statut': d.statut,
+            'type_amu': d.type_amu,
+            'date_prescription': d.date_prescription.strftime('%Y-%m-%d') if d.date_prescription else '',
+            'numero_feuille_soins': d.numero_feuille_soins or '',
+            'medecin_id': d.medecin_id,
+            'medecin_nom': medecins_par_id.get(d.medecin_id, '—'),
+            'patient': {
+                'id': p.id, 'nom': p.nom, 'prenom': p.prenom, 'telephone': p.telephone,
+                'numero_assure': p.numero_assure, 'type_assurance': p.type_assurance,
+            } if p else None,
+            'inclure_actes': d.inclure_actes,
+            'inclure_produits': d.inclure_produits,
+            'inclure_hospitalisation': d.inclure_hospitalisation,
+            'lignes_motif': d.lignes_motif or [],
+            'hospit_date_admission': d.hospit_date_admission.strftime('%Y-%m-%d') if d.hospit_date_admission else '',
+            'hospit_motif': d.hospit_motif or '',
+            'hospit_categorie_salle': d.hospit_categorie_salle or 'cabine_ventilee',
+            'hospit_categorie_autre_precision': d.hospit_categorie_autre_precision or '',
+            'hospit_duree_sejour': d.hospit_duree_sejour or '',
+            'cree_par_nom': d.cree_par_nom or '',
+            'motif_refus': d.motif_refus or '',
+        })
+
     # ⭐ Pré-remplissage depuis la page Hospitalisation (patron : "fait en
     # sorte que depuis la page hospitalisation qu'on puisse demander
     # entente préalable vu qu'il faut ça toujours pour l'hospitalisation")
@@ -863,6 +897,7 @@ def page_amu_entente_prealable():
         demandes=demandes,
         patients_par_id=patients_par_id,
         medecins_par_id=medecins_par_id,
+        demandes_detail=demandes_detail,
         type_amu_labels=TYPE_AMU_LABELS,
         peut_approuver=peut_approuver,
         patient_prerempli=patient_prerempli,
@@ -903,18 +938,17 @@ def api_amu_ep_patients():
     ]})
 
 
-@app.route('/api/amu/entente-prealable', methods=['POST'])
-@login_required
-def api_amu_ep_creer():
-    if not a_acces('entente_prealable'):
-        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
-    structure_id = session.get('structure_id')
-    data = request.json or {}
-
+def _valider_champs_ep(data, structure_id):
+    """Validation partagée création/modification d'une Entente Préalable —
+    retourne (champs: dict, None) si tout est valide, ou (None, (message,
+    code_http)) sinon. Factorisé pour que api_amu_ep_creer() et
+    api_amu_ep_modifier() (patron : "un bouton modifier pour que le
+    médecin modifie si jamais c'est pas bon") appliquent exactement les
+    mêmes règles, sans risque de divergence entre les deux."""
     patient = Patient.query.filter_by(id=data.get('patient_id'), structure_id=structure_id).first()
     medecin = Medecin.query.filter_by(id=data.get('medecin_id'), structure_id=structure_id).first()
     if not patient or not medecin:
-        return jsonify({'success': False, 'error': 'Patient ou médecin introuvable'}), 400
+        return None, ('Patient ou médecin introuvable', 400)
 
     # ⭐ Régime choisi EXPLICITEMENT dans le formulaire, 3 valeurs distinctes
     # (patron : "normalement si on choisit le régime c'est les patients de
@@ -926,15 +960,15 @@ def api_amu_ep_creer():
     # l'impression (même administration CNSS) mais reste stocké tel quel.
     type_amu = data.get('type_amu')
     if type_amu not in ('amu_cnss', 'amu_tns', 'amu_inam'):
-        return jsonify({'success': False, 'error': 'Régime AMU invalide (CNSS, TNS ou INAM)'}), 400
+        return None, ('Régime AMU invalide (CNSS, TNS ou INAM)', 400)
     if patient.type_assurance != type_amu:
-        return jsonify({'success': False, 'error': f"Ce patient n'est pas assuré {TYPE_AMU_LABELS.get(type_amu, type_amu)}"}), 400
+        return None, (f"Ce patient n'est pas assuré {TYPE_AMU_LABELS.get(type_amu, type_amu)}", 400)
 
     inclure_actes = bool(data.get('inclure_actes'))
     inclure_produits = bool(data.get('inclure_produits'))
     inclure_hospitalisation = bool(data.get('inclure_hospitalisation'))
     if not (inclure_actes or inclure_produits or inclure_hospitalisation):
-        return jsonify({'success': False, 'error': 'Cochez au moins un type de demande (Actes, Produits ou Hospitalisation)'}), 400
+        return None, ('Cochez au moins un type de demande (Actes, Produits ou Hospitalisation)', 400)
 
     # ⭐ Jamais plus de lignes que ce que la fiche physique peut accueillir
     # (patron : "ne jamais modifier la structure des fiches") — 3 actes +
@@ -945,44 +979,82 @@ def api_amu_ep_creer():
     actes = [l for l in lignes_motif if l.get('type') == 'acte'][:max_actes] if inclure_actes else []
     produits = [l for l in lignes_motif if l.get('type') == 'produit'][:max_produits] if inclure_produits else []
     if inclure_actes and not actes:
-        return jsonify({'success': False, 'error': 'Ajoutez au moins un acte'}), 400
+        return None, ('Ajoutez au moins un acte', 400)
     if inclure_produits and not produits:
-        return jsonify({'success': False, 'error': 'Ajoutez au moins un produit'}), 400
+        return None, ('Ajoutez au moins un produit', 400)
 
     hospit_date_admission = None
     if inclure_hospitalisation:
         if not data.get('hospit_date_admission') or not data.get('hospit_motif') or not data.get('hospit_categorie_salle'):
-            return jsonify({'success': False, 'error': "Date d'admission, motif et catégorie de salle sont requis pour l'hospitalisation"}), 400
+            return None, ("Date d'admission, motif et catégorie de salle sont requis pour l'hospitalisation", 400)
         try:
             hospit_date_admission = datetime.strptime(data.get('hospit_date_admission'), '%Y-%m-%d').date()
         except (TypeError, ValueError):
-            return jsonify({'success': False, 'error': "Date d'admission invalide"}), 400
+            return None, ("Date d'admission invalide", 400)
 
     try:
         date_prescription = datetime.strptime(data.get('date_prescription'), '%Y-%m-%d').date()
     except (TypeError, ValueError):
-        return jsonify({'success': False, 'error': 'Date de prescription invalide'}), 400
+        return None, ('Date de prescription invalide', 400)
+
+    return {
+        'patient_id': patient.id,
+        'medecin_id': medecin.id,
+        'type_amu': type_amu,
+        'inclure_actes': inclure_actes,
+        'inclure_produits': inclure_produits,
+        'inclure_hospitalisation': inclure_hospitalisation,
+        'lignes_motif': (actes + produits) or None,
+        'numero_feuille_soins': (data.get('numero_feuille_soins') or '').strip() or None,
+        'date_prescription': date_prescription,
+        'hospit_date_admission': hospit_date_admission,
+        'hospit_motif': (data.get('hospit_motif') or '').strip() or None if inclure_hospitalisation else None,
+        'hospit_categorie_salle': data.get('hospit_categorie_salle') if inclure_hospitalisation else None,
+        'hospit_categorie_autre_precision': (data.get('hospit_categorie_autre_precision') or '').strip() or None if inclure_hospitalisation else None,
+        'hospit_duree_sejour': (data.get('hospit_duree_sejour') or '').strip() or None if inclure_hospitalisation else None,
+    }, None
+
+
+@app.route('/api/amu/entente-prealable', methods=['POST'])
+@login_required
+def api_amu_ep_creer():
+    if not a_acces('entente_prealable'):
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    structure_id = session.get('structure_id')
+    champs, erreur = _valider_champs_ep(request.json or {}, structure_id)
+    if erreur:
+        return jsonify({'success': False, 'error': erreur[0]}), erreur[1]
 
     demande = DemandeEntentePrealable(
         structure_id=structure_id,
-        patient_id=patient.id,
-        medecin_id=medecin.id,
-        type_amu=type_amu,
-        inclure_actes=inclure_actes,
-        inclure_produits=inclure_produits,
-        inclure_hospitalisation=inclure_hospitalisation,
-        lignes_motif=(actes + produits) or None,
-        numero_feuille_soins=(data.get('numero_feuille_soins') or '').strip() or None,
-        date_prescription=date_prescription,
-        hospit_date_admission=hospit_date_admission,
-        hospit_motif=(data.get('hospit_motif') or '').strip() or None if inclure_hospitalisation else None,
-        hospit_categorie_salle=data.get('hospit_categorie_salle') if inclure_hospitalisation else None,
-        hospit_categorie_autre_precision=(data.get('hospit_categorie_autre_precision') or '').strip() or None if inclure_hospitalisation else None,
-        hospit_duree_sejour=(data.get('hospit_duree_sejour') or '').strip() or None if inclure_hospitalisation else None,
         cree_par_id=session.get('user_id'),
         cree_par_nom=session.get('user_name'),
+        **champs,
     )
     db.session.add(demande)
+    db.session.commit()
+    return jsonify({'success': True, 'id': demande.id})
+
+
+@app.route('/api/amu/entente-prealable/<int:demande_id>/modifier', methods=['POST'])
+@login_required
+def api_amu_ep_modifier(demande_id):
+    # ⭐ Patron : "un bouton modifier pour que le médecin modifie si jamais
+    # c'est pas bon" — réservé au médecin/admin comme Approuver/Refuser, et
+    # seulement tant que la demande est en attente (une fois approuvée ou
+    # refusée, l'historique ne doit plus bouger).
+    if not (session.get('role') in ('medecin', 'admin') or session.get('is_admin')):
+        return jsonify({'success': False, 'error': 'Réservé au médecin'}), 403
+    structure_id = session.get('structure_id')
+    demande = DemandeEntentePrealable.query.filter_by(id=demande_id, structure_id=structure_id).first_or_404()
+    if demande.statut != 'en_attente':
+        return jsonify({'success': False, 'error': 'Seule une demande en attente peut être modifiée'}), 400
+
+    champs, erreur = _valider_champs_ep(request.json or {}, structure_id)
+    if erreur:
+        return jsonify({'success': False, 'error': erreur[0]}), erreur[1]
+    for cle, valeur in champs.items():
+        setattr(demande, cle, valeur)
     db.session.commit()
     return jsonify({'success': True, 'id': demande.id})
 
