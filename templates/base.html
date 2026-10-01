@@ -2211,7 +2211,29 @@
                  autres (Finances, Pharmacie...), en simple colonne — patron :
                  "il faut aligner les onglets... telle que c'est dans finance
                  par exemple". -->
+            <!-- ⭐ Ordre revu (patron, 2026-10-01 : "range bien les choses,
+                 commence par labo radio, hospitalisation, soins ambulatoire,
+                 ainsi de suite") — parcours clinique d'abord (examens, séjour,
+                 consultation, prescriptions), opérationnel/stock ensuite. -->
             <div class="mega-menu">
+                {% if not onglet_cache('actes_vente') %}
+                <a class="menu-item" href="{{ url_for('actes_vente') }}">
+                    Labo/Radio/Hospi/Actes
+                </a>
+                {% endif %}
+                {% if not onglet_cache('hospitalisation') %}
+                <a class="menu-item" href="{{ url_for('page_hospitalisation') }}">
+                    Hospitalisation (suivi de séjour)
+                </a>
+                {% endif %}
+                <!-- ⭐ Sous-onglet "Soins ambulatoires" — même patron/gate que
+                     sidebar_menu.html (onglet_cache('soins_ambulatoires')),
+                     manquait du menu horizontal. -->
+                {% if not onglet_cache('soins_ambulatoires') and not _bloq %}
+                <a class="menu-item" href="{{ url_for('page_soins_ambulatoires') }}">
+                    Soins ambulatoires
+                </a>
+                {% endif %}
                 {% if not onglet_cache('consultation') %}
                 <a class="menu-item" href="{{ url_for('consultation') }}">
                     Consultation
@@ -2222,9 +2244,9 @@
                     Protocoles et Modèles
                 </a>
                 {% endif %}
-                {% if not onglet_cache('actes_vente') %}
-                <a class="menu-item" href="{{ url_for('actes_vente') }}">
-                    Labo/Radio/Hospi/Actes
+                {% if a_acces('prescriptions_recues') and not onglet_cache('prescriptions_recues') %}
+                <a class="menu-item" href="{{ url_for('prescriptions_recues') }}">
+                    Prescriptions reçues
                 </a>
                 {% endif %}
                 <!-- ⭐ Raccourci "Gestion des actes et stocks de produits" ici
@@ -2245,24 +2267,6 @@
                 <a class="menu-item" href="{{ url_for('page_ventes_en_attente') }}">
                     <i class="fas fa-clock"></i> Ventes en attente
                     <span class="badge bg-danger ms-1 vente-attente-badge" style="display:none;">0</span>
-                </a>
-                {% endif %}
-                {% if not onglet_cache('hospitalisation') %}
-                <a class="menu-item" href="{{ url_for('page_hospitalisation') }}">
-                    Hospitalisation (suivi de séjour)
-                </a>
-                {% endif %}
-                <!-- ⭐ Sous-onglet "Soins ambulatoires" — même patron/gate que
-                     sidebar_menu.html (onglet_cache('soins_ambulatoires')),
-                     manquait du menu horizontal. -->
-                {% if not onglet_cache('soins_ambulatoires') and not _bloq %}
-                <a class="menu-item" href="{{ url_for('page_soins_ambulatoires') }}">
-                    Soins ambulatoires
-                </a>
-                {% endif %}
-                {% if a_acces('prescriptions_recues') and not onglet_cache('prescriptions_recues') %}
-                <a class="menu-item" href="{{ url_for('prescriptions_recues') }}">
-                    Prescriptions reçues
                 </a>
                 {% endif %}
             </div>
