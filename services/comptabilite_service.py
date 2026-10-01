@@ -29,7 +29,7 @@ from models import (
 )
 from utils.plan_comptable_syscohada import (
     PLAN_COMPTABLE_PAR_NUMERO, COMPTE_CLIENTS_PATIENTS, COMPTE_ATTENTE,
-    COMPTE_FOURNISSEURS, compte_assurance,
+    COMPTE_FOURNISSEURS, compte_assurance, nom_compte_assurance,
     COMPTES_RETRAITE_PAR_ORGANISME, COMPTES_AMU_PAR_ORGANISME,
     COMPTE_FORMATION_PRO_CHARGE, COMPTE_FORMATION_PRO_A_REVERSER,
     COMPTE_IRPP_A_REVERSER, COMPTE_PERSONNEL_AVANCES, COMPTE_PERSONNEL_A_PAYER,
@@ -207,7 +207,9 @@ def creer_ecriture(structure_id, date_ecriture, libelle, lignes, journal_code,
     db.session.flush()
 
     for l in lignes_valides:
-        compte_id = _get_compte_id(structure_id, l['numero_compte'])
+        compte_id = _get_compte_id(structure_id, l['numero_compte'],
+                                    nom_repli=l.get('nom_compte'),
+                                    type_repli=l.get('type_compte', 'charge'))
         db.session.add(LigneEcriture(
             ecriture_id=ecriture.id,
             compte_id=compte_id,
@@ -542,6 +544,8 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
             nom_assurance = _nom_assurance(vente, principale=True)
             compte_num = compte_assurance(nom_assurance)
             lignes.append({'numero_compte': compte_num,
+                            'nom_compte': nom_compte_assurance(nom_assurance) if nom_assurance else None,
+                            'type_compte': 'actif',
                             'libelle': f"Tiers-payant à recevoir ({nom_assurance or 'assurance'})",
                             'debit': prise_en_charge,
                             'tiers_type': 'assurance', 'tiers_id': _tiers_id_assurance(nom_assurance),
@@ -559,6 +563,8 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
             libelle_assurance2 = f"Tiers-payant à recevoir ({nom_assurance2 or 'assurance 2'}"
             libelle_assurance2 += f" — {societe})" if societe else ")"
             lignes.append({'numero_compte': compte_num2,
+                            'nom_compte': nom_compte_assurance(nom_assurance2) if nom_assurance2 else None,
+                            'type_compte': 'actif',
                             'libelle': libelle_assurance2,
                             'debit': prise_en_charge2,
                             'tiers_type': 'assurance', 'tiers_id': _tiers_id_assurance(nom_assurance2),

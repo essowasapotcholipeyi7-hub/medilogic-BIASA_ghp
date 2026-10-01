@@ -304,4 +304,34 @@ def compte_assurance(nom_assurance):
         if 'inam' in cle:
             return '41121200'
         return '41121200'
-    return COMPTE_PAR_ASSURANCE.get(cle, '41122800')
+    if cle in COMPTE_PAR_ASSURANCE:
+        return COMPTE_PAR_ASSURANCE[cle]
+    # ⭐ Compagnie non répertoriée dans COMPTE_PAR_ASSURANCE (patron,
+    # 2026-10-01, porté depuis GHP : "je te conseille de faire en sorte
+    # que chaque assurance ait son compte même celles qu'on n'a pas encore
+    # créées / dès qu'il y a une nouvelle assurance qui s'ajoute, que son
+    # compte se crée en même temps") — au lieu de les mélanger toutes dans
+    # le même compte fourre-tout 41122800, chaque compagnie reçoit
+    # désormais son propre compte, généré à la volée dès sa première
+    # utilisation. Le compte lui-même n'est créé qu'au moment de
+    # l'écriture (comptabilite_service._get_compte_id, qui a accès à la
+    # base) — cette fonction ne fait que calculer un numéro stable, jamais
+    # d'accès DB ici. Même principe CRC32 déjà en place pour le tiers_id
+    # (_tiers_id_assurance, comptabilite_service.py). Plage 411239xx —
+    # juste après les 8 comptes nommés manuellement (41122100-41122700)
+    # et le compte générique (41122800).
+    return numero_compte_assurance_dynamique(cle)
+
+
+def numero_compte_assurance_dynamique(nom_normalise):
+    import zlib
+    return f"41123{zlib.crc32(nom_normalise.encode('utf-8')) % 1000:03d}"
+
+
+def nom_compte_assurance(nom_assurance):
+    """Libellé à donner au compte généré pour une compagnie sans compte
+    dédié préexistant — utilisé par comptabilite_service.generer_ecriture_
+    vente comme repli de _get_compte_id() quand compte_assurance() a
+    renvoyé un numéro absent de PLAN_COMPTABLE_PAR_NUMERO (donc pas encore
+    créé pour cette structure)."""
+    return f"Assurance {str(nom_assurance).strip().upper()} — tiers-payant à recevoir"
