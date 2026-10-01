@@ -322,11 +322,13 @@ def api_assurances_liste():
 
 def taux_amu_pour_article(nom_article, taux_defaut):
     """⭐ FIX : taux AMU par article, pas un taux unique pour toute la vente
-    — l'acte P160 est remboursé à 90% par l'AMU, tous les autres au taux
-    général (par défaut 80%). Copie locale de app.py:taux_amu_pour_article()
-    (dupliquée ici plutôt qu'importée depuis app.py, pour éviter un import
-    circulaire : app.py enregistre ce blueprint, donc ce module ne doit pas
-    importer app.py)."""
+    — l'acte P160 est remboursé à 90% par l'AMU, O101 (oxygénothérapie) à
+    100%, tous les autres au taux général (par défaut 80%). Copie locale de
+    app.py:taux_amu_pour_article() (dupliquée ici plutôt qu'importée depuis
+    app.py, pour éviter un import circulaire : app.py enregistre ce
+    blueprint, donc ce module ne doit pas importer app.py)."""
+    if nom_article and 'O101' in nom_article:
+        return 100
     return 90 if (nom_article and 'P160' in nom_article) else taux_defaut
 
 

@@ -162,7 +162,11 @@ def _taux_amu_article(nom, taux_defaut):
     """Même règle que taux_amu_pour_article() (app.py) et
     tauxAMUPourArticle() (JS, actes_vente.html/pharma_vente.html/
     proformas.html) — dupliquée ici plutôt qu'importée d'app.py pour éviter
-    un import circulaire (app.py importe déjà ce module)."""
+    un import circulaire (app.py importe déjà ce module). O101
+    (oxygénothérapie) remboursé à 100% quel que soit le taux général — voir
+    utils/grille_amu_hospitalisation.py."""
+    if nom and 'O101' in nom:
+        return 100
     return 90 if (nom and 'P160' in nom) else taux_defaut
 
 

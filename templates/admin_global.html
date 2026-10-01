@@ -120,6 +120,24 @@
                                 <a href="#" onclick="confirmDelete({{ structure.ID }})" class="btn btn-sm btn-danger" title="Supprimer">
                                     <i class="fas fa-trash"></i>
                                 </a>
+
+                                <!-- ⭐ Niveau de soins AMU (1/2/3) — détermine les tarifs
+                                     officiels d'hospitalisation (P160), voir
+                                     utils/grille_amu_hospitalisation.py et
+                                     admin_definir_niveau_soins() (app.py). Même champ que
+                                     la page "Paramètres AMU" de la structure. -->
+                                {% set niveau_actuel = niveaux_soins_par_structure.get(structure.ID|int) %}
+                                <form method="POST" action="{{ url_for('admin_definir_niveau_soins', structure_id=structure.ID) }}"
+                                      class="d-inline-block" style="min-width:110px;">
+                                    <select name="niveau_soins" class="form-select form-select-sm d-inline-block"
+                                            style="width:auto;" title="Niveau de soins AMU (tarifs hospitalisation P160)"
+                                            onchange="this.form.submit()">
+                                        <option value="" {% if not niveau_actuel %}selected{% endif %}>Niveau AMU --</option>
+                                        <option value="1" {% if niveau_actuel == '1' %}selected{% endif %}>Niveau 1</option>
+                                        <option value="2" {% if niveau_actuel == '2' %}selected{% endif %}>Niveau 2</option>
+                                        <option value="3" {% if niveau_actuel == '3' %}selected{% endif %}>Niveau 3</option>
+                                    </select>
+                                </form>
                             </div>
                         </td>
                     </tr>

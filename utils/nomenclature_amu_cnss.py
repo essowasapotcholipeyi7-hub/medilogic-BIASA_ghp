@@ -1479,6 +1479,7 @@ CODE_VERS_CATEGORIE_CNSS = {
     'N353': 'reeducation',
     'N354': 'reeducation',
     'N355': 'reeducation',
+    'O101': 'hospitalisation',  # Oxygénothérapie — voir utils/grille_amu_hospitalisation.py
     'P152': 'soins_infirmiers',
     'P153': 'soins_infirmiers',
     'P154': 'soins_infirmiers',

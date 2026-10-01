@@ -29,6 +29,7 @@ from services.facturation_amu_service import generer_lignes_facture_amu_cnss, ch
 from utils.categories_amu_cnss import CATEGORIES_AMU_CNSS, CATEGORIES_AMU_CNSS_DICT
 from utils.categories_amu_inam import CATEGORIES_AMU_INAM, CATEGORIES_AMU_INAM_PLATES, CATEGORIES_AMU_INAM_DICT, REGIMES_AMU_INAM
 from utils.nombres_lettres import montant_en_lettres_fcfa
+from utils.grille_amu_hospitalisation import acte_virtuel_o101
 
 # ⭐ Numéro WhatsApp de l'éditeur (Togo, +228) pour l'envoi du reçu
 # d'abonnement — voir admin_finances.html.
@@ -246,7 +247,11 @@ def taux_amu_pour_article(nom_article, taux_defaut):
     confiance au montant déjà calculé et enregistré au moment de la vente)
     remboursait à tort TOUS les articles au même taux — 80% pour un P160
     (perte pour la clinique) ou 90% pour un acte normal à côté d'un P160
-    (trop remboursé)."""
+    (trop remboursé). Même chose pour O101 (oxygénothérapie) : remboursé à
+    100% quel que soit le taux général — voir
+    utils/grille_amu_hospitalisation.py."""
+    if nom_article and 'O101' in nom_article:
+        return 100
     return 90 if (nom_article and 'P160' in nom_article) else taux_defaut
 
 
@@ -2809,6 +2814,12 @@ def actes_vente():
     # 🔥 Récupérer les actes depuis Google Sheets
     actes = sheets_helper.get_all_records('actes', use_prefix=True)
 
+    # ⭐ O101 (Oxygénothérapie) : disponible dans TOUTES les structures sans
+    # devoir l'ajouter à la main dans chaque feuille Google Sheets — voir
+    # utils/grille_amu_hospitalisation.py. Injecté ici, jamais écrit dans
+    # les Sheets.
+    actes = actes + [dict(acte_virtuel_o101(), structure_id=structure_id)]
+
     # ⭐ Part Médecin : {nom_acte: taux} pour poser un data-taux-medecin sur
     # chaque <option> (même esprit que prix_nuit) — voir
     # services/part_medecin_service.py.
@@ -3703,9 +3714,16 @@ def admin_global():
         p.structure_id: p.guide_pdf_autorise
         for p in ParametrageAffichageStructure.query.all()
     }
+    # ⭐ Niveau de soins AMU (1/2/3), éditable depuis cette page — voir
+    # admin_definir_niveau_soins() et utils/grille_amu_hospitalisation.py.
+    niveaux_soins_par_structure = {
+        p.structure_id: p.niveau_soins
+        for p in ParametrageAmuCnss.query.all()
+    }
     faq_en_attente_count = FaqQuestionUtilisateur.query.filter_by(statut='en_attente').count()
     return render_template('admin_global.html', structures=structures,
                             guide_pdf_autorisations=guide_pdf_autorisations,
+                            niveaux_soins_par_structure=niveaux_soins_par_structure,
                             faq_en_attente_count=faq_en_attente_count)
 
 @app.route('/admin/activate/<int:structure_id>', methods=['POST'])
@@ -3832,6 +3850,27 @@ def toggle_guide_pdf_autorisation(structure_id):
             f"Téléchargement du guide PDF {'autorisé' if param.guide_pdf_autorise else 'désactivé'} pour la structure {structure_id}",
             'success'
         )
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Erreur: {str(e)}', 'danger')
+    return redirect(url_for('admin_global'))
+
+@app.route('/admin/niveau-soins/<int:structure_id>', methods=['POST'])
+def admin_definir_niveau_soins(structure_id):
+    """Définit le niveau de soins AMU (1/2/3) d'une structure depuis
+    l'administration globale — en plus de la page "Paramètres AMU" de la
+    structure elle-même (qui a déjà ce champ, voir ParametrageAmuCnss),
+    pour que le superadmin puisse le régler/corriger directement. Sert à
+    déterminer automatiquement les tarifs officiels d'hospitalisation
+    (P160) — voir utils/grille_amu_hospitalisation.py."""
+    if 'super_admin' not in session:
+        return redirect(url_for('admin_login'))
+    try:
+        niveau_soins = request.form.get('niveau_soins', '')
+        param = ParametrageAmuCnss.get_ou_creer(structure_id)
+        param.niveau_soins = niveau_soins if niveau_soins in ('1', '2', '3') else None
+        db.session.commit()
+        flash(f'Niveau de soins mis à jour pour la structure {structure_id}', 'success')
     except Exception as e:
         db.session.rollback()
         flash(f'Erreur: {str(e)}', 'danger')
@@ -13410,7 +13449,13 @@ def api_get_actes():
             sid = a.get('structure_id') or a.get('structure_id') or a.get('structureId')
             if sid is None or str(sid) == str(structure_id):
                 actes_struct.append(a)
-        
+
+        # ⭐ O101 (Oxygénothérapie) : disponible dans TOUTES les structures
+        # sans devoir l'ajouter à la main dans chaque feuille Google Sheets
+        # — voir utils/grille_amu_hospitalisation.py. Injecté ici, jamais
+        # écrit dans les Sheets.
+        actes_struct.append(dict(acte_virtuel_o101(), structure_id=structure_id))
+
         # Filtrer par recherche
         if search:
             search_lower = search.lower()
@@ -15788,12 +15833,18 @@ def proformas():
     # Récupérer les actes et produits depuis Google Sheets
     actes = sheets_helper.get_all_records('actes')
     produits = sheets_helper.get_all_records('produits')
-    
+
     # Filtrer par structure
     actes_filtres = [a for a in actes if str(a.get('structure_id')) == str(structure_id)]
     produits_filtres = [p for p in produits if str(p.get('structure_id')) == str(structure_id)]
-    
-    return render_template('proformas/proformas.html', 
+
+    # ⭐ O101 (Oxygénothérapie) : disponible dans TOUTES les structures sans
+    # devoir l'ajouter à la main dans chaque feuille Google Sheets — voir
+    # utils/grille_amu_hospitalisation.py. Injecté ici, jamais écrit dans
+    # les Sheets.
+    actes_filtres.append(dict(acte_virtuel_o101(), structure_id=structure_id))
+
+    return render_template('proformas/proformas.html',
                          proformas=proformas,
                          stats=stats,
                          actes=actes_filtres,

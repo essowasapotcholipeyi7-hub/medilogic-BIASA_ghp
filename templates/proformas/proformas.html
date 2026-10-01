@@ -2404,6 +2404,7 @@ function calculeSousTotalConversion() {
 // côté serveur dans api_convertir_proforma, applique déjà ce correctif —
 // seul cet aperçu avant validation en tenait pas compte).
 function tauxAMUPourArticleConversion(item, tauxDefaut) {
+    if (item.nom && item.nom.includes('O101')) return 100;
     return (item.nom && item.nom.includes('P160')) ? 90 : tauxDefaut;
 }
 
