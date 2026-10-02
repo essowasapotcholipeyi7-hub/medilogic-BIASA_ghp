@@ -160,7 +160,7 @@
 
                 <div class="row g-3">
                     <div class="col-md-2"><label class="form-label small">Poids (Kg)</label><input type="text" class="form-control" id="poids" oninput="calculerImcTpc()"></div>
-                    <div class="col-md-2"><label class="form-label small">Taille (m)</label><input type="text" class="form-control" id="taille" oninput="calculerImcTpc()"></div>
+                    <div class="col-md-2"><label class="form-label small">Taille (m)</label><input type="text" class="form-control" id="taille" placeholder="1.78 ou 178" oninput="calculerImcTpc()" onblur="normaliserTailleTpc()"></div>
                     <div class="col-md-2"><label class="form-label small">IMC</label><input type="text" class="form-control" id="imc" readonly></div>
                     <div class="col-md-2"><label class="form-label small">TA — BG</label><input type="text" class="form-control" id="taBg"></div>
                     <div class="col-md-2"><label class="form-label small">TA — BD</label><input type="text" class="form-control" id="taBd"></div>
@@ -356,16 +356,37 @@ function escapeHtml(valeur) {
 // ⭐ Patron, 2026-10-02 : "IMC doit être calculé automatiquement en
 // fonction du poids et taille" — champ en lecture seule, recalculé à
 // chaque saisie de l'un ou l'autre (taille en mètres, comme l'indique le
-// libellé du champ).
+// libellé du champ). Puis, 2026-10-02 (suite) : "au niveau de ma taille
+// permet qu'on renseigne aussi en cm comme ça 178 et 1.78 ou 1,78" — une
+// valeur > 3 ne peut être une taille humaine en mètres, donc interprétée
+// comme des centimètres pour le calcul de l'IMC.
+function parseTailleEnMetresTpc(valeurBrute) {
+    const v = parseFloat(String(valeurBrute || '').replace(',', '.'));
+    if (!v || v <= 0) return null;
+    return v > 3 ? v / 100 : v;
+}
 function calculerImcTpc() {
     const poids = parseFloat((document.getElementById('poids').value || '').replace(',', '.'));
-    const taille = parseFloat((document.getElementById('taille').value || '').replace(',', '.'));
+    const taille = parseTailleEnMetresTpc(document.getElementById('taille').value);
     const champImc = document.getElementById('imc');
     if (poids > 0 && taille > 0) {
         champImc.value = (poids / (taille * taille)).toFixed(1);
     } else {
         champImc.value = '';
     }
+}
+// ⭐ À la sortie du champ seulement (pas à chaque frappe, pour ne pas gêner
+// la saisie en cours) : une taille saisie en cm (ex: "178") est convertie
+// et réaffichée en mètres ("1.78"), puisque c'est ce format qui est
+// imprimé sur la fiche TPC (libellé "Taille (m)") — une saisie déjà en
+// mètres (1.78 ou 1,78) n'est pas reformatée.
+function normaliserTailleTpc() {
+    const champ = document.getElementById('taille');
+    const brut = parseFloat(String(champ.value || '').replace(',', '.'));
+    if (brut > 3) {
+        champ.value = (brut / 100).toFixed(2);
+    }
+    calculerImcTpc();
 }
 
 // ===================== RÉGIME → TYPE DE DEMANDE =====================
