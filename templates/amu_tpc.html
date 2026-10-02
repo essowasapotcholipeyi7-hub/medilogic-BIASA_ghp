@@ -120,10 +120,6 @@
                     <label class="form-label small fw-semibold">Date de prescription</label>
                     <input type="date" class="form-control" id="datePrescription" required>
                 </div>
-                <div class="col-md-4">
-                    <label class="form-label small fw-semibold">Date du prochain rendez-vous <span class="text-danger">*</span></label>
-                    <input type="date" class="form-control" id="dateProchainRdv" required>
-                </div>
             </div>
 
             <hr class="my-3">
@@ -166,8 +162,9 @@
                     <div class="col-md-2"><label class="form-label small">Poids (Kg)</label><input type="text" class="form-control" id="poids" oninput="calculerImcTpc()"></div>
                     <div class="col-md-2"><label class="form-label small">Taille (m)</label><input type="text" class="form-control" id="taille" oninput="calculerImcTpc()"></div>
                     <div class="col-md-2"><label class="form-label small">IMC</label><input type="text" class="form-control" id="imc" readonly></div>
-                    <div class="col-md-3"><label class="form-label small">TA — BG</label><input type="text" class="form-control" id="taBg"></div>
-                    <div class="col-md-3"><label class="form-label small">TA — BD</label><input type="text" class="form-control" id="taBd"></div>
+                    <div class="col-md-2"><label class="form-label small">TA — BG</label><input type="text" class="form-control" id="taBg"></div>
+                    <div class="col-md-2"><label class="form-label small">TA — BD</label><input type="text" class="form-control" id="taBd"></div>
+                    <div class="col-md-2"><label class="form-label small">Prochain RDV <span class="text-danger">*</span></label><input type="date" class="form-control" id="dateProchainRdv" required></div>
                 </div>
                 <div class="mt-2">
                     <label class="form-label small">État général</label>
@@ -675,11 +672,11 @@ function voirDetailsTpc(id) {
         <p><strong>Médecin prescripteur :</strong> ${escapeHtml(d.medecin_nom)}</p>
         <p><strong>Régime :</strong> ${escapeHtml(TYPE_AMU_LABELS_JS[d.type_amu] || d.type_amu)}
            &nbsp;·&nbsp; <strong>Type :</strong> ${escapeHtml(labelType)}
-           &nbsp;·&nbsp; <strong>Date de prescription :</strong> ${escapeHtml(d.date_prescription)}
-           &nbsp;·&nbsp; <strong>Prochain RDV :</strong> ${escapeHtml(d.date_prochain_rdv) || '—'}</p>`;
+           &nbsp;·&nbsp; <strong>Date de prescription :</strong> ${escapeHtml(d.date_prescription)}</p>`;
 
     if (d.type_demande === 'identification') {
         html += `<p class="mb-1"><strong>ALD</strong></p><ul>${(d.affections_ald || []).map(a => `<li>${escapeHtml(a.affection)} — ${escapeHtml(a.code_ald)}</li>`).join('') || '<li class="text-muted">Aucune</li>'}</ul>`;
+        html += `<p><strong>Prochain RDV :</strong> ${escapeHtml(d.date_prochain_rdv) || '—'}</p>`;
     }
     if (d.motif_modification) {
         html += `<p><strong>Motif :</strong> ${escapeHtml(d.motif_modification)}</p>`;
@@ -701,7 +698,6 @@ function modifierDemandeTpc(id) {
     if (d.patient) appliquerPatientTpc(d.patient);
     document.getElementById('medecinId').value = d.medecin_id;
     document.getElementById('datePrescription').value = d.date_prescription;
-    document.getElementById('dateProchainRdv').value = d.date_prochain_rdv;
     document.getElementById('typeDemande').value = d.type_demande;
     document.getElementById('typeDemande').disabled = true;
     changerTypeDemande();
@@ -724,6 +720,7 @@ function modifierDemandeTpc(id) {
         document.getElementById('etatGeneral').value = d.etat_general;
         document.getElementById('resumeExamenPhysique').value = d.resume_examen_physique;
         document.getElementById('autresExamen').value = d.autres_examen;
+        document.getElementById('dateProchainRdv').value = d.date_prochain_rdv;
         lignesAld = (d.affections_ald || []).map(l => ({...l}));
         rendreLignesAld();
         lignesExamens = (d.examens_paracliniques || []).map(l => ({...l}));
@@ -789,7 +786,6 @@ document.getElementById('formTpc').addEventListener('submit', function(e) {
     if (!document.getElementById('patientId').value) { alert('Choisissez un patient AMU.'); return; }
     if (!document.getElementById('medecinId').value) { alert('Choisissez un médecin.'); return; }
     if (!document.getElementById('datePrescription').value) { alert('Indiquez la date de prescription.'); return; }
-    if (!document.getElementById('dateProchainRdv').value) { alert('Indiquez la date du prochain rendez-vous.'); return; }
     if (!typeDemande) { alert('Choisissez le type de demande.'); return; }
     if ((typeDemande === 'renouvellement' || typeDemande === 'modification') && !document.getElementById('dossierId').value) { alert('Choisissez le dossier TPC du patient.'); return; }
     if ((typeDemande === 'modification' || typeDemande === 'rectification') && !document.getElementById('motifModification').value.trim()) {
@@ -797,6 +793,7 @@ document.getElementById('formTpc').addEventListener('submit', function(e) {
     }
     if (!lignesTraitements.filter(l => l.medicament).length) { alert('Ajoutez au moins un médicament.'); return; }
     if (typeDemande === 'identification' && !lignesAld.filter(l => l.affection).length) { alert('Indiquez au moins une ALD.'); return; }
+    if (typeDemande === 'identification' && !document.getElementById('dateProchainRdv').value) { alert('Indiquez la date du prochain rendez-vous.'); return; }
 
     const payload = {
         patient_id: parseInt(document.getElementById('patientId').value),
@@ -805,7 +802,6 @@ document.getElementById('formTpc').addEventListener('submit', function(e) {
         type_demande: typeDemande,
         dossier_id: document.getElementById('dossierId').value ? parseInt(document.getElementById('dossierId').value) : null,
         date_prescription: document.getElementById('datePrescription').value,
-        date_prochain_rdv: document.getElementById('dateProchainRdv').value,
         traitements: lignesTraitements,
     };
     if (typeDemande === 'identification') {
@@ -824,6 +820,7 @@ document.getElementById('formTpc').addEventListener('submit', function(e) {
             autres_examen: document.getElementById('autresExamen').value,
             examens_paracliniques: lignesExamens,
             comorbidites: [0,1,2].map(i => document.getElementById('comorbidite' + i).value),
+            date_prochain_rdv: document.getElementById('dateProchainRdv').value,
         });
     } else if (typeDemande === 'renouvellement') {
         payload.traitement_a_renouveler = document.querySelector('input[name="aRenouveler"]:checked').value === 'oui';

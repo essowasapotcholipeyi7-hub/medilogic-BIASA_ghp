@@ -1456,17 +1456,6 @@ def _valider_champs_tpc(data, structure_id):
     except (TypeError, ValueError):
         return None, ('Date de prescription invalide', 400)
 
-    # ⭐ Patron, 2026-10-02 : "tu n'as pas affiché date du prochain rdv,
-    # c'est obligatoire sinon on ne peut pas enregistrer la demande" —
-    # commune aux 4 types de demande (pas seulement l'identification), même
-    # si seule la fiche d'identification a un encart imprimé pour cette
-    # date (voir utils/remplissage_pdf_tpc.py) : les autres types la
-    # gardent en interne pour le suivi du patient.
-    try:
-        date_prochain_rdv = datetime.strptime(data.get('date_prochain_rdv'), '%Y-%m-%d').date()
-    except (TypeError, ValueError):
-        return None, ('Date du prochain rendez-vous invalide ou manquante', 400)
-
     # ⭐ Renouvellement/modification pointent vers un dossier "identification"
     # existant DE CE PATIENT — jamais un autre patient (revalidé ici, pas
     # seulement côté recherche). La rectification INAM est un cas à part :
@@ -1506,8 +1495,7 @@ def _valider_champs_tpc(data, structure_id):
     champs = {
         'patient_id': patient.id, 'medecin_id': medecin.id, 'type_amu': type_amu,
         'type_demande': type_demande, 'dossier_id': dossier_id,
-        'date_prescription': date_prescription, 'date_prochain_rdv': date_prochain_rdv,
-        'traitements': traitements,
+        'date_prescription': date_prescription, 'traitements': traitements,
     }
 
     if type_demande == 'identification':
@@ -1522,7 +1510,16 @@ def _valider_champs_tpc(data, structure_id):
             for e in (data.get('examens_paracliniques') or []) if (e.get('examen') or '').strip()
         ][:14]
         comorbidites = [c.strip() for c in (data.get('comorbidites') or []) if c and c.strip()][:3]
+        # ⭐ Patron, 2026-10-02 : la date du prochain rendez-vous est propre à
+        # la fiche d'identification (seule fiche à avoir un encart imprimé
+        # pour cette date, voir utils/remplissage_pdf_tpc.py) — obligatoire
+        # ICI uniquement, pas pour renouvellement/modification/rectification.
+        try:
+            date_prochain_rdv = datetime.strptime(data.get('date_prochain_rdv'), '%Y-%m-%d').date()
+        except (TypeError, ValueError):
+            return None, ('Date du prochain rendez-vous invalide ou manquante', 400)
         champs.update({
+            'date_prochain_rdv': date_prochain_rdv,
             'ville_residence': (data.get('ville_residence') or '').strip() or None,
             'sexe': (data.get('sexe') or '').strip() or None,
             'profession': (data.get('profession') or '').strip() or None,
