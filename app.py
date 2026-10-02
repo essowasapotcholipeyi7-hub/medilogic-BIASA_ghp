@@ -1060,6 +1060,25 @@ def _valider_champs_ep(data, structure_id):
             id=data.get('hospitalisation_id'), structure_id=structure_id, patient_id=patient.id
         ).first()
         if h:
+            # ⭐⭐ Trouvé en revue de code (2026-10-02) : rien n'empêchait de
+            # lier plusieurs EP au MÊME séjour (double soumission) — l'EP la
+            # plus ancienne devenait alors invisible depuis la page
+            # Hospitalisation (qui ne prend que la plus récente). Un même
+            # PATIENT peut tout à fait avoir plusieurs EP dans le mois
+            # (patron : "on peut demander l'EP à un patient plusieurs fois
+            # dans le mois [...] on le libère, il revient, on l'hospitalise
+            # à nouveau") — mais chaque hospitalisation redonne un NOUVEL
+            # hospitalisation_id, donc ce verrou (scopé au séjour précis, pas
+            # au patient) n'empêche jamais ce cas normal. 'refusee' n'est PAS
+            # bloquant : une EP refusée doit pouvoir être refaite pour le
+            # même séjour (bouton "Refaire une demande" côté Hospitalisation).
+            deja_liee = DemandeEntentePrealable.query.filter(
+                DemandeEntentePrealable.structure_id == structure_id,
+                DemandeEntentePrealable.hospitalisation_id == h.id,
+                DemandeEntentePrealable.statut.in_(('en_attente', 'approuvee')),
+            ).first()
+            if deja_liee:
+                return None, ('Une Entente Préalable est déjà en cours ou approuvée pour ce séjour', 400)
             hospitalisation_id = h.id
 
     return {
