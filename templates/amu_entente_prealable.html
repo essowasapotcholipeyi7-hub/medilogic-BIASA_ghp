@@ -60,6 +60,15 @@
 
     table.ep-historique th { font-size: 12px; text-transform: uppercase; color: #51636D; white-space: nowrap; }
     table.ep-historique td { font-size: 13px; vertical-align: middle; }
+
+    .ep-historique-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+    .ep-historique-toolbar input[type="search"] { flex: 1 1 220px; min-width: 200px; }
+    .ep-filtre-type { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+    .ep-filtre-type button {
+        font-size: 12px; padding: 5px 13px; border-radius: 999px;
+        border: 1px solid #e3e8ec; background: white; color: #51636D; font-weight: 600;
+    }
+    .ep-filtre-type button.active { background: #0A3D5C; color: white; border-color: #0A3D5C; }
 </style>
 {% endblock %}
 
@@ -241,6 +250,16 @@
 
     <div class="ep-card">
         <h6><i class="fas fa-history me-1"></i>Historique</h6>
+        <div class="ep-historique-toolbar">
+            <div class="ep-filtre-type" id="epFiltreType">
+                <button type="button" class="active" data-type="tous">Tous</button>
+                <button type="button" data-type="actes">Actes</button>
+                <button type="button" data-type="produits">Produits</button>
+                <button type="button" data-type="hospit">Hospitalisation</button>
+            </div>
+            <input type="search" class="form-control form-control-sm" id="epHistoriqueRecherche"
+                   placeholder="Rechercher (patient, médecin, régime...)">
+        </div>
         <div class="table-responsive">
             <table class="table table-sm ep-historique">
                 <thead>
@@ -257,7 +276,7 @@
                 <tbody>
                     {% for d in demandes %}
                     {% set p = patients_par_id.get(d.patient_id) %}
-                    <tr>
+                    <tr data-types="{% if d.inclure_actes %}actes {% endif %}{% if d.inclure_produits %}produits {% endif %}{% if d.inclure_hospitalisation %}hospit{% endif %}">
                         <td>{{ d.created_at.strftime('%d/%m/%Y %H:%M') if d.created_at else '' }}</td>
                         <td>{{ (p.nom + ' ' + p.prenom) if p else ('Patient #' ~ d.patient_id) }}</td>
                         <td>{{ medecins_par_id.get(d.medecin_id, '—') }}</td>
@@ -318,6 +337,9 @@
                     {% else %}
                     <tr><td colspan="7" class="text-muted text-center py-3">Aucune demande pour le moment.</td></tr>
                     {% endfor %}
+                    <tr id="epHistoriqueAucunResultat" style="display:none;">
+                        <td colspan="7" class="text-muted text-center py-3">Aucun résultat pour ces filtres.</td>
+                    </tr>
                 </tbody>
             </table>
         </div>
@@ -688,7 +710,17 @@ function soumettreDefinitive() {
     fetch(`/api/amu/entente-prealable/${definitiveEpId}/definitive`, {
         method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
     }).then(r => r.json()).then(data => {
-        if (data.success) location.reload(); else alert(data.error || 'Erreur');
+        if (data.success) {
+            // ⭐ Patron, 2026-10-02 : "possible d'imprimer le billet d'hospitalisation
+            // directement quand on finit de valider une demande définitive" — plus
+            // besoin de rechercher la ligne dans l'historique après coup.
+            if (d.hospitalisation_id) {
+                window.open(`/hospitalisation/${d.hospitalisation_id}/billet`, '_blank');
+            }
+            location.reload();
+        } else {
+            alert(data.error || 'Erreur');
+        }
     });
 }
 
@@ -787,5 +819,36 @@ if (HOSPITALISATION_ID_PREREMPLI) {
         document.getElementById('hospitDateAdmission').value = HOSPIT_DATE_ADMISSION_PREREMPLI;
     }
 }
+
+// ===================== HISTORIQUE : recherche + filtre par type =====================
+// ⭐ Patron, 2026-10-02 : "il faut bien ranger ces historiques acte à part,
+// produit à part, hospit à part [...] avec une facilité de recherche" — une
+// demande pouvant couvrir plusieurs types à la fois (inclure_actes/
+// produits/hospitalisation ne sont pas exclusifs), le filtre par type
+// affiche toute ligne qui CONTIENT le type choisi plutôt que de dupliquer
+// les lignes dans des tableaux séparés.
+function filtrerHistoriqueEp() {
+    const q = (document.getElementById('epHistoriqueRecherche').value || '').trim().toLowerCase();
+    const typeActif = document.querySelector('#epFiltreType button.active').dataset.type;
+    const lignes = document.querySelectorAll('table.ep-historique tbody tr[data-types]');
+    let visibles = 0;
+    lignes.forEach(tr => {
+        const types = tr.dataset.types.split(' ').filter(Boolean);
+        const matchType = typeActif === 'tous' || types.includes(typeActif);
+        const matchRecherche = !q || tr.textContent.toLowerCase().includes(q);
+        const visible = matchType && matchRecherche;
+        tr.style.display = visible ? '' : 'none';
+        if (visible) visibles++;
+    });
+    document.getElementById('epHistoriqueAucunResultat').style.display = (lignes.length && !visibles) ? '' : 'none';
+}
+document.getElementById('epHistoriqueRecherche').addEventListener('input', filtrerHistoriqueEp);
+document.querySelectorAll('#epFiltreType button').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('#epFiltreType button').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        filtrerHistoriqueEp();
+    });
+});
 </script>
 {% endblock %}

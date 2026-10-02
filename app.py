@@ -6377,10 +6377,10 @@ def gestion_medecins():
     
     # Recuperer les medecins (sans qualification)
     medecins = db.execute_query("""
-        SELECT 
+        SELECT
             id, nom, prenom, titre, specialite,
-            telephone, email, honoraire_consultation, actif
-        FROM medecins 
+            telephone, email, honoraire_consultation, actif, code_prescripteur
+        FROM medecins
         WHERE structure_id = %s
         ORDER BY nom
     """, (structure_id,))
@@ -6412,6 +6412,7 @@ def gestion_medecins():
                 'email': m.get('email'),
                 'honoraire': m.get('honoraire_consultation', 0),
                 'actif': m.get('actif', True),
+                'code_prescripteur': m.get('code_prescripteur'),
                 'nb_consultations': nb_consultations
             })
         else:
@@ -6436,6 +6437,7 @@ def gestion_medecins():
                 'email': m[6] if len(m) > 6 else '',
                 'honoraire': m[7] if len(m) > 7 else 0,
                 'actif': m[8] if len(m) > 8 else True,
+                'code_prescripteur': m[9] if len(m) > 9 else None,
                 'nb_consultations': nb_consultations
             })
     
@@ -6477,9 +6479,10 @@ def api_ajouter_medecin():
                 telephone,
                 email,
                 honoraire_consultation,
-                actif
+                actif,
+                code_prescripteur
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             structure_id,
@@ -6491,7 +6494,8 @@ def api_ajouter_medecin():
             data.get('telephone', ''),
             data.get('email', ''),
             data.get('honoraire_consultation', 0),
-            data.get('actif', True)
+            data.get('actif', True),
+            data.get('code_prescripteur', '') or None
         ))
         
         if result and len(result) > 0:
@@ -6535,7 +6539,8 @@ def api_modifier_medecin(id):
                 telephone = %s,
                 email = %s,
                 honoraire_consultation = %s,
-                actif = %s
+                actif = %s,
+                code_prescripteur = %s
             WHERE id = %s AND structure_id = %s
         """, (
             data.get('nom'),
@@ -6547,6 +6552,7 @@ def api_modifier_medecin(id):
             data.get('email', ''),
             data.get('honoraire_consultation', 0),
             data.get('actif', True),
+            data.get('code_prescripteur', '') or None,
             id,
             structure_id
         ))
@@ -6780,13 +6786,13 @@ def get_medecins():
     
     # Recuperer les medecins depuis Neon
     medecins = db.execute_query("""
-        SELECT id, nom, prenom, titre, specialite, qualification, 
-               telephone, email, honoraire_consultation, actif
-        FROM medecins 
-        WHERE structure_id = %s 
+        SELECT id, nom, prenom, titre, specialite, qualification,
+               telephone, email, honoraire_consultation, actif, code_prescripteur
+        FROM medecins
+        WHERE structure_id = %s
         ORDER BY nom
     """, (structure_id,))
-    
+
     result = []
     for m in medecins:
         if isinstance(m, dict):
@@ -6800,6 +6806,7 @@ def get_medecins():
             email = m.get('email')
             honoraire = m.get('honoraire_consultation', 0)
             actif = m.get('actif', True)
+            code_prescripteur = m.get('code_prescripteur')
         else:
             med_id = m[0]
             nom = m[1]
@@ -6811,6 +6818,7 @@ def get_medecins():
             email = m[7] if len(m) > 7 else ''
             honoraire = m[8] if len(m) > 8 else 0
             actif = m[9] if len(m) > 9 else True
+            code_prescripteur = m[10] if len(m) > 10 else None
         
         # ⭐ FIX (2 bugs corrigés ici) :
         # 1) `db.execute_query` retourne toujours des dicts (RealDictCursor) —
@@ -6877,6 +6885,7 @@ def get_medecins():
             'email': email,
             'honoraire_consultation': float(honoraire) if honoraire else 0,
             'actif': actif,
+            'code_prescripteur': code_prescripteur,
             'nb_consultations': nb_total,
             'consultations_mois': nb_mois,
             'consultations_semaine': nb_semaine,
@@ -6895,7 +6904,7 @@ def get_medecin_details(id):
     
     # Une seule requete avec toutes les statistiques
     result = db.execute_query("""
-        SELECT 
+        SELECT
             m.id,
             m.nom,
             m.prenom,
@@ -6906,6 +6915,7 @@ def get_medecin_details(id):
             m.email,
             m.honoraire_consultation,
             m.actif,
+            m.code_prescripteur,
             COUNT(CASE WHEN r.statut = 'termine' THEN 1 END) as total_consultations,
             COUNT(CASE WHEN r.statut = 'termine'
                 AND EXTRACT(YEAR FROM COALESCE(r.date_rendez_vous, r.date_rdv)) = EXTRACT(YEAR FROM CURRENT_DATE)
@@ -6920,7 +6930,7 @@ def get_medecin_details(id):
         LEFT JOIN rendez_vous r ON m.id = r.medecin_id
         WHERE m.id = %s AND m.structure_id = %s
         GROUP BY m.id, m.nom, m.prenom, m.titre, m.specialite, m.qualification,
-                 m.telephone, m.email, m.honoraire_consultation, m.actif
+                 m.telephone, m.email, m.honoraire_consultation, m.actif, m.code_prescripteur
     """, (id, structure_id))
     
     if not result or len(result) == 0:
@@ -6939,11 +6949,12 @@ def get_medecin_details(id):
             'email': r.get('email'),
             'honoraire_consultation': float(r.get('honoraire_consultation') or 0),
             'actif': r.get('actif', True),
+            'code_prescripteur': r.get('code_prescripteur'),
             'total_consultations': int(r.get('total_consultations') or 0),
             'consultations_mois': int(r.get('consultations_mois') or 0),
             'consultations_semaine': int(r.get('consultations_semaine') or 0),
-            'derniere_consultation': r.get('derniere_consultation').isoformat() 
-                if r.get('derniere_consultation') and hasattr(r.get('derniere_consultation'), 'isoformat') 
+            'derniere_consultation': r.get('derniere_consultation').isoformat()
+                if r.get('derniere_consultation') and hasattr(r.get('derniere_consultation'), 'isoformat')
                 else None
         })
     else:
@@ -6959,10 +6970,11 @@ def get_medecin_details(id):
             'email': r[7] if len(r) > 7 else '',
             'honoraire_consultation': float(r[8] if len(r) > 8 else 0),
             'actif': r[9] if len(r) > 9 else True,
-            'total_consultations': int(r[10]) if len(r) > 10 and r[10] else 0,
-            'consultations_mois': int(r[11]) if len(r) > 11 and r[11] else 0,
-            'consultations_semaine': int(r[12]) if len(r) > 12 and r[12] else 0,
-            'derniere_consultation': r[13].isoformat() if len(r) > 13 and r[13] and hasattr(r[13], 'isoformat') else None
+            'code_prescripteur': r[10] if len(r) > 10 else None,
+            'total_consultations': int(r[11]) if len(r) > 11 and r[11] else 0,
+            'consultations_mois': int(r[12]) if len(r) > 12 and r[12] else 0,
+            'consultations_semaine': int(r[13]) if len(r) > 13 and r[13] else 0,
+            'derniere_consultation': r[14].isoformat() if len(r) > 14 and r[14] and hasattr(r[14], 'isoformat') else None
         })
 
 @app.route('/api/medecins/<int:id>/consultations', methods=['GET'])

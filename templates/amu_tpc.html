@@ -49,6 +49,15 @@
 
     table.tpc-historique th { font-size: 12px; text-transform: uppercase; color: #51636D; white-space: nowrap; }
     table.tpc-historique td { font-size: 13px; vertical-align: middle; }
+
+    .tpc-historique-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+    .tpc-historique-toolbar input[type="search"] { flex: 1 1 220px; min-width: 200px; }
+    .tpc-filtre-type { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+    .tpc-filtre-type button {
+        font-size: 12px; padding: 5px 13px; border-radius: 999px;
+        border: 1px solid #e3e8ec; background: white; color: #51636D; font-weight: 600;
+    }
+    .tpc-filtre-type button.active { background: #0A3D5C; color: white; border-color: #0A3D5C; }
 </style>
 {% endblock %}
 
@@ -232,6 +241,17 @@
 
     <div class="tpc-card">
         <h6><i class="fas fa-history me-1"></i>Historique</h6>
+        <div class="tpc-historique-toolbar">
+            <div class="tpc-filtre-type" id="tpcFiltreType">
+                <button type="button" class="active" data-type="tous">Tous</button>
+                <button type="button" data-type="identification">Identification</button>
+                <button type="button" data-type="renouvellement">Renouvellement</button>
+                <button type="button" data-type="modification">Modification</button>
+                <button type="button" data-type="rectification">Rectification</button>
+            </div>
+            <input type="search" class="form-control form-control-sm" id="tpcHistoriqueRecherche"
+                   placeholder="Rechercher (patient, médecin, régime...)">
+        </div>
         <div class="table-responsive">
             <table class="table table-sm tpc-historique">
                 <thead>
@@ -248,7 +268,7 @@
                 <tbody>
                     {% for d in demandes %}
                     {% set p = patients_par_id.get(d.patient_id) %}
-                    <tr>
+                    <tr data-type="{{ d.type_demande }}">
                         <td>{{ d.created_at.strftime('%d/%m/%Y %H:%M') if d.created_at else '' }}</td>
                         <td>{{ (p.nom + ' ' + p.prenom) if p else ('Patient #' ~ d.patient_id) }}</td>
                         <td>{{ medecins_par_id.get(d.medecin_id, '—') }}</td>
@@ -285,6 +305,9 @@
                     {% else %}
                     <tr><td colspan="7" class="text-muted text-center py-3">Aucune demande pour le moment.</td></tr>
                     {% endfor %}
+                    <tr id="tpcHistoriqueAucunResultat" style="display:none;">
+                        <td colspan="7" class="text-muted text-center py-3">Aucun résultat pour ces filtres.</td>
+                    </tr>
                 </tbody>
             </table>
         </div>
@@ -794,5 +817,32 @@ document.getElementById('formTpc').addEventListener('submit', function(e) {
 rendreLignesAld();
 rendreLignesExamens();
 rendreLignesTraitements();
+
+// ===================== HISTORIQUE : recherche + filtre par type =====================
+// ⭐ Patron, 2026-10-02 : même rangement/recherche que l'Entente Préalable.
+// Ici type_demande est exclusif (une seule valeur par ligne), le filtre
+// compare donc directement l'attribut data-type.
+function filtrerHistoriqueTpc() {
+    const q = (document.getElementById('tpcHistoriqueRecherche').value || '').trim().toLowerCase();
+    const typeActif = document.querySelector('#tpcFiltreType button.active').dataset.type;
+    const lignes = document.querySelectorAll('table.tpc-historique tbody tr[data-type]');
+    let visibles = 0;
+    lignes.forEach(tr => {
+        const matchType = typeActif === 'tous' || tr.dataset.type === typeActif;
+        const matchRecherche = !q || tr.textContent.toLowerCase().includes(q);
+        const visible = matchType && matchRecherche;
+        tr.style.display = visible ? '' : 'none';
+        if (visible) visibles++;
+    });
+    document.getElementById('tpcHistoriqueAucunResultat').style.display = (lignes.length && !visibles) ? '' : 'none';
+}
+document.getElementById('tpcHistoriqueRecherche').addEventListener('input', filtrerHistoriqueTpc);
+document.querySelectorAll('#tpcFiltreType button').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('#tpcFiltreType button').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        filtrerHistoriqueTpc();
+    });
+});
 </script>
 {% endblock %}
