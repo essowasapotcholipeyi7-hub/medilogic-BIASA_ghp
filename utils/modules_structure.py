@@ -70,4 +70,18 @@ MODULES_STRUCTURE = {
     'part_medecin': {'label': 'Part Médecin', 'endpoints': [
         'page_part_medecin', 'page_taux_part_medecin',
     ]},
+    # ⭐ Patron, 2026-10-02 : "vérifie maintenant dans admin global [...] les
+    # onglets qui ne sont pas là, ajoute-les" — entente_prealable et tpc
+    # existaient déjà comme clés de permission par rôle (voir
+    # utils/permissions.py, a_acces()) mais n'étaient pas dans ce registre,
+    # donc impossibles à masquer en bloc pour une structure depuis
+    # admin_global.html. soins_ambulatoires était déjà appelé via
+    # onglet_cache() dans base.html/sidebar_menu.html mais absent d'ici —
+    # le masquage ne pouvait jamais être activé faute de case à cocher.
+    'entente_prealable': {'label': 'Entente Préalable AMU', 'endpoints': ['page_amu_entente_prealable']},
+    'tpc':                {'label': 'TPC (Traitement des Pathologies Chroniques)', 'endpoints': ['page_amu_tpc']},
+    'soins_ambulatoires': {'label': 'Soins ambulatoires', 'endpoints': ['page_soins_ambulatoires']},
+    'factures_amu':       {'label': 'Factures AMU (mensuelles)', 'endpoints': [
+        'page_facture_amu_cnss', 'page_facture_amu_inam', 'historique_factures_amu',
+    ]},
 }

@@ -2351,7 +2351,9 @@
                     Factures assurances
                 </a>
                 {% endif %}
-                {% if not _bloq %}
+                <!-- ⭐ Masquable en bloc (clé 'factures_amu', voir
+                     utils/modules_structure.py, ajoutée le 2026-10-02). -->
+                {% if not onglet_cache('factures_amu') and not _bloq %}
                 <a class="menu-item" href="{{ url_for('page_facture_amu_cnss') }}">
                     Facture AMU CNSS (mensuelle)
                 </a>
@@ -2525,16 +2527,19 @@
                 </a>
                 <!-- ⭐ Entente Préalable (patron, 2026-10-01) : remplissage +
                      approbation médecin + impression depuis l'appli — voir
-                     page_amu_entente_prealable (app.py). -->
-                {% if a_acces('entente_prealable') %}
+                     page_amu_entente_prealable (app.py). Masquable en bloc
+                     depuis admin_global.html (voir utils/modules_structure.py,
+                     clé 'entente_prealable', ajoutée le 2026-10-02). -->
+                {% if a_acces('entente_prealable') and not onglet_cache('entente_prealable') and not _bloq %}
                 <div class="menu-divider"></div>
                 <a class="menu-item" href="{{ url_for('page_amu_entente_prealable') }}">
                     <i class="fas fa-file-medical"></i> Entente Préalable
                 </a>
                 {% endif %}
                 <!-- ⭐ TPC (patron, 2026-10-01 : "attaque les TPC, même
-                     logique que les EP") — voir page_amu_tpc (app.py). -->
-                {% if a_acces('tpc') %}
+                     logique que les EP") — voir page_amu_tpc (app.py).
+                     Masquable en bloc (clé 'tpc', voir ci-dessus). -->
+                {% if a_acces('tpc') and not onglet_cache('tpc') and not _bloq %}
                 <a class="menu-item" href="{{ url_for('page_amu_tpc') }}">
                     <i class="fas fa-prescription-bottle-medical"></i> TPC
                 </a>
