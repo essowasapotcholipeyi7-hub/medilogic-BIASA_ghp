@@ -41,6 +41,7 @@ from utils.remplissage_pdf_amu import remplir_entente_prealable
 from models import DemandeTpc, MedicamentTpcMemorise, LieuResidenceMemorise
 from utils.remplissage_pdf_tpc import remplir_tpc
 from utils.codes_ald import CODES_ALD
+from utils.medicaments_amu import rechercher_medicaments_amu
 from datetime import datetime, date, timedelta
 from routes.protocoles_routes import protocoles_bp
 from routes.journal_routes import journal_bp
@@ -1402,6 +1403,20 @@ def api_amu_tpc_dossier_detail(dossier_id):
             } for d in historique
         ],
     })
+
+
+@app.route('/api/tpc/medicaments-amu')
+@login_required
+def api_tpc_medicaments_amu():
+    """Recherche dans le référentiel des médicaments AMU (patron,
+    2026-10-02 : CSV fourni par lui, voir utils/medicaments_amu.py) — par
+    nom commercial ou DCI. Sélectionner un résultat remplit le médicament
+    ET sa forme/dosage dans le tableau Traitement du formulaire TPC."""
+    if not a_acces('tpc'):
+        return jsonify({'data': [], 'error': 'Accès non autorisé'}), 403
+    type_amu = request.args.get('type_amu', '')
+    q = request.args.get('search', '')
+    return jsonify({'data': rechercher_medicaments_amu(type_amu, q)})
 
 
 def _valider_champs_tpc(data, structure_id):

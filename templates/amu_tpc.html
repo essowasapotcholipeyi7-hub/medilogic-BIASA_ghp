@@ -562,12 +562,55 @@ function rendreLignesTraitements() {
     document.getElementById('lignesTraitements').innerHTML = lignesTraitements.map((l, i) => `
         <div class="tpc-ligne">
             <input type="text" placeholder="Code ALD" style="max-width:90px;" value="${escapeHtml(l.code_ald)}" oninput="majLigneTraitement(${i}, 'code_ald', this.value)">
-            <input type="text" placeholder="Médicament" list="listeMedicaments" value="${escapeHtml(l.medicament)}" oninput="majLigneTraitement(${i}, 'medicament', this.value)">
+            <div style="flex:1.4; min-width:180px; position:relative;">
+                <input type="text" placeholder="Médicament — recherchez par nom ou DCI..." list="listeMedicaments" style="width:100%;"
+                       value="${escapeHtml(l.medicament)}"
+                       oninput="majLigneTraitement(${i}, 'medicament', this.value); rechercherMedicamentAmu(${i}, this.value)"
+                       onblur="setTimeout(() => { const r = document.getElementById('resultatsMed${i}'); if (r) r.style.display = 'none'; }, 200)">
+                <div id="resultatsMed${i}" class="ep-motif-resultats" style="display:none;"></div>
+            </div>
             <input type="text" placeholder="Forme et dosage" value="${escapeHtml(l.forme_dosage)}" oninput="majLigneTraitement(${i}, 'forme_dosage', this.value)">
             <input type="text" placeholder="Posologie" value="${escapeHtml(l.posologie)}" oninput="majLigneTraitement(${i}, 'posologie', this.value)">
             <input type="text" placeholder="Durée" style="max-width:100px;" value="${escapeHtml(l.duree)}" oninput="majLigneTraitement(${i}, 'duree', this.value)">
             <button type="button" class="btn btn-sm btn-outline-danger" onclick="retirerLigneTraitement(${i})"><i class="fas fa-times"></i></button>
         </div>`).join('');
+}
+// ⭐ Référentiel officiel des médicaments AMU (patron, 2026-10-02 : CSV
+// qu'il remplace lui-même, voir utils/medicaments_amu.py) — recherche par
+// nom commercial ou DCI, sélectionner un résultat remplit le médicament
+// ET sa forme/dosage. Le datalist "listeMedicaments" (médicaments déjà
+// saisis à la main hors de ce référentiel) reste disponible en secours
+// via le clavier (flèche bas), pour les rares cas absents du CSV.
+let debounceMedicamentAmu = null;
+function rechercherMedicamentAmu(i, texte) {
+    const box = document.getElementById('resultatsMed' + i);
+    const q = texte.trim();
+    clearTimeout(debounceMedicamentAmu);
+    if (q.length < 2) { box.style.display = 'none'; return; }
+    const typeAmu = document.getElementById('typeAmu').value;
+    debounceMedicamentAmu = setTimeout(() => {
+        fetch('/api/tpc/medicaments-amu?type_amu=' + encodeURIComponent(typeAmu) + '&search=' + encodeURIComponent(q))
+            .then(r => r.json())
+            .then(data => {
+                const resultats = data.data || [];
+                if (!resultats.length) {
+                    box.innerHTML = '<div class="list-group-item text-muted small p-2">Aucune correspondance — saisie libre possible</div>';
+                    box.style.display = 'block';
+                    return;
+                }
+                box.innerHTML = resultats.map(m => `
+                    <a href="#" class="list-group-item list-group-item-action p-2" onmousedown='choisirMedicamentAmu(${i}, ${escapeHtml(JSON.stringify(m))}); return false;'>
+                        ${escapeHtml(m.nom)} <span class="text-muted">(${escapeHtml(m.dci)})</span>
+                        <span class="badge bg-light text-dark">${escapeHtml(m.forme)} ${escapeHtml(m.dosage)}</span>
+                    </a>`).join('');
+                box.style.display = 'block';
+            });
+    }, 250);
+}
+function choisirMedicamentAmu(i, m) {
+    lignesTraitements[i].medicament = m.nom;
+    lignesTraitements[i].forme_dosage = (m.forme + ' ' + m.dosage).trim();
+    rendreLignesTraitements();
 }
 
 // ===================== DÉTAILS =====================
