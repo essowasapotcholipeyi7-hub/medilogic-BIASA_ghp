@@ -120,6 +120,10 @@
                     <label class="form-label small fw-semibold">Date de prescription</label>
                     <input type="date" class="form-control" id="datePrescription" required>
                 </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-semibold">Date du prochain rendez-vous <span class="text-danger">*</span></label>
+                    <input type="date" class="form-control" id="dateProchainRdv" required>
+                </div>
             </div>
 
             <hr class="my-3">
@@ -159,12 +163,11 @@
                 <button type="button" class="btn btn-sm btn-outline-secondary mb-3" onclick="ajouterLigneAld()"><i class="fas fa-plus"></i> Ajouter une ALD</button>
 
                 <div class="row g-3">
-                    <div class="col-md-2"><label class="form-label small">Poids (Kg)</label><input type="text" class="form-control" id="poids"></div>
-                    <div class="col-md-2"><label class="form-label small">Taille (m)</label><input type="text" class="form-control" id="taille"></div>
-                    <div class="col-md-2"><label class="form-label small">IMC</label><input type="text" class="form-control" id="imc"></div>
-                    <div class="col-md-2"><label class="form-label small">TA — BG</label><input type="text" class="form-control" id="taBg"></div>
-                    <div class="col-md-2"><label class="form-label small">TA — BD</label><input type="text" class="form-control" id="taBd"></div>
-                    <div class="col-md-2"><label class="form-label small">Prochain RDV</label><input type="date" class="form-control" id="dateProchainRdv"></div>
+                    <div class="col-md-2"><label class="form-label small">Poids (Kg)</label><input type="text" class="form-control" id="poids" oninput="calculerImcTpc()"></div>
+                    <div class="col-md-2"><label class="form-label small">Taille (m)</label><input type="text" class="form-control" id="taille" oninput="calculerImcTpc()"></div>
+                    <div class="col-md-2"><label class="form-label small">IMC</label><input type="text" class="form-control" id="imc" readonly></div>
+                    <div class="col-md-3"><label class="form-label small">TA — BG</label><input type="text" class="form-control" id="taBg"></div>
+                    <div class="col-md-3"><label class="form-label small">TA — BD</label><input type="text" class="form-control" id="taBd"></div>
                 </div>
                 <div class="mt-2">
                     <label class="form-label small">État général</label>
@@ -227,6 +230,11 @@
                 <button type="button" class="btn btn-sm btn-outline-secondary mb-3" onclick="ajouterLigneTraitement()"><i class="fas fa-plus"></i> Ajouter un médicament</button>
                 <datalist id="listeMedicaments">
                     {% for m in medicaments_memorises %}<option value="{{ m }}">{% endfor %}
+                </datalist>
+                <datalist id="listeDureesTraitement">
+                    <option value="1 mois"><option value="2 mois"><option value="3 mois">
+                    <option value="4 mois"><option value="5 mois"><option value="6 mois">
+                    <option value="À vie">
                 </datalist>
             </div>
 
@@ -346,6 +354,21 @@ function escapeHtml(valeur) {
     return String(valeur ?? '').replace(/[&<>"']/g, (c) => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
     }[c]));
+}
+
+// ⭐ Patron, 2026-10-02 : "IMC doit être calculé automatiquement en
+// fonction du poids et taille" — champ en lecture seule, recalculé à
+// chaque saisie de l'un ou l'autre (taille en mètres, comme l'indique le
+// libellé du champ).
+function calculerImcTpc() {
+    const poids = parseFloat((document.getElementById('poids').value || '').replace(',', '.'));
+    const taille = parseFloat((document.getElementById('taille').value || '').replace(',', '.'));
+    const champImc = document.getElementById('imc');
+    if (poids > 0 && taille > 0) {
+        champImc.value = (poids / (taille * taille)).toFixed(1);
+    } else {
+        champImc.value = '';
+    }
 }
 
 // ===================== RÉGIME → TYPE DE DEMANDE =====================
@@ -527,15 +550,19 @@ function rendreLignesAld() {
             <button type="button" class="btn btn-sm btn-outline-danger" onclick="retirerLigneAld(${i})"><i class="fas fa-times"></i></button>
         </div>`).join('');
 }
-// ⭐ Recherche dans le référentiel ALD (patron : "la recherche se fait par
-// nom de l'affection") — sélectionner un résultat remplit le nom ET le
-// code ALD de la ligne, sans reconstruire toute la liste (perdrait le
-// focus en cours de frappe sur une autre ligne).
+// ⭐ Recherche dans le référentiel ALD, par nom de l'affection OU par code
+// (patron, 2026-10-02 : "permet la recherche aussi par code (ex: 006, ou
+// 009)") — "006" retrouve "ALD006" (comparaison en sous-chaîne sur le code
+// en minuscules). Sélectionner un résultat remplit le nom ET le code ALD
+// de la ligne, sans reconstruire toute la liste (perdrait le focus en
+// cours de frappe sur une autre ligne).
 function rechercherAld(i, texte) {
     const box = document.getElementById('resultatsAld' + i);
     const q = texte.trim().toLowerCase();
     if (q.length < 2) { box.style.display = 'none'; return; }
-    const resultats = CODES_ALD.filter(e => e.affection.toLowerCase().includes(q)).slice(0, 12);
+    const resultats = CODES_ALD.filter(e =>
+        e.affection.toLowerCase().includes(q) || e.code_ald.toLowerCase().includes(q)
+    ).slice(0, 12);
     if (!resultats.length) {
         box.innerHTML = '<div class="list-group-item text-muted small p-2">Aucune correspondance — saisie libre possible</div>';
         box.style.display = 'block';
@@ -565,7 +592,7 @@ function rendreLignesExamens() {
     document.getElementById('lignesExamens').innerHTML = lignesExamens.map((l, i) => `
         <div class="tpc-ligne">
             <input type="text" placeholder="Examen" value="${escapeHtml(l.examen)}" oninput="majLigneExamen(${i}, 'examen', this.value)">
-            <input type="text" placeholder="Date" style="max-width:110px;" value="${escapeHtml(l.date)}" oninput="majLigneExamen(${i}, 'date', this.value)">
+            <input type="date" style="max-width:150px;" value="${escapeHtml(l.date)}" oninput="majLigneExamen(${i}, 'date', this.value)">
             <input type="text" placeholder="Résultat" value="${escapeHtml(l.resultat)}" oninput="majLigneExamen(${i}, 'resultat', this.value)">
             <button type="button" class="btn btn-sm btn-outline-danger" onclick="retirerLigneExamen(${i})"><i class="fas fa-times"></i></button>
         </div>`).join('');
@@ -594,7 +621,7 @@ function rendreLignesTraitements() {
             </div>
             <input type="text" placeholder="Forme et dosage" value="${escapeHtml(l.forme_dosage)}" oninput="majLigneTraitement(${i}, 'forme_dosage', this.value)">
             <input type="text" placeholder="Posologie" value="${escapeHtml(l.posologie)}" oninput="majLigneTraitement(${i}, 'posologie', this.value)">
-            <input type="text" placeholder="Durée" style="max-width:100px;" value="${escapeHtml(l.duree)}" oninput="majLigneTraitement(${i}, 'duree', this.value)">
+            <input type="text" placeholder="Durée" list="listeDureesTraitement" style="max-width:110px;" value="${escapeHtml(l.duree)}" oninput="majLigneTraitement(${i}, 'duree', this.value)">
             <button type="button" class="btn btn-sm btn-outline-danger" onclick="retirerLigneTraitement(${i})"><i class="fas fa-times"></i></button>
         </div>`).join('');
 }
@@ -648,7 +675,8 @@ function voirDetailsTpc(id) {
         <p><strong>Médecin prescripteur :</strong> ${escapeHtml(d.medecin_nom)}</p>
         <p><strong>Régime :</strong> ${escapeHtml(TYPE_AMU_LABELS_JS[d.type_amu] || d.type_amu)}
            &nbsp;·&nbsp; <strong>Type :</strong> ${escapeHtml(labelType)}
-           &nbsp;·&nbsp; <strong>Date de prescription :</strong> ${escapeHtml(d.date_prescription)}</p>`;
+           &nbsp;·&nbsp; <strong>Date de prescription :</strong> ${escapeHtml(d.date_prescription)}
+           &nbsp;·&nbsp; <strong>Prochain RDV :</strong> ${escapeHtml(d.date_prochain_rdv) || '—'}</p>`;
 
     if (d.type_demande === 'identification') {
         html += `<p class="mb-1"><strong>ALD</strong></p><ul>${(d.affections_ald || []).map(a => `<li>${escapeHtml(a.affection)} — ${escapeHtml(a.code_ald)}</li>`).join('') || '<li class="text-muted">Aucune</li>'}</ul>`;
@@ -673,6 +701,7 @@ function modifierDemandeTpc(id) {
     if (d.patient) appliquerPatientTpc(d.patient);
     document.getElementById('medecinId').value = d.medecin_id;
     document.getElementById('datePrescription').value = d.date_prescription;
+    document.getElementById('dateProchainRdv').value = d.date_prochain_rdv;
     document.getElementById('typeDemande').value = d.type_demande;
     document.getElementById('typeDemande').disabled = true;
     changerTypeDemande();
@@ -695,7 +724,6 @@ function modifierDemandeTpc(id) {
         document.getElementById('etatGeneral').value = d.etat_general;
         document.getElementById('resumeExamenPhysique').value = d.resume_examen_physique;
         document.getElementById('autresExamen').value = d.autres_examen;
-        document.getElementById('dateProchainRdv').value = d.date_prochain_rdv;
         lignesAld = (d.affections_ald || []).map(l => ({...l}));
         rendreLignesAld();
         lignesExamens = (d.examens_paracliniques || []).map(l => ({...l}));
@@ -761,6 +789,7 @@ document.getElementById('formTpc').addEventListener('submit', function(e) {
     if (!document.getElementById('patientId').value) { alert('Choisissez un patient AMU.'); return; }
     if (!document.getElementById('medecinId').value) { alert('Choisissez un médecin.'); return; }
     if (!document.getElementById('datePrescription').value) { alert('Indiquez la date de prescription.'); return; }
+    if (!document.getElementById('dateProchainRdv').value) { alert('Indiquez la date du prochain rendez-vous.'); return; }
     if (!typeDemande) { alert('Choisissez le type de demande.'); return; }
     if ((typeDemande === 'renouvellement' || typeDemande === 'modification') && !document.getElementById('dossierId').value) { alert('Choisissez le dossier TPC du patient.'); return; }
     if ((typeDemande === 'modification' || typeDemande === 'rectification') && !document.getElementById('motifModification').value.trim()) {
@@ -776,6 +805,7 @@ document.getElementById('formTpc').addEventListener('submit', function(e) {
         type_demande: typeDemande,
         dossier_id: document.getElementById('dossierId').value ? parseInt(document.getElementById('dossierId').value) : null,
         date_prescription: document.getElementById('datePrescription').value,
+        date_prochain_rdv: document.getElementById('dateProchainRdv').value,
         traitements: lignesTraitements,
     };
     if (typeDemande === 'identification') {
@@ -794,7 +824,6 @@ document.getElementById('formTpc').addEventListener('submit', function(e) {
             autres_examen: document.getElementById('autresExamen').value,
             examens_paracliniques: lignesExamens,
             comorbidites: [0,1,2].map(i => document.getElementById('comorbidite' + i).value),
-            date_prochain_rdv: document.getElementById('dateProchainRdv').value,
         });
     } else if (typeDemande === 'renouvellement') {
         payload.traitement_a_renouveler = document.querySelector('input[name="aRenouveler"]:checked').value === 'oui';
