@@ -37,8 +37,26 @@ def mois_paye(structure_id, annee, mois):
 
 
 def _parametrage(structure_id):
+    # ⭐ Patron, 2026-10-03 : "c'est le menu latéral qui crée ça [...] ça
+    # fait tourner seulement" sur Gestion des actes et stock — onglet_cache()
+    # est appelé une fois PAR LIEN de menu (~25 clés), et jusqu'ici chaque
+    # appel relançait sa propre requête Postgres pour la MÊME structure. Le
+    # 2026-10-03, le menu latéral (sidebar_menu.html) a été complété pour
+    # retrouver la parité avec le menu horizontal (+12 liens), doublant ce
+    # nombre de requêtes par page pour toute structure l'ayant activé —
+    # plausible cause du ralentissement/blocage perçu sous charge. Mis en
+    # cache ici pour la durée de LA requête HTTP (flask.g, jamais partagé
+    # entre deux requêtes) : une seule requête par structure_id, quel que
+    # soit le nombre de clés de module vérifiées ensuite.
+    from flask import g
     from models import ParametrageAbonnement
-    return ParametrageAbonnement.query.filter_by(structure_id=structure_id).first()
+    cache = getattr(g, '_parametrage_abonnement_cache', None)
+    if cache is None:
+        cache = {}
+        g._parametrage_abonnement_cache = cache
+    if structure_id not in cache:
+        cache[structure_id] = ParametrageAbonnement.query.filter_by(structure_id=structure_id).first()
+    return cache[structure_id]
 
 
 def onglet_cache(structure_id, module_key):

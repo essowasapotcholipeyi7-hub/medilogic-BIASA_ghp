@@ -81,12 +81,25 @@ def a_acces(permission_cle):
         return True
     if 'user_id' not in session or 'structure_id' not in session:
         return False
+    # ⭐ Patron, 2026-10-03 : même correctif N+1 que onglet_cache()
+    # (services/abonnement_service.py) — a_acces() est aussi appelée une
+    # fois par lien de menu pour un rôle sans accès par défaut (secrétaire,
+    # caissier...), chaque appel relançant sa propre requête. Une seule
+    # requête par requête HTTP (flask.g) : tous les octrois actifs de cet
+    # utilisateur, regroupés par permission_cle, plutôt qu'une requête
+    # filtrée par permission_cle à chaque appel.
+    from flask import g
     from models import HabilitationTemporaire
-    octrois = HabilitationTemporaire.query.filter_by(
-        structure_id=session.get('structure_id'),
-        utilisateur_id=session.get('user_id'),
-        permission_cle=permission_cle,
-        active=True,
-    ).all()
+    cache = getattr(g, '_habilitations_temporaires_cache', None)
+    if cache is None:
+        cache = {}
+        for o in HabilitationTemporaire.query.filter_by(
+            structure_id=session.get('structure_id'),
+            utilisateur_id=session.get('user_id'),
+            active=True,
+        ).all():
+            cache.setdefault(o.permission_cle, []).append(o)
+        g._habilitations_temporaires_cache = cache
     maintenant = datetime.utcnow()
-    return any(o.date_expiration is None or o.date_expiration > maintenant for o in octrois)
+    return any(o.date_expiration is None or o.date_expiration > maintenant
+               for o in cache.get(permission_cle, []))
