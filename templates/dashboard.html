@@ -89,93 +89,10 @@
         transform: translateX(2px);
     }
 
-    /* ===== ACCUEIL GUIDÉ (voir utils/navigation.py) ===== */
-    .hub-section-titre { font-size: 13px; font-weight: 600; color: #51636D; margin: 0 0 8px; }
-    .hub-recherche { position: relative; margin-bottom: 1.25rem; }
-    .hub-recherche i.fa-magnifying-glass { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #8a9aa4; }
-    .hub-recherche input {
-        width: 100%; padding: 13px 16px 13px 44px; font-size: 15px;
-        border: 1px solid #cfd8de; border-radius: 12px; background: #fff;
-    }
-    .hub-recherche input:focus { outline: none; border-color: #0E9D67; box-shadow: 0 0 0 3px rgba(14,157,103,.15); }
-    .hub-resultats {
-        position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 30;
-        background: #fff; border: 1px solid #e3e8ec; border-radius: 12px;
-        box-shadow: 0 10px 24px rgba(10,61,92,.12); max-height: 340px; overflow-y: auto;
-    }
-    .hub-resultats a { display: flex; align-items: center; gap: 12px; padding: 10px 14px; color: #0A3D5C; text-decoration: none; border-bottom: 1px solid #f0f3f5; }
-    .hub-resultats a:last-child { border-bottom: none; }
-    .hub-resultats a:hover, .hub-resultats a.selectionne { background: #f2f8f5; }
-    .hub-resultats small { display: block; color: #6b7c86; font-size: 12px; }
-    .hub-resultats .vide { padding: 12px 14px; color: #6b7c86; font-size: 13px; }
-
-    .hub-parcours { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 1.5rem; }
-    .hub-etape { background: #EEF5F9; border-radius: 12px; padding: 12px 14px; }
-    .hub-etape-num { font-size: 11px; font-weight: 600; letter-spacing: .5px; color: #2F6F8F; }
-    .hub-etape-titre { font-size: 15px; font-weight: 700; color: #0A3D5C; margin: 2px 0; }
-    .hub-etape-desc { font-size: 12px; color: #4a6676; margin-bottom: 8px; }
-    .hub-etape a {
-        display: inline-block; font-size: 12.5px; margin: 0 4px 4px 0; padding: 4px 10px;
-        border-radius: 999px; background: #fff; color: #0A3D5C; text-decoration: none; border: 1px solid #d3e3ec;
-    }
-    .hub-etape a:hover { border-color: #0E9D67; color: #0E9D67; }
-
-    .hub-domaines { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-bottom: 2rem; }
-    .hub-domaine { background: #fff; border: 1px solid #e3e8ec; border-radius: 12px; padding: 12px 14px; }
-    .hub-domaine-titre { font-size: 14px; font-weight: 700; color: #0A3D5C; margin-bottom: 6px; }
-    .hub-domaine-titre i { color: #0E9D67; width: 18px; }
-    .hub-domaine a { display: block; padding: 6px 8px; margin: 0 -8px; border-radius: 8px; color: #1f3340; text-decoration: none; font-size: 13.5px; }
-    .hub-domaine a:hover { background: #f2f8f5; color: #0E9D67; }
-    .hub-domaine a small { display: block; color: #6b7c86; font-size: 12px; }
-    .hub-domaine a:focus-visible, .hub-etape a:focus-visible, .hub-resultats a:focus-visible { outline: 2px solid #0E9D67; outline-offset: 1px; }
-
-    @media (max-width: 768px) {
-        .hub-parcours { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    }
 </style>
 {% endblock %}
 
 {% block content %}
-        <!-- ===== ACCUEIL GUIDÉ (patron, 2026-10-04 : "quand on y entre on
-             ne sait pas par où commencer, quoi et comment") — recherche,
-             parcours du patient, tous les onglets par domaine. Même
-             registre et mêmes conditions que le menu : chacun ne voit que
-             ce qu'il peut ouvrir (utils/navigation.py). ===== -->
-        {% set _nav = navigation() %}
-        <div class="hub-recherche">
-            <i class="fas fa-magnifying-glass" aria-hidden="true"></i>
-            <input type="search" id="hubRecherche" autocomplete="off"
-                   placeholder="Que voulez-vous faire ? ex : entente préalable, vente, inventaire…"
-                   aria-label="Rechercher un onglet" aria-controls="hubResultats" aria-expanded="false">
-            <div class="hub-resultats" id="hubResultats" role="listbox" hidden></div>
-        </div>
-
-        {% if _nav.parcours %}
-        <p class="hub-section-titre">Par où commencer — le parcours d'un patient</p>
-        <div class="hub-parcours">
-            {% for etape in _nav.parcours %}
-            <div class="hub-etape">
-                <div class="hub-etape-num">ÉTAPE {{ loop.index }}</div>
-                <div class="hub-etape-titre"><i class="fas {{ etape.icone }} me-1" aria-hidden="true"></i>{{ etape.titre }}</div>
-                <div class="hub-etape-desc">{{ etape.description }}</div>
-                {% for o in etape.onglets %}<a href="{{ o.url }}">{{ o.libelle }}</a>{% endfor %}
-            </div>
-            {% endfor %}
-        </div>
-        {% endif %}
-
-        <p class="hub-section-titre">Tous les onglets, rangés par domaine</p>
-        <div class="hub-domaines">
-            {% for d in _nav.domaines %}
-            <div class="hub-domaine">
-                <div class="hub-domaine-titre"><i class="fas {{ d.icone }}" aria-hidden="true"></i> {{ d.libelle }}</div>
-                {% for o in d.onglets %}
-                <a href="{{ o.url }}">{{ o.libelle }}<small>{{ o.description }}</small></a>
-                {% endfor %}
-            </div>
-            {% endfor %}
-        </div>
-
         <!-- 7 cartes statistiques modernes -->
         <div class="row g-3 mb-4">
             <div class="col-md-3 col-6">
@@ -357,66 +274,6 @@
 </div>
 
 <script>
-// ===================== ACCUEIL GUIDÉ : recherche d'onglet =====================
-// Cherche dans les onglets que l'utilisateur peut ouvrir (déjà filtrés côté
-// serveur) — par nom, domaine, description ou mot-clé, sans tenir compte
-// des accents. Entrée ouvre le résultat sélectionné (le premier par défaut).
-(function () {
-    const ONGLETS = {{ (_nav.domaines | map(attribute='onglets') | sum(start=[])) | tojson }};
-    const input = document.getElementById('hubRecherche');
-    const boite = document.getElementById('hubResultats');
-    const sansAccent = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-    ONGLETS.forEach(o => { o._texte = sansAccent([o.libelle, o.domaine, o.description, o.mots_cles].join(' ')); });
-    let resultats = [];
-    let selection = 0;
-
-    function fermer() { boite.hidden = true; input.setAttribute('aria-expanded', 'false'); }
-
-    function afficher() {
-        boite.replaceChildren();
-        if (!resultats.length) {
-            const vide = document.createElement('div');
-            vide.className = 'vide';
-            vide.textContent = 'Aucun onglet ne correspond. Essayez un autre mot.';
-            boite.appendChild(vide);
-        }
-        resultats.forEach((o, i) => {
-            const a = document.createElement('a');
-            a.href = o.url;
-            a.setAttribute('role', 'option');
-            if (i === selection) a.classList.add('selectionne');
-            const icone = document.createElement('i');
-            icone.className = 'fas ' + o.icone;
-            icone.setAttribute('aria-hidden', 'true');
-            const texte = document.createElement('div');
-            texte.textContent = o.libelle;
-            const detail = document.createElement('small');
-            detail.textContent = o.domaine + ' · ' + o.description;
-            texte.appendChild(detail);
-            a.append(icone, texte);
-            boite.appendChild(a);
-        });
-        boite.hidden = false;
-        input.setAttribute('aria-expanded', 'true');
-    }
-
-    input.addEventListener('input', () => {
-        const mots = sansAccent(input.value).split(/\s+/).filter(Boolean);
-        if (!mots.length) { fermer(); return; }
-        resultats = ONGLETS.filter(o => mots.every(m => o._texte.includes(m))).slice(0, 8);
-        selection = 0;
-        afficher();
-    });
-    input.addEventListener('keydown', e => {
-        if (boite.hidden || !resultats.length) return;
-        if (e.key === 'ArrowDown') { e.preventDefault(); selection = (selection + 1) % resultats.length; afficher(); }
-        else if (e.key === 'ArrowUp') { e.preventDefault(); selection = (selection - 1 + resultats.length) % resultats.length; afficher(); }
-        else if (e.key === 'Enter') { e.preventDefault(); window.location.href = resultats[selection].url; }
-        else if (e.key === 'Escape') { fermer(); }
-    });
-    document.addEventListener('click', e => { if (!e.target.closest('.hub-recherche')) fermer(); });
-})();
-
 let currentVenteId = null;
 let currentVenteType = null;
 let modeDetailDashboard = 'complet'; // 'complet' ou 'cumule' — pris en compte uniquement par les boutons Facture

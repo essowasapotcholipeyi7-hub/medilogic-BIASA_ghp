@@ -1917,7 +1917,7 @@ def health():
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if 'user_id' in session:
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('page_accueil'))
     
     if request.method == 'POST':
         email = request.form.get('email')
@@ -2025,7 +2025,7 @@ def index():
 
                                 print(f"✅ Connexion réussie pour {row.get('nom')} (rôle: {role})")
                                 flash(f'Bienvenue {row.get("nom")}', 'success')
-                                return redirect(url_for('dashboard'))
+                                return redirect(url_for('page_accueil'))
                             else:
                                 print("❌ Structure non active")
                                 flash('Structure non activée', 'warning')
@@ -2073,7 +2073,7 @@ def index():
                             _reinitialiser_medecin_du_jour_connexion(structure.get('ID'))
 
                             flash(f'Bienvenue {structure.get("nom")}', 'success')
-                            return redirect(url_for('dashboard'))
+                            return redirect(url_for('page_accueil'))
                         else:
                             flash('Structure en attente d\'activation', 'warning')
                             return redirect(url_for('index'))
@@ -2214,7 +2214,7 @@ def login_qr():
     db.session.commit()
 
     flash(f'Bienvenue {nom_bienvenue}', 'success')
-    return jsonify({'success': True, 'redirect': url_for('dashboard')})
+    return jsonify({'success': True, 'redirect': url_for('page_accueil')})
 
 
 @app.route('/api/admin/qr/statut/<type_compte>/<int:utilisateur_id>', methods=['GET'])
@@ -2422,7 +2422,7 @@ def login_webauthn_verifier():
         return erreur
 
     flash(f'Bienvenue {nom_bienvenue}', 'success')
-    return jsonify({'success': True, 'redirect': url_for('dashboard')})
+    return jsonify({'success': True, 'redirect': url_for('page_accueil')})
 
 
 # MODIFIER la route d'inscription
@@ -2857,6 +2857,21 @@ def register():
         return redirect(url_for('index'))
     
     return render_template('register.html')
+
+@app.route('/accueil')
+@login_required
+def page_accueil():
+    """Page d'accueil guidée, point d'arrivée après la connexion — patron,
+    2026-10-04 : "on va séparer page d'accueil [...] et tableau de bord
+    [...] actuellement la page qui s'affiche est trop longue". Recherche,
+    parcours du patient et onglets par domaine (utils/navigation.py) ; les
+    chiffres restent sur /dashboard. Même redirection que dashboard() pour
+    le laborantin/radiologue, dont l'accueil EST leur file de demandes."""
+    if session.get('role') == 'laborantin':
+        return redirect(url_for('page_laboratoire'))
+    if session.get('role') == 'radiologue':
+        return redirect(url_for('page_radiologie'))
+    return render_template('accueil.html')
 
 @app.route('/dashboard')
 @login_required

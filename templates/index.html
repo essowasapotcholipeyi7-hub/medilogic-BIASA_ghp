@@ -823,7 +823,7 @@ function tenterConnexionQr(texteDecoded) {
         .then(r => r.json())
         .then(data => {
             if (data.success) {
-                window.location.href = data.redirect || '/dashboard';
+                window.location.href = data.redirect || '/accueil';
             } else {
                 messageZone.innerHTML = '<span class="text-danger">' + (data.error || 'Erreur de connexion') + '</span>';
                 document.getElementById('qrChampScanner').value = '';
@@ -864,7 +864,7 @@ async function tenterConnexionWebauthn() {
         });
         const dVer = await rVer.json();
         if (dVer.success) {
-            window.location.href = dVer.redirect || '/dashboard';
+            window.location.href = dVer.redirect || '/accueil';
         } else {
             await afficherMessage(dVer.error || 'Connexion refusée');
         }

@@ -2076,7 +2076,7 @@
         <!-- ⭐ Patron : "pour BIASA ne change pas, laisse GED BIASA mais
              enlève le bouton plein écran" — contrairement à GHP, la marque
              reste fixe ici (pas de "SI <acronyme>" par structure). -->
-        <a class="navbar-brand" href="{{ url_for('dashboard' if session.user_id else 'index') }}">
+        <a class="navbar-brand" href="{{ url_for('page_accueil' if session.user_id else 'index') }}">
             <span style="color: #0E9D67;"> GED BIASA</span>
         </a>
 
@@ -2227,11 +2227,20 @@
 {% set _bloq = _ab.bloque_effectif %}
 <div class="top-nav">
     <ul class="nav-group">
+        <!-- ⭐ Accueil (guide : recherche, parcours, onglets par domaine) et
+             Tableau de bord (chiffres) séparés — patron, 2026-10-04. -->
         <li class="nav-item nav-item-accueil">
-            <a class="nav-link-top" href="{{ url_for('dashboard') }}">
+            <a class="nav-link-top" href="{{ url_for('page_accueil') }}">
                 Accueil
             </a>
         </li>
+        {% if session.role not in ['laborantin', 'radiologue'] %}
+        <li class="nav-item">
+            <a class="nav-link-top" href="{{ url_for('dashboard') }}">
+                Tableau de bord
+            </a>
+        </li>
+        {% endif %}
         <!-- ⭐ Laborantin/Radiologue : cette barre du haut contournait
              complètement la restriction posée sur le sidebar (elle n'a
              jamais été gardée par rôle) — un labo/radio pouvait rouvrir
@@ -2796,7 +2805,7 @@
              que la page ouverte, mêmes conditions d'affichage que le menu
              (utils/navigation.py). Absente sur l'accueil (qui montre déjà
              tout) et sur les pages hors registre. ===== -->
-        {% if not (cacher_navigation is defined and cacher_navigation) and request.endpoint != 'dashboard' %}
+        {% if not (cacher_navigation is defined and cacher_navigation) and request.endpoint not in ['dashboard', 'page_accueil'] %}
         {% set _nav = navigation() %}
         {% set _dom = (_nav.domaines | selectattr('id', 'equalto', _nav.domaine_actif) | list | first) if _nav.domaine_actif else none %}
         {% if _dom and _dom.onglets | length > 1 %}
@@ -2806,7 +2815,7 @@
             <a href="{{ o.url }}" class="{{ 'actif' if o.id == _nav.onglet_actif }}" {% if o.id == _nav.onglet_actif %}aria-current="page"{% endif %}>{{ o.libelle }}</a>
             {% endfor %}
             {% if session.role not in ['laborantin', 'radiologue'] %}{# leur accueil les renvoie au labo/radio #}
-            <a href="{{ url_for('dashboard') }}" class="nav-domaine-accueil"><i class="fas fa-table-cells-large me-1" aria-hidden="true"></i>Tous les onglets</a>
+            <a href="{{ url_for('page_accueil') }}" class="nav-domaine-accueil"><i class="fas fa-table-cells-large me-1" aria-hidden="true"></i>Tous les onglets</a>
             {% endif %}
         </nav>
         {% endif %}
