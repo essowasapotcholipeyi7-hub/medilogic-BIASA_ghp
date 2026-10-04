@@ -11718,6 +11718,26 @@ def api_retirer_code_barre(code_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+def candidats_code_barre(code):
+    """Variantes plausibles d'un code scanné "tapé au clavier" par une
+    douchette ou une appli téléphone (voir api_resoudre_code_barre) :
+    tel quel, nettoyé/majuscules, puis décodage d'un brouillage AZERTY
+    (rangée des chiffres sans Maj : & é " ' ( - è _ ç à = 1..0 ; A<->Q,
+    Z<->W, M frappée sur la touche virgule)."""
+    brut = (code or '').strip()
+    propre = ''.join(brut.split()).upper()
+    azerty = str.maketrans({
+        '&': '1', 'É': '2', '"': '3', "'": '4', '(': '5', '-': '6', 'È': '7', '_': '8', 'Ç': '9', 'À': '0',
+        'Q': 'A', 'A': 'Q', 'W': 'Z', 'Z': 'W', ',': 'M', '?': 'M',
+    })
+    decode = propre.translate(azerty)
+    candidats = []
+    for c in (brut, propre, decode):
+        if c and c not in candidats:
+            candidats.append(c)
+    return candidats
+
+
 @app.route('/api/codes-barres/resoudre')
 @login_required
 def api_resoudre_code_barre():
@@ -11736,7 +11756,18 @@ def api_resoudre_code_barre():
     if not code:
         return jsonify({'success': False, 'error': 'Code manquant'}), 400
 
-    entree = CodeBarreArticle.query.filter_by(structure_id=structure_id, code_barre=code).first()
+    entree = None
+    # ⭐ Tolérance (patron, 2026-10-04 : codes bien enregistrés pour la
+    # structure mais "non reconnu" à la vente) : la douchette / l'appli
+    # téléphone "tape" le code comme un clavier — selon la disposition
+    # active (AZERTY vs QWERTY, verr. maj.), "1A0001" peut arriver en
+    # "1a0001", avec des espaces, ou brouillé en "&Qààà&" (rangée des
+    # chiffres AZERTY sans Maj + A/Q inversés). On essaie, dans l'ordre : tel
+    # quel, en majuscules sans espaces, puis décodé AZERTY -> QWERTY.
+    for candidat in candidats_code_barre(code):
+        entree = CodeBarreArticle.query.filter_by(structure_id=structure_id, code_barre=candidat).first()
+        if entree:
+            break
     if not entree:
         return jsonify({'success': False, 'error': f'Code "{code}" non reconnu pour cette structure'}), 404
 

@@ -1438,8 +1438,14 @@ function afficherAlerteScan(message, estErreur) {
     // pause), on valide automatiquement.
     champ.addEventListener('input', function() {
         clearTimeout(debounceScanProduit);
-        if (champ.value.trim().length < 4) return;
-        debounceScanProduit = setTimeout(soumettreScanProduit, 500);
+        const valeur = champ.value.trim();
+        // Code complet au format de l'appli (ex. 1A0001 / 1P0001) : valider tout de
+        // suite. Sinon (autre format, ou brouillage clavier décodé côté serveur),
+        // laisser le temps à une appli téléphone qui "tape" lentement de finir,
+        // pour ne jamais envoyer un code tronqué.
+        if (/^\d+[AP]\d{4}$/i.test(valeur)) { debounceScanProduit = setTimeout(soumettreScanProduit, 150); return; }
+        if (valeur.length < 4) return;
+        debounceScanProduit = setTimeout(soumettreScanProduit, 1500);
     });
     champ.addEventListener('focus', function() {
         champ.scrollIntoView({ behavior: 'smooth', block: 'start' });

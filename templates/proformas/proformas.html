@@ -1377,8 +1377,14 @@ function afficherAlerteScanProforma(message, estErreur) {
     // on valide automatiquement.
     champ.addEventListener('input', function() {
         clearTimeout(debounceScanProforma);
-        if (champ.value.trim().length < 4) return;
-        debounceScanProforma = setTimeout(soumettreScanProforma, 500);
+        const valeur = champ.value.trim();
+        // Code complet au format de l'appli (ex. 1A0001 / 1P0001) : valider tout de
+        // suite. Sinon (autre format, ou brouillage clavier décodé côté serveur),
+        // laisser le temps à une appli téléphone qui "tape" lentement de finir,
+        // pour ne jamais envoyer un code tronqué.
+        if (/^\d+[AP]\d{4}$/i.test(valeur)) { debounceScanProforma = setTimeout(soumettreScanProforma, 150); return; }
+        if (valeur.length < 4) return;
+        debounceScanProforma = setTimeout(soumettreScanProforma, 1500);
     });
     champ.addEventListener('focus', function() {
         champ.scrollIntoView({ behavior: 'smooth', block: 'start' });
