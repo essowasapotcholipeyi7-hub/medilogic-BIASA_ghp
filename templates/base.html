@@ -2819,6 +2819,19 @@
             {% endif %}
         </nav>
         {% endif %}
+        {% if _nav.onglet_actif %}
+        <script>
+        // "Récemment ouverts" de la page d'accueil : mémorise cet onglet dans
+        // le navigateur (clé propre à la structure et à l'utilisateur).
+        try {
+            const cle = 'ongletsRecents_' + {{ session.structure_id | tojson }} + '_' + {{ session.user_id | tojson }};
+            const actuel = {{ _nav.onglet_actif | tojson }};
+            const liste = JSON.parse(localStorage.getItem(cle) || '[]').filter(id => id !== actuel);
+            liste.unshift(actuel);
+            localStorage.setItem(cle, JSON.stringify(liste.slice(0, 6)));
+        } catch (e) { /* stockage indisponible : sans conséquence */ }
+        </script>
+        {% endif %}
         {% endif %}
 
         <!-- ===== CONTENU ===== -->

@@ -5,85 +5,166 @@
 {% block extra_css %}
 <style>
     /* ===== ACCUEIL GUIDÉ (voir utils/navigation.py) ===== */
-    .hub-entete { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 1rem; }
-    .hub-entete h1 { font-size: 20px; font-weight: 700; color: #0A3D5C; margin: 0; }
-    .hub-entete p { font-size: 13px; color: #51636D; margin: 2px 0 0; }
-    .hub-entete .btn-tableau-bord {
-        display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 10px;
-        background: #0A3D5C; color: #fff; text-decoration: none; font-size: 14px; font-weight: 600;
-    }
-    .hub-entete .btn-tableau-bord:hover { background: #0E9D67; color: #fff; }
-    .hub-entete .btn-tableau-bord:focus-visible { outline: 2px solid #0E9D67; outline-offset: 2px; }
+    .hub { --hub-navy: #0A3D5C; --hub-vert: #0E9D67; --hub-gris: #51636D; --hub-bord: #e3e8ec; }
 
-    .hub-section-titre { font-size: 13px; font-weight: 600; color: #51636D; margin: 0 0 8px; }
-    .hub-recherche { position: relative; margin-bottom: 1.25rem; }
-    .hub-recherche i.fa-magnifying-glass { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #8a9aa4; }
+    /* Bandeau de bienvenue — même dégradé que les autres en-têtes de
+       l'application (amu-hero, tpc-hero). */
+    .hub-hero {
+        background: linear-gradient(135deg, #0A3D5C 0%, #0B5A6E 55%, #0E9D67 100%);
+        border-radius: 18px; padding: 22px 24px 18px; margin-bottom: 14px; color: #fff;
+    }
+    .hub-hero-haut { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+    .hub-hero-date { font-size: 13px; opacity: .85; }
+    .hub-hero h1 { font-size: 24px; font-weight: 700; margin: 2px 0 0; color: #fff; letter-spacing: -.01em; }
+    .hub-hero .btn-tableau-bord {
+        display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 10px;
+        border: 1px solid rgba(255,255,255,.55); color: #fff; text-decoration: none; font-size: 13.5px; font-weight: 600;
+        background: rgba(255,255,255,.08);
+    }
+    .hub-hero .btn-tableau-bord:hover { background: #fff; color: #0A3D5C; }
+
+    .hub-recherche { position: relative; margin: 16px 0 12px; }
+    .hub-recherche i.fa-magnifying-glass { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #5d7684; }
     .hub-recherche input {
-        width: 100%; padding: 13px 16px 13px 44px; font-size: 15px;
-        border: 1px solid #cfd8de; border-radius: 12px; background: #fff;
+        width: 100%; padding: 14px 16px 14px 46px; font-size: 15px; color: #1f3340;
+        border: none; border-radius: 12px; background: #fff; box-shadow: 0 6px 18px rgba(4,36,56,.18);
     }
-    .hub-recherche input:focus { outline: none; border-color: #0E9D67; box-shadow: 0 0 0 3px rgba(14,157,103,.15); }
+    .hub-recherche input:focus { outline: 3px solid rgba(255,255,255,.55); outline-offset: 2px; }
     .hub-resultats {
-        position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 30;
-        background: #fff; border: 1px solid #e3e8ec; border-radius: 12px;
-        box-shadow: 0 10px 24px rgba(10,61,92,.12); max-height: 340px; overflow-y: auto;
+        position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30;
+        background: #fff; border: 1px solid var(--hub-bord); border-radius: 12px;
+        box-shadow: 0 12px 28px rgba(10,61,92,.18); max-height: 340px; overflow-y: auto;
     }
-    .hub-resultats a { display: flex; align-items: center; gap: 12px; padding: 10px 14px; color: #0A3D5C; text-decoration: none; border-bottom: 1px solid #f0f3f5; }
+    .hub-resultats a { display: flex; align-items: center; gap: 12px; padding: 10px 14px; color: var(--hub-navy); text-decoration: none; border-bottom: 1px solid #f0f3f5; }
     .hub-resultats a:last-child { border-bottom: none; }
     .hub-resultats a:hover, .hub-resultats a.selectionne { background: #f2f8f5; }
     .hub-resultats small { display: block; color: #6b7c86; font-size: 12px; }
     .hub-resultats .vide { padding: 12px 14px; color: #6b7c86; font-size: 13px; }
 
-    .hub-parcours { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 1.5rem; }
-    .hub-etape { background: #EEF5F9; border-radius: 12px; padding: 12px 14px; }
-    .hub-etape-num { font-size: 11px; font-weight: 600; letter-spacing: .5px; color: #2F6F8F; }
-    .hub-etape-titre { font-size: 15px; font-weight: 700; color: #0A3D5C; margin: 2px 0; }
-    .hub-etape-desc { font-size: 12px; color: #4a6676; margin-bottom: 8px; }
-    .hub-etape a {
-        display: inline-block; font-size: 12.5px; margin: 0 4px 4px 0; padding: 4px 10px;
-        border-radius: 999px; background: #fff; color: #0A3D5C; text-decoration: none; border: 1px solid #d3e3ec;
+    .hub-a-traiter { display: flex; gap: 8px; flex-wrap: wrap; }
+    .hub-a-traiter a {
+        display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600;
+        padding: 6px 13px; border-radius: 999px; text-decoration: none;
+        background: rgba(255,255,255,.16); color: #fff; border: 1px solid rgba(255,255,255,.3);
     }
-    .hub-etape a:hover { border-color: #0E9D67; color: #0E9D67; }
+    .hub-a-traiter a.urgent { background: #FAEEDA; color: #633806; border-color: #FAEEDA; }
+    .hub-a-traiter a:hover { filter: brightness(1.06); }
+    .hub-a-traiter .rien { font-size: 12.5px; opacity: .85; }
 
-    .hub-domaines { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-bottom: 2rem; }
-    .hub-domaine { background: #fff; border: 1px solid #e3e8ec; border-radius: 12px; padding: 12px 14px; }
-    .hub-domaine-titre { font-size: 14px; font-weight: 700; color: #0A3D5C; margin-bottom: 6px; }
-    .hub-domaine-titre i { color: #0E9D67; width: 18px; }
+    .hub-recents { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+    .hub-recents-titre { font-size: 12.5px; font-weight: 600; color: var(--hub-gris); }
+    .hub-recents a {
+        display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 5px 12px; border-radius: 999px;
+        background: #fff; border: 1px solid var(--hub-bord); color: var(--hub-navy); text-decoration: none;
+    }
+    .hub-recents a:hover { border-color: var(--hub-vert); color: var(--hub-vert); }
+
+    .hub-section-titre { font-size: 13px; font-weight: 700; color: var(--hub-gris); margin: 0 0 10px; }
+
+    /* Parcours : une vraie séquence, d'où les numéros et les flèches. */
+    .hub-parcours { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 1.75rem; }
+    .hub-etape {
+        position: relative; background: #fff; border: 1px solid var(--hub-bord); border-radius: 14px;
+        padding: 16px 14px 12px; text-align: center;
+    }
+    .hub-etape:not(:last-child)::after {
+        content: "\f054"; font-family: "Font Awesome 6 Free"; font-weight: 900; font-size: 11px;
+        position: absolute; right: -12px; top: 34px; width: 22px; height: 22px; line-height: 22px; border-radius: 50%;
+        background: #EEF5F9; color: #2F6F8F; z-index: 2;
+    }
+    .hub-etape-icone {
+        width: 46px; height: 46px; border-radius: 50%; margin: 0 auto 6px; display: flex; align-items: center; justify-content: center;
+        background: #E6F1FB; color: #185FA5; font-size: 19px; position: relative;
+    }
+    .hub-etape-num {
+        position: absolute; top: -4px; right: -6px; width: 20px; height: 20px; border-radius: 50%; line-height: 20px;
+        background: var(--hub-navy); color: #fff; font-size: 11px; font-weight: 700;
+    }
+    .hub-etape-titre { font-size: 15px; font-weight: 700; color: var(--hub-navy); }
+    .hub-etape-desc { font-size: 12px; color: #5b7381; margin: 2px 0 10px; }
+    .hub-etape a {
+        display: inline-block; font-size: 12px; margin: 0 2px 5px; padding: 4px 10px;
+        border-radius: 999px; background: #F3F8FB; color: var(--hub-navy); text-decoration: none; border: 1px solid #dce9f1;
+    }
+    .hub-etape a:hover { border-color: var(--hub-vert); color: var(--hub-vert); background: #fff; }
+
+    /* Domaines : une couleur propre à chacun, sur l'icône seulement. */
+    .hub-domaines { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin-bottom: 2rem; }
+    .hub-domaine {
+        background: #fff; border: 1px solid var(--hub-bord); border-radius: 14px; padding: 14px 16px 10px;
+        transition: transform .15s ease, box-shadow .15s ease;
+    }
+    .hub-domaine:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(10,61,92,.08); }
+    .hub-domaine-titre { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; color: var(--hub-navy); margin-bottom: 6px; }
+    .hub-domaine-icone { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 16px; background: var(--d-fond); color: var(--d-encre); }
+    .hub-domaine[data-domaine="patients"]       { --d-fond: #E6F1FB; --d-encre: #185FA5; }
+    .hub-domaine[data-domaine="soins"]          { --d-fond: #E1F5EE; --d-encre: #0F6E56; }
+    .hub-domaine[data-domaine="pharmacie"]      { --d-fond: #EAF3DE; --d-encre: #3B6D11; }
+    .hub-domaine[data-domaine="amu"]            { --d-fond: #EEEDFE; --d-encre: #534AB7; }
+    .hub-domaine[data-domaine="finances"]       { --d-fond: #FAEEDA; --d-encre: #854F0B; }
+    .hub-domaine[data-domaine="suivi"]          { --d-fond: #FAECE7; --d-encre: #993C1D; }
+    .hub-domaine[data-domaine="labo"]           { --d-fond: #FBEAF0; --d-encre: #993556; }
+    .hub-domaine[data-domaine="administration"] { --d-fond: #F1EFE8; --d-encre: #5F5E5A; }
     .hub-domaine a { display: block; padding: 6px 8px; margin: 0 -8px; border-radius: 8px; color: #1f3340; text-decoration: none; font-size: 13.5px; }
-    .hub-domaine a:hover { background: #f2f8f5; color: #0E9D67; }
+    .hub-domaine a:hover { background: #f4f8f6; color: var(--d-encre); }
     .hub-domaine a small { display: block; color: #6b7c86; font-size: 12px; }
-    .hub-domaine a:focus-visible, .hub-etape a:focus-visible, .hub-resultats a:focus-visible { outline: 2px solid #0E9D67; outline-offset: 1px; }
+
+    .hub a:focus-visible { outline: 2px solid var(--hub-vert); outline-offset: 2px; }
 
     @media (max-width: 768px) {
+        .hub-hero { padding: 18px 16px 14px; }
+        .hub-hero h1 { font-size: 21px; }
         .hub-parcours { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .hub-etape:nth-child(2n)::after { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .hub-domaine { transition: none; }
+        .hub-domaine:hover { transform: none; }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<!-- ===== ACCUEIL GUIDÉ (patron, 2026-10-04 : "quand on y entre on ne sait
-     pas par où commencer, quoi et comment", puis "on va séparer page
-     d'accueil et tableau de bord") — point d'arrivée après la connexion :
-     recherche, parcours du patient, tous les onglets par domaine. Même
+<!-- ===== ACCUEIL GUIDÉ (patron, 2026-10-04 : "on ne sait pas par où
+     commencer", puis "séparer page d'accueil et tableau de bord", puis
+     "plus jolie, attirante") — point d'arrivée après la connexion. Même
      registre et mêmes conditions que le menu : chacun ne voit que ce qu'il
      peut ouvrir (utils/navigation.py). Les chiffres sont sur /dashboard. ===== -->
 {% set _nav = navigation() %}
-<div class="hub-entete">
-    <div>
-        <h1>Accueil</h1>
-        <p>Choisissez ce que vous voulez faire, ou cherchez-le ci-dessous.</p>
-    </div>
-    <a href="{{ url_for('dashboard') }}" class="btn-tableau-bord">
-        <i class="fas fa-chart-column" aria-hidden="true"></i> Voir le tableau de bord
-    </a>
-</div>
+<div class="hub">
 
-<div class="hub-recherche">
-    <i class="fas fa-magnifying-glass" aria-hidden="true"></i>
-    <input type="search" id="hubRecherche" autocomplete="off"
-           placeholder="Que voulez-vous faire ? ex : entente préalable, vente, inventaire…"
-           aria-label="Rechercher un onglet" aria-controls="hubResultats" aria-expanded="false">
-    <div class="hub-resultats" id="hubResultats" role="listbox" hidden></div>
+<section class="hub-hero">
+    <div class="hub-hero-haut">
+        <div>
+            <div class="hub-hero-date">
+                {{ date_du_jour }}{% if session.structure_nom and session.structure_nom != session.user_name %} · {{ session.structure_nom }}{% endif %}
+            </div>
+            <h1>{{ salutation }}{% if session.user_name %}, {{ session.user_name }}{% endif %}</h1>
+        </div>
+        <a href="{{ url_for('dashboard') }}" class="btn-tableau-bord">
+            <i class="fas fa-chart-column" aria-hidden="true"></i> Tableau de bord
+        </a>
+    </div>
+
+    <div class="hub-recherche">
+        <i class="fas fa-magnifying-glass" aria-hidden="true"></i>
+        <input type="search" id="hubRecherche" autocomplete="off"
+               placeholder="Que voulez-vous faire ? ex : entente préalable, vente, inventaire…"
+               aria-label="Rechercher un onglet" aria-controls="hubResultats" aria-expanded="false">
+        <div class="hub-resultats" id="hubResultats" role="listbox" hidden></div>
+    </div>
+
+    <div class="hub-a-traiter">
+        {% for t in a_traiter %}
+        <a href="{{ t.url }}" class="{{ 'urgent' if t.urgent }}"><i class="fas {{ t.icone }}" aria-hidden="true"></i>{{ t.texte }}</a>
+        {% else %}
+        <span class="rien"><i class="fas fa-circle-check me-1" aria-hidden="true"></i>Rien en attente pour le moment.</span>
+        {% endfor %}
+    </div>
+</section>
+
+<div class="hub-recents" id="hubRecents" hidden>
+    <span class="hub-recents-titre"><i class="fas fa-clock-rotate-left me-1" aria-hidden="true"></i>Récemment ouverts</span>
 </div>
 
 {% if _nav.parcours %}
@@ -91,8 +172,11 @@
 <div class="hub-parcours">
     {% for etape in _nav.parcours %}
     <div class="hub-etape">
-        <div class="hub-etape-num">ÉTAPE {{ loop.index }}</div>
-        <div class="hub-etape-titre"><i class="fas {{ etape.icone }} me-1" aria-hidden="true"></i>{{ etape.titre }}</div>
+        <div class="hub-etape-icone">
+            <i class="fas {{ etape.icone }}" aria-hidden="true"></i>
+            <span class="hub-etape-num">{{ loop.index }}</span>
+        </div>
+        <div class="hub-etape-titre">{{ etape.titre }}</div>
         <div class="hub-etape-desc">{{ etape.description }}</div>
         {% for o in etape.onglets %}<a href="{{ o.url }}">{{ o.libelle }}</a>{% endfor %}
     </div>
@@ -103,8 +187,10 @@
 <p class="hub-section-titre">Tous les onglets, rangés par domaine</p>
 <div class="hub-domaines">
     {% for d in _nav.domaines %}
-    <div class="hub-domaine">
-        <div class="hub-domaine-titre"><i class="fas {{ d.icone }}" aria-hidden="true"></i> {{ d.libelle }}</div>
+    <div class="hub-domaine" data-domaine="{{ d.id }}">
+        <div class="hub-domaine-titre">
+            <span class="hub-domaine-icone"><i class="fas {{ d.icone }}" aria-hidden="true"></i></span>{{ d.libelle }}
+        </div>
         {% for o in d.onglets %}
         <a href="{{ o.url }}">{{ o.libelle }}<small>{{ o.description }}</small></a>
         {% endfor %}
@@ -112,12 +198,37 @@
     {% endfor %}
 </div>
 
+</div>
+
 <script>
-// Cherche dans les onglets que l'utilisateur peut ouvrir (déjà filtrés côté
-// serveur) — par nom, domaine, description ou mot-clé, sans tenir compte
-// des accents. Entrée ouvre le résultat sélectionné (le premier par défaut).
 (function () {
     const ONGLETS = {{ (_nav.domaines | map(attribute='onglets') | sum(start=[])) | tojson }};
+
+    // ----- Récemment ouverts : enregistrés par base.html à chaque page du
+    // registre ouverte, dans le navigateur de la personne (clé propre à la
+    // structure et à l'utilisateur). On ne montre que des onglets que CET
+    // utilisateur peut encore ouvrir.
+    try {
+        const cle = 'ongletsRecents_' + {{ session.structure_id | tojson }} + '_' + {{ session.user_id | tojson }};
+        const parId = Object.fromEntries(ONGLETS.map(o => [o.id, o]));
+        const recents = JSON.parse(localStorage.getItem(cle) || '[]').map(id => parId[id]).filter(Boolean).slice(0, 4);
+        if (recents.length) {
+            const zone = document.getElementById('hubRecents');
+            recents.forEach(o => {
+                const a = document.createElement('a');
+                a.href = o.url;
+                const i = document.createElement('i');
+                i.className = 'fas ' + o.icone;
+                i.setAttribute('aria-hidden', 'true');
+                a.append(i, document.createTextNode(o.libelle));
+                zone.appendChild(a);
+            });
+            zone.hidden = false;
+        }
+    } catch (e) { /* stockage indisponible (navigation privée) : rien à afficher */ }
+
+    // ----- Recherche d'onglet : par nom, domaine, description ou mot-clé,
+    // sans tenir compte des accents. Entrée ouvre le résultat sélectionné.
     const input = document.getElementById('hubRecherche');
     const boite = document.getElementById('hubResultats');
     const sansAccent = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();

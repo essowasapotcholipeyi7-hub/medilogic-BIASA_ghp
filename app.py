@@ -2871,7 +2871,46 @@ def page_accueil():
         return redirect(url_for('page_laboratoire'))
     if session.get('role') == 'radiologue':
         return redirect(url_for('page_radiologie'))
-    return render_template('accueil.html')
+
+    # ⭐ "À traiter" (patron : page d'accueil "plus jolie, attirante") —
+    # mêmes requêtes que les badges du menu, et seulement si l'onglet
+    # correspondant est visible pour cet utilisateur (même registre que
+    # le reste de la page). Une pastille n'apparaît que s'il y a quelque
+    # chose à traiter.
+    structure_id = session.get('structure_id')
+    visibles = {o['id'] for d in _navigation_session()['domaines'] for o in d['onglets']}
+    a_traiter = []
+    if 'ventes_attente' in visibles:
+        n = VenteEnAttente.query.filter_by(structure_id=structure_id, statut='en_attente').count()
+        if n:
+            a_traiter.append({'texte': f"{n} vente{'s' if n > 1 else ''} en attente", 'icone': 'fa-hourglass-half',
+                              'url': url_for('page_ventes_en_attente'), 'urgent': True})
+    if 'validations' in visibles:
+        n = ValidationDemande.query.filter_by(structure_id=structure_id, statut='en_attente').count()
+        if n:
+            a_traiter.append({'texte': f"{n} demande{'s' if n > 1 else ''} à valider", 'icone': 'fa-circle-check',
+                              'url': url_for('page_validations'), 'urgent': True})
+    if 'rendez_vous' in visibles:
+        # Pas de colonne "archive" ni de VUES_STATUTS dans cette application
+        # (contrairement à GHP) : statuts encore à venir, en clair.
+        n = RendezVous.query.filter_by(structure_id=structure_id, date_rendez_vous=date.today()).filter(
+            RendezVous.statut.in_(['programme', 'confirme', 'reporte']),
+        ).count()
+        if n:
+            a_traiter.append({'texte': f"{n} rendez-vous aujourd'hui", 'icone': 'fa-calendar-day',
+                              'url': url_for('rendez_vous'), 'urgent': False})
+
+    # Heure serveur = heure du Togo (GMT, comme Render).
+    maintenant = datetime.now()
+    jours = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche']
+    mois = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet',
+            'août', 'septembre', 'octobre', 'novembre', 'décembre']
+    return render_template(
+        'accueil.html',
+        a_traiter=a_traiter,
+        salutation='Bonsoir' if maintenant.hour >= 18 else 'Bonjour',
+        date_du_jour=f"{jours[maintenant.weekday()]} {maintenant.day} {mois[maintenant.month - 1]} {maintenant.year}",
+    )
 
 @app.route('/dashboard')
 @login_required
