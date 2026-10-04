@@ -179,6 +179,49 @@ def _abonnement_statut_session():
 
 app.jinja_env.globals['abonnement'] = _abonnement_statut_session
 app.jinja_env.globals['onglet_cache'] = lambda cle: onglet_cache(session.get('structure_id'), cle)
+
+
+# ⭐ Navigation guidée (patron, 2026-10-04 : "on ne sait pas par où
+# commencer [...] accès facile entre les onglets") — page d'accueil et
+# barre de liens en haut de chaque page, toutes deux alimentées par le
+# même registre (utils/navigation.py) et filtrées avec les mêmes
+# conditions que le menu. Calculé une seule fois par requête (flask.g).
+def _navigation_session():
+    from flask import g
+    if hasattr(g, '_navigation_cache'):
+        return g._navigation_cache
+    from utils.navigation import ContexteNavigation, domaines_visibles, parcours_visible, onglet_courant
+    ctx = ContexteNavigation(
+        role=session.get('role'),
+        is_admin=bool(session.get('is_admin')),
+        a_acces=a_acces,
+        onglet_cache=lambda cle: onglet_cache(session.get('structure_id'), cle),
+        bloque=bool(_abonnement_statut_session().get('bloque_effectif')),
+    )
+    domaines = domaines_visibles(ctx)
+
+    def _vers_dict(o, domaine):
+        return {'id': o.id, 'libelle': o.libelle, 'icone': o.icone, 'description': o.description,
+                'mots_cles': o.mots_cles, 'domaine': domaine.libelle,
+                'url': url_for(o.endpoint, **o.kwargs)}
+
+    arguments = {**(request.view_args or {}), **request.args.to_dict()}
+    domaine_actif, onglet_actif = onglet_courant(domaines, request.endpoint, arguments)
+    g._navigation_cache = {
+        'domaines': [
+            {'id': d.id, 'libelle': d.libelle, 'icone': d.icone, 'onglets': [_vers_dict(o, d) for o in onglets]}
+            for d, onglets in domaines
+        ],
+        'parcours': [
+            {**e, 'onglets': [_vers_dict(o, next(d for d, os in domaines if o in os)) for o in e['onglets']]}
+            for e in parcours_visible(domaines)
+        ],
+        'domaine_actif': domaine_actif.id if domaine_actif else None,
+        'onglet_actif': onglet_actif.id if onglet_actif else None,
+    }
+    return g._navigation_cache
+
+app.jinja_env.globals['navigation'] = _navigation_session
 app.jinja_env.globals['ABONNEMENT_WHATSAPP_NUMERO'] = ABONNEMENT_WHATSAPP_NUMERO
 # ⭐ Variante prenant un structure_id explicite — pour admin_global.html
 # (session super-admin, pas de session structure) : un badge de statut par

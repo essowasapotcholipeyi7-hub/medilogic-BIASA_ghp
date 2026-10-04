@@ -1151,6 +1151,40 @@
             align-items: center;
             justify-content: center;
         }
+
+        /* ===== BARRE DE LIENS DU DOMAINE (voir utils/navigation.py) ===== */
+        .nav-domaine {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            overflow-x: auto;
+            white-space: nowrap;
+            padding: 6px 2px 10px;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #e3e8ec;
+            scrollbar-width: thin;
+        }
+        .nav-domaine-titre {
+            font-size: 12px;
+            font-weight: 600;
+            color: #51636D;
+            margin-right: 4px;
+            flex-shrink: 0;
+        }
+        .nav-domaine a {
+            flex-shrink: 0;
+            font-size: 13px;
+            padding: 5px 12px;
+            border-radius: 999px;
+            border: 1px solid #e3e8ec;
+            background: #fff;
+            color: #0A3D5C;
+            text-decoration: none;
+        }
+        .nav-domaine a:hover { border-color: #0E9D67; color: #0E9D67; }
+        .nav-domaine a:focus-visible { outline: 2px solid #0E9D67; outline-offset: 2px; }
+        .nav-domaine a.actif { background: #0A3D5C; border-color: #0A3D5C; color: #fff; }
+        .nav-domaine a.nav-domaine-accueil { margin-left: auto; border-style: dashed; color: #51636D; }
         
         .loader {
             width: 60px;
@@ -2757,9 +2791,30 @@
             {% endwith %}
         </div>
 
+        <!-- ===== BARRE DE LIENS DU DOMAINE (patron, 2026-10-04 : "accès
+             facile entre les onglets") — les autres onglets du même domaine
+             que la page ouverte, mêmes conditions d'affichage que le menu
+             (utils/navigation.py). Absente sur l'accueil (qui montre déjà
+             tout) et sur les pages hors registre. ===== -->
+        {% if not (cacher_navigation is defined and cacher_navigation) and request.endpoint != 'dashboard' %}
+        {% set _nav = navigation() %}
+        {% set _dom = (_nav.domaines | selectattr('id', 'equalto', _nav.domaine_actif) | list | first) if _nav.domaine_actif else none %}
+        {% if _dom and _dom.onglets | length > 1 %}
+        <nav class="nav-domaine" aria-label="Onglets {{ _dom.libelle }}">
+            <span class="nav-domaine-titre"><i class="fas {{ _dom.icone }} me-1" aria-hidden="true"></i>{{ _dom.libelle }}</span>
+            {% for o in _dom.onglets %}
+            <a href="{{ o.url }}" class="{{ 'actif' if o.id == _nav.onglet_actif }}" {% if o.id == _nav.onglet_actif %}aria-current="page"{% endif %}>{{ o.libelle }}</a>
+            {% endfor %}
+            {% if session.role not in ['laborantin', 'radiologue'] %}{# leur accueil les renvoie au labo/radio #}
+            <a href="{{ url_for('dashboard') }}" class="nav-domaine-accueil"><i class="fas fa-table-cells-large me-1" aria-hidden="true"></i>Tous les onglets</a>
+            {% endif %}
+        </nav>
+        {% endif %}
+        {% endif %}
+
         <!-- ===== CONTENU ===== -->
         {% block content %}{% endblock %}
-        
+
     </main>
     
 </div>
