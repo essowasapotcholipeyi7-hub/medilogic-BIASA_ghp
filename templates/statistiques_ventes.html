@@ -947,39 +947,39 @@ function exporterCSV() {
 // ============================================================
 // ONGLET ASSURANCES
 // ============================================================
-function genererFactures() {
+async function genererFactures() {
     const moisInput = document.getElementById('factureMois');
     if (!moisInput) return;
     
     const mois = moisInput.value;
     if (!mois) {
-        alert('Veuillez selectionner un mois');
+        await afficherMessage('Veuillez selectionner un mois');
         return;
     }
     
-    if (confirm(`Generer les factures pour le mois de ${mois} ?`)) {
+    if (await demanderConfirmation(`Generer les factures pour le mois de ${mois} ?`)) {
         fetch('/api/assurances/generer_factures', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({mois_reference: mois})
         })
         .then(r => r.json())
-        .then(result => {
+        .then(async result => {
             if (result.success) {
-                alert(`Factures generees !\n${result.total_ventes || 0} ventes traitees`);
-                chargerFactures();
+                await afficherMessage(`Factures generees !\n${result.total_ventes || 0} ventes traitees`);
+                await chargerFactures();
             } else {
-                alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+                await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
             }
         })
-        .catch(error => alert('Erreur: ' + error));
+        .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
     }
 }
 
-function chargerFactures() {
+async function chargerFactures() {
     const mois = document.getElementById('factureMois')?.value;
     if (!mois) {
-        alert('Veuillez selectionner un mois');
+        await afficherMessage('Veuillez selectionner un mois');
         return;
     }
     
@@ -1113,23 +1113,23 @@ function showPaiementModal(id, assurance, mois, total, deja) {
     new bootstrap.Modal(modal).show();
 }
 
-function enregistrerPaiement() {
+async function enregistrerPaiement() {
     const id = document.getElementById('paiementFactureId').value;
     const montant = parseFloat(document.getElementById('paiementMontant').value);
     const reference = document.getElementById('paiementReference').value.trim();
     const dateVersement = document.getElementById('paiementDateVersement').value;
 
     if (!montant || montant <= 0) {
-        alert('Montant valide requis');
+        await afficherMessage('Montant valide requis');
         return;
     }
 
     if (!reference || !dateVersement) {
-        alert('Le numéro de référence du versement et la date de versement sont obligatoires (pièces justificatives).');
+        await afficherMessage('Le numéro de référence du versement et la date de versement sont obligatoires (pièces justificatives).');
         return;
     }
 
-    if (confirm(`Confirmer le remboursement de ${Math.round(montant).toLocaleString('fr-FR')} FCFA ?`)) {
+    if (await demanderConfirmation(`Confirmer le remboursement de ${Math.round(montant).toLocaleString('fr-FR')} FCFA ?`)) {
         fetch(`/api/assurances/factures/${id}/payer`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -1140,23 +1140,23 @@ function enregistrerPaiement() {
             })
         })
         .then(r => r.json())
-        .then(result => {
+        .then(async result => {
             if (result.success) {
                 // ⭐ Tout encaissement (admin compris) part maintenant en
                 // demande — voir payer_facture_assurance() côté serveur.
-                alert(result.en_attente ? ('📨 ' + result.message) : 'Remboursement enregistre !');
+                await afficherMessage(result.en_attente ? ('' + result.message) : 'Remboursement enregistre !');
                 bootstrap.Modal.getInstance(document.getElementById('paiementModal')).hide();
-                chargerFactures();
+                await chargerFactures();
             } else {
-                alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+                await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
             }
         })
-        .catch(error => alert('Erreur: ' + error));
+        .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
     }
 }
 
-function rafraichirFactures() {
-    chargerFactures();
+async function rafraichirFactures() {
+    await chargerFactures();
 }
 
 // ============================================================
@@ -1856,9 +1856,9 @@ function afficherStatsPatientsList(ventes) {
     }
 }
 
-function exporterStatsCategorieCSV() {
+async function exporterStatsCategorieCSV() {
     if (!statsData) {
-        alert('Aucune donnée à exporter');
+        await afficherMessage('Aucune donnée à exporter');
         return;
     }
     
@@ -1911,11 +1911,11 @@ function exporterListeAssuranceCSV() {
     URL.revokeObjectURL(link.href);
 }
 
-function imprimerBordereauAssurance() {
+async function imprimerBordereauAssurance() {
     const assurance = document.getElementById('statsFiltreAssurance').value;
     if (!assurance || assurance === 'toutes') {
         showToast ? showToast('Sélectionnez d\'abord une compagnie d\'assurance dans le filtre', 'warning')
-                  : alert('Sélectionnez d\'abord une compagnie d\'assurance dans le filtre');
+                  : await afficherMessage('Sélectionnez d\'abord une compagnie d\'assurance dans le filtre');
         return;
     }
 

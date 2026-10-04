@@ -305,15 +305,15 @@ function sauvegarderParametres() {
         })
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
-            alert('Paramètres enregistrés avec succès !');
+            await afficherMessage('Paramètres enregistrés avec succès !');
             chargerParametres();
         } else {
-            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(err => alert('Erreur: ' + err));
+    .catch(async err => await afficherMessage('Erreur: ' + err, {type: 'danger'}));
 }
 
 document.addEventListener('DOMContentLoaded', chargerParametres);

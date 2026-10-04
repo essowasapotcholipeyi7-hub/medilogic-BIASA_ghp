@@ -142,54 +142,54 @@ fetch('/rendez_vous/api/rappels/stats')
         }
     });
 
-function envoyerRappel(id) {
-    if (!confirm('Envoyer un rappel WhatsApp au patient ?')) return;
+async function envoyerRappel(id) {
+    if (!await demanderConfirmation('Envoyer un rappel WhatsApp au patient ?')) return;
     
     fetch('/rendez_vous/api/' + id + '/rappel', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'}
     })
     .then(response => response.json())
-    .then(data => {
+    .then(async data => {
         if (data.success && data.data.url_whatsapp) {
             window.open(data.data.url_whatsapp, '_blank');
-            alert('Rappel envoye avec succes !');
+            await afficherMessage('Rappel envoye avec succes !');
         } else {
-            alert('Erreur: ' + (data.error || 'Impossible d\'envoyer le rappel'));
+            await afficherMessage('Erreur: ' + (data.error || 'Impossible d\'envoyer le rappel'), {type: 'danger'});
         }
     })
-    .catch(error => {
-        alert('Erreur lors de l\'envoi');
+    .catch(async error => {
+        await afficherMessage('Erreur lors de l\'envoi', {type: 'danger'});
         console.error(error);
     });
 }
 
-function annulerRdv(id) {
-    if (!confirm('Annuler ce rendez-vous ?')) return;
+async function annulerRdv(id) {
+    if (!await demanderConfirmation('Annuler ce rendez-vous ?')) return;
     
     fetch('/rendez_vous/api/' + id + '/annuler', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'}
     })
     .then(response => response.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
-            alert('Rendez-vous annule !');
+            await afficherMessage('Rendez-vous annule !');
             location.reload();
         } else {
-            alert('Erreur: ' + data.error);
+            await afficherMessage('Erreur: ' + data.error, {type: 'danger'});
         }
     });
 }
 
-function reporterRdv(id) {
-    let nouvelleDate = prompt("Nouvelle date (format: YYYY-MM-DD)");
+async function reporterRdv(id) {
+    let nouvelleDate = await demanderSaisie("Nouvelle date (format: YYYY-MM-DD)");
     if (!nouvelleDate) return;
     
-    let nouvelleHeure = prompt("Nouvelle heure (format: HH:MM)");
+    let nouvelleHeure = await demanderSaisie("Nouvelle heure (format: HH:MM)");
     if (!nouvelleHeure) return;
     
-    let message = prompt("Message au patient (optionnel)", "");
+    let message = await demanderSaisie("Message au patient (optionnel)", "");
     
     fetch('/rendez_vous/api/reporter', {
         method: 'POST',
@@ -203,21 +203,21 @@ function reporterRdv(id) {
         })
     })
     .then(response => response.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
             if (data.whatsapp_url) {
-                if (confirm("Envoyer un message WhatsApp au patient ?")) {
+                if (await demanderConfirmation("Envoyer un message WhatsApp au patient ?")) {
                     window.open(data.whatsapp_url, '_blank');
                 }
             }
-            alert('Rendez-vous reporte avec succes !');
+            await afficherMessage('Rendez-vous reporte avec succes !');
             location.reload();
         } else {
-            alert('Erreur: ' + data.error);
+            await afficherMessage('Erreur: ' + data.error, {type: 'danger'});
         }
     })
-    .catch(error => {
-        alert('Erreur lors du report');
+    .catch(async error => {
+        await afficherMessage('Erreur lors du report', {type: 'danger'});
         console.error(error);
     });
 }

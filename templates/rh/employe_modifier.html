@@ -196,7 +196,7 @@ function chargerComptesUtilisateurs() {
 }
 document.addEventListener('DOMContentLoaded', chargerComptesUtilisateurs);
 
-function sauvegarderModification() {
+async function sauvegarderModification() {
     const id = document.getElementById('empId').value;
     
     const data = {
@@ -222,7 +222,7 @@ function sauvegarderModification() {
     
     // Validation
     if (!data.nom || !data.prenom || !data.sexe || !data.telephone || !data.service_id || !data.poste || !data.date_embauche) {
-        alert('Veuillez remplir tous les champs obligatoires');
+        await afficherMessage('Veuillez remplir tous les champs obligatoires');
         return;
     }
     
@@ -232,15 +232,15 @@ function sauvegarderModification() {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
-            alert('Employé modifié avec succès !');
+            await afficherMessage('Employé modifié avec succès !');
             window.location.href = `/rh/employe/${id}`;
         } else {
-            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('❌ Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 function fermerPage() {

@@ -152,7 +152,7 @@ function chargerModeleDansEditeur() {
     // à la volée (voir api_convertir_modele_html, app.py) — patron : "je
     // veux que le modèle qu'on a importé s'ouvre facilement dans cet
     // éditeur pour qu'on modifie les parties à modifier".
-    fetch(`/api/modeles-resultats/${modeleId}/convertir-html`).then(r => r.json()).then(data => {
+    fetch(`/api/modeles-resultats/${modeleId}/convertir-html`).then(r => r.json()).then(async data => {
         // ⭐ Garde-fou contre une course : ignore une réponse qui ne
         // correspond plus au modèle sélectionné (sélection changée entre
         // temps) — même raison que ouvrirModeleDansEditeur (modeles_resultats.html).
@@ -165,7 +165,7 @@ function chargerModeleDansEditeur() {
             quillEditeurResultat.clipboard.dangerouslyPasteHTML(data.contenu_html || '');
         } else {
             quillEditeurResultat.setText('');
-            alert('Erreur : ' + (data.error || 'conversion impossible'));
+            await afficherMessage('Erreur : ' + (data.error || 'conversion impossible'), {type: 'danger'});
         }
     });
 }
@@ -235,41 +235,41 @@ function changerSignatureSelectionnee() {
 // du poste, déjà connecté à un vrai compte, pré-rempli ; le personnel
 // clique Envoyer lui-même. Même principe que les boutons WhatsApp
 // (wa.me) déjà dans l'appli.
-function envoyerResultatEmail(resultatId, patientNom) {
-    const email = prompt(`Envoyer le résultat de ${patientNom} par email — adresse (laissez tel quel si déjà enregistrée) :`, '');
+async function envoyerResultatEmail(resultatId, patientNom) {
+    const email = await demanderSaisie(`Envoyer le résultat de ${patientNom} par email — adresse (laissez tel quel si déjà enregistrée) :`, '');
     if (email === null) return;
     fetch(`/api/resultats-analyses/${resultatId}/preparer-email`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim() })
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) window.open(data.mailto_url, '_blank');
-        else alert('Erreur : ' + (data.error || 'inconnue'));
+        else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
     })
-    .catch(e => alert('Erreur : ' + e));
+    .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
-function enregistrerResultat() {
+async function enregistrerResultat() {
     const val = document.getElementById('resultatSignatureSelect').value;
-    if (!val) { alert('Choisissez qui signe.'); return; }
+    if (!val) { await afficherMessage('Choisissez qui signe.'); return; }
 
     const fd = new FormData();
     if (modeResultatActuel === 'fichier') {
         const fichier = document.getElementById('resultatFichier').files[0];
-        if (!fichier) { alert('Choisissez le fichier du résultat.'); return; }
+        if (!fichier) { await afficherMessage('Choisissez le fichier du résultat.'); return; }
         fd.append('fichier', fichier);
     } else {
         const contenu = quillEditeurResultat ? quillEditeurResultat.root.innerHTML : '';
         if (!quillEditeurResultat || quillEditeurResultat.getText().trim().length === 0) {
-            alert('Rédigez le contenu du résultat.'); return;
+            await afficherMessage('Rédigez le contenu du résultat.'); return;
         }
         fd.append('contenu_html', contenu);
     }
 
     if (val === '__autre__') {
         const nom = document.getElementById('resultatNomInterprete').value.trim();
-        if (!nom) { alert('Le nom est obligatoire.'); return; }
+        if (!nom) { await afficherMessage('Le nom est obligatoire.'); return; }
         fd.append('nom_interprete', nom);
     } else {
         fd.append('signature_id', val);
@@ -277,15 +277,15 @@ function enregistrerResultat() {
 
     fetch('/api/resultats-analyses/' + demandeChoisie, { method: 'POST', body: fd })
         .then(r => r.json())
-        .then(data => {
+        .then(async data => {
             if (data.success) {
                 bootstrap.Modal.getInstance(document.getElementById('modalResultat')).hide();
                 chargerResultats();
             } else {
-                alert('Erreur : ' + (data.error || 'inconnue'));
+                await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
             }
         })
-        .catch(e => alert('Erreur : ' + e));
+        .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
 let TOUS_RESULTATS = [];
@@ -345,9 +345,9 @@ function filtrerResultats() {
 }
 
 function afficherCodePortail(patientId, patientNom) {
-    fetch('/api/patients/' + patientId + '/code-portail').then(r => r.json()).then(data => {
+    fetch('/api/patients/' + patientId + '/code-portail').then(r => r.json()).then(async data => {
         const code = data.code_acces || '(non généré)';
-        const regen = confirm(
+        const regen = await demanderConfirmation(
             `Code d'accès portail de ${patientNom} : ${code}\n\n` +
             `À transmettre au patient avec son numéro de téléphone (portail : /portail-patient).\n\n` +
             `OK pour régénérer un nouveau code (l'ancien ne fonctionnera plus) — Annuler pour garder celui-ci.`
@@ -355,7 +355,7 @@ function afficherCodePortail(patientId, patientNom) {
         if (regen) {
             fetch('/api/patients/' + patientId + '/regenerer-code-portail', { method: 'POST' })
                 .then(r => r.json())
-                .then(d => { if (d.success) alert('Nouveau code : ' + d.code_acces); });
+                .then(async d => { if (d.success) await afficherMessage('Nouveau code : ' + d.code_acces); });
         }
     });
 }

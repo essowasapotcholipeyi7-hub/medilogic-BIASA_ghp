@@ -227,22 +227,22 @@ function showPaiementModal(id, assurance, mois, total, deja) {
     new bootstrap.Modal(document.getElementById('paiementModal')).show();
 }
 
-function enregistrerPaiement() {
+async function enregistrerPaiement() {
     const id = document.getElementById('paiementFactureId').value;
     const montant = parseFloat(document.getElementById('paiementMontant').value);
     const reference = document.getElementById('paiementReference').value.trim();
     const dateVersement = document.getElementById('paiementDateVersement').value;
 
     if (!montant || montant <= 0) {
-        alert('Montant valide requis');
+        await afficherMessage('Montant valide requis');
         return;
     }
     if (!reference || !dateVersement) {
-        alert('Le numéro de référence du versement et la date de versement sont obligatoires (pièces justificatives).');
+        await afficherMessage('Le numéro de référence du versement et la date de versement sont obligatoires (pièces justificatives).');
         return;
     }
 
-    if (!confirm(`Envoyer la demande d'encaissement de ${Math.round(montant).toLocaleString('fr-FR')} FCFA ?`)) return;
+    if (!await demanderConfirmation(`Envoyer la demande d'encaissement de ${Math.round(montant).toLocaleString('fr-FR')} FCFA ?`)) return;
 
     const btn = document.getElementById('btnValiderPaiement');
     btn.disabled = true;
@@ -257,19 +257,19 @@ function enregistrerPaiement() {
         })
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         btn.disabled = false;
         if (result.success) {
-            alert(result.en_attente ? ('📨 ' + result.message) : '✅ Encaissement enregistré !');
+            await afficherMessage(result.en_attente ? ('' + result.message) : 'Encaissement enregistré !');
             bootstrap.Modal.getInstance(document.getElementById('paiementModal')).hide();
             window.location.reload();
         } else {
-            alert('❌ Erreur : ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur : ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => {
+    .catch(async error => {
         btn.disabled = false;
-        alert('❌ Erreur réseau : ' + error);
+        await afficherMessage('Erreur réseau : ' + error, {type: 'danger'});
     });
 }
 
@@ -284,20 +284,20 @@ function fermerModalCloture() {
     document.getElementById('modalCloture').style.display = 'none';
     _clotureEndpoint = null;
 }
-function confirmerCloture() {
+async function confirmerCloture() {
     const dateStr = document.getElementById('clotureDateDepot').value;
-    if (!dateStr) { alert('La date de dépôt est obligatoire.'); return; }
+    if (!dateStr) { await afficherMessage('La date de dépôt est obligatoire.'); return; }
     if (!_clotureEndpoint) return;
     fetch(_clotureEndpoint, {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({date_depot: dateStr})
     })
         .then(r => r.json())
-        .then(data => {
+        .then(async data => {
             if (data.success) { fermerModalCloture(); window.location.reload(); }
-            else alert('Erreur : ' + (data.error || 'inconnue'));
+            else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         })
-        .catch(e => alert('Erreur réseau : ' + e));
+        .catch(async e => await afficherMessage('Erreur réseau : ' + e, {type: 'danger'}));
 }
 </script>
 

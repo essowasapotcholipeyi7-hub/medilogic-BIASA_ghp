@@ -131,10 +131,10 @@ function toggleMotifPersonnalise() {
     }
 }
 
-function saveDepense() {
+async function saveDepense() {
     const montant = document.getElementById('depenseMontant').value;
     if (!montant || montant <= 0) {
-        alert('Veuillez entrer un montant valide');
+        await afficherMessage('Veuillez entrer un montant valide');
         return;
     }
 
@@ -153,7 +153,7 @@ function saveDepense() {
         const reference = document.getElementById('depenseReferencePaiement').value.trim();
         const datePaiement = document.getElementById('depenseDatePaiement').value;
         if (!moyen || !reference || !datePaiement) {
-            alert('Le moyen de paiement, la référence et la date du paiement sont obligatoires pour l\'abonnement.');
+            await afficherMessage('Le moyen de paiement, la référence et la date du paiement sont obligatoires pour l\'abonnement.');
             return;
         }
         data.moyen_paiement = moyen;
@@ -171,21 +171,21 @@ function saveDepense() {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
-            alert(result.en_attente ? ('📨 ' + result.message) : '✅ Charge enregistrée avec succès');
+            await afficherMessage(result.en_attente ? ('' + result.message) : 'Charge enregistrée avec succès');
             document.getElementById('depenseForm').reset();
             document.getElementById('motifPersonnaliseDiv').style.display = 'none';
             toggleMotifPersonnalise();
             chargerMesDemandes();
         } else {
-            alert('❌ Erreur : ' + result.error);
+            await afficherMessage('Erreur : ' + result.error, {type: 'danger'});
         }
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-save"></i> Enregistrer';
     })
-    .catch(() => {
-        alert('❌ Erreur réseau');
+    .catch(async () => {
+        await afficherMessage('Erreur réseau', {type: 'danger'});
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-save"></i> Enregistrer';
     });

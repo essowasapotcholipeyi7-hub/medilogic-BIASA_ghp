@@ -124,30 +124,30 @@ function choisirActeClassif(nom) {
     document.getElementById('classifSearch').value = nom;
 }
 
-function enregistrerClassification() {
-    if (!classifChoisi) { alert('Choisissez un acte dans la liste.'); return; }
+async function enregistrerClassification() {
+    if (!classifChoisi) { await afficherMessage('Choisissez un acte dans la liste.'); return; }
     const type_prestation = document.querySelector('input[name="classifType"]:checked').value;
     fetch('/api/classification-actes', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nom_acte: classifChoisi, type_prestation: type_prestation })
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
             bootstrap.Modal.getInstance(document.getElementById('modalClassification')).hide();
             chargerClassifications();
         } else {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
-    .catch(e => alert('Erreur : ' + e));
+    .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
-function supprimerClassification(id) {
-    if (!confirm('Retirer cette classification ? L\'acte redeviendra un acte standard (plus de demande générée).')) return;
+async function supprimerClassification(id) {
+    if (!await demanderConfirmation('Retirer cette classification ? L\'acte redeviendra un acte standard (plus de demande générée).')) return;
     fetch('/api/classification-actes/' + id, { method: 'DELETE' })
         .then(r => r.json())
-        .then(data => { if (data.success) chargerClassifications(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+        .then(async data => { if (data.success) chargerClassifications(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'}); });
 }
 
 function chargerClassifications() {

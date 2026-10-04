@@ -80,6 +80,19 @@
         <p>Remplir une demande, la faire approuver par un médecin, puis l'imprimer pour le patient.</p>
     </div>
 
+    {% if retour_url %}
+    <!-- ⭐ Retour explicite vers la page d'origine (patron, 2026-10-04) : la
+         vente/l'hospitalisation ouvre l'EP dans un nouvel onglet pour ne pas
+         perdre le panier en cours — ce bandeau rappelle d'où l'on vient et
+         ramène à l'onglet d'origine (ou y renvoie si l'onglet a été fermé). -->
+    <div class="alert alert-info d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3" id="bandeauRetourEp">
+        <div><i class="fas fa-arrow-left me-2"></i>Vous venez de <strong>{{ retour_libelle }}</strong>. Une fois la demande enregistrée, vous pourrez y revenir.</div>
+        <button type="button" class="btn btn-sm btn-outline-dark" onclick="revenirPageOrigine()">
+            <i class="fas fa-undo me-1"></i>Revenir à {{ retour_libelle }}
+        </button>
+    </div>
+    {% endif %}
+
     <div class="ep-card">
         <h6><i class="fas fa-plus-circle me-1"></i>Nouvelle demande</h6>
         <form id="formEp">
@@ -389,6 +402,19 @@
 
 <script>
 const PATIENT_PREREMPLI = {{ patient_prerempli|tojson|safe if patient_prerempli else 'null' }};
+// ⭐ Page d'origine (?retour=, validée côté serveur : chemin relatif uniquement)
+const RETOUR_URL = {{ retour_url|tojson|safe }};
+const RETOUR_LIBELLE = {{ retour_libelle|tojson|safe }};
+function revenirPageOrigine() {
+    // Onglet ouvert par la vente/l'hospitalisation : le fermer rend la main à
+    // l'onglet d'origine (panier intact). Sinon (onglet ouvert à la main,
+    // fermeture refusée par le navigateur), on y navigue directement.
+    if (window.opener && !window.opener.closed) {
+        try { window.opener.focus(); } catch (e) { /* onglet d'origine inaccessible */ }
+        window.close();
+    }
+    setTimeout(function() { if (!window.closed && RETOUR_URL) location.href = RETOUR_URL; }, 300);
+}
 const HOSPIT_PREREMPLI = {{ 'true' if hospit_prerempli else 'false' }};
 const HOSPITALISATION_ID_PREREMPLI = {{ hospitalisation_id_prerempli|tojson|safe if hospitalisation_id_prerempli else 'null' }};
 const HOSPIT_DATE_ADMISSION_PREREMPLI = {{ hospit_date_admission_prerempli|tojson|safe if hospit_date_admission_prerempli else 'null' }};
@@ -516,25 +542,25 @@ function brancherRecherche(inputId, resultId, url, type) {
 brancherRecherche('acteSearch', 'acteResultats', '/api/actes?search=', 'acte');
 brancherRecherche('produitSearch', 'produitResultats', '/api/produits/search?search=', 'produit');
 
-function ajouterManuel(type) {
+async function ajouterManuel(type) {
     const inputId = type === 'acte' ? 'acteSearch' : 'produitSearch';
     const nom = document.getElementById(inputId).value.trim();
     if (!nom) return;
-    ajouterLigne({type, nom, saisie_manuelle: true});
+    await ajouterLigne({type, nom, saisie_manuelle: true});
 }
 
-function ajouterLigne(ligne) {
+async function ajouterLigne(ligne) {
     const estInam = document.getElementById('typeAmu').value === 'amu_inam';
     const maxActes = 3;
     const maxProduits = estInam ? 3 : 4;
     if (ligne.type === 'acte') {
-        if (lignesActes.length >= maxActes) { alert('Maximum ' + maxActes + ' actes sur cette fiche.'); return; }
+        if (lignesActes.length >= maxActes) { await afficherMessage('Maximum ' + maxActes + 'actes sur cette fiche.'); return; }
         lignesActes.push({...ligne, motif: ''});
         document.getElementById('acteSearch').value = '';
         document.getElementById('acteResultats').style.display = 'none';
         rendreLignes('acte');
     } else {
-        if (lignesProduits.length >= maxProduits) { alert('Maximum ' + maxProduits + ' produits sur cette fiche.'); return; }
+        if (lignesProduits.length >= maxProduits) { await afficherMessage('Maximum ' + maxProduits + 'produits sur cette fiche.'); return; }
         lignesProduits.push({...ligne, motif: ''});
         document.getElementById('produitSearch').value = '';
         document.getElementById('produitResultats').style.display = 'none';
@@ -699,17 +725,17 @@ function majNuiteesDefinitive() {
     const dateEntree = d.hospitalisation_date_entree || d.hospit_date_admission;
     document.getElementById('definitiveNuitees').textContent = calculerNuitees(dateEntree, document.getElementById('definitiveDateSortie').value);
 }
-function soumettreDefinitive() {
+async function soumettreDefinitive() {
     const d = DEMANDES_DETAIL.find(x => x.id === definitiveEpId);
     const payload = {};
     if (!d.hospitalisation_date_sortie) {
         const dateSortie = document.getElementById('definitiveDateSortie').value;
-        if (!dateSortie) { alert('Indiquez la date de sortie.'); return; }
+        if (!dateSortie) { await afficherMessage('Indiquez la date de sortie.'); return; }
         payload.date_sortie = dateSortie;
     }
     fetch(`/api/amu/entente-prealable/${definitiveEpId}/definitive`, {
         method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
-    }).then(r => r.json()).then(data => {
+    }).then(r => r.json()).then(async data => {
         if (data.success) {
             // ⭐ Patron, 2026-10-02 : "possible d'imprimer le billet d'hospitalisation
             // directement quand on finit de valider une demande définitive" — plus
@@ -719,26 +745,26 @@ function soumettreDefinitive() {
             }
             location.reload();
         } else {
-            alert(data.error || 'Erreur');
+            await afficherMessage(data.error || 'Erreur');
         }
     });
 }
 
 // ===================== SOUMISSION =====================
-document.getElementById('formEp').addEventListener('submit', function(e) {
+document.getElementById('formEp').addEventListener('submit', async function(e) {
     e.preventDefault();
     const inclureActes = document.getElementById('chkActes').checked;
     const inclureProduits = document.getElementById('chkProduits').checked;
     const inclureHospitalisation = document.getElementById('chkHospitalisation').checked;
 
-    if (!document.getElementById('patientId').value) { alert('Choisissez un patient AMU.'); return; }
-    if (!document.getElementById('medecinId').value) { alert('Choisissez un médecin.'); return; }
-    if (!document.getElementById('datePrescription').value) { alert('Indiquez la date de prescription.'); return; }
-    if (!inclureActes && !inclureProduits && !inclureHospitalisation) { alert('Cochez au moins un type de demande.'); return; }
-    if (inclureActes && !lignesActes.length) { alert('Ajoutez au moins un acte.'); return; }
-    if (inclureProduits && !lignesProduits.length) { alert('Ajoutez au moins un produit.'); return; }
+    if (!document.getElementById('patientId').value) { await afficherMessage('Choisissez un patient AMU.'); return; }
+    if (!document.getElementById('medecinId').value) { await afficherMessage('Choisissez un médecin.'); return; }
+    if (!document.getElementById('datePrescription').value) { await afficherMessage('Indiquez la date de prescription.'); return; }
+    if (!inclureActes && !inclureProduits && !inclureHospitalisation) { await afficherMessage('Cochez au moins un type de demande.'); return; }
+    if (inclureActes && !lignesActes.length) { await afficherMessage('Ajoutez au moins un acte.'); return; }
+    if (inclureProduits && !lignesProduits.length) { await afficherMessage('Ajoutez au moins un produit.'); return; }
     if (inclureHospitalisation && (!document.getElementById('hospitDateAdmission').value || !document.getElementById('hospitMotif').value)) {
-        alert("Renseignez la date d'admission et le motif d'hospitalisation."); return;
+        await afficherMessage("Renseignez la date d'admission et le motif d'hospitalisation."); return;
     }
 
     const url = demandeEnEditionId
@@ -766,11 +792,20 @@ document.getElementById('formEp').addEventListener('submit', function(e) {
         }),
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
+            // ⭐ Venu d'une vente/hospitalisation (?retour=) : proposer d'y
+            // revenir tout de suite, l'EP devant de toute façon être approuvée
+            // par un médecin avant impression.
+            if (RETOUR_URL && !demandeEnEditionId) {
+                const revenir = await demanderConfirmation(
+                    "Entente Préalable enregistrée. Elle doit être approuvée par un médecin avant impression.\n\nRevenir à " + RETOUR_LIBELLE + " ?",
+                    {type: 'success', titre: 'Demande enregistrée', texteOk: 'Revenir à ' + RETOUR_LIBELLE, texteAnnuler: 'Rester sur cette page'});
+                if (revenir) { revenirPageOrigine(); return; }
+            }
             location.reload();
         } else {
-            alert(data.error || 'Erreur lors de l\'enregistrement');
+            await afficherMessage(data.error || 'Erreur lors de l\'enregistrement', {type: 'danger'});
         }
     });
 });
@@ -788,14 +823,14 @@ document.getElementById('formEp').addEventListener('submit', function(e) {
 function approuverDemande(id) {
     fetch(`/api/amu/entente-prealable/${id}/approuver`, {method: 'POST'})
         .then(r => r.json())
-        .then(data => { if (data.success) location.reload(); else alert(data.error || 'Erreur'); });
+        .then(async data => { if (data.success) location.reload(); else await afficherMessage(data.error || 'Erreur'); });
 }
-function refuserDemande(id) {
-    const motif = prompt('Motif du refus (optionnel) :');
+async function refuserDemande(id) {
+    const motif = await demanderSaisie('Motif du refus (optionnel) :');
     fetch(`/api/amu/entente-prealable/${id}/refuser`, {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({motif_refus: motif || ''}),
-    }).then(r => r.json()).then(data => { if (data.success) location.reload(); else alert(data.error || 'Erreur'); });
+    }).then(r => r.json()).then(async data => { if (data.success) location.reload(); else await afficherMessage(data.error || 'Erreur'); });
 }
 {% endif %}
 

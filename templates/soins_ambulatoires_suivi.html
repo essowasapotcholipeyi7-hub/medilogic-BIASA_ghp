@@ -534,18 +534,18 @@ function choisirProduit(p) {
 }
 
 // ===================== AJOUT D'UNE LIGNE =====================
-function ajouterLigne(type, confirmerDoublon) {
+async function ajouterLigne(type, confirmerDoublon) {
     const choix = type === 'acte' ? acteChoisi : produitChoisi;
-    if (!choix) { alert('Choisissez d\'abord un article dans la liste.'); return; }
+    if (!choix) { await afficherMessage('Choisissez d\'abord un article dans la liste.'); return; }
 
     const dateEl = document.getElementById(type === 'acte' ? 'acteDate' : 'produitDate');
     if (!dateEl.value) {
-        alert('Indiquez la date à laquelle ce soin a été réellement administré.');
+        await afficherMessage('Indiquez la date à laquelle ce soin a été réellement administré.');
         dateEl.focus();
         return;
     }
     if (DATE_DEBUT_EPISODE && dateEl.value < DATE_DEBUT_EPISODE) {
-        alert("Cette date précède le début de l'épisode (" + DATE_DEBUT_EPISODE.split('-').reverse().join('/') + "). Corrigez la date.");
+        await afficherMessage("Cette date précède le début de l'épisode (" + DATE_DEBUT_EPISODE.split('-').reverse().join('/') + "). Corrigez la date.");
         dateEl.focus();
         return;
     }
@@ -554,11 +554,11 @@ function ajouterLigne(type, confirmerDoublon) {
         const perempDate = new Date(choix.date_peremption);
         const joursRestants = Math.ceil((perempDate - new Date()) / (1000 * 60 * 60 * 24));
         if (joursRestants < 0) {
-            alert(`❌ « ${choix.nom} » est PÉRIMÉ depuis le ${choix.date_peremption}. Impossible de l'ajouter.`);
+            await afficherMessage(`« ${choix.nom} » est PÉRIMÉ depuis le ${choix.date_peremption}. Impossible de l'ajouter.`, {type: 'danger'});
             return;
         }
         if (joursRestants <= 30 && !confirmerDoublon) {
-            if (!confirm(`⚠️ « ${choix.nom} » expire dans ${joursRestants} jour(s) (${choix.date_peremption}). Continuer ?`)) return;
+            if (!await demanderConfirmation(`« ${choix.nom} » expire dans ${joursRestants} jour(s) (${choix.date_peremption}). Continuer ?`, {type: 'warning'})) return;
         }
     }
 
@@ -569,7 +569,7 @@ function ajouterLigne(type, confirmerDoublon) {
         const medecinSelect = document.getElementById('acteMedecinSelect');
         const valeurChoisie = medecinSelect ? medecinSelect.value : '';
         if (!valeurChoisie) {
-            alert(`Veuillez indiquer qui a réalisé "${choix.nom}" — un médecin, ou "Aucun médecin" si la part médecin ne doit pas s'appliquer à ce soin (taux de rétrocession configuré pour cet acte).`);
+            await afficherMessage(`Veuillez indiquer qui a réalisé "${choix.nom}" — un médecin, ou "Aucun médecin" si la part médecin ne doit pas s'appliquer à ce soin (taux de rétrocession configuré pour cet acte).`);
             if (medecinSelect) medecinSelect.focus();
             return;
         }
@@ -595,27 +595,27 @@ function ajouterLigne(type, confirmerDoublon) {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
     })
     .then(r => r.json().then(data => ({ status: r.status, data })))
-    .then(({ status, data }) => {
+    .then(async ({ status, data }) => {
         if (status === 409 && data.doublon) {
-            if (confirm(data.error + '\n\nConfirmer l\'ajout quand même ?')) {
-                ajouterLigne(type, true);
+            if (await demanderConfirmation(data.error + 'Confirmer l\'ajout quand même ?')) {
+                await ajouterLigne(type, true);
             }
             return;
         }
         if (data.success) {
             window.location.reload();
         } else {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
-    .catch(e => alert('Erreur : ' + e));
+    .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
-function supprimerLigne(ligneId) {
-    if (!confirm('Retirer cette ligne de l\'épisode ?')) return;
+async function supprimerLigne(ligneId) {
+    if (!await demanderConfirmation('Retirer cette ligne de l\'épisode ?')) return;
     fetch(`/api/soins-ambulatoires/${EPISODE_ID}/lignes/${ligneId}`, { method: 'DELETE' })
         .then(r => r.json())
-        .then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+        .then(async data => { if (data.success) window.location.reload(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'}); });
 }
 
 // ===================== TOGGLE ASSURANCE (AMU / CAC) =====================
@@ -625,14 +625,14 @@ function toggleAssuranceEpisode(champ, valeur) {
         body: JSON.stringify({ [champ]: valeur })
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
             window.location.reload();
         } else {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
-    .catch(e => alert('Erreur : ' + e));
+    .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
 // ===================== PRÉDÉPÔT =====================
@@ -652,8 +652,8 @@ function enregistrerPredepot() {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
     })
     .then(r => r.json())
-    .then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); })
-    .catch(e => alert('Erreur : ' + e));
+    .then(async data => { if (data.success) window.location.reload(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'}); })
+    .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
 // ===================== CLÔTURE =====================
@@ -663,33 +663,33 @@ function ouvrirModalCloture() {
     new bootstrap.Modal(modalEl).show();
 }
 
-function cloturerEpisode() {
+async function cloturerEpisode() {
     const dateFin = document.getElementById('dateFinInput').value;
-    if (!dateFin) { alert('Choisissez une date de fin.'); return; }
+    if (!dateFin) { await afficherMessage('Choisissez une date de fin.'); return; }
 
     fetch(`/api/soins-ambulatoires/${EPISODE_ID}/cloturer`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date_fin: dateFin })
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
             window.location.reload();
         } else {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
-    .catch(e => alert('Erreur : ' + e));
+    .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
-function facturerEpisode() {
-    if (!confirm("Facturer cet épisode ? Une proforma sera créée avec tous les soins en cours — vous pourrez encore ajuster quantités/prix avant la conversion finale en vente, et le prédépôt sera pré-rempli comme montant déjà donné.")) return;
+async function facturerEpisode() {
+    if (!await demanderConfirmation("Facturer cet épisode ? Une proforma sera créée avec tous les soins en cours — vous pourrez encore ajuster quantités/prix avant la conversion finale en vente, et le prédépôt sera pré-rempli comme montant déjà donné.")) return;
     fetch(`/api/soins-ambulatoires/${EPISODE_ID}/facturer`, { method: 'POST' })
         .then(r => r.json())
-        .then(data => {
+        .then(async data => {
             if (data.success) {
                 window.location.href = '/proformas?convertir=' + data.proforma_id;
             } else {
-                alert('Erreur : ' + (data.error || 'inconnue'));
+                await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
             }
         });
 }

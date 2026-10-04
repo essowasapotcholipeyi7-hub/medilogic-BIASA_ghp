@@ -117,11 +117,11 @@ function choisirActeTaux(nom) {
     document.getElementById('tauxSearch').value = nom;
 }
 
-function enregistrerTaux() {
-    if (!tauxChoisi) { alert('Choisissez un acte dans la liste.'); return; }
+async function enregistrerTaux() {
+    if (!tauxChoisi) { await afficherMessage('Choisissez un acte dans la liste.'); return; }
     const taux_medecin = parseFloat(document.getElementById('tauxValeur').value);
     if (isNaN(taux_medecin) || taux_medecin <= 0 || taux_medecin > 100) {
-        alert('Entrez un taux entre 1 et 100.');
+        await afficherMessage('Entrez un taux entre 1 et 100.');
         return;
     }
     const toujours_demander_medecin = document.getElementById('tauxToujoursDemander').checked;
@@ -130,22 +130,22 @@ function enregistrerTaux() {
         body: JSON.stringify({ nom_acte: tauxChoisi, taux_medecin: taux_medecin, toujours_demander_medecin: toujours_demander_medecin })
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
             bootstrap.Modal.getInstance(document.getElementById('modalTaux')).hide();
             chargerTaux();
         } else {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
-    .catch(e => alert('Erreur : ' + e));
+    .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
-function supprimerTaux(id) {
-    if (!confirm('Retirer ce taux ? Le sélecteur "Réalisé par" disparaîtra pour cet acte.')) return;
+async function supprimerTaux(id) {
+    if (!await demanderConfirmation('Retirer ce taux ? Le sélecteur "Réalisé par" disparaîtra pour cet acte.')) return;
     fetch('/api/taux-part-medecin/' + id, { method: 'DELETE' })
         .then(r => r.json())
-        .then(data => { if (data.success) chargerTaux(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+        .then(async data => { if (data.success) chargerTaux(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'}); });
 }
 
 function chargerTaux() {

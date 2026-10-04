@@ -132,13 +132,13 @@ function afficherDemandes(demandes) {
     }).join('');
 }
 
-function validerDemande(id) {
-    if (!confirm('Valider et exécuter cette demande ?')) return;
+async function validerDemande(id) {
+    if (!await demanderConfirmation('Valider et exécuter cette demande ?')) return;
     fetch('/api/validations/' + id + '/valider', {method: 'POST'})
         .then(r => r.json())
-        .then(data => {
+        .then(async data => {
             if (data.success) {
-                alert('✅ ' + data.message);
+                await afficherMessage('' + data.message, {type: 'success'});
                 // ⭐ Abonnement SSoftOneV10 validé : ouvre tout de suite le
                 // reçu (PDF + WhatsApp), avant même de revenir sur la liste.
                 if (data.recu && data.recu.depense_id) {
@@ -146,14 +146,14 @@ function validerDemande(id) {
                 }
                 chargerDemandes();
             } else {
-                alert('❌ Erreur : ' + data.error);
+                await afficherMessage('Erreur : ' + data.error, {type: 'danger'});
             }
         })
-        .catch(() => alert('❌ Erreur réseau'));
+        .catch(async () => await afficherMessage('Erreur réseau', {type: 'danger'}));
 }
 
-function refuserDemande(id) {
-    const motif = prompt('Motif du refus (optionnel) :', '');
+async function refuserDemande(id) {
+    const motif = await demanderSaisie('Motif du refus (optionnel) :', '');
     if (motif === null) return;
     fetch('/api/validations/' + id + '/refuser', {
         method: 'POST',
@@ -161,15 +161,15 @@ function refuserDemande(id) {
         body: JSON.stringify({motif: motif})
     })
         .then(r => r.json())
-        .then(data => {
+        .then(async data => {
             if (data.success) {
-                alert('Demande refusée');
+                await afficherMessage('Demande refusée');
                 chargerDemandes();
             } else {
-                alert('❌ Erreur : ' + data.error);
+                await afficherMessage('Erreur : ' + data.error, {type: 'danger'});
             }
         })
-        .catch(() => alert('❌ Erreur réseau'));
+        .catch(async () => await afficherMessage('Erreur réseau', {type: 'danger'}));
 }
 
 document.addEventListener('DOMContentLoaded', chargerDemandes);

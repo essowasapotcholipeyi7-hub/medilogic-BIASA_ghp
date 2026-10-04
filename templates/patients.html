@@ -937,14 +937,14 @@ function chargerStatsPatients() {
 // ============================================
 // EXPORTER EN PDF
 // ============================================
-function exporterPDF() {
+async function exporterPDF() {
     showLoader('Génération du PDF...');
     
     const patients = currentFiltered.length > 0 ? currentFiltered : allPatients;
     
     if (patients.length === 0) {
         hideLoader();
-        alert('Aucun patient à exporter');
+        await afficherMessage('Aucun patient à exporter');
         return;
     }
     
@@ -1109,7 +1109,7 @@ function exporterPDF() {
         hideLoader();
     } else {
         hideLoader();
-        alert('Impossible d\'ouvrir la fenêtre d\'impression');
+        await afficherMessage('Impossible d\'ouvrir la fenêtre d\'impression');
     }
 }
 
@@ -1254,9 +1254,9 @@ function changePage(page) {
 // ============================================
 // VOIR DÉTAILS PATIENT (AVEC DATE D'ENREGISTREMENT)
 // ============================================
-function voirDetails(id) {
+async function voirDetails(id) {
     if (!id || id === 'undefined') {
-        alert('Erreur: ID patient invalide');
+        await afficherMessage('Erreur: ID patient invalide', {type: 'danger'});
         return;
     }
     
@@ -1278,7 +1278,7 @@ function voirDetails(id) {
     
     const row = document.querySelector(`tr.patient-row[data-id="${id}"]`);
     if (!row) {
-        alert('Patient non trouvé');
+        await afficherMessage('Patient non trouvé');
         return;
     }
     
@@ -1582,17 +1582,17 @@ function afficherCodePortailPatient(code) {
 function genererCodePortailPatient() {
     fetch(`/api/patients/${detailPatientId}/generer-code-portail`, { method: 'POST' })
         .then(r => r.json())
-        .then(d => { if (d.success) afficherCodePortailPatient(d.code_acces); else alert('Erreur : ' + (d.error || 'inconnue')); });
+        .then(async d => { if (d.success) afficherCodePortailPatient(d.code_acces); else await afficherMessage('Erreur : ' + (d.error || 'inconnue'), {type: 'danger'}); });
 }
 
-function regenererCodePortailPatient() {
-    if (!confirm("Régénérer le code ? L'ancien code ne fonctionnera plus.")) return;
+async function regenererCodePortailPatient() {
+    if (!await demanderConfirmation("Régénérer le code ? L'ancien code ne fonctionnera plus.")) return;
     fetch(`/api/patients/${detailPatientId}/regenerer-code-portail`, { method: 'POST' })
         .then(r => r.json())
-        .then(d => { if (d.success) afficherCodePortailPatient(d.code_acces); else alert('Erreur : ' + (d.error || 'inconnue')); });
+        .then(async d => { if (d.success) afficherCodePortailPatient(d.code_acces); else await afficherMessage('Erreur : ' + (d.error || 'inconnue'), {type: 'danger'}); });
 }
 
-function selectionnerDepuisDetails() {
+async function selectionnerDepuisDetails() {
     const btn = document.getElementById('btnSelectFromDetail');
     const id = btn.getAttribute('data-id');
     if (id) {
@@ -1614,7 +1614,7 @@ function selectionnerDepuisDetails() {
             else assuranceCode = assurance;
 
             bootstrap.Modal.getInstance(document.getElementById('detailPatientModal')).hide();
-            selectPatient(id, nomComplet, assuranceCode, parseInt(taux) || 0, assurance2, parseInt(taux2) || 0, societeAssurance2);
+            await selectPatient(id, nomComplet, assuranceCode, parseInt(taux) || 0, assurance2, parseInt(taux2) || 0, societeAssurance2);
         }
     }
 }
@@ -1624,8 +1624,8 @@ function modifierDepuisDetails() {
     const id = btn.getAttribute('data-id');
     if (id) {
         bootstrap.Modal.getInstance(document.getElementById('detailPatientModal')).hide();
-        setTimeout(() => {
-            editPatient(parseInt(id));
+        setTimeout(async () => {
+            await editPatient(parseInt(id));
         }, 300);
     }
 }
@@ -1633,21 +1633,21 @@ function modifierDepuisDetails() {
 // ============================================
 // SUPPRIMER PATIENT
 // ============================================
-function supprimerPatient(id) {
+async function supprimerPatient(id) {
     if (!id || id === 'undefined') {
-        alert('Erreur: ID patient invalide');
+        await afficherMessage('Erreur: ID patient invalide', {type: 'danger'});
         return;
     }
     
     const row = document.querySelector(`tr.patient-row[data-id="${id}"]`);
     if (!row) {
-        alert('Patient non trouvé');
+        await afficherMessage('Patient non trouvé');
         return;
     }
     
     const nomComplet = row.cells[1].innerText.trim();
     
-    if (!confirm(`Supprimer définitivement le patient "${nomComplet}" ?\n\nCette action est irréversible.`)) {
+    if (!await demanderConfirmation(`Supprimer définitivement le patient "${nomComplet}" ?\n\nCette action est irréversible.`)) {
         return;
     }
     
@@ -1657,18 +1657,18 @@ function supprimerPatient(id) {
         method: 'DELETE'
     })
     .then(response => response.json())
-    .then(data => {
+    .then(async data => {
         hideLoader();
         if(data.success) {
-            alert('Patient supprimé avec succès !');
+            await afficherMessage('Patient supprimé avec succès !');
             location.reload();
         } else {
-            alert('❌ Erreur: ' + (data.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => {
+    .catch(async error => {
         hideLoader();
-        alert('❌ Erreur lors de la suppression: ' + error);
+        await afficherMessage('Erreur lors de la suppression: ' + error, {type: 'danger'});
     });
 }
 
@@ -1922,22 +1922,22 @@ function preRemplirDepuisPreinscription(preinscription) {
     }
 }
 
-function rejeterPreinscription(id) {
-    if (!confirm('Écarter cette préinscription ? Le patient devra se réinscrire s\'il se présente plus tard.')) return;
+async function rejeterPreinscription(id) {
+    if (!await demanderConfirmation('Écarter cette préinscription ? Le patient devra se réinscrire s\'il se présente plus tard.')) return;
     fetch(`/api/patients/preinscriptions/${id}/rejeter`, { method: 'POST' })
         .then(response => response.json())
-        .then(data => {
+        .then(async data => {
             if (data.success) {
                 const ligne = document.getElementById(`preinscriptionLigne${id}`);
                 if (ligne) ligne.remove();
             } else {
-                alert('❌ Erreur: ' + (data.error || 'Erreur inconnue'));
+                await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
             }
         })
-        .catch(error => alert('❌ Erreur: ' + error));
+        .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
-function savePatient() {
+async function savePatient() {
     let typeAssurance = document.getElementById('type_assurance').value;
     let autreAssurance = document.getElementById('autre_assurance').value;
     
@@ -1958,7 +1958,7 @@ function savePatient() {
 
     let tauxAssurance2 = parseFloat(document.getElementById('taux_assurance2').value) || 0;
     if (assurance2Nom && assurance2Nom !== '' && tauxAssurance2 === 0) {
-        if (!confirm(`Le taux de l'assurance complémentaire "${assurance2Nom}" est à 0%. Voulez-vous continuer ?`)) {
+        if (!await demanderConfirmation(`Le taux de l'assurance complémentaire "${assurance2Nom}" est à 0%. Voulez-vous continuer ?`)) {
             document.getElementById('taux_assurance2').focus();
             return;
         }
@@ -1966,7 +1966,7 @@ function savePatient() {
 
     let societeAssurance2 = document.getElementById('societe_assurance2').value.trim();
     if (assurance2Nom && assurance2Nom !== '' && societeAssurance2 === '') {
-        alert(`Veuillez préciser la société ayant souscrit l'assurance complémentaire "${assurance2Nom}"`);
+        await afficherMessage(`Veuillez préciser la société ayant souscrit l'assurance complémentaire "${assurance2Nom}"`);
         document.getElementById('societe_assurance2').focus();
         return;
     }
@@ -1996,7 +1996,7 @@ function savePatient() {
     };
 
     if (!patient.nom || !patient.telephone) {
-        alert('Veuillez remplir les champs obligatoires (Nom et Téléphone)');
+        await afficherMessage('Veuillez remplir les champs obligatoires (Nom et Téléphone)');
         return;
     }
 
@@ -2004,14 +2004,14 @@ function savePatient() {
     // sélectionnée (non_assure exclu) — évite des dossiers d'assurance
     // incomplets, signalé explicitement par le patron.
     if (typeAssurance !== 'non_assure' && !patient.numero_assure) {
-        alert("Le numéro d'assuré est obligatoire pour l'assurance sélectionnée.");
+        await afficherMessage("Le numéro d'assuré est obligatoire pour l'assurance sélectionnée.");
         document.getElementById('numero_assure').focus();
         return;
     }
 
     let tauxPrincipal = patient.taux_prise_charge;
     if (patient.type_assurance !== 'non_assure' && tauxPrincipal === 0) {
-        if (!confirm(`Le taux de l'assurance "${patient.type_assurance}" est à 0%. Voulez-vous continuer ?`)) {
+        if (!await demanderConfirmation(`Le taux de l'assurance "${patient.type_assurance}" est à 0%. Voulez-vous continuer ?`)) {
             document.getElementById('taux_prise_charge').focus();
             return;
         }
@@ -2033,7 +2033,7 @@ function savePatient() {
         body: JSON.stringify(patient)
     })
     .then(response => response.json())
-    .then(data => {
+    .then(async data => {
         hideLoader();
         if(data.success) {
             // ⭐ Pas d'alert() bloquant ici — patron : "il faut encore
@@ -2043,16 +2043,16 @@ function savePatient() {
             // rechargement, sans bloquer l'enchaînement des saisies.
             location.reload();
         } else {
-            alert('❌ Erreur: ' + (data.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
             if (btnSave) {
                 btnSave.disabled = false;
                 btnSave.innerHTML = 'Enregistrer';
             }
         }
     })
-    .catch(error => {
+    .catch(async error => {
         hideLoader();
-        alert('❌ Erreur lors de l\'enregistrement: ' + error);
+        await afficherMessage('Erreur lors de l\'enregistrement: ' + error, {type: 'danger'});
         if (btnSave) {
             btnSave.disabled = false;
             btnSave.innerHTML = 'Enregistrer';
@@ -2063,9 +2063,9 @@ function savePatient() {
 // ============================================
 // MODIFICATION PATIENT
 // ============================================
-function editPatient(id) {
+async function editPatient(id) {
     if (!id || id === 'undefined') {
-        alert('Erreur: ID patient invalide');
+        await afficherMessage('Erreur: ID patient invalide', {type: 'danger'});
         return;
     }
 
@@ -2079,7 +2079,7 @@ function editPatient(id) {
 
     const row = document.querySelector(`tr.patient-row[data-id="${id}"]`);
     if (!row) {
-        alert('Patient non trouvé');
+        await afficherMessage('Patient non trouvé');
         return;
     }
     
@@ -2177,7 +2177,7 @@ function editPatient(id) {
         });
 }
 
-function saveEditPatient() {
+async function saveEditPatient() {
     const id = document.getElementById('editId').value;
     let typeAssurance = document.getElementById('editAssurance').value;
     let autreAssurance = document.getElementById('editAutreAssurance').value;
@@ -2194,7 +2194,7 @@ function saveEditPatient() {
 
     let societeAssurance2 = document.getElementById('editSocieteAssurance2').value.trim();
     if (assurance2Nom && assurance2Nom !== '' && societeAssurance2 === '') {
-        alert(`Veuillez préciser la société ayant souscrit l'assurance complémentaire "${assurance2Nom}"`);
+        await afficherMessage(`Veuillez préciser la société ayant souscrit l'assurance complémentaire "${assurance2Nom}"`);
         document.getElementById('editSocieteAssurance2').focus();
         return;
     }
@@ -2218,14 +2218,14 @@ function saveEditPatient() {
     };
     
     if (!patient.nom || !patient.telephone) {
-        alert('Veuillez remplir les champs obligatoires');
+        await afficherMessage('Veuillez remplir les champs obligatoires');
         return;
     }
 
     // ⭐ Numéro d'assuré obligatoire dès qu'une assurance principale est
     // sélectionnée (non_assure exclu) — même règle qu'à l'ajout.
     if (typeAssurance !== 'non_assure' && !patient.numero_assure) {
-        alert("Le numéro d'assuré est obligatoire pour l'assurance sélectionnée.");
+        await afficherMessage("Le numéro d'assuré est obligatoire pour l'assurance sélectionnée.");
         document.getElementById('editNumeroAssure').focus();
         return;
     }
@@ -2245,22 +2245,22 @@ function saveEditPatient() {
         body: JSON.stringify(patient)
     })
     .then(response => response.json())
-    .then(data => {
+    .then(async data => {
         hideLoader();
         if(data.success) {
-            alert('Patient modifié avec succès !');
+            await afficherMessage('Patient modifié avec succès !');
             location.reload();
         } else {
-            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
             if (btnSave) {
                 btnSave.disabled = false;
                 btnSave.innerHTML = 'Enregistrer';
             }
         }
     })
-    .catch(error => {
+    .catch(async error => {
         hideLoader();
-        alert('Erreur lors de la modification: ' + error);
+        await afficherMessage('Erreur lors de la modification: ' + error, {type: 'danger'});
         if (btnSave) {
             btnSave.disabled = false;
             btnSave.innerHTML = 'Enregistrer';
@@ -2271,9 +2271,9 @@ function saveEditPatient() {
 // ============================================
 // SÉLECTION PATIENT
 // ============================================
-function selectPatient(id, nom, assurance, taux, assurance2, taux2, societeAssurance2) {
+async function selectPatient(id, nom, assurance, taux, assurance2, taux2, societeAssurance2) {
     if (!id || id === 'undefined') {
-        alert('❌ Erreur: ID patient invalide');
+        await afficherMessage('Erreur: ID patient invalide', {type: 'danger'});
         return;
     }
 
@@ -2464,9 +2464,9 @@ function fermerModalDestination() {
 // ============================================
 // ENVOI LIEN WHATSAPP
 // ============================================
-function envoyerLienPatient(id, nom, telephone) {
+async function envoyerLienPatient(id, nom, telephone) {
     if (!id || id === 'undefined') {
-        alert('Erreur: ID patient invalide');
+        await afficherMessage('Erreur: ID patient invalide', {type: 'danger'});
         return;
     }
     
@@ -2490,8 +2490,8 @@ function envoyerLienPatient(id, nom, telephone) {
             
             window.open(`https://wa.me/${tel}?text=${message}`, '_blank');
         })
-        .catch(error => {
-            alert('Erreur lors de l\'envoi');
+        .catch(async error => {
+            await afficherMessage('Erreur lors de l\'envoi', {type: 'danger'});
         });
 }
 

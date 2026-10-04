@@ -328,7 +328,7 @@ function showAbonnementModal(id, nom) {
             });
             new bootstrap.Modal(document.getElementById('abonnementModal')).show();
         })
-        .catch(() => alert('Erreur de chargement du paramétrage abonnement'));
+        .catch(async () => await afficherMessage('Erreur de chargement du paramétrage abonnement', {type: 'danger'}));
 }
 
 function enregistrerAbonnement() {
@@ -347,15 +347,15 @@ function enregistrerAbonnement() {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
             bootstrap.Modal.getInstance(document.getElementById('abonnementModal')).hide();
             location.reload();
         } else {
-            alert('Erreur : ' + result.error);
+            await afficherMessage('Erreur : ' + result.error, {type: 'danger'});
         }
     })
-    .catch(() => alert('Erreur réseau'));
+    .catch(async () => await afficherMessage('Erreur réseau', {type: 'danger'}));
 }
 
 let installationStructureId = null;
@@ -427,7 +427,7 @@ function enregistrerInstallation() {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
             chargerHistoriqueInstallation(installationStructureId);
             window.open(`/admin/installation/recu/${result.paiement_id}?auto=1`, '_blank');
@@ -441,10 +441,10 @@ function enregistrerInstallation() {
             document.getElementById('instNote').value = '';
             toggleReferenceInstallation();
         } else {
-            alert('Erreur : ' + result.error);
+            await afficherMessage('Erreur : ' + result.error, {type: 'danger'});
         }
     })
-    .catch(() => alert('Erreur réseau'));
+    .catch(async () => await afficherMessage('Erreur réseau', {type: 'danger'}));
 }
 
 let resetStructureId = null;
@@ -456,12 +456,12 @@ function showResetPasswordModal(id, nom) {
     new bootstrap.Modal(document.getElementById('resetPasswordModal')).show();
 }
 
-function resetPassword() {
+async function resetPassword() {
     let customPassword = document.getElementById('customPassword').value;
     let password = customPassword || 'medilogic2026';
     
     if (password.length < 6) {
-        alert('Le mot de passe doit contenir au moins 6 caractères');
+        await afficherMessage('Le mot de passe doit contenir au moins 6 caractères');
         return;
     }
     
@@ -471,18 +471,18 @@ function resetPassword() {
         body: JSON.stringify({password: password})
     })
     .then(response => response.json())
-    .then(data => {
+    .then(async data => {
         if(data.success) {
-            alert(`Mot de passe réinitialisé avec succès !\nNouveau mot de passe : ${password}`);
+            await afficherMessage(`Mot de passe réinitialisé avec succès !\nNouveau mot de passe : ${password}`);
             bootstrap.Modal.getInstance(document.getElementById('resetPasswordModal')).hide();
         } else {
-            alert('Erreur: ' + data.error);
+            await afficherMessage('Erreur: ' + data.error, {type: 'danger'});
         }
     });
 }
 
-function confirmDelete(id) {
-    if(confirm('Êtes-vous sûr de vouloir supprimer cette structure ? Cette action est irréversible.')) {
+async function confirmDelete(id) {
+    if(await demanderConfirmation('Êtes-vous sûr de vouloir supprimer cette structure ? Cette action est irréversible.')) {
         postAction('/admin/delete/' + id);
     }
 }

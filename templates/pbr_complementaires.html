@@ -204,39 +204,39 @@ document.getElementById('pbrCompagnie').addEventListener('input', filtrerCompagn
 document.getElementById('pbrCompagnie').addEventListener('focus', filtrerCompagnies);
 document.getElementById('pbrCompagnie').addEventListener('click', filtrerCompagnies);
 
-function enregistrerPbr() {
+async function enregistrerPbr() {
     const compagnie = document.getElementById('pbrCompagnie').value.trim();
     const pbr1 = parseFloat(document.getElementById('pbrValeur1').value);
     const pbr2Raw = document.getElementById('pbrValeur2').value.trim();
     const pbr2 = pbr2Raw === '' ? null : parseFloat(pbr2Raw);
-    if (!pbrChoisi) { alert('Choisissez un acte ou un médicament dans la liste.'); return; }
-    if (!compagnie) { alert('Indiquez la compagnie complémentaire.'); return; }
-    if (isNaN(pbr1) || pbr1 < 0) { alert('PBR habituel invalide.'); return; }
-    if (pbr2 !== null && (isNaN(pbr2) || pbr2 < 0)) { alert('PBR alternatif invalide.'); return; }
+    if (!pbrChoisi) { await afficherMessage('Choisissez un acte ou un médicament dans la liste.'); return; }
+    if (!compagnie) { await afficherMessage('Indiquez la compagnie complémentaire.'); return; }
+    if (isNaN(pbr1) || pbr1 < 0) { await afficherMessage('PBR habituel invalide.'); return; }
+    if (pbr2 !== null && (isNaN(pbr2) || pbr2 < 0)) { await afficherMessage('PBR alternatif invalide.'); return; }
 
     fetch('/api/pbr-complementaires', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: pbrTypeActuel, nom_acte: pbrChoisi, compagnie: compagnie, pbr_1: pbr1, pbr_2: pbr2 })
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
             bootstrap.Modal.getInstance(document.getElementById('modalPbr')).hide();
             chargerPbrComplementaires();
         } else {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
-    .catch(e => alert('Erreur : ' + e));
+    .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
-function supprimerPbr(id) {
-    if (!confirm('Supprimer cette entrée ?')) return;
+async function supprimerPbr(id) {
+    if (!await demanderConfirmation('Supprimer cette entrée ?')) return;
     fetch('/api/pbr-complementaires/' + id, { method: 'DELETE' })
         .then(r => r.json())
-        .then(data => {
+        .then(async data => {
             if (data.success) chargerPbrComplementaires();
-            else alert('Erreur : ' + (data.error || 'inconnue'));
+            else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         });
 }
 

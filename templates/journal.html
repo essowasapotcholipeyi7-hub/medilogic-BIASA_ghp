@@ -408,16 +408,16 @@ function changerPage(delta) {
 function voirDetails(id) {
     fetch('/journal/api/' + id)
         .then(function(response) { return response.json(); })
-        .then(function(data) {
+        .then(async function(data) {
             if (data.success) {
                 afficherDetails(data.data);
             } else {
-                alert('Erreur: ' + (data.error || 'Impossible de charger les détails'));
+                await afficherMessage('Erreur: ' + (data.error || 'Impossible de charger les détails'), {type: 'danger'});
             }
         })
-        .catch(function(error) {
+        .catch(async function(error) {
             console.error('Erreur:', error);
-            alert('Erreur de chargement');
+            await afficherMessage('Erreur de chargement', {type: 'danger'});
         });
 }
 
@@ -532,11 +532,11 @@ function imprimerJournal() {
             btn.innerHTML = '<i class="fas fa-print me-1"></i> Imprimer';
             window.print();
         })
-        .catch(function(error) {
+        .catch(async function(error) {
             console.error('Erreur:', error);
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-print me-1"></i> Imprimer';
-            alert("Impossible de préparer l'impression.");
+            await afficherMessage("Impossible de préparer l'impression.");
         });
 }
 

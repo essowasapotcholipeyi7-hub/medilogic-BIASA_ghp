@@ -105,25 +105,25 @@
 </div>
 
 <script>
-function creerService() {
+async function creerService() {
     const nom = document.getElementById('nouveauServiceNom').value.trim();
-    if (!nom) { alert('Indiquez un nom de service.'); return; }
+    if (!nom) { await afficherMessage('Indiquez un nom de service.'); return; }
     fetch('/api/hospitalisation/services', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nom })
-    }).then(r => r.json()).then(data => {
-        if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue'));
+    }).then(r => r.json()).then(async data => {
+        if (data.success) window.location.reload(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
     });
 }
 
-function creerChambre(serviceId) {
+async function creerChambre(serviceId) {
     const input = document.getElementById('nouvelleChambreNom' + serviceId);
     const nom = input.value.trim();
-    if (!nom) { alert('Indiquez un nom de chambre.'); return; }
+    if (!nom) { await afficherMessage('Indiquez un nom de chambre.'); return; }
     fetch('/api/hospitalisation/chambres', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ service_id: serviceId, nom })
-    }).then(r => r.json()).then(data => {
-        if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue'));
+    }).then(r => r.json()).then(async data => {
+        if (data.success) window.location.reload(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
     });
 }
 
@@ -132,22 +132,22 @@ function creerLits(chambreId) {
     fetch('/api/hospitalisation/lits', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chambre_id: chambreId, nombre })
-    }).then(r => r.json()).then(data => {
-        if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue'));
+    }).then(r => r.json()).then(async data => {
+        if (data.success) window.location.reload(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
     });
 }
 
 function toggleService(id, btn) {
     fetch(`/api/hospitalisation/services/${id}/toggle`, { method: 'POST' })
-        .then(r => r.json()).then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+        .then(r => r.json()).then(async data => { if (data.success) window.location.reload(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'}); });
 }
 function toggleChambre(id, btn) {
     fetch(`/api/hospitalisation/chambres/${id}/toggle`, { method: 'POST' })
-        .then(r => r.json()).then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+        .then(r => r.json()).then(async data => { if (data.success) window.location.reload(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'}); });
 }
 function toggleLit(id, btn) {
     fetch(`/api/hospitalisation/lits/${id}/toggle`, { method: 'POST' })
-        .then(r => r.json()).then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+        .then(r => r.json()).then(async data => { if (data.success) window.location.reload(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'}); });
 }
 </script>
 

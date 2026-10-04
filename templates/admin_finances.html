@@ -597,10 +597,10 @@ function toggleMotifPersonnalise() {
     }
 }
 
-function saveDepense() {
+async function saveDepense() {
     const montant = document.getElementById('depenseMontant').value;
     if (!montant || montant <= 0) {
-        alert('Veuillez entrer un montant valide');
+        await afficherMessage('Veuillez entrer un montant valide');
         return;
     }
     
@@ -619,7 +619,7 @@ function saveDepense() {
         const reference = document.getElementById('depenseReferencePaiement').value.trim();
         const datePaiement = document.getElementById('depenseDatePaiement').value;
         if (!moyen || !reference || !datePaiement) {
-            alert('Le moyen de paiement, la référence et la date du paiement sont obligatoires pour l\'abonnement.');
+            await afficherMessage('Le moyen de paiement, la référence et la date du paiement sont obligatoires pour l\'abonnement.');
             return;
         }
         data.moyen_paiement = moyen;
@@ -635,18 +635,18 @@ function saveDepense() {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         hideLoader();
         if (data.success) {
             // ⭐ Toute dépense (admin compris) part maintenant en demande —
             // voir api_add_depense() côté serveur.
-            alert(data.en_attente ? ('📨 ' + data.message) : 'charge enregistrée avec succès');
+            await afficherMessage(data.en_attente ? ('' + data.message) : 'charge enregistrée avec succès');
             location.reload();
         } else {
-            alert('❌ Erreur: ' + data.error);
+            await afficherMessage('Erreur: ' + data.error, {type: 'danger'});
         }
     })
-    .catch(() => { hideLoader(); alert('❌ Erreur'); });
+    .catch(async () => { hideLoader(); await afficherMessage('Erreur', {type: 'danger'}); });
 }
 
 function filtrerDepenses() {
@@ -913,19 +913,19 @@ function genererRapport() {
             
             hideLoader();
         })
-        .catch(error => {
+        .catch(async error => {
             hideLoader();
             console.error('Erreur:', error);
-            alert('Erreur lors de la génération du rapport');
+            await afficherMessage('Erreur lors de la génération du rapport', {type: 'danger'});
         });
 }
 
-function exporterRapport() {
+async function exporterRapport() {
     const dateDebut = document.getElementById('rapportDateDebut').value;
     const dateFin = document.getElementById('rapportDateFin').value;
     
     if (!dateDebut || !dateFin) {
-        alert('Veuillez sélectionner une période avant d\'exporter');
+        await afficherMessage('Veuillez sélectionner une période avant d\'exporter');
         return;
     }
     

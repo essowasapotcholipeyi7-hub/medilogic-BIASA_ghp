@@ -139,32 +139,32 @@ function choisirCodeBarreArticle(nom) {
     document.getElementById('codeBarreSearch').value = nom;
 }
 
-function enregistrerCodeBarre() {
-    if (!codeBarreChoisi) { alert('Choisissez un article dans la liste.'); return; }
+async function enregistrerCodeBarre() {
+    if (!codeBarreChoisi) { await afficherMessage('Choisissez un article dans la liste.'); return; }
     fetch('/api/codes-barres', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type_article: codeBarreTypeActuel, nom_article: codeBarreChoisi })
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
             bootstrap.Modal.getInstance(document.getElementById('modalCodeBarre')).hide();
-            if (data.deja_existant) alert('Cet article a déjà le code ' + data.code_barre + '.');
+            if (data.deja_existant) await afficherMessage('Cet article a déjà le code ' + data.code_barre + '.');
             chargerCodesBarres();
         } else {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
-    .catch(e => alert('Erreur : ' + e));
+    .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
-function supprimerCodeBarre(id) {
-    if (!confirm('Retirer ce code-barres ?')) return;
+async function supprimerCodeBarre(id) {
+    if (!await demanderConfirmation('Retirer ce code-barres ?')) return;
     fetch('/api/codes-barres/' + id, { method: 'DELETE' })
         .then(r => r.json())
-        .then(data => {
+        .then(async data => {
             if (data.success) chargerCodesBarres();
-            else alert('Erreur : ' + (data.error || 'inconnue'));
+            else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         });
 }
 

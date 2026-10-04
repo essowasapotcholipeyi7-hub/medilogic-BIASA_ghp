@@ -129,7 +129,7 @@ function changerStatutDemande(id, statut) {
         body: JSON.stringify({ statut: statut })
     })
     .then(r => r.json())
-    .then(data => { if (data.success) chargerDemandes(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+    .then(async data => { if (data.success) chargerDemandes(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'}); });
 }
 
 chargerDemandes();

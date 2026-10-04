@@ -912,12 +912,12 @@ function toggleAssurancePrincipale() {
 // ============================================
 // APPLIQUER TAUX PRINCIPAL TEMPORAIRE
 // ============================================
-function appliquerTauxPrincipalTemp() {
+async function appliquerTauxPrincipalTemp() {
     const input = document.getElementById('assurancePrincipaleTauxTemp');
     const valeur = parseFloat(input.value);
     
     if (isNaN(valeur) || valeur < 0 || valeur > 100) {
-        alert('Veuillez entrer un taux valide (0-100)');
+        await afficherMessage('Veuillez entrer un taux valide (0-100)');
         input.value = tauxPrincipalOriginal;
         return;
     }
@@ -1036,7 +1036,7 @@ function definirMedecinDuJour() {
         body: JSON.stringify({ medecin_id: select.value || null })
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
             MEDECIN_JOUR_ID = data.medecin_id;
             MEDECIN_JOUR_NOM = data.medecin_nom;
@@ -1048,21 +1048,21 @@ function definirMedecinDuJour() {
             }
             toggleMedecinRealisateur();
         } else {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
-    .catch(e => alert('Erreur : ' + e));
+    .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
 // ============================================
 // GESTION DU PANIER
 // ============================================
-function ajouterActe() {
+async function ajouterActe() {
     let select = document.getElementById('acteSelect');
     let selectedIndex = select.selectedIndex;
 
     if (selectedIndex === 0 || !select.value) {
-        alert('Veuillez sélectionner un acte');
+        await afficherMessage('Veuillez sélectionner un acte');
         return;
     }
 
@@ -1089,7 +1089,7 @@ function ajouterActe() {
         const medecinSelect = document.getElementById('medecinRealisateurSelect');
         const valeurChoisie = medecinSelect ? medecinSelect.value : '';
         if (!valeurChoisie) {
-            alert(`Veuillez indiquer qui a réalisé "${acteNomPourMedecin}" — un médecin, ou "Aucun médecin" si la part médecin ne doit pas s'appliquer à cette vente (taux de rétrocession configuré pour cet acte).`);
+            await afficherMessage(`Veuillez indiquer qui a réalisé "${acteNomPourMedecin}" — un médecin, ou "Aucun médecin" si la part médecin ne doit pas s'appliquer à cette vente (taux de rétrocession configuré pour cet acte).`);
             if (medecinSelect) medecinSelect.focus();
             return;
         }
@@ -1106,7 +1106,7 @@ function ajouterActe() {
     let quantite = parseInt(document.getElementById('quantite').value);
     if (isNaN(quantite) || quantite < 1) quantite = 1;
 
-    ajouterActeDepuisDonnees({
+    await ajouterActeDepuisDonnees({
         id: select.value,
         nom: selectedOption.getAttribute('data-nom'),
         prix: parseFloat(selectedOption.getAttribute('data-prix')),
@@ -1130,7 +1130,7 @@ function ajouterActe() {
 // médecin réalisateur et du service restent des champs UI (medecinId/
 // medecinNom/medecinDecide/serviceId), lus par l'appelant quel que soit le
 // point d'entrée — ce ne sont pas des propriétés de l'acte lui-même.
-function ajouterActeDepuisDonnees(acte, quantite, medecinId, medecinNom, medecinDecide, serviceId) {
+async function ajouterActeDepuisDonnees(acte, quantite, medecinId, medecinNom, medecinDecide, serviceId) {
     let acteId = acte.id;
     let acteNom = acte.nom;
     let actePrix = acte.prix;
@@ -1166,7 +1166,7 @@ function ajouterActeDepuisDonnees(acte, quantite, medecinId, medecinNom, medecin
     }
 
     if (isNaN(actePrix) || !acteNom) {
-        alert('Erreur: Données de l\'acte invalides');
+        await afficherMessage('Erreur: Données de l\'acte invalides', {type: 'danger'});
         return;
     }
 
@@ -1196,14 +1196,14 @@ function ajouterActeDepuisDonnees(acte, quantite, medecinId, medecinNom, medecin
 
     // 🔥 UNIQUEMENT SI PATIENT ASSURÉ ET STATUT EP
     if (isAMU && statutActe === 'EP') {
-        if (!confirm('⚠️ ENTENTE PRÉALABLE (EP)\n\nL\'acte "' + acteNom + '" est sous Entente Préalable.\n\nAvez-vous reçu un accord écrit de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.')) {
+        if (!await demanderConfirmation('ENTENTE PRÉALABLE (EP)\n\nL\'acte "' + acteNom + '" est sous Entente Préalable.\n\nAvez-vous reçu un accord écrit de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.', {type: 'warning'})) {
             // ⭐ Patron : "si on sélectionne un acte [...] qui nécessite une EP
             // que ça nous propose si on veut remplir l'EP [...] et que le
             // patient [...] ses identifiants soient remplis en même temps
             // avec son régime d'amu" — patient_id suffit : la page EP
             // pré-remplit déjà le régime depuis patient.type_assurance.
-            if (confirm("Voulez-vous remplir l'Entente Préalable maintenant pour ce patient ?")) {
-                window.open('/amu/entente-prealable?patient_id=' + patientId, '_blank');
+            if (await demanderConfirmation("Voulez-vous remplir l'Entente Préalable maintenant pour ce patient ?")) {
+                window.open('/amu/entente-prealable?patient_id=' + patientId + '&retour=' + encodeURIComponent(location.pathname), '_blank');
             }
             return;  // Bloque l'ajout
         }
@@ -1236,7 +1236,7 @@ function ajouterActeDepuisDonnees(acte, quantite, medecinId, medecinNom, medecin
     }
 
     if (infoMessage) {
-        if (!confirm(infoMessage)) {
+        if (!await demanderConfirmation(infoMessage)) {
             return;  // L'utilisateur annule
         }
     }
@@ -1266,7 +1266,7 @@ function ajouterActeParScan(code) {
             }
             return fetch('/api/actes?search=' + encodeURIComponent(data.nom_article) + '&limit=20')
                 .then(r => r.json())
-                .then(res => {
+                .then(async res => {
                     const match = (res.data || []).find(a => a.nom === data.nom_article);
                     if (!match) {
                         afficherAlerteScanActe(`"${data.nom_article}" introuvable dans le catalogue — a peut-être été supprimé ou renommé.`, true);
@@ -1278,7 +1278,7 @@ function ajouterActeParScan(code) {
                         const medecinSelect = document.getElementById('medecinRealisateurSelect');
                         const valeurChoisie = medecinSelect ? medecinSelect.value : '';
                         if (!valeurChoisie) {
-                            alert(`Veuillez indiquer qui a réalisé "${match.nom}" avant de le scanner — un médecin, ou "Aucun médecin".`);
+                            await afficherMessage(`Veuillez indiquer qui a réalisé "${match.nom}" avant de le scanner — un médecin, ou "Aucun médecin".`);
                             if (medecinSelect) medecinSelect.focus();
                             return;
                         }
@@ -1294,7 +1294,7 @@ function ajouterActeParScan(code) {
                     let quantite = parseInt(document.getElementById('quantite').value);
                     if (isNaN(quantite) || quantite < 1) quantite = 1;
 
-                    ajouterActeDepuisDonnees({
+                    await ajouterActeDepuisDonnees({
                         id: match.id, nom: match.nom, prix: match.prix, pbr: match.pbr,
                         prix_nuit: match.prix_nuit || 0, statut: match.statut || 'direct',
                         prise_en_charge_amu_raw: match.prise_en_charge_amu,
@@ -1413,10 +1413,10 @@ function ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,
     }, 1000);
 }
 
-function modifierPrix(index, nouveauPrix) {
+async function modifierPrix(index, nouveauPrix) {
     let prix = parseFloat(nouveauPrix);
     if (isNaN(prix) || prix <= 0) {
-        alert('Veuillez entrer un prix valide');
+        await afficherMessage('Veuillez entrer un prix valide');
         afficherPanier();
         return;
     }
@@ -1448,8 +1448,8 @@ function supprimerActe(index) {
     afficherPanier();
 }
 
-function viderPanier() {
-    if (panier.length > 0 && confirm('Vider complètement le panier ?')) {
+async function viderPanier() {
+    if (panier.length > 0 && await demanderConfirmation('Vider complètement le panier ?')) {
         panier = [];
         afficherPanier();
     }
@@ -2231,19 +2231,19 @@ function restaurerTauxTemp() {
     }
 }
 
-function appliquerTauxTemp() {
+async function appliquerTauxTemp() {
     const input = document.getElementById('assurance2TauxTemp');
     const valeur = parseFloat(input.value);
     const tauxOriginal = patientTaux2Original || 0;
     
     if (isNaN(valeur) || valeur < 0) {
-        alert('Veuillez entrer un taux valide (0-100)');
+        await afficherMessage('Veuillez entrer un taux valide (0-100)');
         input.value = tauxOriginal;
         return;
     }
     
     if (valeur > 100) {
-        alert('Le taux ne peut pas dépasser 100%');
+        await afficherMessage('Le taux ne peut pas dépasser 100%');
         input.value = tauxOriginal;
         return;
     }
@@ -2360,7 +2360,7 @@ function hideProgress() {
 // ============================================
 // FINALISER LA VENTE
 // ============================================
-function finaliserVente() {
+async function finaliserVente() {
     console.log('=== FINALISATION VENTE ACTES ===');
     console.log('Panier:', panier);
     console.log('Patient ID:', patientId);
@@ -2370,16 +2370,16 @@ function finaliserVente() {
     console.log('Taux modifié:', tauxTempModifie, 'Valeur:', tauxTempValeur);
     
     if (panier.length === 0) {
-        alert('Le panier est vide');
+        await afficherMessage('Le panier est vide');
         return;
     }
     
     if (!patientId || patientId === 'null' || patientId === 'undefined') {
-        alert('Veuillez sélectionner un patient');
+        await afficherMessage('Veuillez sélectionner un patient');
         return;
     }
 
-    if (!afficherRecapVente()) {
+    if (!await afficherRecapVente()) {
         return;
     }
     
@@ -2609,18 +2609,18 @@ function finaliserVente() {
         }
         detailCalcul += `\n💰 NET À PAYER : ${Math.round(netAPayer).toLocaleString('fr-FR')} FCFA\n`;
         
-        const confirmation = prompt(
-            `⚠️ ATTENTION !\n\n` +
+        const confirmation = await demanderSaisie(
+            `ATTENTION !\n\n` +
             `Le montant donné est de 0 FCFA.\n\n` +
             detailCalcul +
-            `\n` +
+            `` +
             `Pour confirmer que le patient n'a vraiment rien donné,\n` +
             `tapez "000" dans le champ ci-dessous :\n\n` +
             `(Si c'est une erreur, annulez et saisissez le bon montant)`
         );
         
         if (confirmation !== "000") {
-            alert('❌ Opération annulée. Veuillez saisir le montant donné par le patient.');
+            await afficherMessage('Opération annulée. Veuillez saisir le montant donné par le patient.', {type: 'danger'});
             document.getElementById('montantDonne').focus();
             document.getElementById('montantDonne').select();
             btn.disabled = false;
@@ -2633,7 +2633,7 @@ function finaliserVente() {
         msgFinal += detailCalcul;
         msgFinal += `\nVoulez-vous vraiment continuer ?`;
         
-        if (!confirm(msgFinal)) {
+        if (!await demanderConfirmation(msgFinal)) {
             document.getElementById('montantDonne').focus();
             btn.disabled = false;
             btn.innerHTML = originalText;
@@ -2656,12 +2656,12 @@ function finaliserVente() {
         }
         detailCalcul += `\n💰 NET À PAYER : ${Math.round(netAPayer).toLocaleString('fr-FR')} FCFA\n`;
         
-        if (!confirm(
-            `⚠️ Le patient a donné ${Math.round(montantDonne).toLocaleString('fr-FR')} FCFA\n\n` +
+        if (!await demanderConfirmation(
+            `Le patient a donné ${Math.round(montantDonne).toLocaleString('fr-FR')} FCFA\n\n` +
             detailCalcul +
             `Il reste ${Math.round(resteAPayer).toLocaleString('fr-FR')} FCFA à payer.\n\n` +
             `Voulez-vous continuer ?`
-        )) {
+        , {type: 'warning'})) {
             document.getElementById('montantDonne').focus();
             btn.disabled = false;
             btn.innerHTML = originalText;
@@ -2739,7 +2739,7 @@ function finaliserVente() {
         body: JSON.stringify(vente)
     })
     .then(response => response.json())
-    .then(data => {
+    .then(async data => {
         hideProgress();
         if(data.success) {
             panier = [];
@@ -2787,32 +2787,32 @@ function finaliserVente() {
                     })
                 })
                 .then(r => r.json())
-                .then(factureData => {
+                .then(async factureData => {
                     if (factureData.success) {
                         console.log(`✅ Facture créée: ${factureData.numero_facture}`);
                         sessionStorage.setItem('lastFactureId', factureData.facture_id);
                         sessionStorage.setItem('lastFactureNumero', factureData.numero_facture);
                     }
-                    redirigerVersReçuActes(data.vente_id, typeDocument, formatImpression, urlParams);
+                    await redirigerVersReçuActes(data.vente_id, typeDocument, formatImpression, urlParams);
                 })
-                .catch(error => {
+                .catch(async error => {
                     console.error('❌ Erreur création facture:', error);
-                    redirigerVersReçuActes(data.vente_id, typeDocument, formatImpression, urlParams);
+                    await redirigerVersReçuActes(data.vente_id, typeDocument, formatImpression, urlParams);
                 });
             } else {
                 console.log('✅ Paiement total, pas de facture nécessaire');
-                redirigerVersReçuActes(data.vente_id, typeDocument, formatImpression, urlParams);
+                await redirigerVersReçuActes(data.vente_id, typeDocument, formatImpression, urlParams);
             }
         } else {
-            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
             btn.disabled = false;
             btn.innerHTML = originalText;
         }
     })
-    .catch(error => {
+    .catch(async error => {
         hideProgress();
         console.error('Erreur:', error);
-        alert('Erreur: ' + error);
+        await afficherMessage('Erreur: ' + error, {type: 'danger'});
         btn.disabled = false;
         btn.innerHTML = originalText;
     });
@@ -2821,7 +2821,7 @@ function finaliserVente() {
 // ============================================
 // REDIRECTION
 // ============================================
-function redirigerVersReçuActes(venteId, typeDocument, formatImpression, urlParams) {
+async function redirigerVersReçuActes(venteId, typeDocument, formatImpression, urlParams) {
     let baseUrl = '';
     
     if (typeDocument === 'recu_client') {
@@ -2848,8 +2848,8 @@ function redirigerVersReçuActes(venteId, typeDocument, formatImpression, urlPar
     const newWindow = window.open(url, '_blank');
     
     if (!newWindow || newWindow.closed || typeof newWindow.closed == 'undefined') {
-        alert('⚠️ Veuillez autoriser les pop-ups pour ce site.\n\nCliquez sur le bouton ci-dessous pour ouvrir le reçu manuellement.');
-        if (confirm('Voulez-vous ouvrir le reçu dans l\'onglet actuel ?')) {
+        await afficherMessage('Veuillez autoriser les pop-ups pour ce site.\n\nCliquez sur le bouton ci-dessous pour ouvrir le reçu manuellement.', {type: 'warning'});
+        if (await demanderConfirmation('Voulez-vous ouvrir le reçu dans l\'onglet actuel ?')) {
             window.location.href = url;
         }
     }
@@ -2860,18 +2860,18 @@ function redirigerVersReçuActes(venteId, typeDocument, formatImpression, urlPar
 // ============================================
 // CONFIRMATION SIMPLE
 // ============================================
-function afficherRecapVente() {
+async function afficherRecapVente() {
     if (panier.length === 0) {
-        alert('Le panier est vide');
+        await afficherMessage('Le panier est vide');
         return false;
     }
     
     if (!patientId || patientId === 'null' || patientId === 'undefined') {
-        alert('Veuillez sélectionner un patient');
+        await afficherMessage('Veuillez sélectionner un patient');
         return false;
     }
     
-    return confirm('✅ Confirmer cette vente ?');
+    return await demanderConfirmation('Confirmer cette vente ?');
 }
 
 // ============================================
@@ -2881,9 +2881,9 @@ function afficherRecapVente() {
 // creerProforma() — patron : "le patient... on lui donne le prix... il
 // part à la caisse... la caisse sélectionne le patient concerné".
 // ============================================
-function soumettreVenteEnAttente() {
+async function soumettreVenteEnAttente() {
     if (panier.length === 0) {
-        alert('Le panier est vide');
+        await afficherMessage('Le panier est vide');
         return;
     }
 
@@ -2944,25 +2944,25 @@ function soumettreVenteEnAttente() {
         body: JSON.stringify(corpsRequete)
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         btn.innerHTML = originalText;
         if (data.success) {
-            alert(`✅ Vente en attente soumise !\n\n` +
+            await afficherMessage(`Vente en attente soumise !\n\n` +
                   `Code à communiquer au patient : #${data.numero_local}\n\n` +
-                  `Le patient doit se présenter à la caisse avec ce code pour finaliser le paiement.`);
+                  `Le patient doit se présenter à la caisse avec ce code pour finaliser le paiement.`, {type: 'success'});
             panier = [];
             document.getElementById('nomPatientAttente').value = '';
             afficherPanier();  // remet aussi venteAttenteBtn.disabled à jour (panier vide)
             if (typeof chargerVenteAttenteBadge === 'function') chargerVenteAttenteBadge();
         } else {
             btn.disabled = false;
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => {
+    .catch(async error => {
         btn.disabled = false;
         btn.innerHTML = originalText;
-        alert('Erreur : ' + error);
+        await afficherMessage('Erreur : ' + error, {type: 'danger'});
     });
 }
 
@@ -3051,7 +3051,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (articlesAuto && articlesAuto.length > 0) {
         console.log(`📦 ${articlesAuto.length} prescription(s) d'actes à charger automatiquement`);
         
-        setTimeout(function() {
+        setTimeout(async function() {
             const select = document.getElementById('acteSelect');
             console.log('🔍 Select trouvé:', select);
             
@@ -3064,7 +3064,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             let articlesCharges = 0;
             
-            function ajouterArticleSuivant(index) {
+            async function ajouterArticleSuivant(index) {
                 if (index >= articlesAuto.length) {
                     console.log(`📊 ${articlesCharges} actes chargés automatiquement sur ${articlesAuto.length}`);
                     
@@ -3095,7 +3095,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                         
                         try {
-                            ajouterActe();
+                            await ajouterActe();
                             articlesCharges++;
                             console.log(`✅ Acte ajouté au panier: ${article.nom}`);
                         } catch (e) {
@@ -3111,12 +3111,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     console.warn(`⚠️ Acte ID ${article.id} - ${article.nom} non trouvé dans la liste`);
                 }
                 
-                setTimeout(function() {
-                    ajouterArticleSuivant(index + 1);
+                setTimeout(async function() {
+                    await ajouterArticleSuivant(index + 1);
                 }, 300);
             }
             
-            ajouterArticleSuivant(0);
+            await ajouterArticleSuivant(0);
             
         }, 1000);
     } else {

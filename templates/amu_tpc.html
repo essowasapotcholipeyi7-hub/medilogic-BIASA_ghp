@@ -396,7 +396,7 @@ const TYPES_DEMANDE_PAR_REGIME = {
     amu_inam: [['rectification', 'Rectification']],
 };
 
-function changerRegime() {
+async function changerRegime() {
     const regime = document.getElementById('typeAmu').value;
     patientChoisiTpc = null;
     document.getElementById('patientId').value = '';
@@ -418,10 +418,10 @@ function changerRegime() {
             selectType.innerHTML += '<option value="identification" disabled>Identification (bientôt disponible)</option>';
         }
     }
-    changerTypeDemande();
+    await changerTypeDemande();
 }
 
-function changerTypeDemande() {
+async function changerTypeDemande() {
     const type = document.getElementById('typeDemande').value;
     // ⭐ La rectification INAM n'exige pas de dossier existant (identification
     // TPC INAM pas encore disponible — le TPC d'origine est souvent
@@ -448,9 +448,9 @@ function changerTypeDemande() {
     if (type && type !== 'identification' && document.getElementById('patientId').value) {
         chargerDossiersPatient();
     }
-    if (type === 'identification' && !lignesAld.length) ajouterLigneAld();
-    if (type === 'identification' && !lignesExamens.length) ajouterLigneExamen();
-    if (!lignesTraitements.length) ajouterLigneTraitement();
+    if (type === 'identification' && !lignesAld.length) await ajouterLigneAld();
+    if (type === 'identification' && !lignesExamens.length) await ajouterLigneExamen();
+    if (!lignesTraitements.length) await ajouterLigneTraitement();
 }
 
 // ===================== PATIENT =====================
@@ -524,8 +524,8 @@ function choisirDossier() {
     if (!dossierId) { dossierActuel = null; document.getElementById('historiqueDossierBloc').style.display = 'none'; return; }
     fetch('/api/amu/tpc/dossier/' + dossierId)
         .then(r => r.json())
-        .then(data => {
-            if (!data.success) { alert(data.error || 'Erreur'); return; }
+        .then(async data => {
+            if (!data.success) { await afficherMessage(data.error || 'Erreur'); return; }
             dossierActuel = data.dossier;
             document.getElementById('medecinId').value = data.dossier.medecin_id;
             lignesTraitements = (data.dossier.traitements || []).map(l => ({...l}));
@@ -547,8 +547,8 @@ function choisirDossier() {
 }
 
 // ===================== LIGNES ALD =====================
-function ajouterLigneAld() {
-    if (lignesAld.length >= 4) { alert('Maximum 4 ALD sur cette fiche.'); return; }
+async function ajouterLigneAld() {
+    if (lignesAld.length >= 4) { await afficherMessage('Maximum 4 ALD sur cette fiche.'); return; }
     lignesAld.push({affection: '', code_ald: ''});
     rendreLignesAld();
 }
@@ -599,8 +599,8 @@ function choisirAld(i, entree) {
 }
 
 // ===================== LIGNES EXAMENS PARACLINIQUES =====================
-function ajouterLigneExamen() {
-    if (lignesExamens.length >= 14) { alert('Maximum 14 examens sur cette fiche.'); return; }
+async function ajouterLigneExamen() {
+    if (lignesExamens.length >= 14) { await afficherMessage('Maximum 14 examens sur cette fiche.'); return; }
     lignesExamens.push({examen: '', date: '', resultat: ''});
     rendreLignesExamens();
 }
@@ -617,10 +617,10 @@ function rendreLignesExamens() {
 }
 
 // ===================== LIGNES TRAITEMENTS =====================
-function ajouterLigneTraitement() {
+async function ajouterLigneTraitement() {
     const type = document.getElementById('typeDemande').value;
     const max = type === 'renouvellement' ? 4 : (type === 'rectification' ? 10 : 6);
-    if (lignesTraitements.length >= max) { alert('Maximum ' + max + ' médicaments sur cette fiche.'); return; }
+    if (lignesTraitements.length >= max) { await afficherMessage('Maximum ' + max + 'médicaments sur cette fiche.'); return; }
     lignesTraitements.push({code_ald: '', medicament: '', forme_dosage: '', posologie: '', duree: ''});
     rendreLignesTraitements();
 }
@@ -711,7 +711,7 @@ function voirDetailsTpc(id) {
 }
 
 // ===================== MODIFIER =====================
-function modifierDemandeTpc(id) {
+async function modifierDemandeTpc(id) {
     const d = DEMANDES_DETAIL.find(x => x.id === id);
     if (!d) return;
     demandeEnEditionTpcId = id;
@@ -721,7 +721,7 @@ function modifierDemandeTpc(id) {
     document.getElementById('datePrescription').value = d.date_prescription;
     document.getElementById('typeDemande').value = d.type_demande;
     document.getElementById('typeDemande').disabled = true;
-    changerTypeDemande();
+    await changerTypeDemande();
 
     if (d.dossier_id && d.type_demande !== 'identification') {
         document.getElementById('dossierId').innerHTML = `<option value="${d.dossier_id}">#${d.dossier_id}</option>`;
@@ -790,31 +790,31 @@ function annulerEditionTpc() {
 function approuverDemandeTpc(id) {
     fetch(`/api/amu/tpc/${id}/approuver`, {method: 'POST'})
         .then(r => r.json())
-        .then(data => { if (data.success) location.reload(); else alert(data.error || 'Erreur'); });
+        .then(async data => { if (data.success) location.reload(); else await afficherMessage(data.error || 'Erreur'); });
 }
-function refuserDemandeTpc(id) {
-    const motif = prompt('Motif du refus (optionnel) :');
+async function refuserDemandeTpc(id) {
+    const motif = await demanderSaisie('Motif du refus (optionnel) :');
     fetch(`/api/amu/tpc/${id}/refuser`, {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({motif_refus: motif || ''}),
-    }).then(r => r.json()).then(data => { if (data.success) location.reload(); else alert(data.error || 'Erreur'); });
+    }).then(r => r.json()).then(async data => { if (data.success) location.reload(); else await afficherMessage(data.error || 'Erreur'); });
 }
 
 // ===================== SOUMISSION =====================
-document.getElementById('formTpc').addEventListener('submit', function(e) {
+document.getElementById('formTpc').addEventListener('submit', async function(e) {
     e.preventDefault();
     const typeDemande = document.getElementById('typeDemande').value;
-    if (!document.getElementById('patientId').value) { alert('Choisissez un patient AMU.'); return; }
-    if (!document.getElementById('medecinId').value) { alert('Choisissez un médecin.'); return; }
-    if (!document.getElementById('datePrescription').value) { alert('Indiquez la date de prescription.'); return; }
-    if (!typeDemande) { alert('Choisissez le type de demande.'); return; }
-    if ((typeDemande === 'renouvellement' || typeDemande === 'modification') && !document.getElementById('dossierId').value) { alert('Choisissez le dossier TPC du patient.'); return; }
+    if (!document.getElementById('patientId').value) { await afficherMessage('Choisissez un patient AMU.'); return; }
+    if (!document.getElementById('medecinId').value) { await afficherMessage('Choisissez un médecin.'); return; }
+    if (!document.getElementById('datePrescription').value) { await afficherMessage('Indiquez la date de prescription.'); return; }
+    if (!typeDemande) { await afficherMessage('Choisissez le type de demande.'); return; }
+    if ((typeDemande === 'renouvellement' || typeDemande === 'modification') && !document.getElementById('dossierId').value) { await afficherMessage('Choisissez le dossier TPC du patient.'); return; }
     if ((typeDemande === 'modification' || typeDemande === 'rectification') && !document.getElementById('motifModification').value.trim()) {
-        alert('Le motif de la modification est obligatoire.'); return;
+        await afficherMessage('Le motif de la modification est obligatoire.'); return;
     }
-    if (!lignesTraitements.filter(l => l.medicament).length) { alert('Ajoutez au moins un médicament.'); return; }
-    if (typeDemande === 'identification' && !lignesAld.filter(l => l.affection).length) { alert('Indiquez au moins une ALD.'); return; }
-    if (typeDemande === 'identification' && !document.getElementById('dateProchainRdv').value) { alert('Indiquez la date du prochain rendez-vous.'); return; }
+    if (!lignesTraitements.filter(l => l.medicament).length) { await afficherMessage('Ajoutez au moins un médicament.'); return; }
+    if (typeDemande === 'identification' && !lignesAld.filter(l => l.affection).length) { await afficherMessage('Indiquez au moins une ALD.'); return; }
+    if (typeDemande === 'identification' && !document.getElementById('dateProchainRdv').value) { await afficherMessage('Indiquez la date du prochain rendez-vous.'); return; }
 
     const payload = {
         patient_id: parseInt(document.getElementById('patientId').value),
@@ -856,8 +856,8 @@ document.getElementById('formTpc').addEventListener('submit', function(e) {
     const url = demandeEnEditionTpcId ? `/api/amu/tpc/${demandeEnEditionTpcId}/modifier` : '/api/amu/tpc';
     fetch(url, {
         method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
-    }).then(r => r.json()).then(data => {
-        if (data.success) location.reload(); else alert(data.error || 'Erreur lors de l\'enregistrement');
+    }).then(r => r.json()).then(async data => {
+        if (data.success) location.reload(); else await afficherMessage(data.error || 'Erreur lors de l\'enregistrement');
     });
 });
 

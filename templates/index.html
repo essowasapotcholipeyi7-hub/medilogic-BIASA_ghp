@@ -854,7 +854,7 @@ async function tenterConnexionWebauthn() {
     try {
         const rOpt = await fetch('/login/webauthn/options', { method: 'POST' });
         const dOpt = await rOpt.json();
-        if (!dOpt.success) { alert(dOpt.error || 'Erreur'); return; }
+        if (!dOpt.success) { await afficherMessage(dOpt.error || 'Erreur'); return; }
 
         const assertion = await SimpleWebAuthnBrowser.startAuthentication(dOpt.options);
 
@@ -866,11 +866,11 @@ async function tenterConnexionWebauthn() {
         if (dVer.success) {
             window.location.href = dVer.redirect || '/dashboard';
         } else {
-            alert(dVer.error || 'Connexion refusée');
+            await afficherMessage(dVer.error || 'Connexion refusée');
         }
     } catch (err) {
         if (err.name === 'NotAllowedError') return; // annulé par l'utilisateur, rien à afficher
-        alert('Échec : ' + (err.message || err));
+        await afficherMessage('Échec : ' + (err.message || err));
     }
 }
 </script>

@@ -749,19 +749,19 @@ function initBulletinListeners() {
 // AJOUTER UN MÉDICAMENT
 // ============================================================
 
-function ajouterMedicament() {
+async function ajouterMedicament() {
     var nom = document.getElementById('medicamentNom').value.trim();
     var dosage = document.getElementById('medicamentDosage').value.trim();
     var quantite = document.getElementById('medicamentQuantite').value.trim();
     
     if (!nom) {
-        alert('Veuillez entrer le nom du médicament');
+        await afficherMessage('Veuillez entrer le nom du médicament');
         document.getElementById('medicamentNom').focus();
         return;
     }
     
     if (!quantite) {
-        alert('Veuillez entrer la quantité');
+        await afficherMessage('Veuillez entrer la quantité');
         document.getElementById('medicamentQuantite').focus();
         return;
     }
@@ -922,11 +922,11 @@ function choisirExamenCatalogue(nom) {
     document.getElementById('examenSearchResults').style.display = 'none';
 }
 
-function ajouterExamenManuel() {
+async function ajouterExamenManuel() {
     var input = document.getElementById('examenManuel');
     var nom = input.value.trim();
     if (!nom) {
-        alert("Veuillez entrer le nom de l'examen");
+        await afficherMessage("Veuillez entrer le nom de l'examen");
         input.focus();
         return;
     }
@@ -1019,7 +1019,7 @@ function chargerDonneesProtocole(data) {
 // SAUVEGARDER UN PROTOCOLE
 // ============================================================
 
-function sauvegarderProtocole() {
+async function sauvegarderProtocole() {
     var id = document.getElementById('protocoleId').value;
     var titre = document.getElementById('titre').value.trim();
     var categorie = document.getElementById('categorie').value;
@@ -1032,7 +1032,7 @@ function sauvegarderProtocole() {
     var contenu = document.getElementById('contenu').value.trim();
     
     if (!titre || !categorie || !contenu) {
-        alert('Veuillez remplir les champs obligatoires: Titre, Catégorie et Contenu');
+        await afficherMessage('Veuillez remplir les champs obligatoires: Titre, Catégorie et Contenu');
         return;
     }
     
@@ -1077,18 +1077,18 @@ function sauvegarderProtocole() {
     .then(function(response) {
         return response.json();
     })
-    .then(function(data) {
+    .then(async function(data) {
         if (data.success) {
-            alert(id ? 'Document modifié avec succès' : 'Document créé avec succès');
+            await afficherMessage(id ? 'Document modifié avec succès' : 'Document créé avec succès');
             bootstrap.Modal.getInstance(document.getElementById('protocoleModal')).hide();
             chargerProtocoles();
         } else {
-            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(function(error) {
+    .catch(async function(error) {
         console.error('Erreur:', error);
-        alert('Erreur: ' + error);
+        await afficherMessage('Erreur: ' + error, {type: 'danger'});
     });
 }
 
@@ -1150,9 +1150,9 @@ function modifierProtocole(id) {
                 modal.show();
             }
         })
-        .catch(function(error) {
+        .catch(async function(error) {
             console.error('Erreur:', error);
-            alert('Erreur lors du chargement du document');
+            await afficherMessage('Erreur lors du chargement du document', {type: 'danger'});
         });
 }
 
@@ -1165,16 +1165,16 @@ function voirHistorique(id) {
         .then(function(response) {
             return response.json();
         })
-        .then(function(data) {
+        .then(async function(data) {
             if (data.success) {
                 afficherHistorique(data.data, id);
             } else {
-                alert('Erreur: ' + (data.error || 'Impossible de charger l\'historique'));
+                await afficherMessage('Erreur: ' + (data.error || 'Impossible de charger l\'historique'), {type: 'danger'});
             }
         })
-        .catch(function(error) {
+        .catch(async function(error) {
             console.error('Erreur:', error);
-            alert('Erreur lors du chargement de l\'historique');
+            await afficherMessage('Erreur lors du chargement de l\'historique', {type: 'danger'});
         });
 }
 
@@ -1252,8 +1252,8 @@ function afficherHistorique(historique, protocoleId) {
 // DUPLIQUER UN PROTOCOLE
 // ============================================================
 
-function dupliquerProtocole(id) {
-    if (!confirm('Dupliquer ce document ?')) return;
+async function dupliquerProtocole(id) {
+    if (!await demanderConfirmation('Dupliquer ce document ?')) return;
     
     fetch('/protocoles/api/' + id + '/dupliquer', {
         method: 'POST',
@@ -1262,17 +1262,17 @@ function dupliquerProtocole(id) {
     .then(function(response) {
         return response.json();
     })
-    .then(function(data) {
+    .then(async function(data) {
         if (data.success) {
-            alert('Document dupliqué avec succès');
+            await afficherMessage('Document dupliqué avec succès');
             chargerProtocoles();
         } else {
-            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(function(error) {
+    .catch(async function(error) {
         console.error('Erreur:', error);
-        alert('Erreur: ' + error);
+        await afficherMessage('Erreur: ' + error, {type: 'danger'});
     });
 }
 
@@ -1288,8 +1288,8 @@ function imprimerProtocole(id) {
 // SUPPRIMER UN PROTOCOLE
 // ============================================================
 
-function supprimerProtocole(id) {
-    if (!confirm('Supprimer ce document ? Cette action est irréversible.')) return;
+async function supprimerProtocole(id) {
+    if (!await demanderConfirmation('Supprimer ce document ? Cette action est irréversible.')) return;
     
     fetch('/protocoles/api/' + id, {
         method: 'DELETE',
@@ -1298,17 +1298,17 @@ function supprimerProtocole(id) {
     .then(function(response) {
         return response.json();
     })
-    .then(function(data) {
+    .then(async function(data) {
         if (data.success) {
-            alert('Document supprimé avec succès');
+            await afficherMessage('Document supprimé avec succès');
             chargerProtocoles();
         } else {
-            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(function(error) {
+    .catch(async function(error) {
         console.error('Erreur:', error);
-        alert('Erreur: ' + error);
+        await afficherMessage('Erreur: ' + error, {type: 'danger'});
     });
 }
 

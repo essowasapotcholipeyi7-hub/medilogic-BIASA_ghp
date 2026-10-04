@@ -2256,9 +2256,9 @@ function ouvrirAjoutCompte() {
     compteModal.show();
 }
 
-function modifierCompte(id) {
+async function modifierCompte(id) {
     const c = tousComptes.find(item => item.id === id);
-    if (!c) { alert('Compte non trouvé'); return; }
+    if (!c) { await afficherMessage('Compte non trouvé'); return; }
     document.getElementById('compteModalTitle').textContent = 'Modifier le compte';
     document.getElementById('compteId').value = id;
     document.getElementById('compteNumero').value = c.numero;
@@ -2267,7 +2267,7 @@ function modifierCompte(id) {
     compteModal.show();
 }
 
-function sauvegarderCompte() {
+async function sauvegarderCompte() {
     const id = document.getElementById('compteId').value;
     const data = {
         numero: document.getElementById('compteNumero').value.trim(),
@@ -2275,7 +2275,7 @@ function sauvegarderCompte() {
         type: document.getElementById('compteType').value
     };
     if (!data.numero || !data.nom || !data.type) {
-        alert('Veuillez remplir tous les champs');
+        await afficherMessage('Veuillez remplir tous les champs');
         return;
     }
     const method = id ? 'PUT' : 'POST';
@@ -2287,53 +2287,53 @@ function sauvegarderCompte() {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
-            alert(id ? 'Compte modifié' : 'Compte ajouté');
+            await afficherMessage(id ? 'Compte modifié' : 'Compte ajouté');
             compteModal.hide();
             comptesCache = null;
             comptesCacheTime = null;
             chargerComptes(true);
         } else {
-            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
-function supprimerCompte(id) {
-    if (!confirm('Supprimer ce compte ?')) return;
+async function supprimerCompte(id) {
+    if (!await demanderConfirmation('Supprimer ce compte ?')) return;
     fetch(`/comptabilite/api/comptes/${id}`, { method: 'DELETE' })
         .then(r => r.json())
-        .then(result => {
+        .then(async result => {
             if (result.success) {
-                alert('Compte supprimé');
+                await afficherMessage('Compte supprimé');
                 comptesCache = null;
                 comptesCacheTime = null;
                 chargerComptes(true);
             } else {
-                alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+                await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
             }
         })
-        .catch(error => alert('Erreur: ' + error));
+        .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
-function initComptes() {
-    if (!confirm('⚠️ Cette action va créer les comptes standards.\n\nLes comptes déjà existants ne seront pas modifiés.\n\nContinuer ?')) return;
+async function initComptes() {
+    if (!await demanderConfirmation('Cette action va créer les comptes standards.\n\nLes comptes déjà existants ne seront pas modifiés.\n\nContinuer ?', {type: 'warning'})) return;
     
     fetch('/comptabilite/api/init-comptes', { method: 'POST' })
         .then(r => r.json())
-        .then(data => {
+        .then(async data => {
             if (data.success) {
-                alert('Plan comptable initialisé avec succès !');
+                await afficherMessage('Plan comptable initialisé avec succès !');
                 comptesCache = null;
                 comptesCacheTime = null;
                 chargerComptes(true);
             } else {
-                alert('❌ Erreur: ' + (data.error || 'Erreur inconnue'));
+                await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
             }
         })
-        .catch(error => alert('❌ Erreur: ' + error));
+        .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 
@@ -2344,14 +2344,14 @@ function initComptes() {
 function voirSequences() {
     fetch('/comptabilite/api/sequence/next/ecriture')
         .then(response => response.json())
-        .then(data => {
+        .then(async data => {
             if (data.success) {
-                alert(`📋 Informations de séquence\n\nProchain numéro: ${data.prochain_numero}\nType: ${data.type_piece}\nPréfixe: ${data.prefixe || 'ECR'}\nAnnée: ${data.annee || new Date().getFullYear()}\nNuméro actuel: ${data.numero_actuel || 0}`);
+                await afficherMessage(`Informations de séquence\n\nProchain numéro: ${data.prochain_numero}\nType: ${data.type_piece}\nPréfixe: ${data.prefixe || 'ECR'}\nAnnée: ${data.annee || new Date().getFullYear()}\nNuméro actuel: ${data.numero_actuel || 0}`);
             } else {
-                alert('Erreur: ' + (data.error || 'Impossible de récupérer la séquence'));
+                await afficherMessage('Erreur: ' + (data.error || 'Impossible de récupérer la séquence'), {type: 'danger'});
             }
         })
-        .catch(error => alert('Erreur: ' + error));
+        .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 
@@ -2506,9 +2506,9 @@ function modifierEcriture(id) {
             chargerComptesSelect();
             ecritureModal.show();
         })
-        .catch(error => {
+        .catch(async error => {
             console.error('❌ Erreur:', error);
-            alert('Erreur de chargement de l\'écriture');
+            await afficherMessage('Erreur de chargement de l\'écriture', {type: 'danger'});
         });
 }
 
@@ -2580,9 +2580,9 @@ function voirEcriture(id) {
             document.getElementById('detailEcritureBody').innerHTML = html;
             detailModal.show();
         })
-        .catch(error => {
+        .catch(async error => {
             console.error('❌ Erreur:', error);
-            alert('Erreur de chargement des détails');
+            await afficherMessage('Erreur de chargement des détails', {type: 'danger'});
         });
 }
 
@@ -2609,13 +2609,13 @@ function ajouterLigne(compteId = null, debit = 0, credit = 0, libelle = '') {
     calculerTotaux();
 }
 
-function supprimerLigne(btn) {
+async function supprimerLigne(btn) {
     const tbody = document.getElementById('lignesBody');
     if (tbody.children.length > 1) {
         btn.closest('tr').remove();
         calculerTotaux();
     } else {
-        alert('Au moins une ligne est requise');
+        await afficherMessage('Au moins une ligne est requise');
     }
 }
 
@@ -2641,7 +2641,7 @@ function calculerTotaux() {
 // SAUVEGARDE ÉCRITURE
 // ============================================================
 
-function sauvegarderEcriture(soumettre) {
+async function sauvegarderEcriture(soumettre) {
     const date = document.getElementById('ecritureDate').value;
     const libelle = document.getElementById('ecritureLibelle').value.trim();
     const piece = document.getElementById('ecriturePiece').value.trim();
@@ -2650,7 +2650,7 @@ function sauvegarderEcriture(soumettre) {
     const ecritureId = document.getElementById('ecritureId').value;
     
     if (!date || !libelle) {
-        alert('Veuillez remplir la date et le libellé');
+        await afficherMessage('Veuillez remplir la date et le libellé');
         return;
     }
     
@@ -2674,11 +2674,11 @@ function sauvegarderEcriture(soumettre) {
     });
     
     if (lignes.length === 0) {
-        alert('Ajoutez au moins une ligne valide');
+        await afficherMessage('Ajoutez au moins une ligne valide');
         return;
     }
     if (totalDebit !== totalCredit) {
-        alert('Les totaux débit et crédit doivent être égaux');
+        await afficherMessage('Les totaux débit et crédit doivent être égaux');
         return;
     }
     
@@ -2701,19 +2701,19 @@ function sauvegarderEcriture(soumettre) {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
             const msg = soumettre ? 'Écriture soumise pour validation' : 'Écriture sauvegardée';
-            alert(msg);
+            await afficherMessage(msg);
             ecritureModal.hide();
             chargerEcritures();
             chargerDernieresEcritures();
             chargerDashboard();
         } else {
-            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 
@@ -2741,18 +2741,18 @@ function confirmerValidation() {
         body: JSON.stringify({ niveau: parseInt(niveau), action: action, commentaire: commentaire })
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
-            alert('Validation effectuée');
+            await afficherMessage('Validation effectuée');
             validationModal.hide();
             chargerEcritures();
             chargerDernieresEcritures();
             chargerDashboard();
         } else {
-            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 
@@ -2908,25 +2908,25 @@ function sauvegarderBudget() {
         })
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
-            alert('Budget enregistré avec succès !');
+            await afficherMessage('Budget enregistré avec succès !');
             budgetModal.hide();
             chargerBudget();
         } else {
-            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
-function cloturerAnnee() {
+async function cloturerAnnee() {
     let annee = document.getElementById('exerciceAnneeCourante')?.textContent?.trim();
     if (!annee || annee === '—') {
         annee = document.getElementById('budgetAnnee')?.value;
     }
-    if (!annee) { alert('Veuillez sélectionner une année'); return; }
-    if (!confirm(`Clôturer l'exercice ${annee} ?\n\nCette action est irréversible : toutes les écritures validées de l'année seront figées.`)) return;
+    if (!annee) { await afficherMessage('Veuillez sélectionner une année'); return; }
+    if (!await demanderConfirmation(`Clôturer l'exercice ${annee} ?\n\nCette action est irréversible : toutes les écritures validées de l'année seront figées.`)) return;
 
     fetch('/comptabilite/api/cloture', {
         method: 'POST',
@@ -2934,16 +2934,16 @@ function cloturerAnnee() {
         body: JSON.stringify({ annee: parseInt(annee) })
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
-            alert(`${data.message}`);
+            await afficherMessage(`${data.message}`);
             if (typeof chargerBudget === 'function') chargerBudget();
             chargerExercice();
         } else {
-            alert('❌ Erreur: ' + (data.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('❌ Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 
@@ -3092,18 +3092,18 @@ function chargerAnomalies() {
         .catch(err => console.error('Erreur chargement anomalies:', err));
 }
 
-function resoudreAnomalie(id) {
-    const commentaire = prompt('Comment avez-vous corrigé cette anomalie ? (optionnel, pour traçabilité)') || '';
+async function resoudreAnomalie(id) {
+    const commentaire = await demanderSaisie('Comment avez-vous corrigé cette anomalie ? (optionnel, pour traçabilité)') || '';
     fetch(`/comptabilite/api/anomalies/${id}/resoudre`, {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ commentaire })
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) chargerAnomalies();
-        else alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+        else await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
     })
-    .catch(error => alert('❌ Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 function verifierAnomaliesAuChargement() {
@@ -3159,34 +3159,34 @@ function chargerCreancesDouteuses() {
     chargerProvisions();
 }
 
-function provisionnerCreance(factureId) {
-    const taux = prompt('Taux de provision estimé (%) :', '50');
+async function provisionnerCreance(factureId) {
+    const taux = await demanderSaisie('Taux de provision estimé (%) :', '50');
     if (taux === null) return;
     fetch(`/comptabilite/api/creances-douteuses/${factureId}/provisionner`, {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ taux: parseFloat(taux) || 50 })
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
-            alert(`Provision de ${Math.round(result.montant_provisionne).toLocaleString('fr-FR')} FCFA enregistrée.`);
+            await afficherMessage(`Provision de ${Math.round(result.montant_provisionne).toLocaleString('fr-FR')} FCFA enregistrée.`);
             chargerCreancesDouteuses();
         } else {
-            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('❌ Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
-function perteDirecteCreance(factureId) {
-    if (!confirm("Passer définitivement cette créance en perte (créance abandonnée, patient insolvable) ? Cette action est irréversible.")) return;
+async function perteDirecteCreance(factureId) {
+    if (!await demanderConfirmation("Passer définitivement cette créance en perte (créance abandonnée, patient insolvable) ? Cette action est irréversible.")) return;
     fetch(`/comptabilite/api/creances-douteuses/${factureId}/perte-directe`, { method: 'POST' })
         .then(r => r.json())
-        .then(result => {
+        .then(async result => {
             if (result.success) { chargerCreancesDouteuses(); }
-            else alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            else await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         })
-        .catch(error => alert('❌ Erreur: ' + error));
+        .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 function chargerProvisions() {
@@ -3218,20 +3218,20 @@ function chargerProvisions() {
         .catch(err => console.error('Erreur chargement provisions:', err));
 }
 
-function reprendreProvision(id) {
-    if (!confirm('Le patient a-t-il finalement payé ? Ceci annule la provision.')) return;
+async function reprendreProvision(id) {
+    if (!await demanderConfirmation('Le patient a-t-il finalement payé ? Ceci annule la provision.')) return;
     fetch(`/comptabilite/api/provisions/${id}/reprendre`, { method: 'POST' })
         .then(r => r.json())
-        .then(result => { if (result.success) chargerCreancesDouteuses(); else alert('❌ ' + result.error); })
-        .catch(error => alert('❌ Erreur: ' + error));
+        .then(async result => { if (result.success) chargerCreancesDouteuses(); else await afficherMessage('' + result.error, {type: 'danger'}); })
+        .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
-function provisionPasserEnPerte(id) {
-    if (!confirm('Passer cette créance provisionnée définitivement en perte ? Irréversible.')) return;
+async function provisionPasserEnPerte(id) {
+    if (!await demanderConfirmation('Passer cette créance provisionnée définitivement en perte ? Irréversible.')) return;
     fetch(`/comptabilite/api/provisions/${id}/passer-en-perte`, { method: 'POST' })
         .then(r => r.json())
-        .then(result => { if (result.success) chargerCreancesDouteuses(); else alert('❌ ' + result.error); })
-        .catch(error => alert('❌ Erreur: ' + error));
+        .then(async result => { if (result.success) chargerCreancesDouteuses(); else await afficherMessage('' + result.error, {type: 'danger'}); })
+        .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 
@@ -3273,10 +3273,10 @@ function ouvrirAjoutImmobilisation() {
     new bootstrap.Modal(document.getElementById('immobilisationModal')).show();
 }
 
-function creerImmobilisation() {
+async function creerImmobilisation() {
     const designation = document.getElementById('immoDesignation').value.trim();
     const valeur = parseFloat(document.getElementById('immoValeur').value) || 0;
-    if (!designation || valeur <= 0) { alert('Désignation et valeur d\'acquisition requises'); return; }
+    if (!designation || valeur <= 0) { await afficherMessage('Désignation et valeur d\'acquisition requises'); return; }
 
     fetch('/comptabilite/api/immobilisations', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -3292,34 +3292,34 @@ function creerImmobilisation() {
         })
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
             bootstrap.Modal.getInstance(document.getElementById('immobilisationModal')).hide();
             chargerImmobilisations();
         } else {
-            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('❌ Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
-function genererDotationsAnnee() {
-    const annee = prompt('Générer les dotations aux amortissements pour quelle année ?', new Date().getFullYear());
+async function genererDotationsAnnee() {
+    const annee = await demanderSaisie('Générer les dotations aux amortissements pour quelle année ?', new Date().getFullYear());
     if (!annee) return;
     fetch('/comptabilite/api/immobilisations/dotations/generer', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ annee: parseInt(annee) })
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
-            alert(`${result.nb_generees} dotation(s) générée(s)${result.erreurs.length ? ' (erreurs: ' + result.erreurs.join(', ') + ')' : ''}.`);
+            await afficherMessage(`${result.nb_generees} dotation(s) générée(s)${result.erreurs.length ? ' (erreurs: ' + result.erreurs.join(', ') + ')' : ''}.`);
             chargerImmobilisations();
         } else {
-            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('❌ Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 
@@ -3390,9 +3390,9 @@ function ouvrirAjoutFournisseur() {
     new bootstrap.Modal(document.getElementById('fournisseurModal')).show();
 }
 
-function creerFournisseur() {
+async function creerFournisseur() {
     const nom = document.getElementById('frsNom').value.trim();
-    if (!nom) { alert('Le nom du fournisseur est obligatoire'); return; }
+    if (!nom) { await afficherMessage('Le nom du fournisseur est obligatoire'); return; }
 
     fetch('/comptabilite/api/fournisseurs', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -3404,23 +3404,23 @@ function creerFournisseur() {
         })
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
             bootstrap.Modal.getInstance(document.getElementById('fournisseurModal')).hide();
             chargerFournisseurs();
         } else {
-            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('❌ Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 let _tauxTvaActuel = 18;  // rechargé à chaque ouverture du modal — voir ouvrirAjoutAchatFournisseur()
 
-function ouvrirAjoutAchatFournisseur() {
+async function ouvrirAjoutAchatFournisseur() {
     const select = document.getElementById('achatFournisseurId');
     if (_fournisseursCache.length === 0) {
-        alert('Créez d\'abord au moins un fournisseur.');
+        await afficherMessage('Créez d\'abord au moins un fournisseur.');
         return;
     }
     select.innerHTML = _fournisseursCache.filter(f => f.actif).map(f => `<option value="${f.id}">${f.nom}</option>`).join('');
@@ -3454,12 +3454,12 @@ function majAideMontantAchat() {
 document.getElementById('achatMontant').addEventListener('input', majAideMontantAchat);
 document.getElementById('achatTypeMontant').addEventListener('change', majAideMontantAchat);
 
-function creerAchatFournisseur() {
+async function creerAchatFournisseur() {
     const fournisseur_id = parseInt(document.getElementById('achatFournisseurId').value);
     const montant = parseFloat(document.getElementById('achatMontant').value) || 0;
     const type_montant = document.getElementById('achatTypeMontant').value;
     const motif = document.getElementById('achatMotif').value.trim();
-    if (!fournisseur_id || montant <= 0 || !motif) { alert('Fournisseur, motif et montant sont obligatoires'); return; }
+    if (!fournisseur_id || montant <= 0 || !motif) { await afficherMessage('Fournisseur, motif et montant sont obligatoires'); return; }
 
     fetch('/comptabilite/api/fournisseurs/achats', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -3470,15 +3470,15 @@ function creerAchatFournisseur() {
         })
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
             bootstrap.Modal.getInstance(document.getElementById('achatFournisseurModal')).hide();
             chargerFournisseurs();
         } else {
-            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('❌ Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 let _achatEnCoursReglement = null;
@@ -3493,9 +3493,9 @@ function ouvrirReglerAchat(achatId, fournisseurNom, resteAPayer) {
     new bootstrap.Modal(document.getElementById('reglementFournisseurModal')).show();
 }
 
-function enregistrerReglementAchat(force) {
+async function enregistrerReglementAchat(force) {
     const montant = parseFloat(document.getElementById('reglementMontant').value) || 0;
-    if (montant <= 0) { alert('Montant invalide'); return; }
+    if (montant <= 0) { await afficherMessage('Montant invalide'); return; }
 
     fetch(`/comptabilite/api/fournisseurs/achats/${_achatEnCoursReglement}/regler`, {
         method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -3508,7 +3508,7 @@ function enregistrerReglementAchat(force) {
         })
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
             bootstrap.Modal.getInstance(document.getElementById('reglementFournisseurModal')).hide();
             chargerFournisseurs();
@@ -3516,14 +3516,14 @@ function enregistrerReglementAchat(force) {
             // ⭐ Caisse insuffisante : on prévient et on laisse le choix de
             // régler quand même (ex: règlement en réalité fait depuis la
             // banque) plutôt qu'un blocage sec sans issue.
-            if (confirm(`⚠️ Solde de caisse insuffisant (${Math.round(result.solde_actuel).toLocaleString('fr-FR')} FCFA disponible).\n\nRégler quand même ?`)) {
-                enregistrerReglementAchat(true);
+            if (await demanderConfirmation(`Solde de caisse insuffisant (${Math.round(result.solde_actuel).toLocaleString('fr-FR')} FCFA disponible).\n\nRégler quand même ?`, {type: 'warning'})) {
+                await enregistrerReglementAchat(true);
             }
         } else {
-            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('❌ Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 
@@ -3751,13 +3751,13 @@ function ouvrirClotureExercice() {
     new bootstrap.Modal(document.getElementById('clotureExerciceModal')).show();
 }
 
-function previsualiserClotureExercice() {
+async function previsualiserClotureExercice() {
     const dateDebut = document.getElementById('clotureDateDebut').value;
     const dateFin = document.getElementById('clotureDateFin').value;
     const zone = document.getElementById('clotureApercuZone');
     document.getElementById('clotureBtnGenerer').disabled = true;
     if (!dateDebut || !dateFin) {
-        alert('Choisissez le début et la fin de l\'exercice à clôturer.');
+        await afficherMessage('Choisissez le début et la fin de l\'exercice à clôturer.');
         return;
     }
     zone.innerHTML = '<p class="text-muted"><i class="fas fa-spinner fa-spin"></i> Calcul en cours...</p>';
@@ -3799,10 +3799,10 @@ function previsualiserClotureExercice() {
         .catch(() => { zone.innerHTML = '<p class="text-danger">Erreur réseau</p>'; });
 }
 
-function genererClotureExercice() {
+async function genererClotureExercice() {
     const dateDebut = document.getElementById('clotureDateDebut').value;
     const dateFin = document.getElementById('clotureDateFin').value;
-    if (!confirm(`Clôturer les comptes de charges/produits du ${dateDebut} au ${dateFin} ? Cette écriture sera immédiatement validée.`)) return;
+    if (!await demanderConfirmation(`Clôturer les comptes de charges/produits du ${dateDebut} au ${dateFin} ? Cette écriture sera immédiatement validée.`)) return;
 
     fetch('/comptabilite/api/cloture-exercice/generer', {
         method: 'POST',
@@ -3810,16 +3810,16 @@ function genererClotureExercice() {
         body: JSON.stringify({date_debut: dateDebut, date_fin: dateFin})
     })
         .then(r => r.json())
-        .then(d => {
+        .then(async d => {
             if (d.success) {
-                alert(`Clôture des comptes de gestion générée (pièce ${d.piece_justificative}).`);
+                await afficherMessage(`Clôture des comptes de gestion générée (pièce ${d.piece_justificative}).`);
                 bootstrap.Modal.getInstance(document.getElementById('clotureExerciceModal')).hide();
                 chargerEcritures();
             } else {
-                alert('Erreur : ' + d.error);
+                await afficherMessage('Erreur : ' + d.error, {type: 'danger'});
             }
         })
-        .catch(() => alert('Erreur réseau'));
+        .catch(async () => await afficherMessage('Erreur réseau', {type: 'danger'}));
 }
 
 // ============================================================
@@ -3833,12 +3833,12 @@ function ouvrirReportANouveau() {
     new bootstrap.Modal(document.getElementById('reportANouveauModal')).show();
 }
 
-function previsualiserReportANouveau() {
+async function previsualiserReportANouveau() {
     const dateCloture = document.getElementById('ranDateCloture').value;
     const zone = document.getElementById('ranApercuZone');
     document.getElementById('ranBtnGenerer').disabled = true;
     if (!dateCloture) {
-        alert('Choisissez la date de clôture de l\'exercice précédent.');
+        await afficherMessage('Choisissez la date de clôture de l\'exercice précédent.');
         return;
     }
     zone.innerHTML = '<p class="text-muted"><i class="fas fa-spinner fa-spin"></i> Calcul en cours...</p>';
@@ -3879,9 +3879,9 @@ function previsualiserReportANouveau() {
         .catch(() => { zone.innerHTML = '<p class="text-danger">Erreur réseau</p>'; });
 }
 
-function genererReportANouveau() {
+async function genererReportANouveau() {
     const dateCloture = document.getElementById('ranDateCloture').value;
-    if (!confirm(`Générer le report à nouveau au ${dateCloture} ? Cette écriture sera immédiatement validée.`)) return;
+    if (!await demanderConfirmation(`Générer le report à nouveau au ${dateCloture} ? Cette écriture sera immédiatement validée.`)) return;
 
     fetch('/comptabilite/api/report-a-nouveau/generer', {
         method: 'POST',
@@ -3889,16 +3889,16 @@ function genererReportANouveau() {
         body: JSON.stringify({date_cloture: dateCloture})
     })
         .then(r => r.json())
-        .then(d => {
+        .then(async d => {
             if (d.success) {
-                alert(`Report à nouveau généré (pièce ${d.piece_justificative}).`);
+                await afficherMessage(`Report à nouveau généré (pièce ${d.piece_justificative}).`);
                 bootstrap.Modal.getInstance(document.getElementById('reportANouveauModal')).hide();
                 chargerEcritures();
             } else {
-                alert('Erreur : ' + d.error);
+                await afficherMessage('Erreur : ' + d.error, {type: 'danger'});
             }
         })
-        .catch(() => alert('Erreur réseau'));
+        .catch(async () => await afficherMessage('Erreur réseau', {type: 'danger'}));
 }
 
 function chargerJournal(preserverMessageLettrage) {
@@ -4212,9 +4212,9 @@ function lettrerSelection() {
         .catch(() => { msg.className = 'small text-danger ms-2'; msg.textContent = 'Erreur réseau'; });
 }
 
-function delettrerSelection() {
+async function delettrerSelection() {
     const ligneIds = lignesLettrageSelectionnees();
-    if (!confirm('Délettrer le(s) groupe(s) correspondant à cette sélection ?')) return;
+    if (!await demanderConfirmation('Délettrer le(s) groupe(s) correspondant à cette sélection ?')) return;
     const msg = document.getElementById('lettrageMessage');
 
     fetch('/comptabilite/api/lettrage/delettrer', {
@@ -4326,14 +4326,14 @@ function exporterRapportTXT() {
     document.body.removeChild(a);
 }
 
-function exporterFEC() {
+async function exporterFEC() {
     // ⭐ Un FEC couvre TOUJOURS l'ensemble des journaux d'une période — pas
     // de filtre journal/compte ici, juste les dates (mêmes champs que les
     // autres exports de cet onglet).
     const dateDebut = document.getElementById('rapportDateDebut').value;
     const dateFin = document.getElementById('rapportDateFin').value;
     if (!dateDebut || !dateFin) {
-        alert('Merci de renseigner une date de début et une date de fin.');
+        await afficherMessage('Merci de renseigner une date de début et une date de fin.');
         return;
     }
     const url = `/comptabilite/rapport/export-fec?date_debut=${dateDebut}&date_fin=${dateFin}`;
@@ -4429,10 +4429,10 @@ function importerReleve() {
 
 let associerLigneCourante = null; // { id, index }
 
-function ouvrirAssocierModal(index) {
+async function ouvrirAssocierModal(index) {
     const ligne = lignesReleve[index];
     if (!ligne || !ligne.id) {
-        alert('Enregistrez le relevé avant d\'associer manuellement une ligne.');
+        await afficherMessage('Enregistrez le relevé avant d\'associer manuellement une ligne.');
         return;
     }
     associerLigneCourante = { id: ligne.id, index };
@@ -4475,33 +4475,33 @@ function choisirCandidat(ecritureId) {
         body: JSON.stringify({ ecriture_id: ecritureId })
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
             bootstrap.Modal.getInstance(document.getElementById('associerModal')).hide();
             chargerLignesReleve(releveId);
             chargerHistoriqueReleves();
         } else {
-            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('❌ Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
-function dissocierLigne(index) {
+async function dissocierLigne(index) {
     const ligne = lignesReleve[index];
     if (!ligne || !ligne.id) return;
-    if (!confirm('Annuler ce rapprochement ?')) return;
+    if (!await demanderConfirmation('Annuler ce rapprochement ?')) return;
     fetch(`/comptabilite/api/rapprochement/releves/${releveId}/lignes/${ligne.id}/dissocier`, { method: 'POST' })
         .then(r => r.json())
-        .then(result => {
+        .then(async result => {
             if (result.success) {
                 chargerLignesReleve(releveId);
                 chargerHistoriqueReleves();
             } else {
-                alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+                await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
             }
         })
-        .catch(error => alert('❌ Erreur: ' + error));
+        .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 function ajouterLigneReleve(date = '', libelle = '', reference = '', debit = 0, credit = 0) {
@@ -4532,8 +4532,8 @@ function majLigneReleve(index, champ, valeur) {
     calculerSoldeReleve();
 }
 
-function supprimerLigneReleve(index) {
-    if (!confirm('Supprimer cette ligne ?')) return;
+async function supprimerLigneReleve(index) {
+    if (!await demanderConfirmation('Supprimer cette ligne ?')) return;
     lignesReleve.splice(index, 1);
     rafraichirReleve();
 }
@@ -4621,11 +4621,11 @@ function calculerSoldeReleve() {
     document.getElementById('releveSoldeFinal').value = Math.round(solde).toLocaleString('fr-FR') + ' FCFA';
 }
 
-function sauvegarderReleve() {
+async function sauvegarderReleve() {
     const dateReleve = document.getElementById('releveDate').value;
     const soldeInitial = parseFloat(document.getElementById('releveSoldeInitial').value) || 0;
-    if (!dateReleve) { alert('Veuillez sélectionner une date'); return; }
-    if (lignesReleve.length === 0) { alert('Ajoutez au moins une ligne'); return; }
+    if (!dateReleve) { await afficherMessage('Veuillez sélectionner une date'); return; }
+    if (lignesReleve.length === 0) { await afficherMessage('Ajoutez au moins une ligne'); return; }
     
     const data = {
         date_releve: dateReleve,
@@ -4646,34 +4646,34 @@ function sauvegarderReleve() {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
-            alert('Relevé enregistré !');
+            await afficherMessage('Relevé enregistré !');
             releveId = result.id;
             document.getElementById('releveSoldeFinal').value = Math.round(result.solde_final).toLocaleString('fr-FR') + ' FCFA';
             chargerHistoriqueReleves();
         } else {
-            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('❌ Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
-function rapprocherReleve() {
+async function rapprocherReleve() {
     if (!releveId) { 
-        alert('Enregistrez d\'abord le relevé');
+        await afficherMessage('Enregistrez d\'abord le relevé');
         return; 
     }
-    if (!confirm('Rapprocher automatiquement les lignes avec les écritures comptables ?')) return;
+    if (!await demanderConfirmation('Rapprocher automatiquement les lignes avec les écritures comptables ?')) return;
     
     fetch(`/comptabilite/api/rapprochement/releves/${releveId}/rapprocher`, { 
         method: 'POST',
         headers: {'Content-Type': 'application/json'}
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
-            alert(`${result.nb_rapproche} lignes rapprochées sur ${result.total_lignes}`);
+            await afficherMessage(`${result.nb_rapproche} lignes rapprochées sur ${result.total_lignes}`);
             
             // ⭐ FORCER LE RECHARGEMENT COMPLET
             chargerHistoriqueReleves();        // Met à jour l'historique
@@ -4686,27 +4686,27 @@ function rapprocherReleve() {
             }, 500);
             
         } else {
-            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('❌ Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
-function validerReleve() {
-    if (!releveId) { alert('Enregistrez d\'abord le relevé'); return; }
-    if (!confirm('Valider ce relevé bancaire ?')) return;
+async function validerReleve() {
+    if (!releveId) { await afficherMessage('Enregistrez d\'abord le relevé'); return; }
+    if (!await demanderConfirmation('Valider ce relevé bancaire ?')) return;
     
     fetch(`/comptabilite/api/rapprochement/releves/${releveId}/valider`, { method: 'POST' })
         .then(r => r.json())
-        .then(result => {
+        .then(async result => {
             if (result.success) {
-                alert('Relevé validé !');
+                await afficherMessage('Relevé validé !');
                 chargerHistoriqueReleves();
             } else {
-                alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+                await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
             }
         })
-        .catch(error => alert('❌ Erreur: ' + error));
+        .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 function chargerHistoriqueReleves() {

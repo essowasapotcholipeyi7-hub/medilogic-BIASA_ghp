@@ -239,10 +239,10 @@ let emailPatientActuel = {{ (patient_email or '') | tojson }};
 const patientNomResultat = {{ demande.patient_nom | tojson }};
 
 function voirCodePortailResultat() {
-    fetch('/api/patients/{{ demande.patient_id }}/code-portail').then(r => r.json()).then(data => {
+    fetch('/api/patients/{{ demande.patient_id }}/code-portail').then(r => r.json()).then(async data => {
         const code = data.code_acces || '(non généré — se génère automatiquement au premier envoi/téléchargement)';
-        const regen = confirm(
-            "Code d'accès de " + patientNomResultat + " : " + code + "\n\n" +
+        const regen = await demanderConfirmation(
+            "Code d'accès de " + patientNomResultat + ": " + code + "" +
             "Vérifiez d'abord l'identité du patient avant de le communiquer par téléphone. " +
             "Ce code ouvre à la fois le portail patient ET le PDF protégé.\n\n" +
             "OK pour régénérer un nouveau code (l'ancien ne fonctionnera plus, y compris pour ouvrir un PDF déjà téléchargé) — Annuler pour garder celui-ci."
@@ -250,15 +250,15 @@ function voirCodePortailResultat() {
         if (regen) {
             fetch('/api/patients/{{ demande.patient_id }}/regenerer-code-portail', { method: 'POST' })
                 .then(r => r.json())
-                .then(d => { if (d.success) alert('Nouveau code : ' + d.code_acces); });
+                .then(async d => { if (d.success) await afficherMessage('Nouveau code : ' + d.code_acces); });
         }
     });
 }
 
-function envoyerParEmail(viaServeur) {
+async function envoyerParEmail(viaServeur) {
     let email = emailPatientActuel;
     if (!email) {
-        email = prompt("Aucun email enregistré pour ce patient — saisissez-en un :", '');
+        email = await demanderSaisie("Aucun email enregistré pour ce patient — saisissez-en un :", '');
         if (!email) return;
     }
     envoyerVersEmail(email, viaServeur);
@@ -266,8 +266,8 @@ function envoyerParEmail(viaServeur) {
 
 // ⭐ "possibilité de modifier si le patient change de mail" — pré-rempli
 // avec l'email actuel, modifiable avant l'envoi.
-function modifierEmailPatient() {
-    const nouveau = prompt("Email du patient :", emailPatientActuel || '');
+async function modifierEmailPatient() {
+    const nouveau = await demanderSaisie("Email du patient :", emailPatientActuel || '');
     if (!nouveau) return;
     envoyerVersEmail(nouveau, false);
 }

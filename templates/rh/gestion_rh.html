@@ -1422,13 +1422,13 @@ function ouvrirAjoutService() {
     new bootstrap.Modal(document.getElementById('serviceModal')).show();
 }
 
-function sauvegarderService() {
+async function sauvegarderService() {
     const id = document.getElementById('serviceId').value;
     const nom = document.getElementById('serviceNom').value.trim();
     const responsable = document.getElementById('serviceResponsable').value.trim();
     
     if (!nom) {
-        alert('Veuillez saisir le nom du service');
+        await afficherMessage('Veuillez saisir le nom du service');
         return;
     }
     
@@ -1441,16 +1441,16 @@ function sauvegarderService() {
         body: JSON.stringify({nom, responsable})
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
-            alert(id ? 'Service modifié avec succès !' : 'Service ajouté avec succès !');
+            await afficherMessage(id ? 'Service modifié avec succès !' : 'Service ajouté avec succès !');
             bootstrap.Modal.getInstance(document.getElementById('serviceModal')).hide();
             chargerServices();
         } else {
-            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 function modifierService(id) {
@@ -1466,23 +1466,23 @@ function modifierService(id) {
                 new bootstrap.Modal(document.getElementById('serviceModal')).show();
             }
         })
-        .catch(error => alert('Erreur: ' + error));
+        .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
-function supprimerService(id) {
-    if (!confirm('Voulez-vous vraiment supprimer ce service ?')) return;
+async function supprimerService(id) {
+    if (!await demanderConfirmation('Voulez-vous vraiment supprimer ce service ?')) return;
     
     fetch(`/rh/api/services/${id}`, {method: 'DELETE'})
         .then(r => r.json())
-        .then(result => {
+        .then(async result => {
             if (result.success) {
-                alert('Service supprimé avec succès !');
+                await afficherMessage('Service supprimé avec succès !');
                 chargerServices();
             } else {
-                alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+                await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
             }
         })
-        .catch(error => alert('Erreur: ' + error));
+        .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 // ============================================
@@ -1867,33 +1867,33 @@ function modifierEmploye(id) {
 
                 document.getElementById('employeModal').dataset.employeId = id;
             })
-            .catch(error => {
+            .catch(async error => {
                 console.error('❌ Erreur chargement employé:', error);
-                alert('Erreur de chargement: ' + error);
+                await afficherMessage('Erreur de chargement: ' + error, {type: 'danger'});
                 reactiver();
             });
     });
 }
 
-function supprimerEmploye(id) {
+async function supprimerEmploye(id) {
     const employe = tousEmployes.find(e => e.id === id);
     if (!employe) return;
     
-    if (!confirm(`Voulez-vous vraiment supprimer l'employé ${employe.nom} ${employe.prenom} (${employe.matricule}) ?\n\nCette action est irréversible.`)) {
+    if (!await demanderConfirmation(`Voulez-vous vraiment supprimer l'employé ${employe.nom} ${employe.prenom} (${employe.matricule}) ?\n\nCette action est irréversible.`)) {
         return;
     }
     
     fetch(`/rh/employe/${id}`, {method: 'DELETE'})
         .then(r => r.json())
-        .then(result => {
+        .then(async result => {
             if (result.success) {
-                alert('Employé supprimé avec succès !');
+                await afficherMessage('Employé supprimé avec succès !');
                 chargerEmployes();
             } else {
-                alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+                await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
             }
         })
-        .catch(error => alert('❌ Erreur: ' + error));
+        .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 // ⭐ Départ structuré — voir commentaire sur #departModal et
@@ -1914,13 +1914,13 @@ function ouvrirDepart(id, nom, compteUtilisateurId) {
     new bootstrap.Modal(document.getElementById('departModal')).show();
 }
 
-function confirmerDepart() {
+async function confirmerDepart() {
     const id = document.getElementById('departEmployeId').value;
     const dateDepart = document.getElementById('departDate').value;
     const motif = document.getElementById('departMotif').value;
 
     if (!dateDepart || !motif) {
-        alert('Veuillez renseigner la date de départ et le motif.');
+        await afficherMessage('Veuillez renseigner la date de départ et le motif.');
         return;
     }
 
@@ -1935,40 +1935,40 @@ function confirmerDepart() {
         })
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
             let msg = 'Départ enregistré.';
             if (document.getElementById('departDesactiverCompte').checked) {
                 msg += result.compte_desactive ? ' Compte de connexion désactivé.' : ' ⚠️ Le compte de connexion n\'a pas pu être désactivé automatiquement (à faire manuellement dans Administration > Utilisateurs).';
             }
-            alert(msg);
+            await afficherMessage(msg);
             bootstrap.Modal.getInstance(document.getElementById('departModal')).hide();
             chargerEmployes();
         } else {
-            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('❌ Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
-function reintegrerEmploye(id, nom) {
-    if (!confirm(`Réintégrer ${nom} ? Son statut repasse à Actif et la trace du départ précédent est effacée.`)) {
+async function reintegrerEmploye(id, nom) {
+    if (!await demanderConfirmation(`Réintégrer ${nom} ? Son statut repasse à Actif et la trace du départ précédent est effacée.`)) {
         return;
     }
     fetch(`/rh/employe/${id}/reintegrer`, {method: 'POST'})
         .then(r => r.json())
-        .then(result => {
+        .then(async result => {
             if (result.success) {
-                alert('Employé réintégré.');
+                await afficherMessage('Employé réintégré.');
                 chargerEmployes();
             } else {
-                alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+                await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
             }
         })
-        .catch(error => alert('❌ Erreur: ' + error));
+        .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
-function sauvegarderEmploye() {
+async function sauvegarderEmploye() {
     const id = document.getElementById('employeModal').dataset.employeId;
     const isEdit = id && id !== '';
     
@@ -1995,7 +1995,7 @@ function sauvegarderEmploye() {
     
     // Validation
     if (!data.nom || !data.prenom || !data.sexe || !data.telephone || !data.service_id || !data.poste || !data.date_embauche) {
-        alert('Veuillez remplir tous les champs obligatoires (*)');
+        await afficherMessage('Veuillez remplir tous les champs obligatoires (*)');
         return;
     }
     
@@ -2008,16 +2008,16 @@ function sauvegarderEmploye() {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
-            alert(isEdit ? 'Employé modifié avec succès !' : 'Employé ajouté avec succès !');
+            await afficherMessage(isEdit ? 'Employé modifié avec succès !' : 'Employé ajouté avec succès !');
             bootstrap.Modal.getInstance(document.getElementById('employeModal')).hide();
             chargerEmployes();
         } else {
-            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('❌ Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 function voirEmploye(id) {
@@ -2028,18 +2028,18 @@ function mettreAJourStatuts() {
     showLoader('Mise à jour des statuts...');
     fetch('/rh/api/update_all_status', {method: 'POST'})
         .then(r => r.json())
-        .then(result => {
+        .then(async result => {
             hideLoader();
             if (result.success) {
-                alert(`${result.message}\nStatuts: ${JSON.stringify(result.stats)}`);
+                await afficherMessage(`${result.message}\nStatuts: ${JSON.stringify(result.stats)}`);
                 chargerEmployes();
             } else {
-                alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+                await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
             }
         })
-        .catch(error => {
+        .catch(async error => {
             hideLoader();
-            alert('❌ Erreur: ' + error);
+            await afficherMessage('Erreur: ' + error, {type: 'danger'});
         });
 }
 
@@ -2433,11 +2433,11 @@ function simulerConge() {
     }, 300);
 }
 
-function sauvegarderConge() {
+async function sauvegarderConge() {
     const signataire = document.getElementById('congeSignataire').value.trim();
     
     if (!signataire) {
-        alert('Le nom du signataire est obligatoire.');
+        await afficherMessage('Le nom du signataire est obligatoire.');
         document.getElementById('congeSignataire').focus();
         return;
     }
@@ -2455,17 +2455,17 @@ function sauvegarderConge() {
     };
     
     if (!data.employe_id) {
-        alert('Veuillez sélectionner un employé');
+        await afficherMessage('Veuillez sélectionner un employé');
         return;
     }
     
     if (!data.date_debut || !data.date_fin) {
-        alert('Veuillez remplir les dates de début et de fin');
+        await afficherMessage('Veuillez remplir les dates de début et de fin');
         return;
     }
     
     if (data.date_debut > data.date_fin) {
-        alert('La date de fin doit être après la date de début');
+        await afficherMessage('La date de fin doit être après la date de début');
         return;
     }
     
@@ -2477,11 +2477,11 @@ function sauvegarderConge() {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         hideLoader();
         
         if (result.success) {
-            alert(`Demande de congé soumise avec succès !\nSolde restant: ${result.solde_restant} jours`);
+            await afficherMessage(`Demande de congé soumise avec succès !\nSolde restant: ${result.solde_restant} jours`);
             bootstrap.Modal.getInstance(document.getElementById('congeModal')).hide();
             chargerConges();
         } else if (result.solde_insuffisant && result.annees_futures) {
@@ -2490,7 +2490,7 @@ function sauvegarderConge() {
                 `${a.annee} (${a.solde} jours disponibles)`
             ).join('\n');
             
-            const choix = prompt(
+            const choix = await demanderSaisie(
                 `${result.message}\n\n` +
                 `Années futures disponibles:\n${options}\n\n` +
                 `Entrez l'année souhaitée (ex: ${result.annees_futures[0]?.annee || ''}) :`
@@ -2521,40 +2521,40 @@ function sauvegarderConge() {
                         body: JSON.stringify(newData)
                     })
                     .then(r => r.json())
-                    .then(result2 => {
+                    .then(async result2 => {
                         hideLoader();
                         if (result2.success) {
-                            alert(`Demande de congé soumise avec succès (sur ${anneeChoisie}) !`);
+                            await afficherMessage(`Demande de congé soumise avec succès (sur ${anneeChoisie}) !`);
                             bootstrap.Modal.getInstance(document.getElementById('congeModal')).hide();
                             chargerConges();
                         } else {
-                            alert('❌ Erreur: ' + (result2.error || 'Erreur inconnue'));
+                            await afficherMessage('Erreur: ' + (result2.error || 'Erreur inconnue'), {type: 'danger'});
                         }
                     })
-                    .catch(error => {
+                    .catch(async error => {
                         hideLoader();
-                        alert('❌ Erreur: ' + error);
+                        await afficherMessage('Erreur: ' + error, {type: 'danger'});
                     });
                 } else {
-                    alert('❌ Année invalide. Veuillez recommencer.');
+                    await afficherMessage('Année invalide. Veuillez recommencer.', {type: 'danger'});
                 }
             }
         } else {
-            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => {
+    .catch(async error => {
         hideLoader();
         console.error('❌ Erreur:', error);
-        alert('❌ Erreur lors de l\'envoi: ' + error);
+        await afficherMessage('Erreur lors de l\'envoi: ' + error, {type: 'danger'});
     });
 }
 
 // ⭐ Patron : "pouvoir ajuster la date de reprise s'il le faut [...] un
 // médecin qui fait les gardes [...] doit reprendre le dimanche" — ajustable
 // après coup, indépendamment du statut du congé.
-function modifierRepriseConge(id, dateRepriseActuelle) {
-    const saisie = prompt('Nouvelle date de reprise (AAAA-MM-JJ) :', dateRepriseActuelle || new Date().toISOString().slice(0, 10));
+async function modifierRepriseConge(id, dateRepriseActuelle) {
+    const saisie = await demanderSaisie('Nouvelle date de reprise (AAAA-MM-JJ) :', dateRepriseActuelle || new Date().toISOString().slice(0, 10));
     if (!saisie) return;
     fetch(`/rh/conge/${id}/reprise`, {
         method: 'PUT',
@@ -2562,18 +2562,18 @@ function modifierRepriseConge(id, dateRepriseActuelle) {
         body: JSON.stringify({date_reprise: saisie})
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
             chargerConges();
         } else {
-            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('❌ Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
-function changerStatutConge(id, statut) {
-    if (!confirm(`Confirmer le changement de statut vers "${statut}" ?`)) return;
+async function changerStatutConge(id, statut) {
+    if (!await demanderConfirmation(`Confirmer le changement de statut vers "${statut}" ?`)) return;
     
     fetch(`/rh/conge/${id}/statut`, {
         method: 'PUT',
@@ -2581,20 +2581,20 @@ function changerStatutConge(id, statut) {
         body: JSON.stringify({statut: statut})
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
             // ⭐ Patron : "validation à plusieurs niveaux (SignatureRH)" —
             // le backend renvoie un message différent si un niveau
             // intermédiaire vient d'être validé (congé pas encore
             // finalisé) — voir _avancer_validation_conge (routes/rh.py).
-            alert(result.message || `Statut mis à jour en "${statut}"`);
+            await afficherMessage(result.message || `Statut mis à jour en "${statut}"`);
             chargerConges();
             chargerDashboard();
         } else {
-            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('❌ Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 // ============================================
@@ -2792,11 +2792,11 @@ function calculerJoursPermission() {
     document.getElementById('permNbJours').value = diffDays + ' jour(s)';
 }
 
-function sauvegarderPermission() {
+async function sauvegarderPermission() {
     const signataire = document.getElementById('permSignataire').value.trim();
     
     if (!signataire) {
-        alert('Le nom du signataire est obligatoire.');
+        await afficherMessage('Le nom du signataire est obligatoire.');
         document.getElementById('permSignataire').focus();
         return;
     }
@@ -2810,12 +2810,12 @@ function sauvegarderPermission() {
     };
     
     if (!data.employe_id) {
-        alert('Veuillez sélectionner un employé');
+        await afficherMessage('Veuillez sélectionner un employé');
         return;
     }
     
     if (!data.motif) {
-        alert('Veuillez saisir le motif');
+        await afficherMessage('Veuillez saisir le motif');
         document.getElementById('permMotif').focus();
         return;
     }
@@ -2826,7 +2826,7 @@ function sauvegarderPermission() {
         data.heure_fin = document.getElementById('permHeureFin').value;
         
         if (!data.date_permission || !data.heure_debut || !data.heure_fin) {
-            alert('Veuillez remplir tous les champs (date et heures)');
+            await afficherMessage('Veuillez remplir tous les champs (date et heures)');
             return;
         }
     } else {
@@ -2834,7 +2834,7 @@ function sauvegarderPermission() {
         data.date_fin = document.getElementById('permDateFin').value;
         
         if (!data.date_debut || !data.date_fin) {
-            alert('Veuillez remplir les dates de début et de fin');
+            await afficherMessage('Veuillez remplir les dates de début et de fin');
             return;
         }
     }
@@ -2847,24 +2847,24 @@ function sauvegarderPermission() {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         hideLoader();
         if (result.success) {
-            alert('Demande de permission soumise avec succès !');
+            await afficherMessage('Demande de permission soumise avec succès !');
             bootstrap.Modal.getInstance(document.getElementById('permissionModal')).hide();
             chargerPermissions();
         } else {
-            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => {
+    .catch(async error => {
         hideLoader();
-        alert('❌ Erreur: ' + error);
+        await afficherMessage('Erreur: ' + error, {type: 'danger'});
     });
 }
 
-function changerStatutPermission(id, statut) {
-    if (!confirm(`Confirmer le changement de statut vers "${statut}" ?`)) return;
+async function changerStatutPermission(id, statut) {
+    if (!await demanderConfirmation(`Confirmer le changement de statut vers "${statut}" ?`)) return;
     
     fetch(`/rh/permission/${id}/statut`, {
         method: 'PUT',
@@ -2872,16 +2872,16 @@ function changerStatutPermission(id, statut) {
         body: JSON.stringify({statut: statut})
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
-            alert(`Statut mis à jour en "${statut}"`);
+            await afficherMessage(`Statut mis à jour en "${statut}"`);
             chargerPermissions();
             chargerDashboard();
         } else {
-            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('❌ Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 // ============================================
@@ -3122,8 +3122,8 @@ function sauvegarderParametragePointage() {
         })
     })
     .then(r => r.json())
-    .then(d => alert(d.success ? 'Règles de pointage enregistrées.' : ('Erreur : ' + d.message)))
-    .catch(() => alert('Erreur réseau.'));
+    .then(async d => await afficherMessage(d.success ? 'Règles de pointage enregistrées.' : ('Erreur : ' + d.message)))
+    .catch(async () => await afficherMessage('Erreur réseau.', {type: 'danger'}));
 }
 
 function chargerListeEmpreintes() {
@@ -3156,18 +3156,18 @@ function chargerListeEmpreintes() {
         .catch(err => console.error('Erreur chargement empreintes:', err));
 }
 
-function supprimerEmpreinte(empreinteId) {
-    if (!confirm('Révoquer cette empreinte ? L\'employé ne pourra plus pointer avec, jusqu\'à un nouvel enregistrement.')) return;
+async function supprimerEmpreinte(empreinteId) {
+    if (!await demanderConfirmation('Révoquer cette empreinte ? L\'employé ne pourra plus pointer avec, jusqu\'à un nouvel enregistrement.')) return;
     fetch('/rh/api/empreintes/' + empreinteId, {method: 'DELETE'})
         .then(r => r.json())
-        .then(d => { if (d.success) chargerListeEmpreintes(); else alert('Erreur : ' + d.message); });
+        .then(async d => { if (d.success) chargerListeEmpreintes(); else await afficherMessage('Erreur : ' + d.message, {type: 'danger'}); });
 }
 
 async function enregistrerEmpreinte() {
     const employeId = document.getElementById('selectEmployeEmpreinte').value;
-    if (!employeId) { alert('Sélectionnez un employé.'); return; }
+    if (!employeId) { await afficherMessage('Sélectionnez un employé.'); return; }
     if (!webauthnDisponible()) {
-        alert("Ce poste/navigateur ne supporte pas l'empreinte (WebAuthn). Utilisez http://localhost:<port> sur un poste équipé d'un lecteur d'empreinte compatible Windows Hello.");
+        await afficherMessage("Ce poste/navigateur ne supporte pas l'empreinte (WebAuthn). Utilisez http://localhost:<port> sur un poste équipé d'un lecteur d'empreinte compatible Windows Hello.");
         return;
     }
     try {
@@ -3176,10 +3176,10 @@ async function enregistrerEmpreinte() {
             body: JSON.stringify({employe_id: parseInt(employeId)})
         });
         const dOpt = await rOpt.json();
-        if (!dOpt.success) { alert(dOpt.message); return; }
+        if (!dOpt.success) { await afficherMessage(dOpt.message); return; }
 
         const attestation = await SimpleWebAuthnBrowser.startRegistration(dOpt.options);
-        const libelle = prompt("Nom de cet appareil (ex : PC accueil)", navigator.platform || 'Ce poste') || 'Ce poste';
+        const libelle = await demanderSaisie("Nom de cet appareil (ex : PC accueil)", navigator.platform || 'Ce poste') || 'Ce poste';
 
         const rVer = await fetch('/rh/api/empreintes/enregistrer/verifier', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -3187,14 +3187,14 @@ async function enregistrerEmpreinte() {
         });
         const dVer = await rVer.json();
         if (dVer.success) {
-            alert('Empreinte enregistrée avec succès.');
+            await afficherMessage('Empreinte enregistrée avec succès.');
             chargerListeEmpreintes();
         } else {
-            alert("Échec de l'enregistrement : " + dVer.message);
+            await afficherMessage("Échec de l'enregistrement : " + dVer.message);
         }
     } catch (err) {
         console.error(err);
-        alert("Échec de l'enregistrement de l'empreinte : " + (err.message || err));
+        await afficherMessage("Échec de l'enregistrement de l'empreinte : " + (err.message || err));
     }
 }
 
@@ -3356,19 +3356,19 @@ function chargerListeVisages() {
         .catch(err => console.error('Erreur chargement visages:', err));
 }
 
-function supprimerVisage(visageId) {
-    if (!confirm("Révoquer ce visage ? L'employé ne pourra plus pointer avec, jusqu'à un nouvel enregistrement.")) return;
+async function supprimerVisage(visageId) {
+    if (!await demanderConfirmation("Révoquer ce visage ? L'employé ne pourra plus pointer avec, jusqu'à un nouvel enregistrement.")) return;
     fetch('/rh/api/visages/' + visageId, {method: 'DELETE'})
         .then(r => r.json())
-        .then(d => { if (d.success) chargerListeVisages(); else alert('Erreur : ' + d.message); });
+        .then(async d => { if (d.success) chargerListeVisages(); else await afficherMessage('Erreur : ' + d.message, {type: 'danger'}); });
 }
 
 async function ouvrirCaptureVisage() {
     const employeId = document.getElementById('selectEmployeVisage').value;
-    if (!employeId) { alert('Sélectionnez un employé.'); return; }
+    if (!employeId) { await afficherMessage('Sélectionnez un employé.'); return; }
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        alert("Caméra non disponible sur ce poste/navigateur (nécessite http://localhost ou HTTPS).");
+        await afficherMessage("Caméra non disponible sur ce poste/navigateur (nécessite http://localhost ou HTTPS).");
         return;
     }
 
@@ -3416,16 +3416,16 @@ async function capturerVisage() {
         return;
     }
 
-    const libelle = prompt("Nom de cet enregistrement (ex : lumière du matin)", "Visage principal") || 'Visage principal';
+    const libelle = await demanderSaisie("Nom de cet enregistrement (ex : lumière du matin)", "Visage principal") || 'Visage principal';
 
     fetch('/rh/api/visages/enregistrer', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({employe_id: parseInt(employeId), descripteur: Array.from(detection.descriptor), libelle})
     })
     .then(r => r.json())
-    .then(d => {
+    .then(async d => {
         if (d.success) {
-            alert('Visage enregistré avec succès.');
+            await afficherMessage('Visage enregistré avec succès.');
             fermerCaptureVisage();
             chargerListeVisages();
         } else {

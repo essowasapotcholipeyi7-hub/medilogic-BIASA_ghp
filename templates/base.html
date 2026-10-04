@@ -3311,15 +3311,15 @@ function enregistrerAcronymeStructure() {
         body: JSON.stringify({ acronyme: valeur })
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
             document.getElementById('siAcronymeTexte').textContent = data.acronyme;
             bootstrap.Modal.getInstance(document.getElementById('modalAcronymeStructure')).hide();
         } else {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
-    .catch(() => alert('Erreur réseau'));
+    .catch(async () => await afficherMessage('Erreur réseau', {type: 'danger'}));
 }
 
 // ============================================================
@@ -3793,7 +3793,7 @@ document.addEventListener('DOMContentLoaded', function() {
         div.innerHTML = auteur + escapeHtml(m.contenu) + suppr + `<span class="chat-heure">${heure}</span>`;
         zone.appendChild(div);
         const btn = div.querySelector('.chat-suppr');
-        if (btn) btn.addEventListener('click', function() { supprimerMessage(this.dataset.id); });
+        if (btn) btn.addEventListener('click', async function() { await supprimerMessage(this.dataset.id); });
     }
 
     function escapeHtml(s) {
@@ -3827,8 +3827,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }).then(() => actualiserBadgeChat());
     }
 
-    function supprimerMessage(id) {
-        if (!confirm('Supprimer ce message ?')) return;
+    async function supprimerMessage(id) {
+        if (!await demanderConfirmation('Supprimer ce message ?')) return;
         fetch('/chat/api/messages/' + id, { method: 'DELETE' }).then(r => r.json()).then(d => {
             if (d.success) chargerMessages(true);
         });
@@ -3938,11 +3938,11 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    window.revoquerAppareilSecurite = function(id) {
-        if (!confirm('Retirer cet appareil ? Il ne pourra plus servir à se connecter.')) return;
-        fetch('/api/webauthn/appareils/' + id, { method: 'DELETE' }).then(r => r.json()).then(d => {
+    window.revoquerAppareilSecurite = async function(id) {
+        if (!await demanderConfirmation('Retirer cet appareil ? Il ne pourra plus servir à se connecter.')) return;
+        fetch('/api/webauthn/appareils/' + id, { method: 'DELETE' }).then(r => r.json()).then(async d => {
             if (d.success) chargerAppareilsSecurite();
-            else alert('Erreur : ' + (d.error || 'inconnue'));
+            else await afficherMessage('Erreur : ' + (d.error || 'inconnue'), {type: 'danger'});
         });
     };
 
@@ -3957,7 +3957,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const credential = await SimpleWebAuthnBrowser.startRegistration(dOpt.options);
 
-            const libelle = prompt('Nom de cet appareil (ex: "Mon téléphone", "PC accueil") :', navigator.platform || 'Mon appareil');
+            const libelle = await demanderSaisie('Nom de cet appareil (ex: "Mon téléphone", "PC accueil") :', navigator.platform || 'Mon appareil');
 
             const rVer = await fetch('/api/webauthn/inscription/verifier', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -4002,6 +4002,112 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 {% endif %}
+<!-- ⭐ Boîtes de dialogue communes (remplacent alert/confirm/prompt natifs du
+     navigateur, patron 2026-10-04 : "je veux que ça soit un modal qui s'ouvre
+     au lieu de pop up, comme ça ça va obliger celui qui fait l'opération de
+     lire d'abord"). Fond statique + Échap désactivé : impossible de fermer en
+     cliquant à côté, il faut répondre. Chaque fonction renvoie une Promise ;
+     les appelants font `await` pour garder l'ordre "lire puis continuer". -->
+<div class="modal fade" id="dialogueCommun" tabindex="-1" aria-modal="true" role="dialog" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-2" id="dialogueCommunEntete">
+                <h5 class="modal-title fs-6" id="dialogueCommunTitre"></h5>
+            </div>
+            <div class="modal-body">
+                <div id="dialogueCommunMessage" style="white-space: pre-wrap; word-break: break-word;"></div>
+                <input type="text" class="form-control mt-3" id="dialogueCommunSaisie" autocomplete="off" hidden>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-outline-secondary" id="dialogueCommunAnnuler">Annuler</button>
+                <button type="button" class="btn btn-primary" id="dialogueCommunOk">OK</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+(function() {
+    const el = document.getElementById('dialogueCommun');
+    if (!el || typeof bootstrap === 'undefined') return;
+    const bsModal = new bootstrap.Modal(el);
+    const titreEl = document.getElementById('dialogueCommunTitre');
+    const enteteEl = document.getElementById('dialogueCommunEntete');
+    const messageEl = document.getElementById('dialogueCommunMessage');
+    const saisieEl = document.getElementById('dialogueCommunSaisie');
+    const btnOk = document.getElementById('dialogueCommunOk');
+    const btnAnnuler = document.getElementById('dialogueCommunAnnuler');
+
+    const STYLES = {
+        info:    { entete: 'bg-primary text-white', bouton: 'btn-primary',  titre: 'Information' },
+        success: { entete: 'bg-success text-white', bouton: 'btn-success',  titre: 'Opération réussie' },
+        warning: { entete: 'bg-warning',            bouton: 'btn-warning',  titre: 'Attention' },
+        danger:  { entete: 'bg-danger text-white',  bouton: 'btn-danger',   titre: 'Erreur' },
+        question:{ entete: 'bg-dark text-white',    bouton: 'btn-primary',  titre: 'Confirmation' },
+    };
+
+    // Une seule boîte à la fois : les demandes qui arrivent pendant qu'une
+    // autre est ouverte attendent leur tour (file), aucune n'est perdue.
+    let fileAttente = Promise.resolve();
+    let resoudreCourant = null;
+    let modeCourant = 'message';
+
+    function fermer(valeur) {
+        if (!resoudreCourant) return;
+        const r = resoudreCourant;
+        resoudreCourant = null;
+        bsModal.hide();
+        r(valeur);
+    }
+
+    btnOk.addEventListener('click', function() {
+        if (modeCourant === 'saisie') fermer(saisieEl.value);
+        else fermer(true);
+    });
+    btnAnnuler.addEventListener('click', function() { fermer(modeCourant === 'saisie' ? null : false); });
+    // Entrée = OK, Échap = Annuler (même réflexe que les pop-ups natifs).
+    el.addEventListener('keydown', function(e) {
+        if (!resoudreCourant) return;
+        if (e.key === 'Enter' && !(e.target === saisieEl && e.shiftKey)) { e.preventDefault(); btnOk.click(); }
+        else if (e.key === 'Escape') { e.preventDefault(); btnAnnuler.click(); }
+    });
+    el.addEventListener('shown.bs.modal', function() {
+        (modeCourant === 'saisie' ? saisieEl : btnOk).focus();
+        if (modeCourant === 'saisie') saisieEl.select();
+    });
+
+    function ouvrir(mode, message, options) {
+        options = options || {};
+        const style = STYLES[options.type] || STYLES[mode === 'message' ? 'info' : 'question'];
+        return new Promise(function(resolve) {
+            fileAttente = fileAttente.then(function() {
+                return new Promise(function(libererFile) {
+                    modeCourant = mode;
+                    resoudreCourant = function(v) { resolve(v); libererFile(); };
+                    enteteEl.className = 'modal-header py-2 ' + style.entete;
+                    titreEl.textContent = options.titre || style.titre;
+                    messageEl.textContent = (message === undefined || message === null) ? '' : String(message);
+                    btnOk.className = 'btn ' + style.bouton;
+                    btnOk.textContent = options.texteOk || (mode === 'message' ? 'OK' : (mode === 'saisie' ? 'Valider' : 'Oui'));
+                    btnAnnuler.textContent = options.texteAnnuler || (mode === 'saisie' ? 'Annuler' : 'Non');
+                    btnAnnuler.hidden = (mode === 'message');
+                    saisieEl.hidden = (mode !== 'saisie');
+                    saisieEl.value = (mode === 'saisie' && options.valeurDefaut != null) ? String(options.valeurDefaut) : '';
+                    bsModal.show();
+                });
+            });
+        });
+    }
+
+    // afficherMessage(texte, {type: 'info'|'success'|'warning'|'danger', titre})  -> Promise<void>
+    window.afficherMessage = function(message, options) { return ouvrir('message', message, options); };
+    // demanderConfirmation(texte, {type, titre, texteOk, texteAnnuler})          -> Promise<boolean>
+    window.demanderConfirmation = function(message, options) { return ouvrir('confirmation', message, options); };
+    // demanderSaisie(texte, valeurDefaut, {titre})                               -> Promise<string|null>
+    window.demanderSaisie = function(message, valeurDefaut, options) {
+        return ouvrir('saisie', message, Object.assign({}, options || {}, { valeurDefaut: valeurDefaut }));
+    };
+})();
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

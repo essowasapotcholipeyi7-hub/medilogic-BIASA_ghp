@@ -224,15 +224,15 @@ function creerEpisode() {
         body: JSON.stringify(payload)
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
             window.location.href = '/soins-ambulatoires/' + data.soins_ambulatoires_id;
         } else {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
             btn.disabled = false;
         }
     })
-    .catch(e => { alert('Erreur : ' + e); btn.disabled = false; });
+    .catch(async e => { await afficherMessage('Erreur : ' + e, {type: 'danger'}); btn.disabled = false; });
 }
 
 document.addEventListener('DOMContentLoaded', function() {

@@ -191,10 +191,10 @@ function ouvrirModalPrescripteur(id) {
     new bootstrap.Modal(document.getElementById('modalPrescripteur')).show();
 }
 
-function enregistrerPrescripteur() {
+async function enregistrerPrescripteur() {
     const id = document.getElementById('prescripteurId').value;
     const nom = document.getElementById('prescripteurNom').value.trim();
-    if (!id && !nom) { alert('Le nom est obligatoire.'); return; }
+    if (!id && !nom) { await afficherMessage('Le nom est obligatoire.'); return; }
     const payload = {
         id: id ? parseInt(id) : null,
         nom: nom,
@@ -208,15 +208,15 @@ function enregistrerPrescripteur() {
         body: JSON.stringify(payload)
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
             bootstrap.Modal.getInstance(document.getElementById('modalPrescripteur')).hide();
             chargerPrescripteurs();
         } else {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
-    .catch(e => alert('Erreur : ' + e));
+    .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
 function chargerPrescripteurs() {
@@ -289,35 +289,35 @@ function choisirPxPatient(id, nom) {
     document.getElementById('pxPatientSearch').value = nom;
 }
 
-function enregistrerPatientExterne() {
-    if (!pxPatientChoisi) { alert('Choisissez un patient dans la liste.'); return; }
+async function enregistrerPatientExterne() {
+    if (!pxPatientChoisi) { await afficherMessage('Choisissez un patient dans la liste.'); return; }
     const prescripteur_id = document.getElementById('pxPrescripteur').value;
-    if (!prescripteur_id) { alert('Le prescripteur est obligatoire.'); return; }
+    if (!prescripteur_id) { await afficherMessage('Le prescripteur est obligatoire.'); return; }
     const biologie = document.getElementById('pxBiologie').checked;
     const imagerie = document.getElementById('pxImagerie').checked;
-    if (!biologie && !imagerie) { alert('Cochez Biologie et/ou Imagerie.'); return; }
+    if (!biologie && !imagerie) { await afficherMessage('Cochez Biologie et/ou Imagerie.'); return; }
 
     fetch('/api/patients-externes', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ patient_id: pxPatientChoisi.id, prescripteur_id: parseInt(prescripteur_id), biologie: biologie, imagerie: imagerie })
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
             bootstrap.Modal.getInstance(document.getElementById('modalPatientExterne')).hide();
             chargerPatientsExternes();
         } else {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
-    .catch(e => alert('Erreur : ' + e));
+    .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
-function retirerPatientExterne(id) {
-    if (!confirm('Retirer ce patient de la liste des externes ?')) return;
+async function retirerPatientExterne(id) {
+    if (!await demanderConfirmation('Retirer ce patient de la liste des externes ?')) return;
     fetch('/api/patients-externes/' + id + '/toggle', { method: 'POST' })
         .then(r => r.json())
-        .then(data => { if (data.success) chargerPatientsExternes(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+        .then(async data => { if (data.success) chargerPatientsExternes(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'}); });
 }
 
 function badgePaiementPx(statut, motif) {

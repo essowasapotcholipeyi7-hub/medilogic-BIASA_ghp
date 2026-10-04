@@ -251,18 +251,18 @@ function _regenererSansConfirmation() {
         body: JSON.stringify({ annee: ANNEE_COURANTE, mois: MOIS_COURANT, type_amu: TYPE_AMU_COURANT })
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
             window.location.reload();
         } else {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
-    .catch(e => alert('Erreur : ' + e));
+    .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
-function regenererDepuisVentes() {
-    if (!confirm("Régénérer depuis les ventes va remplacer toutes les valeurs affichées (y compris vos corrections non enregistrées). Continuer ?")) return;
+async function regenererDepuisVentes() {
+    if (!await demanderConfirmation("Régénérer depuis les ventes va remplacer toutes les valeurs affichées (y compris vos corrections non enregistrées). Continuer ?")) return;
     _regenererSansConfirmation();
 }
 
@@ -272,25 +272,25 @@ function enregistrerCorrections() {
         body: JSON.stringify({ annee: ANNEE_COURANTE, mois: MOIS_COURANT, type_amu: TYPE_AMU_COURANT, lignes: collecterLignes() })
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
             window.location.reload();
         } else {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
-    .catch(e => alert('Erreur : ' + e));
+    .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
-function marquerDeposee(factureId) {
-    const dateStr = prompt("Date à laquelle ce bordereau a été déposé à la CNSS :", new Date().toISOString().slice(0, 10));
+async function marquerDeposee(factureId) {
+    const dateStr = await demanderSaisie("Date à laquelle ce bordereau a été déposé à la CNSS :", new Date().toISOString().slice(0, 10));
     if (!dateStr) return;
     fetch(`/api/assurance/facture-amu-cnss/${factureId}/deposer`, {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({date_depot: dateStr})
     })
         .then(r => r.json())
-        .then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+        .then(async data => { if (data.success) window.location.reload(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'}); });
 }
 
 // ⭐ Clôture — voir le commentaire du modal #modalCloture pour le patron.
@@ -304,54 +304,54 @@ function fermerModalCloture() {
     document.getElementById('modalCloture').style.display = 'none';
     _clotureEndpoint = null;
 }
-function confirmerCloture() {
+async function confirmerCloture() {
     const dateStr = document.getElementById('clotureDateDepot').value;
-    if (!dateStr) { alert('La date de dépôt est obligatoire.'); return; }
+    if (!dateStr) { await afficherMessage('La date de dépôt est obligatoire.'); return; }
     if (!_clotureEndpoint) return;
     fetch(_clotureEndpoint, {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({date_depot: dateStr})
     })
         .then(r => r.json())
-        .then(data => {
+        .then(async data => {
             if (data.success) { fermerModalCloture(); window.location.reload(); }
-            else alert('Erreur : ' + (data.error || 'inconnue'));
+            else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         })
-        .catch(e => alert('Erreur réseau : ' + e));
+        .catch(async e => await afficherMessage('Erreur réseau : ' + e, {type: 'danger'}));
 }
 
-function modifierNumeroFacture(factureId, numeroActuel) {
-    const saisie = prompt("Nouveau numéro de facture (juste le compteur, ex: 1 pour N° 000000001) :", numeroActuel);
+async function modifierNumeroFacture(factureId, numeroActuel) {
+    const saisie = await demanderSaisie("Nouveau numéro de facture (juste le compteur, ex: 1 pour N° 000000001) :", numeroActuel);
     if (saisie === null) return;
     const numero = parseInt(saisie, 10);
-    if (!numero || numero <= 0) { alert('Numéro invalide.'); return; }
+    if (!numero || numero <= 0) { await afficherMessage('Numéro invalide.'); return; }
     fetch(`/api/assurance/facture-amu/${factureId}/numero`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ numero_local: numero })
     })
     .then(r => r.json())
-    .then(data => { if (data.success) window.location.reload(); else alert('Erreur : ' + (data.error || 'inconnue')); })
-    .catch(e => alert('Erreur : ' + e));
+    .then(async data => { if (data.success) window.location.reload(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'}); })
+    .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
-function classerActe(btn) {
+async function classerActe(btn) {
     const tr = btn.closest('tr');
     const nom = tr.getAttribute('data-nom');
     const categorie = tr.querySelector('.select-categorie').value;
-    if (!categorie) { alert('Choisissez une catégorie.'); return; }
+    if (!categorie) { await afficherMessage('Choisissez une catégorie.'); return; }
     fetch('/api/assurance/classification-amu-cnss', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nom_acte: nom, categorie: categorie })
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
             _regenererSansConfirmation();
         } else {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
-    .catch(e => alert('Erreur : ' + e));
+    .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 </script>
 

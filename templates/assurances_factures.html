@@ -316,23 +316,23 @@ function showPaiementModal(id, assurance, mois, total, deja) {
     new bootstrap.Modal(document.getElementById('paiementModal')).show();
 }
 
-function enregistrerPaiement() {
+async function enregistrerPaiement() {
     const id = document.getElementById('paiementFactureId').value;
     const montant = parseFloat(document.getElementById('paiementMontant').value);
     const reference = document.getElementById('paiementReference').value.trim();
     const dateVersement = document.getElementById('paiementDateVersement').value;
 
     if (!montant || montant <= 0) {
-        alert('Montant valide requis');
+        await afficherMessage('Montant valide requis');
         return;
     }
     if (!reference || !dateVersement) {
-        alert('Le numéro de référence du versement et la date de versement sont obligatoires (pièces justificatives).');
+        await afficherMessage('Le numéro de référence du versement et la date de versement sont obligatoires (pièces justificatives).');
         return;
     }
 
     // ⭐ Tout encaissement (admin compris) part maintenant en demande.
-    if (!confirm(`Envoyer la demande d'encaissement de ${Math.round(montant).toLocaleString('fr-FR')} FCFA ?`)) return;
+    if (!await demanderConfirmation(`Envoyer la demande d'encaissement de ${Math.round(montant).toLocaleString('fr-FR')} FCFA ?`)) return;
 
     const btn = document.getElementById('btnValiderPaiement');
     btn.disabled = true;
@@ -347,19 +347,19 @@ function enregistrerPaiement() {
         })
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         btn.disabled = false;
         if (result.success) {
-            alert(result.en_attente ? ('📨 ' + result.message) : '✅ Encaissement enregistré !');
+            await afficherMessage(result.en_attente ? ('' + result.message) : 'Encaissement enregistré !');
             bootstrap.Modal.getInstance(document.getElementById('paiementModal')).hide();
             chargerFactures();
         } else {
-            alert('❌ Erreur : ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur : ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => {
+    .catch(async error => {
         btn.disabled = false;
-        alert('❌ Erreur réseau : ' + error);
+        await afficherMessage('Erreur réseau : ' + error, {type: 'danger'});
     });
 }
 
@@ -451,21 +451,21 @@ function previsualiserRepartition() {
     document.getElementById('btnValiderPaiementGlobal').disabled = !montant || montant <= 0 || depasse;
 }
 
-function enregistrerPaiementGlobal() {
+async function enregistrerPaiementGlobal() {
     const assurance = document.getElementById('globalAssurance').value;
     const montant = parseFloat(document.getElementById('globalMontant').value);
     const reference = document.getElementById('globalReference').value.trim();
     const dateVersement = document.getElementById('globalDateVersement').value;
 
     if (!montant || montant <= 0) {
-        alert('Montant valide requis');
+        await afficherMessage('Montant valide requis');
         return;
     }
     if (!reference || !dateVersement) {
-        alert('Le numéro de référence du versement et la date de versement sont obligatoires (pièces justificatives).');
+        await afficherMessage('Le numéro de référence du versement et la date de versement sont obligatoires (pièces justificatives).');
         return;
     }
-    if (!confirm(`Envoyer la demande d'encaissement global de ${Math.round(montant).toLocaleString('fr-FR')} FCFA pour ${assurance}, réparti sur ${globalFacturesOuvertes.length} société(s) ?`)) return;
+    if (!await demanderConfirmation(`Envoyer la demande d'encaissement global de ${Math.round(montant).toLocaleString('fr-FR')} FCFA pour ${assurance}, réparti sur ${globalFacturesOuvertes.length} société(s) ?`)) return;
 
     const btn = document.getElementById('btnValiderPaiementGlobal');
     btn.disabled = true;
@@ -480,20 +480,20 @@ function enregistrerPaiementGlobal() {
         })
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         btn.disabled = false;
         if (result.success) {
-            alert(result.en_attente ? ('📨 ' + result.message) : '✅ Encaissement enregistré !');
+            await afficherMessage(result.en_attente ? ('' + result.message) : 'Encaissement enregistré !');
             bootstrap.Modal.getInstance(document.getElementById('paiementGlobalModal')).hide();
             chargerFactures();
         } else {
-            alert('❌ Erreur : ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur : ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
             btn.disabled = false;
         }
     })
-    .catch(error => {
+    .catch(async error => {
         btn.disabled = false;
-        alert('❌ Erreur réseau : ' + error);
+        await afficherMessage('Erreur réseau : ' + error, {type: 'danger'});
     });
 }
 
@@ -526,11 +526,11 @@ function ouvrirBordereauGlobal() {
         });
 }
 
-function imprimerBordereauGlobal() {
+async function imprimerBordereauGlobal() {
     const assurance = document.getElementById('bordereauGlobalAssurance').value;
     const moisReference = document.getElementById('bordereauGlobalMois').value;
-    if (!assurance) { alert('Choisissez une compagnie'); return; }
-    if (!moisReference) { alert('Choisissez un mois de référence'); return; }
+    if (!assurance) { await afficherMessage('Choisissez une compagnie'); return; }
+    if (!moisReference) { await afficherMessage('Choisissez un mois de référence'); return; }
 
     const [annee, mois] = moisReference.split('-').map(Number);
     const dateDebut = `${moisReference}-01`;

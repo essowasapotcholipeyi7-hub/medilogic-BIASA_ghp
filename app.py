@@ -927,8 +927,28 @@ def page_amu_entente_prealable():
         else:
             hospitalisation_id_param = None
 
+    # ⭐ Retour explicite vers la page d'origine (patron, 2026-10-04 : "ça
+    # nous amène pour remplir mais il n'y a pas un bon retour explicite d'où
+    # on venait") — ?retour=<chemin> posé par Actes/Vente, Pharmacie,
+    # Hospitalisation quand elles proposent de remplir l'EP. Chemin RELATIF
+    # uniquement (commence par un seul '/') : jamais une URL externe, pour ne
+    # pas servir de redirection ouverte.
+    retour_url = (request.args.get('retour') or '').strip()
+    if not (retour_url.startswith('/') and not retour_url.startswith('//')):
+        retour_url = ''
+    libelles_retour = (
+        ('/actes_vente', "la vente d'actes"),
+        ('/pharma_vente', 'la vente pharmacie'),
+        ('/hospitalisation', "l'hospitalisation"),
+        ('/soins-ambulatoires', 'les soins ambulatoires'),
+        ('/proformas', 'les proformas'),
+    )
+    retour_libelle = next((lib for prefixe, lib in libelles_retour if retour_url.startswith(prefixe)), 'la page précédente') if retour_url else ''
+
     return render_template(
         'amu_entente_prealable.html',
+        retour_url=retour_url,
+        retour_libelle=retour_libelle,
         medecins_liste=medecins_liste,
         demandes=demandes,
         patients_par_id=patients_par_id,

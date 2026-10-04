@@ -587,7 +587,7 @@ function mettreAJourStatutsPanier() {
 // ============================================
 // AJOUTER TOUT UN GROUPE
 // ============================================
-function ajouterToutGroupe(type) {
+async function ajouterToutGroupe(type) {
     // ⭐ Délègue entièrement à ajouterPanierGroupe(), qui fait un fetch par
     // ligne vers /api/prescriptions/<id>/ajouter-panier (endpoint réel) —
     // l'ancienne version appelait /api/prescriptions/panier/mass, qui
@@ -614,13 +614,13 @@ function ajouterToutGroupe(type) {
         return;
     }
 
-    ajouterPanierGroupe(ids);
+    await ajouterPanierGroupe(ids);
 }
 
 // ============================================
 // AJOUTER UN GROUPE D'IDS
 // ============================================
-function ajouterPanierGroupe(ids) {
+async function ajouterPanierGroupe(ids) {
     if (isAjoutEnCours) return;
     if (!ids || ids.length === 0) return;
     
@@ -633,7 +633,7 @@ function ajouterPanierGroupe(ids) {
         return;
     }
     
-    if (!confirm(`Ajouter ${idsFiltered.length} prescription(s) au panier ?`)) return;
+    if (!await demanderConfirmation(`Ajouter ${idsFiltered.length} prescription(s) au panier ?`)) return;
     
     isAjoutEnCours = true;
     let count = 0;
@@ -754,8 +754,8 @@ function appliquerCorrection(nomCorrect) {
 // ⭐ Bouton "boîte" (vue "En attente") : range manuellement une
 // prescription récente dans "Anciennes", même avant les 14 jours —
 // libère la place dans la vue active pour les nouvelles arrivées.
-function mettreDeCote(id) {
-    if (!confirm("Mettre cette prescription de côté (elle passera dans l'onglet 'Anciennes') ?")) return;
+async function mettreDeCote(id) {
+    if (!await demanderConfirmation("Mettre cette prescription de côté (elle passera dans l'onglet 'Anciennes') ?")) return;
 
     fetch(`/api/prescriptions/${id}/mettre-de-cote`, { method: 'POST' })
         .then(r => r.json())
@@ -840,8 +840,8 @@ function ajouterPanier(id) {
 // ============================================
 // RETIRER DU PANIER
 // ============================================
-function retirerPanier(id) {
-    if (!confirm('Retirer cette prescription du panier ?')) return;
+async function retirerPanier(id) {
+    if (!await demanderConfirmation('Retirer cette prescription du panier ?')) return;
     
     // Mise à jour UI optimiste
     const row = document.getElementById(`presc-row-${id}`);
@@ -885,13 +885,13 @@ function retirerPanier(id) {
 // ============================================
 // VIDER LE PANIER
 // ============================================
-function viderPanier() {
+async function viderPanier() {
     if (panier.length === 0) {
         showToast('⚠️ Le panier est déjà vide', 'warning');
         return;
     }
     
-    if (!confirm(`⚠️ Vider tout le panier (${panier.length} article(s)) ?`)) return;
+    if (!await demanderConfirmation(`Vider tout le panier (${panier.length} article(s)) ?`, {type: 'warning'})) return;
     
     const btn = document.querySelector('.btn-danger');
     if (btn) {
@@ -1001,7 +1001,7 @@ async function finaliserPanier() {
     msg += type === 'actes' ? '🔬 Vente d\'ACTES' : '💊 Vente PHARMACIE';
     msg += `\n\nLe patient et les articles seront automatiquement chargés ✅`;
 
-    if (!confirm(msg)) return;
+    if (!await demanderConfirmation(msg)) return;
 
     // ⭐ actes_vente/pharma_vente ne lisent PAS l'URL pour savoir quel
     // patient est sélectionné — elles lisent uniquement sessionStorage
@@ -1130,22 +1130,22 @@ function ajouterPanierDepuisModal() {
 // ============================================
 // IMPRIMER
 // ============================================
-function imprimerPrescription(id) {
-    const choix = confirm('📄 Imprimer en format A4 (couleur) ?\n\nCliquez sur "OK" pour A4\nAnnuler pour format 80mm (ticket)');
+async function imprimerPrescription(id) {
+    const choix = await demanderConfirmation('Imprimer en format A4 (couleur) ?\n\nCliquez sur "OK" pour A4\nAnnuler pour format 80mm (ticket)');
     const format = choix ? 'A4' : '80mm';
     window.open(`/ordonnance/${id}?format=${format}`, '_blank', 'width=800,height=600');
 }
 
-function imprimerMedicaments(patientId) {
+async function imprimerMedicaments(patientId) {
     if (!patientId) return;
-    const choix = confirm(`📄 Imprimer TOUTES les prescriptions MÉDICAMENTEUSES de ce patient ?\n\nCliquez sur "OK" pour A4\nAnnuler pour format 80mm (ticket)`);
+    const choix = await demanderConfirmation(`Imprimer TOUTES les prescriptions MÉDICAMENTEUSES de ce patient ?\n\nCliquez sur "OK" pour A4\nAnnuler pour format 80mm (ticket)`);
     const format = choix ? 'A4' : '80mm';
     window.open(`/ordonnance/patient/${patientId}/medicaments?format=${format}`, '_blank', 'width=800,height=600');
 }
 
-function imprimerActes(patientId) {
+async function imprimerActes(patientId) {
     if (!patientId) return;
-    const choix = confirm(`📄 Imprimer TOUTES les prescriptions d'ACTES de ce patient ?\n\nCliquez sur "OK" pour A4\nAnnuler pour format 80mm (ticket)`);
+    const choix = await demanderConfirmation(`Imprimer TOUTES les prescriptions d'ACTES de ce patient ?\n\nCliquez sur "OK" pour A4\nAnnuler pour format 80mm (ticket)`);
     const format = choix ? 'A4' : '80mm';
     window.open(`/ordonnance/patient/${patientId}/actes?format=${format}`, '_blank', 'width=800,height=600');
 }

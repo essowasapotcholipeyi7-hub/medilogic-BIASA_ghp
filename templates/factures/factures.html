@@ -427,14 +427,14 @@ function afficherFactures(factures) {
 // dans templates/patients.html) : pas d'envoi automatique (aucune
 // intégration API WhatsApp Business dans l'appli), on ouvre wa.me avec un
 // message pré-rempli que l'utilisateur envoie lui-même d'un clic.
-function rappelFactureWhatsApp(id) {
+async function rappelFactureWhatsApp(id) {
     const facture = facturesData.find(f => f.id === id);
     if (!facture) {
-        alert('Facture non trouvée');
+        await afficherMessage('Facture non trouvée');
         return;
     }
     if (!facture.patient_telephone) {
-        alert("Ce patient n'a pas de numéro de téléphone enregistré.");
+        await afficherMessage("Ce patient n'a pas de numéro de téléphone enregistré.");
         return;
     }
 
@@ -458,8 +458,8 @@ function rappelFactureWhatsApp(id) {
 
             window.open(`https://wa.me/${tel}?text=${message}`, '_blank');
         })
-        .catch(() => {
-            alert("Erreur lors de la préparation du rappel");
+        .catch(async () => {
+            await afficherMessage("Erreur lors de la préparation du rappel", {type: 'danger'});
         });
 }
 
@@ -474,10 +474,10 @@ function filtrer(statut) {
 }
 
 // ========== VOIR FACTURE DANS UN MODAL ==========
-function voirFacture(id) {
+async function voirFacture(id) {
     const facture = facturesData.find(f => f.id === id);
     if (!facture) {
-        alert('Facture non trouvée');
+        await afficherMessage('Facture non trouvée');
         return;
     }
     
@@ -570,24 +570,24 @@ function ouvrirPaiement(id) {
 }
 
 // ========== CONFIRMER PAIEMENT ==========
-function confirmerPaiement() {
+async function confirmerPaiement() {
     const factureId = document.getElementById('factureId').value;
     const montant = parseFloat(document.getElementById('montantPaiement').value);
     const modePaiement = document.getElementById('modePaiement').value;
     const notes = document.getElementById('notesPaiement').value;
     
     if (!montant || montant <= 0) {
-        alert('Veuillez saisir un montant valide');
+        await afficherMessage('Veuillez saisir un montant valide');
         return;
     }
     
     const facture = facturesData.find(f => f.id === parseInt(factureId));
     if (montant > facture.reste_a_payer) {
-        alert(`Le montant (${Math.round(montant).toLocaleString('fr-FR')} FCFA) dépasse le reste à payer (${Math.round(facture.reste_a_payer).toLocaleString('fr-FR')} FCFA)`);
+        await afficherMessage(`Le montant (${Math.round(montant).toLocaleString('fr-FR')} FCFA) dépasse le reste à payer (${Math.round(facture.reste_a_payer).toLocaleString('fr-FR')} FCFA)`);
         return;
     }
     
-    if (!confirm(`Confirmer le paiement de ${Math.round(montant).toLocaleString('fr-FR')} FCFA pour la facture ${facture.numero_facture} ?`)) {
+    if (!await demanderConfirmation(`Confirmer le paiement de ${Math.round(montant).toLocaleString('fr-FR')} FCFA pour la facture ${facture.numero_facture} ?`)) {
         return;
     }
     
@@ -601,28 +601,28 @@ function confirmerPaiement() {
         })
     })
     .then(response => response.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
-            alert(`Paiement enregistré !\nMontant: ${Math.round(montant).toLocaleString('fr-FR')} FCFA\nReste à payer: ${Math.round(data.reste_a_payer).toLocaleString('fr-FR')} FCFA`);
+            await afficherMessage(`Paiement enregistré !\nMontant: ${Math.round(montant).toLocaleString('fr-FR')} FCFA\nReste à payer: ${Math.round(data.reste_a_payer).toLocaleString('fr-FR')} FCFA`);
             
             bootstrap.Modal.getInstance(document.getElementById('paiementModal')).hide();
             chargerFactures(statutActuel);
             
             if (data.statut === 'payee') {
-                if (confirm('La facture est entièrement payée. Voulez-vous imprimer le reçu ?')) {
+                if (await demanderConfirmation('La facture est entièrement payée. Voulez-vous imprimer le reçu ?')) {
                     ouvrirChoixFormat(factureId, 'facture');
                 }
             } else {
-                if (confirm('Voulez-vous imprimer le reçu de paiement ?')) {
+                if (await demanderConfirmation('Voulez-vous imprimer le reçu de paiement ?')) {
                     ouvrirChoixFormatRecu(data.paiement_id);
                 }
             }
         } else {
-            alert('❌ Erreur: ' + data.error);
+            await afficherMessage('Erreur: ' + data.error, {type: 'danger'});
         }
     })
-    .catch(error => {
-        alert('❌ Erreur: ' + error);
+    .catch(async error => {
+        await afficherMessage('Erreur: ' + error, {type: 'danger'});
     });
 }
 
@@ -652,9 +652,9 @@ function ouvrirChoixFormatRecu(paiementId) {
 }
 
 // ========== IMPRIMER LE DOCUMENT ==========
-function imprimerDocument(format) {
+async function imprimerDocument(format) {
     if (!documentAImprimer) {
-        alert('Aucun document à imprimer');
+        await afficherMessage('Aucun document à imprimer');
         return;
     }
 

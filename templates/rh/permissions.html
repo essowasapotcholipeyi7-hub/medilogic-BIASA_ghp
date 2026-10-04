@@ -233,7 +233,7 @@ function demanderPermission() {
     new bootstrap.Modal(document.getElementById('permissionModal')).show();
 }
 
-function sauvegarderPermission() {
+async function sauvegarderPermission() {
     const data = {
         employe_id: document.getElementById('permEmploye').value,
         date_permission: document.getElementById('permDate').value,
@@ -243,7 +243,7 @@ function sauvegarderPermission() {
     };
     
     if (!data.employe_id || !data.date_permission || !data.heure_debut || !data.heure_fin || !data.motif) {
-        alert('Veuillez remplir tous les champs obligatoires');
+        await afficherMessage('Veuillez remplir tous les champs obligatoires');
         return;
     }
     
@@ -253,23 +253,23 @@ function sauvegarderPermission() {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
-            alert('Demande de permission soumise avec succes !');
+            await afficherMessage('Demande de permission soumise avec succes !');
             bootstrap.Modal.getInstance(document.getElementById('permissionModal')).hide();
             chargerPermissions();
         } else {
-            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 // ============================================
 // CHANGER STATUT PERMISSION
 // ============================================
-function changerStatutPermission(id, statut) {
-    if (!confirm(`Confirmer le changement de statut vers "${statut}" ?`)) return;
+async function changerStatutPermission(id, statut) {
+    if (!await demanderConfirmation(`Confirmer le changement de statut vers "${statut}" ?`)) return;
     
     fetch(`/rh/permission/${id}/statut`, {
         method: 'PUT',
@@ -277,15 +277,15 @@ function changerStatutPermission(id, statut) {
         body: JSON.stringify({statut: statut})
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
-            alert('Statut mis a jour avec succes !');
+            await afficherMessage('Statut mis a jour avec succes !');
             chargerPermissions();
         } else {
-            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 // ============================================

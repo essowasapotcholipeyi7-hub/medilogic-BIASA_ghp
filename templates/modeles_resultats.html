@@ -125,7 +125,7 @@ function ouvrirModeleDansEditeur(id, nom, typePrestation) {
     quillEditeurModele.setText('Conversion en cours...');
     new bootstrap.Modal(document.getElementById('modalModele')).show();
 
-    fetch(`/api/modeles-resultats/${id}/convertir-html`).then(r => r.json()).then(data => {
+    fetch(`/api/modeles-resultats/${id}/convertir-html`).then(r => r.json()).then(async data => {
         // ⭐ Garde-fou contre une course : si un autre modèle a été ouvert
         // entre-temps (double-clic, ou ouverture d'un second modèle avant
         // la fin de la conversion du premier), on n'écrase pas son contenu
@@ -142,35 +142,35 @@ function ouvrirModeleDansEditeur(id, nom, typePrestation) {
             quillEditeurModele.clipboard.dangerouslyPasteHTML(data.contenu_html || '');
         } else {
             quillEditeurModele.setText('');
-            alert('Erreur : ' + (data.error || 'conversion impossible'));
+            await afficherMessage('Erreur : ' + (data.error || 'conversion impossible'), {type: 'danger'});
         }
     });
 }
 
-function enregistrerModele() {
+async function enregistrerModele() {
     const nom = document.getElementById('modeleNom').value.trim();
-    if (!nom) { alert('Le nom est obligatoire.'); return; }
+    if (!nom) { await afficherMessage('Le nom est obligatoire.'); return; }
 
     // ⭐ Conversion permanente d'un modèle fichier existant — met à jour
     // CE modèle au lieu d'en créer un nouveau (voir ouvrirModeleDansEditeur).
     if (modeleEnConversionId) {
         if (!quillEditeurModele || quillEditeurModele.getText().trim().length === 0) {
-            alert('Le contenu ne peut pas être vide.'); return;
+            await afficherMessage('Le contenu ne peut pas être vide.'); return;
         }
         fetch(`/api/modeles-resultats/${modeleEnConversionId}/contenu`, {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contenu_html: quillEditeurModele.root.innerHTML })
         })
             .then(r => r.json())
-            .then(data => {
+            .then(async data => {
                 if (data.success) {
                     bootstrap.Modal.getInstance(document.getElementById('modalModele')).hide();
                     chargerModeles();
                 } else {
-                    alert('Erreur : ' + (data.error || 'inconnue'));
+                    await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
                 }
             })
-            .catch(e => alert('Erreur : ' + e));
+            .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
         return;
     }
 
@@ -180,33 +180,33 @@ function enregistrerModele() {
 
     if (modeModeleActuel === 'fichier') {
         const fichier = document.getElementById('modeleFichier').files[0];
-        if (!fichier) { alert('Choisissez un fichier.'); return; }
+        if (!fichier) { await afficherMessage('Choisissez un fichier.'); return; }
         fd.append('fichier', fichier);
     } else {
         if (!quillEditeurModele || quillEditeurModele.getText().trim().length === 0) {
-            alert('Rédigez le contenu du modèle.'); return;
+            await afficherMessage('Rédigez le contenu du modèle.'); return;
         }
         fd.append('contenu_html', quillEditeurModele.root.innerHTML);
     }
 
     fetch('/api/modeles-resultats', { method: 'POST', body: fd })
         .then(r => r.json())
-        .then(data => {
+        .then(async data => {
             if (data.success) {
                 bootstrap.Modal.getInstance(document.getElementById('modalModele')).hide();
                 chargerModeles();
             } else {
-                alert('Erreur : ' + (data.error || 'inconnue'));
+                await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
             }
         })
-        .catch(e => alert('Erreur : ' + e));
+        .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
-function supprimerModele(id) {
-    if (!confirm('Supprimer ce modèle ?')) return;
+async function supprimerModele(id) {
+    if (!await demanderConfirmation('Supprimer ce modèle ?')) return;
     fetch('/api/modeles-resultats/' + id, { method: 'DELETE' })
         .then(r => r.json())
-        .then(data => { if (data.success) chargerModeles(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+        .then(async data => { if (data.success) chargerModeles(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'}); });
 }
 
 function chargerModeles() {

@@ -131,13 +131,13 @@ function modifierService(id) {
         });
 }
 
-function sauvegarderService() {
+async function sauvegarderService() {
     const id = document.getElementById('serviceId').value;
     const nom = document.getElementById('serviceNom').value.trim();
     const responsable = document.getElementById('serviceResponsable').value.trim();
     
     if (!nom) {
-        alert('Veuillez saisir le nom du service');
+        await afficherMessage('Veuillez saisir le nom du service');
         return;
     }
     
@@ -151,34 +151,34 @@ function sauvegarderService() {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
-            alert(id ? 'Service modifie avec succes !' : 'Service ajoute avec succes !');
+            await afficherMessage(id ? 'Service modifie avec succes !' : 'Service ajoute avec succes !');
             bootstrap.Modal.getInstance(document.getElementById('serviceModal')).hide();
             chargerServices();
         } else {
-            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
-function supprimerService(id) {
-    if (!confirm('Voulez-vous vraiment supprimer ce service ?')) return;
+async function supprimerService(id) {
+    if (!await demanderConfirmation('Voulez-vous vraiment supprimer ce service ?')) return;
     
     fetch(`/rh/api/services/${id}`, {
         method: 'DELETE'
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
-            alert('Service supprime avec succes !');
+            await afficherMessage('Service supprime avec succes !');
             chargerServices();
         } else {
-            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 // ============================================

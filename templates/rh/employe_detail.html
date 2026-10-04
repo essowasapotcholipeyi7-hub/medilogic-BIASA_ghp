@@ -882,38 +882,38 @@ const DOC_INPUT_IDS = {
     contrat: 'docContratInput',
 };
 
-function uploaderDocumentEmploye(typeDoc) {
+async function uploaderDocumentEmploye(typeDoc) {
     const input = document.getElementById(DOC_INPUT_IDS[typeDoc]);
     if (!input || !input.files || !input.files[0]) {
-        alert('Choisissez un fichier d\'abord.');
+        await afficherMessage('Choisissez un fichier d\'abord.');
         return;
     }
     const formData = new FormData();
     formData.append('file', input.files[0]);
     fetch(`/rh/employe/${employeId}/document/${typeDoc}`, {method: 'POST', body: formData})
         .then(r => r.json())
-        .then(result => {
+        .then(async result => {
             if (result.success) {
                 window.location.reload();
             } else {
-                alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+                await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
             }
         })
-        .catch(error => alert('❌ Erreur: ' + error));
+        .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
-function supprimerDocumentEmploye(typeDoc) {
-    if (!confirm('Supprimer ce document ?')) return;
+async function supprimerDocumentEmploye(typeDoc) {
+    if (!await demanderConfirmation('Supprimer ce document ?')) return;
     fetch(`/rh/employe/${employeId}/document/${typeDoc}`, {method: 'DELETE'})
         .then(r => r.json())
-        .then(result => {
+        .then(async result => {
             if (result.success) {
                 window.location.reload();
             } else {
-                alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+                await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
             }
         })
-        .catch(error => alert('❌ Erreur: ' + error));
+        .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 // ⭐ Évaluations — voir #evaluationModal et api_ajouter_evaluation
@@ -929,11 +929,11 @@ function ouvrirAjoutEvaluation() {
     new bootstrap.Modal(document.getElementById('evaluationModal')).show();
 }
 
-function confirmerAjoutEvaluation() {
+async function confirmerAjoutEvaluation() {
     const dateEvaluation = document.getElementById('evalDate').value;
     const evaluateur = document.getElementById('evalEvaluateur').value.trim();
     if (!dateEvaluation || !evaluateur) {
-        alert("La date et le nom de l'évaluateur sont obligatoires.");
+        await afficherMessage("La date et le nom de l'évaluateur sont obligatoires.");
         return;
     }
     fetch(`/rh/employe/${employeId}/evaluation`, {
@@ -950,28 +950,28 @@ function confirmerAjoutEvaluation() {
         })
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
             window.location.reload();
         } else {
-            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('❌ Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
-function supprimerEvaluation(id) {
-    if (!confirm('Supprimer cette évaluation ?')) return;
+async function supprimerEvaluation(id) {
+    if (!await demanderConfirmation('Supprimer cette évaluation ?')) return;
     fetch(`/rh/evaluation/${id}`, {method: 'DELETE'})
         .then(r => r.json())
-        .then(result => {
+        .then(async result => {
             if (result.success) {
                 window.location.reload();
             } else {
-                alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+                await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
             }
         })
-        .catch(error => alert('❌ Erreur: ' + error));
+        .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 // ⭐ Sanctions disciplinaires — voir #sanctionModal et
@@ -996,12 +996,12 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-function confirmerAjoutSanction() {
+async function confirmerAjoutSanction() {
     const type = document.getElementById('sanctionType').value;
     const dateSanction = document.getElementById('sanctionDate').value;
     const motif = document.getElementById('sanctionMotif').value.trim();
     if (!type || !dateSanction || !motif) {
-        alert('Le type, la date et le motif sont obligatoires.');
+        await afficherMessage('Le type, la date et le motif sont obligatoires.');
         return;
     }
     fetch(`/rh/employe/${employeId}/sanction`, {
@@ -1017,28 +1017,28 @@ function confirmerAjoutSanction() {
         })
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
             window.location.reload();
         } else {
-            alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('❌ Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
-function supprimerSanction(id) {
-    if (!confirm('Supprimer cette sanction ?')) return;
+async function supprimerSanction(id) {
+    if (!await demanderConfirmation('Supprimer cette sanction ?')) return;
     fetch(`/rh/sanction/${id}`, {method: 'DELETE'})
         .then(r => r.json())
-        .then(result => {
+        .then(async result => {
             if (result.success) {
                 window.location.reload();
             } else {
-                alert('❌ Erreur: ' + (result.error || 'Erreur inconnue'));
+                await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
             }
         })
-        .catch(error => alert('❌ Erreur: ' + error));
+        .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 // ⭐ Gestion des raccourcis clavier

@@ -106,11 +106,11 @@ chargerRapportService();
 // ⭐ Imprimer toutes les recettes de la période choisie (patron,
 // 2026-09-30) — même schéma que le bouton "Imprimer" de Comptabilité :
 // fenêtre autonome, impression déclenchée automatiquement à l'ouverture.
-function imprimerRecettesService() {
+async function imprimerRecettesService() {
     const dateDebut = document.getElementById('rrsDateDebut').value;
     const dateFin = document.getElementById('rrsDateFin').value;
     if (!dateDebut || !dateFin) {
-        alert('Choisissez une période avant d\'imprimer.');
+        await afficherMessage('Choisissez une période avant d\'imprimer.');
         return;
     }
     window.open(`/rapport-recettes-service/print?date_debut=${dateDebut}&date_fin=${dateFin}`, '_blank', 'width=1100,height=800');

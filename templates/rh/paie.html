@@ -403,21 +403,21 @@ function confirmerGenererPaie() {
         })
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
             bootstrap.Modal.getInstance(document.getElementById('genererPaieModal')).hide();
             chargerPaies();
         } else {
-            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(err => alert('Erreur: ' + err));
+    .catch(async err => await afficherMessage('Erreur: ' + err, {type: 'danger'}));
 }
 
-function genererPaieMasse() {
+async function genererPaieMasse() {
     const annee = document.getElementById('paieAnnee').value;
     const mois = document.getElementById('paieMois').value;
-    if (!confirm(`Générer un bulletin de base pour tous les employés actifs sans bulletin en ${MOIS_NOMS[mois - 1]} ${annee} ?\n\nLes bulletins déjà existants (brouillon, calculé ou payé) ne seront pas modifiés.`)) {
+    if (!await demanderConfirmation(`Générer un bulletin de base pour tous les employés actifs sans bulletin en ${MOIS_NOMS[mois - 1]} ${annee} ?\n\nLes bulletins déjà existants (brouillon, calculé ou payé) ne seront pas modifiés.`)) {
         return;
     }
 
@@ -432,23 +432,23 @@ function genererPaieMasse() {
         body: JSON.stringify({ annee: parseInt(annee), mois: parseInt(mois) })
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         btn.disabled = false;
         btn.innerHTML = texteOriginal;
         if (result.success) {
             let msg = `${result.nouvelles} bulletin(s) généré(s).`;
             if (result.deja_generees) msg += ` ${result.deja_generees} bulletin(s) déjà existant(s) non touché(s).`;
             if (result.erreurs && result.erreurs.length) msg += `\n\nErreurs :\n- ${result.erreurs.join('\n- ')}`;
-            alert(msg);
+            await afficherMessage(msg);
             chargerPaies();
         } else {
-            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(err => {
+    .catch(async err => {
         btn.disabled = false;
         btn.innerHTML = texteOriginal;
-        alert('Erreur: ' + err);
+        await afficherMessage('Erreur: ' + err, {type: 'danger'});
     });
 }
 
@@ -465,7 +465,7 @@ function confirmerPayerPaie(force) {
         body: JSON.stringify({ mode_paiement: document.getElementById('ppModePaiement').value, force: !!force })
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
             bootstrap.Modal.getInstance(document.getElementById('payerPaieModal')).hide();
             chargerPaies();
@@ -473,14 +473,14 @@ function confirmerPayerPaie(force) {
             // ⭐ Caisse insuffisante : on prévient et on laisse le choix de
             // payer quand même (ex: salaire réellement viré depuis la
             // banque) plutôt qu'un blocage sec sans issue.
-            if (confirm(`⚠️ ${result.error}\n\nPayer quand même ?`)) {
+            if (await demanderConfirmation(`${result.error}\n\nPayer quand même ?`, {type: 'warning'})) {
                 confirmerPayerPaie(true);
             }
         } else {
-            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(err => alert('Erreur: ' + err));
+    .catch(async err => await afficherMessage('Erreur: ' + err, {type: 'danger'}));
 }
 
 document.addEventListener('DOMContentLoaded', function() {

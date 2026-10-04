@@ -257,11 +257,11 @@ function choisirLit(litId, texte, btn) {
     if (btn) { btn.classList.remove('btn-outline-success'); btn.classList.add('btn-success'); }
 }
 
-function creerSejour() {
+async function creerSejour() {
     if (!nsPatientId) return;
     const litIdEl = document.getElementById('nsLitId');
     if (litIdEl && document.getElementById('nsService') && document.getElementById('nsService').value && !litIdEl.value) {
-        alert('Choisissez un lit disponible (ou laissez le service vide pour ne pas en assigner).');
+        await afficherMessage('Choisissez un lit disponible (ou laissez le service vide pour ne pas en assigner).');
         return;
     }
     const btn = document.getElementById('btnCreerSejour');
@@ -287,15 +287,15 @@ function creerSejour() {
         body: JSON.stringify(payload)
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
             window.location.href = '/hospitalisation/' + data.hospitalisation_id;
         } else {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
             btn.disabled = false;
         }
     })
-    .catch(e => { alert('Erreur : ' + e); btn.disabled = false; });
+    .catch(async e => { await afficherMessage('Erreur : ' + e, {type: 'danger'}); btn.disabled = false; });
 }
 
 document.addEventListener('DOMContentLoaded', function() {

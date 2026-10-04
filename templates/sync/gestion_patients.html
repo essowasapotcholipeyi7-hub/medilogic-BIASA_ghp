@@ -49,14 +49,14 @@
             </div>
 
             <form method="POST" action="{{ url_for('sync_gestion_patients_activer') }}" class="d-inline"
-                  onsubmit="return confirm('Régénérer la clé ? L\'ancienne clé cessera de fonctionner — il faudra la remettre à jour côté gestion_patients.');">
+                  onsubmit="event.preventDefault(); demanderConfirmation('Régénérer la clé ? L\'ancienne clé cessera de fonctionner — il faudra la remettre à jour côté gestion_patients.', {type: 'warning'}).then(ok => { if (ok) this.submit(); });">
                 <input type="hidden" name="api_url" value="{{ mapping.api_url }}">
                 <button type="submit" class="btn btn-outline-primary btn-sm">
                     <i class="fas fa-key me-1"></i>Régénérer la clé
                 </button>
             </form>
             <form method="POST" action="{{ url_for('sync_gestion_patients_desactiver') }}" class="d-inline"
-                  onsubmit="return confirm('Désactiver la synchronisation avec gestion_patients pour cette structure ?');">
+                  onsubmit="event.preventDefault(); demanderConfirmation('Désactiver la synchronisation avec gestion_patients pour cette structure ?', {type: 'danger'}).then(ok => { if (ok) this.submit(); });">
                 <button type="submit" class="btn btn-outline-danger btn-sm">
                     <i class="fas fa-power-off me-1"></i>Désactiver
                 </button>

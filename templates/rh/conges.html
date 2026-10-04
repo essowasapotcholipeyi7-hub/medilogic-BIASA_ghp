@@ -394,7 +394,7 @@ function verifierRegleConge() {
     }
 }
 
-function sauvegarderConge() {
+async function sauvegarderConge() {
     const data = {
         employe_id: document.getElementById('congeEmploye').value,
         type_conge: document.getElementById('congeType').value,
@@ -404,7 +404,7 @@ function sauvegarderConge() {
     };
     
     if (!data.employe_id || !data.date_debut || !data.date_fin) {
-        alert('Veuillez remplir tous les champs obligatoires');
+        await afficherMessage('Veuillez remplir tous les champs obligatoires');
         return;
     }
     
@@ -414,23 +414,23 @@ function sauvegarderConge() {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
-            alert('Demande de conge soumise avec succes !');
+            await afficherMessage('Demande de conge soumise avec succes !');
             bootstrap.Modal.getInstance(document.getElementById('congeModal')).hide();
             chargerConges();
         } else {
-            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 // ============================================
 // CHANGER STATUT CONGE
 // ============================================
-function changerStatutConge(id, statut) {
-    if (!confirm(`Confirmer le changement de statut vers "${statut}" ?`)) return;
+async function changerStatutConge(id, statut) {
+    if (!await demanderConfirmation(`Confirmer le changement de statut vers "${statut}" ?`)) return;
     
     fetch(`/rh/conge/${id}/statut`, {
         method: 'PUT',
@@ -438,15 +438,15 @@ function changerStatutConge(id, statut) {
         body: JSON.stringify({statut: statut})
     })
     .then(r => r.json())
-    .then(result => {
+    .then(async result => {
         if (result.success) {
-            alert('Statut mis a jour avec succes !');
+            await afficherMessage('Statut mis a jour avec succes !');
             chargerConges();
         } else {
-            alert('Erreur: ' + (result.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => alert('Erreur: ' + error));
+    .catch(async error => await afficherMessage('Erreur: ' + error, {type: 'danger'}));
 }
 
 // ============================================

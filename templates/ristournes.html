@@ -186,16 +186,16 @@ function confirmerCloture() {
     };
     fetch('/api/ristournes/calculer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
         .then(r => r.json())
-        .then(data => {
+        .then(async data => {
             if (data.success) {
                 bootstrap.Modal.getInstance(document.getElementById('modalCloturer')).hide();
-                alert('Clôture calculée : ' + Math.round(data.montant_ristourne).toLocaleString('fr-FR') + ' FCFA. À faire valider par l\'admin.');
+                await afficherMessage('Clôture calculée : ' + Math.round(data.montant_ristourne).toLocaleString('fr-FR') + 'FCFA. À faire valider par l\'admin.');
                 chargerTout();
             } else {
-                alert('Erreur : ' + (data.error || 'inconnue'));
+                await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
             }
         })
-        .catch(e => alert('Erreur : ' + e));
+        .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
 function ouvrirModalModifierRistourne(id, tauxActuel, baseCalcul) {
@@ -213,41 +213,41 @@ function majApercuModif() {
     document.getElementById('modifApercu').textContent = `Nouveau montant : ${Math.round(base * taux / 100).toLocaleString('fr-FR')} F`;
 }
 
-function confirmerModifierRistourne() {
+async function confirmerModifierRistourne() {
     const id = document.getElementById('modifPeriodeId').value;
     const taux = parseFloat(document.getElementById('modifTaux').value);
-    if (isNaN(taux) || taux < 0 || taux > 100) { alert('Taux invalide.'); return; }
+    if (isNaN(taux) || taux < 0 || taux > 100) { await afficherMessage('Taux invalide.'); return; }
     fetch('/api/ristournes/' + id + '/modifier', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ taux_applique: taux })
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
             bootstrap.Modal.getInstance(document.getElementById('modalModifierRistourne')).hide();
             chargerHistorique();
         } else {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
-    .catch(e => alert('Erreur : ' + e));
+    .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
-function annulerRistourne(id) {
-    if (!confirm("Annuler cette clôture ? Les actes concernés redeviendront disponibles pour une prochaine clôture.")) return;
+async function annulerRistourne(id) {
+    if (!await demanderConfirmation("Annuler cette clôture ? Les actes concernés redeviendront disponibles pour une prochaine clôture.")) return;
     fetch('/api/ristournes/' + id + '/annuler', { method: 'POST' })
         .then(r => r.json())
-        .then(data => {
+        .then(async data => {
             if (data.success) { chargerTout(); }
-            else alert('Erreur : ' + (data.error || 'inconnue'));
+            else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         })
-        .catch(e => alert('Erreur : ' + e));
+        .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
-function validerRistourne(id) {
-    if (!confirm('Valider cette clôture ?')) return;
+async function validerRistourne(id) {
+    if (!await demanderConfirmation('Valider cette clôture ?')) return;
     fetch('/api/ristournes/' + id + '/valider', { method: 'POST' })
         .then(r => r.json())
-        .then(data => { if (data.success) chargerHistorique(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+        .then(async data => { if (data.success) chargerHistorique(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'}); });
 }
 
 function toggleModePaiement() {
@@ -265,31 +265,31 @@ function ouvrirModalPaiement(id) {
     new bootstrap.Modal(document.getElementById('modalPaiement')).show();
 }
 
-function confirmerPaiement() {
+async function confirmerPaiement() {
     const mode = document.querySelector('input[name="paieMode"]:checked').value;
     const payload = {
         mode_paiement: mode,
         date_paiement: document.getElementById('paieDate').value,
     };
-    if (!payload.date_paiement) { alert('La date de paiement est obligatoire.'); return; }
+    if (!payload.date_paiement) { await afficherMessage('La date de paiement est obligatoire.'); return; }
     if (mode === 'mobile_money') {
         payload.operateur_mobile = document.getElementById('paieOperateur').value;
         payload.reference_paiement = document.getElementById('paieReference').value.trim();
-        if (!payload.reference_paiement) { alert('La référence de transaction est obligatoire.'); return; }
+        if (!payload.reference_paiement) { await afficherMessage('La référence de transaction est obligatoire.'); return; }
     }
     fetch('/api/ristournes/' + document.getElementById('paieId').value + '/payer', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
             bootstrap.Modal.getInstance(document.getElementById('modalPaiement')).hide();
             chargerHistorique();
         } else {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
-    .catch(e => alert('Erreur : ' + e));
+    .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
 function chargerEnAttente() {

@@ -195,8 +195,8 @@ function enregistrerFaq() {
         });
 }
 
-function supprimerFaq(id) {
-    if (!confirm('Supprimer cette question de la FAQ ?')) return;
+async function supprimerFaq(id) {
+    if (!await demanderConfirmation('Supprimer cette question de la FAQ ?')) return;
     fetch(`/api/admin/faq/${id}/supprimer`, { method: 'POST' })
         .then(r => r.json())
         .then(data => { if (data.success) window.location.reload(); });

@@ -63,7 +63,7 @@
                         <td>{{ jour.date.strftime('%d/%m/%Y') }}</td>
                         <td>{{ jour.libelle or '-' }}</td>
                         <td class="text-end">
-                            <form method="POST" action="{{ url_for('admin_jours_feries_supprimer', jour_id=jour.id) }}" onsubmit="return confirm('Supprimer ce jour férié ?');" class="d-inline">
+                            <form method="POST" action="{{ url_for('admin_jours_feries_supprimer', jour_id=jour.id) }}" onsubmit="event.preventDefault(); demanderConfirmation('Supprimer ce jour férié ?', {type: 'danger'}).then(ok => { if (ok) this.submit(); });" class="d-inline">
                                 <button type="submit" class="btn btn-sm btn-outline-danger">
                                     <i class="fas fa-trash"></i>
                                 </button>

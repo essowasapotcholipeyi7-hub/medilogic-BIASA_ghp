@@ -400,12 +400,12 @@ function modifierMedecin(id) {
             
             new bootstrap.Modal(document.getElementById('medecinModal')).show();
         })
-        .catch(error => {
-            showToast('Erreur lors du chargement du medecin', 'danger');
+        .catch(async error => {
+            await showToast('Erreur lors du chargement du medecin', 'danger');
         });
 }
 
-function enregistrerMedecin() {
+async function enregistrerMedecin() {
     const id = document.getElementById('medecinId').value;
     const data = {
         nom: document.getElementById('medecinNom').value.trim(),
@@ -422,12 +422,12 @@ function enregistrerMedecin() {
     
     // Validation
     if (!data.nom) {
-        showToast('Veuillez entrer le nom du medecin', 'warning');
+        await showToast('Veuillez entrer le nom du medecin', 'warning');
         document.getElementById('medecinNom').focus();
         return;
     }
     if (!data.specialite) {
-        showToast('Veuillez entrer la specialite', 'warning');
+        await showToast('Veuillez entrer la specialite', 'warning');
         document.getElementById('medecinSpecialite').focus();
         return;
     }
@@ -443,19 +443,19 @@ function enregistrerMedecin() {
         body: JSON.stringify(data)
     })
     .then(response => response.json())
-    .then(result => {
+    .then(async result => {
         hideLoader();
         if (result.success) {
-            showToast(result.message, 'success');
+            await showToast(result.message, 'success');
             bootstrap.Modal.getInstance(document.getElementById('medecinModal')).hide();
             setTimeout(() => location.reload(), 1000);
         } else {
-            showToast('Erreur: ' + result.error, 'danger');
+            await showToast('Erreur: ' + result.error, 'danger');
         }
     })
-    .catch(() => {
+    .catch(async () => {
         hideLoader();
-        showToast('Erreur lors de l\'enregistrement', 'danger');
+        await showToast('Erreur lors de l\'enregistrement', 'danger');
     });
 }
 
@@ -463,14 +463,14 @@ function enregistrerMedecin() {
 // ACTIVER / DESACTIVER
 // ============================================================
 
-function toggleMedecin(id) {
+async function toggleMedecin(id) {
     const row = document.querySelector(`tr[data-id="${id}"]`);
     if (!row) return;
     
     const actif = row.cells[6]?.innerText.includes('Actif');
     const action = actif ? 'desactiver' : 'activer';
     
-    if (!confirm(`Voulez-vous ${action} ce medecin ?`)) return;
+    if (!await demanderConfirmation(`Voulez-vous ${action} ce medecin ?`)) return;
     
     showLoader('Mise a jour...');
     
@@ -479,18 +479,18 @@ function toggleMedecin(id) {
         headers: {'Content-Type': 'application/json'}
     })
     .then(response => response.json())
-    .then(result => {
+    .then(async result => {
         hideLoader();
         if (result.success) {
-            showToast(result.message, 'success');
+            await showToast(result.message, 'success');
             setTimeout(() => location.reload(), 1000);
         } else {
-            showToast('Erreur: ' + result.error, 'danger');
+            await showToast('Erreur: ' + result.error, 'danger');
         }
     })
-    .catch(() => {
+    .catch(async () => {
         hideLoader();
-        showToast('Erreur lors de la mise a jour', 'danger');
+        await showToast('Erreur lors de la mise a jour', 'danger');
     });
 }
 
@@ -560,9 +560,9 @@ function voirHistorique(id) {
             
             new bootstrap.Modal(document.getElementById('historiqueModal')).show();
         })
-        .catch(error => {
+        .catch(async error => {
             hideLoader();
-            showToast('Erreur lors du chargement de l\'historique', 'danger');
+            await showToast('Erreur lors du chargement de l\'historique', 'danger');
         });
 }
 
@@ -635,9 +635,9 @@ function creerGraphiqueHistorique(data) {
 // IMPRESSION HISTORIQUE
 // ============================================================
 
-function imprimerHistoriqueMedecin() {
+async function imprimerHistoriqueMedecin() {
     if (!historiqueData || !historiqueData.historique || historiqueData.historique.length === 0) {
-        showToast('Aucune donnee a imprimer', 'warning');
+        await showToast('Aucune donnee a imprimer', 'warning');
         return;
     }
     
@@ -716,14 +716,14 @@ function hideLoader() {
     }
 }
 
-function showToast(message, type) {
+async function showToast(message, type) {
     const toast = document.getElementById('globalToast');
     if (toast) {
         toast.querySelector('.toast-body').innerText = message;
         const bsToast = new bootstrap.Toast(toast);
         bsToast.show();
     } else {
-        alert(message);
+        await afficherMessage(message);
     }
 }
 

@@ -188,13 +188,13 @@
 <script>
 var currentRdvId = null;
 
-function demanderRendezVous() {
+async function demanderRendezVous() {
     var date = document.getElementById('dateRendezVous').value;
     var heure = document.getElementById('heureRendezVous').value;
     var motif = document.getElementById('motif').value;
     
     if (!date || !heure) {
-        alert('Veuillez remplir la date et l\'heure');
+        await afficherMessage('Veuillez remplir la date et l\'heure');
         return;
     }
     
@@ -208,23 +208,23 @@ function demanderRendezVous() {
         })
     })
     .then(function(response) { return response.json(); })
-    .then(function(data) {
+    .then(async function(data) {
         if (data.success) {
-            alert('Demande de rendez-vous envoyée !');
+            await afficherMessage('Demande de rendez-vous envoyée !');
             location.reload();
         } else {
-            alert('Erreur: ' + data.error);
+            await afficherMessage('Erreur: ' + data.error, {type: 'danger'});
         }
     });
 }
 
-function annulerRendezVous(id) {
-    if (confirm('Annuler ce rendez-vous ?')) {
+async function annulerRendezVous(id) {
+    if (await demanderConfirmation('Annuler ce rendez-vous ?')) {
         fetch('/api/patient/rendez_vous/' + id + '/annuler', {method: 'POST'})
         .then(function(response) { return response.json(); })
-        .then(function(data) {
+        .then(async function(data) {
             if (data.success) location.reload();
-            else alert('Erreur');
+            else await afficherMessage('Erreur', {type: 'danger'});
         });
     }
 }
@@ -234,13 +234,13 @@ function reporterRendezVous(id) {
     new bootstrap.Modal(document.getElementById('reporterModal')).show();
 }
 
-function validerReport() {
+async function validerReport() {
     var nouvelleDate = document.getElementById('nouvelleDate').value;
     var nouvelleHeure = document.getElementById('nouvelleHeure').value;
     var message = document.getElementById('messageReport').value;
     
     if (!nouvelleDate || !nouvelleHeure) {
-        alert('Veuillez entrer la nouvelle date et heure');
+        await afficherMessage('Veuillez entrer la nouvelle date et heure');
         return;
     }
     
@@ -255,12 +255,12 @@ function validerReport() {
         })
     })
     .then(function(response) { return response.json(); })
-    .then(function(data) {
+    .then(async function(data) {
         if (data.success) {
-            alert('Demande de report envoyée !');
+            await afficherMessage('Demande de report envoyée !');
             location.reload();
         } else {
-            alert('Erreur: ' + data.error);
+            await afficherMessage('Erreur: ' + data.error, {type: 'danger'});
         }
     });
 }

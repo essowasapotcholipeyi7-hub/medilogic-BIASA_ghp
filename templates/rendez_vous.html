@@ -827,8 +827,8 @@ function ajouterRendezVous() {
 // CHANGEMENT DE STATUT
 // ============================================================
 
-function confirmerRendezVous(id) {
-    if (!confirm('Confirmer ce rendez-vous ?')) return;
+async function confirmerRendezVous(id) {
+    if (!await demanderConfirmation('Confirmer ce rendez-vous ?')) return;
     
     showLoader('Confirmation...');
     fetch(`/rendez_vous/api/${id}/confirmer`, {
@@ -847,8 +847,8 @@ function confirmerRendezVous(id) {
     });
 }
 
-function terminerRendezVous(id) {
-    if (!confirm('Marquer ce rendez-vous comme terminé ?')) return;
+async function terminerRendezVous(id) {
+    if (!await demanderConfirmation('Marquer ce rendez-vous comme terminé ?')) return;
     
     showLoader('Mise à jour...');
     fetch(`/rendez_vous/api/${id}/terminer`, {
@@ -867,11 +867,11 @@ function terminerRendezVous(id) {
     });
 }
 
-function annulerRendezVous(id) {
-    const motif = prompt('Motif de l\'annulation (optionnel) :');
+async function annulerRendezVous(id) {
+    const motif = await demanderSaisie('Motif de l\'annulation (optionnel) :');
     if (motif === null) return;
     
-    if (!confirm('Annuler ce rendez-vous ?')) return;
+    if (!await demanderConfirmation('Annuler ce rendez-vous ?')) return;
     
     showLoader('Annulation...');
     fetch(`/rendez_vous/api/${id}/annuler`, {

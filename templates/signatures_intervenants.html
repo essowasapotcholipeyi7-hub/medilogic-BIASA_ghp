@@ -106,14 +106,14 @@ function previsualiserSignature() {
     reader.readAsDataURL(fichier);
 }
 
-function enregistrerSignature() {
+async function enregistrerSignature() {
     const filiere = document.getElementById('signatureFiliere').value;
     const nom = document.getElementById('signatureNom').value.trim();
     const titre = document.getElementById('signatureTitre').value;
     const fichier = document.getElementById('signatureFichier').files[0];
-    if (!nom) { alert('Le nom est obligatoire.'); return; }
-    if (filiere === 'analyse' && !titre) { alert('Le titre est obligatoire pour le laboratoire.'); return; }
-    if (!fichier) { alert("Choisissez l'image de la signature."); return; }
+    if (!nom) { await afficherMessage('Le nom est obligatoire.'); return; }
+    if (filiere === 'analyse' && !titre) { await afficherMessage('Le titre est obligatoire pour le laboratoire.'); return; }
+    if (!fichier) { await afficherMessage("Choisissez l'image de la signature."); return; }
 
     const fd = new FormData();
     fd.append('filiere', filiere);
@@ -123,28 +123,28 @@ function enregistrerSignature() {
 
     fetch('/api/signatures-intervenants', { method: 'POST', body: fd })
         .then(r => r.json())
-        .then(data => {
+        .then(async data => {
             if (data.success) {
                 bootstrap.Modal.getInstance(document.getElementById('modalSignature')).hide();
                 chargerSignatures();
             } else {
-                alert('Erreur : ' + (data.error || 'inconnue'));
+                await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
             }
         })
-        .catch(e => alert('Erreur : ' + e));
+        .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
 function toggleSignature(id) {
     fetch('/api/signatures-intervenants/' + id + '/toggle', { method: 'POST' })
         .then(r => r.json())
-        .then(data => { if (data.success) chargerSignatures(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+        .then(async data => { if (data.success) chargerSignatures(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'}); });
 }
 
-function supprimerSignature(id) {
-    if (!confirm('Supprimer définitivement cette signature ? Les résultats déjà imprimés avec ne changent pas.')) return;
+async function supprimerSignature(id) {
+    if (!await demanderConfirmation('Supprimer définitivement cette signature ? Les résultats déjà imprimés avec ne changent pas.')) return;
     fetch('/api/signatures-intervenants/' + id, { method: 'DELETE' })
         .then(r => r.json())
-        .then(data => { if (data.success) chargerSignatures(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+        .then(async data => { if (data.success) chargerSignatures(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'}); });
 }
 
 function chargerSignatures() {

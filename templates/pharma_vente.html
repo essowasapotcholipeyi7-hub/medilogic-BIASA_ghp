@@ -784,12 +784,12 @@ function toggleAssurancePrincipale() {
 // ============================================
 // APPLIQUER TAUX PRINCIPAL TEMPORAIRE
 // ============================================
-function appliquerTauxPrincipalTemp() {
+async function appliquerTauxPrincipalTemp() {
     const input = document.getElementById('assurancePrincipaleTauxTemp');
     const valeur = parseFloat(input.value);
     
     if (isNaN(valeur) || valeur < 0 || valeur > 100) {
-        alert('Veuillez entrer un taux valide (0-100)');
+        await afficherMessage('Veuillez entrer un taux valide (0-100)');
         input.value = tauxPrincipalOriginal;
         return;
     }
@@ -1019,11 +1019,11 @@ function chargerProduits() {
             chargerStocks(produitsList);
             filterProduits();
         })
-        .catch(error => {
+        .catch(async error => {
             console.error('❌ Erreur chargement produits:', error);
             select.innerHTML = '<option value="">-- Erreur de chargement --</option>';
             document.getElementById('produitResultCount').textContent = '❌';
-            alert('Erreur de chargement des produits. Vérifie la console (F12).');
+            await afficherMessage('Erreur de chargement des produits. Vérifie la console (F12).', {type: 'danger'});
         });
 }
 
@@ -1085,8 +1085,8 @@ function chargerStocks(produitsDejaCharges) {
         });
 }
 
-function reapprovisionner(id, nom) {
-    const quantite = prompt(`Quantité à ajouter pour ${nom} :`, "50");
+async function reapprovisionner(id, nom) {
+    const quantite = await demanderSaisie(`Quantité à ajouter pour ${nom} :`, "50");
     if (quantite && !isNaN(quantite) && parseInt(quantite) > 0) {
         showProgress('Approvisionnement', `Ajout de ${quantite} ${nom} au stock...`);
         
@@ -1096,18 +1096,18 @@ function reapprovisionner(id, nom) {
             body: JSON.stringify({quantite: parseInt(quantite)})
         })
         .then(r => r.json())
-        .then(data => {
+        .then(async data => {
             hideProgress();
             if (data.success) {
-                alert(`✅ ${quantite} ${nom} ajouté(s) au stock`);
+                await afficherMessage(`${quantite} ${nom} ajouté(s) au stock`, {type: 'success'});
                 chargerProduits();
             } else {
-                alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+                await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
             }
         })
-        .catch(error => {
+        .catch(async error => {
             hideProgress();
-            alert('Erreur: ' + error);
+            await afficherMessage('Erreur: ' + error, {type: 'danger'});
         });
     }
 }
@@ -1144,13 +1144,13 @@ function clearProduitSearch() {
 // ============================================
 // GESTION PANIER
 // ============================================
-function ajouterProduit() {
+async function ajouterProduit() {
     const select = document.getElementById('produitSelect');
     const produitId = select.value;
     const selectedOption = select.options[select.selectedIndex];
 
     if (!produitId) {
-        alert('Veuillez sélectionner un produit');
+        await afficherMessage('Veuillez sélectionner un produit');
         return;
     }
 
@@ -1164,7 +1164,7 @@ function ajouterProduit() {
         ? selectedOption.getAttribute('data-prise-en-charge-amu-tns')
         : selectedOption.getAttribute('data-prise-en-charge-amu');
 
-    const ok = ajouterProduitAuPanier({
+    const ok = await ajouterProduitAuPanier({
         id: parseInt(produitId),
         nom: selectedOption.getAttribute('data-nom'),
         prix: parseFloat(selectedOption.getAttribute('data-prix')),
@@ -1199,7 +1199,7 @@ function ajouterProduit() {
 // prise_en_charge_cac_raw, commentaire_amu, commentaire_cac}. Retourne
 // true si l'ajout a eu lieu (pour que l'appelant sache s'il doit réagir :
 // réinitialiser le formulaire, refocaliser le scanner...).
-function ajouterProduitAuPanier(produit, quantite) {
+async function ajouterProduitAuPanier(produit, quantite) {
     const produitId = produit.id;
     const produitNom = produit.nom;
     const produitPrix = produit.prix;
@@ -1220,13 +1220,13 @@ function ajouterProduitAuPanier(produit, quantite) {
     const datePeremption = produit.date_peremption || '';
 
     if (isNaN(produitPrix) || !produitNom) {
-        alert('Erreur : données du produit invalides');
+        await afficherMessage('Erreur : données du produit invalides', {type: 'danger'});
         return false;
     }
 
     // Vérification du stock
     if (quantite > produitStock) {
-        alert(`Stock insuffisant ! Stock disponible: ${produitStock}`);
+        await afficherMessage(`Stock insuffisant ! Stock disponible: ${produitStock}`);
         return false;
     }
 
@@ -1238,13 +1238,13 @@ function ajouterProduitAuPanier(produit, quantite) {
         perempDate.setHours(0, 0, 0, 0);
 
         if (perempDate < today) {
-            alert(`❌ Le produit "${produitNom}" est PÉRIMÉ depuis le ${datePeremption}.\n\nImpossible de l'ajouter au panier.`);
+            await afficherMessage(`Le produit "${produitNom}" est PÉRIMÉ depuis le ${datePeremption}.\n\nImpossible de l'ajouter au panier.`, {type: 'danger'});
             return false;
         }
 
         const joursRestants = Math.ceil((perempDate - today) / (1000 * 60 * 60 * 24));
         if (joursRestants <= 7 && joursRestants > 0) {
-            if (!confirm(`⚠️ Attention ! Le produit "${produitNom}" expire dans ${joursRestants} jour(s) (${datePeremption}).\n\nVoulez-vous quand même l'ajouter au panier ?`)) {
+            if (!await demanderConfirmation(`Attention ! Le produit "${produitNom}" expire dans ${joursRestants} jour(s) (${datePeremption}).\n\nVoulez-vous quand même l'ajouter au panier ?`, {type: 'warning'})) {
                 return false;
             }
         }
@@ -1270,15 +1270,15 @@ function ajouterProduitAuPanier(produit, quantite) {
 
     // 🔥 UNIQUEMENT SI PATIENT ASSURÉ ET STATUT EP
     if (isAMU && statutProduit === 'EP') {
-        if (!confirm('⚠️ ENTENTE PRÉALABLE (EP)\n\nLe produit "' + produitNom + '" est sous Entente Préalable.\n\nAvez-vous reçu un accord écrit de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.')) {
+        if (!await demanderConfirmation('ENTENTE PRÉALABLE (EP)\n\nLe produit "' + produitNom + '" est sous Entente Préalable.\n\nAvez-vous reçu un accord écrit de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.', {type: 'warning'})) {
             // ⭐ Patron : "si on sélectionne un acte ou un produit qui
             // nécessite une EP que ça nous propose si on veut remplir l'EP
             // [...] et que le patient [...] ses identifiants soient
             // remplis en même temps avec son régime d'amu" — patient_id
             // suffit : la page EP pré-remplit déjà le régime depuis
             // patient.type_assurance.
-            if (confirm("Voulez-vous remplir l'Entente Préalable maintenant pour ce patient ?")) {
-                window.open('/amu/entente-prealable?patient_id=' + patientId, '_blank');
+            if (await demanderConfirmation("Voulez-vous remplir l'Entente Préalable maintenant pour ce patient ?")) {
+                window.open('/amu/entente-prealable?patient_id=' + patientId + '&retour=' + encodeURIComponent(location.pathname), '_blank');
             }
             return false;
         }
@@ -1286,7 +1286,7 @@ function ajouterProduitAuPanier(produit, quantite) {
 
     // 🔥 UNIQUEMENT SI PATIENT ASSURÉ ET STATUT TPC
     if (isAMU && statutProduit === 'TPC') {
-        if (!confirm('⚠️ TRAITEMENT DES PATHOLOGIES CHRONIQUES (TPC)\n\nLe produit "' + produitNom + '" concerne un Traitement des Pathologies Chroniques.\n\nAvez-vous reçu l\'accord TPC de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.')) {
+        if (!await demanderConfirmation('TRAITEMENT DES PATHOLOGIES CHRONIQUES (TPC)\n\nLe produit "' + produitNom + '" concerne un Traitement des Pathologies Chroniques.\n\nAvez-vous reçu l\'accord TPC de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.', {type: 'warning'})) {
             return false;
         }
     }
@@ -1307,7 +1307,7 @@ function ajouterProduitAuPanier(produit, quantite) {
     }
 
     if (messageAlerte) {
-        if (!confirm(messageAlerte)) {
+        if (!await demanderConfirmation(messageAlerte)) {
             return false;
         }
     }
@@ -1318,7 +1318,7 @@ function ajouterProduitAuPanier(produit, quantite) {
     if (indexExistant !== -1) {
         const nouvelleQte = panier[indexExistant].quantite + quantite;
         if (nouvelleQte > panier[indexExistant].stock_max) {
-            alert(`Stock maximum disponible pour ${produitNom}: ${panier[indexExistant].stock_max}`);
+            await afficherMessage(`Stock maximum disponible pour ${produitNom}: ${panier[indexExistant].stock_max}`);
             return false;
         }
         panier[indexExistant].quantite = nouvelleQte;
@@ -1371,7 +1371,7 @@ function ajouterProduitParScan(code) {
             }
             return fetch('/api/produits/search?search=' + encodeURIComponent(data.nom_article) + '&limit=20')
                 .then(r => r.json())
-                .then(res => {
+                .then(async res => {
                     const match = (res.data || []).find(p => p.nom === data.nom_article);
                     if (!match) {
                         afficherAlerteScan(`"${data.nom_article}" introuvable dans le catalogue — a peut-être été supprimé ou renommé.`, true);
@@ -1379,7 +1379,7 @@ function ajouterProduitParScan(code) {
                     }
                     let quantite = parseInt(document.getElementById('quantite').value);
                     if (isNaN(quantite) || quantite < 1) quantite = 1;
-                    const ok = ajouterProduitAuPanier({
+                    const ok = await ajouterProduitAuPanier({
                         id: match.id, nom: match.nom, prix: match.prix_vente ?? match.prix,
                         pbr: match.pbr || 0, stock: match.quantite_stock ?? match.stock,
                         statut: match.statut || 'direct', date_peremption: match.date_peremption || '',
@@ -1447,10 +1447,10 @@ function afficherAlerteScan(message, estErreur) {
     champ.focus();
 })();
 
-function modifierPrix(index, nouveauPrix) {
+async function modifierPrix(index, nouveauPrix) {
     const prix = parseFloat(nouveauPrix);
     if (isNaN(prix) || prix <= 0) {
-        alert('Veuillez entrer un prix valide');
+        await afficherMessage('Veuillez entrer un prix valide');
         afficherPanier();
         return;
     }
@@ -1462,12 +1462,12 @@ function modifierPrix(index, nouveauPrix) {
     }
 }
 
-function modifierQuantite(index, nouvelleQuantite) {
+async function modifierQuantite(index, nouvelleQuantite) {
     let qte = parseInt(nouvelleQuantite);
     if (isNaN(qte) || qte < 1) qte = 1;
     if (index >= 0 && index < panier.length) {
         if (qte > panier[index].stock_max) {
-            alert(`Stock maximum: ${panier[index].stock_max}`);
+            await afficherMessage(`Stock maximum: ${panier[index].stock_max}`);
             afficherPanier();
             return;
         }
@@ -1640,8 +1640,8 @@ function supprimerProduit(index) {
     }
 }
 
-function viderPanier() {
-    if (panier.length > 0 && confirm('Vider complètement le panier ?')) {
+async function viderPanier() {
+    if (panier.length > 0 && await demanderConfirmation('Vider complètement le panier ?')) {
         panier = [];
         afficherPanier();
     }
@@ -2216,19 +2216,19 @@ function restaurerTauxTemp() {
     }
 }
 
-function appliquerTauxTemp() {
+async function appliquerTauxTemp() {
     const input = document.getElementById('assurance2TauxTemp');
     const valeur = parseFloat(input.value);
     const tauxOriginal = patientTaux2Original || 0;
     
     if (isNaN(valeur) || valeur < 0) {
-        alert('Veuillez entrer un taux valide (0-100)');
+        await afficherMessage('Veuillez entrer un taux valide (0-100)');
         input.value = tauxOriginal;
         return;
     }
     
     if (valeur > 100) {
-        alert('Le taux ne peut pas dépasser 100%');
+        await afficherMessage('Le taux ne peut pas dépasser 100%');
         input.value = tauxOriginal;
         return;
     }
@@ -2295,9 +2295,9 @@ function resetTauxTemp() {
 // ============================================
 // FINALISER LA VENTE
 // ============================================
-function finaliserVente() {
+async function finaliserVente() {
     if (panier.length === 0) {
-        alert('Le panier est vide');
+        await afficherMessage('Le panier est vide');
         return;
     }
     
@@ -2305,7 +2305,7 @@ function finaliserVente() {
     const patientNom = sessionStorage.getItem('selectedPatientName') || localStorage.getItem('selectedPatientName');
     
     if (!patientId || patientId === 'null') {
-        alert('Veuillez sélectionner un patient');
+        await afficherMessage('Veuillez sélectionner un patient');
         return;
     }
     
@@ -2329,8 +2329,8 @@ function finaliserVente() {
 
     
     if (montantDonne === 0 && netAPayer > 0) {
-        const confirmation = prompt(
-            `⚠️ ATTENTION !\n\n` +
+        const confirmation = await demanderSaisie(
+            `ATTENTION !\n\n` +
             `Le montant donné est de 0 FCFA.\n` +
             `Net à payer : ${Math.round(netAPayer).toLocaleString('fr-FR')} FCFA\n\n` +
             `Pour confirmer que le patient n'a vraiment rien donné,\n` +
@@ -2339,26 +2339,26 @@ function finaliserVente() {
         );
         
         if (confirmation !== "000") {
-            alert('❌ Opération annulée. Veuillez saisir le montant donné par le patient.');
+            await afficherMessage('Opération annulée. Veuillez saisir le montant donné par le patient.', {type: 'danger'});
             document.getElementById('montantDonne').focus();
             document.getElementById('montantDonne').select();
             return;
         }
         
-        if (!confirm(`⚠️ DERNIÈRE CONFIRMATION :\n\nLe patient ${patientNom} n'a donné AUCUN argent (0 FCFA).\nLe reste à payer est de ${Math.round(resteAPayer).toLocaleString('fr-FR')} FCFA.\n\nVoulez-vous vraiment continuer ?`)) {
+        if (!await demanderConfirmation(`DERNIÈRE CONFIRMATION :\n\nLe patient ${patientNom} n'a donné AUCUN argent (0 FCFA).\nLe reste à payer est de ${Math.round(resteAPayer).toLocaleString('fr-FR')} FCFA.\n\nVoulez-vous vraiment continuer ?`, {type: 'warning'})) {
             document.getElementById('montantDonne').focus();
             return;
         }
     }
     
     if (montantDonne > 0 && montantDonne < netAPayer) {
-        if (!confirm(`⚠️ Le patient a donné ${Math.round(montantDonne).toLocaleString('fr-FR')} FCFA mais le net à payer est de ${Math.round(netAPayer).toLocaleString('fr-FR')} FCFA.\n\nIl reste ${Math.round(resteAPayer).toLocaleString('fr-FR')} FCFA à payer.\n\nVoulez-vous continuer ?`)) {
+        if (!await demanderConfirmation(`Le patient a donné ${Math.round(montantDonne).toLocaleString('fr-FR')} FCFA mais le net à payer est de ${Math.round(netAPayer).toLocaleString('fr-FR')} FCFA.\n\nIl reste ${Math.round(resteAPayer).toLocaleString('fr-FR')} FCFA à payer.\n\nVoulez-vous continuer ?`, {type: 'warning'})) {
             document.getElementById('montantDonne').focus();
             return;
         }
     }
     
-    if (!confirm('✅ Confirmer cette vente ?')) {
+    if (!await demanderConfirmation('Confirmer cette vente ?')) {
         return;
     }
     
@@ -2415,10 +2415,10 @@ function finaliserVente() {
         body: JSON.stringify(venteData)
     })
     .then(response => response.json())
-    .then(data => {
+    .then(async data => {
         if (!data.success) {
             hideProgress();
-            alert('❌ Erreur: ' + (data.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
             return;
         }
         
@@ -2465,7 +2465,7 @@ function finaliserVente() {
                 })
             })
             .then(r => r.json())
-            .then(factureData => {
+            .then(async factureData => {
                 console.log('📄 Réponse facture:', factureData);
                 if (factureData.success) {
                     console.log(`✅ Facture créée: ${factureData.numero_facture} (ID: ${factureData.facture_id})`);
@@ -2475,30 +2475,30 @@ function finaliserVente() {
                     console.error('❌ Erreur création facture:', factureData.error);
                 }
                 hideProgress();
-                redirigerApresVente(data.vente_id);
+                await redirigerApresVente(data.vente_id);
             })
-            .catch(error => {
+            .catch(async error => {
                 console.error('❌ Erreur fetch facture:', error);
                 hideProgress();
-                redirigerApresVente(data.vente_id);
+                await redirigerApresVente(data.vente_id);
             });
         } else {
             console.log('✅ Paiement total, pas de facture nécessaire');
             hideProgress();
-            redirigerApresVente(data.vente_id);
+            await redirigerApresVente(data.vente_id);
         }
     })
-    .catch(error => {
+    .catch(async error => {
         hideProgress();
         console.error('❌ Erreur:', error);
-        alert('❌ Erreur: ' + error);
+        await afficherMessage('Erreur: ' + error, {type: 'danger'});
     });
 }
 
 // ============================================
 // FONCTION DE REDIRECTION
 // ============================================
-function redirigerApresVente(venteId) {
+async function redirigerApresVente(venteId) {
     const typeDoc = document.getElementById('typeDocument').value;
     const format = document.getElementById('formatImpression').value;
     
@@ -2533,8 +2533,8 @@ function redirigerApresVente(venteId) {
     const newWindow = window.open(url, '_blank');
     
     if (!newWindow || newWindow.closed || typeof newWindow.closed == 'undefined') {
-        alert('⚠️ Veuillez autoriser les pop-ups pour ce site.\n\nCliquez sur le bouton ci-dessous pour ouvrir le reçu manuellement.');
-        if (confirm('Voulez-vous ouvrir le reçu dans l\'onglet actuel ?')) {
+        await afficherMessage('Veuillez autoriser les pop-ups pour ce site.\n\nCliquez sur le bouton ci-dessous pour ouvrir le reçu manuellement.', {type: 'warning'});
+        if (await demanderConfirmation('Voulez-vous ouvrir le reçu dans l\'onglet actuel ?')) {
             window.location.href = url;
         }
     }
@@ -2546,9 +2546,9 @@ function redirigerApresVente(venteId) {
 // VENTE EN ATTENTE — voir actes_vente.html pour le contexte complet.
 // Remplace l'ancien bouton Proforma ici aussi.
 // ============================================
-function soumettreVenteEnAttente() {
+async function soumettreVenteEnAttente() {
     if (panier.length === 0) {
-        alert('Le panier est vide');
+        await afficherMessage('Le panier est vide');
         return;
     }
 
@@ -2587,25 +2587,25 @@ function soumettreVenteEnAttente() {
         body: JSON.stringify(corpsRequete)
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         btn.innerHTML = originalText;
         if (data.success) {
-            alert(`✅ Vente en attente soumise !\n\n` +
+            await afficherMessage(`Vente en attente soumise !\n\n` +
                   `Code à communiquer au patient : #${data.numero_local}\n\n` +
-                  `Le patient doit se présenter à la caisse avec ce code pour finaliser le paiement.`);
+                  `Le patient doit se présenter à la caisse avec ce code pour finaliser le paiement.`, {type: 'success'});
             panier = [];
             document.getElementById('nomPatientAttente').value = '';
             afficherPanier();
             if (typeof chargerVenteAttenteBadge === 'function') chargerVenteAttenteBadge();
         } else {
             btn.disabled = false;
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => {
+    .catch(async error => {
         btn.disabled = false;
         btn.innerHTML = originalText;
-        alert('Erreur : ' + error);
+        await afficherMessage('Erreur : ' + error, {type: 'danger'});
     });
 }
 
@@ -2696,7 +2696,7 @@ document.addEventListener('DOMContentLoaded', function() {
             setTimeout(() => attendreProduitsChargesPuis(callback, tentative + 1), 200);
         }
 
-        attendreProduitsChargesPuis(function(select) {
+        attendreProduitsChargesPuis(async function(select) {
             console.log('🔍 Select trouvé:', select);
 
             if (!select) {
@@ -2708,7 +2708,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             let articlesCharges = 0;
             
-            function ajouterArticleSuivant(index) {
+            async function ajouterArticleSuivant(index) {
                 if (index >= articlesAuto.length) {
                     console.log(`📊 ${articlesCharges} produits chargés automatiquement sur ${articlesAuto.length}`);
                     
@@ -2751,7 +2751,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                         
                         try {
-                            ajouterProduit();
+                            await ajouterProduit();
                             articlesCharges++;
                             console.log(`✅ Produit ajouté au panier: ${article.nom}`);
                         } catch (e) {
@@ -2767,12 +2767,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     console.warn(`⚠️ Produit ID ${article.id} - ${article.nom} non trouvé dans la liste`);
                 }
                 
-                setTimeout(function() {
-                    ajouterArticleSuivant(index + 1);
+                setTimeout(async function() {
+                    await ajouterArticleSuivant(index + 1);
                 }, 300);
             }
             
-            ajouterArticleSuivant(0);
+            await ajouterArticleSuivant(0);
         });
     } else {
         console.log('ℹ️ Aucun article à charger automatiquement');

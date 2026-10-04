@@ -436,36 +436,36 @@ function genererQr() {
         }),
     })
         .then(r => r.json())
-        .then(d => {
+        .then(async d => {
             hideLoader();
             if (d.success) {
                 ouvrirModalQr(qrModalTypeCompte, qrModalUtilisateurId, qrModalNom);
             } else {
-                alert('Erreur: ' + (d.error || 'Erreur inconnue'));
+                await afficherMessage('Erreur: ' + (d.error || 'Erreur inconnue'), {type: 'danger'});
             }
         })
-        .catch(error => {
+        .catch(async error => {
             hideLoader();
-            alert('Erreur: ' + error);
+            await afficherMessage('Erreur: ' + error, {type: 'danger'});
         });
 }
 
-function revoquerQr(qrId) {
-    if (!confirm('Révoquer ce code QR ? Il ne pourra plus être utilisé pour se connecter.')) return;
+async function revoquerQr(qrId) {
+    if (!await demanderConfirmation('Révoquer ce code QR ? Il ne pourra plus être utilisé pour se connecter.')) return;
     showLoader();
     fetch(`/api/admin/qr/${qrId}/revoquer`, { method: 'POST' })
         .then(r => r.json())
-        .then(d => {
+        .then(async d => {
             hideLoader();
             if (d.success) {
                 afficherAucunQr();
             } else {
-                alert('Erreur: ' + (d.error || 'Erreur inconnue'));
+                await afficherMessage('Erreur: ' + (d.error || 'Erreur inconnue'), {type: 'danger'});
             }
         })
-        .catch(error => {
+        .catch(async error => {
             hideLoader();
-            alert('Erreur: ' + error);
+            await afficherMessage('Erreur: ' + error, {type: 'danger'});
         });
 }
 
@@ -493,7 +493,7 @@ function editUser(id, nom, email, role, actif) {
     new bootstrap.Modal(document.getElementById('userModal')).show();
 }
 
-function saveUser() {
+async function saveUser() {
     const data = {
         id: document.getElementById('userId').value,
         nom: document.getElementById('userNom').value,
@@ -504,7 +504,7 @@ function saveUser() {
     };
     
     if (!data.nom || !data.email) {
-        alert('Veuillez remplir tous les champs obligatoires');
+        await afficherMessage('Veuillez remplir tous les champs obligatoires');
         return;
     }
     
@@ -516,26 +516,26 @@ function saveUser() {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         hideLoader();
         if (data.success) {
-            alert(data.id ? 'Utilisateur modifié' : 'Utilisateur ajouté');
+            await afficherMessage(data.id ? 'Utilisateur modifié' : 'Utilisateur ajouté');
             location.reload();
         } else {
-            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => {
+    .catch(async error => {
         hideLoader();
-        alert('Erreur: ' + error);
+        await afficherMessage('Erreur: ' + error, {type: 'danger'});
     });
 }
 
-function toggleUserStatus(userId, actuel) {
+async function toggleUserStatus(userId, actuel) {
     const nouveauStatut = (actuel === 'oui' || actuel === 'true' || actuel === '1') ? 'non' : 'oui';
     const message = nouveauStatut === 'oui' ? 'activer' : 'désactiver';
     
-    if (confirm(`Voulez-vous ${message} cet utilisateur ?`)) {
+    if (await demanderConfirmation(`Voulez-vous ${message} cet utilisateur ?`)) {
         showLoader();
         
         fetch(`/api/admin/users/${userId}/toggle`, {
@@ -544,40 +544,40 @@ function toggleUserStatus(userId, actuel) {
             body: JSON.stringify({actif: nouveauStatut})
         })
         .then(r => r.json())
-        .then(data => {
+        .then(async data => {
             hideLoader();
             if (data.success) {
-                alert(`Utilisateur ${message} avec succès`);
+                await afficherMessage(`Utilisateur ${message} avec succès`);
                 location.reload();
             } else {
-                alert('Erreur: ' + data.error);
+                await afficherMessage('Erreur: ' + data.error, {type: 'danger'});
             }
         })
-        .catch(error => {
+        .catch(async error => {
             hideLoader();
-            alert('Erreur: ' + error);
+            await afficherMessage('Erreur: ' + error, {type: 'danger'});
         });
     }
 }
 
-function deleteUser(id) {
-    if (confirm('Supprimer cet utilisateur ?')) {
+async function deleteUser(id) {
+    if (await demanderConfirmation('Supprimer cet utilisateur ?')) {
         showLoader();
 
         fetch(`/api/admin/users/${id}`, { method: 'DELETE' })
             .then(r => r.json())
-            .then(data => {
+            .then(async data => {
                 hideLoader();
                 if (data.success) {
-                    alert('Utilisateur supprimé');
+                    await afficherMessage('Utilisateur supprimé');
                     location.reload();
                 } else {
-                    alert('Erreur: ' + data.error);
+                    await afficherMessage('Erreur: ' + data.error, {type: 'danger'});
                 }
             })
-            .catch(error => {
+            .catch(async error => {
                 hideLoader();
-                alert('Erreur: ' + error);
+                await afficherMessage('Erreur: ' + error, {type: 'danger'});
             });
     }
 }
@@ -608,18 +608,18 @@ document.getElementById('structureForm').addEventListener('submit', function(e) 
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         hideLoader();
         if(data.success) {
-            alert('✓ Structure mise à jour');
+            await afficherMessage('Structure mise à jour', {type: 'success'});
             location.reload();
         } else {
-            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => {
+    .catch(async error => {
         hideLoader();
-        alert('Erreur: ' + error);
+        await afficherMessage('Erreur: ' + error, {type: 'danger'});
     });
 });
 
@@ -675,30 +675,30 @@ function chargerHabilitations() {
         });
 }
 
-function revoquerHabilitation(id) {
-    if (!confirm('Révoquer cet accès ?')) return;
+async function revoquerHabilitation(id) {
+    if (!await demanderConfirmation('Révoquer cet accès ?')) return;
     showLoader();
     fetch(`/api/admin/habilitations/${id}/revoquer`, { method: 'POST' })
         .then(r => r.json())
-        .then(data => {
+        .then(async data => {
             hideLoader();
             if (data.success) {
                 chargerHabilitations();
             } else {
-                alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+                await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
             }
         })
-        .catch(error => {
+        .catch(async error => {
             hideLoader();
-            alert('Erreur: ' + error);
+            await afficherMessage('Erreur: ' + error, {type: 'danger'});
         });
 }
 
-document.getElementById('habilitationForm').addEventListener('submit', function(e) {
+document.getElementById('habilitationForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     const permissions = Array.from(document.querySelectorAll('#habilitationPermissions input:checked')).map(el => el.value);
     if (!permissions.length) {
-        alert('Sélectionnez au moins une section.');
+        await afficherMessage('Sélectionnez au moins une section.');
         return;
     }
     const expirationVal = document.getElementById('habilitationExpiration').value;
@@ -714,18 +714,18 @@ document.getElementById('habilitationForm').addEventListener('submit', function(
         })
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         hideLoader();
         if (data.success) {
             document.getElementById('habilitationForm').reset();
             chargerHabilitations();
         } else {
-            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => {
+    .catch(async error => {
         hideLoader();
-        alert('Erreur: ' + error);
+        await afficherMessage('Erreur: ' + error, {type: 'danger'});
     });
 });
 {% endif %}

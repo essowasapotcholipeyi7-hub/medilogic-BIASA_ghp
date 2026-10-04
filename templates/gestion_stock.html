@@ -1069,9 +1069,9 @@ function filterStockADate() {
     afficherStockADate(filtered);
 }
 
-function exporterProduitsCSV() {
+async function exporterProduitsCSV() {
     if (!tousLesProduits || tousLesProduits.length === 0) {
-        alert('Aucun produit à exporter');
+        await afficherMessage('Aucun produit à exporter');
         return;
     }
     
@@ -1108,7 +1108,7 @@ function editActe(id, nom, prix, pbr, description) {
     new bootstrap.Modal(document.getElementById('acteModal')).show();
 }
 
-function saveActe() {
+async function saveActe() {
     const data = {
         id: document.getElementById('acteId').value,
         nom: document.getElementById('acteNom').value,
@@ -1119,7 +1119,7 @@ function saveActe() {
     };
     
     if (!data.nom || !data.prix) {
-        alert('Veuillez remplir tous les champs obligatoires');
+        await afficherMessage('Veuillez remplir tous les champs obligatoires');
         return;
     }
     
@@ -1131,38 +1131,38 @@ function saveActe() {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         hideLoader();
         if(data.success) {
-            alert('Acte enregistré');
+            await afficherMessage('Acte enregistré');
             location.reload();
         } else {
-            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => {
+    .catch(async error => {
         hideLoader();
-        alert('Erreur: ' + error);
+        await afficherMessage('Erreur: ' + error, {type: 'danger'});
     });
 }
 
-function deleteActe(id) {
-    if (confirm('Supprimer cet acte ?')) {
+async function deleteActe(id) {
+    if (await demanderConfirmation('Supprimer cet acte ?')) {
         showLoader();
         fetch(`/api/admin/actes/${id}`, { method: 'DELETE' })
             .then(r => r.json())
-            .then(data => {
+            .then(async data => {
                 hideLoader();
                 if(data.success) {
-                    alert('Acte supprimé');
+                    await afficherMessage('Acte supprimé');
                     location.reload();
                 } else {
-                    alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+                    await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
                 }
             })
-            .catch(error => {
+            .catch(async error => {
                 hideLoader();
-                alert('Erreur: ' + error);
+                await afficherMessage('Erreur: ' + error, {type: 'danger'});
             });
     }
 }
@@ -1204,7 +1204,7 @@ function modifierProduit(id) {
     new bootstrap.Modal(document.getElementById('produitModal')).show();
 }
 
-function saveProduit() {
+async function saveProduit() {
     const id = document.getElementById('produitId').value;
     const produit = {
         nom: document.getElementById('produitNom').value,
@@ -1222,7 +1222,7 @@ function saveProduit() {
     };
     
     if (!produit.nom || !produit.prix_vente) {
-        alert('Veuillez remplir tous les champs obligatoires (Nom et Prix vente)');
+        await afficherMessage('Veuillez remplir tous les champs obligatoires (Nom et Prix vente)');
         return;
     }
     
@@ -1237,19 +1237,19 @@ function saveProduit() {
         body: JSON.stringify(produit) 
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         hideLoader();
         if (data.success) {
-            alert(id ? '✓ Produit modifié' : '✓ Produit ajouté');
+            await afficherMessage(id ? 'Produit modifié' : 'Produit ajouté', {type: 'success'});
             bootstrap.Modal.getInstance(document.getElementById('produitModal')).hide();
             chargerProduitsAdmin();
         } else {
-            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => {
+    .catch(async error => {
         hideLoader();
-        alert('Erreur: ' + error);
+        await afficherMessage('Erreur: ' + error, {type: 'danger'});
     });
 }
 
@@ -1260,12 +1260,12 @@ function approvisionner(id, nom) {
     new bootstrap.Modal(document.getElementById('approModal')).show();
 }
 
-function validerApprovisionnement() {
+async function validerApprovisionnement() {
     const id = document.getElementById('approProduitId').value;
     const quantite = parseInt(document.getElementById('approQuantite').value);
     
     if (!quantite || quantite <= 0) { 
-        alert('Veuillez entrer une quantité valide'); 
+        await afficherMessage('Veuillez entrer une quantité valide'); 
         return; 
     }
     
@@ -1277,39 +1277,39 @@ function validerApprovisionnement() {
         body: JSON.stringify({quantite: quantite})
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         hideLoader();
         if (data.success) {
-            alert(`✓ ${quantite} unité(s) ajoutée(s) au stock`);
+            await afficherMessage(`${quantite} unité(s) ajoutée(s) au stock`, {type: 'success'});
             bootstrap.Modal.getInstance(document.getElementById('approModal')).hide();
             chargerProduitsAdmin();
         } else {
-            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => {
+    .catch(async error => {
         hideLoader();
-        alert('Erreur: ' + error);
+        await afficherMessage('Erreur: ' + error, {type: 'danger'});
     });
 }
 
-function supprimerProduit(id) {
-    if (confirm('Supprimer définitivement ce produit ?')) {
+async function supprimerProduit(id) {
+    if (await demanderConfirmation('Supprimer définitivement ce produit ?')) {
         showLoader();
         fetch(`/api/admin/produits/${id}`, { method: 'DELETE' })
             .then(r => r.json())
-            .then(data => {
+            .then(async data => {
                 hideLoader();
                 if (data.success) {
-                    alert('Produit supprimé');
+                    await afficherMessage('Produit supprimé');
                     chargerProduitsAdmin();
                 } else {
-                    alert('Erreur: ' + data.error);
+                    await afficherMessage('Erreur: ' + data.error, {type: 'danger'});
                 }
             })
-            .catch(error => {
+            .catch(async error => {
                 hideLoader();
-                alert('Erreur: ' + error);
+                await afficherMessage('Erreur: ' + error, {type: 'danger'});
             });
     }
 }
@@ -1454,10 +1454,10 @@ function _collecterLignesInventaireComptees() {
     return lignes;
 }
 
-function apercuInventaire() {
+async function apercuInventaire() {
     const lignes = _collecterLignesInventaireComptees();
     if (lignes.length === 0) {
-        alert("Saisissez au moins une quantité comptée avant de voir l'aperçu.");
+        await afficherMessage("Saisissez au moins une quantité comptée avant de voir l'aperçu.");
         return;
     }
     inventaireApercuLignes = lignes;
@@ -1480,7 +1480,7 @@ function apercuInventaire() {
     new bootstrap.Modal(document.getElementById('modalApercuInventaire')).show();
 }
 
-function imprimerApercuInventaire() {
+async function imprimerApercuInventaire() {
     const lignes = inventaireApercuLignes;
     if (!lignes || lignes.length === 0) return;
     const dateStr = new Date().toLocaleDateString('fr-FR');
@@ -1524,14 +1524,14 @@ function imprimerApercuInventaire() {
         </body></html>
     `;
     const w = window.open('', '_blank');
-    if (!w) { alert("Le navigateur a bloqué l'ouverture de la fenêtre d'impression."); return; }
+    if (!w) { await afficherMessage("Le navigateur a bloqué l'ouverture de la fenêtre d'impression."); return; }
     w.document.write(html);
     w.document.close();
     w.focus();
     setTimeout(() => w.print(), 300);
 }
 
-function validerInventaire() {
+async function validerInventaire() {
     const lignes = _collecterLignesInventaireComptees().map(l => ({
         produit_id: l.produit_id,
         quantite_comptee: l.quantite_comptee,
@@ -1539,10 +1539,10 @@ function validerInventaire() {
     }));
 
     if (lignes.length === 0) {
-        alert('Saisissez au moins une quantité comptée avant de valider.');
+        await afficherMessage('Saisissez au moins une quantité comptée avant de valider.');
         return;
     }
-    if (!confirm(`Valider l'inventaire pour ${lignes.length} médicament(s) saisi(s) ?`)) return;
+    if (!await demanderConfirmation(`Valider l'inventaire pour ${lignes.length} médicament(s) saisi(s) ?`)) return;
 
     showLoader();
     fetch('/api/produits/inventaire/valider', {
@@ -1551,19 +1551,19 @@ function validerInventaire() {
         body: JSON.stringify({lignes: lignes})
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         hideLoader();
         if (data.success) {
-            alert(`✓ Inventaire validé — ${data.nb_ecarts} écart(s) ajusté(s) sur ${data.nb_lignes} médicament(s) compté(s).`);
+            await afficherMessage(`Inventaire validé — ${data.nb_ecarts} écart(s) ajusté(s) sur ${data.nb_lignes} médicament(s) compté(s).`, {type: 'success'});
             chargerInventaire();
             chargerProduitsAdmin();
         } else {
-            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => {
+    .catch(async error => {
         hideLoader();
-        alert('Erreur: ' + error);
+        await afficherMessage('Erreur: ' + error, {type: 'danger'});
     });
 }
 

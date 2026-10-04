@@ -102,13 +102,13 @@ function toggleChoixServiceActif() {
         body: JSON.stringify({ choix_service_actif: actif })
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (!data.success) {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
             document.getElementById('choixServiceActifSwitch').checked = !actif;
         }
     })
-    .catch(() => { alert('Erreur réseau'); document.getElementById('choixServiceActifSwitch').checked = !actif; });
+    .catch(async () => { await afficherMessage('Erreur réseau', {type: 'danger'}); document.getElementById('choixServiceActifSwitch').checked = !actif; });
 }
 
 fetch('/api/parametrage-service').then(r => r.json()).then(data => {
@@ -154,31 +154,31 @@ function choisirActeClassif(nom) {
     document.getElementById('classifSearch').value = nom;
 }
 
-function enregistrerClassification() {
-    if (!classifChoisi) { alert('Choisissez un acte dans la liste.'); return; }
+async function enregistrerClassification() {
+    if (!classifChoisi) { await afficherMessage('Choisissez un acte dans la liste.'); return; }
     const serviceId = document.getElementById('classifServiceSelect').value;
-    if (!serviceId) { alert('Choisissez un service.'); return; }
+    if (!serviceId) { await afficherMessage('Choisissez un service.'); return; }
     fetch('/api/classification-services', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nom_acte: classifChoisi, service_id: serviceId })
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
             bootstrap.Modal.getInstance(document.getElementById('modalClassification')).hide();
             chargerClassifications();
         } else {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
-    .catch(e => alert('Erreur : ' + e));
+    .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
 
-function supprimerClassification(id) {
-    if (!confirm('Retirer cette classification ? L\'acte redeviendra soumis uniquement à la détection automatique.')) return;
+async function supprimerClassification(id) {
+    if (!await demanderConfirmation('Retirer cette classification ? L\'acte redeviendra soumis uniquement à la détection automatique.')) return;
     fetch('/api/classification-services/' + id, { method: 'DELETE' })
         .then(r => r.json())
-        .then(data => { if (data.success) chargerClassifications(); else alert('Erreur : ' + (data.error || 'inconnue')); });
+        .then(async data => { if (data.success) chargerClassifications(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'}); });
 }
 
 function chargerClassifications() {

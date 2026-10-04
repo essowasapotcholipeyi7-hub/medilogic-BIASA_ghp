@@ -352,19 +352,19 @@ function ouvrirPaiement(factureId) {
     new bootstrap.Modal(document.getElementById('paiementModal')).show();
 }
 
-function confirmerPaiement(factureId) {
+async function confirmerPaiement(factureId) {
     const montant = parseFloat(document.getElementById('montantPaiement').value);
     const modePaiement = document.getElementById('modePaiement').value;
     const notes = document.getElementById('notesPaiement').value;
     
     if (!montant || montant <= 0) {
-        alert('Veuillez saisir un montant valide');
+        await afficherMessage('Veuillez saisir un montant valide');
         return;
     }
     
     const reste = {{ facture.reste_a_payer }};
     if (montant > reste) {
-        alert(`Le montant (${Math.round(montant).toLocaleString('fr-FR')} FCFA) dépasse le reste à payer (${Math.round(reste).toLocaleString('fr-FR')} FCFA)`);
+        await afficherMessage(`Le montant (${Math.round(montant).toLocaleString('fr-FR')} FCFA) dépasse le reste à payer (${Math.round(reste).toLocaleString('fr-FR')} FCFA)`);
         return;
     }
     
@@ -376,7 +376,7 @@ function confirmerPaiement(factureId) {
     confirmMsg += `Reste après paiement: ${Math.round(reste - montant).toLocaleString('fr-FR')} FCFA\n\n`;
     confirmMsg += `Confirmer ce paiement ?`;
     
-    if (!confirm(confirmMsg)) {
+    if (!await demanderConfirmation(confirmMsg)) {
         return;
     }
     
@@ -392,41 +392,41 @@ function confirmerPaiement(factureId) {
         })
     })
     .then(response => response.json())
-    .then(data => {
+    .then(async data => {
         hideProgress();
         
         if (data.success) {
-            alert(`Paiement enregistré !\nMontant: ${Math.round(montant).toLocaleString('fr-FR')} FCFA\nReste: ${Math.round(data.reste_a_payer).toLocaleString('fr-FR')} FCFA`);
+            await afficherMessage(`Paiement enregistré !\nMontant: ${Math.round(montant).toLocaleString('fr-FR')} FCFA\nReste: ${Math.round(data.reste_a_payer).toLocaleString('fr-FR')} FCFA`);
             
             bootstrap.Modal.getInstance(document.getElementById('paiementModal')).hide();
             
             // Imprimer le reçu
             if (data.statut === 'payee') {
-                if (confirm('Facture entièrement payée. Voulez-vous imprimer la facture ?')) {
+                if (await demanderConfirmation('Facture entièrement payée. Voulez-vous imprimer la facture ?')) {
                     ouvrirChoixFormat(factureId);
                 }
             } else {
-                if (confirm('Voulez-vous imprimer le reçu de paiement ?')) {
+                if (await demanderConfirmation('Voulez-vous imprimer le reçu de paiement ?')) {
                     imprimerRecuPaiement(data.paiement_id);
                 }
             }
             
             location.reload();
         } else {
-            alert('❌ Erreur: ' + (data.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => {
+    .catch(async error => {
         hideProgress();
-        alert('❌ Erreur: ' + error);
+        await afficherMessage('Erreur: ' + error, {type: 'danger'});
     });
 }
 
 // ============================================
 // ANNULATION FACTURE
 // ============================================
-function annulerFacture(factureId) {
-    const motif = prompt('Motif de l\'annulation :\n\n(Optionnel - laissez vide si aucun motif)');
+async function annulerFacture(factureId) {
+    const motif = await demanderSaisie('Motif de l\'annulation :\n\n(Optionnel - laissez vide si aucun motif)');
     if (motif === null) return; // Annulé par l'utilisateur
     
     const msg = `⚠️ ANNULATION DE LA FACTURE\n\n`;
@@ -436,7 +436,7 @@ function annulerFacture(factureId) {
     msg += `Êtes-vous sûr de vouloir annuler cette facture ?\n`;
     msg += `Cette action est irréversible.`;
     
-    if (!confirm(msg)) return;
+    if (!await demanderConfirmation(msg)) return;
     
     showProgress('Annulation de la facture', 'Traitement en cours...');
     
@@ -446,18 +446,18 @@ function annulerFacture(factureId) {
         body: JSON.stringify({ motif: motif || 'Annulation manuelle' })
     })
     .then(response => response.json())
-    .then(data => {
+    .then(async data => {
         hideProgress();
         if (data.success) {
-            alert('Facture annulée avec succès');
+            await afficherMessage('Facture annulée avec succès');
             location.reload();
         } else {
-            alert('❌ Erreur: ' + (data.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => {
+    .catch(async error => {
         hideProgress();
-        alert('❌ Erreur: ' + error);
+        await afficherMessage('Erreur: ' + error, {type: 'danger'});
     });
 }
 

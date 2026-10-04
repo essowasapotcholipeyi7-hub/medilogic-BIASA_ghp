@@ -1122,7 +1122,7 @@ function resetTauxAssurance2() {
 // GESTION ARTICLES (CORRIGÉE AVEC PRIX + PÉREMPTION)
 // ============================================
 
-function ajouterArticleSelectionne() {
+async function ajouterArticleSelectionne() {
     const acteSelect = document.getElementById('acteSelect');
     const produitSelect = document.getElementById('produitSelect');
     const qte = parseInt(document.getElementById('quantiteArticle').value) || 1;
@@ -1154,7 +1154,7 @@ function ajouterArticleSelectionne() {
             prise_en_charge_cac: opt.dataset.priseEnChargeCac !== 'false',
             statut: opt.dataset.statut || 'DIRECT',
         };
-        if (validerEtAjouterActeProforma(acte, qte, isAMU, isCAC, patientAssuranceProforma)) added++;
+        if (await validerEtAjouterActeProforma(acte, qte, isAMU, isCAC, patientAssuranceProforma)) added++;
         opt.selected = false;
     }
 
@@ -1172,12 +1172,12 @@ function ajouterArticleSelectionne() {
             prise_en_charge_cac: opt.dataset.priseEnChargeCac !== 'false',
             statut: opt.dataset.statut || 'DIRECT',
         };
-        if (validerEtAjouterProduitProforma(produit, qte, isAMU, isCAC, patientAssuranceProforma)) added++;
+        if (await validerEtAjouterProduitProforma(produit, qte, isAMU, isCAC, patientAssuranceProforma)) added++;
         opt.selected = false;
     }
 
     if (added === 0) {
-        alert('Veuillez sélectionner au moins un article valide dans les listes');
+        await afficherMessage('Veuillez sélectionner au moins un article valide dans les listes');
     }
 }
 
@@ -1187,7 +1187,7 @@ function ajouterArticleSelectionne() {
 // points d'entrée). `acte` : {nom, prix, pbr, prise_en_charge_amu,
 // prise_en_charge_amu_tns, prise_en_charge_cac, statut}. Retourne true si
 // ajouté.
-function validerEtAjouterActeProforma(acte, qte, isAMU, isCAC, patientAssuranceProforma) {
+async function validerEtAjouterActeProforma(acte, qte, isAMU, isCAC, patientAssuranceProforma) {
     const nom = acte.nom;
     const prix = acte.prix || 0;
     const pbrValue = (acte.pbr !== undefined && acte.pbr !== null && !isNaN(acte.pbr)) ? acte.pbr : 0;
@@ -1199,7 +1199,7 @@ function validerEtAjouterActeProforma(acte, qte, isAMU, isCAC, patientAssuranceP
 
     // ⭐ ENTENTE PRÉALABLE (les actes n'ont pas de statut TPC).
     if (isAMU && statutActe === 'EP') {
-        if (!confirm('⚠️ ENTENTE PRÉALABLE (EP)\n\nL\'acte "' + nom + '" est sous Entente Préalable.\n\nAvez-vous reçu un accord écrit de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.')) {
+        if (!await demanderConfirmation('ENTENTE PRÉALABLE (EP)\n\nL\'acte "' + nom + '" est sous Entente Préalable.\n\nAvez-vous reçu un accord écrit de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.', {type: 'warning'})) {
             return false;
         }
     }
@@ -1216,7 +1216,7 @@ function validerEtAjouterActeProforma(acte, qte, isAMU, isCAC, patientAssuranceP
     } else if (!priseEnChargeCAC && isCAC && !isAMU) {
         infoMessageActe = `L'acte "${nom}" n'est pas pris en charge par ${assurance2Nom} (CAC).\n\nLe patient n'a pas d'assurance principale.`;
     }
-    if (infoMessageActe && !confirm(infoMessageActe)) {
+    if (infoMessageActe && !await demanderConfirmation(infoMessageActe)) {
         return false;
     }
 
@@ -1232,7 +1232,7 @@ function validerEtAjouterActeProforma(acte, qte, isAMU, isCAC, patientAssuranceP
 // `produit` : {nom, prix_vente, pbr, quantite_stock, date_peremption,
 // prise_en_charge_amu, prise_en_charge_amu_tns, prise_en_charge_cac,
 // statut}.
-function validerEtAjouterProduitProforma(produit, qte, isAMU, isCAC, patientAssuranceProforma) {
+async function validerEtAjouterProduitProforma(produit, qte, isAMU, isCAC, patientAssuranceProforma) {
     const nom = produit.nom;
     const prix = produit.prix_vente || 0;
     const pbrValue = (produit.pbr !== undefined && produit.pbr !== null && !isNaN(produit.pbr)) ? produit.pbr : 0;
@@ -1244,7 +1244,7 @@ function validerEtAjouterProduitProforma(produit, qte, isAMU, isCAC, patientAssu
     // 🔥 VÉRIFICATION DU STOCK
     const stock = produit.quantite_stock || 0;
     if (stock <= 0) {
-        alert(`❌ Le produit "${nom}" est en rupture de stock.`);
+        await afficherMessage(`Le produit "${nom}" est en rupture de stock.`, {type: 'danger'});
         return false;
     }
 
@@ -1258,12 +1258,12 @@ function validerEtAjouterProduitProforma(produit, qte, isAMU, isCAC, patientAssu
 
         if (!isNaN(perempDate.getTime())) {
             if (perempDate < today) {
-                alert(`❌ Le produit "${nom}" est PÉRIMÉ depuis le ${datePeremption}.\n\nImpossible de l'ajouter.`);
+                await afficherMessage(`Le produit "${nom}" est PÉRIMÉ depuis le ${datePeremption}.\n\nImpossible de l'ajouter.`, {type: 'danger'});
                 return false;
             }
             const joursRestants = Math.ceil((perempDate - today) / (1000 * 60 * 60 * 24));
             if (joursRestants <= 7 && joursRestants > 0) {
-                if (!confirm(`⚠️ Attention ! Le produit "${nom}" expire dans ${joursRestants} jour(s) (${datePeremption}).\n\nVoulez-vous quand même l'ajouter ?`)) {
+                if (!await demanderConfirmation(`Attention ! Le produit "${nom}" expire dans ${joursRestants} jour(s) (${datePeremption}).\n\nVoulez-vous quand même l'ajouter ?`, {type: 'warning'})) {
                     return false;
                 }
             }
@@ -1273,12 +1273,12 @@ function validerEtAjouterProduitProforma(produit, qte, isAMU, isCAC, patientAssu
     // ⭐ ENTENTE PRÉALABLE / TPC.
     const statutProduit = (produit.statut || 'DIRECT').toUpperCase();
     if (isAMU && statutProduit === 'EP') {
-        if (!confirm('⚠️ ENTENTE PRÉALABLE (EP)\n\nLe produit "' + nom + '" est sous Entente Préalable.\n\nAvez-vous reçu un accord écrit de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.')) {
+        if (!await demanderConfirmation('ENTENTE PRÉALABLE (EP)\n\nLe produit "' + nom + '" est sous Entente Préalable.\n\nAvez-vous reçu un accord écrit de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.', {type: 'warning'})) {
             return false;
         }
     }
     if (isAMU && statutProduit === 'TPC') {
-        if (!confirm('⚠️ TRAITEMENT DES PATHOLOGIES CHRONIQUES (TPC)\n\nLe produit "' + nom + '" concerne un Traitement des Pathologies Chroniques.\n\nAvez-vous reçu l\'accord TPC de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.')) {
+        if (!await demanderConfirmation('TRAITEMENT DES PATHOLOGIES CHRONIQUES (TPC)\n\nLe produit "' + nom + '" concerne un Traitement des Pathologies Chroniques.\n\nAvez-vous reçu l\'accord TPC de l\'assurance ?\n\nCliquez sur OK si vous avez l\'accord, sinon Annulez.', {type: 'warning'})) {
             return false;
         }
     }
@@ -1295,7 +1295,7 @@ function validerEtAjouterProduitProforma(produit, qte, isAMU, isCAC, patientAssu
     } else if (!isAMU && isCAC && !priseEnChargeCAC) {
         messageAlerteProduit = `ℹ️ Le produit "${nom}" n'est pas pris en charge par ${assurance2Nom} (CAC).\n\nLe patient devra payer la totalité (${Math.round(prix * qte).toLocaleString('fr-FR')} FCFA).\n\nVoulez-vous continuer ?`;
     }
-    if (messageAlerteProduit && !confirm(messageAlerteProduit)) {
+    if (messageAlerteProduit && !await demanderConfirmation(messageAlerteProduit)) {
         return false;
     }
 
@@ -1325,19 +1325,19 @@ function ajouterArticleParScan(code) {
             if (data.type_article === 'acte') {
                 return fetch('/api/actes?search=' + encodeURIComponent(data.nom_article) + '&limit=20')
                     .then(r => r.json())
-                    .then(res => {
+                    .then(async res => {
                         const match = (res.data || []).find(a => a.nom === data.nom_article);
                         if (!match) { afficherAlerteScanProforma(`"${data.nom_article}" introuvable dans le catalogue.`, true); return; }
-                        const ajoute = validerEtAjouterActeProforma(match, qte, isAMU, isCAC, patientAssuranceProforma);
+                        const ajoute = await validerEtAjouterActeProforma(match, qte, isAMU, isCAC, patientAssuranceProforma);
                         afficherAlerteScanProforma(ajoute ? `✅ "${match.nom}" ajouté au panier.` : `"${match.nom}" non ajouté.`, !ajoute);
                     });
             } else {
                 return fetch('/api/produits/search?search=' + encodeURIComponent(data.nom_article) + '&limit=20')
                     .then(r => r.json())
-                    .then(res => {
+                    .then(async res => {
                         const match = (res.data || []).find(p => p.nom === data.nom_article);
                         if (!match) { afficherAlerteScanProforma(`"${data.nom_article}" introuvable dans le catalogue.`, true); return; }
-                        const ajoute = validerEtAjouterProduitProforma(match, qte, isAMU, isCAC, patientAssuranceProforma);
+                        const ajoute = await validerEtAjouterProduitProforma(match, qte, isAMU, isCAC, patientAssuranceProforma);
                         afficherAlerteScanProforma(ajoute ? `✅ "${match.nom}" ajouté au panier.` : `"${match.nom}" non ajouté.`, !ajoute);
                     });
             }
@@ -1384,16 +1384,16 @@ function afficherAlerteScanProforma(message, estErreur) {
         champ.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
 })();
-function ajouterArticlePersonnalise() {
-    const nom = prompt('Nom de l\'article :');
+async function ajouterArticlePersonnalise() {
+    const nom = await demanderSaisie('Nom de l\'article :');
     if (!nom) return;
     
-    const type = confirm('Cliquez OK pour "Acte", Annuler pour "Produit"') ? 'acte' : 'produit';
-    const prix = parseFloat(prompt('Prix unitaire (FCFA) :')) || 0;
-    const qte = parseInt(prompt('Quantité :')) || 1;
+    const type = await demanderConfirmation('Cliquez OK pour "Acte", Annuler pour "Produit"') ? 'acte' : 'produit';
+    const prix = parseFloat(await demanderSaisie('Prix unitaire (FCFA) :')) || 0;
+    const qte = parseInt(await demanderSaisie('Quantité :')) || 1;
     
     if (prix <= 0) {
-        alert('Prix invalide');
+        await afficherMessage('Prix invalide');
         return;
     }
     
@@ -1463,12 +1463,12 @@ function modifierQuantitePanier(index, delta) {
     afficherPanier();
 }
 
-function modifierPrixPanier(index, nouveauPrix) {
+async function modifierPrixPanier(index, nouveauPrix) {
     const item = panierArticles[index];
     if (!item) return;
     const prix = parseFloat(nouveauPrix);
     if (isNaN(prix) || prix <= 0) {
-        alert('Prix invalide');
+        await afficherMessage('Prix invalide');
         afficherPanier();
         return;
     }
@@ -1477,9 +1477,9 @@ function modifierPrixPanier(index, nouveauPrix) {
     afficherPanier();
 }
 
-function viderPanier() {
+async function viderPanier() {
     if (panierArticles.length === 0) return;
-    if (!confirm('Vider le panier ?')) return;
+    if (!await demanderConfirmation('Vider le panier ?')) return;
     panierArticles = [];
     afficherPanier();
 }
@@ -1748,14 +1748,14 @@ function calculerTotal() {
 // ============================================
 // SAUVEGARDER PROFORMA (CORRIGÉ)
 // ============================================
-function sauvegarderProforma() {
+async function sauvegarderProforma() {
     if (panierArticles.length === 0) {
-        alert('Veuillez ajouter au moins un article');
+        await afficherMessage('Veuillez ajouter au moins un article');
         return;
     }
     
     if (!patientId) {
-        alert('Veuillez sélectionner un patient');
+        await afficherMessage('Veuillez sélectionner un patient');
         return;
     }
     
@@ -1863,7 +1863,7 @@ function sauvegarderProforma() {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         hideLoader();
         if (data.success) {
             let msg = `Proforma #${data.numero} créée !\n`;
@@ -1874,29 +1874,29 @@ function sauvegarderProforma() {
                     msg += ` - Taux modifié (original: ${data.taux_original}%)`;
                 }
             }
-            alert(msg);
+            await afficherMessage(msg);
             
-            if (confirm('Imprimer la proforma ?')) {
+            if (await demanderConfirmation('Imprimer la proforma ?')) {
                 window.open(`/proforma/${data.id}/print?format=A4`, '_blank');
             }
             
             bootstrap.Modal.getInstance(document.getElementById('proformaModal')).hide();
             location.reload();
         } else {
-            alert('❌ Erreur: ' + data.error);
+            await afficherMessage('Erreur: ' + data.error, {type: 'danger'});
         }
     })
-    .catch(() => { 
+    .catch(async () => { 
         hideLoader(); 
-        alert('❌ Erreur'); 
+        await afficherMessage('Erreur', {type: 'danger'}); 
     });
 }
 
 // ============================================
 // CHANGER STATUT
 // ============================================
-function changerStatut(id, statut) {
-    if (!confirm('Confirmer le changement de statut ?')) return;
+async function changerStatut(id, statut) {
+    if (!await demanderConfirmation('Confirmer le changement de statut ?')) return;
     
     fetch(`/api/proformas/${id}/statut`, {
         method: 'PUT',
@@ -1904,11 +1904,11 @@ function changerStatut(id, statut) {
         body: JSON.stringify({ statut: statut })
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         if (data.success) {
             location.reload();
         } else {
-            alert('Erreur: ' + data.error);
+            await afficherMessage('Erreur: ' + data.error, {type: 'danger'});
         }
     });
 }
@@ -2020,9 +2020,9 @@ let proformaConversionData = null;
 let panierConversion = [];
 let conversionNetAPayer = 0;
 
-function convertirEnVente(proformaId) {
+async function convertirEnVente(proformaId) {
     if (!proformaId) {
-        alert('ID de proforma invalide');
+        await afficherMessage('ID de proforma invalide');
         return;
     }
     
@@ -2030,21 +2030,21 @@ function convertirEnVente(proformaId) {
     
     fetch(`/api/proformas/${proformaId}`)
         .then(r => r.json())
-        .then(data => {
+        .then(async data => {
             hideLoader();
             
             if (data.error) {
-                alert('Erreur: ' + data.error);
+                await afficherMessage('Erreur: ' + data.error, {type: 'danger'});
                 return;
             }
             
             if (data.statut === 'converti_en_vente') {
-                alert('Cette proforma a déjà été convertie en vente.');
+                await afficherMessage('Cette proforma a déjà été convertie en vente.');
                 return;
             }
             
             if (data.statut === 'refuse') {
-                alert('Cette proforma a été refusée et ne peut pas être convertie.');
+                await afficherMessage('Cette proforma a été refusée et ne peut pas être convertie.');
                 return;
             }
             
@@ -2085,10 +2085,10 @@ function convertirEnVente(proformaId) {
             console.log('📊 Panier conversion avec PBR:', panierConversion);
             afficherModalConversion(data);
         })
-        .catch(error => {
+        .catch(async error => {
             hideLoader();
             console.error('❌ Erreur:', error);
-            alert('Erreur lors du chargement de la proforma');
+            await afficherMessage('Erreur lors du chargement de la proforma', {type: 'danger'});
         });
 }
 
@@ -2898,8 +2898,8 @@ function modifierArticleConversion(index, champ, valeur) {
     mettreAJourTotauxConversion();
 }
 
-function supprimerArticleConversion(index) {
-    if (!confirm('Supprimer cet article ?')) return;
+async function supprimerArticleConversion(index) {
+    if (!await demanderConfirmation('Supprimer cet article ?')) return;
     panierConversion.splice(index, 1);
     
     const tbody = document.getElementById('convertPanierBody');
@@ -2910,9 +2910,9 @@ function supprimerArticleConversion(index) {
     mettreAJourTotauxConversion();
 }
 
-function supprimerTousArticlesConversion() {
+async function supprimerTousArticlesConversion() {
     if (panierConversion.length === 0) return;
-    if (!confirm('Supprimer tous les articles ?')) return;
+    if (!await demanderConfirmation('Supprimer tous les articles ?')) return;
     panierConversion = [];
     
     const tbody = document.getElementById('convertPanierBody');
@@ -2920,19 +2920,19 @@ function supprimerTousArticlesConversion() {
     mettreAJourTotauxConversion();
 }
 
-function ajouterArticleConversion() {
-    const nom = prompt('Nom de l\'article :');
+async function ajouterArticleConversion() {
+    const nom = await demanderSaisie('Nom de l\'article :');
     if (!nom) return;
     
-    const prix = parseFloat(prompt('Prix unitaire (FCFA) :')) || 0;
-    const qte = parseInt(prompt('Quantité :')) || 1;
+    const prix = parseFloat(await demanderSaisie('Prix unitaire (FCFA) :')) || 0;
+    const qte = parseInt(await demanderSaisie('Quantité :')) || 1;
     
     if (prix <= 0) {
-        alert('Prix invalide');
+        await afficherMessage('Prix invalide');
         return;
     }
     
-    const type = confirm('Cliquez OK pour "Acte", Annuler pour "Produit"') ? 'acte' : 'produit';
+    const type = await demanderConfirmation('Cliquez OK pour "Acte", Annuler pour "Produit"') ? 'acte' : 'produit';
     
     panierConversion.push({
         id: null,
@@ -3013,14 +3013,14 @@ function calculerRenduConversion() {
 // ============================================
 // FINALISER LA CONVERSION EN VENTE (CORRIGÉ)
 // ============================================
-function finaliserConversionVente() {
+async function finaliserConversionVente() {
     if (!proformaConversionData) {
-        alert('Aucune proforma à convertir');
+        await afficherMessage('Aucune proforma à convertir');
         return;
     }
     
     if (panierConversion.length === 0) {
-        alert('Le panier est vide. Ajoutez au moins un article.');
+        await afficherMessage('Le panier est vide. Ajoutez au moins un article.');
         return;
     }
     
@@ -3030,20 +3030,20 @@ function finaliserConversionVente() {
     const typeDocument = document.getElementById('convertTypeDocument').value;
     
     if (netAPayer > 0 && montantDonne === 0) {
-        if (!confirm(`Le patient n'a rien donné (0 FCFA) alors que le net à payer est de ${Math.round(netAPayer).toLocaleString('fr-FR')} FCFA.\n\nCréer une facture pour le reste à payer ?`)) {
+        if (!await demanderConfirmation(`Le patient n'a rien donné (0 FCFA) alors que le net à payer est de ${Math.round(netAPayer).toLocaleString('fr-FR')} FCFA.\n\nCréer une facture pour le reste à payer ?`)) {
             document.getElementById('convertMontantDonne').focus();
             return;
         }
     }
     
     if (montantDonne > 0 && montantDonne < netAPayer) {
-        if (!confirm(`Le patient a donné ${Math.round(montantDonne).toLocaleString('fr-FR')} FCFA mais le net à payer est de ${Math.round(netAPayer).toLocaleString('fr-FR')} FCFA.\n\nIl reste ${Math.round(netAPayer - montantDonne).toLocaleString('fr-FR')} FCFA à payer.\n\nContinuer ?`)) {
+        if (!await demanderConfirmation(`Le patient a donné ${Math.round(montantDonne).toLocaleString('fr-FR')} FCFA mais le net à payer est de ${Math.round(netAPayer).toLocaleString('fr-FR')} FCFA.\n\nIl reste ${Math.round(netAPayer - montantDonne).toLocaleString('fr-FR')} FCFA à payer.\n\nContinuer ?`)) {
             document.getElementById('convertMontantDonne').focus();
             return;
         }
     }
     
-    if (!confirm(`Confirmer la conversion de la proforma #${proformaConversionData.numero_proforma || proformaConversionData.id} en vente ?`)) {
+    if (!await demanderConfirmation(`Confirmer la conversion de la proforma #${proformaConversionData.numero_proforma || proformaConversionData.id} en vente ?`)) {
         return;
     }
     
@@ -3131,10 +3131,10 @@ function finaliserConversionVente() {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(response => {
+    .then(async response => {
         hideLoader();
         if (response.success) {
-            alert(`Proforma convertie en vente #${response.vente_id} !\nNet à payer: ${Math.round(response.net_a_payer).toLocaleString('fr-FR')} FCFA`);
+            await afficherMessage(`Proforma convertie en vente #${response.vente_id} !\nNet à payer: ${Math.round(response.net_a_payer).toLocaleString('fr-FR')} FCFA`);
             
             bootstrap.Modal.getInstance(document.getElementById('convertirProformaModal')).hide();
             
@@ -3147,13 +3147,13 @@ function finaliserConversionVente() {
             
             location.reload();
         } else {
-            alert('❌ Erreur: ' + (response.error || 'Erreur inconnue'));
+            await afficherMessage('Erreur: ' + (response.error || 'Erreur inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => {
+    .catch(async error => {
         hideLoader();
         console.error('❌ Erreur:', error);
-        alert('❌ Erreur lors de la conversion: ' + error);
+        await afficherMessage('Erreur lors de la conversion: ' + error, {type: 'danger'});
     });
 }
 
@@ -3219,9 +3219,9 @@ function modifierProforma(id) {
     
     fetch(`/api/proformas/${id}`)
         .then(response => response.json())
-        .then(data => {
+        .then(async data => {
             if (data.error) {
-                alert('Erreur: ' + data.error);
+                await afficherMessage('Erreur: ' + data.error, {type: 'danger'});
                 modal.hide();
                 return;
             }
@@ -3462,9 +3462,9 @@ function modifierProforma(id) {
             document.querySelector('#modifierProformaModal .modal-title').textContent =
                 `Modifier la proforma #${data.numero_proforma || data.id} - ${data.patient_nom}`;
         })
-        .catch(error => {
+        .catch(async error => {
             console.error('❌ Erreur:', error);
-            alert('Erreur lors du chargement de la proforma');
+            await afficherMessage('Erreur lors du chargement de la proforma', {type: 'danger'});
             modal.hide();
         });
 }
@@ -3600,8 +3600,8 @@ function modifierArticleModif(index, champ, valeur) {
     }
 }
 
-function supprimerArticleModif(index) {
-    if (!confirm('Supprimer cet article ?')) return;
+async function supprimerArticleModif(index) {
+    if (!await demanderConfirmation('Supprimer cet article ?')) return;
     window.modifArticles.splice(index, 1);
     
     const tbody = document.getElementById('modifPanierBody');
@@ -3612,17 +3612,17 @@ function supprimerArticleModif(index) {
     calculerTotalModif();
 }
 
-function ajouterArticleModif() {
+async function ajouterArticleModif() {
     const nom = document.getElementById('modifNewArticleNom').value.trim();
     const prix = parseFloat(document.getElementById('modifNewArticlePrix').value) || 0;
     const qte = parseInt(document.getElementById('modifNewArticleQte').value) || 1;
     
     if (!nom) {
-        alert('Veuillez entrer un nom');
+        await afficherMessage('Veuillez entrer un nom');
         return;
     }
     if (prix <= 0) {
-        alert('Veuillez entrer un prix valide');
+        await afficherMessage('Veuillez entrer un prix valide');
         return;
     }
     
@@ -3674,15 +3674,15 @@ function toggleAssurance2Modif() {
     calculerTotalModif();
 }
 
-function sauvegarderModificationProforma() {
+async function sauvegarderModificationProforma() {
     if (!proformaAModifier) {
-        alert('Aucune proforma à modifier');
+        await afficherMessage('Aucune proforma à modifier');
         return;
     }
     
     const articles = window.modifArticles || [];
     if (articles.length === 0) {
-        alert('Veuillez ajouter au moins un article');
+        await afficherMessage('Veuillez ajouter au moins un article');
         return;
     }
     
@@ -3716,7 +3716,7 @@ function sauvegarderModificationProforma() {
     
     console.log('📦 Données modification:', data);
     
-    if (!confirm('Confirmer la modification de cette proforma ?')) return;
+    if (!await demanderConfirmation('Confirmer la modification de cette proforma ?')) return;
     
     showLoader('Enregistrement des modifications...');
     
@@ -3726,19 +3726,19 @@ function sauvegarderModificationProforma() {
         body: JSON.stringify(data)
     })
     .then(r => r.json())
-    .then(response => {
+    .then(async response => {
         hideLoader();
         if (response.success) {
-            alert('Proforma modifiée avec succès !');
+            await afficherMessage('Proforma modifiée avec succès !');
             bootstrap.Modal.getInstance(document.getElementById('modifierProformaModal')).hide();
             location.reload();
         } else {
-            alert('❌ Erreur: ' + response.error);
+            await afficherMessage('Erreur: ' + response.error, {type: 'danger'});
         }
     })
-    .catch(() => {
+    .catch(async () => {
         hideLoader();
-        alert('❌ Erreur lors de la modification');
+        await afficherMessage('Erreur lors de la modification', {type: 'danger'});
     });
 }
 
@@ -3773,7 +3773,7 @@ function hideLoader() {
 // ============================================
 // INITIALISATION
 // ============================================
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
     chargerPatients();
     chargerActes('', false);
     chargerProduits('', false);
@@ -3816,7 +3816,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const paramsUrl = new URLSearchParams(window.location.search);
     const idAConvertir = paramsUrl.get('convertir');
     if (idAConvertir) {
-        convertirEnVente(parseInt(idAConvertir, 10));
+        await convertirEnVente(parseInt(idAConvertir, 10));
     }
 });
 </script>

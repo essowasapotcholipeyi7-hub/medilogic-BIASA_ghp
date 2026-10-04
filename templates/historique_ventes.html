@@ -864,7 +864,7 @@ function changerPageVentes(page) {
 // ============================================
 // VOIR DÉTAIL D'UNE VENTE
 // ============================================
-function voirDetailVente(venteId, type) {
+async function voirDetailVente(venteId, type) {
     currentVenteId = venteId;
     currentVenteType = type;
     
@@ -873,7 +873,7 @@ function voirDetailVente(venteId, type) {
     });
     
     if (!v) {
-        alert('Vente non trouvée');
+        await afficherMessage('Vente non trouvée');
         return;
     }
     
@@ -1122,12 +1122,12 @@ function calculerStats(debut, fin) {
     }
 }
 
-function appliquerStatsPersonnalise() {
+async function appliquerStatsPersonnalise() {
     var dateDebut = document.getElementById('statsDateDebut').value;
     var dateFin = document.getElementById('statsDateFin').value;
     
     if (!dateDebut || !dateFin) {
-        alert('Veuillez sélectionner les deux dates');
+        await afficherMessage('Veuillez sélectionner les deux dates');
         return;
     }
     
@@ -1208,13 +1208,13 @@ function printDocument(docType) {
 // ============================================
 // ANNULATION
 // ============================================
-function annulerVente(venteId, type) {
-    var motif = prompt("Motif de l'annulation :", "Annulation manuelle");
+async function annulerVente(venteId, type) {
+    var motif = await demanderSaisie("Motif de l'annulation :", "Annulation manuelle");
     if (motif === null) return;
 
     // ⭐ Toute annulation (admin compris) part maintenant en demande — voir
     // annuler_vente() côté serveur.
-    if (confirm("Envoyer une demande d'annulation ?")) {
+    if (await demanderConfirmation("Envoyer une demande d'annulation ?")) {
         showLoader('Envoi de la demande...');
 
         fetch('/api/ventes/' + venteId + '/annuler', {
@@ -1223,18 +1223,18 @@ function annulerVente(venteId, type) {
             body: JSON.stringify({motif: motif})
         })
         .then(function(r) { return r.json(); })
-        .then(function(data) {
+        .then(async function(data) {
             hideLoader();
             if (data.success) {
-                alert('📨 ' + data.message);
+                await afficherMessage('' + data.message);
                 location.reload();
             } else {
-                alert('❌ Erreur: ' + data.error);
+                await afficherMessage('Erreur: ' + data.error, {type: 'danger'});
             }
         })
-        .catch(function() {
+        .catch(async function() {
             hideLoader();
-            alert('❌ Erreur');
+            await afficherMessage('Erreur', {type: 'danger'});
         });
     }
 }
@@ -1242,9 +1242,9 @@ function annulerVente(venteId, type) {
 // ============================================
 // IMPRESSION
 // ============================================
-function imprimerHistorique() {
+async function imprimerHistorique() {
     if (!ventesFiltrees || ventesFiltrees.length === 0) {
-        alert('Aucune vente à imprimer');
+        await afficherMessage('Aucune vente à imprimer');
         return;
     }
     
@@ -1514,13 +1514,13 @@ function imprimerStats() {
 // ============================================
 // 🔥 NOUVELLE FONCTION IMPRIMER AIDES
 // ============================================
-function imprimerAides() {
+async function imprimerAides() {
     var aides = ventesFiltrees.filter(function(v) {
         return (v.aide_hospitaliere || 0) > 0;
     });
     
     if (!aides || aides.length === 0) {
-        alert('Aucune aide hospitalière à imprimer');
+        await afficherMessage('Aucune aide hospitalière à imprimer');
         return;
     }
     

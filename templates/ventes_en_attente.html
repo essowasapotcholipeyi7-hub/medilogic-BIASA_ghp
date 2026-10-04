@@ -383,19 +383,19 @@ function confirmerAnnulation() {
         body: JSON.stringify({ motif: motif })
     })
     .then(r => r.json())
-    .then(data => {
+    .then(async data => {
         btn.disabled = false;
         if (data.success) {
             bootstrap.Modal.getInstance(document.getElementById('annulerModal')).hide();
             chargerListe();
             chargerCompteur();
         } else {
-            alert('Erreur : ' + (data.error || 'inconnue'));
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
-    .catch(error => {
+    .catch(async error => {
         btn.disabled = false;
-        alert('Erreur : ' + error);
+        await afficherMessage('Erreur : ' + error, {type: 'danger'});
     });
 }
 </script>
