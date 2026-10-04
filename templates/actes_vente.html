@@ -703,8 +703,8 @@ function repartirLigneActes(item, ctx) {
     const t = tarifUnitaireActes(item, ctx);
     const tarif = t.tarif;
     const total = tarif * quantite;
-    let pbrAMU = parseFloat(item.pbr) || 0;
-    if (pbrAMU <= 0) pbrAMU = tarif;
+    // PBR absent = le tarif sert de base ; PBR explicitement 0 = pas de part AMU
+    const pbrAMU = (item.pbr === undefined || item.pbr === null || item.pbr === '') ? tarif : (parseFloat(item.pbr) || 0);
     const priseAMU = item.prise_en_charge_amu !== false;
     const priseCAC = item.prise_en_charge_cac !== false;
 
@@ -718,7 +718,9 @@ function repartirLigneActes(item, ctx) {
     let basePrivee = 0, partPrivee = 0;
     if (ctx.privee && priseCAC && ctx.tauxPrivee > 0) {
         const reste = Math.max(total - partAMU, 0);
-        const pbrPrive = ctx.appliquePbrPrive ? pbrCacVarianteValeurActes(pbrCacMapActes[item.nom], ctx.variante) : null;
+        // Variante choisie LIGNE PAR LIGNE (sélecteur dans le panier), sinon celle du panier
+        const varianteLigne = item.pbr_variante || ctx.variante;
+        const pbrPrive = ctx.appliquePbrPrive ? pbrCacVarianteValeurActes(pbrCacMapActes[item.nom], varianteLigne) : null;
         if (pbrPrive !== null && pbrPrive !== undefined) {
             basePrivee = pbrPrive * quantite;
             partPrivee = Math.min(basePrivee * ctx.tauxPrivee / 100, reste);
@@ -1525,6 +1527,16 @@ function ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,
     }, 1000);
 }
 
+// ⭐ Variante PBR (habituel / alternatif) choisie pour UNE ligne du panier —
+// voir le sélecteur de la colonne Prix (afficherPanier) ; envoyée au serveur
+// avec l'article (pbr_variante) et réappliquée telle quelle sur le reçu.
+function changerVariantePbrLigne(index, valeur) {
+    panier[index].pbr_variante = (valeur === 'alternatif') ? 'alternatif' : 'defaut';
+    afficherPanier();
+    calculerTotal();
+    if (typeof calculerRendu === 'function') calculerRendu();
+}
+
 async function modifierPrix(index, nouveauPrix) {
     let prix = parseFloat(nouveauPrix);
     if (isNaN(prix) || prix <= 0) {
@@ -1628,12 +1640,29 @@ function afficherPanier() {
 
         // ⭐ Tarif appliqué (prix de base modifiable ; tarif privé / prix non
         // assuré signalé quand il remplace le prix de base).
+        // ⭐ Patron (2026-10-04) : afficher directement le tarif ENREGISTRÉ
+        // (tarif privé de la compagnie / prix non assuré / prix de base), pas
+        // le prix de base accompagné d'un calcul. Modifier ce champ à la main
+        // fixe le prix de la ligne (prime sur le tarif automatique).
         let cellPrix = row.insertCell(2);
         cellPrix.className = 'text-center';
         let libelleTarif = '';
-        if (ligne.source === 'prive') libelleTarif = '<div class="small text-info">Tarif ' + (patientAssurance2 || 'privé') + ' : ' + Math.round(ligne.tarif).toLocaleString('fr-FR') + ' F</div>';
-        else if (ligne.source === 'non_assure') libelleTarif = '<div class="small text-secondary">Non assuré : ' + Math.round(ligne.tarif).toLocaleString('fr-FR') + ' F</div>';
-        cellPrix.innerHTML = '<input type="number" class="form-control form-control-sm" value="' + item.prix + '" style="width: 100px; text-align: center;" onchange="modifierPrix(' + index + ', this.value)">' + libelleTarif;
+        if (ligne.source === 'prive') libelleTarif = '<div class="small text-info">Tarif ' + (patientAssurance2 || 'privé') + '</div>';
+        else if (ligne.source === 'non_assure') libelleTarif = '<div class="small text-secondary">Tarif non assuré</div>';
+        else if (item.prix_modifie) libelleTarif = '<div class="small text-warning">Prix modifié</div>';
+        // ⭐ Variante PBR ligne par ligne (patron : le choix habituel/alternatif
+        // ne doit pas s'imposer à tout le panier) — seulement si cet acte a un
+        // PBR alternatif chez la compagnie du patient.
+        let selectVariante = '';
+        const entreePbr = ctxPanier.privee ? pbrCacMapActes[item.nom] : undefined;
+        if (entreePbr && entreePbr.pbr_2 !== null && entreePbr.pbr_2 !== undefined && entreePbr.pbr_1 !== null && entreePbr.pbr_1 !== undefined) {
+            const varianteActive = item.pbr_variante || ctxPanier.variante;
+            selectVariante = '<select class="form-select form-select-sm mt-1" style="width: 150px; margin: 0 auto;" onchange="changerVariantePbrLigne(' + index + ', this.value)">' +
+                '<option value="defaut"' + (varianteActive !== 'alternatif' ? ' selected' : '') + '>PBR habituel (' + Math.round(entreePbr.pbr_1).toLocaleString('fr-FR') + ' F)</option>' +
+                '<option value="alternatif"' + (varianteActive === 'alternatif' ? ' selected' : '') + '>PBR alternatif (' + Math.round(entreePbr.pbr_2).toLocaleString('fr-FR') + ' F)</option>' +
+                '</select>';
+        }
+        cellPrix.innerHTML = '<input type="number" class="form-control form-control-sm" value="' + Math.round(ligne.tarif) + '" style="width: 100px; text-align: center;" onchange="modifierPrix(' + index + ', this.value)">' + libelleTarif + selectVariante;
 
         // ⭐ La base de remboursement (PBR) n'a de sens que pour un patient
         // assuré AMU — l'afficher pour un patient non assuré laissait croire
@@ -1828,37 +1857,13 @@ function calculerTotal() {
 // Réplique volontairement le calcul CAC de calculerTotal() ci-dessus,
 // figé sur `variante` au lieu de lire le select.
 function calculerCACPourVarianteActes(variante) {
-    if (!(assurance2Active && patientAssurance2 && patientAssurance2 !== 'Aucune')) return 0;
-    const tauxComplementaire = tauxTempModifie ? tauxTempValeur : (patientTaux2Original || 0);
-    if (tauxComplementaire <= 0) return 0;
-
-    const typeAssurance = sessionStorage.getItem('selectedPatientAssurance') || '';
-    const estAssure = typeAssurance === 'amu_cnss' || typeAssurance === 'amu_inam' || typeAssurance === 'amu_tns';
-    const tauxAMU = (estAssure && assurancePrincipaleActive) ? (parseFloat(document.getElementById('tauxVente')?.value) || 0) : 0;
-
-    const toggleAppliquePbrCac = document.getElementById('toggleAppliquePbrCac');
-    const appliquePbrCacActes = toggleAppliquePbrCac ? toggleAppliquePbrCac.checked : true;
-
-    let baseCAC = 0;
-    for (const item of panier) {
-        if (!item.prise_en_charge_cac) continue;
-        const prix = item.prix;
-        const pbr = item.pbr || item.prix;
-        const total = prix * item.quantite;
-        let reste;
-        if (estAssure && assurancePrincipaleActive && item.prise_en_charge_amu) {
-            const baseAMU = (prix < pbr) ? prix : pbr;
-            const priseAMU = (baseAMU * tauxAMUPourArticle(item, tauxAMU) * item.quantite) / 100;
-            reste = total - priseAMU;
-        } else {
-            reste = total;
-        }
-        if (appliquePbrCacActes && pbrCacMapActes[item.nom] !== undefined) {
-            reste = Math.min(reste, pbrCacVarianteValeurActes(pbrCacMapActes[item.nom], variante) * item.quantite);
-        }
-        if (reste > 0) baseCAC += reste;
-    }
-    return (baseCAC * tauxComplementaire) / 100;
+    // Même formule que le panier (repartirLigneActes), figée sur `variante`
+    // pour TOUTES les lignes (choix de ligne ignoré) : "combien ferait la
+    // part privée si tout le panier était sur cette variante".
+    const ctx = contexteTarificationActes();
+    if (!ctx.privee || ctx.tauxPrivee <= 0) return 0;
+    ctx.variante = variante;
+    return panier.reduce((s, item) => s + repartirLigneActes(Object.assign({}, item, { pbr_variante: null }), ctx).partPrivee, 0);
 }
 
 // ⭐ Taux de TVA de la structure (18% par défaut, configurable — voir
@@ -2311,6 +2316,7 @@ async function finaliserVente() {
         prix_base: parseFloat(item.prix),
         source_tarif: lignesFinales[i].source,
         prix_modifie: !!item.prix_modifie,
+        pbr_variante: item.pbr_variante || null,
         prix_non_assure: item.prix_non_assure !== undefined ? item.prix_non_assure : (PRIX_NON_ASSURE_PAR_ACTE[item.nom] || null),
         pbr: parseFloat(item.pbr || item.prix),
         quantite: parseInt(item.quantite),

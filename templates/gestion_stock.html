@@ -541,7 +541,14 @@
                             <input type="number" class="form-control" id="produitPBR" placeholder="Prix de Base de Remboursement">
                         </div>
                     </div>
-                    
+                    <!-- ⭐ Patron (2026-10-04, "tu feras de même pour la pharmacie") : prix
+                         facturé aux patients sans aucune assurance — stocké en base
+                         (PrixNonAssureActe, type produit). Vide = prix de vente. -->
+                    <div class="mb-3">
+                        <label class="form-label">Prix non assuré (FCFA) <span class="text-muted">— optionnel, vide = prix de vente</span></label>
+                        <input type="number" class="form-control" id="produitPrixNonAssure" placeholder="Prix facturé aux patients sans aucune assurance">
+                    </div>
+
                     <div class="row">
                         <div class="col-md-4 mb-3">
                             <label class="form-label">Stock initial</label>
@@ -1211,6 +1218,7 @@ function modifierProduit(id) {
     document.getElementById('produitFournisseur').value = p.fournisseur || '';
     document.getElementById('produitRayon').value = p.rayon_rangement || '';
     document.getElementById('produitDci').value = p.dci || '';
+    document.getElementById('produitPrixNonAssure').value = p.prix_non_assure || '';
     new bootstrap.Modal(document.getElementById('produitModal')).show();
 }
 
@@ -1228,7 +1236,8 @@ async function saveProduit() {
         lot: document.getElementById('produitLot').value || '',
         fournisseur: document.getElementById('produitFournisseur').value || '',
         rayon_rangement: document.getElementById('produitRayon').value || '',
-        dci: document.getElementById('produitDci').value || ''
+        dci: document.getElementById('produitDci').value || '',
+        prix_non_assure: document.getElementById('produitPrixNonAssure').value.trim() === '' ? null : parseFloat(document.getElementById('produitPrixNonAssure').value)
     };
     
     if (!produit.nom || !produit.prix_vente) {

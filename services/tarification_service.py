@@ -81,9 +81,10 @@ def repartir_ligne(article, contexte):
     quantite = 1.0 if q is None or q == '' else _nombre(q)
     tarif, source = tarif_unitaire(article, contexte)
     total = tarif * quantite
-    pbr_amu = _nombre(article.get('pbr'))
-    if pbr_amu <= 0:
-        pbr_amu = tarif
+    # PBR AMU absent (None / '') = le tarif sert de base ; PBR explicitement 0
+    # (pharmacie : "non pris en charge") = aucune part AMU.
+    pbr_raw = article.get('pbr')
+    pbr_amu = tarif if pbr_raw is None or pbr_raw == '' else _nombre(pbr_raw)
     prise_amu = article.get('prise_en_charge_amu', True)
     prise_cac = article.get('prise_en_charge_cac', True)
     prise_amu = prise_amu if isinstance(prise_amu, bool) else str(prise_amu).upper() != 'FALSE'
@@ -104,7 +105,11 @@ def repartir_ligne(article, contexte):
     if contexte.get('privee') and prise_cac and taux_privee > 0:
         reste = max(total - part_amu, 0.0)
         entree = contexte.get('pbr_prive_par_acte', {}).get(article.get('nom'))
-        pbr_prive = pbr_prive_valeur(entree, contexte.get('variante', 'defaut')) if contexte.get('applique_pbr_prive', True) else None
+        # ⭐ Variante choisie LIGNE PAR LIGNE dans le panier (patron, 2026-10-04 :
+        # le choix habituel/alternatif ne doit pas s'imposer à tout le panier),
+        # sinon la variante globale du contexte.
+        variante = article.get('pbr_variante') or contexte.get('variante', 'defaut')
+        pbr_prive = pbr_prive_valeur(entree, variante) if contexte.get('applique_pbr_prive', True) else None
         if pbr_prive is not None:
             # Part privée = taux x PBR privé (pas réduite par l'AMU), la PART
             # restant plafonnée à ce qui reste après l'AMU (patient >= 0)

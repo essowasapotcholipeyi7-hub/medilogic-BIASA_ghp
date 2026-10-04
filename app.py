@@ -4191,6 +4191,9 @@ def pharma_vente():
     # JS via /api/produits) — on ne les envoie plus au template.
     return render_template('pharma_vente.html',
                           articles_auto=articles_auto,
+                          # ⭐ Prix non assuré par produit (patron, 2026-10-04) — miroir JS
+                          # de services/tarification_service.py dans le panier.
+                          prix_non_assure_par_produit=charger_prix_non_assure(structure_id, 'produit'),
                           patientTaux=patient_taux,
                           vente_attente=vente_attente)
 
@@ -5188,6 +5191,7 @@ def recu(vente_id, type):
             ligne_recu = repartir_ligne({
                 'nom': item.get('nom'), 'prix': prix_unitaire, 'pbr': pbr_article, 'quantite': quantite,
                 'prise_en_charge_amu': prise_amu, 'prise_en_charge_cac': prise_cac,
+                'pbr_variante': item.get('pbr_variante'),  # variante PBR choisie ligne par ligne à la vente
             }, {
                 'amu': bool(est_assure and assurance_principale_active), 'taux_amu': taux_assurance,
                 'privee': taux_assurance2 > 0, 'taux_privee': taux_assurance2,
@@ -9099,6 +9103,8 @@ def api_get_produits():
         sheet_name = f"struct_{structure_id}_produits"
         print(f"📂 Chargement des produits pour structure {structure_id}")
         print(f"   Feuille: {sheet_name}")
+        # ⭐ Prix non assuré par produit (patron, 2026-10-04) — voir PrixNonAssureActe (type 'produit').
+        prix_non_assure_par_produit = charger_prix_non_assure(structure_id, 'produit')
         
         try:
             all_values = sheets_helper.get_all_values_cached(sheet_name)
@@ -9193,6 +9199,7 @@ def api_get_produits():
                                 'fournisseur': fournisseur,
                                 'rayon_rangement': rayon_rangement,
                                 'dci': dci,
+                                'prix_non_assure': prix_non_assure_par_produit.get(nom),
                             })
                 except Exception as e:
                     print(f"⚠️ Erreur ligne {i}: {e}")
@@ -9377,6 +9384,8 @@ def api_produits_search():
         
         # 🔥 Utiliser la bonne feuille avec préfixe
         sheet_name = f"struct_{structure_id}_produits"
+        # ⭐ Prix non assuré par produit (patron, 2026-10-04) — voir PrixNonAssureActe (type 'produit').
+        prix_non_assure_par_produit = charger_prix_non_assure(structure_id, 'produit')
         
         try:
             worksheet = sheets_helper.spreadsheet.worksheet(sheet_name)
@@ -9455,7 +9464,8 @@ def api_produits_search():
                                 'prise_en_charge_cac': prise_en_charge_cac,
                                 'commentaire_cac': commentaire_cac,
                                 'prise_en_charge_amu_tns': prise_en_charge_amu_tns,
-                                'statut': statut
+                                'statut': statut,
+                                'prix_non_assure': prix_non_assure_par_produit.get(nom),
                             })
                 except Exception as e:
                     continue
@@ -9592,6 +9602,12 @@ def api_admin_add_produit():
 
         _assurer_entetes_produits_etendues(structure_id)
         sheets_helper.add_record('produits', new_produit)
+        # ⭐ Prix non assuré du produit (patron, 2026-10-04) — en base Postgres,
+        # voir enregistrer_prix_non_assure().
+        if data.get('prix_non_assure') not in (None, ''):
+            enregistrer_prix_non_assure(structure_id, data.get('nom', ''), data.get('prix_non_assure'),
+                                        user_nom=session.get('user_name'), type_article='produit')
+            db.session.commit()
         stock_initial = int(data.get('quantite_stock') or 0)
         _log_mouvement_stock(structure_id, new_id, data.get('nom', ''), 'initial',
                               stock_initial, stock_initial, reference_type='creation_produit',
@@ -9634,6 +9650,7 @@ def api_admin_update_produit(produit_id):
         # R/S/T (fournisseur, rayon de rangement, DCI, NOUVEAU) inclus.
         while len(current_row) < 20:
             current_row.append('')
+        ancien_nom_produit = current_row[1] if len(current_row) > 1 else None
 
         # Stock avant modification — pour journaliser l'écart si l'admin
         # a changé la quantité en stock directement depuis ce formulaire.
@@ -9691,6 +9708,13 @@ def api_admin_update_produit(produit_id):
         # 🔥 Mettre à jour la ligne
         worksheet.update(range_name=f'A{row_num}:T{row_num}', values=[current_row])
         sheets_helper.clear_cache(sheet_name)
+        # ⭐ Prix non assuré du produit (patron, 2026-10-04) : en base Postgres,
+        # suit le produit s'il est renommé — voir enregistrer_prix_non_assure().
+        if 'prix_non_assure' in data:
+            enregistrer_prix_non_assure(structure_id, data.get('nom', ''), data.get('prix_non_assure'),
+                                        ancien_nom=ancien_nom_produit, user_nom=session.get('user_name'),
+                                        type_article='produit')
+            db.session.commit()
 
         stock_apres = int(data.get('quantite_stock') or 0)
         if stock_apres != stock_avant:
@@ -9748,6 +9772,9 @@ def api_admin_delete_produit(produit_id):
         # Supprimer la ligne
         worksheet.delete_rows(cell.row)
         sheets_helper.clear_cache(sheet_name)
+        # ⭐ Prix non assuré (patron, 2026-10-04) : retiré avec le produit.
+        enregistrer_prix_non_assure(structure_id, nom_produit, None, type_article='produit')
+        db.session.commit()
 
         _log_mouvement_stock(structure_id, produit_id, nom_produit, 'suppression',
                               -stock_avant, 0, reference_type='suppression_produit',
@@ -10163,7 +10190,64 @@ def api_vente_pharma():
                 produit['prise_en_charge_cac'] = True
             if 'statut' not in produit:
                 produit['statut'] = 'direct'  # 🔥 AJOUT
-        
+
+        # ⭐⭐ RECALCUL SERVEUR (patron, 2026-10-04 : "tu feras de même pour la
+        # pharmacie") — mêmes règles centrales que la vente d'actes
+        # (services/tarification_service.py) : tarif selon le type de patient
+        # (tarif privé de la compagnie / prix non assuré / prix de vente), part
+        # AMU = taux x min(tarif, PBR) (PBR 0 = produit non pris en charge),
+        # part privée avec/sans PBR (variante choisie ligne par ligne), aide
+        # hospitalière. Les montants du navigateur sont tracés en cas d'écart,
+        # ce sont les valeurs serveur qui sont enregistrées.
+        est_assure_amu_vente = bool(assurance_principale_active) and str(data.get('assurance_nom', '')).lower().startswith('amu') and taux_assurance > 0
+        assurance2_active_vente = bool(data.get('assurance2_active', True)) and bool(assurance2_nom) and taux_assurance2 > 0
+        contexte_tarif = {
+            'amu': est_assure_amu_vente, 'taux_amu': taux_assurance,
+            'privee': assurance2_active_vente, 'taux_privee': taux_assurance2,
+            'pbr_prive_par_acte': charger_pbr_complementaires(structure_id, assurance2_nom) if assurance2_active_vente else {},
+            'applique_pbr_prive': bool(data.get('applique_pbr_cac', True)),
+            'variante': data.get('pbr_cac_variante') or 'defaut',
+            'taux_aide': taux_aide, 'type_aide': type_aide,
+        }
+        prix_non_assure_par_produit = charger_prix_non_assure(structure_id, 'produit')
+        articles_calcul = []
+        for produit in produits_data:
+            if produit.get('prix_non_assure') is None:
+                produit['prix_non_assure'] = prix_non_assure_par_produit.get(produit.get('nom'))
+            prix_base_produit = float(produit.get('prix_base') if produit.get('prix_base') is not None else (produit.get('prix_reel') if produit.get('prix_reel') is not None else produit.get('prix') or 0))
+            articles_calcul.append({
+                'nom': produit.get('nom'), 'prix': prix_base_produit,
+                'pbr': produit.get('pbr'), 'quantite': produit.get('quantite'),
+                'prix_non_assure': produit.get('prix_non_assure'), 'prix_modifie': produit.get('prix_modifie'),
+                'pbr_variante': produit.get('pbr_variante'),
+                'prise_en_charge_amu': produit.get('prise_en_charge_amu', True),
+                'prise_en_charge_cac': produit.get('prise_en_charge_cac', True),
+            })
+        calcul = repartir_panier(articles_calcul, contexte_tarif)
+        for produit, article, ligne in zip(produits_data, articles_calcul, calcul['lignes']):
+            produit['prix_base'] = article['prix']
+            produit['prix_reel'] = ligne['tarif_unitaire']
+            produit['prix'] = ligne['tarif_unitaire']
+            produit['source_tarif'] = ligne['source_tarif']
+            produit['total'] = ligne['total']
+        ecarts = {
+            'sous_total': (float(data.get('sous_total') or 0), calcul['sous_total']),
+            'prise_en_charge': (prise_en_charge, calcul['part_amu']),
+            'prise_en_charge2': (prise_en_charge2, calcul['part_privee']),
+            'net_a_payer': (float(data.get('net_a_payer') or 0), calcul['net_a_payer']),
+        }
+        for cle, (client, serveur) in ecarts.items():
+            if abs(round(client) - round(serveur)) > 1:
+                print(f"⚠️ Vente pharmacie : {cle} navigateur={client} serveur={serveur} — valeur serveur retenue")
+        sous_total = calcul['sous_total']
+        base_remboursement = calcul['base_remboursement']
+        prise_en_charge = calcul['part_amu']
+        prise_en_charge2 = calcul['part_privee']
+        aide_hospitaliere = calcul['aide_hospitaliere']
+        net_a_payer = calcul['net_a_payer']
+        rendu = max(montant_donne - net_a_payer, 0.0)
+        reste_a_payer = max(net_a_payer - montant_donne, 0.0)
+
         # 🔥 Construire l'objet assurances pour le JSONB
         assurances_data = {
             'principale': {
@@ -10233,9 +10317,9 @@ def api_vente_pharma():
             data.get('patient_nom', 'Patient'),
             structure_id,
             'pharmacie',
-            float(data.get('sous_total') or 0),
+            sous_total,
             prise_en_charge,
-            float(data.get('net_a_payer') or 0),
+            net_a_payer,
             data.get('mode_paiement', 'especes'),
             taux_assurance,
             json.dumps(produits_data, ensure_ascii=False),
@@ -10415,7 +10499,7 @@ def api_vente_pharma():
             'vente_id': vente_id,
             'montant_donne': montant_donne,
             'reste_a_payer': reste_a_payer,
-            'net_a_payer': float(data.get('net_a_payer') or 0),
+            'net_a_payer': net_a_payer,  # valeur recalculée côté serveur (voir repartir_panier ci-dessus)
             'rendu': rendu
         })
         

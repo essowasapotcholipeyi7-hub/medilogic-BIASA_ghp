@@ -246,19 +246,19 @@ def charger_pbr_complementaires(structure_id, compagnie):
     }
 
 
-def charger_prix_non_assure(structure_id):
-    """{nom_acte: prix non assuré} pour cette structure (voir
-    PrixNonAssureActe, models.py) — vide tant que rien n'est renseigné :
-    les patients non assurés paient alors le prix de base (cas 1,
-    "ou prix AMU si non défini")."""
+def charger_prix_non_assure(structure_id, type_article='acte'):
+    """{nom: prix non assuré} pour cette structure et ce catalogue ('acte' ou
+    'produit', voir PrixNonAssureActe, models.py) — vide tant que rien n'est
+    renseigné : les patients non assurés paient alors le prix de base
+    (cas 1, "ou prix AMU si non défini")."""
     return {
         l.nom_acte: float(l.prix)
-        for l in PrixNonAssureActe.query.filter_by(structure_id=structure_id).all()
+        for l in PrixNonAssureActe.query.filter_by(structure_id=structure_id, type=type_article).all()
         if l.prix is not None
     }
 
 
-def enregistrer_prix_non_assure(structure_id, nom_acte, prix, ancien_nom=None, user_nom=None):
+def enregistrer_prix_non_assure(structure_id, nom_acte, prix, ancien_nom=None, user_nom=None, type_article='acte'):
     """Pose / met à jour / retire (prix vide) le prix non assuré d'un acte —
     appelé par l'admin des actes (api_add_acte / api_delete_acte, app.py)
     en même temps que l'écriture Google Sheets. `ancien_nom` : l'acte a été
@@ -270,7 +270,8 @@ def enregistrer_prix_non_assure(structure_id, nom_acte, prix, ancien_nom=None, u
         return
     cles = [nom_acte] + ([ancien_nom.strip()] if ancien_nom and ancien_nom.strip() != nom_acte else [])
     lignes = PrixNonAssureActe.query.filter(
-        PrixNonAssureActe.structure_id == structure_id, PrixNonAssureActe.nom_acte.in_(cles)
+        PrixNonAssureActe.structure_id == structure_id, PrixNonAssureActe.type == type_article,
+        PrixNonAssureActe.nom_acte.in_(cles)
     ).all()
     if prix is None or prix == '' or float(prix) <= 0:
         for l in lignes:
@@ -284,7 +285,7 @@ def enregistrer_prix_non_assure(structure_id, nom_acte, prix, ancien_nom=None, u
         for doublon in lignes[1:]:
             db.session.delete(doublon)
     else:
-        db.session.add(PrixNonAssureActe(structure_id=structure_id, nom_acte=nom_acte, prix=prix, created_by=user_nom))
+        db.session.add(PrixNonAssureActe(structure_id=structure_id, type=type_article, nom_acte=nom_acte, prix=prix, created_by=user_nom))
 
 
 def pbr_cac_variante_valeur(entree, variante):

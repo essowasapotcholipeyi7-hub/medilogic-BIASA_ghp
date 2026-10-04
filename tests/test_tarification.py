@@ -72,6 +72,28 @@ def test_prix_non_assure_uniquement_sans_aucune_assurance():
     assert tarif_unitaire({'nom': 'Acte', 'prix': 10000, 'pbr': 5250}, ctx()) == (10000, 'base')
 
 
+def test_variante_pbr_prive_par_ligne():
+    """Le choix habituel/alternatif se fait ligne par ligne : une ligne peut
+    prendre l'alternatif alors que le contexte (panier) reste sur l'habituel."""
+    entree = {'pbr_1': 8500, 'pbr_2': 12000, 'tarif_prive': None}
+    c = {'amu': False, 'taux_amu': 0, 'privee': True, 'taux_privee': 80,
+         'pbr_prive_par_acte': {'Acte': entree}, 'variante': 'defaut'}
+    base = {'nom': 'Acte', 'prix': 15000, 'pbr': 5250, 'quantite': 1}
+    assert round(repartir_ligne(base, c)['part_privee']) == 6800
+    assert round(repartir_ligne(dict(base, pbr_variante='alternatif'), c)['part_privee']) == 9600
+    # et inversement : contexte alternatif, ligne forcée en habituel
+    assert round(repartir_ligne(dict(base, pbr_variante='defaut'), dict(c, variante='alternatif'))['part_privee']) == 6800
+
+
+def test_pbr_amu_absent_ou_zero():
+    """PBR absent -> le tarif sert de base AMU ; PBR explicitement 0 (pharmacie :
+    produit non pris en charge) -> aucune part AMU."""
+    c = ctx(amu=True, taux_amu=80)
+    assert round(repartir_ligne({'nom': 'Produit', 'prix': 1000, 'quantite': 2}, c)['part_amu']) == 1600
+    assert round(repartir_ligne({'nom': 'Produit', 'prix': 1000, 'pbr': '', 'quantite': 2}, c)['part_amu']) == 1600
+    assert repartir_ligne({'nom': 'Produit', 'prix': 1000, 'pbr': 0, 'quantite': 2}, c)['part_amu'] == 0
+
+
 def test_base_amu_plafonnee_au_tarif():
     """PBR AMU supérieur au tarif : l'AMU ne rembourse pas plus que le tarif."""
     r = repartir_ligne({'nom': 'Acte', 'prix': 4000, 'pbr': 5250, 'quantite': 1}, ctx(amu=True, taux_amu=80))

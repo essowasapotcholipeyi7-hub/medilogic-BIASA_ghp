@@ -30,5 +30,11 @@ with app.app_context():
             ADD COLUMN IF NOT EXISTS tarif_prive NUMERIC
     '''))
     db.session.execute(db.text('ALTER TABLE pbr_complementaires ALTER COLUMN pbr_1 DROP NOT NULL'))
+    # ⭐ Même table pour les produits (patron : "tu feras de même pour la pharmacie")
+    db.session.execute(db.text('''
+        ALTER TABLE prix_non_assure_actes
+            ADD COLUMN IF NOT EXISTS type VARCHAR(20) NOT NULL DEFAULT 'acte'
+    '''))
+    db.session.execute(db.text("UPDATE prix_non_assure_actes SET type = 'acte' WHERE type IS NULL"))
     db.session.commit()
-    print('OK : tarif_prive ajouté (pbr_1 optionnel), table prix_non_assure_actes créée.')
+    print("OK : tarif_prive ajouté (pbr_1 optionnel), table prix_non_assure_actes créée (type acte/produit).")

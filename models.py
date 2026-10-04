@@ -2794,6 +2794,9 @@ class PrixNonAssureActe(db.Model):
     __tablename__ = 'prix_non_assure_actes'
     id = db.Column(db.Integer, primary_key=True)
     structure_id = db.Column(db.Integer, nullable=False)
+    # ⭐ 'acte' | 'produit' (patron, 2026-10-04 : "tu feras de même pour la
+    # pharmacie") — même table pour les deux catalogues, comme PbrComplementaire.
+    type = db.Column(db.String(20), nullable=False, default='acte')
     nom_acte = db.Column(db.String(255), nullable=False)
     prix = db.Column(db.Numeric, nullable=False)
     created_by = db.Column(db.String(255))
