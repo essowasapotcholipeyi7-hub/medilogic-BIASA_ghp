@@ -2770,10 +2770,35 @@ class PbrComplementaire(db.Model):
     # défaut) ; pbr_2 = l'alternatif, optionnel, choisissable EN DIRECT
     # depuis la vente (voir pbr_cac_variante sur Hospitalisation/
     # Proforma/Vente) si le premier ne correspond pas pour ce patient.
-    pbr_1 = db.Column(db.Numeric, nullable=False)
+    # ⭐ Patron (2026-10-04, "Vérification de la logique de calcul des tarifs
+    # actes") : "pour chaque acte et chaque assurance privée : tarif privé,
+    # présence ou non d'un PBR, montant du PBR" — pbr_1 devient OPTIONNEL
+    # (NULL = pas de PBR pour ce couple : la part privée se calcule sur le
+    # tarif / le reste après AMU), et tarif_prive porte le tarif facturé au
+    # patient de cette compagnie (NULL = prix de base du catalogue). Voir
+    # services/tarification_service.py.
+    pbr_1 = db.Column(db.Numeric)
     pbr_2 = db.Column(db.Numeric)
+    tarif_prive = db.Column(db.Numeric)
     created_by = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# ⭐ Prix "non assuré" d'un acte (patron, 2026-10-04 : "Patient non assuré :
+# prix non assuré (ou prix AMU par défaut)") — le catalogue Google Sheets ne
+# porte que prix (= prix AMU, prix de base) et pbr ; cette table Postgres
+# dédiée (même motif que ClassificationActe/PbrComplementaire, clé = nom de
+# l'acte) évite une colonne positionnelle de plus dans chaque feuille. Absent
+# -> prix de base, zéro changement pour les actes non renseignés.
+class PrixNonAssureActe(db.Model):
+    __tablename__ = 'prix_non_assure_actes'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    nom_acte = db.Column(db.String(255), nullable=False)
+    prix = db.Column(db.Numeric, nullable=False)
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 # ⭐ Liste canonique des compagnies complémentaires (SUNU, OLEA, GTA...)

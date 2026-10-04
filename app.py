@@ -21,7 +21,8 @@ from utils.permissions import a_acces, PERMISSIONS
 from utils.modules_structure import MODULES_STRUCTURE
 from utils.onglets_recherchables import onglets_recherchables
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
-from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur
+from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure
+from services.tarification_service import repartir_ligne, repartir_panier
 from services.laboratoire_service import charger_classification_actes, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
 from services.part_medecin_service import charger_taux_part_medecin, creer_lignes_part_medecin, prestations_en_attente, calculer_periode_part_medecin, charger_toujours_demander_medecin
 from services.service_acte_service import charger_services, deviner_service_acte, creer_lignes_service, generer_rapport_recettes_service
@@ -4020,6 +4021,9 @@ def actes_vente():
 
     return render_template('actes_vente.html',
                           actes=actes_filtres,
+                          # ⭐ Prix non assuré par acte (patron, 2026-10-04) — miroir JS
+                          # de services/tarification_service.py dans le panier.
+                          prix_non_assure_par_acte=charger_prix_non_assure(structure_id),
                           patients=patients,
                           articles_auto=articles_auto,
                           patientTaux=patient_taux,
@@ -5178,31 +5182,25 @@ def recu(vente_id, type):
             else:
                 type_article = 'acte'
 
-            taux_item = taux_amu_pour_article(item.get('nom'), taux_assurance)
-
-            # 🔥 SEULEMENT SI PBR > 0, on calcule l'AMU et la CAC
+            # ⭐ Mêmes règles que la vente (services/tarification_service.py,
+            # patron 2026-10-04) — le prix de l'article est celui enregistré
+            # dans la vente (tarif déjà appliqué), jamais remplacé ici.
+            ligne_recu = repartir_ligne({
+                'nom': item.get('nom'), 'prix': prix_unitaire, 'pbr': pbr_article, 'quantite': quantite,
+                'prise_en_charge_amu': prise_amu, 'prise_en_charge_cac': prise_cac,
+            }, {
+                'amu': bool(est_assure and assurance_principale_active), 'taux_amu': taux_assurance,
+                'privee': taux_assurance2 > 0, 'taux_privee': taux_assurance2,
+                'pbr_prive_par_acte': pbr_cac_par_acte_recu, 'variante': pbr_cac_variante_recu,
+                'appliquer_tarif_prive': False,
+            })
             if prise_amu and pbr_article > 0:
                 sous_total_amu += total_article
-                base_item = min(prix_unitaire, pbr_article) * quantite
-                pbr_total_amu += base_item
-                if est_assure and assurance_principale_active and taux_item > 0:
-                    prise_en_charge_par_article += (base_item * taux_item) / 100
-
-            # CALCUL DE LA CAC
-            if prise_cac:
-                if est_assure and assurance_principale_active:
-                    if prise_amu:
-                        baseAMU = min(prix_unitaire, pbr_article)
-                        priseAMU = (baseAMU * taux_item * quantite) / 100
-                        reste = total_article - priseAMU
-                    else:
-                        reste = total_article
-                else:
-                    reste = total_article
-                if item.get('nom') in pbr_cac_par_acte_recu:
-                    reste = min(reste, pbr_cac_variante_valeur(pbr_cac_par_acte_recu[item.get('nom')], pbr_cac_variante_recu) * quantite)
-                if reste > 0:
-                    baseCAC += reste
+                pbr_total_amu += min(prix_unitaire, pbr_article) * quantite
+            prise_en_charge_par_article += ligne_recu['part_amu']
+            # ⭐ baseCAC cumule désormais directement la PART privée de chaque
+            # article (taux déjà appliqué, PBR privé plafonné au reste après AMU).
+            baseCAC += ligne_recu['part_privee']
 
             # ⭐ Date(s) de prestation (hospitalisation) — reformatées en
             # jj/mm ici, côté serveur, plutôt que dans le template : ce sont
@@ -5238,7 +5236,7 @@ def recu(vente_id, type):
 
         # 🔥 Appliquer le taux CAC
         if baseCAC > 0 and taux_assurance2 > 0:
-            prise_en_charge2 = (baseCAC * taux_assurance2) / 100
+            prise_en_charge2 = baseCAC  # part privée déjà calculée article par article (voir boucle ci-dessus)
         else:
             prise_en_charge2 = 0
 
@@ -6145,6 +6143,14 @@ def api_add_acte():
                     worksheet.update_cell(row_num, 9, data.get('prise_en_charge_cac'))
                 if 'commentaire_cac' in data:
                     worksheet.update_cell(row_num, 10, data.get('commentaire_cac', ''))
+                # ⭐ Prix non assuré (patron, 2026-10-04) : en base Postgres,
+                # suit l'acte s'il est renommé — voir enregistrer_prix_non_assure().
+                if 'prix_non_assure' in data:
+                    ligne_sheet = values[row_num - 1]
+                    ancien_nom = ligne_sheet[1] if len(ligne_sheet) > 1 else None
+                    enregistrer_prix_non_assure(structure_id, data.get('nom', ''), data.get('prix_non_assure'),
+                                                ancien_nom=ancien_nom, user_nom=session.get('user_name'))
+                    db.session.commit()
                 print(f"✅ Acte {acte_id} modifié dans Sheets")
                 # ⭐ Trace qui a modifié cet acte — avant ce fix, rien ne
                 # gardait cette information (contrairement aux produits, qui
@@ -6179,6 +6185,11 @@ def api_add_acte():
             ]
             worksheet.append_row(new_row)
             print(f"✅ Nouvel acte ajouté dans Sheets avec ID: {new_id}")
+            # ⭐ Prix non assuré (patron, 2026-10-04) — voir enregistrer_prix_non_assure().
+            if data.get('prix_non_assure') not in (None, ''):
+                enregistrer_prix_non_assure(structure_id, data.get('nom', ''), data.get('prix_non_assure'),
+                                            user_nom=session.get('user_name'))
+                db.session.commit()
             # ⭐ Trace qui a créé cet acte — voir note similaire ci-dessus.
             _log_mouvement_stock(structure_id, new_id, data.get('nom', ''), 'creation_acte',
                                   0, 0, reference_type='creation_acte',
@@ -6217,6 +6228,9 @@ def api_delete_acte(acte_id):
                 nom_acte = row[1] if len(row) > 1 else ''
                 worksheet.delete_rows(i)
                 print(f"✅ Acte {acte_id} supprimé de Sheets")
+                # ⭐ Prix non assuré (patron, 2026-10-04) : retiré avec l'acte.
+                enregistrer_prix_non_assure(structure_id, nom_acte, None)
+                db.session.commit()
                 # ⭐ Trace qui a supprimé cet acte — voir note similaire dans
                 # api_add_acte().
                 _log_mouvement_stock(structure_id, acte_id, nom_acte, 'suppression_acte',
@@ -10724,23 +10738,16 @@ def _repartition_ligne_vente_attente(article, taux_amu, taux_cac):
     avoir sommé les parts de chaque ligne, plutôt que de sommer des parts
     déjà arrondies ligne par ligne — l'appelant doit reproduire cet ordre
     (sommer les valeurs brutes ici, arrondir ensuite)."""
-    prix = float(article.get('prix') or 0)
-    pbr = float(article.get('pbr') or prix)
-    quantite = float(article.get('quantite') or 0)
-    total = prix * quantite
-    taux_amu_ligne = 90 if 'P160' in (article.get('nom') or '') else taux_amu
-
-    part_amu = 0.0
-    if article.get('prise_en_charge_amu', True) and taux_amu_ligne > 0:
-        part_amu = min(prix, pbr) * quantite * taux_amu_ligne / 100
-
-    part_cac = 0.0
-    if article.get('prise_en_charge_cac', True) and taux_cac > 0:
-        base_cac = max(total - part_amu, 0) if part_amu > 0 else total
-        part_cac = base_cac * taux_cac / 100
-
-    part_patient = max(total - part_amu - part_cac, 0)
-    return {'total': total, 'part_amu': part_amu, 'part_cac': part_cac, 'part_patient': part_patient}
+    # ⭐ Règles centralisées (services/tarification_service.py, patron
+    # 2026-10-04) — sans PBR privé ici (compagnie inconnue à ce stade).
+    ligne = repartir_ligne({
+        'nom': article.get('nom'), 'prix': float(article.get('prix') or 0),
+        'pbr': float(article.get('pbr') or 0), 'quantite': float(article.get('quantite') or 0),
+        'prise_en_charge_amu': article.get('prise_en_charge_amu', True),
+        'prise_en_charge_cac': article.get('prise_en_charge_cac', True),
+    }, {'amu': taux_amu > 0, 'taux_amu': taux_amu, 'privee': taux_cac > 0, 'taux_privee': taux_cac,
+        'pbr_prive_par_acte': {}, 'appliquer_tarif_prive': False})
+    return {'total': ligne['total'], 'part_amu': ligne['part_amu'], 'part_cac': ligne['part_privee'], 'part_patient': ligne['part_patient']}
 
 
 @app.route('/api/ventes-en-attente/creer', methods=['POST'])
@@ -11010,6 +11017,52 @@ def api_add_acte_vente():
             if erreur_p160:
                 return jsonify({'success': False, 'error': erreur_p160}), 400
 
+        # ⭐⭐ RECALCUL SERVEUR (patron, 2026-10-04, "Vérification de la logique
+        # de calcul des tarifs actes") : les montants ne sont plus pris tels
+        # quels du navigateur — ils sont recalculés ici avec les règles
+        # centrales (services/tarification_service.py : tarif par type de
+        # patient, part AMU, part privée avec/sans PBR, aide hospitalière) à
+        # partir des articles et des taux reçus. Le panier JS applique la
+        # même formule ; un écart (ancien onglet, manipulation) est tracé et
+        # ce sont les valeurs serveur qui sont enregistrées.
+        assurance2_active_vente = bool(data.get('assurance2_active', True)) and bool(assurance2_nom) and taux_assurance2 > 0
+        applique_pbr_prive_vente = bool(data.get('applique_pbr_cac', True))
+        contexte_tarif = {
+            'amu': est_assure_amu_vente, 'taux_amu': taux_assurance,
+            'privee': assurance2_active_vente, 'taux_privee': taux_assurance2,
+            'pbr_prive_par_acte': charger_pbr_complementaires(structure_id, assurance2_nom) if assurance2_active_vente else {},
+            'applique_pbr_prive': applique_pbr_prive_vente,
+            'variante': data.get('pbr_cac_variante') or 'defaut',
+            'taux_aide': taux_aide, 'type_aide': type_aide,
+        }
+        prix_non_assure_par_acte = charger_prix_non_assure(structure_id)
+        for acte in actes_data:
+            if acte.get('prix_non_assure') is None:
+                acte['prix_non_assure'] = prix_non_assure_par_acte.get(acte.get('nom'))
+        calcul = repartir_panier(actes_data, contexte_tarif)
+        for acte, ligne in zip(actes_data, calcul['lignes']):
+            acte['prix_base'] = float(acte.get('prix') or 0)
+            acte['prix'] = ligne['tarif_unitaire']
+            acte['source_tarif'] = ligne['source_tarif']
+            acte['total'] = ligne['total']
+        ecarts = {
+            'sous_total': (float(data.get('sous_total') or 0), calcul['sous_total']),
+            'prise_en_charge': (prise_en_charge, calcul['part_amu']),
+            'prise_en_charge2': (prise_en_charge2, calcul['part_privee']),
+            'net_a_payer': (float(data.get('net_a_payer') or 0), calcul['net_a_payer']),
+        }
+        for cle, (client, serveur) in ecarts.items():
+            if abs(round(client) - round(serveur)) > 1:
+                print(f"⚠️ Vente actes : {cle} navigateur={client} serveur={serveur} — valeur serveur retenue")
+        sous_total = calcul['sous_total']
+        base_remboursement = calcul['base_remboursement']
+        prise_en_charge = calcul['part_amu']
+        prise_en_charge2 = calcul['part_privee']
+        aide_hospitaliere = calcul['aide_hospitaliere']
+        net_a_payer = calcul['net_a_payer']
+        rendu = max(montant_donne - net_a_payer, 0.0)
+        reste_a_payer = max(net_a_payer - montant_donne, 0.0)
+
         # 🔥 Construire l'objet assurances pour le JSONB
         assurances_data = {
             'principale': {
@@ -11079,9 +11132,9 @@ def api_add_acte_vente():
             data.get('patient_nom', 'Patient'),
             structure_id,
             'actes',
-            float(data.get('sous_total') or 0),
+            sous_total,
             prise_en_charge,
-            float(data.get('net_a_payer') or 0),
+            net_a_payer,
             data.get('mode_paiement', 'especes'),
             taux_assurance,
             json.dumps(actes_data, ensure_ascii=False),
@@ -11251,7 +11304,8 @@ def api_add_acte_vente():
             'vente_id': vente_id,
             'montant_donne': montant_donne,
             'reste_a_payer': reste_a_payer,
-            'net_a_payer': float(data.get('net_a_payer') or 0)
+            'net_a_payer': net_a_payer,  # valeur recalculée côté serveur (voir repartir_panier ci-dessus)
+            'rendu': rendu
         })
         
     except Exception as e:
@@ -11620,11 +11674,13 @@ def api_actes_liste_admin():
         structure_id = session.get('structure_id')
         actes = sheets_helper.get_all_records('actes')
         actes_filtres = [a for a in actes if str(a.get('structure_id')) == str(structure_id)]
+        prix_non_assure_par_acte = charger_prix_non_assure(structure_id)
         result = [{
             'id': a.get('ID'),
             'nom': a.get('nom', ''),
             'prix': a.get('prix') or 0,
             'pbr': a.get('pbr') or a.get('prix') or 0,
+            'prix_non_assure': prix_non_assure_par_acte.get(str(a.get('nom', '')).strip()),
             'description': a.get('description', '')
         } for a in actes_filtres]
         return jsonify(result)
@@ -11834,14 +11890,22 @@ def api_lister_pbr_complementaires():
     q = PbrComplementaire.query.filter_by(structure_id=structure_id)
     if compagnie:
         lignes = q.filter_by(compagnie=compagnie).all()
+        # ⭐ pbr_1 None = pas de PBR pour ce couple (tarif privé seul) ;
+        # tarif_prive None = prix de base — voir services/tarification_service.py.
         return jsonify({
-            l.nom_acte: {'pbr_1': float(l.pbr_1 or 0), 'pbr_2': float(l.pbr_2) if l.pbr_2 is not None else None}
+            l.nom_acte: {
+                'pbr_1': float(l.pbr_1) if l.pbr_1 is not None else None,
+                'pbr_2': float(l.pbr_2) if l.pbr_2 is not None else None,
+                'tarif_prive': float(l.tarif_prive) if l.tarif_prive is not None else None,
+            }
             for l in lignes
         })
     lignes = q.order_by(PbrComplementaire.compagnie, PbrComplementaire.nom_acte).all()
     return jsonify([{
         'id': l.id, 'type': l.type, 'nom_acte': l.nom_acte, 'compagnie': l.compagnie,
-        'pbr_1': float(l.pbr_1 or 0), 'pbr_2': float(l.pbr_2) if l.pbr_2 is not None else None,
+        'pbr_1': float(l.pbr_1) if l.pbr_1 is not None else None,
+        'pbr_2': float(l.pbr_2) if l.pbr_2 is not None else None,
+        'tarif_prive': float(l.tarif_prive) if l.tarif_prive is not None else None,
     } for l in lignes])
 
 
@@ -11862,15 +11926,33 @@ def api_creer_pbr_complementaire():
         compagnie = (data.get('compagnie') or '').strip()
         pbr_1 = data.get('pbr_1')
         pbr_2 = data.get('pbr_2')
+        tarif_prive = data.get('tarif_prive')
 
         if not nom_acte or not compagnie:
             return jsonify({'success': False, 'error': "Acte et compagnie requis"}), 400
-        try:
-            pbr_1 = float(pbr_1)
-        except (TypeError, ValueError):
-            return jsonify({'success': False, 'error': "PBR (habituel) invalide"}), 400
-        if pbr_1 < 0:
-            return jsonify({'success': False, 'error': "PBR (habituel) invalide"}), 400
+        # ⭐ Patron (2026-10-04) : "tarif privé, présence ou non d'un PBR,
+        # montant du PBR" — le PBR habituel devient optionnel, mais il faut au
+        # moins un tarif privé OU un PBR pour que l'entrée ait un sens.
+        if pbr_1 is None or pbr_1 == '':
+            pbr_1 = None
+        else:
+            try:
+                pbr_1 = float(pbr_1)
+            except (TypeError, ValueError):
+                return jsonify({'success': False, 'error': "PBR (habituel) invalide"}), 400
+            if pbr_1 < 0:
+                return jsonify({'success': False, 'error': "PBR (habituel) invalide"}), 400
+        if tarif_prive is None or tarif_prive == '':
+            tarif_prive = None
+        else:
+            try:
+                tarif_prive = float(tarif_prive)
+            except (TypeError, ValueError):
+                return jsonify({'success': False, 'error': "Tarif privé invalide"}), 400
+            if tarif_prive <= 0:
+                return jsonify({'success': False, 'error': "Tarif privé invalide"}), 400
+        if pbr_1 is None and tarif_prive is None:
+            return jsonify({'success': False, 'error': "Indiquez au moins un tarif privé ou un PBR"}), 400
         if pbr_2 is not None and pbr_2 != '':
             try:
                 pbr_2 = float(pbr_2)
@@ -11892,12 +11974,13 @@ def api_creer_pbr_complementaire():
         if existante:
             existante.pbr_1 = pbr_1
             existante.pbr_2 = pbr_2
+            existante.tarif_prive = tarif_prive
             db.session.commit()
             return jsonify({'success': True, 'id': existante.id, 'mis_a_jour': True})
 
         ligne = PbrComplementaire(
             structure_id=structure_id, type=type_, nom_acte=nom_acte,
-            compagnie=compagnie, pbr_1=pbr_1, pbr_2=pbr_2, created_by=user_name,
+            compagnie=compagnie, pbr_1=pbr_1, pbr_2=pbr_2, tarif_prive=tarif_prive, created_by=user_name,
         )
         db.session.add(ligne)
         db.session.commit()
@@ -14613,6 +14696,8 @@ def api_get_actes():
         # pré-remplit le menu côté hospitalisation_suivi.html sans qu'il
         # faille la redemander à chaque fois que le même nom est utilisé.
         categories_salle_connues = CorrespondanceSalleAmu.connues_pour(structure_id)
+        # ⭐ Prix non assuré par acte (patron, 2026-10-04) — voir PrixNonAssureActe.
+        prix_non_assure_par_acte = charger_prix_non_assure(structure_id)
 
         classification_service = {}
         if parametrage_service.choix_service_actif:
@@ -14746,6 +14831,7 @@ def api_get_actes():
                         or (deviner_service_acte(str(acte_nom).strip(), services_liste) or {}).get('id')
                     ) if parametrage_service.choix_service_actif else None,
                     'categorie_salle_connue': categories_salle_connues.get(str(acte_nom).strip()),
+                    'prix_non_assure': prix_non_assure_par_acte.get(str(acte_nom).strip()),
                 })
         
         return jsonify({
@@ -17109,45 +17195,43 @@ def api_creer_proforma():
         pbr_cac_variante = data.get('pbr_cac_variante') or 'defaut'
         pbr_cac_par_acte = charger_pbr_complementaires(structure_id, assurance2_nom_pour_pbr) if (data.get('assurance2_active', False) and applique_pbr_cac) else {}
 
+        # ⭐ Règles centralisées (services/tarification_service.py, patron
+        # 2026-10-04) : tarif selon le type de patient (tarif privé de la
+        # compagnie, prix non assuré), part AMU, part privée avec/sans PBR.
+        # base_cac_articles cumule désormais directement la PART privée.
+        est_assure_amu_proforma = bool(data.get('assurance_nom')) and data.get('assurance_nom') != 'Non assuré' and taux_assurance > 0
+        taux2_lignes = float(data.get('taux_assurance2') or 0) if data.get('assurance2_active', False) else 0
+        contexte_proforma = {
+            'amu': est_assure_amu_proforma, 'taux_amu': taux_assurance,
+            'privee': taux2_lignes > 0, 'taux_privee': taux2_lignes,
+            'pbr_prive_par_acte': charger_pbr_complementaires(structure_id, assurance2_nom_pour_pbr) if (data.get('assurance2_active', False) and assurance2_nom_pour_pbr) else {},
+            'applique_pbr_prive': bool(applique_pbr_cac), 'variante': pbr_cac_variante,
+        }
+        prix_non_assure_proforma = charger_prix_non_assure(structure_id) if (type_proforma_actes := str(data.get('type', 'actes')).lower() in ('actes', 'acte')) else {}
         for article in articles:
             prix = float(article.get('prix', article.get('prix_unitaire', 0)))
             pbr = float(article.get('pbr', prix))
             quantite = float(article.get('quantite', 1))
-            total = prix * quantite
-
+            if article.get('prix_non_assure') is None and type_proforma_actes:
+                article['prix_non_assure'] = prix_non_assure_proforma.get(article.get('nom'))
+            ligne = repartir_ligne({
+                'nom': article.get('nom'), 'prix': prix, 'pbr': pbr, 'quantite': quantite,
+                'prix_non_assure': article.get('prix_non_assure'), 'prix_modifie': article.get('prix_modifie'),
+                'prise_en_charge_amu': article.get('prise_en_charge_amu', True),
+                'prise_en_charge_cac': article.get('prise_en_charge_cac', True),
+            }, contexte_proforma)
+            total = ligne['total']
             article['total'] = total
-            article['prix'] = prix
+            article['prix_base'] = prix
+            article['prix'] = ligne['tarif_unitaire']
+            article['source_tarif'] = ligne['source_tarif']
             article['pbr'] = pbr
             sous_total += total
-
-            prise_amu = article.get('prise_en_charge_amu', True)
-            prise_cac = article.get('prise_en_charge_cac', True)
-            taux_item = taux_amu_pour_article(article.get('nom'), taux_assurance)
-
-            # 🔥 AMU
-            if prise_amu and pbr > 0:
+            if article.get('prise_en_charge_amu', True) and pbr > 0:
                 sous_total_amu += total
-                base_amu_article = min(prix, pbr) * quantite
-                pbr_total_amu += base_amu_article
-                if taux_item > 0:
-                    prise_en_charge_par_article += (base_amu_article * taux_item) / 100
-
-            # 🔥🔥🔥 CAC article par article 🔥🔥🔥
-            if prise_cac:
-                if prise_amu and pbr > 0 and taux_assurance > 0:
-                    # 🔥 Article avec AMU → CAC sur le reste après AMU
-                    base_amu_article = min(prix, pbr) * quantite
-                    prise_amu_article = (base_amu_article * taux_item) / 100
-                    reste = total - prise_amu_article
-                else:
-                    # 🔥 Article sans AMU → CAC sur le prix total
-                    reste = total
-                if article.get('nom') in pbr_cac_par_acte:
-                    reste = min(reste, pbr_cac_variante_valeur(pbr_cac_par_acte[article.get('nom')], pbr_cac_variante) * quantite)
-                if reste > 0:
-                    base_cac_articles += reste
-
-                print(f"🔍 {article.get('nom')}: Base CAC={base_cac_articles}")
+                pbr_total_amu += min(ligne['tarif_unitaire'], pbr) * quantite
+            prise_en_charge_par_article += ligne['part_amu']
+            base_cac_articles += ligne['part_privee']
         
         # 🔥 Vérifier si tous les articles sont non pris en charge
         tout_non_pris = all(
@@ -17183,8 +17267,8 @@ def api_creer_proforma():
         prise_en_charge2 = 0
         
         if assurance2_active and taux_assurance2 > 0 and base_cac_articles > 0:
-            prise_en_charge2 = base_cac_articles * (taux_assurance2 / 100)
-            print(f"📊 CAC appliquée sur base: {base_cac_articles} x {taux_assurance2}% = {prise_en_charge2} FCFA")
+            prise_en_charge2 = base_cac_articles  # part privée déjà calculée article par article (voir boucle ci-dessus)
+            print(f"📊 CAC appliquée (part privée cumulée) : {prise_en_charge2} FCFA")
         
         # 🔥 TAUX MODIFIÉ
         taux_modifie = data.get('taux_modifie', False)
@@ -17765,29 +17849,27 @@ def api_convertir_proforma():
             # ci-dessous en était amputée à tort (ex. 9 733 F de part SUNU
             # attendus, 5 232,50 F réellement enregistrés) — signalé par le
             # patron en testant la conversion en direct.
+            # ⭐ Règles centralisées (services/tarification_service.py, patron
+            # 2026-10-04) — le prix est celui déjà enregistré sur la proforma
+            # (tarif appliqué à sa création), jamais remplacé ici ; base_cac
+            # cumule désormais directement la PART privée.
+            taux2_conv = float(taux_assurance2 or 0) if assurance2_active else 0
+            ligne_conv = repartir_ligne({
+                'nom': a.get('nom'), 'prix': prix, 'pbr': pbr, 'quantite': quantite,
+                'prise_en_charge_amu': prise_amu, 'prise_en_charge_cac': prise_cac,
+            }, {
+                'amu': bool(est_assure and taux_assurance > 0), 'taux_amu': taux_assurance,
+                'privee': taux2_conv > 0, 'taux_privee': taux2_conv,
+                'pbr_prive_par_acte': pbr_cac_par_acte, 'variante': pbr_cac_variante,
+                'appliquer_tarif_prive': False,
+            })
             if prise_amu and pbr > 0 and est_assure:
                 sous_total_amu += total
-                base_amu = min(prix, pbr) * quantite
-                pbr_total_amu += base_amu
-                if taux_item > 0:
-                    prise_en_charge_par_article += (base_amu * taux_item) / 100
+                pbr_total_amu += min(prix, pbr) * quantite
             else:
                 montant_non_amu += total
-
-            # 🔥 CAC article par article
-            if prise_cac:
-                if prise_amu and pbr > 0 and est_assure:
-                    base_amu = min(prix, pbr) * quantite
-                    prise_amu_article = (base_amu * taux_item) / 100
-                    reste = total - prise_amu_article
-                else:
-                    reste = total
-                # ⭐ Plafond propre à la compagnie complémentaire, comme
-                # l'AMU le fait déjà avec son PBR (voir plus haut).
-                if a.get('nom') in pbr_cac_par_acte:
-                    reste = min(reste, pbr_cac_variante_valeur(pbr_cac_par_acte[a.get('nom')], pbr_cac_variante) * quantite)
-                if reste > 0:
-                    base_cac += reste
+            prise_en_charge_par_article += ligne_conv['part_amu']
+            base_cac += ligne_conv['part_privee']
 
             articles_transformes.append(article)
         
@@ -17819,8 +17901,8 @@ def api_convertir_proforma():
         # 🔥🔥🔥 CAC 🔥🔥🔥
         prise_en_charge2 = 0
         if assurance2_active and taux_assurance2 > 0 and base_cac > 0:
-            prise_en_charge2 = (base_cac * taux_assurance2) / 100
-        
+            prise_en_charge2 = base_cac  # part privée déjà calculée article par article (voir boucle ci-dessus)
+
         # 🔥 Net à payer
         net_a_payer = sous_total - prise_en_charge - prise_en_charge2
 
@@ -19216,24 +19298,23 @@ def api_facturer_hospitalisation(hospit_id):
             prise_cac = bool(s.prise_en_charge_cac)
             taux_item = taux_amu_pour_article(s.nom, taux_assurance) if est_assure else 0
 
+            # ⭐ Règles centralisées (services/tarification_service.py, patron
+            # 2026-10-04) — prix = celui enregistré au séjour, jamais
+            # remplacé ; base_cac_articles cumule directement la PART privée.
+            ligne_hospit = repartir_ligne({
+                'nom': s.nom, 'prix': prix, 'pbr': pbr, 'quantite': quantite,
+                'prise_en_charge_amu': prise_amu, 'prise_en_charge_cac': prise_cac,
+            }, {
+                'amu': bool(est_assure), 'taux_amu': taux_assurance,
+                'privee': bool(assurance2_active and taux_assurance2 > 0), 'taux_privee': taux_assurance2,
+                'pbr_prive_par_acte': pbr_cac_par_acte, 'variante': hospit.pbr_cac_variante,
+                'appliquer_tarif_prive': False,
+            })
             if est_assure and prise_amu and pbr > 0:
                 sous_total_amu += total
-                base_amu_article = min(prix, pbr) * quantite
-                pbr_total_amu += base_amu_article
-                if taux_item > 0:
-                    prise_en_charge_par_article += (base_amu_article * taux_item) / 100
-
-            if prise_cac:
-                if est_assure and prise_amu and pbr > 0 and taux_assurance > 0:
-                    base_amu_article = min(prix, pbr) * quantite
-                    prise_amu_article = (base_amu_article * taux_item) / 100
-                    reste = total - prise_amu_article
-                else:
-                    reste = total
-                if s.nom in pbr_cac_par_acte:
-                    reste = min(reste, pbr_cac_variante_valeur(pbr_cac_par_acte[s.nom], hospit.pbr_cac_variante) * quantite)
-                if reste > 0:
-                    base_cac_articles += reste
+                pbr_total_amu += min(prix, pbr) * quantite
+            prise_en_charge_par_article += ligne_hospit['part_amu']
+            base_cac_articles += ligne_hospit['part_privee']
 
             articles.append({
                 'id': s.reference_id, 'nom': s.nom, 'prix': prix, 'prix_unitaire': prix, 'pbr': pbr,
@@ -19258,7 +19339,7 @@ def api_facturer_hospitalisation(hospit_id):
 
         prise_en_charge2 = 0
         if assurance2_active and taux_assurance2 > 0 and base_cac_articles > 0:
-            prise_en_charge2 = base_cac_articles * (taux_assurance2 / 100)
+            prise_en_charge2 = base_cac_articles  # part privée déjà calculée article par article (voir boucle ci-dessus)
 
         net_a_payer = sous_total - prise_en_charge - prise_en_charge2
         if net_a_payer < 0:
@@ -19813,24 +19894,23 @@ def api_facturer_soins_ambulatoires(episode_id):
             prise_cac = bool(l.prise_en_charge_cac)
             taux_item = taux_amu_pour_article(l.nom, taux_assurance) if est_assure else 0
 
+            # ⭐ Règles centralisées (services/tarification_service.py, patron
+            # 2026-10-04) — prix = celui enregistré à l'épisode, jamais
+            # remplacé ; base_cac_articles cumule directement la PART privée.
+            ligne_amb = repartir_ligne({
+                'nom': l.nom, 'prix': prix, 'pbr': pbr, 'quantite': quantite,
+                'prise_en_charge_amu': prise_amu, 'prise_en_charge_cac': prise_cac,
+            }, {
+                'amu': bool(est_assure), 'taux_amu': taux_assurance,
+                'privee': bool(assurance2_active and taux_assurance2 > 0), 'taux_privee': taux_assurance2,
+                'pbr_prive_par_acte': pbr_cac_par_acte, 'variante': episode.pbr_cac_variante,
+                'appliquer_tarif_prive': False,
+            })
             if est_assure and prise_amu and pbr > 0:
                 sous_total_amu += total
-                base_amu_ligne = min(prix, pbr) * quantite
-                pbr_total_amu += base_amu_ligne
-                if taux_item > 0:
-                    prise_en_charge_par_article += (base_amu_ligne * taux_item) / 100
-
-            if prise_cac:
-                if est_assure and prise_amu and pbr > 0 and taux_assurance > 0:
-                    base_amu_ligne = min(prix, pbr) * quantite
-                    prise_amu_ligne = (base_amu_ligne * taux_item) / 100
-                    reste = total - prise_amu_ligne
-                else:
-                    reste = total
-                if l.nom in pbr_cac_par_acte:
-                    reste = min(reste, pbr_cac_variante_valeur(pbr_cac_par_acte[l.nom], episode.pbr_cac_variante) * quantite)
-                if reste > 0:
-                    base_cac_articles += reste
+                pbr_total_amu += min(prix, pbr) * quantite
+            prise_en_charge_par_article += ligne_amb['part_amu']
+            base_cac_articles += ligne_amb['part_privee']
 
             articles.append({
                 'id': l.reference_id, 'nom': l.nom, 'prix': prix, 'prix_unitaire': prix, 'pbr': pbr,
@@ -19852,7 +19932,7 @@ def api_facturer_soins_ambulatoires(episode_id):
 
         prise_en_charge2 = 0
         if assurance2_active and taux_assurance2 > 0 and base_cac_articles > 0:
-            prise_en_charge2 = base_cac_articles * (taux_assurance2 / 100)
+            prise_en_charge2 = base_cac_articles  # part privée déjà calculée article par article (voir boucle ci-dessus)
 
         net_a_payer = sous_total - prise_en_charge - prise_en_charge2
         if net_a_payer < 0:

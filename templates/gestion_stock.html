@@ -473,6 +473,14 @@
                         <label class="form-label">PBR (FCFA)</label>
                         <input type="number" class="form-control" id="actePBR" placeholder="Prix de Base de Remboursement">
                     </div>
+                    <!-- ⭐ Patron (2026-10-04) : "Patient non assuré : prix non assuré (ou
+                         prix AMU par défaut)" — stocké en base (PrixNonAssureActe),
+                         pas dans la feuille Google Sheets. Vide = le prix ci-dessus
+                         s'applique à tout le monde. -->
+                    <div class="mb-3">
+                        <label class="form-label">Prix non assuré (FCFA) <span class="text-muted">— optionnel, vide = prix ci-dessus</span></label>
+                        <input type="number" class="form-control" id="actePrixNonAssure" placeholder="Prix facturé aux patients sans aucune assurance">
+                    </div>
                     <div class="mb-3">
                         <label class="form-label">Description</label>
                         <textarea class="form-control" id="acteDescription" rows="3"></textarea>
@@ -747,7 +755,7 @@ function renderActesPage() {
                 <td>${pbr} FCFA</td>
                 <td>${a.description || '-'}</td>
                 <td>
-                    <button class="btn btn-sm btn-warning" onclick='editActe(${a.id}, "${nomEsc}", ${prix}, ${pbr}, "${descEsc}")'>
+                    <button class="btn btn-sm btn-warning" onclick='editActe(${a.id}, "${nomEsc}", ${prix}, ${pbr}, "${descEsc}", ${a.prix_non_assure || 'null'})'>
                         <i class="fas fa-edit"></i>
                     </button>
                     <button class="btn btn-sm btn-danger" onclick="deleteActe(${a.id})">
@@ -1098,12 +1106,13 @@ function showAddActeModal() {
     new bootstrap.Modal(document.getElementById('acteModal')).show();
 }
 
-function editActe(id, nom, prix, pbr, description) {
+function editActe(id, nom, prix, pbr, description, prixNonAssure) {
     document.getElementById('acteModalTitle').innerText = "Modifier l'acte";
     document.getElementById('acteId').value = id;
     document.getElementById('acteNom').value = nom;
     document.getElementById('actePrix').value = prix;
     document.getElementById('actePBR').value = pbr || prix;
+    document.getElementById('actePrixNonAssure').value = prixNonAssure || '';
     document.getElementById('acteDescription').value = description || '';
     new bootstrap.Modal(document.getElementById('acteModal')).show();
 }
@@ -1115,6 +1124,7 @@ async function saveActe() {
         code: document.getElementById('acteCode').value,
         prix: parseInt(document.getElementById('actePrix').value),
         pbr: parseInt(document.getElementById('actePBR').value) || parseInt(document.getElementById('actePrix').value),
+        prix_non_assure: document.getElementById('actePrixNonAssure').value.trim() === '' ? null : parseInt(document.getElementById('actePrixNonAssure').value),
         description: document.getElementById('acteDescription').value
     };
     

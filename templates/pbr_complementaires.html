@@ -85,9 +85,19 @@
                     <input type="text" class="form-control" id="pbrCompagnie" placeholder="Ex. SUNU" autocomplete="off">
                     <div id="pbrCompagnieResultats" class="list-group position-absolute w-100" style="z-index:1000; max-height:180px; overflow-y:auto; display:none;"></div>
                 </div>
+                <!-- ⭐ Patron (2026-10-04) : "pour chaque acte et chaque assurance
+                     privée : tarif privé, présence ou non d'un PBR, montant du
+                     PBR" — tarif privé facturé aux patients de cette compagnie
+                     (vide = prix de base du catalogue), PBR désormais optionnel
+                     (vide = la part privée se calcule sur le tarif / le reste
+                     après AMU). Au moins l'un des deux est requis. -->
+                <div class="mb-2">
+                    <label class="form-label mb-1">Tarif privé (FCFA) <span class="text-muted">— facturé aux patients de cette compagnie, vide = prix de base</span></label>
+                    <input type="number" class="form-control" id="pbrTarifPrive" min="0" step="1" placeholder="Ex. 15000">
+                </div>
                 <div class="row">
                     <div class="col-md-6 mb-2">
-                        <label class="form-label mb-1">PBR habituel (FCFA) <span class="text-danger">*</span></label>
+                        <label class="form-label mb-1">PBR habituel (FCFA) <span class="text-muted">— vide = pas de PBR</span></label>
                         <input type="number" class="form-control" id="pbrValeur1" min="0" step="1" placeholder="Appliqué par défaut">
                     </div>
                     <div class="col-md-6 mb-2">
@@ -206,17 +216,22 @@ document.getElementById('pbrCompagnie').addEventListener('click', filtrerCompagn
 
 async function enregistrerPbr() {
     const compagnie = document.getElementById('pbrCompagnie').value.trim();
-    const pbr1 = parseFloat(document.getElementById('pbrValeur1').value);
+    const tarifPriveRaw = document.getElementById('pbrTarifPrive').value.trim();
+    const tarifPrive = tarifPriveRaw === '' ? null : parseFloat(tarifPriveRaw);
+    const pbr1Raw = document.getElementById('pbrValeur1').value.trim();
+    const pbr1 = pbr1Raw === '' ? null : parseFloat(pbr1Raw);
     const pbr2Raw = document.getElementById('pbrValeur2').value.trim();
     const pbr2 = pbr2Raw === '' ? null : parseFloat(pbr2Raw);
     if (!pbrChoisi) { await afficherMessage('Choisissez un acte ou un médicament dans la liste.'); return; }
     if (!compagnie) { await afficherMessage('Indiquez la compagnie complémentaire.'); return; }
-    if (isNaN(pbr1) || pbr1 < 0) { await afficherMessage('PBR habituel invalide.'); return; }
+    if (tarifPrive !== null && (isNaN(tarifPrive) || tarifPrive <= 0)) { await afficherMessage('Tarif privé invalide.'); return; }
+    if (pbr1 !== null && (isNaN(pbr1) || pbr1 < 0)) { await afficherMessage('PBR habituel invalide.'); return; }
+    if (pbr1 === null && tarifPrive === null) { await afficherMessage('Indiquez au moins un tarif privé ou un PBR habituel.'); return; }
     if (pbr2 !== null && (isNaN(pbr2) || pbr2 < 0)) { await afficherMessage('PBR alternatif invalide.'); return; }
 
     fetch('/api/pbr-complementaires', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: pbrTypeActuel, nom_acte: pbrChoisi, compagnie: compagnie, pbr_1: pbr1, pbr_2: pbr2 })
+        body: JSON.stringify({ type: pbrTypeActuel, nom_acte: pbrChoisi, compagnie: compagnie, pbr_1: pbr1, pbr_2: pbr2, tarif_prive: tarifPrive })
     })
     .then(r => r.json())
     .then(async data => {
@@ -264,6 +279,7 @@ function chargerPbrComplementaires() {
                         <thead>
                             <tr class="small text-muted">
                                 <th></th><th>Acte / médicament</th>
+                                <th class="text-end">Tarif privé</th>
                                 <th class="text-end">PBR habituel</th>
                                 <th class="text-end">PBR alternatif</th>
                                 <th></th>
@@ -274,7 +290,8 @@ function chargerPbrComplementaires() {
                                 <tr>
                                     <td><span class="badge ${l.type === 'acte' ? 'bg-primary' : 'bg-success'}">${l.type === 'acte' ? 'Acte' : 'Médicament'}</span></td>
                                     <td>${l.nom_acte}</td>
-                                    <td class="text-end fw-bold">${Math.round(l.pbr_1).toLocaleString('fr-FR')} FCFA</td>
+                                    <td class="text-end">${l.tarif_prive !== null ? Math.round(l.tarif_prive).toLocaleString('fr-FR') + ' FCFA' : '<span class="text-muted">prix de base</span>'}</td>
+                                    <td class="text-end fw-bold">${l.pbr_1 !== null ? Math.round(l.pbr_1).toLocaleString('fr-FR') + ' FCFA' : '<span class="text-muted">sans PBR</span>'}</td>
                                     <td class="text-end">${l.pbr_2 !== null ? Math.round(l.pbr_2).toLocaleString('fr-FR') + ' FCFA' : '<span class="text-muted">-</span>'}</td>
                                     <td style="width:40px;">
                                         <button class="btn btn-sm btn-outline-danger" onclick="supprimerPbr(${l.id})" title="Supprimer">

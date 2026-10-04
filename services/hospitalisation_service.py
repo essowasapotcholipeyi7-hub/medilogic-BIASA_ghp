@@ -17,7 +17,8 @@ from datetime import timedelta
 
 # ⭐ Import différé (pas de circularité : models.py n'importe jamais ce
 # module) — utilisé uniquement par charger_pbr_complementaires() ci-dessous.
-from models import PbrComplementaire
+from models import PbrComplementaire, PrixNonAssureActe
+from services.tarification_service import repartir_ligne, pbr_prive_valeur
 from utils.grille_amu_hospitalisation import pbr_officiel_p160, JOURS_MAX_SANS_PALIER
 
 # Suffixe (normalisé) -> palier 1/2/3. Plusieurs variantes tolérées
@@ -235,11 +236,55 @@ def charger_pbr_complementaires(structure_id, compagnie):
     ).all()
     return {
         l.nom_acte: {
-            'pbr_1': float(l.pbr_1 or 0),
+            # ⭐ pbr_1 None = pas de PBR pour ce couple (tarif privé seul) ;
+            # tarif_prive None = prix de base — voir services/tarification_service.py.
+            'pbr_1': float(l.pbr_1) if l.pbr_1 is not None else None,
             'pbr_2': float(l.pbr_2) if l.pbr_2 is not None else None,
+            'tarif_prive': float(l.tarif_prive) if l.tarif_prive is not None else None,
         }
         for l in lignes
     }
+
+
+def charger_prix_non_assure(structure_id):
+    """{nom_acte: prix non assuré} pour cette structure (voir
+    PrixNonAssureActe, models.py) — vide tant que rien n'est renseigné :
+    les patients non assurés paient alors le prix de base (cas 1,
+    "ou prix AMU si non défini")."""
+    return {
+        l.nom_acte: float(l.prix)
+        for l in PrixNonAssureActe.query.filter_by(structure_id=structure_id).all()
+        if l.prix is not None
+    }
+
+
+def enregistrer_prix_non_assure(structure_id, nom_acte, prix, ancien_nom=None, user_nom=None):
+    """Pose / met à jour / retire (prix vide) le prix non assuré d'un acte —
+    appelé par l'admin des actes (api_add_acte / api_delete_acte, app.py)
+    en même temps que l'écriture Google Sheets. `ancien_nom` : l'acte a été
+    renommé, l'entrée suit le nouveau nom. Ne commit pas : l'appelant le
+    fait (ou pas) avec le reste."""
+    from models import db
+    nom_acte = (nom_acte or '').strip()
+    if not nom_acte:
+        return
+    cles = [nom_acte] + ([ancien_nom.strip()] if ancien_nom and ancien_nom.strip() != nom_acte else [])
+    lignes = PrixNonAssureActe.query.filter(
+        PrixNonAssureActe.structure_id == structure_id, PrixNonAssureActe.nom_acte.in_(cles)
+    ).all()
+    if prix is None or prix == '' or float(prix) <= 0:
+        for l in lignes:
+            db.session.delete(l)
+        return
+    prix = float(prix)
+    if lignes:
+        ligne = lignes[0]
+        ligne.nom_acte = nom_acte
+        ligne.prix = prix
+        for doublon in lignes[1:]:
+            db.session.delete(doublon)
+    else:
+        db.session.add(PrixNonAssureActe(structure_id=structure_id, nom_acte=nom_acte, prix=prix, created_by=user_nom))
 
 
 def pbr_cac_variante_valeur(entree, variante):
@@ -248,9 +293,9 @@ def pbr_cac_variante_valeur(entree, variante):
     ('defaut'|'alternatif' — voir Hospitalisation/Proforma.pbr_cac_variante).
     Se replie sur pbr_1 si l'alternatif est demandé mais absent pour cet
     acte (toutes les compagnies n'ont pas forcément un second tarif)."""
-    if variante == 'alternatif' and entree.get('pbr_2') is not None:
-        return entree['pbr_2']
-    return entree['pbr_1']
+    # ⭐ Peut renvoyer None depuis 2026-10-04 (entrée "tarif privé sans PBR") —
+    # voir services/tarification_service.pbr_prive_valeur.
+    return pbr_prive_valeur(entree, variante)
 
 
 def calculer_repartition_assurance(soins, hospit, pbr_cac_par_acte=None, pbr_cac_variante='defaut'):
@@ -278,48 +323,28 @@ def calculer_repartition_assurance(soins, hospit, pbr_cac_par_acte=None, pbr_cac
     a_cac = hospit.a_cac
     taux_assurance2 = hospit.taux_assurance2_effectif
 
-    sous_total = 0.0
-    pbr_total_amu = 0.0
-    sous_total_amu = 0.0
-    base_cac = 0.0
-    part_amu = 0.0
-
+    # ⭐ Règles centralisées (patron, 2026-10-04) : voir
+    # services/tarification_service.py. Ici le prix de chaque soin est celui
+    # déjà enregistré au séjour (jamais remplacé par un tarif privé après
+    # coup : appliquer_tarif_prive=False), seules les parts AMU / privée /
+    # patient en découlent.
+    contexte = {
+        'amu': bool(est_assure), 'taux_amu': taux_assurance,
+        'privee': bool(a_cac), 'taux_privee': taux_assurance2,
+        'pbr_prive_par_acte': pbr_cac_par_acte, 'variante': pbr_cac_variante,
+        'appliquer_tarif_prive': False,
+    }
+    sous_total = part_amu = part_cac = 0.0
     for s in soins:
-        prix = float(s.prix or 0)
-        pbr = float(s.pbr or prix)
-        quantite = int(s.quantite or 0)
-        total = prix * quantite
-        sous_total += total
-
-        prise_amu = bool(s.prise_en_charge_amu)
-        prise_cac = bool(s.prise_en_charge_cac)
-        taux_item = _taux_amu_article(s.nom, taux_assurance) if est_assure else 0
-
-        if est_assure and prise_amu and pbr > 0:
-            sous_total_amu += total
-            base_amu = min(prix, pbr) * quantite
-            pbr_total_amu += base_amu
-            if taux_item > 0:
-                part_amu += (base_amu * taux_item) / 100
-
-        if prise_cac and a_cac:
-            if est_assure and prise_amu and pbr > 0:
-                base_amu = min(prix, pbr) * quantite
-                prise_amu_article = (base_amu * taux_item) / 100
-                reste = total - prise_amu_article
-            else:
-                reste = total
-            # ⭐ Plafond propre à la compagnie complémentaire du patient,
-            # comme l'AMU le fait déjà avec son PBR — voir
-            # charger_pbr_complementaires() ci-dessus. Rien à faire si
-            # cet acte n'a pas d'entrée pour cette compagnie (reste tel quel).
-            if s.nom in pbr_cac_par_acte:
-                plafond_cac = pbr_cac_variante_valeur(pbr_cac_par_acte[s.nom], pbr_cac_variante) * quantite
-                reste = min(reste, plafond_cac)
-            if reste > 0:
-                base_cac += reste
-
-    part_cac = (base_cac * taux_assurance2) / 100 if (a_cac and base_cac > 0) else 0.0
+        ligne = repartir_ligne({
+            'nom': s.nom, 'prix': float(s.prix or 0), 'pbr': float(s.pbr or 0),
+            'quantite': int(s.quantite or 0),
+            'prise_en_charge_amu': bool(s.prise_en_charge_amu),
+            'prise_en_charge_cac': bool(s.prise_en_charge_cac),
+        }, contexte)
+        sous_total += ligne['total']
+        part_amu += ligne['part_amu']
+        part_cac += ligne['part_privee']
     part_patient = max(sous_total - part_amu - part_cac, 0.0)
 
     return {

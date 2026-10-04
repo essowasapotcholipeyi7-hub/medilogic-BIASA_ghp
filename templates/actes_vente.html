@@ -644,8 +644,114 @@ let pbrCacMapActes = {};
 // JS de pbr_cac_variante_valeur() (services/hospitalisation_service.py).
 // Repli sur pbr_1 si l'alternatif est demandé mais absent pour cet acte.
 function pbrCacVarianteValeurActes(entree, variante) {
+    // ⭐ Peut renvoyer null : entrée "tarif privé sans PBR" (2026-10-04).
+    if (!entree) return null;
     if (variante === 'alternatif' && entree.pbr_2 !== null && entree.pbr_2 !== undefined) return entree.pbr_2;
+    if (entree.pbr_1 === null || entree.pbr_1 === undefined || entree.pbr_1 <= 0) return null;
     return entree.pbr_1;
+}
+
+// ⭐ Prix "non assuré" par acte (patron, 2026-10-04) — voir PrixNonAssureActe
+// (models.py) ; vide = prix de base pour tout le monde.
+const PRIX_NON_ASSURE_PAR_ACTE = {{ prix_non_assure_par_acte|tojson|safe }};
+
+// ============================================
+// ⭐ TARIFICATION — miroir JS de services/tarification_service.py (patron,
+// 2026-10-04, "Vérification de la logique de calcul des tarifs actes").
+// UNE seule formule pour le panier (lignes + total) et la finalisation ; le
+// serveur recalcule avec la même règle à l'enregistrement de la vente.
+//   Cas 1 non assuré : tarif = prix non assuré (sinon prix de base), patient paie tout
+//   Cas 2 AMU seule  : part AMU = taux AMU x min(tarif, PBR AMU)
+//   Cas 3 privée seule : tarif = tarif privé ; part privée = taux x PBR privé
+//                        s'il existe, sinon taux x tarif
+//   Cas 4 AMU + privée : tarif = tarif privé ; part AMU comme cas 2 ; part
+//                        privée = taux x PBR privé s'il existe (plafonnée au
+//                        reste après AMU), sinon taux x (tarif - part AMU)
+// ============================================
+function contexteTarificationActes() {
+    const typeAssurance = sessionStorage.getItem('selectedPatientAssurance') || '';
+    const estAssure = typeAssurance === 'amu_cnss' || typeAssurance === 'amu_inam' || typeAssurance === 'amu_tns';
+    const amu = estAssure && assurancePrincipaleActive;
+    let tauxAMU = 0;
+    if (amu) {
+        tauxAMU = parseFloat(document.getElementById('tauxVente').value) || 0;
+        if (isNaN(tauxAMU) || tauxAMU === 0) { tauxAMU = 80; document.getElementById('tauxVente').value = tauxAMU; }
+    }
+    const privee = !!(assurance2Active && patientAssurance2 && patientAssurance2 !== 'Aucune');
+    const tauxPrivee = privee ? (tauxTempModifie ? tauxTempValeur : (patientTaux2Original || 0)) : 0;
+    const toggle = document.getElementById('toggleAppliquePbrCac');
+    return {
+        estAssure: estAssure, amu: amu, tauxAMU: tauxAMU, privee: privee, tauxPrivee: tauxPrivee,
+        appliquePbrPrive: toggle ? toggle.checked : true,
+        variante: document.getElementById('selectPbrCacVarianteActes')?.value || 'defaut',
+    };
+}
+
+function tarifUnitaireActes(item, ctx) {
+    const prixBase = parseFloat(item.prix) || 0;
+    if (item.prix_modifie) return { tarif: prixBase, source: 'base' };
+    const entree = ctx.privee ? pbrCacMapActes[item.nom] : undefined;
+    if (entree && entree.tarif_prive) return { tarif: parseFloat(entree.tarif_prive), source: 'prive' };
+    const prixNonAssure = parseFloat(item.prix_non_assure !== undefined ? item.prix_non_assure : PRIX_NON_ASSURE_PAR_ACTE[item.nom]) || 0;
+    if (!ctx.amu && !ctx.privee && prixNonAssure > 0) return { tarif: prixNonAssure, source: 'non_assure' };
+    return { tarif: prixBase, source: 'base' };
+}
+
+function repartirLigneActes(item, ctx) {
+    ctx = ctx || contexteTarificationActes();
+    const quantite = parseFloat(item.quantite) || 0;
+    const t = tarifUnitaireActes(item, ctx);
+    const tarif = t.tarif;
+    const total = tarif * quantite;
+    let pbrAMU = parseFloat(item.pbr) || 0;
+    if (pbrAMU <= 0) pbrAMU = tarif;
+    const priseAMU = item.prise_en_charge_amu !== false;
+    const priseCAC = item.prise_en_charge_cac !== false;
+
+    let baseAMU = 0, partAMU = 0;
+    if (ctx.amu && priseAMU && pbrAMU > 0) {
+        baseAMU = Math.min(tarif, pbrAMU) * quantite;
+        const tauxItem = tauxAMUPourArticle(item, ctx.tauxAMU);
+        if (tauxItem > 0) partAMU = baseAMU * tauxItem / 100;
+    }
+
+    let basePrivee = 0, partPrivee = 0;
+    if (ctx.privee && priseCAC && ctx.tauxPrivee > 0) {
+        const reste = Math.max(total - partAMU, 0);
+        const pbrPrive = ctx.appliquePbrPrive ? pbrCacVarianteValeurActes(pbrCacMapActes[item.nom], ctx.variante) : null;
+        if (pbrPrive !== null && pbrPrive !== undefined) {
+            basePrivee = pbrPrive * quantite;
+            partPrivee = Math.min(basePrivee * ctx.tauxPrivee / 100, reste);
+        } else {
+            basePrivee = reste;
+            partPrivee = basePrivee * ctx.tauxPrivee / 100;
+        }
+    }
+    const partPatient = Math.max(total - partAMU - partPrivee, 0);
+    return { tarif: tarif, source: t.source, quantite: quantite, total: total,
+             baseAMU: baseAMU, partAMU: partAMU, basePrivee: basePrivee, partPrivee: partPrivee, partPatient: partPatient };
+}
+
+function repartirPanierActes(ctx) {
+    ctx = ctx || contexteTarificationActes();
+    const lignes = panier.map(item => repartirLigneActes(item, ctx));
+    const sousTotal = lignes.reduce((s, l) => s + l.total, 0);
+    const baseRemboursement = lignes.reduce((s, l) => s + l.baseAMU, 0);
+    const partAMU = lignes.reduce((s, l) => s + l.partAMU, 0);
+    const partPrivee = lignes.reduce((s, l) => s + l.partPrivee, 0);
+    const reste = Math.max(sousTotal - partAMU - partPrivee, 0);
+
+    // Aide hospitalière : % (plafonné à 100) ou montant direct, sur le reste après assurances
+    const typeAide = document.getElementById('typeAideHospitaliere')?.value || 'pourcentage';
+    let tauxAide = parseFloat(document.getElementById('tauxAideHospitaliere')?.value) || 0;
+    if (isNaN(tauxAide) || tauxAide < 0) tauxAide = 0;
+    if (typeAide === 'pourcentage' && tauxAide > 100) tauxAide = 100;
+    let aide = 0;
+    if (tauxAide > 0 && reste > 0) aide = (typeAide === 'montant') ? Math.min(tauxAide, reste) : reste * tauxAide / 100;
+    const net = Math.max(reste - aide, 0);
+    return { ctx: ctx, lignes: lignes, sousTotal: sousTotal, baseRemboursement: baseRemboursement,
+             partAMU: partAMU, partPrivee: partPrivee, resteApresAssurances: reste,
+             typeAide: typeAide, tauxAide: tauxAide, aideHospitaliere: aide, netAPayer: net };
 }
 let tauxTempValeur = 0;
 let assurance2Active = false;
@@ -1427,6 +1533,9 @@ async function modifierPrix(index, nouveauPrix) {
         return;
     }
     panier[index].prix = prix;
+    // ⭐ Prix saisi à la main : prime sur le tarif privé / non assuré automatique
+    // (voir tarifUnitaireActes).
+    panier[index].prix_modifie = true;
     panier[index].total = prix * panier[index].quantite;
     afficherPanier();
 }
@@ -1484,23 +1593,17 @@ function afficherPanier() {
     let sousTotal = 0;
     let pbrTotal = 0;
 
-    // ⭐ Part AMU par ligne : même détermination du taux effectif que
-    // calculerTotal() (estAssure + assurancePrincipaleActive + valeur du
-    // champ "Taux AMU (%)", avec le même repli à 80% par défaut), pour que
-    // la colonne "Part AMU" du panier corresponde exactement à ce qui sera
-    // réellement calculé — tauxAMUPourArticle() applique ensuite le 90% de
-    // P160 article par article, comme pour le total.
-    const typeAssurancePourPanier = sessionStorage.getItem('selectedPatientAssurance') || '';
-    const estAssurePourPanier = typeAssurancePourPanier === 'amu_cnss' || typeAssurancePourPanier === 'amu_inam' || typeAssurancePourPanier === 'amu_tns';
-    let tauxAMUPourPanier = 0;
-    if (estAssurePourPanier && assurancePrincipaleActive) {
-        tauxAMUPourPanier = parseFloat(document.getElementById('tauxVente').value) || 80;
-    }
+    // ⭐ Une seule formule pour la ligne et le total : repartirLigneActes()
+    // (miroir de services/tarification_service.py) — tarif selon le type de
+    // patient, part AMU, part privée (PBR privé ou reste après AMU), patient.
+    const ctxPanier = contexteTarificationActes();
+    const estAssurePourPanier = ctxPanier.estAssure;
 
     for (let index = 0; index < panier.length; index++) {
         let item = panier[index];
-        item.total = item.prix * item.quantite;
-        item.pbr_total = (item.pbr || item.prix) * item.quantite;
+        const ligne = repartirLigneActes(item, ctxPanier);
+        item.total = ligne.total;
+        item.pbr_total = (item.pbr || ligne.tarif) * item.quantite;
         sousTotal += item.total;
         pbrTotal += item.pbr_total;
 
@@ -1523,9 +1626,14 @@ function afficherPanier() {
         }
         cellPriseEnCharge.innerHTML = status;
 
+        // ⭐ Tarif appliqué (prix de base modifiable ; tarif privé / prix non
+        // assuré signalé quand il remplace le prix de base).
         let cellPrix = row.insertCell(2);
         cellPrix.className = 'text-center';
-        cellPrix.innerHTML = '<input type="number" class="form-control form-control-sm" value="' + item.prix + '" style="width: 100px; text-align: center;" onchange="modifierPrix(' + index + ', this.value)">';
+        let libelleTarif = '';
+        if (ligne.source === 'prive') libelleTarif = '<div class="small text-info">Tarif ' + (patientAssurance2 || 'privé') + ' : ' + Math.round(ligne.tarif).toLocaleString('fr-FR') + ' F</div>';
+        else if (ligne.source === 'non_assure') libelleTarif = '<div class="small text-secondary">Non assuré : ' + Math.round(ligne.tarif).toLocaleString('fr-FR') + ' F</div>';
+        cellPrix.innerHTML = '<input type="number" class="form-control form-control-sm" value="' + item.prix + '" style="width: 100px; text-align: center;" onchange="modifierPrix(' + index + ', this.value)">' + libelleTarif;
 
         // ⭐ La base de remboursement (PBR) n'a de sens que pour un patient
         // assuré AMU — l'afficher pour un patient non assuré laissait croire
@@ -1533,59 +1641,28 @@ function afficherPanier() {
         let cellPBR = row.insertCell(3);
         cellPBR.className = 'text-center';
         cellPBR.innerHTML = estAssurePourPanier
-            ? '<span class="badge bg-primary">' + Math.round(item.pbr || item.prix).toLocaleString('fr-FR') + ' F</span>'
+            ? '<span class="badge bg-primary">' + Math.round(item.pbr || ligne.tarif).toLocaleString('fr-FR') + ' F</span>'
             : '<span class="text-muted">-</span>';
 
-        // ⭐ Part AMU de cette ligne précise
+        // ⭐ Part AMU / part privée / part patient de cette ligne précise —
+        // exactement la même formule que le total (repartirLigneActes).
         let cellPartAMU = row.insertCell(4);
         cellPartAMU.className = 'text-center';
-        let partAMULigne = 0;
-        if (item.prise_en_charge_amu && tauxAMUPourPanier > 0) {
-            const baseLigne = Math.min(item.prix, item.pbr || item.prix) * item.quantite;
-            const tauxLigne = tauxAMUPourArticle(item, tauxAMUPourPanier);
-            partAMULigne = (baseLigne * tauxLigne) / 100;
-        }
+        const partAMULigne = ligne.partAMU;
         cellPartAMU.innerHTML = partAMULigne > 0
             ? '<span class="badge bg-success">' + Math.round(partAMULigne).toLocaleString('fr-FR') + ' F</span>'
             : '<span class="text-muted">-</span>';
 
-        // ⭐ Part CAC de cette ligne précise — même principe que Part AMU,
-        // même formule (reste après la part AMU de CETTE ligne si elle y est
-        // éligible, sinon le prix total) que le total "Prise en charge
-        // complémentaire" calculé plus bas dans calculerTotal().
         let cellPartCAC = row.insertCell(5);
         cellPartCAC.className = 'text-center';
-        let partCACLigne = 0;
-        if (assurance2Active && patientAssurance2 && patientAssurance2 !== 'Aucune' && item.prise_en_charge_cac) {
-            const tauxCACPourPanier = tauxTempModifie ? tauxTempValeur : (patientTaux2Original || 0);
-            if (tauxCACPourPanier > 0) {
-                const total = item.prix * item.quantite;
-                let baseCACLigne;
-                if (estAssurePourPanier && assurancePrincipaleActive && item.prise_en_charge_amu) {
-                    const baseAMU = Math.min(item.prix, item.pbr || item.prix);
-                    const priseAMU = (baseAMU * tauxAMUPourArticle(item, tauxAMUPourPanier) * item.quantite) / 100;
-                    baseCACLigne = Math.max(total - priseAMU, 0);
-                } else {
-                    baseCACLigne = total;
-                }
-                const toggleAppliquePbrCacLigne = document.getElementById('toggleAppliquePbrCac');
-                if ((toggleAppliquePbrCacLigne ? toggleAppliquePbrCacLigne.checked : true) && pbrCacMapActes[item.nom] !== undefined) {
-                    const varianteLigne = document.getElementById('selectPbrCacVarianteActes')?.value || 'defaut';
-                    baseCACLigne = Math.min(baseCACLigne, pbrCacVarianteValeurActes(pbrCacMapActes[item.nom], varianteLigne) * item.quantite);
-                }
-                partCACLigne = (baseCACLigne * tauxCACPourPanier) / 100;
-            }
-        }
+        const partCACLigne = ligne.partPrivee;
         cellPartCAC.innerHTML = partCACLigne > 0
             ? '<span class="badge bg-info">' + Math.round(partCACLigne).toLocaleString('fr-FR') + ' F</span>'
             : '<span class="text-muted">-</span>';
 
-        // ⭐ Part Patient de cette ligne — reste après Part AMU et Part CAC
-        // (jamais négatif, au cas où un arrondi ferait dépasser le total).
         let cellPartPatient = row.insertCell(6);
         cellPartPatient.className = 'text-center';
-        let partPatientLigne = Math.max(item.total - partAMULigne - partCACLigne, 0);
-        cellPartPatient.innerHTML = '<span class="badge bg-warning text-dark">' + Math.round(partPatientLigne).toLocaleString('fr-FR') + ' F</span>';
+        cellPartPatient.innerHTML = '<span class="badge bg-warning text-dark">' + Math.round(ligne.partPatient).toLocaleString('fr-FR') + ' F</span>';
 
         let cellQuantite = row.insertCell(7);
         cellQuantite.className = 'text-center';
@@ -1649,234 +1726,28 @@ function onChangeTypeAideHospitaliere() {
 // CALCULER LES TOTAUX (VERSION CORRIGÉE)
 // ============================================
 function calculerTotal() {
-    // 🔥 1. Calculer les bases
-    let sousTotal = 0;
-    let pbrTotalAMU = 0;
-    let sousTotalAMU = 0;
-    let sousTotalNonAMU = 0;
-    let montantNonPriseEnChargeCACSurAMU = 0;
-    
-    for (const item of panier) {
-        const prix = item.prix;
-        const pbr = item.pbr || item.prix;
-        const total = prix * item.quantite;
-        
-        sousTotal += total;
-        
-        // 🔥 VÉRIFIER LA PRISE EN CHARGE AMU
-        if (item.prise_en_charge_amu) {
-            sousTotalAMU += total;
-            // Règle PBR : si prix < PBR, on utilise le prix
-            let basePBR = pbr;
-            if (prix < pbr) {
-                basePBR = prix;
-            }
-            pbrTotalAMU += basePBR * item.quantite;
-        } else {
-            sousTotalNonAMU += total;
-        }
-        
-        // 🔥 VÉRIFIER LA PRISE EN CHARGE CAC (pour les articles pris en charge par AMU)
-        if (item.prise_en_charge_amu && !item.prise_en_charge_cac) {
-            montantNonPriseEnChargeCACSurAMU += total;
-        }
-    }
-    
-    // 🔥 Récupérer le type d'assurance du patient
+    // ⭐ Une seule formule (repartirPanierActes, miroir de
+    // services/tarification_service.py) pour le total, les lignes du panier
+    // et la finalisation — le serveur recalcule avec la même règle.
+    const calc = repartirPanierActes();
     const typeAssurance = sessionStorage.getItem('selectedPatientAssurance') || '';
-    const estAssure = typeAssurance === 'amu_cnss' || typeAssurance === 'amu_inam' || typeAssurance === 'amu_tns';
-    
-    // 🔥🔥🔥 TAUX AMU (pour l'assurance) - Séparé de l'aide hospitalière 🔥🔥🔥
-    let tauxAMU = 0;
-    if (estAssure && assurancePrincipaleActive) {
-        tauxAMU = parseFloat(document.getElementById('tauxVente').value) || 0;
-    } else {
-        tauxAMU = 0;
+    const estAssure = calc.ctx.estAssure;
+    const tauxAMU = calc.ctx.tauxAMU;
+    const typeAide = calc.typeAide;
+    const tauxAide = calc.tauxAide;
+    if (document.getElementById('tauxAideHospitaliere') && parseFloat(document.getElementById('tauxAideHospitaliere').value) !== tauxAide
+        && !(isNaN(parseFloat(document.getElementById('tauxAideHospitaliere').value)) && tauxAide === 0)) {
+        document.getElementById('tauxAideHospitaliere').value = tauxAide;
     }
-    
-    // 🔥 Définir le taux AMU par défaut
-    if (isNaN(tauxAMU) || tauxAMU === 0) {
-        if (estAssure && assurancePrincipaleActive) {
-            tauxAMU = 80;
-        } else {
-            tauxAMU = 0;
-        }
-        document.getElementById('tauxVente').value = tauxAMU;
-    }
-    
-    // 🔥🔥🔥 AIDE HOSPITALIÈRE : % (plafonné à 100) ou montant direct FCFA 🔥🔥🔥
-    let typeAide = document.getElementById('typeAideHospitaliere').value;
-    let tauxAide = parseFloat(document.getElementById('tauxAideHospitaliere').value) || 0;
-    if (isNaN(tauxAide) || tauxAide < 0) {
-        tauxAide = 0;
-        document.getElementById('tauxAideHospitaliere').value = 0;
-    }
-    if (typeAide === 'pourcentage' && tauxAide > 100) {
-        tauxAide = 100;
-        document.getElementById('tauxAideHospitaliere').value = 100;
-    }
+    const sousTotal = calc.sousTotal;
+    const baseRemboursement = calc.baseRemboursement;
+    const priseEnChargeAMU = calc.partAMU;
+    const priseEnChargeCAC = calc.partPrivee;
+    const tauxComplementaire = calc.ctx.tauxPrivee;
+    const resteApresAssurances = calc.resteApresAssurances;
+    const aideHospitaliere = calc.aideHospitaliere;
+    const netAPayer = calc.netAPayer;
 
-    console.log('Type assurance:', typeAssurance);
-    console.log('Est assuré:', estAssure);
-    console.log('Taux AMU utilisé:', tauxAMU);
-    console.log('Taux Aide hospitalière:', tauxAide);
-    console.log('Assurance principale active:', assurancePrincipaleActive);
-    
-    // 🔥🔥🔥 CALCUL DE L'ASSURANCE PRINCIPALE (AMU) 🔥🔥🔥
-    let baseRemboursement = 0;
-    let priseEnChargeAMU = 0;
-    
-    if (estAssure && assurancePrincipaleActive) {
-        // 🔥 Patient assuré → Utiliser le PBR (base de remboursement AMU)
-        baseRemboursement = pbrTotalAMU;
-        if (sousTotalAMU < pbrTotalAMU) {
-            baseRemboursement = sousTotalAMU;
-        }
-        // ⭐ FIX : taux par article (P160 = 90%, reste = tauxAMU) au lieu
-        // d'un taux unique appliqué à baseRemboursement en bloc — voir
-        // tauxAMUPourArticle() ci-dessus.
-        if (tauxAMU > 0) {
-            for (const item of panier) {
-                if (!item.prise_en_charge_amu) continue;
-                const prix = item.prix;
-                const pbr = item.pbr || item.prix;
-                const baseItem = (prix < pbr ? prix : pbr) * item.quantite;
-                const tauxItem = tauxAMUPourArticle(item, tauxAMU);
-                priseEnChargeAMU += (baseItem * tauxItem) / 100;
-            }
-        }
-        console.log('📊 Patient assuré - Base PBR:', baseRemboursement, '- Prise en charge (par article):', priseEnChargeAMU);
-    } else if (assurancePrincipaleActive && !estAssure) {
-        // 🔥 PATIENT NON ASSURÉ MAIS ASSURANCE ACTIVÉE (Aide hospitalière via taux AMU)
-        let baseNonAssure = 0;
-        for (const item of panier) {
-            if (item.prise_en_charge_amu) {
-                baseNonAssure += item.prix * item.quantite;
-            }
-        }
-        
-        if (baseNonAssure > 0 && tauxAMU > 0) {
-            baseRemboursement = baseNonAssure;
-            priseEnChargeAMU = (baseNonAssure * tauxAMU) / 100;
-            console.log('Patient non assuré - Aide hospitalière sur:', baseNonAssure);
-        } else {
-            baseRemboursement = 0;
-            priseEnChargeAMU = 0;
-            console.log('Patient non assuré - Pas d\'aide');
-        }
-    } else {
-        // Assurance principale désactivée
-        baseRemboursement = 0;
-        priseEnChargeAMU = 0;
-        console.log('📊 Assurance principale désactivée');
-    }
-    
-    // 🔥🔥🔥 PRISE EN CHARGE CAC (COMPLÉMENTAIRE) 🔥🔥🔥
-    let priseEnChargeCAC = 0;
-    let tauxComplementaire = 0;
-    let baseCAC = 0;
-    
-    if (assurance2Active && patientAssurance2 && patientAssurance2 !== 'Aucune') {
-        tauxComplementaire = tauxTempModifie ? tauxTempValeur : (patientTaux2Original || 0);
-        
-        if (tauxComplementaire > 0) {
-            for (const item of panier) {
-                const prix = item.prix;
-                const pbr = item.pbr || item.prix;
-                const total = prix * item.quantite;
-                
-                if (item.prise_en_charge_cac) {
-                    let reste;
-                    if (estAssure && assurancePrincipaleActive) {
-                        // Patient assuré → CAC sur le reste après AMU
-                        if (item.prise_en_charge_amu) {
-                            let baseAMU = (prix < pbr) ? prix : pbr;
-                            // ⭐ FIX : même taux par article que le calcul AMU
-                            // principal ci-dessus (P160 = 90%, reste = tauxAMU).
-                            let priseAMU = (baseAMU * tauxAMUPourArticle(item, tauxAMU) * item.quantite) / 100;
-                            reste = total - priseAMU;
-                        } else {
-                            reste = total;
-                        }
-                    } else {
-                        // 🔥 PATIENT NON ASSURÉ OU ASSURANCE PRINCIPALE DÉSACTIVÉE → CAC SUR LE PRIX TOTAL
-                        reste = total;
-                    }
-                    // ⭐ Plafond propre à la compagnie complémentaire de ce
-                    // patient (voir pbrCacMapActes) — seulement si le toggle
-                    // "Appliquer le PBR..." est coché (par défaut) ET qu'une
-                    // entrée existe pour cet acte.
-                    const toggleAppliquePbrCac = document.getElementById('toggleAppliquePbrCac');
-                    const appliquePbrCacActes = toggleAppliquePbrCac ? toggleAppliquePbrCac.checked : true;
-                    if (appliquePbrCacActes && pbrCacMapActes[item.nom] !== undefined) {
-                        const variante = document.getElementById('selectPbrCacVarianteActes')?.value || 'defaut';
-                        reste = Math.min(reste, pbrCacVarianteValeurActes(pbrCacMapActes[item.nom], variante) * item.quantite);
-                    }
-                    if (reste > 0) {
-                        baseCAC += reste;
-                    }
-                }
-            }
-            
-            if (baseCAC > 0) {
-                priseEnChargeCAC = (baseCAC * tauxComplementaire) / 100;
-                console.log('📊 CAC (taux ' + tauxComplementaire + '%):', {
-                    baseCAC: baseCAC,
-                    priseEnChargeCAC: priseEnChargeCAC
-                });
-            }
-        }
-    }
-    
-    // 🔥🔥🔥 RESTE APRÈS ASSURANCES 🔥🔥🔥
-    let resteApresAssurances = sousTotal - priseEnChargeAMU - priseEnChargeCAC;
-    if (resteApresAssurances < 0) resteApresAssurances = 0;
-    
-    // 🔥🔥🔥 AIDE HOSPITALIÈRE (APPLICATION DU TAUX AIDE) - CORRIGÉ 🔥🔥🔥
-    let aideHospitaliere = 0;
-    let netAPayer = 0;
-
-    // 🔥 Déterminer la base pour l'aide hospitalière (4 cas)
-    let baseAide = 0;
-
-    if (estAssure && assurancePrincipaleActive) {
-        // ✅ Cas 1: Patient ASSURÉ avec assurance active → Aide sur le RESTE après AMU + CAC
-        baseAide = resteApresAssurances;
-        console.log('📊 Cas 1 - Patient assuré, base = reste après AMU+CAC:', baseAide);
-    } else if (assurance2Active && !estAssure) {
-        // ✅ Cas 2: Patient NON ASSURÉ mais avec CAC → Aide sur le RESTE après CAC
-        let resteApresCAC = sousTotal - priseEnChargeCAC;
-        baseAide = resteApresCAC;
-        console.log('📊 Cas 2 - Patient non assuré avec CAC, base = reste après CAC:', baseAide);
-    } else if (estAssure && !assurancePrincipaleActive && assurance2Active) {
-        // ✅ Cas 4: Patient ASSURÉ mais assurance principale DÉSACTIVÉE → CAC seule
-        // Aide sur le RESTE après CAC (comme cas 2)
-        let resteApresCAC = sousTotal - priseEnChargeCAC;
-        baseAide = resteApresCAC;
-        console.log('📊 Cas 4 - Patient assuré mais assurance désactivée, base = reste après CAC:', baseAide);
-    } else {
-        // ✅ Cas 3: Patient NON ASSURÉ sans CAC → Aide sur le SOUS-TOTAL
-        baseAide = sousTotal;
-        console.log('📊 Cas 3 - Patient non assuré sans CAC, base = sous-total:', baseAide);
-    }
-
-    // 🔥 Appliquer l'aide hospitalière sur la base déterminée
-    if (tauxAide > 0 && baseAide > 0) {
-        aideHospitaliere = (typeAide === 'montant') ? Math.min(tauxAide, baseAide) : (baseAide * tauxAide) / 100;
-        netAPayer = baseAide - aideHospitaliere;
-        console.log('📊 Aide hospitalière appliquée:', {
-            type: typeAide,
-            taux: tauxAide,
-            base: baseAide,
-            montant: aideHospitaliere,
-            net: netAPayer
-        });
-    } else {
-        netAPayer = baseAide;
-    }
-
-    if (netAPayer < 0) netAPayer = 0;
-    
     // 🔥🔥🔥 MISE À JOUR DE L'AFFICHAGE 🔥🔥🔥
     document.getElementById('sousTotal').innerHTML = Math.round(sousTotal).toLocaleString('fr-FR') + ' FCFA';
     afficherDecompositionTva(sousTotal);
@@ -2414,156 +2285,36 @@ async function finaliserVente() {
         tauxAide = 100;
     }
 
-    // 🔥 Recalcul avec PBR et prise en charge
-    let sousTotal = 0;
-    let pbrTotalAMU = 0;
-    let sousTotalAMU = 0;
-    let montantNonPriseEnCharge = 0;
-    
-    for (const item of panier) {
-        const prix = item.prix;
-        const pbr = item.pbr || item.prix;
-        const total = prix * item.quantite;
-        
-        sousTotal += total;
-        
-        const estPriseEnCharge = (item.prise_en_charge_amu !== false) || (item.prise_en_charge_cac !== false);
-        
-        if (!estPriseEnCharge) {
-            montantNonPriseEnCharge += total;
-        }
-        
-        if (item.prise_en_charge_amu !== false) {
-            sousTotalAMU += total;
-            let basePBR = pbr;
-            if (prix < pbr) {
-                basePBR = prix;
-            }
-            pbrTotalAMU += basePBR * item.quantite;
-        }
-    }
-    
-    let baseRemboursement = pbrTotalAMU;
-    if (sousTotalAMU < pbrTotalAMU) {
-        baseRemboursement = sousTotalAMU;
-    }
-    
-    // ⭐ FIX : taux par article (P160 = 90%, reste = tauxPrincipal) au lieu
-    // d'un taux unique appliqué à baseRemboursement en bloc — voir
-    // tauxAMUPourArticle() (même fonction que calculerTotal()). Sans ce
-    // correctif, un P160 dans le panier faisait recalculer TOUT le panier
-    // (y compris les autres actes à 80%) au taux de 90% au moment même de
-    // la finalisation de la vente — pas seulement à l'affichage.
-    let priseEnCharge = 0;
-    if (assurancePrincipaleActive && tauxPrincipal > 0) {
-        for (const item of panier) {
-            if (item.prise_en_charge_amu === false) continue;
-            const prix = item.prix;
-            const pbr = item.pbr || item.prix;
-            const baseItem = (prix < pbr ? prix : pbr) * item.quantite;
-            const tauxItem = tauxAMUPourArticle(item, tauxPrincipal);
-            priseEnCharge += (baseItem * tauxItem) / 100;
-        }
-    }
-
-    let resteApresAMU = sousTotalAMU - priseEnCharge;
-    
-    let priseEnCharge2 = 0;
-    let tauxComplementaire = patientTaux2Original || 0;
-    if (tauxTempModifie) {
-        tauxComplementaire = tauxTempValeur;
-    }
-    
-    if (assurance2Active && tauxComplementaire > 0) {
-        let baseCAC = 0;
-        
-        for (const item of panier) {
-            const prix = item.prix;
-            const pbr = item.pbr || item.prix;
-            const total = prix * item.quantite;
-            
-            if (item.prise_en_charge_cac !== false) {
-                if (assurancePrincipaleActive && item.prise_en_charge_amu !== false) {
-                    let basePBR = pbr;
-                    if (prix < pbr) {
-                        basePBR = prix;
-                    }
-                    let baseAMU = (prix > basePBR) ? basePBR : prix;
-                    // ⭐ FIX : même taux par article que le calcul AMU
-                    // principal ci-dessus (P160 = 90%, reste = tauxPrincipal).
-                    let priseAMU = (baseAMU * tauxAMUPourArticle(item, tauxPrincipal) * item.quantite) / 100;
-                    let reste = total - priseAMU;
-                    if (reste > 0) {
-                        baseCAC += reste;
-                    }
-                } else {
-                    // CAC seule ou assurance principale désactivée
-                    baseCAC += total;
-                }
-            }
-        }
-        
-        priseEnCharge2 = (baseCAC * tauxComplementaire) / 100;
-    }
-    
-    // 🔥🔥🔥 CALCUL DU NET À PAYER AVEC AIDE HOSPITALIÈRE (4 CAS) 🔥🔥🔥
-    let netAPayer = 0;
-    let aideHospitaliere = 0;
-    let resteApresAssurances = sousTotal - priseEnCharge - priseEnCharge2;
-    if (resteApresAssurances < 0) resteApresAssurances = 0;
-
-    // 🔥 Déterminer la base pour l'aide hospitalière (4 cas)
-    let baseAide = 0;
-
-    if (assurancePrincipaleActive && (patientAssurance === 'amu_cnss' || patientAssurance === 'amu_inam' || patientAssurance === 'amu_tns')) {
-        // ✅ Cas 1: Patient ASSURÉ avec assurance active → Aide sur le RESTE après AMU + CAC
-        baseAide = resteApresAssurances;
-        console.log('📊 Cas 1 - Patient assuré, base aide = reste après AMU+CAC:', baseAide);
-    } else if (assurance2Active && patientAssurance === 'non_assure') {
-        // ✅ Cas 2: Patient NON ASSURÉ mais avec CAC → Aide sur le RESTE après CAC
-        let resteApresCAC = sousTotal - priseEnCharge2;
-        baseAide = resteApresCAC;
-        console.log('📊 Cas 2 - Patient non assuré avec CAC, base aide = reste après CAC:', baseAide);
-    } else if (assurance2Active && !assurancePrincipaleActive && (patientAssurance === 'amu_cnss' || patientAssurance === 'amu_inam' || patientAssurance === 'amu_tns')) {
-        // 🔥🔥🔥 NOUVEAU CAS 4: Patient ASSURÉ mais assurance principale DÉSACTIVÉE → CAC seule
-        // Aide sur le RESTE après CAC (comme cas 2)
-        let resteApresCAC = sousTotal - priseEnCharge2;
-        baseAide = resteApresCAC;
-        console.log('📊 Cas 4 - Patient assuré mais assurance désactivée, base aide = reste après CAC:', baseAide);
-    } else {
-        // ✅ Cas 3: Patient NON ASSURÉ sans CAC → Aide sur le SOUS-TOTAL
-        baseAide = sousTotal;
-        console.log('📊 Cas 3 - Patient non assuré sans CAC, base aide = sous-total:', baseAide);
-    }
-
-    // 🔥 Appliquer l'aide hospitalière sur la base déterminée
-    if (tauxAide > 0 && baseAide > 0) {
-        aideHospitaliere = (typeAide === 'montant') ? Math.min(tauxAide, baseAide) : (baseAide * tauxAide) / 100;
-        netAPayer = baseAide - aideHospitaliere;
-        console.log('Aide hospitalière appliquée:', {
-            type: typeAide,
-            taux: tauxAide,
-            base: baseAide,
-            montant: aideHospitaliere,
-            net: netAPayer
-        });
-    } else {
-        netAPayer = baseAide;
-    }
-
-    if (netAPayer < 0) netAPayer = 0;
-    
-    console.log('💰 Net à payer (avec aide hospitalière):', netAPayer);
-    console.log('💰 Aide hospitalière:', aideHospitaliere);
+    // ⭐ Même formule que l'affichage (repartirPanierActes, miroir de
+    // services/tarification_service.py) — avant ce correctif, cette
+    // finalisation recalculait de son côté SANS le plafond PBR de la
+    // compagnie privée : les montants enregistrés pouvaient différer de ceux
+    // affichés dans le panier. Le serveur recalcule à son tour et retient
+    // ses propres valeurs.
+    const calcFinal = repartirPanierActes();
+    const sousTotal = calcFinal.sousTotal;
+    const baseRemboursement = calcFinal.baseRemboursement;
+    const priseEnCharge = calcFinal.partAMU;
+    const priseEnCharge2 = calcFinal.partPrivee;
+    const tauxComplementaire = calcFinal.ctx.tauxPrivee;
+    const aideHospitaliere = calcFinal.aideHospitaliere;
+    const netAPayer = calcFinal.netAPayer;
+    const lignesFinales = calcFinal.lignes;
     
     // 🔥 CRÉER LES ACTES AVEC LES INFOS DE PRISE EN CHARGE
-    let actesData = panier.map(item => ({
+    let actesData = panier.map((item, i) => ({
         id: parseInt(item.id),
         nom: item.nom,
-        prix: parseFloat(item.prix),
+        // ⭐ prix = tarif réellement appliqué (privé / non assuré / base) ;
+        // prix_base garde le prix catalogue, source_tarif dit lequel a joué.
+        prix: parseFloat(lignesFinales[i].tarif),
+        prix_base: parseFloat(item.prix),
+        source_tarif: lignesFinales[i].source,
+        prix_modifie: !!item.prix_modifie,
+        prix_non_assure: item.prix_non_assure !== undefined ? item.prix_non_assure : (PRIX_NON_ASSURE_PAR_ACTE[item.nom] || null),
         pbr: parseFloat(item.pbr || item.prix),
         quantite: parseInt(item.quantite),
-        total: parseFloat(item.total),
+        total: parseFloat(lignesFinales[i].total),
         prise_en_charge_amu: item.prise_en_charge_amu !== false,
         prise_en_charge_cac: item.prise_en_charge_cac !== false,
         // ⭐ Part Médecin : réalisateur choisi à l'ajout (voir
@@ -2601,8 +2352,8 @@ async function finaliserVente() {
         let tauxTotal = tauxPrincipal + (assurance2Active ? (tauxComplementaire || 0) : 0) + tauxAide;
         
         // 🔥 Construire le message détaillé
-        let detailCalcul = `📊 DÉTAIL DU CALCUL :\n`;
-        detailCalcul += `💰 Sous-total : ${Math.round(sousTotal).toLocaleString('fr-FR')} FCFA\n`;
+        let detailCalcul = `DÉTAIL DU CALCUL :\n`;
+        detailCalcul += `Sous-total : ${Math.round(sousTotal).toLocaleString('fr-FR')} FCFA\n`;
         if (priseEnCharge > 0) {
             detailCalcul += `Prise en charge (${tauxPrincipal}%) : - ${Math.round(priseEnCharge).toLocaleString('fr-FR')} FCFA\n`;
         }
@@ -2613,7 +2364,7 @@ async function finaliserVente() {
             const suffixeAideRecap = (typeAide === 'montant') ? '' : ` (${tauxAide}%)`;
             detailCalcul += `Aide hospitalière${suffixeAideRecap} : - ${Math.round(aideHospitaliere).toLocaleString('fr-FR')} FCFA\n`;
         }
-        detailCalcul += `\n💰 NET À PAYER : ${Math.round(netAPayer).toLocaleString('fr-FR')} FCFA\n`;
+        detailCalcul += `\nNET À PAYER : ${Math.round(netAPayer).toLocaleString('fr-FR')} FCFA\n`;
         
         const confirmation = await demanderSaisie(
             `ATTENTION !\n\n` +
@@ -2634,7 +2385,7 @@ async function finaliserVente() {
             return;
         }
         
-        let msgFinal = `⚠️ DERNIÈRE CONFIRMATION :\n\n`;
+        let msgFinal = `DERNIÈRE CONFIRMATION :\n\n`;
         msgFinal += `Le patient ${patientName} n'a donné AUCUN argent (0 FCFA).\n\n`;
         msgFinal += detailCalcul;
         msgFinal += `\nVoulez-vous vraiment continuer ?`;
@@ -2660,7 +2411,7 @@ async function finaliserVente() {
             const suffixeAideRecap = (typeAide === 'montant') ? '' : ` (${tauxAide}%)`;
             detailCalcul += `Aide hospitalière${suffixeAideRecap} : - ${Math.round(aideHospitaliere).toLocaleString('fr-FR')} FCFA\n`;
         }
-        detailCalcul += `\n💰 NET À PAYER : ${Math.round(netAPayer).toLocaleString('fr-FR')} FCFA\n`;
+        detailCalcul += `\nNET À PAYER : ${Math.round(netAPayer).toLocaleString('fr-FR')} FCFA\n`;
         
         if (!await demanderConfirmation(
             `Le patient a donné ${Math.round(montantDonne).toLocaleString('fr-FR')} FCFA\n\n` +
