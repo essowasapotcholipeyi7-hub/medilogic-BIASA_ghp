@@ -11838,6 +11838,91 @@ def api_get_all_ventes():
         traceback.print_exc()
         return jsonify([]), 500
 
+
+@app.route('/api/ventes/historique_complements')
+@login_required
+def api_ventes_historique_complements():
+    """Compléments de l'historique des ventes (patron, 2026-10-05) :
+
+    - `reglements` : les règlements de créance encaissés plus tard (vente à
+      crédit → facture → paiement, table paiements_factures). Ils
+      n'apparaissaient nulle part dans l'historique : "quand un client règle
+      sa créance il n'y a pas cette historique". La vente d'origine n'est pas
+      modifiée par un règlement, donc aucun double compte avec ses colonnes
+      Payé/Reste.
+    - `assurances_payees` : par vente, la part déjà remboursée par l'assurance
+      (principale / complémentaire), pour déduire ce qui est déjà payé dans
+      "Ce que les assurances doivent". Une facture d'assurance mensuelle
+      regroupe plusieurs ventes (details) ; son montant_rembourse est réparti
+      au prorata de la part de chaque vente.
+    """
+    structure_id = session.get('structure_id')
+    try:
+        lignes = db.execute_query("""
+            SELECT pf.id, pf.montant, pf.date_paiement, pf.mode_paiement, pf.created_by,
+                   f.numero_facture, f.patient_nom, f.vente_id,
+                   v.type AS vente_type, v.numero_local AS vente_numero_local,
+                   v.date_vente
+            FROM paiements_factures pf
+            JOIN factures f ON f.id = pf.facture_id
+            LEFT JOIN ventes v ON v.id = f.vente_id AND v.structure_id = f.structure_id
+            WHERE f.structure_id = %s
+              AND (f.statut IS NULL OR f.statut != 'annulee')
+            ORDER BY pf.date_paiement DESC
+        """, (structure_id,)) or []
+
+        def iso(d):
+            # ISO sans microsecondes : lisible par new Date() côté page.
+            if not d:
+                return ''
+            return d.strftime('%Y-%m-%dT%H:%M:%S') if hasattr(d, 'strftime') else str(d)
+
+        reglements = [{
+            'id': r['id'],
+            'montant': float(r['montant'] or 0),
+            'date_paiement': iso(r.get('date_paiement')),
+            'mode_paiement': r.get('mode_paiement') or '',
+            'created_by': r.get('created_by') or '',
+            'numero_facture': r.get('numero_facture') or '',
+            'patient_nom': r.get('patient_nom') or '',
+            'vente_id': r.get('vente_id'),
+            'vente_type': r.get('vente_type') or '',
+            'vente_numero_local': r.get('vente_numero_local') or r.get('vente_id'),
+            'date_vente': iso(r.get('date_vente')),
+        } for r in lignes]
+
+        assurances_payees = {}
+        factures_payees = db.execute_query("""
+            SELECT montant_total, montant_rembourse, details, type_assurance
+            FROM factures_assurance
+            WHERE structure_id = %s AND COALESCE(montant_rembourse, 0) > 0
+        """, (structure_id,)) or []
+        for fa in factures_payees:
+            total = float(fa['montant_total'] or 0)
+            if total <= 0:
+                continue
+            ratio = min(1.0, float(fa['montant_rembourse'] or 0) / total)
+            details = fa.get('details') or []
+            if isinstance(details, str):
+                try:
+                    details = json.loads(details)
+                except ValueError:
+                    details = []
+            part = 'complementaire' if fa.get('type_assurance') == 'complementaire' else 'principale'
+            for d in details:
+                if not isinstance(d, dict) or d.get('id') is None:
+                    continue
+                cle = str(d['id'])
+                paye = assurances_payees.setdefault(cle, {'principale': 0.0, 'complementaire': 0.0})
+                paye[part] += float(d.get('montant_assurance') or 0) * ratio
+
+        return jsonify({'reglements': reglements, 'assurances_payees': assurances_payees})
+    except Exception as e:
+        print(f"❌ Erreur compléments historique: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'reglements': [], 'assurances_payees': {}}), 500
+
 @app.route('/api/actes/liste-admin')
 @login_required
 def api_actes_liste_admin():
@@ -16203,7 +16288,13 @@ def api_add_facture_assurance():
 @app.route('/api/assurances/generer_factures', methods=['POST'])
 @login_required
 def generer_factures_assurance():
-    if not a_acces('statistiques'):
+    # ⭐ Caissiers/secrétaires aussi — patron, 2026-10-05 : "permets aux
+    # secrétaires et caissiers de pouvoir générer les factures et les
+    # afficher comme le fait l'administrateur ou gestionnaire, des fois ces
+    # gens sont occupés". Ce sont eux qui gèrent déjà la page Factures
+    # assurances (liste, bordereau, encaissement) ; seule la génération
+    # leur manquait. La clôture reste réservée à l'admin.
+    if not (a_acces('statistiques') or session.get('role') in ('caissier', 'secretaire')):
         return jsonify({'success': False, 'error': 'Non autorise'}), 403
     
     try:

@@ -144,12 +144,15 @@
                     </div>
                     <div class="col-md-2">
                         <label class="form-label small">Type</label>
-                        <select id="searchType" class="form-control form-control-sm" onchange="filtrerHistorique()">
-                            <option value="">Tous</option>
-                            <option value="actes">Actes</option>
-                            <option value="pharmacie">Pharmacie</option>
-                            <option value="mixte">Mixte</option>
-                        </select>
+                        <!-- ⭐ Cases à cocher (patron, 2026-10-05) : le pharmacien ou la
+                             caissière qui a fait des ventes mixtes doit pouvoir cocher
+                             « Pharmacie + Mixte » (ou « Actes + Mixte ») pour faire ses
+                             comptes du soir. Tout coché (ou rien) = tous les types. -->
+                        <div class="d-flex flex-wrap align-items-center gap-2" style="min-height:31px;">
+                            <div class="form-check m-0"><input class="form-check-input filtre-type" type="checkbox" id="typeActes" value="actes" checked onchange="filtrerHistorique()"><label class="form-check-label small" for="typeActes">Actes</label></div>
+                            <div class="form-check m-0"><input class="form-check-input filtre-type" type="checkbox" id="typePharmacie" value="pharmacie" checked onchange="filtrerHistorique()"><label class="form-check-label small" for="typePharmacie">Pharmacie</label></div>
+                            <div class="form-check m-0"><input class="form-check-input filtre-type" type="checkbox" id="typeMixte" value="mixte" checked onchange="filtrerHistorique()"><label class="form-check-label small" for="typeMixte">Mixte</label></div>
+                        </div>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label small">Statut</label>
@@ -292,6 +295,27 @@
                 </div>
             </div>
         </div>
+
+        <!-- ⭐ Règlements de créances (patron, 2026-10-05) : "quand un client
+             règle sa créance il n'y a pas cette historique". Mêmes filtres
+             que la liste (période sur la date du règlement). -->
+        <div class="card mt-3" id="carteReglements" style="display:none;">
+            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h5 class="mb-0"><i class="fas fa-hand-holding-usd"></i> Règlements de créances (<span id="reglementsCount">0</span>)</h5>
+                <span>Total encaissé : <strong id="reglementsTotal">0 F</strong></span>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive" style="max-height:420px;overflow-y:auto;">
+                    <table class="table table-sm table-striped mb-0">
+                        <thead class="table-light">
+                            <tr><th>Date du règlement</th><th>Patient</th><th>Vente d'origine</th><th>Facture</th>
+                                <th class="text-end">Montant réglé</th><th>Mode</th><th>Encaissé par</th></tr>
+                        </thead>
+                        <tbody id="reglementsList"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -376,6 +400,9 @@
 // ============================================
 let toutesLesVentes = [];
 let ventesFiltrees = [];
+let toutesLesReglements = [];   // règlements de créance (paiements de factures)
+let reglementsFiltres = [];
+let assurancesPayees = {};      // {vente_id: {principale, complementaire}} déjà remboursé
 let currentPage = 1;
 let rowsPerPage = 10;
 let currentVenteId = null;
@@ -445,6 +472,7 @@ function chargerHistorique() {
             filtrerHistorique();
             changerPeriodeStats('tous');
             hideLoader();
+            chargerComplementsHistorique();
         })
         .catch(function(error) {
             console.error('❌ Erreur:', error);
@@ -452,6 +480,20 @@ function chargerHistorique() {
                 '<tr><td colspan="11" class="text-center text-danger">❌ Erreur de chargement</td></tr>';
             hideLoader();
         });
+}
+
+// ⭐ Règlements de créance + parts déjà remboursées par les assurances
+// (chargés après les ventes ; la liste des ventes reste utilisable sans).
+function chargerComplementsHistorique() {
+    fetch('/api/ventes/historique_complements')
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(c) {
+            if (!c) return;
+            toutesLesReglements = c.reglements || [];
+            assurancesPayees = c.assurances_payees || {};
+            filtrerHistorique();
+        })
+        .catch(function(e) { console.error('Compléments historique :', e); });
 }
 
 // ⭐ NOUVEAU : libellé AMU partagé (colonne "Assuré" du rapport imprimé,
@@ -535,6 +577,75 @@ function trierVentesFiltrees(cle) {
     }
 }
 
+// Date (vente ou règlement) dans la période choisie : dates personnalisées
+// puis période prédéfinie (aujourd'hui, semaine, mois, année). Une date
+// absente n'exclut rien.
+function dansPeriodeChoisie(dateTexte, periode, dateDebut, dateFin) {
+    var d = dateTexte ? new Date(dateTexte) : null;
+    if (!d || isNaN(d.getTime())) return true;
+    if (dateDebut) {
+        var debut = new Date(dateDebut);
+        debut.setHours(0, 0, 0, 0);
+        if (d < debut) return false;
+    }
+    if (dateFin) {
+        var fin = new Date(dateFin);
+        fin.setHours(23, 59, 59);
+        if (d > fin) return false;
+    }
+    if (periode !== 'tous' && periode !== 'personnalise') {
+        var aujourdhui = new Date();
+        aujourdhui.setHours(0, 0, 0, 0);
+        var debutPeriode = new Date(aujourdhui);
+        var finPeriode = new Date(aujourdhui);
+        finPeriode.setHours(23, 59, 59);
+        if (periode === 'semaine') {
+            debutPeriode.setDate(debutPeriode.getDate() - debutPeriode.getDay());
+            finPeriode.setDate(finPeriode.getDate() + (6 - finPeriode.getDay()));
+            finPeriode.setHours(23, 59, 59);
+        } else if (periode === 'mois') {
+            debutPeriode = new Date(aujourdhui.getFullYear(), aujourdhui.getMonth(), 1);
+            finPeriode = new Date(aujourdhui.getFullYear(), aujourdhui.getMonth() + 1, 0);
+            finPeriode.setHours(23, 59, 59);
+        } else if (periode === 'annee') {
+            debutPeriode = new Date(aujourdhui.getFullYear(), 0, 1);
+            finPeriode = new Date(aujourdhui.getFullYear(), 11, 31);
+            finPeriode.setHours(23, 59, 59);
+        }
+        if (d < debutPeriode || d > finPeriode) return false;
+    }
+    return true;
+}
+
+// ⭐ Tableau "Règlements de créances" sous la liste des ventes.
+function afficherReglements() {
+    var carte = document.getElementById('carteReglements');
+    if (!carte) return;
+    if (!toutesLesReglements.length) { carte.style.display = 'none'; return; }
+    carte.style.display = '';
+    var total = 0;
+    var html = '';
+    reglementsFiltres.forEach(function(r) {
+        total += r.montant || 0;
+        html += '<tr><td>' + escFR(r.date_paiement ? new Date(r.date_paiement).toLocaleString('fr-FR') : '-') + '</td>' +
+                '<td>' + escFR(r.patient_nom) + '</td>' +
+                '<td>' + (r.vente_id ? '#' + escFR(r.vente_numero_local) + ' ' : '') + '<small class="text-muted">' + escFR(libelleTypeVente(r.vente_type)) + '</small></td>' +
+                '<td>' + escFR(r.numero_facture) + '</td>' +
+                '<td class="text-end text-success fw-bold">' + Math.round(r.montant || 0).toLocaleString('fr-FR') + ' F</td>' +
+                '<td>' + escFR(r.mode_paiement) + '</td>' +
+                '<td>' + escFR(r.created_by) + '</td></tr>';
+    });
+    document.getElementById('reglementsList').innerHTML = html ||
+        '<tr><td colspan="7" class="text-center text-muted">Aucun règlement de créance pour ces filtres.</td></tr>';
+    document.getElementById('reglementsCount').innerText = reglementsFiltres.length;
+    document.getElementById('reglementsTotal').innerText = Math.round(total).toLocaleString('fr-FR') + ' F';
+}
+
+function libelleTypeVente(type) {
+    var c = categorieTypeVente(type);
+    return c === 'actes' ? 'Acte' : c === 'pharmacie' ? 'Pharmacie' : c === 'mixte' ? 'Mixte' : (type || '');
+}
+
 // ============================================
 // AFFICHER LES VENTES AVEC PAGINATION
 // ============================================
@@ -544,13 +655,15 @@ function filtrerHistorique() {
             '<tr><td colspan="11" class="text-center text-muted">Aucune vente trouvée</td></tr>';
         document.getElementById('resultCount').innerText = '0';
         ventesFiltrees = [];
+        reglementsFiltres = [];
+        afficherReglements();
         updatePagination();
         return;
     }
     
     // Récupérer les filtres
     var periode = document.getElementById('periodeFiltre').value;
-    var searchType = document.getElementById('searchType').value;
+    var typesCoches = typesVenteCoches();
     var searchGlobal = document.getElementById('searchGlobal').value.toLowerCase().trim();
     searchGlobalActuel = searchGlobal;  // ⭐ pour l'affichage du détail par acte (afficherPageVentes)
     var dateDebut = document.getElementById('filtreDateDebut').value;
@@ -564,74 +677,21 @@ function filtrerHistorique() {
     var triEtat = document.getElementById('triEtat').value;
 
     ventesFiltrees = [];
-    
+    var idsVentesHorsPeriode = {};
+    var idsVentesConnues = {};
+    toutesLesVentes.forEach(function(v) { idsVentesConnues[v.ID] = true; });
+
     for (var i = 0; i < toutesLesVentes.length; i++) {
         var v = toutesLesVentes[i];
         var visible = true;
         
         // Filtre par type
-        if (searchType) {
-            var typeVente = (v.type || '').toLowerCase();
-            if (searchType === 'pharma' || searchType === 'pharmacie') {
-                if (typeVente !== 'pharma' && typeVente !== 'pharmacie') visible = false;
-            } else if (searchType === 'actes') {
-                if (typeVente !== 'actes') visible = false;
-            } else {
-                if (typeVente !== searchType) visible = false;
-            }
-        }
+        if (typesCoches && typesCoches.indexOf(categorieTypeVente(v.type)) === -1) visible = false;
         
         // Filtre global — patient ET acte/produit (échographie, ECG, NFS...)
         if (visible && searchGlobal) {
             var texte = (v.patient_nom || '') + ' ' + (v.detail || '') + ' ' + (v.acte_nom || '') + ' ' + (v.produit_nom || '') + ' ' + (v.net_a_payer || '');
             if (normaliserTexte(texte).indexOf(normaliserTexte(searchGlobal)) === -1) visible = false;
-        }
-        
-        // Filtre par date
-        if (visible && (dateDebut || dateFin)) {
-            var dateVente = v.date_vente ? new Date(v.date_vente) : null;
-            if (dateVente) {
-                if (dateDebut) {
-                    var debut = new Date(dateDebut);
-                    debut.setHours(0, 0, 0, 0);
-                    if (dateVente < debut) visible = false;
-                }
-                if (dateFin && visible) {
-                    var fin = new Date(dateFin);
-                    fin.setHours(23, 59, 59);
-                    if (dateVente > fin) visible = false;
-                }
-            }
-        }
-        
-        // Filtre par période
-        if (visible && periode !== 'tous' && periode !== 'personnalise') {
-            var dateVente2 = v.date_vente ? new Date(v.date_vente) : null;
-            if (dateVente2) {
-                var aujourdhui = new Date();
-                aujourdhui.setHours(0, 0, 0, 0);
-                var debutPeriode = new Date(aujourdhui);
-                var finPeriode = new Date(aujourdhui);
-                finPeriode.setHours(23, 59, 59);
-                
-                if (periode === 'aujourdhui') {
-                    // Déjà défini
-                } else if (periode === 'semaine') {
-                    debutPeriode.setDate(debutPeriode.getDate() - debutPeriode.getDay());
-                    finPeriode.setDate(finPeriode.getDate() + (6 - finPeriode.getDay()));
-                    finPeriode.setHours(23, 59, 59);
-                } else if (periode === 'mois') {
-                    debutPeriode = new Date(aujourdhui.getFullYear(), aujourdhui.getMonth(), 1);
-                    finPeriode = new Date(aujourdhui.getFullYear(), aujourdhui.getMonth() + 1, 0);
-                    finPeriode.setHours(23, 59, 59);
-                } else if (periode === 'annee') {
-                    debutPeriode = new Date(aujourdhui.getFullYear(), 0, 1);
-                    finPeriode = new Date(aujourdhui.getFullYear(), 11, 31);
-                    finPeriode.setHours(23, 59, 59);
-                }
-                
-                if (dateVente2 < debutPeriode || dateVente2 > finPeriode) visible = false;
-            }
         }
         
         // Filtre par statut paiement
@@ -672,10 +732,31 @@ function filtrerHistorique() {
             if ((v.societe_assurance2 || '') !== filtreSociete) visible = false;
         }
 
+        // ⭐ Vente retenue par tous les filtres sauf la période : sert aux
+        // règlements de créance, filtrés sur LEUR date de paiement.
+        if (visible) idsVentesHorsPeriode[v.ID] = true;
+
+        // Filtre par date (personnalisée) et par période
+        if (visible && !dansPeriodeChoisie(v.date_vente, periode, dateDebut, dateFin)) visible = false;
+
         if (visible) {
             ventesFiltrees.push(v);
         }
     }
+
+    // ⭐ Règlements de créance (patron, 2026-10-05) : affichés selon la date
+    // du règlement et les mêmes filtres que leur vente d'origine.
+    var filtresVente = !!(filtreStatutPaiement || filtreAide || filtreAssurance || filtreSociete);
+    reglementsFiltres = toutesLesReglements.filter(function(r) {
+        if (!dansPeriodeChoisie(r.date_paiement, periode, dateDebut, dateFin)) return false;
+        if (r.vente_id && idsVentesConnues[r.vente_id]) return !!idsVentesHorsPeriode[r.vente_id];
+        // Vente d'origine introuvable (annulée...) : seuls type et recherche s'appliquent.
+        if (filtresVente) return false;
+        if (typesCoches && typesCoches.indexOf(categorieTypeVente(r.vente_type)) === -1) return false;
+        if (searchGlobal && normaliserTexte(r.patient_nom + ' ' + r.numero_facture).indexOf(normaliserTexte(searchGlobal)) === -1) return false;
+        return true;
+    });
+    afficherReglements();
 
     // ⭐ NOUVEAU : classement de l'état selon l'ordre choisi — s'applique
     // avant l'affichage écran ET avant impression (même tableau).
@@ -1143,9 +1224,27 @@ async function appliquerStatsPersonnalise() {
 // ============================================
 // FILTRES
 // ============================================
+// Catégorie d'une vente pour le filtre Type : 'actes', 'pharmacie', 'mixte'
+// (ou 'autre' pour un type inattendu, montré seulement quand tout est coché).
+function categorieTypeVente(type) {
+    var t = (type || '').toLowerCase();
+    if (t === 'actes' || t === 'acte') return 'actes';
+    if (t === 'pharma' || t === 'pharmacie') return 'pharmacie';
+    if (t === 'mixte') return 'mixte';
+    return 'autre';
+}
+
+// Types cochés, ou null quand aucun filtre ne s'applique (tout ou rien coché).
+function typesVenteCoches() {
+    var cases = document.querySelectorAll('.filtre-type');
+    var coches = [];
+    cases.forEach(function(c) { if (c.checked) coches.push(c.value); });
+    return (coches.length === 0 || coches.length === cases.length) ? null : coches;
+}
+
 function resetFiltres() {
     document.getElementById('periodeFiltre').value = 'tous';
-    document.getElementById('searchType').value = '';
+    document.querySelectorAll('.filtre-type').forEach(function(c) { c.checked = true; });
     document.getElementById('searchGlobal').value = '';
     document.getElementById('filtreDateDebut').value = '';
     document.getElementById('filtreDateFin').value = '';
@@ -1271,11 +1370,11 @@ function styleImpressionNB() {
 }
 
 async function imprimerHistorique() {
-    if (!ventesFiltrees || ventesFiltrees.length === 0) {
+    if ((!ventesFiltrees || ventesFiltrees.length === 0) && reglementsFiltres.length === 0) {
         await afficherMessage('Aucune vente à imprimer');
         return;
     }
-    
+
     var printWindow = window.open('', '_blank');
     var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Historique des ventes</title>';
     html += '<style>' + styleImpressionNB() + '</style>';
@@ -1306,6 +1405,11 @@ async function imprimerHistorique() {
         libellePeriode = 'du ' + fmt(dDeb) + ' au ' + fmt(dFin);
     }
     mentions.push('Période : ' + libellePeriode);
+    var typesImpr = typesVenteCoches();
+    if (typesImpr) {
+        var nomsTypes = { actes: 'Actes', pharmacie: 'Pharmacie', mixte: 'Mixte' };
+        mentions.push('Types : ' + typesImpr.map(function(t) { return nomsTypes[t]; }).join(' + '));
+    }
     if (selAssurance.value) mentions.push('Assurance : ' + selAssurance.options[selAssurance.selectedIndex].text);
     if (selSociete.value) mentions.push('Société : ' + selSociete.value);
     mentions.push('Trié par : ' + selTri.options[selTri.selectedIndex].text);
@@ -1379,31 +1483,43 @@ async function imprimerHistorique() {
     // carte "Créances assurances" (calculerStats) : part AMU
     // (prise_en_charge) + part complémentaire (prise_en_charge2), ici
     // détaillée par assurance, sur les ventes affichées (période et filtres).
+    // Patron : "déduis le montant si déjà payé pour la période concernée" —
+    // part déjà remboursée de chaque vente (factures d'assurance encaissées,
+    // voir /api/ventes/historique_complements).
     var dettes = {};
     ventesFiltrees.forEach(function(v) {
-        var ajouter = function(nom, montant) {
+        var payeVente = assurancesPayees[String(v.ID)] || {};
+        var ajouter = function(nom, montant, dejaPaye) {
             if (!(montant > 0)) return;
-            if (!dettes[nom]) dettes[nom] = { ventes: 0, montant: 0 };
+            if (!dettes[nom]) dettes[nom] = { ventes: 0, montant: 0, paye: 0 };
             dettes[nom].ventes++;
             dettes[nom].montant += montant;
+            dettes[nom].paye += Math.min(montant, dejaPaye || 0);
         };
         var libAmu = libelleAssuranceAmu(v);
-        ajouter(libAmu === 'Non assuré' ? 'AMU' : libAmu, v.prise_en_charge || 0);
-        if (v.assurance2_nom) ajouter(v.assurance2_nom + ' (complémentaire)', v.prise_en_charge2 || 0);
+        ajouter(libAmu === 'Non assuré' ? 'AMU' : libAmu, v.prise_en_charge || 0, payeVente.principale);
+        if (v.assurance2_nom) ajouter(v.assurance2_nom + ' (complémentaire)', v.prise_en_charge2 || 0, payeVente.complementaire);
     });
-    var nomsAssurances = Object.keys(dettes).sort(function(a, b) { return dettes[b].montant - dettes[a].montant; });
+    var nomsAssurances = Object.keys(dettes).sort(function(a, b) {
+        return (dettes[b].montant - dettes[b].paye) - (dettes[a].montant - dettes[a].paye);
+    });
     html += '<h3 style="font-size:16px;margin:16px 0 6px;">Ce que les assurances doivent — ' + escFR(libellePeriode) + '</h3>';
     if (nomsAssurances.length) {
-        var totalDettes = 0;
-        html += '<table style="width:auto;min-width:60%;margin-bottom:16px;">';
-        html += '<thead><tr><th>Assurance</th><th class="text-end">Ventes concernées</th><th class="text-end">Montant dû</th></tr></thead><tbody>';
+        var totalPris = 0, totalPaye = 0;
+        var fmtF = function(n) { return Math.round(n).toLocaleString('fr-FR') + ' F'; };
+        html += '<table style="width:auto;min-width:70%;margin-bottom:16px;">';
+        html += '<thead><tr><th>Assurance</th><th class="text-end">Ventes concernées</th><th class="text-end">Pris en charge</th>' +
+                '<th class="text-end">Déjà payé</th><th class="text-end">Reste dû</th></tr></thead><tbody>';
         nomsAssurances.forEach(function(nom) {
-            totalDettes += dettes[nom].montant;
-            html += '<tr><td>' + escFR(nom) + '</td><td class="text-end">' + dettes[nom].ventes + '</td><td class="text-end">' +
-                    Math.round(dettes[nom].montant).toLocaleString('fr-FR') + ' F</td></tr>';
+            var d = dettes[nom];
+            totalPris += d.montant;
+            totalPaye += d.paye;
+            html += '<tr><td>' + escFR(nom) + '</td><td class="text-end">' + d.ventes + '</td><td class="text-end">' + fmtF(d.montant) +
+                    '</td><td class="text-end">' + fmtF(d.paye) + '</td><td class="text-end"><strong>' + fmtF(d.montant - d.paye) + '</strong></td></tr>';
         });
-        html += '<tr><td><strong>Total dû par les assurances</strong></td><td></td><td class="text-end"><strong>' +
-                Math.round(totalDettes).toLocaleString('fr-FR') + ' F</strong></td></tr>';
+        html += '<tr><td><strong>Total</strong></td><td></td><td class="text-end"><strong>' + fmtF(totalPris) +
+                '</strong></td><td class="text-end"><strong>' + fmtF(totalPaye) + '</strong></td><td class="text-end"><strong>' +
+                fmtF(totalPris - totalPaye) + '</strong></td></tr>';
         html += '</tbody></table>';
     } else {
         html += '<p style="margin:0 0 16px;">Aucune prise en charge par une assurance sur cette période.</p>';
@@ -1529,8 +1645,34 @@ async function imprimerHistorique() {
     }
     
     html += '</tbody></table>';
+
+    // ⭐ Règlements de créances encaissés sur la période (patron, 2026-10-05).
+    var totalReglements = 0;
+    if (reglementsFiltres.length) {
+        html += '<h3 style="font-size:16px;margin:16px 0 6px;">Règlements de créances — ' + escFR(libellePeriode) + '</h3>';
+        html += '<table><thead><tr><th>Date du règlement</th><th>Patient</th><th>Vente d\'origine</th><th>Facture</th>' +
+                '<th class="text-end">Montant réglé</th><th>Mode</th><th>Encaissé par</th></tr></thead><tbody>';
+        reglementsFiltres.forEach(function(r) {
+            totalReglements += r.montant || 0;
+            html += '<tr><td>' + escFR(r.date_paiement ? new Date(r.date_paiement).toLocaleString('fr-FR') : '-') + '</td>' +
+                    '<td>' + escFR(r.patient_nom) + '</td>' +
+                    '<td>' + (r.vente_id ? '#' + escFR(r.vente_numero_local) + ' ' : '') + escFR(libelleTypeVente(r.vente_type)) +
+                    (r.date_vente ? ' du ' + escFR(new Date(r.date_vente).toLocaleDateString('fr-FR')) : '') + '</td>' +
+                    '<td>' + escFR(r.numero_facture) + '</td>' +
+                    '<td class="text-end">' + Math.round(r.montant || 0).toLocaleString('fr-FR') + ' F</td>' +
+                    '<td>' + escFR(r.mode_paiement) + '</td><td>' + escFR(r.created_by) + '</td></tr>';
+        });
+        html += '<tr><td colspan="4"><strong>Total des règlements</strong></td><td class="text-end"><strong>' +
+                Math.round(totalReglements).toLocaleString('fr-FR') + ' F</strong></td><td colspan="2"></td></tr>';
+        html += '</tbody></table>';
+    }
+
     html += '<div class="footer">';
     html += 'Total: ' + ventesFiltrees.length + ' ventes - CA (espèces): ' + Math.round(totalCA).toLocaleString('fr-FR') + ' FCFA<br>';
+    if (totalReglements > 0) {
+        html += 'Règlements de créances : ' + Math.round(totalReglements).toLocaleString('fr-FR') + ' FCFA — Total encaissé : ' +
+                Math.round(totalCA + totalReglements).toLocaleString('fr-FR') + ' FCFA<br>';
+    }
     html += 'SSoftOneV10';
     html += '</div>';
     

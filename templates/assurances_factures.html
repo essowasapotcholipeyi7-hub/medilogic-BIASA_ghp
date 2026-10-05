@@ -34,9 +34,16 @@
                     par l'administrateur avant d'être réellement pris en compte (caisse, comptabilité).
                 </div>
 
-                <div class="mb-3">
-                    <label class="form-label">Mois de référence</label>
-                    <input type="month" id="filtreMois" class="form-control" style="max-width:220px;" onchange="chargerFactures()">
+                <div class="mb-3 d-flex align-items-end gap-2 flex-wrap">
+                    <div>
+                        <label class="form-label">Mois de référence</label>
+                        <input type="month" id="filtreMois" class="form-control" style="max-width:220px;" onchange="chargerFactures()">
+                    </div>
+                    <!-- ⭐ Génération des factures du mois, comme l'admin depuis
+                         Statistiques des ventes (patron, 2026-10-05). -->
+                    <button class="btn btn-success" id="btnGenererFactures" onclick="genererFacturesMois()">
+                        <i class="fas fa-calculator"></i> Générer les factures du mois
+                    </button>
                 </div>
 
                 <div class="table-responsive">
@@ -220,6 +227,34 @@ document.addEventListener('DOMContentLoaded', function() {
     chargerFactures();
 });
 
+// Même appel que le bouton "Générer factures" de Statistiques des ventes :
+// crée ou met à jour les factures d'assurance du mois choisi à partir des
+// ventes (les factures clôturées ne sont jamais modifiées).
+async function genererFacturesMois() {
+    const mois = document.getElementById('filtreMois').value;
+    if (!mois) { await afficherMessage('Choisissez d\'abord le mois de référence.'); return; }
+    if (!await demanderConfirmation(`Générer les factures d'assurance du mois ${mois} ?`)) return;
+    const bouton = document.getElementById('btnGenererFactures');
+    bouton.disabled = true;
+    try {
+        const r = await fetch('/api/assurances/generer_factures', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({mois_reference: mois}),
+        });
+        const res = await r.json();
+        if (res.success) {
+            await afficherMessage('Factures générées pour ' + mois + '.');
+            chargerFactures();
+        } else {
+            await afficherMessage('Erreur : ' + (res.error || 'inconnue'), {type: 'danger'});
+        }
+    } catch (e) {
+        await afficherMessage('Erreur : ' + e, {type: 'danger'});
+    } finally {
+        bouton.disabled = false;
+    }
+}
+
 function chargerFactures() {
     const mois = document.getElementById('filtreMois').value;
     let url = '/api/assurances/factures';
@@ -237,7 +272,7 @@ function chargerFactures() {
 function afficherFactures(factures) {
     const tbody = document.getElementById('facturesList');
     if (!factures || factures.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">Aucune facture pour ce mois</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">Aucune facture pour ce mois. Cliquez sur « Générer les factures du mois » pour les créer à partir des ventes des patients assurés.</td></tr>';
         return;
     }
 
