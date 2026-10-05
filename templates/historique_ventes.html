@@ -625,6 +625,32 @@ function dansPeriodeChoisie(dateTexte, periode, dateDebut, dateFin) {
     return true;
 }
 
+// ⭐ Patron, 2026-10-05 : la colonne "Payé" montrait la somme DONNÉE par le
+// patient (5 000 F pour une part de 2 000 F). Le montant réellement payé =
+// donné − rendu, jamais plus que sa part (net à payer) — c'est lui seul qui
+// compte dans le CA espèces. La somme donnée reste affichée en dessous pour
+// garder la trace.
+function montantPayeReel(v) {
+    var paye = (v.montant_donne || 0) - (v.rendu || 0);
+    if (paye < 0) paye = 0;
+    var net = v.net_a_payer || 0;
+    return paye > net ? net : paye;
+}
+
+// Cellule "Payé" : montant réellement payé en gras + somme donnée et rendu
+// quand ils diffèrent.
+function cellulePaye(v) {
+    var fmtP = function(n) { return Math.round(n).toLocaleString('fr-FR') + ' F'; };
+    var paye = montantPayeReel(v);
+    var donne = v.montant_donne || 0;
+    var html = '<strong>' + fmtP(paye) + '</strong>';
+    if (Math.round(donne) !== Math.round(paye)) {
+        html += '<br><small class="donne-rendu text-muted">Donné ' + fmtP(donne) +
+                (donne > paye ? ' · rendu ' + fmtP(donne - paye) : '') + '</small>';
+    }
+    return html;
+}
+
 // ⭐ Tableau "Règlements de créances" sous la liste des ventes.
 function afficherReglements() {
     var carte = document.getElementById('carteReglements');
@@ -899,7 +925,7 @@ function afficherPageVentes(page) {
         html += '</td>';
         html += '<td>' + construireDetailCellule(v) + '</td>';
         html += '<td class="text-end fw-bold">' + Math.round(netAPayer).toLocaleString('fr-FR') + ' F</td>';
-        html += '<td class="text-end" style="color:#28a745;">' + Math.round(montantDonne).toLocaleString('fr-FR') + ' F</td>';
+        html += '<td class="text-end" style="color:#28a745;">' + cellulePaye(v) + '</td>';
         html += '<td class="text-end" style="color:#dc3545;">' + Math.round(resteAPayer).toLocaleString('fr-FR') + ' F</td>';
         html += '<td>' + aideDisplay + '</td>';  // 🔥 NOUVELLE COLONNE
         html += '<td><span class="badge ' + statutBadge + '">' + statutPaiement + '</span></td>';
@@ -1022,7 +1048,7 @@ async function voirDetailVente(venteId, type) {
             </div>
             <div class="col-md-3">
                 <h6><i class="fas fa-hand-holding-usd"></i> Payé</h6>
-                <p style="color:#28a745; font-weight:bold;">${Math.round(v.montant_donne || 0).toLocaleString('fr-FR')} F</p>
+                <p style="color:#28a745;">${cellulePaye(v)}</p>
             </div>
             <div class="col-md-3">
                 <h6><i class="fas fa-arrow-right"></i> Reste</h6>
@@ -1144,8 +1170,7 @@ function calculerStats(debut, fin) {
         
         totalVentes++;
         
-        var recettePatient = (v.montant_donne || 0) - (v.rendu || 0);
-        if (recettePatient < 0) recettePatient = 0;
+        var recettePatient = montantPayeReel(v);
         
         var recetteAMU = v.prise_en_charge || 0;
         var recetteCAC = v.prise_en_charge2 || 0;
@@ -1436,8 +1461,7 @@ async function imprimerHistorique() {
     html += '<div class="header">' + mentions.join(' — ') + '</div>';
 
     var totalCA = ventesFiltrees.reduce(function(sum, v) {
-        var caEffectif = (v.montant_donne || 0) - (v.rendu || 0);
-        return sum + (caEffectif > 0 ? caEffectif : 0);
+        return sum + montantPayeReel(v);
     }, 0);
 
     var actesCount = ventesFiltrees.filter(function(v) { return v.type === 'actes'; }).length;
@@ -1661,7 +1685,7 @@ async function imprimerHistorique() {
         html += '<td><span class="' + badgeClass + '">' + typeLabel + '</span></td>';
         html += '<td class="detail-cell">' + details + '</td>';
         html += '<td class="text-end">' + Math.round(netAPayer).toLocaleString('fr-FR') + ' F</td>';
-        html += '<td class="text-end text-success">' + Math.round(montantDonne).toLocaleString('fr-FR') + ' F</td>';
+        html += '<td class="text-end text-success">' + cellulePaye(v) + '</td>';
         html += '<td class="text-end text-danger">' + Math.round(resteAPayer).toLocaleString('fr-FR') + ' F</td>';
         html += '<td>' + statutPaiement + '</td>';
         html += '</tr>';
