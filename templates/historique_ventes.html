@@ -152,6 +152,12 @@
                             <div class="form-check m-0"><input class="form-check-input filtre-type" type="checkbox" id="typeActes" value="actes" checked onchange="filtrerHistorique()"><label class="form-check-label small" for="typeActes">Actes</label></div>
                             <div class="form-check m-0"><input class="form-check-input filtre-type" type="checkbox" id="typePharmacie" value="pharmacie" checked onchange="filtrerHistorique()"><label class="form-check-label small" for="typePharmacie">Pharmacie</label></div>
                             <div class="form-check m-0"><input class="form-check-input filtre-type" type="checkbox" id="typeMixte" value="mixte" checked onchange="filtrerHistorique()"><label class="form-check-label small" for="typeMixte">Mixte</label></div>
+                            <!-- ⭐ Règlements de créances (patron, 2026-10-05 : "dans les filtres il
+                                 manque règlement, sinon comment on pourra rendre compte ?").
+                                 Cochée seule = uniquement les règlements (pour rendre compte de
+                                 l'argent des créances encaissé) ; avec Actes/Pharmacie/Mixte = ces
+                                 ventes + les règlements de ces mêmes types de vente. -->
+                            <div class="form-check m-0"><input class="form-check-input" type="checkbox" id="typeReglements" checked onchange="filtrerHistorique()"><label class="form-check-label small" for="typeReglements">Règlements</label></div>
                         </div>
                     </div>
                     <div class="col-md-2">
@@ -402,6 +408,8 @@ let toutesLesVentes = [];
 let ventesFiltrees = [];
 let toutesLesReglements = [];   // règlements de créance (paiements de factures)
 let reglementsFiltres = [];
+let reglementsVisibles = true;  // case "Règlements" cochée (ou rien coché = tout)
+let ventesMasquees = false;     // seule la case "Règlements" est cochée
 let assurancesPayees = {};      // {vente_id: {principale, complementaire}} déjà remboursé
 let currentPage = 1;
 let rowsPerPage = 10;
@@ -621,7 +629,7 @@ function dansPeriodeChoisie(dateTexte, periode, dateDebut, dateFin) {
 function afficherReglements() {
     var carte = document.getElementById('carteReglements');
     if (!carte) return;
-    if (!toutesLesReglements.length) { carte.style.display = 'none'; return; }
+    if (!toutesLesReglements.length || !reglementsVisibles) { carte.style.display = 'none'; return; }
     carte.style.display = '';
     var total = 0;
     var html = '';
@@ -664,6 +672,10 @@ function filtrerHistorique() {
     // Récupérer les filtres
     var periode = document.getElementById('periodeFiltre').value;
     var typesCoches = typesVenteCoches();
+    var reglementsCoches = document.getElementById('typeReglements').checked;
+    var nbTypesVente = document.querySelectorAll('.filtre-type:checked').length;
+    ventesMasquees = reglementsCoches && nbTypesVente === 0;
+    reglementsVisibles = reglementsCoches || nbTypesVente === 0;
     var searchGlobal = document.getElementById('searchGlobal').value.toLowerCase().trim();
     searchGlobalActuel = searchGlobal;  // ⭐ pour l'affichage du détail par acte (afficherPageVentes)
     var dateDebut = document.getElementById('filtreDateDebut').value;
@@ -738,6 +750,7 @@ function filtrerHistorique() {
 
         // Filtre par date (personnalisée) et par période
         if (visible && !dansPeriodeChoisie(v.date_vente, periode, dateDebut, dateFin)) visible = false;
+        if (ventesMasquees) visible = false;
 
         if (visible) {
             ventesFiltrees.push(v);
@@ -747,7 +760,7 @@ function filtrerHistorique() {
     // ⭐ Règlements de créance (patron, 2026-10-05) : affichés selon la date
     // du règlement et les mêmes filtres que leur vente d'origine.
     var filtresVente = !!(filtreStatutPaiement || filtreAide || filtreAssurance || filtreSociete);
-    reglementsFiltres = toutesLesReglements.filter(function(r) {
+    reglementsFiltres = !reglementsVisibles ? [] : toutesLesReglements.filter(function(r) {
         if (!dansPeriodeChoisie(r.date_paiement, periode, dateDebut, dateFin)) return false;
         if (r.vente_id && idsVentesConnues[r.vente_id]) return !!idsVentesHorsPeriode[r.vente_id];
         // Vente d'origine introuvable (annulée...) : seuls type et recherche s'appliquent.
@@ -903,7 +916,9 @@ function afficherPageVentes(page) {
         html += '</tr>';
     }
     
-    tbody.innerHTML = html || '<tr><td colspan="11" class="text-center text-muted">Aucun résultat</td></tr>';
+    tbody.innerHTML = html || '<tr><td colspan="11" class="text-center text-muted">' +
+        (ventesMasquees ? 'Seuls les règlements de créances sont affichés (case « Règlements » cochée seule) — voir plus bas.' : 'Aucun résultat') +
+        '</td></tr>';
 }
 
 function updatePagination() {
@@ -1245,6 +1260,7 @@ function typesVenteCoches() {
 function resetFiltres() {
     document.getElementById('periodeFiltre').value = 'tous';
     document.querySelectorAll('.filtre-type').forEach(function(c) { c.checked = true; });
+    document.getElementById('typeReglements').checked = true;
     document.getElementById('searchGlobal').value = '';
     document.getElementById('filtreDateDebut').value = '';
     document.getElementById('filtreDateFin').value = '';
@@ -1371,7 +1387,7 @@ function styleImpressionNB() {
 
 async function imprimerHistorique() {
     if ((!ventesFiltrees || ventesFiltrees.length === 0) && reglementsFiltres.length === 0) {
-        await afficherMessage('Aucune vente à imprimer');
+        await afficherMessage(ventesMasquees ? 'Aucun règlement de créance à imprimer pour ces filtres' : 'Aucune vente à imprimer');
         return;
     }
 
@@ -1406,9 +1422,13 @@ async function imprimerHistorique() {
     }
     mentions.push('Période : ' + libellePeriode);
     var typesImpr = typesVenteCoches();
-    if (typesImpr) {
+    if (ventesMasquees) {
+        mentions.push('Types : Règlements de créances uniquement');
+    } else if (typesImpr || !reglementsVisibles) {
         var nomsTypes = { actes: 'Actes', pharmacie: 'Pharmacie', mixte: 'Mixte' };
-        mentions.push('Types : ' + typesImpr.map(function(t) { return nomsTypes[t]; }).join(' + '));
+        var libTypes = (typesImpr || ['actes', 'pharmacie', 'mixte']).map(function(t) { return nomsTypes[t]; });
+        if (reglementsVisibles) libTypes.push('Règlements');
+        mentions.push('Types : ' + libTypes.join(' + '));
     }
     if (selAssurance.value) mentions.push('Assurance : ' + selAssurance.options[selAssurance.selectedIndex].text);
     if (selSociete.value) mentions.push('Société : ' + selSociete.value);
@@ -1462,6 +1482,9 @@ async function imprimerHistorique() {
         });
     }
 
+    // Mode "Règlements" seul : les sections ventes (résumé, dettes des
+    // assurances, détail) sont retirées plus bas, il ne reste que les règlements.
+    var debutSectionsVentes = html.length;
     html += '<div class="summary">';
     html += '<div class="summary-item"><strong>Total ventes</strong><br>' + ventesFiltrees.length + '</div>';
     html += '<div class="summary-item"><strong>CA (espèces)</strong><br>' + Math.round(totalCA).toLocaleString('fr-FR') + ' F</div>';
@@ -1645,6 +1668,7 @@ async function imprimerHistorique() {
     }
     
     html += '</tbody></table>';
+    if (ventesMasquees) html = html.slice(0, debutSectionsVentes);
 
     // ⭐ Règlements de créances encaissés sur la période (patron, 2026-10-05).
     var totalReglements = 0;
@@ -1668,8 +1692,12 @@ async function imprimerHistorique() {
     }
 
     html += '<div class="footer">';
-    html += 'Total: ' + ventesFiltrees.length + ' ventes - CA (espèces): ' + Math.round(totalCA).toLocaleString('fr-FR') + ' FCFA<br>';
-    if (totalReglements > 0) {
+    if (ventesMasquees) {
+        html += 'Total : ' + reglementsFiltres.length + ' règlement(s) de créances — ' + Math.round(totalReglements).toLocaleString('fr-FR') + ' FCFA encaissés<br>';
+    } else {
+        html += 'Total: ' + ventesFiltrees.length + ' ventes - CA (espèces): ' + Math.round(totalCA).toLocaleString('fr-FR') + ' FCFA<br>';
+    }
+    if (totalReglements > 0 && !ventesMasquees) {
         html += 'Règlements de créances : ' + Math.round(totalReglements).toLocaleString('fr-FR') + ' FCFA — Total encaissé : ' +
                 Math.round(totalCA + totalReglements).toLocaleString('fr-FR') + ' FCFA<br>';
     }
