@@ -203,6 +203,7 @@
         }
     }
 </style>
+{% with a4_zoom=1.3 %}{% include 'partials/impression_a4.html' %}{% endwith %}
 {% endif %}
 <style>
     table.table-cumul td:first-child {
@@ -629,7 +630,11 @@
 
         <!-- BOUTONS -->
         <div class="text-center mt-3 no-print">
+            {% if format == '80mm' %}
             <button onclick="window.print()" class="btn btn-primary btn-sm"><i class="fas fa-print"></i> Imprimer</button>
+            {% else %}
+            {% include 'partials/boutons_impression_a4.html' %}
+            {% endif %}
             <button onclick="telechargerPDF()" class="btn btn-success btn-sm">PDF</button>
             <button onclick="fermerOuRediriger()" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</button>
         </div>

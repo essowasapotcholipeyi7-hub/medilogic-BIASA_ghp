@@ -1,0 +1,110 @@
+{#
+  Impression A4 des reçus et factures (recu_client, recu_structure,
+  facture_client, facture_structure) — inclus dans le bloc extra_css,
+  branche A4 uniquement (le ticket 80mm n'est pas concerné).
+
+  Patron, 2026-10-05 : "quand on imprime en noir et blanc il y a un fond
+  dans l'en-tête, je veux ce fond uniquement en couleur [...] rendre bien
+  jolies ces impressions en A4, bien en noir, pas de couleur sauf en-tête
+  en cas d'impression couleur".
+
+  Une page web ne peut pas savoir si l'imprimante imprimera en couleur ou
+  en noir et blanc : le choix se fait donc par deux boutons explicites
+  ("Imprimer (noir et blanc)" / "Imprimer en couleur", voir
+  partials/boutons_impression_a4.html). Il est appliqué comme classe sur
+  <html> (impression-nb / impression-couleur), dès l'aperçu à l'écran — ce
+  qu'on voit est ce qui sort — et le dernier choix est mémorisé.
+
+  Variables optionnelles (via {% with %} à l'inclusion) : a4_zoom
+  (agrandissement à l'impression) et a4_taille_tableau (police du
+  tableau des articles, en px).
+
+  Les règles ci-dessous passent devant les anciennes règles @media print
+  de chaque modèle (en-tête bleu forcé, net à payer en rouge) grâce à
+  #pdfWrapper dans leurs sélecteurs.
+#}
+<script>
+(function () {
+    var mode = 'nb';
+    try { if (localStorage.getItem('modeImpressionA4') === 'couleur') mode = 'couleur'; } catch (e) {}
+    document.documentElement.classList.add('impression-' + mode);
+})();
+function imprimerA4(mode) {
+    var racine = document.documentElement;
+    racine.classList.remove('impression-nb', 'impression-couleur');
+    racine.classList.add('impression-' + mode);
+    try { localStorage.setItem('modeImpressionA4', mode); } catch (e) {}
+    window.print();
+}
+</script>
+<style>
+    /* ===== Commun aux deux modes : corps du document tout en noir ===== */
+    #pdfWrapper .card-body,
+    #pdfWrapper .card-body *:not(.recu-header):not(.recu-header *) {
+        color: #000 !important;
+        background: transparent !important;
+    }
+    #pdfWrapper .card-body * { border-color: #8a8a8a !important; }
+    #pdfWrapper .card-body hr { border-color: #000 !important; opacity: 1 !important; }
+
+    /* Encadré patient (premier bloc après l'en-tête) */
+    #pdfWrapper .recu-header + div {
+        border: 1px solid #000 !important;
+        border-radius: 4px;
+        padding: 6px 10px !important;
+    }
+
+    /* Tableaux : en-tête souligné, lignes fines */
+    #pdfWrapper .card-body table th {
+        border-bottom: 2px solid #000 !important;
+        font-weight: 700 !important;
+    }
+    #pdfWrapper .card-body table tr { border-bottom-color: #8a8a8a !important; }
+
+    /* Net à payer : mis en valeur par un encadré plutôt que par la couleur */
+    #pdfWrapper .montant-net-a-payer { font-size: 1.2em; font-weight: 800 !important; }
+    #pdfWrapper div:has(.montant-net-a-payer):not(:has(div .montant-net-a-payer)) {
+        border: 2px solid #000 !important;
+        border-radius: 4px;
+        padding: 5px 10px !important;
+        margin-top: 6px !important;
+    }
+
+    /* ===== Noir et blanc : en-tête sans fond, simplement souligné ===== */
+    html.impression-nb #pdfWrapper .recu-header {
+        background: transparent !important;
+        border-bottom: 2px solid #000 !important;
+        -webkit-print-color-adjust: economy !important;
+        print-color-adjust: economy !important;
+    }
+    html.impression-nb #pdfWrapper .recu-header,
+    html.impression-nb #pdfWrapper .recu-header * {
+        color: #000 !important;
+        opacity: 1 !important;
+    }
+    html.impression-nb #pdfWrapper .recu-header img { filter: grayscale(1); }
+
+    /* ===== Couleur : seul l'en-tête garde son fond bleu sombre ===== */
+    html.impression-couleur #pdfWrapper .recu-header {
+        background: #1a2a6c !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+    html.impression-couleur #pdfWrapper .recu-header,
+    html.impression-couleur #pdfWrapper .recu-header * { color: #fff !important; }
+
+    {% if a4_taille_tableau %}
+    /* Tableau des articles lisible (il était en 8px sur ce document). */
+    #pdfWrapper .card-body table td,
+    #pdfWrapper .card-body table th { font-size: {{ a4_taille_tableau }}px !important; }
+    {% endif %}
+    {% if a4_zoom %}
+    @media print {
+        /* Police plus grande à l'impression, document entier agrandi d'un
+           même facteur — réglé par modèle (a4_zoom) : seul le reçu patient
+           avait un texte minuscule (8 à 10px) ; les autres restent sur une
+           page sans agrandissement global. */
+        #pdfWrapper .card-body { zoom: {{ a4_zoom }}; }
+    }
+    {% endif %}
+</style>

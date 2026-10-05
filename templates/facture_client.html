@@ -168,6 +168,7 @@
         }
     }
 </style>
+{% include 'partials/impression_a4.html' %}
 {% endif %}
 <style>
     /* Récapitulatif par catégorie (sans détail des articles) — voir
@@ -537,7 +538,11 @@
         </div>
 
         <div class="text-center mt-3 no-print">
+            {% if format == '80mm' %}
             <button onclick="window.print()" class="btn btn-primary"><i class="fas fa-print"></i> Imprimer</button>
+            {% else %}
+            {% include 'partials/boutons_impression_a4.html' %}
+            {% endif %}
             <button onclick="telechargerPDF()" class="btn btn-success"><i class="fas fa-download"></i> PDF</button>
             <button onclick="fermerOuRediriger()" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</button>
         </div>

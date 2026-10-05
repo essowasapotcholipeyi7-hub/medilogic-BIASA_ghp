@@ -1242,6 +1242,34 @@ async function annulerVente(venteId, type) {
 // ============================================
 // IMPRESSION
 // ============================================
+// ⭐ Style commun des états imprimés de cette page (historique, aides) —
+// patron, 2026-10-05 : "augmente la police et que tout soit bien en noir et
+// blanc quand on imprime, pas de couleur". Le bloc @media print force aussi
+// le noir sur blanc pour tout ce qui garderait une couleur (styles en ligne).
+function styleImpressionNB() {
+    return 'body{font-family:Arial,Helvetica,sans-serif;padding:20px;font-size:14px;color:#000;background:#fff;}' +
+        'h2{text-align:center;color:#000;margin-top:0;font-size:20px;}' +
+        '.header{text-align:center;margin-bottom:12px;color:#000;font-size:13px;}' +
+        'table{width:100%;border-collapse:collapse;font-size:13px;}' +
+        'thead{display:table-header-group;}' +
+        'tr{page-break-inside:avoid;}' +
+        'th{background:#fff;color:#000;font-weight:bold;padding:7px 6px;text-align:left;border:1px solid #000;border-bottom:2px solid #000;}' +
+        'td{padding:6px;border:1px solid #000;color:#000;vertical-align:top;}' +
+        '.text-end{text-align:right;white-space:nowrap;}' +
+        '.text-success,.text-danger{color:#000;}' +
+        '.badge-actes,.badge-pharma,.badge-mixte,.badge-assure,.badge-non-assure,.badge-aide,.badge-secondary' +
+            '{display:inline-block;white-space:nowrap;color:#000;background:none;border:1px solid #000;padding:1px 5px;border-radius:3px;margin:1px 0;}' +
+        '.detail-cell{font-size:12px;color:#000;max-width:220px;}' +
+        '.summary{display:flex;flex-wrap:wrap;justify-content:center;gap:10px 28px;margin:12px 0;padding:10px;border:1px solid #000;font-size:14px;}' +
+        '.summary-item{text-align:center;}' +
+        '.footer{text-align:center;margin-top:15px;color:#000;font-size:12px;border-top:1px solid #000;padding-top:10px;}' +
+        '.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;padding:10px;border:1px solid #000;border-radius:5px;}' +
+        '.toolbar .title{font-size:16px;font-weight:bold;color:#000;}' +
+        '.btn-close{background:#000;color:#fff;border:none;padding:8px 25px;border-radius:5px;cursor:pointer;font-size:14px;}' +
+        '@media print{.toolbar{display:none;}' +
+            '*{color:#000 !important;background:transparent !important;box-shadow:none !important;}}';
+}
+
 async function imprimerHistorique() {
     if (!ventesFiltrees || ventesFiltrees.length === 0) {
         await afficherMessage('Aucune vente à imprimer');
@@ -1250,32 +1278,7 @@ async function imprimerHistorique() {
     
     var printWindow = window.open('', '_blank');
     var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Historique des ventes</title>';
-    html += '<style>';
-    html += 'body{font-family:Arial;padding:20px;font-size:12px;}';
-    html += 'h2{text-align:center;color:#333;margin-top:0;}';
-    html += '.header{text-align:center;margin-bottom:15px;color:#666;}';
-    html += 'table{width:100%;border-collapse:collapse;font-size:11px;}';
-    html += 'th{background:#667eea;color:white;padding:8px;text-align:left;border:1px solid #ddd;}';
-    html += 'td{padding:6px;border:1px solid #ddd;}';
-    html += '.text-end{text-align:right;}';
-    html += '.badge-actes{background:#007bff;color:white;padding:2px 6px;border-radius:3px;}';
-    html += '.badge-pharma{background:#28a745;color:white;padding:2px 6px;border-radius:3px;}';
-    html += '.badge-mixte{background:#8b5cf6;color:white;padding:2px 6px;border-radius:3px;}';  // 🔥 NOUVEAU
-    html += '.badge-assure{background:#28a745;color:white;padding:2px 6px;border-radius:3px;}';
-    html += '.badge-non-assure{background:#6c757d;color:white;padding:2px 6px;border-radius:3px;}';
-    html += '.badge-aide{background:#ffc107;color:#333;padding:2px 6px;border-radius:3px;}';
-    html += '.text-success{color:#28a745;}';
-    html += '.text-danger{color:#dc3545;}';
-    html += '.detail-cell{font-size:10px;color:#555;max-width:200px;}';
-    html += '.summary{display:flex;justify-content:center;gap:30px;margin:15px 0;padding:10px;background:#f8f9fa;border-radius:5px;}';
-    html += '.summary-item{text-align:center;}';
-    html += '.footer{text-align:center;margin-top:15px;color:#666;font-size:10px;border-top:1px solid #ddd;padding-top:10px;}';
-    html += '.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;padding:10px;background:#f8f9fa;border-radius:5px;border:1px solid #ddd;}';
-    html += '.toolbar .title{font-size:16px;font-weight:bold;color:#333;}';
-    html += '.btn-close{background:#dc3545;color:white;border:none;padding:8px 25px;border-radius:5px;cursor:pointer;font-size:14px;}';
-    html += '.btn-close:hover{background:#c82333;}';
-    html += '@media print{.toolbar{display:none;}}';
-    html += '</style>';
+    html += '<style>' + styleImpressionNB() + '</style>';
     html += '</head><body>';
     
     html += '<div class="toolbar">';
@@ -1292,6 +1295,17 @@ async function imprimerHistorique() {
     var selSociete = document.getElementById('filtreSociete');
     var selTri = document.getElementById('triEtat');
     var mentions = [];
+    // Période choisie (Aujourd'hui, Mois, dates personnalisées...) — rappelée
+    // sur l'état, puisque le récapitulatif des assurances en dépend.
+    var selPeriode = document.getElementById('periodeFiltre');
+    var libellePeriode = selPeriode.options[selPeriode.selectedIndex].text;
+    if (selPeriode.value === 'personnalise') {
+        var dDeb = document.getElementById('filtreDateDebut').value;
+        var dFin = document.getElementById('filtreDateFin').value;
+        var fmt = function(d) { return d ? d.split('-').reverse().join('/') : '…'; };
+        libellePeriode = 'du ' + fmt(dDeb) + ' au ' + fmt(dFin);
+    }
+    mentions.push('Période : ' + libellePeriode);
     if (selAssurance.value) mentions.push('Assurance : ' + selAssurance.options[selAssurance.selectedIndex].text);
     if (selSociete.value) mentions.push('Société : ' + selSociete.value);
     mentions.push('Trié par : ' + selTri.options[selTri.selectedIndex].text);
@@ -1349,17 +1363,53 @@ async function imprimerHistorique() {
     html += '<div class="summary-item"><strong>CA (espèces)</strong><br>' + Math.round(totalCA).toLocaleString('fr-FR') + ' F</div>';
     html += '<div class="summary-item"><strong>Actes</strong><br>' + actesCount + '</div>';
     html += '<div class="summary-item"><strong>Pharmacie</strong><br>' + pharmaCount + '</div>';
-    html += '<div class="summary-item"><strong style="color:#8b5cf6;">Mixte</strong><br>' + mixteCount + '</div>';  // 🔥 NOUVEAU
-    html += '<div class="summary-item"><strong style="color:#28a745;">Assurés (AMU)</strong><br>' + assuresCount + '</div>';
-    html += '<div class="summary-item"><strong style="color:#6c757d;">Non assurés</strong><br>' + nonAssuresCount + '</div>';
-    html += '<div class="summary-item"><strong style="color:#20c997;">Avec CAC</strong><br>' + cacCount + '</div>';
-    html += '<div class="summary-item"><strong style="color:#e0a800;">Avec aide</strong><br>' + aideCount + '</div>';
+    html += '<div class="summary-item"><strong>Mixte</strong><br>' + mixteCount + '</div>';  // 🔥 NOUVEAU
+    html += '<div class="summary-item"><strong>Assurés (AMU)</strong><br>' + assuresCount + '</div>';
+    html += '<div class="summary-item"><strong>Non assurés</strong><br>' + nonAssuresCount + '</div>';
+    html += '<div class="summary-item"><strong>Avec CAC</strong><br>' + cacCount + '</div>';
+    html += '<div class="summary-item"><strong>Avec aide</strong><br>' + aideCount + '</div>';
     if (totalActeRecherche !== null) {
-        html += '<div class="summary-item"><strong style="color:#dc3545;">"' + escFR(rechercheActive) + '" (' + nbActeRecherche + ')</strong><br>' +
+        html += '<div class="summary-item"><strong>"' + escFR(rechercheActive) + '" (' + nbActeRecherche + ')</strong><br>' +
                 Math.round(totalActeRecherche).toLocaleString('fr-FR') + ' F</div>';
     }
     html += '</div>';
-    
+
+    // ⭐ Patron, 2026-10-05 : "afficher sur cette impression ce que les
+    // assurances doivent selon la période choisie". Même calcul que la
+    // carte "Créances assurances" (calculerStats) : part AMU
+    // (prise_en_charge) + part complémentaire (prise_en_charge2), ici
+    // détaillée par assurance, sur les ventes affichées (période et filtres).
+    var dettes = {};
+    ventesFiltrees.forEach(function(v) {
+        var ajouter = function(nom, montant) {
+            if (!(montant > 0)) return;
+            if (!dettes[nom]) dettes[nom] = { ventes: 0, montant: 0 };
+            dettes[nom].ventes++;
+            dettes[nom].montant += montant;
+        };
+        var libAmu = libelleAssuranceAmu(v);
+        ajouter(libAmu === 'Non assuré' ? 'AMU' : libAmu, v.prise_en_charge || 0);
+        if (v.assurance2_nom) ajouter(v.assurance2_nom + ' (complémentaire)', v.prise_en_charge2 || 0);
+    });
+    var nomsAssurances = Object.keys(dettes).sort(function(a, b) { return dettes[b].montant - dettes[a].montant; });
+    html += '<h3 style="font-size:16px;margin:16px 0 6px;">Ce que les assurances doivent — ' + escFR(libellePeriode) + '</h3>';
+    if (nomsAssurances.length) {
+        var totalDettes = 0;
+        html += '<table style="width:auto;min-width:60%;margin-bottom:16px;">';
+        html += '<thead><tr><th>Assurance</th><th class="text-end">Ventes concernées</th><th class="text-end">Montant dû</th></tr></thead><tbody>';
+        nomsAssurances.forEach(function(nom) {
+            totalDettes += dettes[nom].montant;
+            html += '<tr><td>' + escFR(nom) + '</td><td class="text-end">' + dettes[nom].ventes + '</td><td class="text-end">' +
+                    Math.round(dettes[nom].montant).toLocaleString('fr-FR') + ' F</td></tr>';
+        });
+        html += '<tr><td><strong>Total dû par les assurances</strong></td><td></td><td class="text-end"><strong>' +
+                Math.round(totalDettes).toLocaleString('fr-FR') + ' F</strong></td></tr>';
+        html += '</tbody></table>';
+    } else {
+        html += '<p style="margin:0 0 16px;">Aucune prise en charge par une assurance sur cette période.</p>';
+    }
+    html += '<h3 style="font-size:16px;margin:8px 0 6px;">Détail des ventes</h3>';
+
     html += '<table>';
     html += '<thead><tr>';
     html += '<th>N°</th>';
@@ -1449,7 +1499,7 @@ async function imprimerHistorique() {
         // assurances et ou société").
         var cacHtml = '';
         if (v.assurance2_nom) {
-            cacHtml = '<br><span class="badge-assure" style="background:#20c997;">+ CAC ' + v.assurance2_nom +
+            cacHtml = '<br><span class="badge-assure">+ CAC ' + v.assurance2_nom +
                 (v.societe_assurance2 ? ' (' + v.societe_assurance2 + ')' : '') + '</span>';
         }
 
@@ -1494,14 +1544,19 @@ async function imprimerHistorique() {
 function imprimerStats() {
     var printWindow = window.open('', '_blank');
     var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Statistiques</title>';
-    html += '<style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #ddd;padding:6px;}th{background:#667eea;color:white;}.stat{display:inline-block;padding:10px;margin:5px;border:1px solid #ddd;border-radius:5px;min-width:100px;text-align:center;}</style>';
+    html += '<style>' + styleImpressionNB() + '.stat{display:inline-block;padding:10px;margin:5px;border:1px solid #000;border-radius:5px;min-width:110px;text-align:center;font-size:14px;}h3{margin:4px 0 0;font-size:20px;}h4{font-size:16px;margin:16px 0 6px;}</style>';
     html += '</head><body><h2>STATISTIQUES</h2>';
     html += '<div>' + document.getElementById('periodeStatsLabel').innerText + '</div>';
     html += '<div>';
-    html += '<div class="stat"><div>Total ventes</div><h3>' + document.getElementById('statTotalVentes').innerText + '</h3></div>';
-    html += '<div class="stat"><div>CA (espèces)</div><h3>' + document.getElementById('statCA').innerText + '</h3></div>';
-    html += '<div class="stat"><div>Actes</div><h3>' + document.getElementById('statActes').innerText + '</h3></div>';
-    html += '<div class="stat"><div>Pharmacie</div><h3>' + document.getElementById('statPharma').innerText + '</h3></div>';
+    // L'admin voit "Créances" et "CA total" à la place de "Actes" et
+    // "Pharmacie" (voir la condition sur les cartes plus haut) : on n'imprime que les
+    // compteurs réellement présents — sinon plantage pour l'admin.
+    [['statTotalVentes', 'Total ventes'], ['statCA', 'CA (espèces)'], ['statCreances', 'Créances assurances'],
+     ['statCATotal', 'CA total (avec assurances)'], ['statActes', 'Actes'], ['statPharma', 'Pharmacie']
+    ].forEach(function(s) {
+        var el = document.getElementById(s[0]);
+        if (el) html += '<div class="stat"><div>' + s[1] + '</div><h3>' + el.innerText + '</h3></div>';
+    });
     html += '</div>';
     html += '<h4>Top actes</h4><table><thead><tr><th>Acte</th><th>Quantité</th></tr></thead><tbody>' + document.getElementById('topActesTable').innerHTML + '</tbody></table>';
     html += '<h4>Top produits</h4><table><thead><tr><th>Produit</th><th>Quantité</th></tr></thead><tbody>' + document.getElementById('topProduitsTable').innerHTML + '</tbody></table>';
@@ -1526,26 +1581,7 @@ async function imprimerAides() {
     
     var printWindow = window.open('', '_blank');
     var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Aides hospitalières</title>';
-    html += '<style>';
-    html += 'body{font-family:Arial;padding:20px;font-size:12px;}';
-    html += 'h2{text-align:center;color:#333;margin-top:0;}';
-    html += '.header{text-align:center;margin-bottom:15px;color:#666;}';
-    html += 'table{width:100%;border-collapse:collapse;font-size:11px;}';
-    html += 'th{background:#667eea;color:white;padding:8px;text-align:left;border:1px solid #ddd;}';
-    html += 'td{padding:6px;border:1px solid #ddd;}';
-    html += '.text-end{text-align:right;}';
-    html += '.text-success{color:#28a745;}';
-    html += '.badge-aide{background:#ffc107;color:#333;padding:2px 6px;border-radius:3px;}';
-    html += '.badge-mixte{background:#8b5cf6;color:white;padding:2px 6px;border-radius:3px;}';
-    html += '.summary{display:flex;justify-content:center;gap:30px;margin:15px 0;padding:10px;background:#f8f9fa;border-radius:5px;}';
-    html += '.summary-item{text-align:center;}';
-    html += '.footer{text-align:center;margin-top:15px;color:#666;font-size:10px;border-top:1px solid #ddd;padding-top:10px;}';
-    html += '.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;padding:10px;background:#f8f9fa;border-radius:5px;border:1px solid #ddd;}';
-    html += '.toolbar .title{font-size:16px;font-weight:bold;color:#333;}';
-    html += '.btn-close{background:#dc3545;color:white;border:none;padding:8px 25px;border-radius:5px;cursor:pointer;font-size:14px;}';
-    html += '.btn-close:hover{background:#c82333;}';
-    html += '@media print{.toolbar{display:none;}}';
-    html += '</style>';
+    html += '<style>' + styleImpressionNB() + '</style>';
     html += '</head><body>';
     
     html += '<div class="toolbar">';
