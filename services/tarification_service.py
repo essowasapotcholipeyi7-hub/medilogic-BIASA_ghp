@@ -71,7 +71,7 @@ def repartir_ligne(article, contexte):
     """Répartition d'UNE ligne.
 
     article : {nom, prix, pbr, quantite, prix_non_assure?, prise_en_charge_amu?,
-               prise_en_charge_cac?}
+               prise_en_charge_cac?, pbr_variante?, pbr_prive_modifie?}
     contexte : {amu: bool, taux_amu: %, privee: bool, taux_privee: %,
                 pbr_prive_par_acte: {nom: {pbr_1, pbr_2, tarif_prive}},
                 variante: 'defaut'|'alternatif'}
@@ -109,7 +109,15 @@ def repartir_ligne(article, contexte):
         # le choix habituel/alternatif ne doit pas s'imposer à tout le panier),
         # sinon la variante globale du contexte.
         variante = article.get('pbr_variante') or contexte.get('variante', 'defaut')
-        pbr_prive = pbr_prive_valeur(entree, variante) if contexte.get('applique_pbr_prive', True) else None
+        # ⭐ PBR privé saisi à la main sur la ligne (patron, 2026-10-05 : « si
+        # jamais le taux ne sera pas appliqué sur le prix clinique ») — offert
+        # dans le panier seulement quand la compagnie n'a PAS de PBR enregistré
+        # pour cet article ; un PBR enregistré et le PBR AMU ne bougent pas.
+        pbr_manuel = _nombre(article.get('pbr_prive_modifie'))
+        if pbr_manuel > 0:
+            pbr_prive = pbr_manuel
+        else:
+            pbr_prive = pbr_prive_valeur(entree, variante) if contexte.get('applique_pbr_prive', True) else None
         if pbr_prive is not None:
             # Part privée = taux x PBR privé (pas réduite par l'AMU), la PART
             # restant plafonnée à ce qui reste après l'AMU (patient >= 0)

@@ -5289,6 +5289,7 @@ def recu(vente_id, type):
                 'nom': item.get('nom'), 'prix': prix_unitaire, 'pbr': pbr_article, 'quantite': quantite,
                 'prise_en_charge_amu': prise_amu, 'prise_en_charge_cac': prise_cac,
                 'pbr_variante': item.get('pbr_variante'),  # variante PBR choisie ligne par ligne à la vente
+                'pbr_prive_modifie': item.get('pbr_prive_modifie'),  # PBR privé saisi à la main à la vente
             }, {
                 'amu': bool(est_assure and assurance_principale_active), 'taux_amu': taux_assurance,
                 'privee': taux_assurance2 > 0, 'taux_privee': taux_assurance2,
@@ -10317,6 +10318,7 @@ def api_vente_pharma():
                 'pbr': produit.get('pbr'), 'quantite': produit.get('quantite'),
                 'prix_non_assure': produit.get('prix_non_assure'), 'prix_modifie': produit.get('prix_modifie'),
                 'pbr_variante': produit.get('pbr_variante'),
+                'pbr_prive_modifie': produit.get('pbr_prive_modifie'),
                 'prise_en_charge_amu': produit.get('prise_en_charge_amu', True),
                 'prise_en_charge_cac': produit.get('prise_en_charge_cac', True),
             })
@@ -17489,6 +17491,7 @@ def api_creer_proforma():
             ligne = repartir_ligne({
                 'nom': article.get('nom'), 'prix': prix, 'pbr': pbr, 'quantite': quantite,
                 'prix_non_assure': article.get('prix_non_assure'), 'prix_modifie': article.get('prix_modifie'),
+                'pbr_variante': article.get('pbr_variante'), 'pbr_prive_modifie': article.get('pbr_prive_modifie'),
                 'prise_en_charge_amu': article.get('prise_en_charge_amu', True),
                 'prise_en_charge_cac': article.get('prise_en_charge_cac', True),
             }, contexte_proforma)

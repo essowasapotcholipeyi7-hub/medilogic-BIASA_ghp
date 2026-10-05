@@ -720,7 +720,11 @@ function repartirLigneActes(item, ctx) {
         const reste = Math.max(total - partAMU, 0);
         // Variante choisie LIGNE PAR LIGNE (sélecteur dans le panier), sinon celle du panier
         const varianteLigne = item.pbr_variante || ctx.variante;
-        const pbrPrive = ctx.appliquePbrPrive ? pbrCacVarianteValeurActes(pbrCacMapActes[item.nom], varianteLigne) : null;
+        // PBR privé saisi à la main sur la ligne (quand la compagnie n'en a pas
+        // d'enregistré pour cet acte) — prime sur « taux x reste ».
+        const pbrManuel = parseFloat(item.pbr_prive_modifie) || 0;
+        const pbrPrive = pbrManuel > 0 ? pbrManuel
+            : (ctx.appliquePbrPrive ? pbrCacVarianteValeurActes(pbrCacMapActes[item.nom], varianteLigne) : null);
         if (pbrPrive !== null && pbrPrive !== undefined) {
             basePrivee = pbrPrive * quantite;
             partPrivee = Math.min(basePrivee * ctx.tauxPrivee / 100, reste);
@@ -1537,6 +1541,33 @@ function changerVariantePbrLigne(index, valeur) {
     if (typeof calculerRendu === 'function') calculerRendu();
 }
 
+// ⭐ PBR privé saisi à la main pour UNE ligne (patron, 2026-10-05) : quand
+// la compagnie du patient n'a pas de PBR enregistré pour cet acte, le taux
+// privé s'applique au prix clinique ; ce champ permet de fixer une autre
+// base. Vide = retour à la règle (taux sur le prix). Jamais proposé quand un
+// PBR est enregistré, et sans effet sur le PBR AMU.
+function modifierPbrPrive(index, valeur) {
+    const pbr = parseFloat(valeur);
+    if (isNaN(pbr) || pbr <= 0) delete panier[index].pbr_prive_modifie;
+    else panier[index].pbr_prive_modifie = pbr;
+    afficherPanier();
+    calculerTotal();
+    if (typeof calculerRendu === 'function') calculerRendu();
+}
+
+function champPbrPriveActes(item, index, ctx) {
+    if (!ctx.privee || item.prise_en_charge_cac === false) return '';
+    const entree = pbrCacMapActes[item.nom];
+    const enregistre = pbrCacVarianteValeurActes(entree, item.pbr_variante || ctx.variante);
+    const nomAssurance = patientAssurance2 || 'privée';
+    if (enregistre !== null && enregistre !== undefined) {
+        return '<div class="small text-muted mt-1">PBR ' + nomAssurance + ' : ' + Math.round(enregistre).toLocaleString('fr-FR') + ' F</div>';
+    }
+    const valeur = item.pbr_prive_modifie ? Math.round(item.pbr_prive_modifie) : '';
+    return '<input type="number" class="form-control form-control-sm mt-1" style="width: 110px; margin: 0 auto;" placeholder="PBR ' + nomAssurance + '" value="' + valeur + '" title="Base de remboursement de l\'assurance privée pour cette ligne — vide : le taux s\'applique au prix" onchange="modifierPbrPrive(' + index + ', this.value)">' +
+        (valeur ? '<div class="small text-warning">PBR saisi</div>' : '<div class="small text-muted">vide = taux sur le prix</div>');
+}
+
 async function modifierPrix(index, nouveauPrix) {
     let prix = parseFloat(nouveauPrix);
     if (isNaN(prix) || prix <= 0) {
@@ -1685,9 +1716,9 @@ function afficherPanier() {
         let cellPartCAC = row.insertCell(5);
         cellPartCAC.className = 'text-center';
         const partCACLigne = ligne.partPrivee;
-        cellPartCAC.innerHTML = partCACLigne > 0
+        cellPartCAC.innerHTML = (partCACLigne > 0
             ? '<span class="badge bg-info">' + Math.round(partCACLigne).toLocaleString('fr-FR') + ' F</span>'
-            : '<span class="text-muted">-</span>';
+            : '<span class="text-muted">-</span>') + champPbrPriveActes(item, index, ctxPanier);
 
         let cellPartPatient = row.insertCell(6);
         cellPartPatient.className = 'text-center';
@@ -2317,6 +2348,7 @@ async function finaliserVente() {
         source_tarif: lignesFinales[i].source,
         prix_modifie: !!item.prix_modifie,
         pbr_variante: item.pbr_variante || null,
+        pbr_prive_modifie: item.pbr_prive_modifie || null,
         prix_non_assure: item.prix_non_assure !== undefined ? item.prix_non_assure : (PRIX_NON_ASSURE_PAR_ACTE[item.nom] || null),
         pbr: parseFloat(item.pbr || item.prix),
         quantite: parseInt(item.quantite),

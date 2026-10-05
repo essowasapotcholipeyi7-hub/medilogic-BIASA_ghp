@@ -138,3 +138,29 @@ def test_panier_aide_hospitaliere():
     assert round(p['aide_hospitaliere']) == 5800 and p['net_a_payer'] == 0
     p = repartir_panier(articles, ctx(taux_aide=150, type_aide='pourcentage'))
     assert p['net_a_payer'] == 0  # % plafonné à 100
+
+
+def test_pbr_prive_saisi_a_la_main_sans_pbr_enregistre():
+    """Patron (2026-10-05) : sans PBR enregistré chez la compagnie, le taux privé
+    s'appliquerait au prix clinique ; un PBR privé saisi sur la ligne sert de
+    base à la place. Le PBR AMU ne change pas."""
+    article = {'nom': 'Echo', 'prix': 15000, 'pbr': 5250, 'quantite': 1, 'pbr_prive_modifie': 8000}
+    r = repartir_ligne(article, ctx(amu=True, taux_amu=80, privee=True, taux_privee=80))
+    # AMU 80 % x 5 250 = 4 200 (inchangé) ; privée 80 % x 8 000 = 6 400 ; patient 4 400
+    assert arrondi(r) == (4200, 6400, 4400) and r['base_amu'] == 5250
+    # Privée seule : 80 % x 8 000 au lieu de 80 % x 15 000
+    r = repartir_ligne(article, ctx(privee=True, taux_privee=80))
+    assert arrondi(r) == (0, 6400, 8600)
+    # Vide / 0 / absent = règle normale (taux sur le reste)
+    for vide in (None, '', 0):
+        r = repartir_ligne(dict(article, pbr_prive_modifie=vide), ctx(privee=True, taux_privee=80))
+        assert arrondi(r) == (0, 12000, 3000)
+
+
+def test_pbr_prive_saisi_plafonne_et_quantite():
+    """La part privée reste plafonnée au reste après AMU, et le PBR saisi est
+    unitaire (multiplié par la quantité)."""
+    article = {'nom': 'Echo', 'prix': 10000, 'pbr': 5250, 'quantite': 2, 'pbr_prive_modifie': 9000}
+    r = repartir_ligne(article, ctx(amu=True, taux_amu=80, privee=True, taux_privee=100))
+    # total 20 000 ; AMU 2 x 4 200 = 8 400 ; privée 100 % x 18 000 = 18 000 plafonnée au reste 11 600
+    assert arrondi(r) == (8400, 11600, 0)
