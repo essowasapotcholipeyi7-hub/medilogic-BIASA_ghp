@@ -84,3 +84,31 @@ def test_signature_illisible_ignoree():
     """Une image corrompue ne doit jamais faire échouer l'impression."""
     pdf = remplir_entente_prealable(_ep('amu_cnss'), _patient(), _medecin(), 'FS001', signature=(b'pas une image', 'image/png'))
     assert _images(pdf)[0] == _images(remplir_entente_prealable(_ep('amu_cnss'), _patient(), _medecin(), 'FS001'))[0]
+
+
+def test_recadrage_photo_grande_avec_marges():
+    """Une grande photo où la signature n'occupe qu'un coin est recadrée sur
+    l'encre, le papier devient transparent (patron : "même si la photo est
+    grande, que ça puisse recadrer pour tenir en lieu et place prévu")."""
+    from utils.remplissage_pdf_amu import preparer_image_signature
+    photo = Image.new('RGB', (2400, 1800), (236, 233, 228))  # papier légèrement gris (photo)
+    ImageDraw.Draw(photo).line([(300, 1500), (500, 1300), (700, 1520), (900, 1350)], fill=(25, 25, 90), width=14)
+    buf = io.BytesIO()
+    photo.save(buf, format='JPEG', quality=85)
+    sortie = preparer_image_signature(buf.getvalue())
+    assert sortie
+    img = Image.open(io.BytesIO(sortie))
+    assert img.mode == 'RGBA'
+    # recadrée sur la signature (environ 600 x 220 px après réduction à 1600 px de large)
+    assert img.width < 700 and img.height < 300
+    # papier transparent, encre opaque
+    alpha = img.getchannel('A')
+    assert alpha.getpixel((2, 2)) == 0
+    assert alpha.getextrema()[1] == 255
+
+
+def test_nom_du_medecin_sous_la_signature():
+    """Le nom du prescripteur est écrit sous l'image (texte présent dans la page)."""
+    pdf = remplir_entente_prealable(_ep('amu_cnss'), _patient(), _medecin(), 'FS001', signature=(_png(), 'image/png'))
+    texte = PdfReader(io.BytesIO(pdf)).pages[0].extract_text()
+    assert 'KOFFI' in texte and 'Jean' in texte

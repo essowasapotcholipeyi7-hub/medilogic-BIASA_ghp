@@ -51,30 +51,109 @@ def _overlay(largeur, hauteur, dessiner):
     return PdfReader(buf).pages[0]
 
 
-def _signature(c, hauteur, x0, x1, top0, top1, signature):
+def preparer_image_signature(data):
+    """⭐ Recadre la photo/scan de signature sur l'encre seule et rend le fond
+    blanc transparent (patron, 2026-10-06 : "même si la photo de la
+    signature est grande, que ça puisse recadrer pour tenir en lieu et
+    place prévu"). Une photo A4 où la signature n'occupe qu'un coin donne
+    ainsi une signature pleine case, et les lignes de la fiche restent
+    visibles autour. Retourne des octets PNG, ou None si illisible."""
+    try:
+        from PIL import Image, ImageOps
+        img = Image.open(io.BytesIO(data))
+        img = ImageOps.exif_transpose(img).convert('RGBA')
+        # Photo très grande : réduite d'abord (poids du PDF, vitesse)
+        if max(img.size) > 1600:
+            img.thumbnail((1600, 1600))
+        # Aplatie sur blanc (un PNG déjà transparent garde son rendu)
+        fond = Image.new('RGBA', img.size, (255, 255, 255, 255))
+        fond.alpha_composite(img)
+        gris = ImageOps.grayscale(fond)
+        # Encre = pixels nettement plus sombres que le papier (photo : papier
+        # gris clair, ombres légères) — seuil adaptatif sur le fond réel.
+        histogramme = gris.histogram()
+        total = sum(histogramme)
+        cumul = 0
+        fond_niveau = 255
+        for niveau in range(255, -1, -1):  # niveau du papier = clair majoritaire
+            cumul += histogramme[niveau]
+            if cumul > total * 0.5:
+                fond_niveau = niveau
+                break
+        seuil = max(60, min(200, fond_niveau - 45))
+        encre = gris.point(lambda v, s=seuil: 255 if v < s else 0)
+        boite = encre.getbbox()
+        if not boite:
+            return None
+        marge_x = max(4, (boite[2] - boite[0]) // 25)
+        marge_y = max(4, (boite[3] - boite[1]) // 25)
+        boite = (max(0, boite[0] - marge_x), max(0, boite[1] - marge_y),
+                 min(fond.width, boite[2] + marge_x), min(fond.height, boite[3] + marge_y))
+        fond = fond.crop(boite)
+        gris = gris.crop(boite)
+        # Fond transparent : opacité proportionnelle à la noirceur (traits
+        # fins conservés, papier effacé) — bornes : papier -> 0, encre -> 255
+        bas, haut = seuil, max(seuil - 70, 0)
+        alpha = gris.point(lambda v, b=bas, h=haut: 0 if v >= b else (255 if v <= h else int(255 * (b - v) / (b - h))))
+        fond.putalpha(alpha)
+        sortie = io.BytesIO()
+        fond.save(sortie, format='PNG')
+        return sortie.getvalue()
+    except Exception:
+        return None
+
+
+def _nom_medecin(medecin):
+    """« Dr NOM Prénom » — via get_nom_complet() quand c'est un vrai Medecin,
+    sinon reconstruit depuis titre/nom/prénom (objets de test)."""
+    if medecin is None:
+        return ''
+    fonction = getattr(medecin, 'get_nom_complet', None)
+    if callable(fonction):
+        try:
+            valeur = fonction()
+            if valeur:
+                return str(valeur)
+        except Exception:
+            pass
+    morceaux = [getattr(medecin, 'titre', None) or 'Dr', getattr(medecin, 'nom', None) or '', getattr(medecin, 'prenom', None) or '']
+    return ' '.join(m for m in morceaux if m).strip()
+
+
+def _signature(c, hauteur, x0, x1, top0, top1, signature, nom_medecin=None):
     """⭐ Appose l'image de signature pré-enregistrée du prescripteur (page
     Signatures électroniques, filière 'prescripteur') dans la zone
-    « Signature et cachet » de la fiche — patron, 2026-10-06. `signature` :
-    (bytes, mime) ou bytes, ou None (rien n'est dessiné). Proportions
-    conservées, image centrée dans la boîte [x0, x1] x [top0, top1] (tops
-    mesurés depuis le haut de la page, comme _texte). Jamais bloquant : une
-    image illisible est ignorée plutôt que de faire échouer l'impression."""
+    « Signature et cachet » de la fiche — patron, 2026-10-06 — avec le NOM
+    du médecin écrit dessous. `signature` : (bytes, mime) ou bytes, ou None
+    (rien n'est dessiné). L'image est d'abord recadrée sur l'encre
+    (preparer_image_signature), puis mise à l'échelle, proportions
+    conservées, centrée dans la boîte [x0, x1] x [top0, top1] (tops mesurés
+    depuis le haut de la page, comme _texte). Jamais bloquant : une image
+    illisible est ignorée plutôt que de faire échouer l'impression."""
     if not signature:
         return
     data = signature[0] if isinstance(signature, (tuple, list)) else signature
+    prepare = preparer_image_signature(data)
     try:
-        image = ImageReader(io.BytesIO(data))
+        image = ImageReader(io.BytesIO(prepare or data))
         largeur_img, hauteur_img = image.getSize()
     except Exception:
         return
     if not largeur_img or not hauteur_img:
         return
     boite_l, boite_h = x1 - x0, top1 - top0
-    ratio = min(boite_l / largeur_img, boite_h / hauteur_img)
+    taille_nom = 8
+    hauteur_nom = taille_nom + 3 if nom_medecin else 0
+    zone_h = boite_h - hauteur_nom
+    ratio = min(boite_l / largeur_img, zone_h / hauteur_img)
     l, h_img = largeur_img * ratio, hauteur_img * ratio
     x = x0 + (boite_l - l) / 2
-    y = hauteur - top1 + (boite_h - h_img) / 2
+    y = hauteur - top0 - zone_h + (zone_h - h_img) / 2
     c.drawImage(image, x, y, width=l, height=h_img, mask='auto')
+    if nom_medecin:
+        c.setFont(FONT, taille_nom)
+        c.drawCentredString((x0 + x1) / 2, hauteur - top1 + 2, nom_medecin)
+        c.setFont(FONT, FONT_SIZE)
 
 
 def _ajuster_pour_largeur(valeur, largeur_max, taille_base):
@@ -283,7 +362,7 @@ def remplir_ep_cnss(demande, patient, medecin, code_formation_sanitaire, signatu
                 _texte(c, h, 212, 717, demande.hospit_categorie_autre_precision or '', taille=9, largeur_max=80)
 
         # Signature du prescripteur : sous « Signature cachet prescripteur » (bas droit)
-        _signature(c, h, 350, 560, 771, 838, signature)
+        _signature(c, h, 350, 560, 771, 838, signature, _nom_medecin(medecin))
 
     page1.merge_page(_overlay(largeur, hauteur, dessiner))
 
@@ -349,7 +428,7 @@ def remplir_ep_inam(demande, patient, medecin, code_formation_sanitaire, signatu
                 _texte_precision_inam(c, h, demande.hospit_categorie_autre_precision or '')
 
         # Signature du prescripteur : sous « Signature et cachet du prescripteur » (bas droit)
-        _signature(c, h, 372, 565, 772, 838, signature)
+        _signature(c, h, 372, 565, 772, 838, signature, _nom_medecin(medecin))
 
     page1.merge_page(_overlay(largeur, hauteur, dessiner))
 

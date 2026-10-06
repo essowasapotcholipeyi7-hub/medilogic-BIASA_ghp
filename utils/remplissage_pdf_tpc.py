@@ -23,7 +23,7 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 
 from utils.remplissage_pdf_amu import (
     FONT,
-    _overlay, _ajuster_pour_largeur, _texte, _texte_centree, _texte_cases, _coche, _signature,
+    _overlay, _ajuster_pour_largeur, _texte, _texte_centree, _texte_cases, _coche, _signature, _nom_medecin,
 )
 
 # ⭐ Tailles propres au TPC (patron, 2026-10-02 : "augmente un peu la
@@ -187,7 +187,7 @@ def remplir_tpc_cnss_identification(demande, patient, medecin, code_formation_sa
         _texte_cases(c, h, 615.3, CASES_IDENTIFICATION['code_prescripteur'], medecin.code_prescripteur or '', taille=FONT_SIZE_TPC_IDENTITE)
         _texte(c, h, 101.8, 652.2, medecin.telephone or '', largeur_max=155)
         # Signature du prescripteur : sous « Signature et cachet » (droite)
-        _signature(c, h, 400, 560, 662, 735, signature)
+        _signature(c, h, 400, 560, 662, 735, signature, _nom_medecin(medecin))
 
     for i, dessiner in enumerate([dessiner_page1, dessiner_page2, dessiner_page3]):
         pages[i].merge_page(_overlay(largeur, hauteur, dessiner))
@@ -233,7 +233,7 @@ def remplir_tpc_cnss_renouvellement(demande, patient, medecin, code_formation_sa
         _texte_centree(c, h, 211.1, 241.8, 593.4, d.strftime('%m'), taille=FONT_SIZE_TPC_TABLE)
         _texte_centree(c, h, 259.3, 276.3, 593.4, str(d.year)[-2:], taille=FONT_SIZE_TPC_TABLE)
         # Signature du prescripteur : sous « Signature et Cachet » (bas droit)
-        _signature(c, h, 400, 560, 626, 700, signature)
+        _signature(c, h, 400, 560, 626, 700, signature, _nom_medecin(medecin))
 
     page1.merge_page(_overlay(largeur, hauteur, dessiner))
     writer = PdfWriter()
@@ -275,7 +275,7 @@ def remplir_tpc_cnss_modification(demande, patient, medecin, code_formation_sani
         _texte_centree(c, h, 471.5, 502.0, 700.9, d.strftime('%m'), taille=FONT_SIZE_TPC_TABLE)
         _texte_centree(c, h, 519.4, 536.3, 700.9, str(d.year)[-2:], taille=FONT_SIZE_TPC_TABLE)
         # Signature du prescripteur : sous « Signature et Cachet » (bas droit)
-        _signature(c, h, 400, 560, 731, 769, signature)  # au-dessus du NB en bas de page
+        _signature(c, h, 400, 560, 731, 769, signature, _nom_medecin(medecin))  # au-dessus du NB en bas de page
 
     page1.merge_page(_overlay(largeur, hauteur, dessiner))
     writer = PdfWriter()
@@ -316,7 +316,7 @@ def remplir_tpc_inam_rectification(demande, patient, medecin, code_formation_san
         _texte_centree(c, h, 426.8, 484.6, 765.4, d.strftime('%m'), taille=FONT_SIZE_TPC_BOITE)
         _texte_centree(c, h, 489.3, 533.8, 765.4, str(d.year), taille=FONT_SIZE_TPC_BOITE)
         # Signature du prescripteur : sous « Signature et cachet » (bas GAUCHE sur cette fiche)
-        _signature(c, h, 45, 235, 700, 780, signature)
+        _signature(c, h, 45, 235, 700, 780, signature, _nom_medecin(medecin))
 
     page1.merge_page(_overlay(largeur, hauteur, dessiner))
     writer = PdfWriter()
