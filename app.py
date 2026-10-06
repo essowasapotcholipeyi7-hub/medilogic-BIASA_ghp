@@ -1313,8 +1313,11 @@ def api_amu_whatsapp_depot():
     """⭐ Patron (2026-10-06) : "par prudence on peut prévoir des numéros
     WhatsApp au cas où on changeait, toujours dans les pages TPC / EP" —
     même valeur que le Paramétrage AMU, modifiable ici par un médecin/admin."""
-    if not (session.get('role') in ('medecin', 'admin') or session.get('is_admin')):
-        return jsonify({'success': False, 'error': 'Réservé au médecin ou à l\'administrateur'}), 403
+    # ⭐ Patron (2026-10-06) : les secrétaires et caissières doivent pouvoir
+    # renseigner ou modifier ce numéro — ouvert à quiconque accède aux pages
+    # EP / TPC (c'est là que le numéro sert).
+    if not (a_acces('entente_prealable') or a_acces('tpc') or session.get('role') in ('medecin', 'admin') or session.get('is_admin')):
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
     data = request.json or {}
     assureur = data.get('assureur')
     numero = ''.join(ch for ch in str(data.get('numero') or '') if ch.isdigit() or ch == '+')[:20]
