@@ -12,7 +12,8 @@
     <i class="fas fa-info-circle me-1"></i>
     <strong>Comment faire :</strong> signez sur une feuille blanche, prenez-la en photo bien cadrée (fond clair, pas
     d'ombre) ou scannez-la, puis importez cette image ici. Elle s'appliquera ensuite automatiquement sur vos
-    résultats — plus besoin d'imprimer, signer à la main puis scanner à chaque fois.
+    résultats, et pour les prescripteurs sur les demandes d'Entente Préalable et les fiches TPC — plus besoin
+    d'imprimer, signer à la main puis scanner à chaque fois.
 </div>
 
 <div class="row g-3">
@@ -38,6 +39,19 @@
             <div class="card-body p-0"><div id="listeSignaturesExamen"><div class="text-center text-muted py-4">Chargement...</div></div></div>
         </div>
     </div>
+    <!-- ⭐ Prescripteurs (patron, 2026-10-06) : signature d'un médecin de la
+         structure, apposée sur ses EP et TPC dès qu'ils sont imprimés. -->
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-user-md me-1"></i> Prescripteurs — Entente Préalable et TPC (AMU)</span>
+                <button class="btn btn-sm btn-light" onclick="ouvrirModalSignature('prescripteur')">
+                    <i class="fas fa-plus me-1"></i> Ajouter
+                </button>
+            </div>
+            <div class="card-body p-0"><div id="listeSignaturesPrescripteur"><div class="text-center text-muted py-4">Chargement...</div></div></div>
+        </div>
+    </div>
 </div>
 
 <div class="modal fade" id="modalSignature" tabindex="-1">
@@ -49,7 +63,17 @@
             </div>
             <div class="modal-body">
                 <input type="hidden" id="signatureFiliere">
-                <div class="mb-2">
+                <div class="mb-2" id="blocMedecinSignature" style="display:none;">
+                    <label class="form-label mb-1">Médecin prescripteur <span class="text-danger">*</span></label>
+                    <select class="form-select" id="signatureMedecin">
+                        <option value="">-- Sélectionner --</option>
+                        {% for m in medecins_liste %}
+                        <option value="{{ m.id }}">{{ m.nom_complet }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text">Sa signature s'apposera sur chaque EP / TPC dont il est le prescripteur.</div>
+                </div>
+                <div class="mb-2" id="blocNomSignature">
                     <label class="form-label mb-1">Nom <span class="text-danger">*</span></label>
                     <input type="text" class="form-control" id="signatureNom" placeholder="Ex. Dr Koffi Mensah">
                 </div>
@@ -88,9 +112,11 @@ function ouvrirModalSignature(filiere) {
     document.getElementById('signatureFichier').value = '';
     document.getElementById('apercuSignatureZone').style.display = 'none';
     document.getElementById('blocTitreSignature').style.display = filiere === 'analyse' ? '' : 'none';
-    document.querySelector('.modal-title').innerHTML = filiere === 'analyse'
-        ? '<i class="fas fa-signature me-2"></i>Nouvelle signature — Laboratoire'
-        : '<i class="fas fa-signature me-2"></i>Nouvelle signature — Radiologie';
+    document.getElementById('blocMedecinSignature').style.display = filiere === 'prescripteur' ? '' : 'none';
+    document.getElementById('blocNomSignature').style.display = filiere === 'prescripteur' ? 'none' : '';
+    document.getElementById('signatureMedecin').value = '';
+    const titres = {analyse: 'Laboratoire', examen: 'Radiologie', prescripteur: 'Prescripteur (EP / TPC)'};
+    document.querySelector('.modal-title').innerHTML = '<i class="fas fa-signature me-2"></i>Nouvelle signature — ' + (titres[filiere] || '');
     new bootstrap.Modal(document.getElementById('modalSignature')).show();
 }
 
@@ -111,7 +137,9 @@ async function enregistrerSignature() {
     const nom = document.getElementById('signatureNom').value.trim();
     const titre = document.getElementById('signatureTitre').value;
     const fichier = document.getElementById('signatureFichier').files[0];
-    if (!nom) { await afficherMessage('Le nom est obligatoire.'); return; }
+    const medecinId = document.getElementById('signatureMedecin').value;
+    if (filiere === 'prescripteur' && !medecinId) { await afficherMessage('Choisissez le médecin prescripteur.'); return; }
+    if (filiere !== 'prescripteur' && !nom) { await afficherMessage('Le nom est obligatoire.'); return; }
     if (filiere === 'analyse' && !titre) { await afficherMessage('Le titre est obligatoire pour le laboratoire.'); return; }
     if (!fichier) { await afficherMessage("Choisissez l'image de la signature."); return; }
 
@@ -119,6 +147,7 @@ async function enregistrerSignature() {
     fd.append('filiere', filiere);
     fd.append('nom', nom);
     fd.append('titre', titre);
+    fd.append('medecin_id', medecinId);
     fd.append('fichier', fichier);
 
     fetch('/api/signatures-intervenants', { method: 'POST', body: fd })
@@ -171,6 +200,7 @@ function chargerSignatures() {
             : '<div class="text-center text-muted py-4">Aucune signature enregistrée.</div>';
         document.getElementById('listeSignaturesAnalyse').innerHTML = rendre(lignes.filter(l => l.filiere === 'analyse'));
         document.getElementById('listeSignaturesExamen').innerHTML = rendre(lignes.filter(l => l.filiere === 'examen'));
+        document.getElementById('listeSignaturesPrescripteur').innerHTML = rendre(lignes.filter(l => l.filiere === 'prescripteur'));
     });
 }
 

@@ -23,6 +23,7 @@ from datetime import date
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import black
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
 AMU_CNSS_PDF = 'static/documents/amu_cnss/demande_entente_prealable.pdf'
@@ -48,6 +49,32 @@ def _overlay(largeur, hauteur, dessiner):
     c.save()
     buf.seek(0)
     return PdfReader(buf).pages[0]
+
+
+def _signature(c, hauteur, x0, x1, top0, top1, signature):
+    """⭐ Appose l'image de signature pré-enregistrée du prescripteur (page
+    Signatures électroniques, filière 'prescripteur') dans la zone
+    « Signature et cachet » de la fiche — patron, 2026-10-06. `signature` :
+    (bytes, mime) ou bytes, ou None (rien n'est dessiné). Proportions
+    conservées, image centrée dans la boîte [x0, x1] x [top0, top1] (tops
+    mesurés depuis le haut de la page, comme _texte). Jamais bloquant : une
+    image illisible est ignorée plutôt que de faire échouer l'impression."""
+    if not signature:
+        return
+    data = signature[0] if isinstance(signature, (tuple, list)) else signature
+    try:
+        image = ImageReader(io.BytesIO(data))
+        largeur_img, hauteur_img = image.getSize()
+    except Exception:
+        return
+    if not largeur_img or not hauteur_img:
+        return
+    boite_l, boite_h = x1 - x0, top1 - top0
+    ratio = min(boite_l / largeur_img, boite_h / hauteur_img)
+    l, h_img = largeur_img * ratio, hauteur_img * ratio
+    x = x0 + (boite_l - l) / 2
+    y = hauteur - top1 + (boite_h - h_img) / 2
+    c.drawImage(image, x, y, width=l, height=h_img, mask='auto')
 
 
 def _ajuster_pour_largeur(valeur, largeur_max, taille_base):
@@ -197,7 +224,7 @@ CNSS_ZONE_MOIS = (409, 439)
 CNSS_ZONE_ANNEE = (457, 473)
 
 
-def remplir_ep_cnss(demande, patient, medecin, code_formation_sanitaire):
+def remplir_ep_cnss(demande, patient, medecin, code_formation_sanitaire, signature=None):
     """demande: DemandeEntentePrealable ; patient: Patient ; medecin: Medecin.
     Retourne les bytes du PDF (2 pages, page 2 = encart contact imprimé
     tel quel, jamais modifié)."""
@@ -255,6 +282,9 @@ def remplir_ep_cnss(demande, patient, medecin, code_formation_sanitaire):
                 # à la ligne possible.
                 _texte(c, h, 212, 717, demande.hospit_categorie_autre_precision or '', taille=9, largeur_max=80)
 
+        # Signature du prescripteur : sous « Signature cachet prescripteur » (bas droit)
+        _signature(c, h, 350, 560, 771, 838, signature)
+
     page1.merge_page(_overlay(largeur, hauteur, dessiner))
 
     writer = PdfWriter()
@@ -265,7 +295,7 @@ def remplir_ep_cnss(demande, patient, medecin, code_formation_sanitaire):
     return out.getvalue()
 
 
-def remplir_ep_inam(demande, patient, medecin, code_formation_sanitaire):
+def remplir_ep_inam(demande, patient, medecin, code_formation_sanitaire, signature=None):
     """Même principe que remplir_ep_cnss, pour le gabarit INAM (1 page,
     libellés et pointillés sur deux lignes distinctes — voir calibrage)."""
     reader = PdfReader(AMU_INAM_PDF)
@@ -318,6 +348,9 @@ def remplir_ep_inam(demande, patient, medecin, code_formation_sanitaire):
                 _coche(c, h, 396.2, 409.2, 679.7, 689.5)  # case "Non"
                 _texte_precision_inam(c, h, demande.hospit_categorie_autre_precision or '')
 
+        # Signature du prescripteur : sous « Signature et cachet du prescripteur » (bas droit)
+        _signature(c, h, 372, 565, 772, 838, signature)
+
     page1.merge_page(_overlay(largeur, hauteur, dessiner))
 
     writer = PdfWriter()
@@ -327,10 +360,10 @@ def remplir_ep_inam(demande, patient, medecin, code_formation_sanitaire):
     return out.getvalue()
 
 
-def remplir_entente_prealable(demande, patient, medecin, code_formation_sanitaire):
+def remplir_entente_prealable(demande, patient, medecin, code_formation_sanitaire, signature=None):
     """Point d'entrée unique — choisit le bon gabarit selon type_amu.
     'amu_cnss' et 'amu_tns' partagent le gabarit CNSS (même administration,
     confirmé par le patron)."""
     if demande.type_amu == 'amu_inam':
-        return remplir_ep_inam(demande, patient, medecin, code_formation_sanitaire)
-    return remplir_ep_cnss(demande, patient, medecin, code_formation_sanitaire)
+        return remplir_ep_inam(demande, patient, medecin, code_formation_sanitaire, signature=signature)
+    return remplir_ep_cnss(demande, patient, medecin, code_formation_sanitaire, signature=signature)

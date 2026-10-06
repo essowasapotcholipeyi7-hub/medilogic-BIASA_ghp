@@ -1001,6 +1001,8 @@ def page_amu_entente_prealable():
         type_amu_labels=TYPE_AMU_LABELS,
         categories_salle_amu=CATEGORIES_SALLE_AMU,
         peut_approuver=peut_approuver,
+        whatsapp_depot=_numeros_whatsapp_depot(structure_id),
+        structure_nom=session.get('structure_nom') or '',
         patient_prerempli=patient_prerempli,
         hospit_prerempli=request.args.get('hospit') == '1',
         hospitalisation_id_prerempli=hospitalisation_id_param,
@@ -1256,6 +1258,47 @@ def api_amu_ep_refuser(demande_id):
     return jsonify({'success': True})
 
 
+def signature_prescripteur_pour(structure_id, medecin_id):
+    """⭐ Image de signature pré-enregistrée du médecin prescripteur (page
+    Signatures électroniques, filière 'prescripteur') — apposée sur l'EP /
+    le TPC à l'impression (patron, 2026-10-06). None si le médecin n'en a
+    pas : la fiche s'imprime alors comme avant, à signer à la main."""
+    if not medecin_id:
+        return None
+    s = SignatureIntervenant.query.filter_by(
+        structure_id=structure_id, filiere='prescripteur', medecin_id=medecin_id, actif=True,
+    ).order_by(SignatureIntervenant.created_at.desc()).first()
+    return (s.signature_data, s.signature_mime) if s else None
+
+
+def _numeros_whatsapp_depot(structure_id):
+    """Numéros WhatsApp de dépôt des EP/TPC par assureur (Paramétrage AMU,
+    modifiables aussi depuis les pages EP/TPC) — 'amu_tns' suit la CNSS."""
+    cnss = ParametrageAmuCnss.get_ou_creer(structure_id).whatsapp_depot or ''
+    inam = ParametrageAmuInam.get_ou_creer(structure_id).whatsapp_depot or ''
+    return {'amu_cnss': cnss, 'amu_tns': cnss, 'amu_inam': inam}
+
+
+@app.route('/api/amu/whatsapp-depot', methods=['POST'])
+@login_required
+def api_amu_whatsapp_depot():
+    """⭐ Patron (2026-10-06) : "par prudence on peut prévoir des numéros
+    WhatsApp au cas où on changeait, toujours dans les pages TPC / EP" —
+    même valeur que le Paramétrage AMU, modifiable ici par un médecin/admin."""
+    if not (session.get('role') in ('medecin', 'admin') or session.get('is_admin')):
+        return jsonify({'success': False, 'error': 'Réservé au médecin ou à l\'administrateur'}), 403
+    data = request.json or {}
+    assureur = data.get('assureur')
+    numero = ''.join(ch for ch in str(data.get('numero') or '') if ch.isdigit() or ch == '+')[:20]
+    if assureur not in ('cnss', 'inam'):
+        return jsonify({'success': False, 'error': 'Assureur inconnu'}), 400
+    structure_id = session.get('structure_id')
+    param = ParametrageAmuCnss.get_ou_creer(structure_id) if assureur == 'cnss' else ParametrageAmuInam.get_ou_creer(structure_id)
+    param.whatsapp_depot = numero or None
+    db.session.commit()
+    return jsonify({'success': True, 'numeros': _numeros_whatsapp_depot(structure_id)})
+
+
 @app.route('/amu/entente-prealable/<int:demande_id>/imprimer')
 @login_required
 def page_amu_ep_imprimer(demande_id):
@@ -1278,7 +1321,8 @@ def page_amu_ep_imprimer(demande_id):
     medecin = Medecin.query.filter_by(id=demande.medecin_id, structure_id=structure_id).first()
     code_formation_sanitaire = ParametrageAmuCnss.get_ou_creer(structure_id).code_prestataire
 
-    pdf_bytes = remplir_entente_prealable(demande, patient, medecin, code_formation_sanitaire)
+    pdf_bytes = remplir_entente_prealable(demande, patient, medecin, code_formation_sanitaire,
+                                          signature=signature_prescripteur_pour(structure_id, demande.medecin_id))
     demande.imprime_le = datetime.utcnow()
     db.session.commit()
     return Response(pdf_bytes, mimetype='application/pdf', headers={
@@ -1413,6 +1457,8 @@ def page_amu_tpc():
         demandes_detail=demandes_detail,
         type_amu_labels=TYPE_AMU_LABELS,
         peut_approuver=peut_approuver,
+        whatsapp_depot=_numeros_whatsapp_depot(structure_id),
+        structure_nom=session.get('structure_nom') or '',
         medicaments_memorises=MedicamentTpcMemorise.connues_pour(structure_id),
         lieux_residence_memorises=LieuResidenceMemorise.connues_pour(structure_id),
         codes_ald=CODES_ALD,
@@ -1767,7 +1813,8 @@ def page_amu_tpc_imprimer(demande_id):
     code_formation_sanitaire = ParametrageAmuCnss.get_ou_creer(structure_id).code_prestataire
 
     try:
-        pdf_bytes = remplir_tpc(demande, patient, medecin, code_formation_sanitaire)
+        pdf_bytes = remplir_tpc(demande, patient, medecin, code_formation_sanitaire,
+                                signature=signature_prescripteur_pour(structure_id, demande.medecin_id))
     except NotImplementedError as e:
         flash(str(e), 'warning')
         return redirect(url_for('page_amu_tpc'))
@@ -13147,10 +13194,23 @@ def api_supprimer_modele_resultat(modele_id):
 @app.route('/signatures-intervenants')
 @login_required
 def page_signatures_intervenants():
-    if session.get('role') not in ('laborantin', 'radiologue', 'secretaire') and not a_acces('demandes_laboratoire') and not a_acces('demandes_radiologie'):
+    # ⭐ Ouverte aussi aux médecins / admins et aux comptes EP-TPC (filière
+    # 'prescripteur' : signature apposée sur les EP et TPC, patron 2026-10-06).
+    autorise = (
+        session.get('role') in ('laborantin', 'radiologue', 'secretaire', 'medecin', 'admin')
+        or session.get('is_admin')
+        or a_acces('demandes_laboratoire') or a_acces('demandes_radiologie')
+        or a_acces('entente_prealable') or a_acces('tpc')
+    )
+    if not autorise:
         flash('Accès non autorisé pour votre rôle.', 'danger')
         return redirect(url_for('dashboard'))
-    return render_template('signatures_intervenants.html', titres_laboratoire=TITRES_LABORATOIRE)
+    medecins_liste = [
+        {'id': m.id, 'nom_complet': m.get_nom_complet()}
+        for m in Medecin.query.filter_by(structure_id=session.get('structure_id'), actif=True).order_by(Medecin.nom).all()
+    ]
+    return render_template('signatures_intervenants.html', titres_laboratoire=TITRES_LABORATOIRE,
+                           medecins_liste=medecins_liste)
 
 
 @app.route('/api/signatures-intervenants', methods=['GET'])
@@ -13165,7 +13225,7 @@ def api_lister_signatures_intervenants():
         q = q.filter_by(actif=True)
     lignes = q.order_by(SignatureIntervenant.filiere, SignatureIntervenant.nom).all()
     return jsonify([{
-        'id': l.id, 'filiere': l.filiere, 'nom': l.nom, 'titre': l.titre,
+        'id': l.id, 'filiere': l.filiere, 'nom': l.nom, 'titre': l.titre, 'medecin_id': l.medecin_id,
         'actif': l.actif, 'created_at': l.created_at.strftime('%d/%m/%Y') if l.created_at else '',
     } for l in lignes])
 
@@ -13180,8 +13240,21 @@ def api_creer_signature_intervenant():
         titre = (request.form.get('titre') or '').strip()
         fichier = request.files.get('fichier')
 
-        if filiere not in ('analyse', 'examen'):
-            return jsonify({'success': False, 'error': "filiere doit être 'analyse' ou 'examen'"}), 400
+        if filiere not in ('analyse', 'examen', 'prescripteur'):
+            return jsonify({'success': False, 'error': "filiere doit être 'analyse', 'examen' ou 'prescripteur'"}), 400
+        # ⭐ Prescripteur (EP / TPC) : la signature est celle d'un médecin de la
+        # structure — nom et titre repris de sa fiche, rattachement par id.
+        medecin_id = None
+        if filiere == 'prescripteur':
+            try:
+                medecin_id = int(request.form.get('medecin_id') or 0)
+            except ValueError:
+                medecin_id = 0
+            medecin = Medecin.query.filter_by(id=medecin_id, structure_id=structure_id).first() if medecin_id else None
+            if not medecin:
+                return jsonify({'success': False, 'error': 'Choisissez le médecin prescripteur'}), 400
+            nom = nom or medecin.get_nom_complet()
+            titre = (medecin.specialite or '')[:100]
         if not nom:
             return jsonify({'success': False, 'error': 'Le nom est obligatoire'}), 400
         if filiere == 'analyse' and titre not in TITRES_LABORATOIRE:
@@ -13190,8 +13263,8 @@ def api_creer_signature_intervenant():
             return jsonify({'success': False, 'error': 'Image de signature requise'}), 400
 
         signature = SignatureIntervenant(
-            structure_id=structure_id, filiere=filiere, nom=nom,
-            titre=titre if filiere == 'analyse' else None,
+            structure_id=structure_id, filiere=filiere, nom=nom, medecin_id=medecin_id,
+            titre=titre if filiere in ('analyse', 'prescripteur') else None,
             signature_data=fichier.read(), signature_mime=fichier.mimetype,
             created_by=session.get('user_name', 'System'),
         )

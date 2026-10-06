@@ -261,6 +261,21 @@
     </div>
     {% endif %}
 
+    <!-- ⭐ Patron (2026-10-06) : dès qu'on valide, envoyer la demande via
+         WhatsApp au numéro de dépôt de l'assureur (CNSS 71383919 ; INAM à
+         communiquer) ; numéros modifiables ici même "au cas où on changeait". -->
+    <div class="card mb-3 border-success">
+        <div class="card-body py-2 d-flex flex-wrap align-items-center gap-3">
+            <strong><i class="fab fa-whatsapp text-success me-1"></i>Dépôt par WhatsApp</strong>
+            <span>AMU-CNSS / TNS : <strong id="numeroWhatsAppCnss">{{ whatsapp_depot.amu_cnss or 'non renseigné' }}</strong>
+                {% if peut_approuver %}<button type="button" class="btn btn-sm btn-link p-0 ms-1" onclick="modifierNumeroWhatsApp('cnss')">modifier</button>{% endif %}</span>
+            <span>AMU-INAM : <strong id="numeroWhatsAppInam">{{ whatsapp_depot.amu_inam or 'non renseigné' }}</strong>
+                {% if peut_approuver %}<button type="button" class="btn btn-sm btn-link p-0 ms-1" onclick="modifierNumeroWhatsApp('inam')">modifier</button>{% endif %}</span>
+            <span class="small text-muted">Après approbation, le bouton <i class="fab fa-whatsapp"></i> de chaque demande ouvre la fiche signée puis la conversation WhatsApp avec le message prêt : il reste à y joindre le PDF.</span>
+            <a class="small" href="{{ url_for('page_signatures_intervenants') }}" target="_blank"><i class="fas fa-signature me-1"></i>Signatures des prescripteurs</a>
+        </div>
+    </div>
+
     <div class="ep-card">
         <h6><i class="fas fa-history me-1"></i>Historique</h6>
         <div class="ep-historique-toolbar">
@@ -311,6 +326,10 @@
                             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('page_amu_ep_imprimer', demande_id=d.id) }}" target="_blank">
                                 <i class="fas fa-print"></i> Imprimer
                             </a>
+                            <button type="button" class="btn btn-sm btn-success" title="Envoyer la fiche signée par WhatsApp à l'assureur"
+                                    onclick="envoyerWhatsApp({{ d.id }}, {{ d.type_amu|tojson }}, {{ ((p.nom ~ ' ' ~ (p.prenom or '')).strip() if p else ('Patient #' ~ d.patient_id))|tojson }})">
+                                <i class="fab fa-whatsapp"></i> WhatsApp
+                            </button>
                             {% if d.hospitalisation_id %}
                             <a class="btn btn-sm btn-outline-dark" href="{{ url_for('hospitalisation_billet', hospit_id=d.hospitalisation_id) }}" target="_blank">
                                 <i class="fas fa-receipt"></i> Billet
@@ -833,6 +852,42 @@ async function refuserDemande(id) {
     }).then(r => r.json()).then(async data => { if (data.success) location.reload(); else await afficherMessage(data.error || 'Erreur'); });
 }
 {% endif %}
+
+// ===================== ENVOI WHATSAPP (patron, 2026-10-06) =====================
+// wa.me n'accepte pas de pièce jointe : on ouvre la fiche signée (PDF) ET la
+// conversation avec le message prêt ; l'utilisateur joint le PDF dans WhatsApp.
+const WHATSAPP_DEPOT = {{ whatsapp_depot|tojson }};
+const STRUCTURE_NOM = {{ structure_nom|tojson }};
+function numeroWhatsAppInternational(n) {
+    let chiffres = (n || '').replace(/\D/g, '');
+    if (chiffres.length === 8) chiffres = '228' + chiffres;   // numéro togolais sans indicatif
+    return chiffres;
+}
+async function envoyerWhatsApp(id, typeAmu, patientNom) {
+    const assureur = typeAmu === 'amu_inam' ? 'INAM' : 'CNSS';
+    const brut = WHATSAPP_DEPOT[typeAmu] || '';
+    const numero = numeroWhatsAppInternational(brut);
+    if (!numero) {
+        await afficherMessage(`Le numéro WhatsApp de dépôt AMU-${assureur} n'est pas renseigné. Indiquez-le dans l'encadré « Dépôt par WhatsApp » de cette page.`, {type: 'warning'});
+        return;
+    }
+    const message = `Bonjour, veuillez trouver ci-joint la demande d'Entente Préalable AMU-${assureur} de ${patientNom} (${STRUCTURE_NOM}). Merci.`;
+    window.open(`/amu/entente-prealable/${id}/imprimer`, '_blank');
+    const ok = await demanderConfirmation(
+        `La fiche signée s'ouvre dans un nouvel onglet : enregistrez le PDF, puis joignez-le dans la conversation WhatsApp AMU-${assureur} (${brut}) qui va s'ouvrir avec le message prêt.`,
+        {titre: 'Envoi par WhatsApp', texteOk: 'Ouvrir WhatsApp', texteAnnuler: 'Plus tard'}
+    );
+    if (ok) window.open(`https://wa.me/${numero}?text=${encodeURIComponent(message)}`, '_blank');
+}
+async function modifierNumeroWhatsApp(assureur) {
+    const actuel = assureur === 'inam' ? WHATSAPP_DEPOT.amu_inam : WHATSAPP_DEPOT.amu_cnss;
+    const saisi = await demanderSaisie(`Numéro WhatsApp de dépôt AMU-${assureur.toUpperCase()} (ex. 71383919) :`, actuel || '');
+    if (saisi === null) return;
+    const r = await fetch('/api/amu/whatsapp-depot', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                                      body: JSON.stringify({assureur: assureur, numero: saisi.trim()})});
+    const d = await r.json();
+    if (d.success) location.reload(); else await afficherMessage(d.error || 'Erreur', {type: 'danger'});
+}
 
 rendreLignes('acte');
 rendreLignes('produit');

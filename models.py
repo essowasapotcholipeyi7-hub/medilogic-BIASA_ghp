@@ -3527,9 +3527,14 @@ class SignatureIntervenant(db.Model):
     __tablename__ = 'signatures_intervenants'
     id = db.Column(db.Integer, primary_key=True)
     structure_id = db.Column(db.Integer, nullable=False)
-    filiere = db.Column(db.String(20), nullable=False)  # 'analyse' | 'examen'
+    filiere = db.Column(db.String(20), nullable=False)  # 'analyse' | 'examen' | 'prescripteur'
     nom = db.Column(db.String(200), nullable=False)
     titre = db.Column(db.String(100))  # un des 4 titres labo ; vide/« Radiologue » pour la radio
+    # ⭐ filière 'prescripteur' (patron, 2026-10-06 : "les signatures des
+    # prescripteurs s'apposent sur les demandes d'EP et tous les TPC") :
+    # signature rattachée à un médecin de la structure (Medecin.id) — relue
+    # à l'impression de l'EP / du TPC dont il est le prescripteur.
+    medecin_id = db.Column(db.Integer)
     signature_data = db.Column(db.LargeBinary, nullable=False)
     signature_mime = db.Column(db.String(100))
     actif = db.Column(db.Boolean, default=True)
