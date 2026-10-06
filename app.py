@@ -13245,16 +13245,48 @@ def api_creer_signature_intervenant():
         # ⭐ Prescripteur (EP / TPC) : la signature est celle d'un médecin de la
         # structure — nom et titre repris de sa fiche, rattachement par id.
         medecin_id = None
-        if filiere == 'prescripteur':
-            try:
-                medecin_id = int(request.form.get('medecin_id') or 0)
-            except ValueError:
-                medecin_id = 0
-            medecin = Medecin.query.filter_by(id=medecin_id, structure_id=structure_id).first() if medecin_id else None
+        medecin_cree = None
+        # ⭐ Patron (2026-10-06) : pour TOUTES les filières (labo, radio,
+        # prescripteurs), la personne est CHOISIE dans la table médecins — plus
+        # de nom tapé à la main — ou enregistrée sur place si elle n'y est pas.
+        if filiere in ('analyse', 'examen', 'prescripteur'):
+            brut_id = (request.form.get('medecin_id') or '').strip()
+            if brut_id == 'nouveau':
+                # ⭐ Patron (2026-10-06) : "si le médecin n'existe pas on l'enregistre
+                # selon la logique existante et joint sa signature" — mêmes champs
+                # et mêmes règles que la fiche médecin (nom + spécialité
+                # obligatoires, pas de doublon nom/prénom dans la structure) ;
+                # un homonyme déjà enregistré est simplement réutilisé.
+                n_nom = (request.form.get('nouveau_nom') or '').strip()
+                n_prenom = (request.form.get('nouveau_prenom') or '').strip()
+                n_specialite = (request.form.get('nouveau_specialite') or '').strip()
+                if not n_nom or not n_specialite:
+                    return jsonify({'success': False, 'error': 'Nom et spécialité du nouveau médecin sont obligatoires'}), 400
+                medecin = Medecin.query.filter_by(structure_id=structure_id, nom=n_nom, prenom=n_prenom).first()
+                if not medecin:
+                    medecin = Medecin(
+                        structure_id=structure_id, nom=n_nom, prenom=n_prenom,
+                        titre=(request.form.get('nouveau_titre') or 'Dr').strip()[:20] or 'Dr',
+                        specialite=n_specialite[:100],
+                        code_prescripteur=(request.form.get('nouveau_code_prescripteur') or '').strip()[:50] or None,
+                        telephone=(request.form.get('nouveau_telephone') or '').strip()[:20] or None,
+                        actif=True,
+                    )
+                    db.session.add(medecin)
+                    db.session.flush()
+                    medecin_cree = True
+                medecin_id = medecin.id
+            else:
+                try:
+                    medecin_id = int(brut_id or 0)
+                except ValueError:
+                    medecin_id = 0
+                medecin = Medecin.query.filter_by(id=medecin_id, structure_id=structure_id).first() if medecin_id else None
             if not medecin:
-                return jsonify({'success': False, 'error': 'Choisissez le médecin prescripteur'}), 400
-            nom = nom or medecin.get_nom_complet()
-            titre = (medecin.specialite or '')[:100]
+                return jsonify({'success': False, 'error': 'Choisissez la personne dans la liste des médecins'}), 400
+            nom = medecin.get_nom_complet()
+            if filiere == 'prescripteur':
+                titre = (medecin.specialite or '')[:100]
         if not nom:
             return jsonify({'success': False, 'error': 'Le nom est obligatoire'}), 400
         if filiere == 'analyse' and titre not in TITRES_LABORATOIRE:
@@ -13270,7 +13302,9 @@ def api_creer_signature_intervenant():
         )
         db.session.add(signature)
         db.session.commit()
-        return jsonify({'success': True, 'id': signature.id})
+        reponse = {'success': True, 'id': signature.id,
+                   'medecin': {'id': medecin_id, 'nom_complet': nom, 'cree': bool(medecin_cree)}}
+        return jsonify(reponse)
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
