@@ -1258,6 +1258,21 @@ def api_amu_ep_refuser(demande_id):
     return jsonify({'success': True})
 
 
+def nom_fichier_pdf_amu(prefixe, demande, patient):
+    """⭐ Nom du PDF EP / TPC enregistré par l'utilisateur (patron, 2026-10-06 :
+    "ça écrit seulement entente préalable sans le nom du patient") :
+    EP_AMU-CNSS_DUPONT_Afi_2026-10-06.pdf — sans accents ni caractères
+    interdits dans un nom de fichier."""
+    import re as _re
+    import unicodedata as _ud
+    libelle = {'amu_cnss': 'AMU-CNSS', 'amu_inam': 'AMU-INAM', 'amu_tns': 'AMU-TNS'}.get(demande.type_amu, 'AMU')
+    nom = f"{patient.nom or ''} {patient.prenom or ''}".strip() or f"patient{demande.patient_id}"
+    nom = _ud.normalize('NFKD', nom).encode('ascii', 'ignore').decode()
+    nom = _re.sub(r'[^A-Za-z0-9]+', '_', nom).strip('_')
+    jour = (demande.date_prescription or date.today()).strftime('%Y-%m-%d')
+    return f"{prefixe}_{libelle}_{nom}_{jour}.pdf"
+
+
 def signature_prescripteur_pour(structure_id, medecin_id):
     """⭐ Image de signature pré-enregistrée du médecin prescripteur (page
     Signatures électroniques, filière 'prescripteur') — apposée sur l'EP /
@@ -1326,7 +1341,7 @@ def page_amu_ep_imprimer(demande_id):
     demande.imprime_le = datetime.utcnow()
     db.session.commit()
     return Response(pdf_bytes, mimetype='application/pdf', headers={
-        'Content-Disposition': f'inline; filename=entente_prealable_{demande.id}.pdf'
+        'Content-Disposition': f'inline; filename="{nom_fichier_pdf_amu("EP", demande, patient)}"'
     })
 
 
@@ -1822,7 +1837,7 @@ def page_amu_tpc_imprimer(demande_id):
     demande.imprime_le = datetime.utcnow()
     db.session.commit()
     return Response(pdf_bytes, mimetype='application/pdf', headers={
-        'Content-Disposition': f'inline; filename=tpc_{demande.type_demande}_{demande.id}.pdf'
+        'Content-Disposition': f'inline; filename="{nom_fichier_pdf_amu("TPC_" + (demande.type_demande or "").capitalize(), demande, patient)}"'
     })
 
 
