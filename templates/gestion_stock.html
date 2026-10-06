@@ -125,19 +125,20 @@
                                     </div>
                                 </div>
                             </div>
+                            <!-- ⭐ Patron (2026-10-06) : cliquer sur la carte montre les produits concernés -->
                             <div class="col-md-2">
-                                <div class="card bg-danger bg-opacity-10 border-0 shadow-sm h-100">
+                                <div class="card bg-danger bg-opacity-10 border-0 shadow-sm h-100 carte-cliquable" role="button" title="Voir les produits périmés" onclick="afficherProduitsFiltre('perimes')">
                                     <div class="card-body text-center">
                                         <h6 class="text-danger" id="produitsPerimesCard">0</h6>
-                                        <small class="text-muted">Produits périmés</small>
+                                        <small class="text-muted">Produits périmés <i class="fas fa-search-plus small"></i></small>
                                     </div>
                                 </div>
                             </div>
                             <div class="col-md-2">
-                                <div class="card bg-warning bg-opacity-10 border-0 shadow-sm h-100">
+                                <div class="card bg-warning bg-opacity-10 border-0 shadow-sm h-100 carte-cliquable" role="button" title="Voir les produits en stock bas" onclick="afficherProduitsFiltre('stockbas')">
                                     <div class="card-body text-center">
                                         <h6 class="text-warning" id="stockAlerteCard">0</h6>
-                                        <small class="text-muted">Stock bas</small>
+                                        <small class="text-muted">Stock bas <i class="fas fa-search-plus small"></i></small>
                                     </div>
                                 </div>
                             </div>
@@ -201,8 +202,8 @@
                         <h5 class="mb-0"><i class="fas fa-chart-bar"></i> Statistiques des produits</h5>
                         <!-- ⭐ Patron (2026-10-06) : « Stock à une date donnée » était caché tout
                              en bas ; il s'ouvre maintenant d'ici, dans une fenêtre avec Fermer. -->
-                        <button class="btn btn-light btn-sm fw-semibold" onclick="ouvrirStockADate()">
-                            <i class="fas fa-history"></i> Stock à une date donnée
+                        <button class="btn btn-warning fw-bold shadow" style="font-size:1.05rem;padding:8px 18px;border:2px solid #fff;" onclick="ouvrirStockADate()">
+                            <i class="fas fa-history me-1"></i> Stock à une date donnée
                         </button>
                     </div>
                     <div class="card-body">
@@ -241,18 +242,18 @@
                                 </div>
                             </div>
                             <div class="col-md-2">
-                                <div class="card bg-danger bg-opacity-10 border-0 shadow-sm h-100">
+                                <div class="card bg-danger bg-opacity-10 border-0 shadow-sm h-100 carte-cliquable" role="button" title="Voir les produits périmés" onclick="afficherProduitsFiltre('perimes')">
                                     <div class="card-body text-center">
                                         <h4 class="text-danger" id="statPerimes">0</h4>
-                                        <small class="text-muted">Produits périmés</small>
+                                        <small class="text-muted">Produits périmés <i class="fas fa-search-plus small"></i></small>
                                     </div>
                                 </div>
                             </div>
                             <div class="col-md-2">
-                                <div class="card bg-warning bg-opacity-10 border-0 shadow-sm h-100">
+                                <div class="card bg-warning bg-opacity-10 border-0 shadow-sm h-100 carte-cliquable" role="button" title="Voir les produits bientôt périmés (30 jours)" onclick="afficherProduitsFiltre('bientot')">
                                     <div class="card-body text-center">
                                         <h4 class="text-warning" id="statBientotPerimes">0</h4>
-                                        <small class="text-muted">Bientôt périmés</small>
+                                        <small class="text-muted">Bientôt périmés <i class="fas fa-search-plus small"></i></small>
                                     </div>
                                 </div>
                             </div>
@@ -545,6 +546,34 @@
             </div>
 
 
+
+<style>
+    .carte-cliquable { cursor: pointer; transition: transform .08s, box-shadow .08s; }
+    .carte-cliquable:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.15) !important; }
+</style>
+<!-- ⭐ Produits concernés par une carte (périmés / bientôt périmés / stock bas) -->
+<div class="modal fade" id="modalListeProduits" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header" id="modalListeProduitsEntete">
+                <h5 class="modal-title" id="modalListeProduitsTitre"></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead class="table-light" id="modalListeProduitsThead"></thead>
+                        <tbody id="modalListeProduitsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-dark" onclick="imprimerListeProduitsModal()"><i class="fas fa-print"></i> Imprimer</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><i class="fas fa-times"></i> Fermer</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- ⭐ Stock à une date donnée — fenêtre ouverte depuis l'onglet Statistiques -->
 <div class="modal fade" id="modalStockADate" tabindex="-1">
@@ -1179,6 +1208,52 @@ function updateStats(produits) {
 
 // ========== STOCK À UNE DATE DONNÉE ==========
 let stockADateListe = [];
+
+// ⭐ Cartes cliquables (patron, 2026-10-06) : liste des produits concernés
+let modalListeProduitsCourante = null;
+function afficherProduitsFiltre(type) {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const limite = new Date(today); limite.setDate(limite.getDate() + 30);
+    const jours = d => Math.round((d - today) / 86400000);
+    const fmtD = d => d.toLocaleDateString('fr-FR');
+    let titre, classeEntete, entetes, lignes;
+    const avecDate = (tousLesProduits || []).map(p => ({p, d: p.date_peremption ? new Date(p.date_peremption) : null})).filter(x => x.d && !isNaN(x.d));
+    if (type === 'perimes') {
+        titre = 'Produits périmés'; classeEntete = 'bg-danger text-white';
+        entetes = ['Médicament', 'Lot', 'Date de péremption', 'Périmé depuis', 'Stock'];
+        lignes = avecDate.filter(x => x.d < today).sort((a, b) => a.d - b.d)
+            .map(x => [x.p.nom, x.p.lot || '', fmtD(x.d), (-jours(x.d)) + ' jour(s)', (x.p.quantite_stock ?? 0) + ' ' + (x.p.unite || '')]);
+    } else if (type === 'bientot') {
+        titre = 'Produits bientôt périmés (dans les 30 jours)'; classeEntete = 'bg-warning';
+        entetes = ['Médicament', 'Lot', 'Date de péremption', 'Dans', 'Stock'];
+        lignes = avecDate.filter(x => x.d >= today && x.d <= limite).sort((a, b) => a.d - b.d)
+            .map(x => [x.p.nom, x.p.lot || '', fmtD(x.d), jours(x.d) + ' jour(s)', (x.p.quantite_stock ?? 0) + ' ' + (x.p.unite || '')]);
+    } else {
+        titre = 'Produits en stock bas (au seuil d\'alerte ou en dessous)'; classeEntete = 'bg-warning';
+        entetes = ['Médicament', 'Stock', 'Seuil d\'alerte', 'Manque pour revenir au seuil'];
+        lignes = (tousLesProduits || []).filter(p => (parseFloat(p.quantite_stock) || 0) <= (parseFloat(p.seuil_alerte) || 0))
+            .sort((a, b) => (parseFloat(a.quantite_stock) || 0) - (parseFloat(b.quantite_stock) || 0))
+            .map(p => [p.nom, (p.quantite_stock ?? 0) + ' ' + (p.unite || ''), p.seuil_alerte ?? 0, Math.max((parseFloat(p.seuil_alerte) || 0) - (parseFloat(p.quantite_stock) || 0), 0)]);
+    }
+    modalListeProduitsCourante = {titre, entetes, lignes};
+    document.getElementById('modalListeProduitsTitre').textContent = titre + ' — ' + lignes.length + ' produit(s)';
+    document.getElementById('modalListeProduitsEntete').className = 'modal-header ' + classeEntete;
+    document.getElementById('modalListeProduitsThead').innerHTML = '<tr>' + entetes.map(e => '<th>' + e + '</th>').join('') + '</tr>';
+    document.getElementById('modalListeProduitsBody').innerHTML = lignes.length
+        ? lignes.map(l => '<tr>' + l.map(c => '<td>' + c + '</td>').join('') + '</tr>').join('')
+        : '<tr><td colspan="' + entetes.length + '" class="text-center text-muted">Aucun produit concerné</td></tr>';
+    new bootstrap.Modal(document.getElementById('modalListeProduits')).show();
+}
+async function imprimerListeProduitsModal() {
+    const m = modalListeProduitsCourante;
+    if (!m || !m.lignes.length) { await afficherMessage('Aucun produit à imprimer.'); return; }
+    const html = `<html><head><title>${m.titre}</title><style>body{font-family:Arial,sans-serif;padding:20px;color:#000;font-size:13px;} h2{margin:0 0 4px;} table{width:100%;border-collapse:collapse;margin-top:12px;} th,td{border:1px solid #000;padding:5px 7px;text-align:left;} thead{display:table-header-group;}</style></head><body>
+        <h2>${m.titre}</h2><div>${m.lignes.length} produit(s) — établi le ${new Date().toLocaleString('fr-FR')}</div>
+        <table><thead><tr>${m.entetes.map(e => '<th>' + e + '</th>').join('')}</tr></thead><tbody>${m.lignes.map(l => '<tr>' + l.map(c => '<td>' + c + '</td>').join('') + '</tr>').join('')}</tbody></table></body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { await afficherMessage("Le navigateur a bloqué l'ouverture de la fenêtre d'impression."); return; }
+    w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+}
 
 function ouvrirStockADate() {
     const input = document.getElementById('stockDateInput');
