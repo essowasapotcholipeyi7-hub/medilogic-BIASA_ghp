@@ -1286,6 +1286,19 @@ def signature_prescripteur_pour(structure_id, medecin_id):
     return (s.signature_data, s.signature_mime) if s else None
 
 
+@app.route('/api/signatures-intervenants/prescripteurs-signes')
+@login_required
+def api_prescripteurs_signes():
+    """⭐ Ids des médecins ayant une signature électronique active (filière
+    'prescripteur') — les pages EP/TPC s'en servent pour prévenir dès le
+    choix du prescripteur qu'il n'en a pas encore et proposer de
+    l'enregistrer (patron, 2026-10-06)."""
+    lignes = SignatureIntervenant.query.filter_by(
+        structure_id=session.get('structure_id'), filiere='prescripteur', actif=True,
+    ).with_entities(SignatureIntervenant.medecin_id).all()
+    return jsonify({'success': True, 'medecin_ids': sorted({l[0] for l in lignes if l[0]})})
+
+
 def _numeros_whatsapp_depot(structure_id):
     """Numéros WhatsApp de dépôt des EP/TPC par assureur (Paramétrage AMU,
     modifiables aussi depuis les pages EP/TPC) — 'amu_tns' suit la CNSS."""

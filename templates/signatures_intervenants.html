@@ -257,6 +257,18 @@ function chargerSignatures() {
 }
 
 chargerSignatures();
+
+// ⭐ Arrivée depuis une EP / un TPC (« Enregistrer sa signature maintenant ») :
+// la fenêtre s'ouvre directement sur ce médecin, filière prescripteur.
+(function () {
+    const id = new URLSearchParams(location.search).get('prescripteur');
+    if (!id) return;
+    ouvrirModalSignature('prescripteur');
+    const sel = document.getElementById('signatureMedecin');
+    sel.value = id;
+    if (sel.value !== id) sel.value = '';   // médecin inconnu : liste laissée au choix
+    toggleNouveauMedecin();
+})();
 </script>
 
 {% endblock %}

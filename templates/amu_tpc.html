@@ -102,6 +102,13 @@
                         <option value="{{ m.id }}">{{ m.nom_complet }}</option>
                         {% endfor %}
                     </select>
+                    <!-- ⭐ Prescripteur sans signature électronique : on le dit tout de
+                         suite et on propose de l'enregistrer (patron, 2026-10-06). -->
+                    <div id="avertSignatureMedecin" class="alert alert-warning py-2 px-3 mt-2 mb-0 small" style="display:none;">
+                        <i class="fas fa-signature me-1"></i><span id="avertSignatureTexte"></span>
+                        <a id="lienSignatureMedecin" href="#" target="_blank" class="alert-link ms-1">Enregistrer sa signature maintenant</a>
+                        <span class="text-muted">(s'ouvre dans un nouvel onglet ; revenez ici ensuite, la vérification se refait toute seule)</span>
+                    </div>
                 </div>
 
                 <div class="col-md-4">
@@ -840,6 +847,34 @@ async function modifierNumeroWhatsApp(assureur) {
     const d = await r.json();
     if (d.success) location.reload(); else await afficherMessage(d.error || 'Erreur', {type: 'danger'});
 }
+
+// ===================== SIGNATURE DU PRESCRIPTEUR (patron, 2026-10-06) =====================
+// Dès qu'un médecin est choisi, on vérifie s'il a une signature électronique ;
+// sinon on propose de l'enregistrer (lien vers la page Signatures, médecin
+// présélectionné). Re-vérifié au retour sur cet onglet.
+let prescripteursSignes = null;
+async function chargerPrescripteursSignes() {
+    try {
+        const r = await fetch('/api/signatures-intervenants/prescripteurs-signes');
+        const d = await r.json();
+        prescripteursSignes = new Set((d.medecin_ids || []).map(String));
+    } catch (e) { prescripteursSignes = null; }
+    verifierSignatureMedecin();
+}
+function verifierSignatureMedecin() {
+    const select = document.getElementById('medecinId');
+    const bloc = document.getElementById('avertSignatureMedecin');
+    if (!select || !bloc) return;
+    const id = select.value;
+    if (!id || prescripteursSignes === null || prescripteursSignes.has(String(id))) { bloc.style.display = 'none'; return; }
+    const nom = select.options[select.selectedIndex].text;
+    document.getElementById('avertSignatureTexte').textContent = nom + " n'a pas encore de signature électronique : la fiche sortira sans signature.";
+    document.getElementById('lienSignatureMedecin').href = '/signatures-intervenants?prescripteur=' + encodeURIComponent(id);
+    bloc.style.display = '';
+}
+document.getElementById('medecinId').addEventListener('change', verifierSignatureMedecin);
+window.addEventListener('focus', chargerPrescripteursSignes);
+chargerPrescripteursSignes();
 
 // ===================== APPROUVER / REFUSER =====================
 function approuverDemandeTpc(id) {
