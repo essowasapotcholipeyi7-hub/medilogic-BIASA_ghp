@@ -197,8 +197,13 @@
             <!-- ========== ONGLET STATISTIQUES ========== -->
             <div class="tab-pane fade" id="statsProduits" role="tabpanel">
                 <div class="card">
-                    <div class="card-header bg-info text-white">
-                        <h5><i class="fas fa-chart-bar"></i> Statistiques des produits</h5>
+                    <div class="card-header bg-info text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <h5 class="mb-0"><i class="fas fa-chart-bar"></i> Statistiques des produits</h5>
+                        <!-- ⭐ Patron (2026-10-06) : « Stock à une date donnée » était caché tout
+                             en bas ; il s'ouvre maintenant d'ici, dans une fenêtre avec Fermer. -->
+                        <button class="btn btn-light btn-sm fw-semibold" onclick="ouvrirStockADate()">
+                            <i class="fas fa-history"></i> Stock à une date donnée
+                        </button>
                     </div>
                     <div class="card-body">
                         <div class="row g-3 mb-4">
@@ -298,41 +303,6 @@
                                         </thead>
                                         <tbody id="topMargeList">
                                             <tr><td colspan="7" class="text-center">Chargement...</td></tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Stock à une date donnée -->
-                        <div class="card mt-3">
-                            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
-                                <h6 class="mb-0"><i class="fas fa-history"></i> Stock à une date donnée</h6>
-                                <div class="d-flex align-items-center gap-2">
-                                    <label for="stockDateInput" class="text-white small mb-0">Depuis le début du :</label>
-                                    <input type="date" id="stockDateInput" class="form-control form-control-sm" style="width:auto;">
-                                    <button class="btn btn-light btn-sm" onclick="chargerStockADate()">
-                                        <i class="fas fa-search"></i> Voir
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="card-body">
-                                <div id="stockADateInfo" class="small text-muted mb-2"></div>
-                                <div class="mb-3">
-                                    <input type="text" id="searchStockADate" class="form-control form-control-sm" placeholder="Rechercher un produit..." onkeyup="filterStockADate()" style="max-width:300px;">
-                                </div>
-                                <div class="table-responsive">
-                                    <table class="table table-hover">
-                                        <thead>
-                                            <tr>
-                                                <th>Produit</th>
-                                                <th class="text-end">Stock au début du jour choisi</th>
-                                                <th class="text-end">Stock actuel</th>
-                                                <th class="text-end">Vendu / Consommé depuis</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="stockADateList">
-                                            <tr><td colspan="4" class="text-center">Choisissez une date puis cliquez sur "Voir"</td></tr>
                                         </tbody>
                                     </table>
                                 </div>
@@ -575,6 +545,47 @@
             </div>
 
 
+
+<!-- ⭐ Stock à une date donnée — fenêtre ouverte depuis l'onglet Statistiques -->
+<div class="modal fade" id="modalStockADate" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-history"></i> Stock à une date donnée</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+                    <label for="stockDateInput" class="small mb-0">Depuis le début du :</label>
+                    <input type="date" id="stockDateInput" class="form-control form-control-sm" style="width:auto;">
+                    <button class="btn btn-primary btn-sm" onclick="chargerStockADate()">
+                        <i class="fas fa-search"></i> Voir
+                    </button>
+                    <input type="text" id="searchStockADate" class="form-control form-control-sm ms-auto" placeholder="Rechercher un produit..." onkeyup="filterStockADate()" style="max-width:300px;">
+                </div>
+                <div id="stockADateInfo" class="small text-muted mb-2"></div>
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Produit</th>
+                                <th class="text-end">Stock au début du jour choisi</th>
+                                <th class="text-end">Stock actuel</th>
+                                <th class="text-end">Vendu / Consommé depuis</th>
+                            </tr>
+                        </thead>
+                        <tbody id="stockADateList">
+                            <tr><td colspan="4" class="text-center">Choisissez une date puis cliquez sur "Voir"</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><i class="fas fa-times"></i> Fermer</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- Modal Acte -->
 <div class="modal fade" id="acteModal" tabindex="-1">
@@ -1169,6 +1180,12 @@ function updateStats(produits) {
 // ========== STOCK À UNE DATE DONNÉE ==========
 let stockADateListe = [];
 
+function ouvrirStockADate() {
+    const input = document.getElementById('stockDateInput');
+    if (input && !input.value) input.value = new Date().toISOString().split('T')[0];
+    new bootstrap.Modal(document.getElementById('modalStockADate')).show();
+    chargerStockADate();   // données fraîches à chaque ouverture
+}
 function chargerStockADate() {
     const dateInput = document.getElementById('stockDateInput');
     const date = dateInput.value; // vide = aujourd'hui (géré côté serveur)
