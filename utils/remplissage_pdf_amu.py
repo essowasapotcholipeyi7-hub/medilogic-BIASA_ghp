@@ -91,9 +91,16 @@ def preparer_image_signature(data):
                  min(fond.width, boite[2] + marge_x), min(fond.height, boite[3] + marge_y))
         fond = fond.crop(boite)
         gris = gris.crop(boite)
-        # Fond transparent : opacité proportionnelle à la noirceur (traits
-        # fins conservés, papier effacé) — bornes : papier -> 0, encre -> 255
-        bas, haut = seuil, max(seuil - 70, 0)
+        # ⭐ Encre forcée bien foncée (patron, 2026-10-06 : "oui force") tout
+        # en gardant sa couleur : saturation relevée (un bleu délavé reste
+        # bleu) puis assombrissement ; le fond, lui, devient transparent.
+        from PIL import ImageEnhance
+        couleur = ImageEnhance.Color(fond.convert('RGB')).enhance(1.6)
+        couleur = ImageEnhance.Brightness(couleur).enhance(0.55)
+        fond = couleur.convert('RGBA')
+        # Fond transparent, trait pleinement opaque : rampe très courte
+        # autour du seuil (juste de quoi lisser les bords du trait).
+        bas, haut = seuil, max(seuil - 12, 0)
         alpha = gris.point(lambda v, b=bas, h=haut: 0 if v >= b else (255 if v <= h else int(255 * (b - v) / (b - h))))
         fond.putalpha(alpha)
         sortie = io.BytesIO()
