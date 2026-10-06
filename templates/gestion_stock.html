@@ -26,7 +26,7 @@
             </li>
             <li class="nav-item" role="presentation">
                 <button class="nav-link" id="historique-tab" data-bs-toggle="tab" data-bs-target="#historiqueProduits" type="button" role="tab" onclick="chargerHistoriqueProduits(); chargerVentesMedicamentsParJour()">
-                    <i class="fas fa-history"></i> Historique des actes et produits
+                    <i class="fas fa-history"></i> Historique médicaments
                 </button>
             </li>
         </ul>
@@ -371,9 +371,14 @@
                 <div class="card">
                     <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h5><i class="fas fa-clipboard-check"></i> Inventaire physique</h5>
-                        <button class="btn btn-light btn-sm" onclick="chargerInventaire()">
-                            <i class="fas fa-sync-alt"></i> Actualiser
-                        </button>
+                        <div>
+                            <button class="btn btn-light btn-sm me-2" onclick="imprimerFeuilleComptage()" title="Liste à imprimer pour aller compter : stock système + colonnes vides à remplir">
+                                <i class="fas fa-print"></i> Feuille de comptage
+                            </button>
+                            <button class="btn btn-light btn-sm" onclick="chargerInventaire()">
+                                <i class="fas fa-sync-alt"></i> Actualiser
+                            </button>
+                        </div>
                     </div>
                     <div class="card-body">
                         <div class="alert alert-info small">
@@ -425,6 +430,22 @@
 
             <!-- ========== ONGLET HISTORIQUE DES ACTES ET PRODUITS ========== -->
             <div class="tab-pane fade" id="historiqueProduits" role="tabpanel">
+                <!-- ⭐ Patron (2026-10-06) : deux sous-onglets pour ne pas avoir à
+                     défiler les ventes par jour avant d'atteindre les mouvements. -->
+                <ul class="nav nav-pills mb-3" id="sousOngletsHistorique" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#sousVentesJour" type="button" role="tab">
+                            <i class="fas fa-pills"></i> Ventes par jour
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" data-bs-toggle="pill" data-bs-target="#sousMouvements" type="button" role="tab">
+                            <i class="fas fa-exchange-alt"></i> Mouvements de stock (entrées / sorties)
+                        </button>
+                    </li>
+                </ul>
+                <div class="tab-content">
+                <div class="tab-pane fade show active" id="sousVentesJour" role="tabpanel">
                 <!-- ⭐ Ventes de médicaments par jour (patron, 2026-10-06 : "de façon
                      compacte, nombre de médicaments vendus par jour et la valeur totale
                      encaissée ou non"). -->
@@ -457,12 +478,17 @@
                                 <tfoot id="vmjFoot"></tfoot>
                             </table>
                         </div>
-                        <div class="small text-muted mt-2">Encaissé = part patient réellement payée (au prorata des médicaments pour une vente mixte). Non encaissé = parts prises en charge par les assurances + reste dû.</div>
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-2">
+                            <div class="small text-muted">Encaissé = part patient réellement payée (au prorata des médicaments pour une vente mixte). Non encaissé = parts prises en charge par les assurances + reste dû.</div>
+                            <div id="vmjPagination" class="d-flex align-items-center gap-2"></div>
+                        </div>
                     </div>
                 </div>
+                </div>
+                <div class="tab-pane fade" id="sousMouvements" role="tabpanel">
                 <div class="card">
                     <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
-                        <h5><i class="fas fa-history"></i> Historique des mouvements (entrées / sorties)</h5>
+                        <h5><i class="fas fa-history"></i> Mouvements de stock des médicaments (entrées / sorties)</h5>
                         <div>
                             <button class="btn btn-light btn-sm me-2" onclick="exporterHistorique('texte')">
                                 <i class="fas fa-file-alt"></i> Export texte
@@ -540,6 +566,8 @@
                             </table>
                         </div>
                     </div>
+                </div>
+                </div>
                 </div>
             </div>
 
@@ -1786,19 +1814,31 @@ async function imprimerFeuilleComptage() {
 
 // ========== ⭐ VENTES DE MÉDICAMENTS PAR JOUR (patron, 2026-10-06) ==========
 let vmjDonnees = null;
-function chargerVentesMedicamentsParJour() {
-    const deb = document.getElementById('vmjDateDebut'), fin = document.getElementById('vmjDateFin');
-    if (!deb || !fin) return;
-    if (!fin.value) fin.value = new Date().toISOString().slice(0, 10);
-    if (!deb.value) { const d = new Date(); d.setDate(d.getDate() - 29); deb.value = d.toISOString().slice(0, 10); }
+let vmjPage = 1;
+const VMJ_PAR_PAGE = 15;
+function changerPageVmj(delta) {
+    const total = vmjDonnees ? Math.max(1, Math.ceil(vmjDonnees.jours.length / VMJ_PAR_PAGE)) : 1;
+    vmjPage = Math.min(Math.max(1, vmjPage + delta), total);
+    rendreVentesMedicamentsParJour();
+}
+function rendreVentesMedicamentsParJour() {
+    const d = vmjDonnees;
     const f = n => Math.round(n).toLocaleString('fr-FR');
     const body = document.getElementById('vmjBody');
-    body.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Chargement...</td></tr>';
-    fetch(`/api/produits/ventes-par-jour?date_debut=${deb.value}&date_fin=${fin.value}`).then(r => r.json()).then(d => {
-        if (!d.success) { body.innerHTML = '<tr><td colspan="7" class="text-center text-danger">' + (d.error || 'Erreur') + '</td></tr>'; return; }
-        vmjDonnees = d;
-        if (!d.jours.length) { body.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Aucune vente de médicament sur cette période.</td></tr>'; document.getElementById('vmjFoot').innerHTML = ''; return; }
-        body.innerHTML = d.jours.map((j, i) => `
+    const pagination = document.getElementById('vmjPagination');
+    if (!d || !d.jours.length) {
+        body.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Aucune vente de médicament sur cette période.</td></tr>';
+        document.getElementById('vmjFoot').innerHTML = '';
+        if (pagination) pagination.innerHTML = '';
+        return;
+    }
+    const nbPages = Math.max(1, Math.ceil(d.jours.length / VMJ_PAR_PAGE));
+    vmjPage = Math.min(Math.max(1, vmjPage), nbPages);
+    const debut = (vmjPage - 1) * VMJ_PAR_PAGE;
+    const page = d.jours.slice(debut, debut + VMJ_PAR_PAGE);
+    body.innerHTML = page.map((j, k) => {
+        const i = debut + k;
+        return `
             <tr>
                 <td><strong>${new Date(j.jour + 'T00:00:00').toLocaleDateString('fr-FR', {weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric'})}</strong></td>
                 <td class="text-end">${j.nb_ventes}</td>
@@ -1811,9 +1851,31 @@ function chargerVentesMedicamentsParJour() {
             <tr id="vmjDetail${i}" style="display:none;"><td colspan="7" class="bg-light">
                 <table class="table table-sm mb-0" style="max-width:700px;"><thead><tr><th>Médicament</th><th class="text-end">Unités</th><th class="text-end">Valeur</th></tr></thead>
                 <tbody>${j.detail.map(x => `<tr><td>${x.nom}</td><td class="text-end">${f(x.quantite)}</td><td class="text-end">${f(x.valeur)} F</td></tr>`).join('')}</tbody></table>
-            </td></tr>`).join('');
-        const t = d.totaux;
-        document.getElementById('vmjFoot').innerHTML = `<tr class="table-light fw-bold"><td>Total (${d.jours.length} jour(s))</td><td class="text-end">${t.nb_ventes}</td><td class="text-end">${f(t.unites)}</td><td class="text-end">${f(t.valeur)} F</td><td class="text-end text-success">${f(t.encaisse)} F</td><td class="text-end">${f(t.non_encaisse)} F</td><td></td></tr>`;
+            </td></tr>`;
+    }).join('');
+    const t = d.totaux;
+    document.getElementById('vmjFoot').innerHTML = `<tr class="table-light fw-bold"><td>Total période (${d.jours.length} jour(s))</td><td class="text-end">${t.nb_ventes}</td><td class="text-end">${f(t.unites)}</td><td class="text-end">${f(t.valeur)} F</td><td class="text-end text-success">${f(t.encaisse)} F</td><td class="text-end">${f(t.non_encaisse)} F</td><td></td></tr>`;
+    if (pagination) {
+        pagination.innerHTML = nbPages > 1 ? `
+            <button class="btn btn-sm btn-outline-secondary" onclick="changerPageVmj(-1)" ${vmjPage === 1 ? 'disabled' : ''}><i class="fas fa-chevron-left"></i></button>
+            <span class="small">Page ${vmjPage} / ${nbPages} — jours ${debut + 1} à ${Math.min(debut + VMJ_PAR_PAGE, d.jours.length)} sur ${d.jours.length}</span>
+            <button class="btn btn-sm btn-outline-secondary" onclick="changerPageVmj(1)" ${vmjPage === nbPages ? 'disabled' : ''}><i class="fas fa-chevron-right"></i></button>`
+            : `<span class="small text-muted">${d.jours.length} jour(s)</span>`;
+    }
+}
+function chargerVentesMedicamentsParJour() {
+    const deb = document.getElementById('vmjDateDebut'), fin = document.getElementById('vmjDateFin');
+    if (!deb || !fin) return;
+    if (!fin.value) fin.value = new Date().toISOString().slice(0, 10);
+    if (!deb.value) { const d = new Date(); d.setDate(d.getDate() - 29); deb.value = d.toISOString().slice(0, 10); }
+    const f = n => Math.round(n).toLocaleString('fr-FR');
+    const body = document.getElementById('vmjBody');
+    body.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Chargement...</td></tr>';
+    fetch(`/api/produits/ventes-par-jour?date_debut=${deb.value}&date_fin=${fin.value}`).then(r => r.json()).then(d => {
+        if (!d.success) { body.innerHTML = '<tr><td colspan="7" class="text-center text-danger">' + (d.error || 'Erreur') + '</td></tr>'; return; }
+        vmjDonnees = d;
+        vmjPage = 1;
+        rendreVentesMedicamentsParJour();
     }).catch(() => { body.innerHTML = '<tr><td colspan="7" class="text-center text-danger">Erreur de chargement</td></tr>'; });
 }
 function toggleDetailJour(i) {
