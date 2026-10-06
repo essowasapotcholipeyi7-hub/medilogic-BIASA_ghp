@@ -457,7 +457,7 @@
                             <input type="date" class="form-control form-control-sm" id="vmjDateDebut" style="width:auto;" onchange="chargerVentesMedicamentsParJour()">
                             <label class="small mb-0">au</label>
                             <input type="date" class="form-control form-control-sm" id="vmjDateFin" style="width:auto;" onchange="chargerVentesMedicamentsParJour()">
-                            <button class="btn btn-light btn-sm" onclick="imprimerVentesMedicamentsParJour()"><i class="fas fa-print"></i> Imprimer</button>
+                            <button class="btn btn-warning btn-sm fw-semibold" onclick="imprimerVentesMedicamentsParJour()" title="Imprime toute la période choisie, avec le détail par médicament de chaque jour"><i class="fas fa-print"></i> Imprimer la période</button>
                         </div>
                     </div>
                     <div class="card-body">
@@ -480,7 +480,10 @@
                         </div>
                         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-2">
                             <div class="small text-muted">Encaissé = part patient réellement payée (au prorata des médicaments pour une vente mixte). Non encaissé = parts prises en charge par les assurances + reste dû.</div>
-                            <div id="vmjPagination" class="d-flex align-items-center gap-2"></div>
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <div id="vmjPagination" class="d-flex align-items-center gap-2"></div>
+                                <button class="btn btn-outline-dark btn-sm" onclick="imprimerVentesMedicamentsParJour()"><i class="fas fa-print"></i> Imprimer la période</button>
+                            </div>
                         </div>
                     </div>
                 </div>
