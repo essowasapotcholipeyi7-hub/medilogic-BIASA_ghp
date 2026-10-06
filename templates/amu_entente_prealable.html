@@ -327,7 +327,7 @@
                                 <i class="fas fa-print"></i> Imprimer
                             </a>
                             <button type="button" class="btn btn-sm btn-success" title="Envoyer la fiche signée par WhatsApp à l'assureur"
-                                    onclick="envoyerWhatsApp({{ d.id }}, {{ d.type_amu|tojson }}, {{ ((p.nom ~ ' ' ~ (p.prenom or '')).strip() if p else ('Patient #' ~ d.patient_id))|tojson }})">
+                                    onclick='envoyerWhatsApp({{ d.id }}, {{ d.type_amu|tojson }}, {{ ((p.nom ~ " " ~ (p.prenom or "")).strip() if p else ("Patient #" ~ d.patient_id))|tojson }})'>
                                 <i class="fab fa-whatsapp"></i> WhatsApp
                             </button>
                             {% if d.hospitalisation_id %}
