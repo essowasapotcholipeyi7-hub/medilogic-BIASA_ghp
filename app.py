@@ -11623,7 +11623,8 @@ def api_get_all_ventes():
                 v.prise_en_charge,
                 v.type_aide,
                 v.numero_local,
-                v.applique_tva
+                v.applique_tva,
+                v.mode_paiement
             FROM ventes v
             LEFT JOIN patients p ON v.patient_id = p.id
             WHERE v.structure_id = %s
@@ -11810,7 +11811,10 @@ def api_get_all_ventes():
                     'nb_actes': len(actes_data),
                     'nb_produits': len(produits_data),
                     'total_articles': len(actes_data) + len(produits_data),
-                    'applique_tva': bool(v.get('applique_tva', False))
+                    'applique_tva': bool(v.get('applique_tva', False)),
+                    # ⭐ Espèces / Mobile Money : l'état imprimé distingue ce que la
+                    # caissière remet en espèces (patron, 2026-10-06).
+                    'mode_paiement': v.get('mode_paiement') or 'especes',
                 })
             else:
                 # Format tuple (pour compatibilité)

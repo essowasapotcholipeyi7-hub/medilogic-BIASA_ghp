@@ -1397,8 +1397,18 @@ function styleImpressionNB() {
         'td{padding:6px;border:1px solid #000;color:#000;vertical-align:top;}' +
         '.text-end{text-align:right;white-space:nowrap;}' +
         '.text-success,.text-danger{color:#000;}' +
+        // ⭐ Patron (2026-10-06) : "dans la colonne assurance et type les libellés
+        // sont encadrés, enlève ça" — texte simple, sans cadre.
         '.badge-actes,.badge-pharma,.badge-mixte,.badge-assure,.badge-non-assure,.badge-aide,.badge-secondary' +
-            '{display:inline-block;white-space:nowrap;color:#000;background:none;border:1px solid #000;padding:1px 5px;border-radius:3px;margin:1px 0;}' +
+            '{display:inline;white-space:nowrap;color:#000;background:none;border:none;padding:0;margin:0;}' +
+        '.badge-aide{font-size:12px;}' +
+        // Bloc « Encaissements à remettre » : ce que la caissière rend, en évidence
+        '.remise{border:2px solid #000;padding:12px 16px;margin:14px 0;}' +
+        '.remise h3{margin:0 0 8px;font-size:16px;text-transform:uppercase;letter-spacing:.3px;}' +
+        '.remise .lignes{display:flex;flex-wrap:wrap;gap:6px 36px;font-size:14px;}' +
+        '.remise .total{margin-top:10px;padding-top:8px;border-top:1px solid #000;font-size:18px;display:flex;justify-content:space-between;align-items:baseline;}' +
+        '.remise .total .montant{font-size:26px;font-weight:bold;}' +
+        '.remise table{width:auto;min-width:60%;margin-top:10px;font-size:13px;}' +
         '.detail-cell{font-size:12px;color:#000;max-width:220px;}' +
         '.summary{display:flex;flex-wrap:wrap;justify-content:center;gap:10px 28px;margin:12px 0;padding:10px;border:1px solid #000;font-size:14px;}' +
         '.summary-item{text-align:center;}' +
@@ -1506,12 +1516,74 @@ async function imprimerHistorique() {
         });
     }
 
+    // ⭐ Patron (2026-10-06) : "fait de sorte que ce que la caissière rend
+    // [soit] bien visible". Un bloc en tête de l'état, avant tout le reste :
+    // ventes encaissées (espèces / Mobile Money), règlements de créances,
+    // TOTAL encaissé à remettre, puis le détail par caissier(ère).
+    var fmtR = function(n) { return Math.round(n).toLocaleString('fr-FR') + ' F'; };
+    var libelleMode = function(m) {
+        m = (m || 'especes').toLowerCase();
+        if (m === 'especes' || m === 'espèces' || m === 'cash') return 'Espèces';
+        if (m.indexOf('mobile') !== -1 || m === 'flooz' || m === 'tmoney') return 'Mobile Money';
+        return m.charAt(0).toUpperCase() + m.slice(1);
+    };
+    var parMode = {};
+    ventesFiltrees.forEach(function(v) {
+        var mode = libelleMode(v.mode_paiement);
+        parMode[mode] = (parMode[mode] || 0) + montantPayeReel(v);
+    });
+    var totalReglements = reglementsFiltres.reduce(function(s, r) { return s + (r.montant || 0); }, 0);
+    var reglementsParMode = {};
+    reglementsFiltres.forEach(function(r) {
+        var mode = libelleMode(r.mode_paiement);
+        reglementsParMode[mode] = (reglementsParMode[mode] || 0) + (r.montant || 0);
+    });
+    var totalEncaisse = totalCA + totalReglements;
+    var especesTotal = (parMode['Espèces'] || 0) + (reglementsParMode['Espèces'] || 0);
+    var parCaissier = {};
+    ventesFiltrees.forEach(function(v) {
+        var nom = v.created_by_nom || 'Non précisé';
+        if (!parCaissier[nom]) parCaissier[nom] = { ventes: 0, montant: 0, reglements: 0 };
+        parCaissier[nom].ventes++;
+        parCaissier[nom].montant += montantPayeReel(v);
+    });
+    reglementsFiltres.forEach(function(r) {
+        var nom = r.created_by || 'Non précisé';
+        if (!parCaissier[nom]) parCaissier[nom] = { ventes: 0, montant: 0, reglements: 0 };
+        parCaissier[nom].reglements += (r.montant || 0);
+    });
+    html += '<div class="remise">';
+    html += '<h3>Encaissements à remettre — ' + escFR(libellePeriode) + '</h3>';
+    html += '<div class="lignes">';
+    if (!ventesMasquees) {
+        html += '<div>Ventes encaissées : <strong>' + fmtR(totalCA) + '</strong>' +
+            (Object.keys(parMode).length > 1 ? ' (' + Object.keys(parMode).map(function(m) { return m + ' ' + fmtR(parMode[m]); }).join(' · ') + ')' : '') + '</div>';
+    }
+    html += '<div>Règlements de créances : <strong>' + fmtR(totalReglements) + '</strong></div>';
+    html += '</div>';
+    html += '<div class="total"><span>TOTAL ENCAISSÉ À REMETTRE</span><span class="montant">' + fmtR(totalEncaisse) + '</span></div>';
+    if (Math.round(especesTotal) !== Math.round(totalEncaisse)) {
+        html += '<div style="font-size:13px;margin-top:4px;">dont en espèces : <strong>' + fmtR(especesTotal) + '</strong> — le reste par Mobile Money / autre.</div>';
+    }
+    var nomsCaissiers = Object.keys(parCaissier);
+    if (nomsCaissiers.length) {
+        html += '<table><thead><tr><th>Caissier(ère)</th><th class="text-end">Ventes</th><th class="text-end">Encaissé ventes</th>' +
+                '<th class="text-end">Règlements</th><th class="text-end">Total remis</th></tr></thead><tbody>';
+        nomsCaissiers.sort().forEach(function(nom) {
+            var c = parCaissier[nom];
+            html += '<tr><td>' + escFR(nom) + '</td><td class="text-end">' + c.ventes + '</td><td class="text-end">' + fmtR(c.montant) +
+                    '</td><td class="text-end">' + fmtR(c.reglements) + '</td><td class="text-end"><strong>' + fmtR(c.montant + c.reglements) + '</strong></td></tr>';
+        });
+        html += '</tbody></table>';
+    }
+    html += '</div>';
+
     // Mode "Règlements" seul : les sections ventes (résumé, dettes des
     // assurances, détail) sont retirées plus bas, il ne reste que les règlements.
     var debutSectionsVentes = html.length;
     html += '<div class="summary">';
     html += '<div class="summary-item"><strong>Total ventes</strong><br>' + ventesFiltrees.length + '</div>';
-    html += '<div class="summary-item"><strong>CA (espèces)</strong><br>' + Math.round(totalCA).toLocaleString('fr-FR') + ' F</div>';
+    html += '<div class="summary-item"><strong>Encaissé (ventes)</strong><br>' + Math.round(totalCA).toLocaleString('fr-FR') + ' F</div>';
     html += '<div class="summary-item"><strong>Actes</strong><br>' + actesCount + '</div>';
     html += '<div class="summary-item"><strong>Pharmacie</strong><br>' + pharmaCount + '</div>';
     html += '<div class="summary-item"><strong>Mixte</strong><br>' + mixteCount + '</div>';  // 🔥 NOUVEAU
@@ -1695,13 +1767,11 @@ async function imprimerHistorique() {
     if (ventesMasquees) html = html.slice(0, debutSectionsVentes);
 
     // ⭐ Règlements de créances encaissés sur la période (patron, 2026-10-05).
-    var totalReglements = 0;
     if (reglementsFiltres.length) {
         html += '<h3 style="font-size:16px;margin:16px 0 6px;">Règlements de créances — ' + escFR(libellePeriode) + '</h3>';
         html += '<table><thead><tr><th>Date du règlement</th><th>Patient</th><th>Vente d\'origine</th><th>Facture</th>' +
                 '<th class="text-end">Montant réglé</th><th>Mode</th><th>Encaissé par</th></tr></thead><tbody>';
         reglementsFiltres.forEach(function(r) {
-            totalReglements += r.montant || 0;
             html += '<tr><td>' + escFR(r.date_paiement ? new Date(r.date_paiement).toLocaleString('fr-FR') : '-') + '</td>' +
                     '<td>' + escFR(r.patient_nom) + '</td>' +
                     '<td>' + (r.vente_id ? '#' + escFR(r.vente_numero_local) + ' ' : '') + escFR(libelleTypeVente(r.vente_type)) +
@@ -1719,7 +1789,7 @@ async function imprimerHistorique() {
     if (ventesMasquees) {
         html += 'Total : ' + reglementsFiltres.length + ' règlement(s) de créances — ' + Math.round(totalReglements).toLocaleString('fr-FR') + ' FCFA encaissés<br>';
     } else {
-        html += 'Total: ' + ventesFiltrees.length + ' ventes - CA (espèces): ' + Math.round(totalCA).toLocaleString('fr-FR') + ' FCFA<br>';
+        html += 'Total : ' + ventesFiltrees.length + ' vente(s) — encaissé (ventes) : ' + Math.round(totalCA).toLocaleString('fr-FR') + ' FCFA<br>';
     }
     if (totalReglements > 0 && !ventesMasquees) {
         html += 'Règlements de créances : ' + Math.round(totalReglements).toLocaleString('fr-FR') + ' FCFA — Total encaissé : ' +
