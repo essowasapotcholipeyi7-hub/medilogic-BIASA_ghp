@@ -88,34 +88,53 @@
                         </div>
                     </div>
                     <div class="card-body">
+                        <!-- ⭐ Patron (2026-10-06) : valeur du stock au prix de VENTE en
+                             principal, puis au prix d'achat, puis la différence (marge
+                             potentielle) — sur les quantités réelles en stock. -->
                         <div class="row g-3 mb-3">
-                            <div class="col-md-3">
-                                <div class="card bg-light border-0 shadow-sm">
+                            <div class="col-md-2">
+                                <div class="card bg-light border-0 shadow-sm h-100">
                                     <div class="card-body text-center">
                                         <h6 class="text-primary" id="totalProduitsCard">0</h6>
                                         <small class="text-muted">Total produits</small>
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-md-3">
-                                <div class="card bg-success bg-opacity-10 border-0 shadow-sm">
+                            <div class="col-md-2">
+                                <div class="card bg-success bg-opacity-10 border-0 shadow-sm h-100">
                                     <div class="card-body text-center">
                                         <h6 class="text-success" id="valeurStockCard">0 FCFA</h6>
-                                        <small class="text-muted">Valeur du stock (prix d'achat)</small>
+                                        <small class="text-muted">Valeur du stock (prix de vente)</small>
                                         <div class="small text-muted" id="valeurStockVenteCard"></div>
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-md-3">
-                                <div class="card bg-danger bg-opacity-10 border-0 shadow-sm">
+                            <div class="col-md-2">
+                                <div class="card bg-info bg-opacity-10 border-0 shadow-sm h-100">
+                                    <div class="card-body text-center">
+                                        <h6 class="text-info" id="valeurStockAchatCard">0 FCFA</h6>
+                                        <small class="text-muted">Valeur au prix d'achat</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="card bg-secondary bg-opacity-10 border-0 shadow-sm h-100">
+                                    <div class="card-body text-center">
+                                        <h6 class="text-dark" id="valeurStockMargeCard">0 FCFA</h6>
+                                        <small class="text-muted">Différence (marge potentielle)</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="card bg-danger bg-opacity-10 border-0 shadow-sm h-100">
                                     <div class="card-body text-center">
                                         <h6 class="text-danger" id="produitsPerimesCard">0</h6>
                                         <small class="text-muted">Produits périmés</small>
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-md-3">
-                                <div class="card bg-warning bg-opacity-10 border-0 shadow-sm">
+                            <div class="col-md-2">
+                                <div class="card bg-warning bg-opacity-10 border-0 shadow-sm h-100">
                                     <div class="card-body text-center">
                                         <h6 class="text-warning" id="stockAlerteCard">0</h6>
                                         <small class="text-muted">Stock bas</small>
@@ -183,33 +202,49 @@
                     </div>
                     <div class="card-body">
                         <div class="row g-3 mb-4">
-                            <div class="col-md-3">
-                                <div class="card bg-light border-0 shadow-sm">
+                            <div class="col-md-2">
+                                <div class="card bg-light border-0 shadow-sm h-100">
                                     <div class="card-body text-center">
                                         <h4 class="text-primary" id="statTotalProduits">0</h4>
                                         <small class="text-muted">Total produits</small>
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-md-3">
-                                <div class="card bg-success bg-opacity-10 border-0 shadow-sm">
+                            <div class="col-md-2">
+                                <div class="card bg-success bg-opacity-10 border-0 shadow-sm h-100">
                                     <div class="card-body text-center">
                                         <h4 class="text-success" id="statValeurStock">0 FCFA</h4>
-                                        <small class="text-muted">Valeur du stock (prix d'achat)</small>
+                                        <small class="text-muted">Valeur du stock (prix de vente)</small>
                                         <div class="small text-muted" id="statValeurStockVente"></div>
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-md-3">
-                                <div class="card bg-danger bg-opacity-10 border-0 shadow-sm">
+                            <div class="col-md-2">
+                                <div class="card bg-info bg-opacity-10 border-0 shadow-sm h-100">
+                                    <div class="card-body text-center">
+                                        <h4 class="text-info" id="statValeurStockAchat">0 FCFA</h4>
+                                        <small class="text-muted">Valeur au prix d'achat</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="card bg-secondary bg-opacity-10 border-0 shadow-sm h-100">
+                                    <div class="card-body text-center">
+                                        <h4 class="text-dark" id="statValeurStockMarge">0 FCFA</h4>
+                                        <small class="text-muted">Différence (marge potentielle)</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="card bg-danger bg-opacity-10 border-0 shadow-sm h-100">
                                     <div class="card-body text-center">
                                         <h4 class="text-danger" id="statPerimes">0</h4>
                                         <small class="text-muted">Produits périmés</small>
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-md-3">
-                                <div class="card bg-warning bg-opacity-10 border-0 shadow-sm">
+                            <div class="col-md-2">
+                                <div class="card bg-warning bg-opacity-10 border-0 shadow-sm h-100">
                                     <div class="card-body text-center">
                                         <h4 class="text-warning" id="statBientotPerimes">0</h4>
                                         <small class="text-muted">Bientôt périmés</small>
@@ -975,8 +1010,8 @@ function clearSearchProduitAdmin() {
 
 function updateStats(produits) {
     let total = produits.length;
-    let valeurStock = 0;          // au prix d'achat (valeur comptable)
-    let valeurStockVente = 0;     // au prix de vente
+    let valeurStock = 0;          // au prix d'achat
+    let valeurStockVente = 0;     // au prix de vente (valeur principale affichée)
     let unitesEnStock = 0;
     let sansPrixAchat = 0;
     let perimes = 0;
@@ -1031,9 +1066,15 @@ function updateStats(produits) {
     
     // Cartes
     document.getElementById('totalProduitsCard').textContent = total;
-    document.getElementById('valeurStockCard').textContent = Math.round(valeurStock).toLocaleString('fr-FR') + ' FCFA';
-    const complementValeur = 'À la vente : ' + Math.round(valeurStockVente).toLocaleString('fr-FR') + ' FCFA · ' +
-        Math.round(unitesEnStock).toLocaleString('fr-FR') + ' unités' +
+    // Principal : prix de VENTE ; puis prix d'achat ; puis la différence (marge potentielle)
+    const fmtF = n => Math.round(n).toLocaleString('fr-FR') + ' FCFA';
+    const marge = valeurStockVente - valeurStock;
+    document.getElementById('valeurStockCard').textContent = fmtF(valeurStockVente);
+    document.getElementById('valeurStockAchatCard').textContent = fmtF(valeurStock);
+    document.getElementById('valeurStockMargeCard').textContent = fmtF(marge);
+    document.getElementById('statValeurStockAchat').textContent = fmtF(valeurStock);
+    document.getElementById('statValeurStockMarge').textContent = fmtF(marge);
+    const complementValeur = Math.round(unitesEnStock).toLocaleString('fr-FR') + ' unités en stock' +
         (sansPrixAchat ? ' · <span class="text-warning">' + sansPrixAchat + ' produit(s) sans prix d\'achat</span>' : '');
     document.getElementById('valeurStockVenteCard').innerHTML = complementValeur;
     document.getElementById('statValeurStockVente').innerHTML = complementValeur;
@@ -1043,7 +1084,7 @@ function updateStats(produits) {
     
     // Statistiques
     document.getElementById('statTotalProduits').textContent = total;
-    document.getElementById('statValeurStock').textContent = Math.round(valeurStock).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('statValeurStock').textContent = Math.round(valeurStockVente).toLocaleString('fr-FR') + ' FCFA';
     document.getElementById('statPerimes').textContent = perimes;
     document.getElementById('statBientotPerimes').textContent = bientotPerimes;
     
