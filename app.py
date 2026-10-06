@@ -9157,6 +9157,20 @@ def _assurer_entetes_produits_etendues(structure_id):
         print(f"⚠️ Erreur extension en-têtes produits (structure {structure_id}): {e}")
 
 
+def _lire_quantite_stock(valeur):
+    """⭐ Lecture tolérante d'une quantité de stock venue de Google Sheets
+    ('12', '12.0', '12,0', ' 12 ', '' ...) -> int. Avant, int('12.0') levait
+    ValueError et le stock était traité comme 0 : une vente ramenait alors
+    la cellule à 0, un approvisionnement repartait de 0, un inventaire
+    calculait un faux écart — « la valeur du stock affichée ne correspond
+    pas au comptage physique » (patron, 2026-10-06)."""
+    try:
+        s = str(valeur if valeur is not None else '').strip().replace('\u202f', '').replace(' ', '').replace(',', '.')
+        return int(float(s)) if s else 0
+    except (ValueError, TypeError):
+        return 0
+
+
 def _decrementer_stock_produit(worksheet, produit_id, quantite_vendue, produit_nom,
                                 structure_id, vente_id, user_nom):
     """Décrémente le stock d'UN SEUL produit dans Google Sheets — patron :
@@ -9204,7 +9218,7 @@ def _decrementer_stock_produit(worksheet, produit_id, quantite_vendue, produit_n
         current_row = worksheet.row_values(row_num)
         valeur_brute = current_row[5] if len(current_row) > 5 else ''
         try:
-            stock_actuel = int(valeur_brute) if str(valeur_brute).strip() != '' else 0
+            stock_actuel = _lire_quantite_stock(valeur_brute)
         except (ValueError, TypeError):
             print(f"   ⚠️ Valeur de stock illisible pour {produit_nom} (ligne {row_num}): {valeur_brute!r} — traitée comme 0")
             stock_actuel = 0
@@ -9986,7 +10000,7 @@ def api_approvisionner_produit(id):
         current_row = worksheet.row_values(row_num)
         
         # 🔥 Stock est en colonne F (index 5) car E=prix_achat
-        stock_actuel = int(current_row[5]) if len(current_row) > 5 else 0
+        stock_actuel = _lire_quantite_stock(current_row[5] if len(current_row) > 5 else '')
         nouveau_stock = stock_actuel + quantite
         
         worksheet.update_cell(row_num, 6, nouveau_stock)  # Colonne F = index 6 (1-based)
@@ -10049,10 +10063,7 @@ def api_inventaire_valider():
             row_num = cell.row
             current_row = worksheet.row_values(row_num)
             nom_produit = current_row[1] if len(current_row) > 1 else ''
-            try:
-                stock_systeme = int(current_row[5]) if len(current_row) > 5 and current_row[5] else 0
-            except (ValueError, TypeError):
-                stock_systeme = 0
+            stock_systeme = _lire_quantite_stock(current_row[5] if len(current_row) > 5 else '')
 
             ecart = quantite_comptee - stock_systeme
             if ecart == 0:
@@ -10190,6 +10201,80 @@ def _recuperer_historique_mouvements(structure_id, args):
             'unite': m.get('unite', ''),
         })
     return resultats
+
+
+@app.route('/api/produits/ventes-par-jour')
+@login_required
+def api_produits_ventes_par_jour():
+    """⭐ Historique compact des ventes de médicaments (patron, 2026-10-06 :
+    "nombre de médicaments vendus par jour et la valeur totale, encaissée
+    ou non") — par jour : ventes, unités, valeur des médicaments, encaissé
+    (part patient réellement payée, au prorata pour une vente mixte), non
+    encaissé (parts assurances + reste dû) ; détail par médicament."""
+    import json as _json
+    from datetime import date as _date, timedelta as _td
+    structure_id = session.get('structure_id')
+    date_fin = (request.args.get('date_fin') or '').strip() or _date.today().isoformat()
+    date_debut = (request.args.get('date_debut') or '').strip() or (_date.fromisoformat(date_fin) - _td(days=29)).isoformat()
+    rows = db.execute_query("""
+        SELECT id, date_vente, type, produits, actes, net_a_payer, montant_donne, rendu
+        FROM ventes
+        WHERE structure_id = %s AND type IN ('pharma', 'pharmacie', 'mixte')
+          AND (statut IS NULL OR statut != 'annulee')
+          AND date_vente >= %s AND date_vente < CAST(%s AS date) + INTERVAL '1 day'
+        ORDER BY date_vente
+    """, (structure_id, date_debut, date_fin)) or []
+
+    def _liste(v):
+        if isinstance(v, str):
+            try:
+                v = _json.loads(v)
+            except Exception:
+                v = []
+        return [x for x in (v or []) if isinstance(x, dict)]
+
+    def _total_ligne(x):
+        q = float(x.get('quantite') or 1)
+        prix = x.get('prix') if x.get('prix') is not None else (x.get('prix_reel') or 0)
+        total = x.get('total')
+        return float(total) if total is not None else float(prix or 0) * q, q
+
+    jours = {}
+    for v in rows:
+        produits = _liste(v.get('produits'))
+        if not produits:
+            continue
+        valeur_produits, unites, detail = 0.0, 0.0, {}
+        for p in produits:
+            total, q = _total_ligne(p)
+            valeur_produits += total
+            unites += q
+            d = detail.setdefault(p.get('nom') or 'Produit', {'quantite': 0.0, 'valeur': 0.0})
+            d['quantite'] += q
+            d['valeur'] += total
+        valeur_actes = sum(_total_ligne(a)[0] for a in _liste(v.get('actes')))
+        net = float(v.get('net_a_payer') or 0)
+        paye = max(float(v.get('montant_donne') or 0) - float(v.get('rendu') or 0), 0.0)
+        paye = min(paye, net) if net > 0 else 0.0
+        part = valeur_produits / (valeur_produits + valeur_actes) if (valeur_produits + valeur_actes) > 0 else 1.0
+        jour = v['date_vente'].strftime('%Y-%m-%d') if v.get('date_vente') else ''
+        j = jours.setdefault(jour, {'jour': jour, 'nb_ventes': 0, 'unites': 0.0, 'valeur': 0.0, 'encaisse': 0.0, 'detail': {}})
+        j['nb_ventes'] += 1
+        j['unites'] += unites
+        j['valeur'] += valeur_produits
+        j['encaisse'] += paye * part
+        for nom, d in detail.items():
+            jd = j['detail'].setdefault(nom, {'quantite': 0.0, 'valeur': 0.0})
+            jd['quantite'] += d['quantite']
+            jd['valeur'] += d['valeur']
+    liste = []
+    for j in sorted(jours.values(), key=lambda x: x['jour'], reverse=True):
+        j['encaisse'] = min(j['encaisse'], j['valeur'])
+        j['non_encaisse'] = max(j['valeur'] - j['encaisse'], 0.0)
+        j['detail'] = sorted([{'nom': n, **d} for n, d in j['detail'].items()], key=lambda x: -x['quantite'])
+        liste.append(j)
+    totaux = {k: sum(j[k] for j in liste) for k in ('nb_ventes', 'unites', 'valeur', 'encaisse', 'non_encaisse')}
+    return jsonify({'success': True, 'date_debut': date_debut, 'date_fin': date_fin, 'jours': liste, 'totaux': totaux})
 
 
 @app.route('/api/produits/historique', methods=['GET'])
@@ -15355,7 +15440,7 @@ def _executer_annulation_vente(vente_id, motif, structure_id, user_id, user_name
                             # (index 3, qui est le PBR) : une annulation
                             # écrasait le PBR avec un nombre-de-stock et ne
                             # touchait jamais le vrai stock — bug corrigé.
-                            stock_actuel = int(current_row[5]) if len(current_row) > 5 else 0
+                            stock_actuel = _lire_quantite_stock(current_row[5] if len(current_row) > 5 else '')
                             nouveau_stock = stock_actuel + quantite
                             worksheet.update_cell(row_num, 6, nouveau_stock)  # Colonne F = index 6 (1-based)
                             print(f"📦 Restocké dans Sheets: {produit.get('nom')} +{quantite}")

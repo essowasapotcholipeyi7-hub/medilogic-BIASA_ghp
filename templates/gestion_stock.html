@@ -25,7 +25,7 @@
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="historique-tab" data-bs-toggle="tab" data-bs-target="#historiqueProduits" type="button" role="tab" onclick="chargerHistoriqueProduits()">
+                <button class="nav-link" id="historique-tab" data-bs-toggle="tab" data-bs-target="#historiqueProduits" type="button" role="tab" onclick="chargerHistoriqueProduits(); chargerVentesMedicamentsParJour()">
                     <i class="fas fa-history"></i> Historique des actes et produits
                 </button>
             </li>
@@ -101,7 +101,8 @@
                                 <div class="card bg-success bg-opacity-10 border-0 shadow-sm">
                                     <div class="card-body text-center">
                                         <h6 class="text-success" id="valeurStockCard">0 FCFA</h6>
-                                        <small class="text-muted">Valeur du stock</small>
+                                        <small class="text-muted">Valeur du stock (prix d'achat)</small>
+                                        <div class="small text-muted" id="valeurStockVenteCard"></div>
                                     </div>
                                 </div>
                             </div>
@@ -194,7 +195,8 @@
                                 <div class="card bg-success bg-opacity-10 border-0 shadow-sm">
                                     <div class="card-body text-center">
                                         <h4 class="text-success" id="statValeurStock">0 FCFA</h4>
-                                        <small class="text-muted">Valeur du stock</small>
+                                        <small class="text-muted">Valeur du stock (prix d'achat)</small>
+                                        <div class="small text-muted" id="statValeurStockVente"></div>
                                     </div>
                                 </div>
                             </div>
@@ -212,6 +214,30 @@
                                         <h4 class="text-warning" id="statBientotPerimes">0</h4>
                                         <small class="text-muted">Bientôt périmés</small>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ⭐ Détail de la valeur du stock (patron, 2026-10-06 : "la valeur du
+                             stock affichée n'est pas correcte par rapport à leur calcul physique")
+                             : quantités réelles x prix, produit par produit, pour rapprocher
+                             avec le comptage. -->
+                        <div class="card mt-3">
+                            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                <h6 class="mb-0"><i class="fas fa-coins"></i> Détail de la valeur du stock (quantités en stock × prix)</h6>
+                                <div class="d-flex gap-2">
+                                    <input type="text" id="searchDetailValeur" class="form-control form-control-sm" placeholder="Rechercher..." onkeyup="filterDetailValeurStock()" style="max-width:220px;">
+                                    <button class="btn btn-light btn-sm" onclick="imprimerDetailValeurStock()"><i class="fas fa-print"></i> Imprimer</button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="small text-muted mb-2">Valeur au prix d'achat = valeur comptable du stock (à comparer à l'inventaire physique). Valeur au prix de vente = ce que rapporterait le stock s'il était vendu. Un stock négatif compte pour 0.</div>
+                                <div class="table-responsive" style="max-height:440px;">
+                                    <table class="table table-sm table-hover">
+                                        <thead class="table-light"><tr><th>Médicament</th><th class="text-end">Quantité</th><th>Unité</th><th class="text-end">Prix d'achat</th><th class="text-end">Valeur (achat)</th><th class="text-end">Prix de vente</th><th class="text-end">Valeur (vente)</th></tr></thead>
+                                        <tbody id="detailValeurStockBody"></tbody>
+                                        <tfoot id="detailValeurStockFoot"></tfoot>
+                                    </table>
                                 </div>
                             </div>
                         </div>
@@ -348,8 +374,11 @@
                     <div class="card-footer d-flex justify-content-between align-items-center">
                         <span id="inventaireEcartsResume" class="text-muted"></span>
                         <div>
+                            <button class="btn btn-outline-dark me-2" onclick="imprimerFeuilleComptage()" title="Liste à imprimer pour aller compter : stock système + colonnes vides à remplir">
+                                <i class="fas fa-print"></i> Feuille de comptage
+                            </button>
                             <button class="btn btn-outline-secondary me-2" onclick="apercuInventaire()">
-                                <i class="fas fa-eye"></i> Aperçu / Imprimer
+                                <i class="fas fa-eye"></i> Aperçu des écarts / Imprimer
                             </button>
                             <button class="btn btn-secondary" id="btnValiderInventaire" onclick="validerInventaire()">
                                 <i class="fas fa-check"></i> Valider l'inventaire
@@ -361,6 +390,41 @@
 
             <!-- ========== ONGLET HISTORIQUE DES ACTES ET PRODUITS ========== -->
             <div class="tab-pane fade" id="historiqueProduits" role="tabpanel">
+                <!-- ⭐ Ventes de médicaments par jour (patron, 2026-10-06 : "de façon
+                     compacte, nombre de médicaments vendus par jour et la valeur totale
+                     encaissée ou non"). -->
+                <div class="card mb-3">
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <h5 class="mb-0"><i class="fas fa-pills"></i> Ventes de médicaments par jour</h5>
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <label class="small mb-0">Du</label>
+                            <input type="date" class="form-control form-control-sm" id="vmjDateDebut" style="width:auto;" onchange="chargerVentesMedicamentsParJour()">
+                            <label class="small mb-0">au</label>
+                            <input type="date" class="form-control form-control-sm" id="vmjDateFin" style="width:auto;" onchange="chargerVentesMedicamentsParJour()">
+                            <button class="btn btn-light btn-sm" onclick="imprimerVentesMedicamentsParJour()"><i class="fas fa-print"></i> Imprimer</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Jour</th>
+                                        <th class="text-end">Ventes</th>
+                                        <th class="text-end">Médicaments vendus (unités)</th>
+                                        <th class="text-end">Valeur totale</th>
+                                        <th class="text-end">Encaissé</th>
+                                        <th class="text-end">Non encaissé</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="vmjBody"><tr><td colspan="7" class="text-center text-muted">Chargement...</td></tr></tbody>
+                                <tfoot id="vmjFoot"></tfoot>
+                            </table>
+                        </div>
+                        <div class="small text-muted mt-2">Encaissé = part patient réellement payée (au prorata des médicaments pour une vente mixte). Non encaissé = parts prises en charge par les assurances + reste dû.</div>
+                    </div>
+                </div>
                 <div class="card">
                     <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h5><i class="fas fa-history"></i> Historique des mouvements (entrées / sorties)</h5>
@@ -911,7 +975,10 @@ function clearSearchProduitAdmin() {
 
 function updateStats(produits) {
     let total = produits.length;
-    let valeurStock = 0;
+    let valeurStock = 0;          // au prix d'achat (valeur comptable)
+    let valeurStockVente = 0;     // au prix de vente
+    let unitesEnStock = 0;
+    let sansPrixAchat = 0;
     let perimes = 0;
     let bientotPerimes = 0;
     let stockAlerte = 0;
@@ -922,10 +989,18 @@ function updateStats(produits) {
     dateLimite.setDate(dateLimite.getDate() + 30);
     
     produits.forEach(p => {
-        // Valeur du stock au prix de vente (pas au prix d'achat) : ce que
-        // représente le stock actuel s'il était vendu, pas son coût — somme
-        // de (prix de vente × quantité en stock) pour chaque article.
-        valeurStock += (p.prix_vente || 0) * (p.quantite_stock || 0);
+        // ⭐ Patron (2026-10-06) : "la valeur du stock affichée n'est pas
+        // correcte par rapport à leur calcul physique". Deux valeurs, sur les
+        // quantités RÉELLES en stock (un stock négatif compte 0) : au prix
+        // d'achat (valeur comptable, celle qu'on compare au comptage) et au
+        // prix de vente (ce que rapporterait le stock). Le détail produit par
+        // produit est dans Statistiques (rendreDetailValeurStock).
+        const qteReelle = Math.max(parseFloat(p.quantite_stock) || 0, 0);
+        const prixAchat = parseFloat(p.prix_achat) || 0;
+        valeurStock += prixAchat * qteReelle;
+        valeurStockVente += (parseFloat(p.prix_vente) || 0) * qteReelle;
+        unitesEnStock += qteReelle;
+        if (!(prixAchat > 0) && qteReelle > 0) sansPrixAchat++;
         
         if (p.quantite_stock <= p.seuil_alerte) stockAlerte++;
         
@@ -957,6 +1032,12 @@ function updateStats(produits) {
     // Cartes
     document.getElementById('totalProduitsCard').textContent = total;
     document.getElementById('valeurStockCard').textContent = Math.round(valeurStock).toLocaleString('fr-FR') + ' FCFA';
+    const complementValeur = 'À la vente : ' + Math.round(valeurStockVente).toLocaleString('fr-FR') + ' FCFA · ' +
+        Math.round(unitesEnStock).toLocaleString('fr-FR') + ' unités' +
+        (sansPrixAchat ? ' · <span class="text-warning">' + sansPrixAchat + ' produit(s) sans prix d\'achat</span>' : '');
+    document.getElementById('valeurStockVenteCard').innerHTML = complementValeur;
+    document.getElementById('statValeurStockVente').innerHTML = complementValeur;
+    rendreDetailValeurStock(produits);
     document.getElementById('produitsPerimesCard').textContent = perimes;
     document.getElementById('stockAlerteCard').textContent = stockAlerte;
     
@@ -1493,8 +1574,14 @@ async function apercuInventaire() {
     `).join('');
 
     const nbEcarts = lignes.filter(l => l.ecart !== 0).length;
+    // Valeur des écarts au prix d'achat (manquants = négatif) — pour mesurer l'impact avant de valider
+    const valeurEcarts = lignes.reduce((s, l) => {
+        const p = inventaireListeComplete.find(x => String(x.id) === String(l.produit_id));
+        return s + l.ecart * (p ? (parseFloat(p.prix_achat) || 0) : 0);
+    }, 0);
     document.getElementById('apercuInventaireResume').textContent =
-        `${lignes.length} médicament(s) compté(s), dont ${nbEcarts} écart(s).`;
+        `${lignes.length} médicament(s) compté(s), dont ${nbEcarts} écart(s)` +
+        (nbEcarts ? ` — valeur des écarts au prix d'achat : ${valeurEcarts > 0 ? '+' : ''}${Math.round(valeurEcarts).toLocaleString('fr-FR')} F.` : '.');
 
     new bootstrap.Modal(document.getElementById('modalApercuInventaire')).show();
 }
@@ -1584,6 +1671,132 @@ async function validerInventaire() {
         hideLoader();
         await afficherMessage('Erreur: ' + error, {type: 'danger'});
     });
+}
+
+// ========== ⭐ VALEUR DU STOCK — détail par produit (patron, 2026-10-06) ==========
+let detailValeurStockLignes = [];
+function rendreDetailValeurStock(produits) {
+    const f = n => Math.round(n).toLocaleString('fr-FR');
+    detailValeurStockLignes = (produits || []).map(p => {
+        const qte = Math.max(parseFloat(p.quantite_stock) || 0, 0);
+        const pa = parseFloat(p.prix_achat) || 0, pv = parseFloat(p.prix_vente) || 0;
+        return { nom: p.nom, unite: p.unite || '', qte, pa, pv, va: pa * qte, vv: pv * qte };
+    }).sort((a, b) => b.va - a.va || b.vv - a.vv);
+    filterDetailValeurStock();
+}
+function filterDetailValeurStock() {
+    const f = n => Math.round(n).toLocaleString('fr-FR');
+    const q = (document.getElementById('searchDetailValeur')?.value || '').toLowerCase();
+    const lignes = detailValeurStockLignes.filter(l => !q || (l.nom || '').toLowerCase().includes(q));
+    const body = document.getElementById('detailValeurStockBody');
+    if (!body) return;
+    body.innerHTML = lignes.length ? lignes.map(l => `
+        <tr class="${l.qte === 0 ? 'text-muted' : ''}">
+            <td>${l.nom}</td><td class="text-end">${f(l.qte)}</td><td>${l.unite}</td>
+            <td class="text-end">${l.pa ? f(l.pa) : '<span class="text-warning" title="Prix d\'achat non renseigné">—</span>'}</td>
+            <td class="text-end fw-semibold">${f(l.va)}</td>
+            <td class="text-end">${f(l.pv)}</td><td class="text-end">${f(l.vv)}</td>
+        </tr>`).join('') : '<tr><td colspan="7" class="text-center text-muted">Aucun produit</td></tr>';
+    const tva = lignes.reduce((s, l) => s + l.va, 0), tvv = lignes.reduce((s, l) => s + l.vv, 0), tq = lignes.reduce((s, l) => s + l.qte, 0);
+    document.getElementById('detailValeurStockFoot').innerHTML =
+        `<tr class="table-light fw-bold"><td>Total (${lignes.length} produit(s))</td><td class="text-end">${f(tq)}</td><td></td><td></td><td class="text-end">${f(tva)} F</td><td></td><td class="text-end">${f(tvv)} F</td></tr>`;
+}
+async function imprimerDetailValeurStock() {
+    const f = n => Math.round(n).toLocaleString('fr-FR');
+    const q = (document.getElementById('searchDetailValeur')?.value || '').toLowerCase();
+    const lignes = detailValeurStockLignes.filter(l => !q || (l.nom || '').toLowerCase().includes(q));
+    const tva = lignes.reduce((s, l) => s + l.va, 0), tvv = lignes.reduce((s, l) => s + l.vv, 0), tq = lignes.reduce((s, l) => s + l.qte, 0);
+    const html = `<html><head><title>Valeur du stock</title><style>
+        body{font-family:Arial,sans-serif;padding:20px;color:#000;font-size:13px;} h2{margin:0 0 4px;} table{width:100%;border-collapse:collapse;margin-top:12px;}
+        th,td{border:1px solid #000;padding:5px 7px;} th{text-align:left;} .e{text-align:right;} tfoot td{font-weight:bold;} thead{display:table-header-group;}
+        </style></head><body>
+        <h2>Valeur du stock de médicaments</h2><div>Établi le ${new Date().toLocaleString('fr-FR')} — ${lignes.length} produit(s), ${f(tq)} unité(s) en stock</div>
+        <div style="margin-top:8px;border:2px solid #000;padding:8px 12px;display:inline-block;"><strong>Valeur au prix d'achat : ${f(tva)} F</strong> &nbsp;·&nbsp; Valeur au prix de vente : ${f(tvv)} F</div>
+        <table><thead><tr><th>Médicament</th><th class="e">Quantité</th><th>Unité</th><th class="e">Prix d'achat</th><th class="e">Valeur (achat)</th><th class="e">Prix de vente</th><th class="e">Valeur (vente)</th></tr></thead>
+        <tbody>${lignes.map(l => `<tr><td>${l.nom}</td><td class="e">${f(l.qte)}</td><td>${l.unite}</td><td class="e">${l.pa ? f(l.pa) : '—'}</td><td class="e">${f(l.va)}</td><td class="e">${f(l.pv)}</td><td class="e">${f(l.vv)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td>Total</td><td class="e">${f(tq)}</td><td></td><td></td><td class="e">${f(tva)} F</td><td></td><td class="e">${f(tvv)} F</td></tr></tfoot></table>
+        </body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { await afficherMessage("Le navigateur a bloqué l'ouverture de la fenêtre d'impression."); return; }
+    w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+}
+
+// ========== ⭐ INVENTAIRE — feuille de comptage à imprimer AVANT de valider (patron, 2026-10-06) ==========
+async function imprimerFeuilleComptage() {
+    const q = (document.getElementById('searchInventaire')?.value || '').toLowerCase();
+    const lignes = inventaireListeComplete.filter(p => !q || (p.nom || '').toLowerCase().includes(q));
+    if (!lignes.length) { await afficherMessage('Aucun médicament à imprimer.'); return; }
+    const dateStr = new Date().toLocaleDateString('fr-FR');
+    const html = `<html><head><title>Feuille de comptage - ${dateStr}</title><style>
+        body{font-family:Arial,sans-serif;padding:20px;color:#000;font-size:13px;} h2{margin:0 0 4px;} table{width:100%;border-collapse:collapse;margin-top:12px;}
+        th,td{border:1px solid #000;padding:6px 7px;} th{text-align:left;} .e{text-align:right;} thead{display:table-header-group;} tr{page-break-inside:avoid;}
+        .vide{min-width:90px;} .signatures{margin-top:50px;display:flex;justify-content:space-between;} .signatures div{width:45%;border-top:1px solid #000;padding-top:6px;text-align:center;}
+        </style></head><body>
+        <h2>Feuille de comptage — inventaire physique</h2>
+        <div>Date : ${dateStr} — ${lignes.length} médicament(s)${q ? ' (filtre : « ' + q + ' »)' : ''}. Comptez, écrivez la quantité trouvée, puis reportez-la dans l'onglet Inventaire avant de valider.</div>
+        <table><thead><tr><th>Médicament</th><th>Unité</th><th>Rayon</th><th class="e">Stock système</th><th class="vide">Quantité comptée</th><th class="vide">Écart</th><th>Motif / observation</th></tr></thead>
+        <tbody>${lignes.map(p => `<tr><td>${p.nom}</td><td>${p.unite || ''}</td><td>${p.rayon_rangement || ''}</td><td class="e">${p.quantite_stock ?? 0}</td><td></td><td></td><td></td></tr>`).join('')}</tbody></table>
+        <div class="signatures"><div>Compté par</div><div>Vérifié par</div></div>
+        </body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { await afficherMessage("Le navigateur a bloqué l'ouverture de la fenêtre d'impression."); return; }
+    w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+}
+
+// ========== ⭐ VENTES DE MÉDICAMENTS PAR JOUR (patron, 2026-10-06) ==========
+let vmjDonnees = null;
+function chargerVentesMedicamentsParJour() {
+    const deb = document.getElementById('vmjDateDebut'), fin = document.getElementById('vmjDateFin');
+    if (!deb || !fin) return;
+    if (!fin.value) fin.value = new Date().toISOString().slice(0, 10);
+    if (!deb.value) { const d = new Date(); d.setDate(d.getDate() - 29); deb.value = d.toISOString().slice(0, 10); }
+    const f = n => Math.round(n).toLocaleString('fr-FR');
+    const body = document.getElementById('vmjBody');
+    body.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Chargement...</td></tr>';
+    fetch(`/api/produits/ventes-par-jour?date_debut=${deb.value}&date_fin=${fin.value}`).then(r => r.json()).then(d => {
+        if (!d.success) { body.innerHTML = '<tr><td colspan="7" class="text-center text-danger">' + (d.error || 'Erreur') + '</td></tr>'; return; }
+        vmjDonnees = d;
+        if (!d.jours.length) { body.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Aucune vente de médicament sur cette période.</td></tr>'; document.getElementById('vmjFoot').innerHTML = ''; return; }
+        body.innerHTML = d.jours.map((j, i) => `
+            <tr>
+                <td><strong>${new Date(j.jour + 'T00:00:00').toLocaleDateString('fr-FR', {weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric'})}</strong></td>
+                <td class="text-end">${j.nb_ventes}</td>
+                <td class="text-end">${f(j.unites)}</td>
+                <td class="text-end fw-semibold">${f(j.valeur)} F</td>
+                <td class="text-end text-success">${f(j.encaisse)} F</td>
+                <td class="text-end ${j.non_encaisse > 0 ? 'text-danger' : 'text-muted'}">${f(j.non_encaisse)} F</td>
+                <td class="text-end"><button class="btn btn-sm btn-outline-secondary py-0" onclick="toggleDetailJour(${i})" title="Détail par médicament"><i class="fas fa-list"></i></button></td>
+            </tr>
+            <tr id="vmjDetail${i}" style="display:none;"><td colspan="7" class="bg-light">
+                <table class="table table-sm mb-0" style="max-width:700px;"><thead><tr><th>Médicament</th><th class="text-end">Unités</th><th class="text-end">Valeur</th></tr></thead>
+                <tbody>${j.detail.map(x => `<tr><td>${x.nom}</td><td class="text-end">${f(x.quantite)}</td><td class="text-end">${f(x.valeur)} F</td></tr>`).join('')}</tbody></table>
+            </td></tr>`).join('');
+        const t = d.totaux;
+        document.getElementById('vmjFoot').innerHTML = `<tr class="table-light fw-bold"><td>Total (${d.jours.length} jour(s))</td><td class="text-end">${t.nb_ventes}</td><td class="text-end">${f(t.unites)}</td><td class="text-end">${f(t.valeur)} F</td><td class="text-end text-success">${f(t.encaisse)} F</td><td class="text-end">${f(t.non_encaisse)} F</td><td></td></tr>`;
+    }).catch(() => { body.innerHTML = '<tr><td colspan="7" class="text-center text-danger">Erreur de chargement</td></tr>'; });
+}
+function toggleDetailJour(i) {
+    const tr = document.getElementById('vmjDetail' + i);
+    if (tr) tr.style.display = tr.style.display === 'none' ? '' : 'none';
+}
+async function imprimerVentesMedicamentsParJour() {
+    const d = vmjDonnees;
+    if (!d || !d.jours.length) { await afficherMessage('Rien à imprimer sur cette période.'); return; }
+    const f = n => Math.round(n).toLocaleString('fr-FR');
+    const fd = s => new Date(s + 'T00:00:00').toLocaleDateString('fr-FR');
+    const html = `<html><head><title>Ventes de médicaments par jour</title><style>
+        body{font-family:Arial,sans-serif;padding:20px;color:#000;font-size:13px;} h2{margin:0 0 4px;} table{width:100%;border-collapse:collapse;margin-top:12px;}
+        th,td{border:1px solid #000;padding:5px 7px;} th{text-align:left;} .e{text-align:right;} tfoot td{font-weight:bold;} thead{display:table-header-group;} .det{font-size:12px;color:#333;}
+        </style></head><body>
+        <h2>Ventes de médicaments par jour</h2><div>Du ${fd(d.date_debut)} au ${fd(d.date_fin)} — établi le ${new Date().toLocaleString('fr-FR')}</div>
+        <table><thead><tr><th>Jour</th><th class="e">Ventes</th><th class="e">Unités vendues</th><th class="e">Valeur totale</th><th class="e">Encaissé</th><th class="e">Non encaissé</th><th>Détail (médicament × unités)</th></tr></thead>
+        <tbody>${d.jours.map(j => `<tr><td>${fd(j.jour)}</td><td class="e">${j.nb_ventes}</td><td class="e">${f(j.unites)}</td><td class="e">${f(j.valeur)} F</td><td class="e">${f(j.encaisse)} F</td><td class="e">${f(j.non_encaisse)} F</td><td class="det">${j.detail.map(x => x.nom + ' × ' + f(x.quantite)).join(', ')}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td>Total</td><td class="e">${d.totaux.nb_ventes}</td><td class="e">${f(d.totaux.unites)}</td><td class="e">${f(d.totaux.valeur)} F</td><td class="e">${f(d.totaux.encaisse)} F</td><td class="e">${f(d.totaux.non_encaisse)} F</td><td></td></tr></tfoot></table>
+        <div style="margin-top:8px;font-size:12px;">Encaissé = part patient réellement payée ; non encaissé = parts assurances + reste dû.</div>
+        </body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { await afficherMessage("Le navigateur a bloqué l'ouverture de la fenêtre d'impression."); return; }
+    w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
 }
 
 // ========== HISTORIQUE DES MOUVEMENTS (actes et produits) ==========
