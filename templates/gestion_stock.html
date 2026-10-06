@@ -202,9 +202,14 @@
                         <h5 class="mb-0"><i class="fas fa-chart-bar"></i> Statistiques des produits</h5>
                         <!-- ⭐ Patron (2026-10-06) : « Stock à une date donnée » était caché tout
                              en bas ; il s'ouvre maintenant d'ici, dans une fenêtre avec Fermer. -->
-                        <button class="btn btn-warning fw-bold shadow" style="font-size:1.05rem;padding:8px 18px;border:2px solid #fff;" onclick="ouvrirStockADate()">
-                            <i class="fas fa-history me-1"></i> Stock à une date donnée
-                        </button>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button class="btn btn-warning fw-bold shadow" style="font-size:1.05rem;padding:8px 18px;border:2px solid #fff;" onclick="ouvrirStockADate()">
+                                <i class="fas fa-history me-1"></i> Stock à une date donnée
+                            </button>
+                            <button class="btn btn-success fw-bold shadow" style="font-size:1.05rem;padding:8px 18px;border:2px solid #fff;" onclick="new bootstrap.Modal(document.getElementById('modalTopMarge')).show()">
+                                <i class="fas fa-chart-line me-1"></i> Top 10 produits par marge
+                            </button>
+                        </div>
                     </div>
                     <div class="card-body">
                         <div class="row g-3 mb-4">
@@ -278,33 +283,6 @@
                                         <thead class="table-light"><tr><th>Médicament</th><th class="text-end">Quantité</th><th>Unité</th><th class="text-end">Prix d'achat</th><th class="text-end">Valeur (achat)</th><th class="text-end">Prix de vente</th><th class="text-end">Valeur (vente)</th></tr></thead>
                                         <tbody id="detailValeurStockBody"></tbody>
                                         <tfoot id="detailValeurStockFoot"></tfoot>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Top 10 produits par marge -->
-                        <div class="card mt-3">
-                            <div class="card-header bg-success text-white">
-                                <h6><i class="fas fa-chart-line"></i> Top 10 produits par marge</h6>
-                            </div>
-                            <div class="card-body">
-                                <div class="table-responsive">
-                                    <table class="table table-hover">
-                                        <thead>
-                                            <tr>
-                                                <th>#</th>
-                                                <th>Produit</th>
-                                                <th>Prix vente</th>
-                                                <th>Prix achat</th>
-                                                <th>Marge unitaire</th>
-                                                <th>Stock</th>
-                                                <th>Marge totale</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="topMargeList">
-                                            <tr><td colspan="7" class="text-center">Chargement...</td></tr>
-                                        </tbody>
                                     </table>
                                 </div>
                             </div>
@@ -569,6 +547,42 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-dark" onclick="imprimerListeProduitsModal()"><i class="fas fa-print"></i> Imprimer</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><i class="fas fa-times"></i> Fermer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ⭐ Top 10 produits par marge — fenêtre ouverte depuis l'onglet Statistiques (patron, 2026-10-06) -->
+<div class="modal fade" id="modalTopMarge" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-chart-line"></i> Top 10 produits par marge</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="small text-muted mb-2">Marge unitaire = prix de vente − prix d'achat ; marge totale = marge unitaire × stock. Seuls les produits avec un prix d'achat renseigné et du stock apparaissent.</div>
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th>#</th>
+                                <th>Produit</th>
+                                <th>Prix vente</th>
+                                <th>Prix achat</th>
+                                <th>Marge unitaire</th>
+                                <th>Stock</th>
+                                <th>Marge totale</th>
+                            </tr>
+                        </thead>
+                        <tbody id="topMargeList">
+                            <tr><td colspan="7" class="text-center">Chargement...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><i class="fas fa-times"></i> Fermer</button>
             </div>
         </div>
