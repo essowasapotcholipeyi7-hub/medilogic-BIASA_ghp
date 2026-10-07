@@ -345,6 +345,7 @@ body.modal-open {
                             {% for m in medecins %}{% if m.specialite and (m.specialite|trim|lower) not in specialites_connues %}{% set _ = specialites_connues.append(m.specialite|trim|lower) %}{% endif %}{% endfor %}
                             <select class="form-select" id="motifSpecialite">
                                 <option value="">-- Quelle spécialité ? --</option>
+                                <option value="Médecine générale">Médecine générale</option>
                                 {% set deja = [] %}
                                 {% for m in medecins %}{% if m.specialite and (m.specialite|trim|lower) not in deja %}{% set _ = deja.append(m.specialite|trim|lower) %}
                                 <option value="{{ m.specialite|trim }}">{{ m.specialite|trim }}</option>{% endif %}{% endfor %}
@@ -754,7 +755,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Gestion du motif "Autre"
     document.getElementById('motifSelect').addEventListener('change', function() {
         document.getElementById('motifAutreContainer').style.display = this.value === 'Autre' ? 'block' : 'none';
-        document.getElementById('motifSpecialiteContainer').style.display = this.value === 'Consultation specialisee' ? 'block' : 'none';
+        document.getElementById('motifSpecialiteContainer').style.display = MOTIFS_AVEC_SPECIALITE[this.value] ? 'block' : 'none';
         filtrerMedecinsParSpecialite();
     });
     // ⭐ Spécialité choisie : champ libre si « Autre », et liste des médecins filtrée dessus
@@ -949,14 +950,17 @@ function ajouterRendezVous() {
     }
     // ⭐ Consultation spécialisée : la spécialité fait partie du motif (et donc
     // du reçu imprimé) — patron, 2026-10-07.
-    if (motif === 'Consultation specialisee') {
+    // ⭐ Patron (2026-10-07) : « même si le motif est contrôle on doit choisir
+    // dans quelle spécialité » — la règle de paiement compare alors avec la
+    // dernière consultation payée de cette spécialité.
+    if (MOTIFS_AVEC_SPECIALITE[motif]) {
         var spec = document.getElementById('motifSpecialite').value;
         if (spec === '__autre__') spec = document.getElementById('motifSpecialiteAutre').value.trim();
         if (!spec) {
-            showToast('Précisez la spécialité de la consultation', 'warning');
+            showToast('Précisez la spécialité (' + MOTIFS_AVEC_SPECIALITE[motif].toLowerCase() + ')', 'warning');
             return;
         }
-        motif = 'Consultation spécialisée — ' + spec;
+        motif = MOTIFS_AVEC_SPECIALITE[motif] + ' — ' + spec;
     }
     
     if (!motif) {
@@ -1205,14 +1209,17 @@ function calImprimer() {
 }
 
 // Médecins filtrés sur la spécialité choisie (consultation spécialisée) ; tous visibles sinon
+// ⭐ Motifs pour lesquels on précise la spécialité (valeur du select -> libellé du motif)
+const MOTIFS_AVEC_SPECIALITE = {'Consultation specialisee': 'Consultation spécialisée', 'Controle': 'Contrôle', 'Suivi medical': 'Suivi médical'};
 function filtrerMedecinsParSpecialite() {
     const type = document.getElementById('motifSelect').value;
     const spec = document.getElementById('motifSpecialite').value;
-    const actif = type === 'Consultation specialisee' && spec && spec !== '__autre__';
+    const actif = !!MOTIFS_AVEC_SPECIALITE[type] && spec && spec !== '__autre__';
     const sel = document.getElementById('medecinSelect');
     [...sel.options].forEach(o => {
         if (!o.value) return;
-        const cache = actif && (o.dataset.specialite || '').trim().toLowerCase() !== spec.trim().toLowerCase();
+        const sp = (o.dataset.specialite || '').trim().toLowerCase(), voulu = spec.trim().toLowerCase();
+        const cache = actif && sp !== voulu && !(voulu === 'médecine générale' && /g[eé]n[eé]ral/.test(sp));
         o.hidden = cache;
         if (cache && sel.value === o.value) sel.value = '';
     });

@@ -26,6 +26,11 @@ def test_type_du_rendez_vous():
     assert type_consultation_rdv('Consultation générale') == ('general', 'médecine générale')
     assert type_consultation_rdv('Consultation spécialisée — Cardiologie')[0] == 'cardio'
     assert type_consultation_rdv('Consultation spécialisée — CARDIO')[0] == 'cardio'
+    # contrôle / suivi / résultats avec la spécialité choisie dans le motif
+    assert type_consultation_rdv('Contrôle — Cardiologie', 'Generaliste')[0] == 'cardio'
+    assert type_consultation_rdv('Contrôle / suivi — Médecine générale', 'CARDIOLOGUE')[0] == 'general'
+    assert type_consultation_rdv("Résultats d'examens — Rhumatologie")[0] == 'rhumato'
+    assert type_consultation_rdv('Suivi médical — Acupuncture')[0] == type_consultation_acte('Consultation acupuncture')
     # contrôle sans spécialité dans le motif : celle du médecin
     assert type_consultation_rdv('Contrôle', 'RHUMATOLOGUE')[0] == 'rhumato'
     assert type_consultation_rdv('Contrôle / suivi', None)[0] == 'general'

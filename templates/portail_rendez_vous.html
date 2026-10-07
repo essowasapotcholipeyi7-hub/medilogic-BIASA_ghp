@@ -106,7 +106,8 @@ function chargerRdv() {
         if (sel.options.length <= 1) d.medecins.forEach(m => { const o = document.createElement('option'); o.value = m.id; o.textContent = m.nom + (m.specialite ? ' — ' + m.specialite : ''); o.dataset.specialite = (m.specialite || '').toLowerCase(); sel.appendChild(o); });
         const selSpec = document.getElementById('ppSpecialite');
         if (selSpec.options.length <= 1) {
-            (d.specialites || []).forEach(sp => { const o = document.createElement('option'); o.value = sp; o.textContent = sp; selSpec.appendChild(o); });
+            const mg = document.createElement('option'); mg.value = 'Médecine générale'; mg.textContent = 'Médecine générale'; selSpec.appendChild(mg);
+            (d.specialites || []).filter(sp => !/g[eé]n[eé]ral/i.test(sp)).forEach(sp => { const o = document.createElement('option'); o.value = sp; o.textContent = sp; selSpec.appendChild(o); });
             const autre = document.createElement('option'); autre.value = '__autre__'; autre.textContent = 'Autre spécialité (préciser)'; selSpec.appendChild(autre);
         }
         const dateInput = document.getElementById('ppDate');
@@ -147,18 +148,23 @@ function chargerRdv() {
 }
 
 // ⭐ Motif : type choisi + spécialité ou précision -> un seul texte envoyé
+// ⭐ Patron (2026-10-07) : contrôle / suivi et résultats demandent aussi la
+// spécialité, pour que la règle de paiement compare avec la bonne consultation.
+const MOTIFS_AVEC_SPECIALITE = ['Consultation spécialisée', 'Contrôle / suivi', "Résultats d'examens"];
 function majMotif() {
     const type = document.getElementById('ppMotifType').value;
     const blocSpec = document.getElementById('ppBlocSpecialite'), blocAutre = document.getElementById('ppBlocMotifAutre');
-    blocSpec.style.display = type === 'Consultation spécialisée' ? '' : 'none';
+    const avecSpec = MOTIFS_AVEC_SPECIALITE.includes(type);
+    blocSpec.style.display = avecSpec ? '' : 'none';
     blocAutre.style.display = type === 'Autre' ? '' : 'none';
     const spec = document.getElementById('ppSpecialite').value;
-    document.getElementById('ppSpecialiteAutre').style.display = (type === 'Consultation spécialisée' && spec === '__autre__') ? '' : 'none';
+    document.getElementById('ppSpecialiteAutre').style.display = (avecSpec && spec === '__autre__') ? '' : 'none';
     // Médecins filtrés sur la spécialité choisie (les autres restent accessibles via « Au choix de la structure »)
     const sel = document.getElementById('ppMedecin');
     [...sel.options].forEach(o => {
         if (!o.value) return;
-        const cache = type === 'Consultation spécialisée' && spec && spec !== '__autre__' && o.dataset.specialite !== spec.toLowerCase();
+        const voulu = spec.toLowerCase();
+        const cache = avecSpec && spec && spec !== '__autre__' && o.dataset.specialite !== voulu && !(voulu === 'médecine générale' && /g[eé]n[eé]ral/.test(o.dataset.specialite));
         o.hidden = cache;
         if (cache && sel.value === o.value) sel.value = '';
     });
@@ -166,11 +172,11 @@ function majMotif() {
 function motifCompose() {
     const type = document.getElementById('ppMotifType').value;
     if (!type) return null;
-    if (type === 'Consultation spécialisée') {
+    if (MOTIFS_AVEC_SPECIALITE.includes(type)) {
         const spec = document.getElementById('ppSpecialite').value;
         const precision = spec === '__autre__' ? document.getElementById('ppSpecialiteAutre').value.trim() : spec;
         if (!precision) return null;
-        return 'Consultation spécialisée — ' + precision;
+        return type + ' — ' + precision;
     }
     if (type === 'Autre') {
         const precision = document.getElementById('ppMotifAutre').value.trim();

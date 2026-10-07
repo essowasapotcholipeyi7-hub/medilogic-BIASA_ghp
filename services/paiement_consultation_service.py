@@ -106,9 +106,15 @@ def type_consultation_rdv(motif, specialite_medecin=None):
         return None
     # Consultation spécialisée — X : la spécialité est dans le motif
     partie_spec = None
-    if 'specialis' in m:
+    if '—' in m:
+        # « Contrôle — Cardiologie », « Consultation spécialisée — X » : la
+        # spécialité est après le tiret (patron : « même si le motif est
+        # contrôle on doit choisir dans quelle spécialité »)
+        partie_spec = m.split('—', 1)[1].strip()
+    elif 'specialis' in m:
         morceaux = re.split(r'[—:\-]', m, maxsplit=1)
         partie_spec = morceaux[1].strip() if len(morceaux) > 1 else ''
+    if partie_spec is not None:
         partie_spec = re.sub(r'consult\w*|specialis\w*', ' ', partie_spec).strip()
     cle = famille(partie_spec if partie_spec else m)
     if cle:
