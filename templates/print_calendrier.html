@@ -3,257 +3,125 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Calendrier des rendez-vous</title>
+    <title>Rendez-vous — {{ libelle_periode }}</title>
+    <!-- ⭐ Patron (2026-10-07) : "corrige pour que ça soit bien visible". Un bloc
+         par jour avec un vrai tableau lisible (heure, patient, téléphone,
+         médecin, motif, statut) à la place de sept colonnes minuscules ;
+         paysage ; impression à la demande, fermeture après impression. -->
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Segoe UI', Arial, sans-serif;
-            background: white;
-            padding: 20px;
-        }
-        .header {
-            text-align: center;
-            padding: 20px 0 15px 0;
-            border-bottom: 3px solid #1a2a6c;
-            margin-bottom: 25px;
-        }
-        .header .logo-area {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 15px;
-            flex-wrap: wrap;
-        }
-        .header .logo-area img {
-            max-height: 60px;
-            max-width: 120px;
-            object-fit: contain;
-        }
-        .header h1 {
-            font-size: 24px;
-            color: #1a2a6c;
-        }
-        .header .sub-info {
-            font-size: 12px;
-            color: #6c7a89;
-            margin-top: 5px;
-        }
-        .header .sub-info span {
-            margin: 0 8px;
-        }
-        .header .period {
-            font-size: 16px;
-            color: #2d4373;
-            margin-top: 8px;
-            font-weight: 600;
-        }
-        .header .stats {
-            font-size: 12px;
-            color: #3d4f60;
-            margin-top: 5px;
-        }
-        .header .stats span {
-            font-weight: 600;
-            color: #1a2a6c;
-        }
-        .calendrier-grid {
-            display: grid;
-            grid-template-columns: repeat(7, 1fr);
-            gap: 2px;
-            background: #e6ebf2;
-            border: 1px solid #dce3ed;
-        }
-        .jour-colonne {
-            background: white;
-            min-height: 400px;
-        }
-        .jour-entete {
-            background: #1a2a6c;
-            color: white;
-            padding: 10px 8px;
-            text-align: center;
-            font-weight: 600;
-            font-size: 13px;
-        }
-        .jour-entete .date-num {
-            font-size: 22px;
-            font-weight: 700;
-        }
-        .jour-entete .date-nom {
-            font-size: 11px;
-            opacity: 0.8;
-            text-transform: uppercase;
-        }
-        .jour-entete.weekend {
-            background: #2d4373;
-        }
-        .jour-entete.aujourdhui {
-            background: #e74c3c;
-        }
-        .jour-contenu {
-            padding: 6px;
-            min-height: 300px;
-        }
-        .jour-contenu .aucun-rdv {
-            text-align: center;
-            color: #b0b8c5;
-            font-size: 11px;
-            padding: 20px 5px;
-            font-style: italic;
-        }
-        .rdv-card {
-            background: #f8faff;
-            border-radius: 6px;
-            padding: 6px 8px;
-            margin-bottom: 4px;
-            border-left: 4px solid #667eea;
-            font-size: 10px;
-        }
-        .rdv-card .rdv-heure {
-            font-weight: 700;
-            color: #1a2a6c;
-            font-size: 12px;
-        }
-        .rdv-card .rdv-patient {
-            font-weight: 600;
-            color: #1a2a3a;
-            font-size: 11px;
-        }
-        .rdv-card .rdv-medecin {
-            color: #6c7a89;
-            font-size: 9px;
-        }
-        .rdv-card .rdv-motif {
-            color: #3d4f60;
-            font-size: 9px;
-            margin-top: 1px;
-        }
-        .rdv-card .badge-statut {
-            display: inline-block;
-            font-size: 7px;
-            padding: 1px 6px;
-            border-radius: 10px;
-            font-weight: 600;
-            text-transform: uppercase;
-            margin-top: 2px;
-        }
-        .badge-statut.programme { background: #fff3cd; color: #856404; }
-        .badge-statut.confirme { background: #d4edda; color: #155724; }
-        .badge-statut.termine { background: #e2e3e5; color: #383d41; }
-        .badge-statut.annule { background: #f8d7da; color: #721c24; }
-        .badge-statut.reporte { background: #d1ecf1; color: #0c5460; }
-        .footer {
-            margin-top: 25px;
-            padding-top: 15px;
-            border-top: 2px solid #e6ebf2;
-            text-align: center;
-            font-size: 10px;
-            color: #8e9aaf;
-        }
+        :root { --bleu: #1a2a6c; --gris: #6b7a8c; --bord: #d9e0ea; }
+        body { font-family: 'Segoe UI', Arial, Helvetica, sans-serif; color: #1f2d3d; background: #eef1f5; padding: 20px; }
+        .actions { max-width: 1100px; margin: 0 auto 12px; display: flex; gap: 10px; justify-content: flex-end; }
+        .actions button { border: none; border-radius: 6px; padding: 9px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }
+        .actions .imprimer { background: var(--bleu); color: #fff; }
+        .actions .fermer { background: #e4e8ef; color: #1f2d3d; }
+        .page { max-width: 1100px; margin: 0 auto; background: #fff; border: 1px solid var(--bord); padding: 18px 24px; }
+        .entete { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 4px solid var(--bleu); padding-bottom: 10px; margin-bottom: 14px; }
+        .entete .structure { display: flex; align-items: center; gap: 12px; }
+        .entete img { max-height: 54px; max-width: 110px; object-fit: contain; }
+        .entete .nom { font-size: 19px; font-weight: 700; color: var(--bleu); }
+        .entete .coord { font-size: 11.5px; color: var(--gris); white-space: pre-line; }
+        .entete .titre { text-align: right; }
+        .entete .titre .libelle { font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--gris); font-weight: 600; }
+        .entete .titre .periode { font-size: 18px; font-weight: 700; color: var(--bleu); }
+        .entete .titre .stats { font-size: 12px; color: var(--gris); margin-top: 2px; }
+        .jour { margin-bottom: 14px; page-break-inside: avoid; }
+        .jour-titre { display: flex; justify-content: space-between; align-items: baseline; background: var(--bleu); color: #fff; padding: 6px 12px; border-radius: 6px 6px 0 0; }
+        .jour-titre.weekend { background: #4a5b8a; }
+        .jour-titre.aujourdhui { background: #c0392b; }
+        .jour-titre .nom { font-size: 15px; font-weight: 700; text-transform: capitalize; }
+        .jour-titre .nb { font-size: 12px; opacity: .9; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid var(--bord); padding: 6px 8px; font-size: 13px; vertical-align: top; }
+        th { background: #f3f6fb; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; color: var(--gris); }
+        td.heure { font-weight: 700; font-size: 15px; color: var(--bleu); white-space: nowrap; width: 70px; }
+        td.patient { font-weight: 600; }
+        .vide { padding: 8px 12px; color: var(--gris); font-size: 12px; border: 1px solid var(--bord); border-top: none; font-style: italic; }
+        .statut { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; border: 1px solid #999; white-space: nowrap; }
+        .statut.confirme { border-color: #198754; color: #198754; }
+        .statut.programme { border-color: #b8860b; color: #8a6400; }
+        .statut.reporte { border-color: #0d6efd; color: #0d6efd; }
+        .statut.termine { border-color: #6c757d; color: #6c757d; }
+        .statut.annule, .statut.absent { border-color: #dc3545; color: #dc3545; }
+        .statut.demande { border-color: #0d6efd; color: #0d6efd; border-style: dashed; }
+        .pied { margin-top: 14px; padding-top: 8px; border-top: 1px solid var(--bord); font-size: 10.5px; color: var(--gris); display: flex; justify-content: space-between; }
         @media print {
-            body { padding: 10px; }
-            .calendrier-grid { break-inside: avoid; }
-            .jour-colonne { break-inside: avoid; page-break-inside: avoid; }
-            .jour-entete { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .rdv-card { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .badge-statut { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        }
-        @media screen and (max-width: 768px) {
-            .calendrier-grid { grid-template-columns: 1fr 1fr; }
-        }
-        @media screen and (max-width: 480px) {
-            .calendrier-grid { grid-template-columns: 1fr; }
+            @page { size: A4 landscape; margin: 9mm 10mm; }
+            body { background: #fff; padding: 0; }
+            .actions { display: none !important; }
+            .page { max-width: 100%; border: none; padding: 0; }
+            .jour-titre, .statut, th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            thead { display: table-header-group; }
+            tr { page-break-inside: avoid; }
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="logo-area">
-            {% if structure and structure.logo_url %}
-            <img src="{{ structure.logo_url }}" alt="Logo">
-            {% endif %}
-            <h1>{{ structure.nom if structure else 'Hopital' }}</h1>
-        </div>
-        <div class="sub-info" style="white-space: pre-line;">
-            {% if structure and structure.adresse %}
-            <span>{{ structure.adresse }}</span>
-            {% endif %}
-            {% if structure and structure.telephone %}
-            <span>| Tel: {{ structure.telephone }}</span>
-            {% endif %}
-            {% if structure and structure.email %}
-            <span>| Email: {{ structure.email }}</span>
-            {% endif %}
-        </div>
-        <div class="period">Calendrier des rendez-vous - {{ libelle_periode }}</div>
-        <div class="stats">
-            <span>{{ stats.total }}</span> rendez-vous | 
-            <span>{{ stats.jours_avec_rdv }}</span> jours avec rendez-vous | 
-            <span>{{ stats.jours_total }}</span> jours
-        </div>
-        <div style="font-size: 11px; color: #8e9aaf; margin-top: 5px;">
-            Genere le {{ now.strftime('%d/%m/%Y à %H:%M') }}
-        </div>
+    <div class="actions">
+        <button type="button" class="fermer" onclick="window.close()">Fermer</button>
+        <button type="button" class="imprimer" onclick="window.print()">Imprimer</button>
     </div>
+    <div class="page">
+        <div class="entete">
+            <div class="structure">
+                {% if structure and structure.logo_url %}<img src="{{ structure.logo_url }}" alt="">{% endif %}
+                <div>
+                    <div class="nom">{{ structure.nom if structure else 'Hôpital' }}</div>
+                    <div class="coord">{% if structure and structure.adresse %}{{ structure.adresse }}
+{% endif %}{% if structure and structure.telephone %}Tél. {{ structure.telephone }}{% endif %}{% if structure and structure.email %}  ·  {{ structure.email }}{% endif %}</div>
+                </div>
+            </div>
+            <div class="titre">
+                <div class="libelle">Planning des rendez-vous</div>
+                <div class="periode">{{ libelle_periode }}</div>
+                <div class="stats">{{ stats.total }} rendez-vous sur {{ stats.jours_avec_rdv }} jour(s){% if stats.jours_total %} — période de {{ stats.jours_total }} jour(s){% endif %}</div>
+            </div>
+        </div>
 
-    <div class="calendrier-grid">
+        {% set noms_jours = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'] %}
+        {% set noms_mois = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'] %}
+        {% if not jours_liste %}
+        <div class="vide" style="border-top:1px solid var(--bord);">Aucun rendez-vous sur cette période.</div>
+        {% endif %}
         {% for jour in jours_liste %}
-        {% set date_str = jour.isoformat() %}
-        {% set rdvs = rdv_par_jour.get(date_str, []) %}
-        {% set jour_semaine = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'][jour.weekday()] %}
-        {% set est_weekend = jour.weekday() >= 5 %}
-        {% set est_aujourdhui = jour == today %}
-        
-        <div class="jour-colonne">
-            <div class="jour-entete {% if est_weekend %}weekend{% endif %} {% if est_aujourdhui %}aujourdhui{% endif %}">
-                <div class="date-num">{{ jour.strftime('%d') }}</div>
-                <div class="date-nom">{{ jour_semaine }}</div>
-                <div style="font-size: 9px; opacity: 0.7;">{{ jour.strftime('%b %Y') }}</div>
+        {% set rdvs = rdv_par_jour.get(jour.isoformat(), []) %}
+        {% if rdvs or afficher_jours_vides %}
+        <div class="jour">
+            <div class="jour-titre {% if jour.weekday() >= 5 %}weekend{% endif %} {% if jour == today %}aujourdhui{% endif %}">
+                <span class="nom">{{ noms_jours[jour.weekday()] }} {{ jour.day }} {{ noms_mois[jour.month - 1] }} {{ jour.year }}{% if jour == today %} — aujourd'hui{% endif %}</span>
+                <span class="nb">{{ rdvs|length }} rendez-vous</span>
             </div>
-            <div class="jour-contenu">
-                {% if rdvs %}
-                    {% for rdv in rdvs %}
-                    <div class="rdv-card">
-                        <div class="rdv-heure">{{ rdv.heure_rendez_vous }}</div>
-                        <div class="rdv-patient">{{ rdv.patient_nom }}</div>
-                        {% if rdv.medecin %}
-                        <div class="rdv-medecin">Medecin: {{ rdv.medecin.get_nom_complet() if rdv.medecin.get_nom_complet else rdv.medecin.nom }}</div>
-                        {% elif rdv.medecin_nom %}
-                        <div class="rdv-medecin">Medecin: {{ rdv.medecin_nom }}</div>
-                        {% endif %}
-                        {% if rdv.motif %}
-                        <div class="rdv-motif">{{ rdv.motif }}</div>
-                        {% endif %}
-                        <span class="badge-statut {{ rdv.statut }}">
-                            {{ rdv.get_statut_label() if rdv.get_statut_label else rdv.statut }}
-                        </span>
-                    </div>
+            {% if rdvs %}
+            <table>
+                <thead><tr><th>Heure</th><th>Patient</th><th>Téléphone</th><th>Médecin</th><th>Motif</th><th>Statut</th></tr></thead>
+                <tbody>
+                    {% for rdv in rdvs|sort(attribute='heure_rendez_vous') %}
+                    <tr>
+                        <td class="heure">{{ rdv.heure_rendez_vous }}</td>
+                        <td class="patient">{{ rdv.patient_nom }}</td>
+                        <td>{{ rdv.patient_telephone or '—' }}</td>
+                        <td>{% if rdv.medecin %}{{ rdv.medecin.get_nom_complet() }}{% if rdv.medecin.specialite %} <span style="color:var(--gris);">({{ rdv.medecin.specialite }})</span>{% endif %}{% else %}—{% endif %}</td>
+                        <td>{{ rdv.motif or '' }}</td>
+                        <td><span class="statut {{ rdv.statut }}">{{ rdv.get_statut_label() }}</span></td>
+                    </tr>
                     {% endfor %}
-                {% else %}
-                    <div class="aucun-rdv">Aucun rendez-vous</div>
-                {% endif %}
-            </div>
+                </tbody>
+            </table>
+            {% else %}
+            <div class="vide">Aucun rendez-vous</div>
+            {% endif %}
         </div>
+        {% endif %}
         {% endfor %}
-    </div>
 
-    <div class="footer">
-        {{ structure.nom if structure else 'Hopital' }} - Document genere le {{ now.strftime('%d/%m/%Y à %H:%M') }}
+        <div class="pied">
+            <span>Édité le {{ now.strftime('%d/%m/%Y à %H:%M') }}</span>
+            <span>{{ structure.nom if structure else '' }}</span>
+        </div>
     </div>
-
     <script>
-        window.onload = function() {
-            setTimeout(function() {
-                window.print();
-                setTimeout(function() {
-                    // ⭐ Renfort défensif (cohérence avec les autres pages
-                    // d'impression de l'appli) : window.close() est refusé
-                    // silencieusement par le navigateur si cette page n'a
-                    // pas été ouverte via window.open().
-                    try { window.close(); } catch (e) {}
-                }, 600);
-            }, 500);
-        };
+        window.addEventListener('afterprint', function () { setTimeout(function () { try { window.close(); } catch (e) {} }, 300); });
     </script>
 </body>
 </html>

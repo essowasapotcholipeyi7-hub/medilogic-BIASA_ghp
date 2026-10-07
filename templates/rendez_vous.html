@@ -371,6 +371,20 @@ body.modal-open {
                         <div id="motifAutreContainer" style="display:none; margin-top:5px;">
                             <input type="text" class="form-control" id="motifAutre" placeholder="Saisir le motif...">
                         </div>
+                        <!-- ⭐ Patron (2026-10-07) : consultation spécialisée -> préciser la
+                             spécialité (celles des médecins de la structure, ou autre). -->
+                        <div id="motifSpecialiteContainer" style="display:none; margin-top:5px;">
+                            {% set specialites_connues = [] %}
+                            {% for m in medecins %}{% if m.specialite and (m.specialite|trim|lower) not in specialites_connues %}{% set _ = specialites_connues.append(m.specialite|trim|lower) %}{% endif %}{% endfor %}
+                            <select class="form-select" id="motifSpecialite">
+                                <option value="">-- Quelle spécialité ? --</option>
+                                {% set deja = [] %}
+                                {% for m in medecins %}{% if m.specialite and (m.specialite|trim|lower) not in deja %}{% set _ = deja.append(m.specialite|trim|lower) %}
+                                <option value="{{ m.specialite|trim }}">{{ m.specialite|trim }}</option>{% endif %}{% endfor %}
+                                <option value="__autre__">Autre spécialité (préciser)</option>
+                            </select>
+                            <input type="text" class="form-control mt-1" id="motifSpecialiteAutre" placeholder="Précisez la spécialité" style="display:none;">
+                        </div>
                     </div>
                     
                     <div class="col-md-6">
@@ -441,8 +455,11 @@ body.modal-open {
     <h6 class="mb-0"><i class="fas fa-list me-2"></i> Liste des rendez-vous</h6>
     <div>
         <span class="badge bg-light text-dark me-2">{{ total }} rendez-vous</span>
-        <button class="btn btn-light btn-sm me-2" onclick="imprimerCalendrier()">
-            Imprimer Calendrier semaine
+        <button class="btn btn-warning btn-sm me-2 fw-semibold" onclick="ouvrirCalendrier('semaine')" title="Voir les rendez-vous de la semaine ou du mois en calendrier">
+            <i class="fas fa-calendar-alt me-1"></i> Calendrier
+        </button>
+        <button class="btn btn-light btn-sm me-2" onclick="imprimerCalendrier()" title="Imprimer le planning de la période choisie dans le filtre">
+            <i class="fas fa-print me-1"></i> Imprimer le planning
         </button>
         <button class="btn btn-light btn-sm" onclick="exporterCSV()">
             Exporter RDV
@@ -559,6 +576,56 @@ body.modal-open {
     </div>
 </div>
 
+<!-- ⭐ Calendrier semaine / mois à l'écran (patron, 2026-10-07) -->
+<div class="modal fade" id="modalCalendrier" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-calendar-alt me-2"></i>Calendrier des rendez-vous</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                    <div class="btn-group">
+                        <button class="btn btn-outline-primary btn-sm" id="calModeSemaine" onclick="calChangerMode('semaine')">Semaine</button>
+                        <button class="btn btn-outline-primary btn-sm" id="calModeMois" onclick="calChangerMode('mois')">Mois</button>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <button class="btn btn-outline-secondary btn-sm" onclick="calNaviguer(-1)"><i class="fas fa-chevron-left"></i></button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="calAujourdhui()">Aujourd'hui</button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="calNaviguer(1)"><i class="fas fa-chevron-right"></i></button>
+                        <strong id="calTitre" class="ms-2"></strong>
+                    </div>
+                    <button class="btn btn-dark btn-sm" onclick="calImprimer()"><i class="fas fa-print me-1"></i> Imprimer cette vue</button>
+                </div>
+                <div id="calGrille" class="cal-grille"></div>
+                <div id="calDetail" class="alert alert-light border mt-3 mb-0" style="display:none;"></div>
+                <div class="small text-muted mt-2">Légende : <span class="cal-chip confirme">confirmé</span> <span class="cal-chip programme">programmé</span> <span class="cal-chip reporte">reporté</span> <span class="cal-chip demande">demande du portail</span> <span class="cal-chip termine">terminé</span> <span class="cal-chip annule">annulé</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+<style>
+    .cal-grille { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+    .cal-entete { background: #1a2a6c; color: #fff; text-align: center; font-weight: 600; font-size: 12px; padding: 6px 2px; border-radius: 4px; }
+    .cal-jour { background: #fff; border: 1px solid #dde3ec; border-radius: 4px; min-height: 92px; padding: 4px; }
+    .cal-jour.hors-mois { background: #f5f7fa; opacity: .6; }
+    .cal-jour.aujourdhui { border-color: #c0392b; box-shadow: inset 0 0 0 1px #c0392b; }
+    .cal-jour.semaine { min-height: 260px; }
+    .cal-num { font-size: 12px; font-weight: 700; color: #1a2a6c; display: flex; justify-content: space-between; }
+    .cal-num .nb { font-weight: 500; color: #6b7a8c; font-size: 11px; }
+    .cal-chip { display: block; font-size: 11px; line-height: 1.25; padding: 2px 5px; border-radius: 4px; margin-top: 3px; cursor: pointer; border-left: 3px solid #999; background: #f3f6fb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .small .cal-chip { display: inline-block; margin-right: 6px; cursor: default; }
+    .cal-chip.confirme { border-left-color: #198754; background: #e9f7ef; }
+    .cal-chip.programme { border-left-color: #d4a017; background: #fff8e1; }
+    .cal-chip.reporte { border-left-color: #0d6efd; background: #e8f0fe; }
+    .cal-chip.demande { border-left-color: #0d6efd; border-left-style: dashed; background: #eef3ff; }
+    .cal-chip.termine { border-left-color: #6c757d; background: #f1f3f5; color: #6c757d; }
+    .cal-chip.annule, .cal-chip.absent { border-left-color: #dc3545; background: #fdecee; text-decoration: line-through; color: #8a2a33; }
+    .cal-chip.plus { background: none; border: none; color: #0d6efd; font-weight: 600; }
+    @media (max-width: 768px) { .cal-grille { grid-template-columns: repeat(2, 1fr); } .cal-entete { display: none; } }
+</style>
+
 <div class="modal fade" id="reporterModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -619,12 +686,14 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Gestion du motif "Autre"
     document.getElementById('motifSelect').addEventListener('change', function() {
-        const container = document.getElementById('motifAutreContainer');
-        if (this.value === 'Autre') {
-            container.style.display = 'block';
-        } else {
-            container.style.display = 'none';
-        }
+        document.getElementById('motifAutreContainer').style.display = this.value === 'Autre' ? 'block' : 'none';
+        document.getElementById('motifSpecialiteContainer').style.display = this.value === 'Consultation specialisee' ? 'block' : 'none';
+        filtrerMedecinsParSpecialite();
+    });
+    // ⭐ Spécialité choisie : champ libre si « Autre », et liste des médecins filtrée dessus
+    document.getElementById('motifSpecialite').addEventListener('change', function() {
+        document.getElementById('motifSpecialiteAutre').style.display = this.value === '__autre__' ? 'block' : 'none';
+        filtrerMedecinsParSpecialite();
     });
     
     // Vérifier les disponibilités automatiquement
@@ -811,6 +880,17 @@ function ajouterRendezVous() {
             return;
         }
     }
+    // ⭐ Consultation spécialisée : la spécialité fait partie du motif (et donc
+    // du reçu imprimé) — patron, 2026-10-07.
+    if (motif === 'Consultation specialisee') {
+        var spec = document.getElementById('motifSpecialite').value;
+        if (spec === '__autre__') spec = document.getElementById('motifSpecialiteAutre').value.trim();
+        if (!spec) {
+            showToast('Précisez la spécialité de la consultation', 'warning');
+            return;
+        }
+        motif = 'Consultation spécialisée — ' + spec;
+    }
     
     if (!motif) {
         showToast('Veuillez sélectionner un motif', 'warning');
@@ -939,6 +1019,92 @@ async function terminerReponseDemande(d, texte) {
         await afficherMessage(texte);
     }
     location.reload();
+}
+
+// ===== ⭐ Calendrier semaine / mois (patron, 2026-10-07) =====
+let calMode = 'semaine', calRef = new Date(), calDonnees = [], calDebut = null, calFin = null;
+const CAL_JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+const CAL_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+const calIso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+function ouvrirCalendrier(mode) { calMode = mode || calMode; calRef = new Date(); new bootstrap.Modal(document.getElementById('modalCalendrier')).show(); calCharger(); }
+function calChangerMode(mode) { calMode = mode; calCharger(); }
+function calAujourdhui() { calRef = new Date(); calCharger(); }
+function calNaviguer(sens) {
+    if (calMode === 'semaine') calRef.setDate(calRef.getDate() + 7 * sens); else calRef.setMonth(calRef.getMonth() + sens, 1);
+    calCharger();
+}
+function calBornes() {
+    if (calMode === 'semaine') {
+        const d = new Date(calRef); d.setDate(d.getDate() - ((d.getDay() + 6) % 7));   // lundi
+        const f = new Date(d); f.setDate(d.getDate() + 6);
+        return [d, f];
+    }
+    return [new Date(calRef.getFullYear(), calRef.getMonth(), 1), new Date(calRef.getFullYear(), calRef.getMonth() + 1, 0)];
+}
+function calCharger() {
+    document.getElementById('calModeSemaine').classList.toggle('active', calMode === 'semaine');
+    document.getElementById('calModeMois').classList.toggle('active', calMode === 'mois');
+    [calDebut, calFin] = calBornes();
+    document.getElementById('calTitre').textContent = calMode === 'semaine'
+        ? `Semaine du ${calDebut.getDate()} ${CAL_MOIS[calDebut.getMonth()]} au ${calFin.getDate()} ${CAL_MOIS[calFin.getMonth()]} ${calFin.getFullYear()}`
+        : `${CAL_MOIS[calRef.getMonth()].charAt(0).toUpperCase() + CAL_MOIS[calRef.getMonth()].slice(1)} ${calRef.getFullYear()}`;
+    document.getElementById('calDetail').style.display = 'none';
+    document.getElementById('calGrille').innerHTML = '<div class="text-muted small" style="grid-column:1/-1;">Chargement...</div>';
+    fetch(`/rendez_vous/api/calendrier?debut=${calIso(calDebut)}&fin=${calIso(calFin)}`).then(r => r.json()).then(d => {
+        if (!d.success) { document.getElementById('calGrille').innerHTML = '<div class="text-danger" style="grid-column:1/-1;">' + (d.error || 'Erreur') + '</div>'; return; }
+        calDonnees = d.rendez_vous; calRendre();
+    });
+}
+function calRendre() {
+    const parJour = {};
+    calDonnees.forEach(r => { (parJour[r.date] = parJour[r.date] || []).push(r); });
+    Object.values(parJour).forEach(l => l.sort((a, b) => a.heure.localeCompare(b.heure)));
+    const auj = calIso(new Date());
+    let html = CAL_JOURS.map(j => `<div class="cal-entete">${j}</div>`).join('');
+    const premier = new Date(calDebut);
+    if (calMode === 'mois') premier.setDate(premier.getDate() - ((premier.getDay() + 6) % 7));   // commence le lundi
+    const nbJours = calMode === 'semaine' ? 7 : 42;
+    const maxChips = calMode === 'semaine' ? 50 : 4;
+    for (let i = 0; i < nbJours; i++) {
+        const d = new Date(premier); d.setDate(premier.getDate() + i);
+        const iso = calIso(d), rdvs = parJour[iso] || [];
+        const horsMois = calMode === 'mois' && d.getMonth() !== calRef.getMonth();
+        if (calMode === 'mois' && i >= 35 && horsMois) break;
+        html += `<div class="cal-jour ${calMode} ${horsMois ? 'hors-mois' : ''} ${iso === auj ? 'aujourdhui' : ''}">
+            <div class="cal-num"><span>${d.getDate()}${calMode === 'semaine' ? ' ' + CAL_MOIS[d.getMonth()] : ''}</span>${rdvs.length ? `<span class="nb">${rdvs.length}</span>` : ''}</div>
+            ${rdvs.slice(0, maxChips).map(r => `<span class="cal-chip ${r.statut}" title="${r.patient} — ${r.motif}" onclick="calVoir(${r.id})"><strong>${r.heure}</strong> ${r.patient}</span>`).join('')}
+            ${rdvs.length > maxChips ? `<span class="cal-chip plus" onclick="calMode='semaine'; calRef=new Date('${iso}T00:00:00'); calCharger();">+ ${rdvs.length - maxChips} autre(s)…</span>` : ''}
+        </div>`;
+    }
+    document.getElementById('calGrille').innerHTML = html;
+}
+function calVoir(id) {
+    const r = calDonnees.find(x => x.id === id);
+    if (!r) return;
+    const zone = document.getElementById('calDetail');
+    zone.innerHTML = `<div class="d-flex justify-content-between flex-wrap gap-2">
+        <div><strong>${r.patient}</strong>${r.telephone ? ' · ' + r.telephone : ''}<br>
+            <span class="text-muted">${r.date.split('-').reverse().join('/')} à ${r.heure}</span>${r.medecin ? ' — ' + r.medecin : ''}<br>${r.motif}
+            <span class="badge bg-secondary ms-1">${r.statut_label}</span></div>
+        <div><a class="btn btn-sm btn-outline-primary" href="/rendez_vous/api/${r.id}/print" target="_blank"><i class="fas fa-print"></i> Reçu</a></div></div>`;
+    zone.style.display = '';
+}
+function calImprimer() {
+    window.open('/rendez_vous/print?periode=personnalise&date_debut=' + calIso(calDebut) + '&date_fin=' + calIso(calFin), '_blank', 'width=1200,height=800');
+}
+
+// Médecins filtrés sur la spécialité choisie (consultation spécialisée) ; tous visibles sinon
+function filtrerMedecinsParSpecialite() {
+    const type = document.getElementById('motifSelect').value;
+    const spec = document.getElementById('motifSpecialite').value;
+    const actif = type === 'Consultation specialisee' && spec && spec !== '__autre__';
+    const sel = document.getElementById('medecinSelect');
+    [...sel.options].forEach(o => {
+        if (!o.value) return;
+        const cache = actif && (o.dataset.specialite || '').trim().toLowerCase() !== spec.trim().toLowerCase();
+        o.hidden = cache;
+        if (cache && sel.value === o.value) sel.value = '';
+    });
 }
 
 async function confirmerRendezVous(id) {
@@ -1284,6 +1450,9 @@ function resetForm() {
     document.getElementById('formRendezVous').reset();
     document.getElementById('dateRendezVous').value = new Date().toISOString().split('T')[0];
     document.getElementById('motifAutreContainer').style.display = 'none';
+    document.getElementById('motifSpecialiteContainer').style.display = 'none';
+    document.getElementById('motifSpecialiteAutre').style.display = 'none';
+    filtrerMedecinsParSpecialite();
     document.getElementById('disponibilitesInfo').innerHTML = '';
 }
 

@@ -8042,6 +8042,35 @@ def api_reporter_rendez_vous():
             'error': resultat.get('error', 'Erreur lors du report')
         }), 400
 
+@app.route('/rendez_vous/api/calendrier', methods=['GET'])
+@login_required
+@permission_requise('rendez_vous')
+def api_rendez_vous_calendrier():
+    """⭐ Rendez-vous d'une plage de dates pour le calendrier à l'écran
+    (semaine / mois) — patron, 2026-10-07. Hors fourrière ; les demandes du
+    portail et les annulés sont renvoyés avec leur statut (le calendrier
+    les distingue)."""
+    structure_id = session.get('structure_id')
+    try:
+        debut = datetime.strptime(request.args.get('debut', ''), '%Y-%m-%d').date()
+        fin = datetime.strptime(request.args.get('fin', ''), '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'success': False, 'error': 'Dates invalides'}), 400
+    if (fin - debut).days > 62:
+        return jsonify({'success': False, 'error': 'Période trop longue'}), 400
+    q = RendezVous.query.filter_by(structure_id=structure_id).filter(
+        RendezVous.date_rendez_vous >= debut, RendezVous.date_rendez_vous <= fin)
+    if hasattr(RendezVous, 'archive'):
+        q = q.filter(db.or_(RendezVous.archive.is_(False), RendezVous.archive.is_(None)))
+    rdvs = q.order_by(RendezVous.date_rendez_vous, RendezVous.heure_rendez_vous).all()
+    return jsonify({'success': True, 'rendez_vous': [{
+        'id': r.id, 'date': r.date_rendez_vous.isoformat(), 'heure': r.heure_rendez_vous or '',
+        'patient': r.patient_nom, 'telephone': r.patient_telephone or '',
+        'medecin': r.medecin.get_nom_complet() if r.medecin else '', 'motif': r.motif or '',
+        'statut': r.statut, 'statut_label': r.get_statut_label(),
+    } for r in rdvs]})
+
+
 @app.route('/rendez_vous/api/check-conflit', methods=['GET'])
 @login_required
 def api_check_conflit():
@@ -8258,6 +8287,13 @@ def print_rendez_vous():
         while current <= date_fin:
             jours_liste.append(current)
             current += timedelta(days=1)
+    else:
+        # ⭐ « Tous » : rien n'était affiché faute de bornes — on liste les jours
+        # qui ont des rendez-vous (patron, 2026-10-07).
+        jours_liste = sorted(date.fromisoformat(j) for j in rdv_par_jour)
+    # Sur un mois ou une longue période, n'imprimer que les jours ayant des
+    # rendez-vous ; sur une semaine (ou moins), montrer aussi les jours vides.
+    afficher_jours_vides = bool(date_debut and date_fin and (date_fin - date_debut).days <= 7)
     
     # Statistiques
     stats = {
@@ -8305,6 +8341,7 @@ def print_rendez_vous():
     
     return render_template(
         'print_calendrier.html',
+        afficher_jours_vides=afficher_jours_vides,
         rdv_par_jour=rdv_par_jour,
         jours_liste=jours_liste,
         libelle_periode=libelle_periode,
