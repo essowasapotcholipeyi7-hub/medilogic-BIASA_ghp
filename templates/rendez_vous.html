@@ -291,14 +291,17 @@ body.modal-open {
             <h6 class="mb-0"><i class="fas fa-plus-circle me-2"></i> Nouveau rendez-vous</h6>
         </div>
         <div class="card-body">
-            <form id="formRendezVous">
+            <form id="formRendezVous" autocomplete="off">
                 <div class="row g-3">
 <div class="col-md-4">
     <label class="form-label fw-bold small">Patient</label>
     <div class="input-group">
-        <input type="text" class="form-control" id="patientSearch" 
-               placeholder="Rechercher par nom, prénom ou téléphone..." 
-               onkeyup="rechercherPatient()" onfocus="rechercherPatient()">
+        <!-- ⭐ Patron (2026-10-07) : les anciennes propositions du navigateur se
+             superposaient à la liste des patients et, choisies, ne sélectionnaient
+             rien — autocomplete coupé, et la recherche réagit à toute saisie. -->
+        <input type="text" class="form-control" id="patientSearch" autocomplete="off" autocorrect="off" spellcheck="false"
+               placeholder="Rechercher par nom, prénom ou téléphone..."
+               oninput="rechercherPatient()" onfocus="rechercherPatient()">
         <button class="btn btn-outline-secondary" type="button" onclick="viderRecherchePatient()">
             <i class="fas fa-times"></i>
         </button>
@@ -316,43 +319,7 @@ body.modal-open {
     </div>
 </div>
                     
-                    <div class="col-md-3">
-                        <label class="form-label fw-bold small">Médecin</label>
-                        <select class="form-select" id="medecinSelect" required>
-                            <option value="">-- Sélectionner --</option>
-                            {% for medecin in medecins %}
-                            <option value="{{ medecin.id }}" 
-                                    data-specialite="{{ medecin.specialite }}">
-                                {{ medecin.titre }} {{ medecin.nom }} - {{ medecin.specialite }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    
-                    <div class="col-md-2">
-                        <label class="form-label fw-bold small">Date</label>
-                        <input type="date" class="form-control" id="dateRendezVous" min="{{ today }}" required>
-                    </div>
-                    
-                    <div class="col-md-2">
-                        <label class="form-label fw-bold small">Heure</label>
-                        <input type="time" class="form-control" id="heureRendezVous" required>
-                        <div class="text-muted small" id="disponibilitesInfo"></div>
-                    </div>
-                    
-                    <div class="col-md-1">
-                        <label class="form-label fw-bold small">Durée</label>
-                        <select class="form-select" id="dureeRendezVous">
-                            <option value="15">15</option>
-                            <option value="30" selected>30</option>
-                            <option value="45">45</option>
-                            <option value="60">60</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div class="row g-3 mt-1">
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <label class="form-label fw-bold small">Motif</label>
                         <select class="form-select" id="motifSelect">
                             <option value="">-- Sélectionner --</option>
@@ -386,8 +353,43 @@ body.modal-open {
                             <input type="text" class="form-control mt-1" id="motifSpecialiteAutre" placeholder="Précisez la spécialité" style="display:none;">
                         </div>
                     </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold small">Médecin</label>
+                        <select class="form-select" id="medecinSelect" required>
+                            <option value="">-- Sélectionner --</option>
+                            {% for medecin in medecins %}
+                            <option value="{{ medecin.id }}" 
+                                    data-specialite="{{ medecin.specialite }}">
+                                {{ medecin.titre }} {{ medecin.nom }} - {{ medecin.specialite }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
                     
-                    <div class="col-md-6">
+                </div>
+
+                <div class="row g-3 mt-1">
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold small">Date</label>
+                        <input type="date" class="form-control" id="dateRendezVous" min="{{ today }}" required>
+                    </div>
+                    
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold small">Heure</label>
+                        <input type="time" class="form-control" id="heureRendezVous" required>
+                        <div class="text-muted small" id="disponibilitesInfo"></div>
+                    </div>
+                    
+                    <div class="col-md-2">
+                        <label class="form-label fw-bold small">Durée</label>
+                        <select class="form-select" id="dureeRendezVous">
+                            <option value="15">15</option>
+                            <option value="30" selected>30</option>
+                            <option value="45">45</option>
+                            <option value="60">60</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
                         <label class="form-label fw-bold small">Notes</label>
                         <input type="text" class="form-control" id="notesRendezVous" placeholder="Informations complémentaires...">
                     </div>
@@ -396,7 +398,7 @@ body.modal-open {
                 <div class="row mt-3">
                     <div class="col-md-12">
                         <button type="button" class="btn btn-primary" onclick="ajouterRendezVous()">
-                            <i class="fas fa-calendar-plus me-1"></i> Prendre rendez-vous
+                            <i class="fas fa-save me-1"></i> Enregistrer le rendez-vous
                         </button>
                         <button type="button" class="btn btn-secondary" onclick="resetForm()">
                             <i class="fas fa-undo me-1"></i> Réinitialiser
