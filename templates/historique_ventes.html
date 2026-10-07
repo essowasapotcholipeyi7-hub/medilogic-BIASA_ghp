@@ -1428,7 +1428,21 @@ async function imprimerHistorique() {
 
     var printWindow = window.open('', '_blank');
     var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Historique des ventes</title>';
-    html += '<style>' + styleImpressionNB() + '</style>';
+    // ⭐ Patron (2026-10-07) : "le tableau de détails des ventes est coupé vers
+    // la droite" — 10 colonnes ne tiennent pas en portrait. Page en PAYSAGE,
+    // colonnes du détail à largeur fixe (texte qui passe à la ligne au lieu
+    // de pousser le tableau hors de la feuille), marges réduites.
+    html += '<style>' + styleImpressionNB() +
+        '@page{size:A4 landscape;margin:9mm;}' +
+        'body{padding:8px;}' +
+        '.table-details{table-layout:fixed;width:100%;}' +
+        '.table-details th,.table-details td{word-wrap:break-word;overflow-wrap:anywhere;white-space:normal;padding:5px 4px;font-size:12px;}' +
+        '.table-details .detail-cell{max-width:none;}' +
+        '.table-details .text-end{white-space:normal;}' +
+        '.table-details th:nth-child(1){width:4.5%;}.table-details th:nth-child(2){width:10%;}.table-details th:nth-child(3){width:13%;}' +
+        '.table-details th:nth-child(4){width:12%;}.table-details th:nth-child(5){width:7%;}.table-details th:nth-child(6){width:26%;}' +
+        '.table-details th:nth-child(7){width:7.5%;}.table-details th:nth-child(8){width:8%;}.table-details th:nth-child(9){width:6.5%;}.table-details th:nth-child(10){width:5.5%;}' +
+        '</style>';
     html += '</head><body>';
     
     html += '<div class="toolbar">';
@@ -1645,7 +1659,7 @@ async function imprimerHistorique() {
     }
     html += '<h3 style="font-size:16px;margin:8px 0 6px;">Détail des ventes</h3>';
 
-    html += '<table>';
+    html += '<table class="table-details">';
     html += '<thead><tr>';
     html += '<th>N°</th>';
     html += '<th>Date</th>';
