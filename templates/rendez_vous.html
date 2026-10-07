@@ -372,12 +372,14 @@ body.modal-open {
                 <div class="row g-3 mt-1">
                     <div class="col-md-3">
                         <label class="form-label fw-bold small">Date</label>
-                        <input type="date" class="form-control" id="dateRendezVous" min="{{ today }}" required>
+                        <input type="date" class="form-control" id="dateRendezVous" min="{{ today }}" required oninput="this.classList.remove('is-invalid')">
+                        <div class="invalid-feedback fw-bold">Indiquez la date du rendez-vous.</div>
                     </div>
                     
                     <div class="col-md-3">
                         <label class="form-label fw-bold small">Heure</label>
-                        <input type="time" class="form-control" id="heureRendezVous" required>
+                        <input type="time" class="form-control" id="heureRendezVous" required oninput="this.classList.remove('is-invalid')">
+                        <div class="invalid-feedback fw-bold">Indiquez l'heure du rendez-vous.</div>
                         <div class="text-muted small" id="disponibilitesInfo"></div>
                     </div>
                     
@@ -930,6 +932,14 @@ document.addEventListener('click', function(e) {
 // AJOUTER RENDEZ-VOUS
 // ============================================================
 
+function signalerChampManquant(id, message) {
+    const champ = document.getElementById(id);
+    champ.classList.add('is-invalid');
+    champ.scrollIntoView({behavior: 'smooth', block: 'center'});
+    try { champ.focus({preventScroll: true}); } catch (e) { champ.focus(); }
+    showToast(message, 'warning');
+}
+
 function ajouterRendezVous() {
     // Récupérer l'ID du patient depuis le champ caché
     var patientId = document.getElementById('patientSelect').value;
@@ -978,10 +988,10 @@ function ajouterRendezVous() {
         showToast('Veuillez sélectionner un médecin', 'warning');
         return;
     }
-    if (!date || !heure) {
-        showToast('Veuillez remplir la date et l\'heure', 'warning');
-        return;
-    }
+    // ⭐ Patron (2026-10-07) : « quand on ne met pas l'heure et on enregistre,
+    // c'est silencieux » — champ en rouge, message dessous, défilement + focus.
+    if (!date) { signalerChampManquant('dateRendezVous', 'Indiquez la date du rendez-vous'); return; }
+    if (!heure) { signalerChampManquant('heureRendezVous', "Indiquez l'heure du rendez-vous"); return; }
     
     // Vérifier que la date n'est pas passée
     var today = new Date().toISOString().split('T')[0];
@@ -1062,6 +1072,8 @@ async function envoyerConfirmationDemande() {
     const id = document.getElementById('cdId').value;
     const medecin = document.getElementById('cdMedecin').value;
     if (!medecin) { showToast('Choisissez le médecin qui recevra le patient', 'warning'); return; }
+    if (!document.getElementById('cdDate').value) { signalerChampManquant('cdDate', 'Indiquez la date du rendez-vous'); return; }
+    if (!document.getElementById('cdHeure').value) { signalerChampManquant('cdHeure', "Indiquez l'heure du rendez-vous"); return; }
     showLoader('Confirmation...');
     const r = await fetch(`/rendez_vous/api/${id}/confirmer-demande`, {method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({date: document.getElementById('cdDate').value, heure: document.getElementById('cdHeure').value,
