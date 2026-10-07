@@ -3,412 +3,253 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Confirmation de rendez-vous</title>
+    <title>Confirmation de rendez-vous RDV-{{ "%04d"|format(rdv.id) }}</title>
+    <!-- ⭐ QR code dessiné SUR PLACE (même bibliothèque que la carte du portail
+         patient), plus de service externe : l'ancien appel à api.qrserver.com
+         arrivait souvent après le lancement de l'impression, d'où un QR vide
+         ou absent (patron, 2026-10-07). -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root { --bleu: #1a2a6c; --bleu-clair: #eef2fb; --texte: #1f2d3d; --gris: #6b7a8c; --bord: #dfe5ee; }
         body {
-            font-family: 'Segoe UI', Arial, sans-serif;
-            background: #f5f7fa;
-            padding: 30px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
+            font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
+            background: #eef1f5;
+            color: var(--texte);
+            padding: 24px;
         }
-        .recu-container {
-            max-width: 700px;
-            width: 100%;
-            background: #ffffff;
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+        .recu {
+            max-width: 720px;
+            margin: 0 auto;
+            background: #fff;
+            border: 1px solid var(--bord);
+            border-radius: 10px;
             overflow: hidden;
         }
-        .recu-header {
-            background: #1a2a6c;
-            padding: 25px 30px;
-            color: white;
-        }
-        .recu-header .top-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-        .recu-header .logo-area {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-        .recu-header .logo-area img {
-            max-height: 50px;
-            max-width: 100px;
-            object-fit: contain;
-        }
-        .recu-header h1 {
-            font-size: 20px;
-            font-weight: 600;
-        }
-        .recu-header .badge-rdv {
-            background: rgba(255,255,255,0.15);
-            padding: 5px 14px;
-            border-radius: 30px;
-            font-size: 12px;
-            border: 1px solid rgba(255,255,255,0.2);
-        }
-        .recu-header .sub-info {
-            margin-top: 8px;
-            font-size: 12px;
-            opacity: 0.8;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 5px 15px;
-        }
-        .recu-body {
-            padding: 25px 30px;
-        }
-        .section-title {
-            font-size: 11px;
-            text-transform: uppercase;
-            color: #7a8a9e;
-            font-weight: 600;
-            border-bottom: 2px solid #eef2f7;
-            padding-bottom: 6px;
-            margin-bottom: 12px;
-        }
-        .grid-2cols {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px 30px;
-            margin-bottom: 15px;
-        }
-        .info-item .label {
-            font-size: 10px;
-            text-transform: uppercase;
-            color: #8e9aaf;
-            font-weight: 600;
-        }
-        .info-item .value {
-            font-size: 14px;
-            color: #1a2a3a;
-            font-weight: 500;
-        }
-        .rdv-card {
-            background: #f8faff;
-            border-radius: 10px;
-            padding: 15px 20px;
-            margin: 12px 0 15px 0;
-            border-left: 4px solid #1a2a6c;
-        }
-        .rdv-card .rdv-date-big {
-            font-size: 24px;
-            font-weight: 700;
-            color: #1a2a6c;
-        }
-        .rdv-card .rdv-time-big {
-            font-size: 28px;
-            font-weight: 800;
-            color: #1a2a3a;
-        }
-        .rdv-card .rdv-motif {
-            font-size: 14px;
-            color: #3d4f60;
-            margin-top: 5px;
-        }
-        .rdv-card .rdv-motif span {
-            background: #eef2f7;
-            padding: 2px 12px;
-            border-radius: 20px;
-            font-weight: 600;
-            color: #1a2a6c;
-        }
-        .rdv-card .rdv-medecin {
-            font-size: 13px;
-            color: #3d4f60;
-            margin-top: 2px;
-        }
-        .rdv-card .rdv-medecin span {
-            font-weight: 600;
-            color: #1a2a6c;
-        }
-        /* QR Code */
-        .qr-area {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            margin: 10px 0;
-        }
-        .qr-area img {
-            border-radius: 10px;
-            border: 1px solid #e0e6ef;
-            padding: 5px;
-            background: white;
-            width: 130px;
-            height: 130px;
-        }
-        .qr-area .qr-label {
-            font-size: 9px;
-            color: #8e9aaf;
-            text-transform: uppercase;
-            letter-spacing: 0.6px;
-            margin-top: 4px;
-        }
-        .flex-row {
+        /* ---- en-tête : coordonnées à gauche, titre + numéro à droite ---- */
+        .entete {
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
-            gap: 15px;
-            margin-top: 10px;
-            padding-top: 12px;
-            border-top: 1px dashed #dce3ed;
+            gap: 16px;
+            padding: 18px 26px 14px;
+            border-bottom: 4px solid var(--bleu);
         }
-        .flex-row .left-col {
-            flex: 1;
-        }
-        .documents-box {
-            background: #f9fafc;
-            border-radius: 10px;
-            padding: 10px 15px;
-        }
-        .documents-box ul {
-            list-style: none;
-            padding: 0;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 2px 15px;
-        }
-        .documents-box ul li {
-            font-size: 11px;
-            color: #3d4f60;
-            padding: 2px 0;
-            position: relative;
-            padding-left: 16px;
-        }
-        .documents-box ul li:before {
-            content: "";
-            position: absolute;
-            left: 0;
-            top: 8px;
-            width: 8px;
-            height: 2px;
-            background: #1a2a6c;
-            border-radius: 2px;
-        }
-        .thank-you {
-            text-align: center;
-            padding: 8px 0 4px 0;
-            font-size: 14px;
-            font-weight: 600;
-            color: #1a2a6c;
-        }
-        .notice-box {
-            background: #fef8e7;
+        .entete .structure { display: flex; align-items: center; gap: 14px; }
+        .entete .structure img { max-height: 56px; max-width: 110px; object-fit: contain; }
+        .entete .structure .nom { font-size: 19px; font-weight: 700; color: var(--bleu); line-height: 1.15; }
+        .entete .structure .coord { font-size: 11.5px; color: var(--gris); margin-top: 3px; white-space: pre-line; line-height: 1.35; }
+        .entete .titre { text-align: right; }
+        .entete .titre .libelle { font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--gris); font-weight: 600; }
+        .entete .titre .numero { font-size: 18px; font-weight: 700; color: var(--bleu); margin-top: 2px; }
+        /* ---- bloc date / heure ---- */
+        .bloc-rdv {
+            margin: 20px 26px 0;
+            background: var(--bleu-clair);
+            border-left: 5px solid var(--bleu);
             border-radius: 8px;
-            padding: 8px 15px;
-            margin: 10px 0 5px 0;
-            font-size: 11px;
-            color: #7d6b3a;
-            text-align: center;
-            border: 1px solid #f0e4c8;
-        }
-        .footer-recu {
-            background: #f5f7fb;
-            padding: 12px 30px;
+            padding: 14px 20px;
             display: flex;
             justify-content: space-between;
-            font-size: 10px;
-            color: #7e8a9b;
-            border-top: 1px solid #e6ebf2;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
         }
-        .footer-recu .right {
-            font-weight: 500;
-            color: #1a2a6c;
+        .bloc-rdv .date { font-size: 22px; font-weight: 700; color: var(--bleu); }
+        .bloc-rdv .heure { font-size: 30px; font-weight: 800; color: var(--texte); letter-spacing: .5px; }
+        .bloc-rdv .heure small { font-size: 12px; font-weight: 600; color: var(--gris); display: block; text-transform: uppercase; letter-spacing: 1px; }
+        /* ---- informations ---- */
+        .corps { padding: 18px 26px 10px; }
+        .titre-section {
+            font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--gris);
+            font-weight: 700; border-bottom: 1px solid var(--bord); padding-bottom: 5px; margin: 14px 0 10px;
         }
+        .grille { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 28px; }
+        .champ .etiquette { font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--gris); font-weight: 600; }
+        .champ .valeur { font-size: 14.5px; font-weight: 600; color: var(--texte); margin-top: 1px; }
+        .champ .valeur.secondaire { font-weight: 500; }
+        /* ---- bas : consignes + QR ---- */
+        .bas { display: flex; gap: 22px; align-items: flex-start; margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--bord); }
+        .bas .consignes { flex: 1; }
+        .consignes ul { list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 14px; margin-top: 6px; }
+        .consignes li { font-size: 12px; color: var(--texte); padding-left: 14px; position: relative; }
+        .consignes li::before { content: ""; position: absolute; left: 0; top: 7px; width: 7px; height: 2px; background: var(--bleu); }
+        .qr { width: 160px; text-align: center; flex-shrink: 0; }
+        .qr #qrcode { display: inline-block; padding: 6px; border: 1px solid var(--bord); border-radius: 8px; background: #fff; }
+        .qr #qrcode img, .qr #qrcode canvas { display: block; }
+        .qr .legende { font-size: 10.5px; color: var(--gris); margin-top: 6px; line-height: 1.3; }
+        .rappel {
+            margin: 16px 26px 0;
+            background: #fff8e6;
+            border: 1px solid #f1e3b8;
+            border-radius: 8px;
+            padding: 9px 14px;
+            font-size: 12px;
+            color: #6b5a24;
+            text-align: center;
+        }
+        .merci { text-align: center; font-size: 14px; font-weight: 600; color: var(--bleu); margin: 14px 0 4px; }
+        .pied {
+            margin-top: 10px;
+            padding: 10px 26px;
+            border-top: 1px solid var(--bord);
+            display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px;
+            font-size: 10.5px; color: var(--gris);
+        }
+        .pied .droite { color: var(--bleu); font-weight: 600; }
+        /* ---- impression : en haut de page, pas de centrage vertical, couleurs conservées ---- */
         @media print {
-            body { background: white; padding: 0; margin: 0; }
-            .recu-container { border-radius: 0; box-shadow: none; max-width: 100%; }
-            .recu-header { background: #1a2a6c !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .rdv-card { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .notice-box { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .documents-box { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .qr-area img { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            @page { size: A4 portrait; margin: 10mm 12mm; }
+            html, body { background: #fff; padding: 0; margin: 0; min-height: 0; height: auto; }
+            .recu { max-width: 100%; border: none; border-radius: 0; margin: 0; }
+            .entete, .bloc-rdv, .rappel, .qr #qrcode { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .bas { page-break-inside: avoid; }
         }
         @media (max-width: 600px) {
-            .recu-body { padding: 15px; }
-            .grid-2cols { grid-template-columns: 1fr; gap: 8px; }
-            .documents-box ul { grid-template-columns: 1fr; }
-            .flex-row { flex-direction: column; align-items: center; }
-            .qr-area img { width: 100px; height: 100px; }
+            .grille, .consignes ul { grid-template-columns: 1fr; }
+            .bas { flex-direction: column; align-items: center; }
+            .entete { flex-direction: column; }
+            .entete .titre { text-align: left; }
         }
     </style>
 </head>
 <body>
-    <div class="recu-container">
-        <div class="recu-header">
-            <div class="top-row">
-                <div class="logo-area">
-                    {% if structure and structure.logo_url %}
-                    <img src="{{ structure.logo_url }}" alt="Logo">
-                    {% endif %}
-                    <h1>{{ structure.nom if structure else 'Hopital' }}</h1>
+    {% set nom_medecin = ((medecin.titre or 'Dr') ~ ' ' ~ (medecin.nom or '') ~ ' ' ~ (medecin.prenom or '')).strip() if medecin else '' %}
+    <div class="recu">
+        <div class="entete">
+            <div class="structure">
+                {% if structure and structure.logo_url %}
+                <img src="{{ structure.logo_url }}" alt="">
+                {% endif %}
+                <div>
+                    <div class="nom">{{ structure.nom if structure else 'Hôpital' }}</div>
+                    <div class="coord">{% if structure and structure.adresse %}{{ structure.adresse }}
+{% endif %}{% if structure and structure.telephone %}Tél. {{ structure.telephone }}{% endif %}{% if structure and structure.email %}  ·  {{ structure.email }}{% endif %}</div>
                 </div>
-                <div class="badge-rdv">RDV-{{ "%04d"|format(rdv.id) }}</div>
             </div>
-            <div class="sub-info" style="white-space: pre-line;">
-                {% if structure and structure.adresse %}
-                <span>{{ structure.adresse }}</span>
-                {% endif %}
-                {% if structure and structure.telephone %}
-                <span>Tel: {{ structure.telephone }}</span>
-                {% endif %}
-                {% if structure and structure.email %}
-                <span>Email: {{ structure.email }}</span>
-                {% endif %}
+            <div class="titre">
+                <div class="libelle">Confirmation de rendez-vous</div>
+                <div class="numero">N° RDV-{{ "%04d"|format(rdv.id) }}</div>
             </div>
         </div>
 
-        <div class="recu-body">
-            <div class="section-title">Informations patient</div>
-            <div class="grid-2cols">
-                <div class="info-item">
-                    <div class="label">Patient</div>
-                    <div class="value">{{ rdv.patient_nom }}</div>
-                </div>
-                <div class="info-item">
-                    <div class="label">Telephone</div>
-                    <div class="value">{{ rdv.patient_telephone or 'Non renseigne' }}</div>
-                </div>
-                <div class="info-item">
-                    <div class="label">Medecin</div>
-                    <div class="value">{{ medecin.titre if medecin else '' }} {{ medecin.nom if medecin else '' }}</div>
-                </div>
-                <div class="info-item">
-                    <div class="label">Specialite</div>
-                    <div class="value">{{ medecin.specialite if medecin else '' }}</div>
-                </div>
+        <div class="bloc-rdv">
+            <div>
+                <div class="date" id="dateRdv"></div>
+                <div style="font-size:13px;color:var(--gris);margin-top:2px;">avec <strong style="color:var(--texte);">{{ nom_medecin or 'le médecin' }}</strong>{% if medecin and medecin.specialite %} — {{ medecin.specialite }}{% endif %}</div>
+            </div>
+            <div class="heure"><small>Heure</small>{{ rdv.heure_rendez_vous }}</div>
+        </div>
+
+        <div class="corps">
+            <div class="titre-section">Patient</div>
+            <div class="grille">
+                <div class="champ"><div class="etiquette">Nom et prénom</div><div class="valeur">{{ rdv.patient_nom }}</div></div>
+                <div class="champ"><div class="etiquette">Téléphone</div><div class="valeur secondaire">{{ rdv.patient_telephone or 'Non renseigné' }}</div></div>
+                {% if patient and patient.numero_local %}
+                <div class="champ"><div class="etiquette">N° patient</div><div class="valeur secondaire">{{ patient.numero_local }}</div></div>
+                {% endif %}
+                <div class="champ"><div class="etiquette">Motif</div><div class="valeur">{{ rdv.motif or '—' }}</div></div>
             </div>
 
-            <div class="section-title">Details du rendez-vous</div>
-            <div class="rdv-card">
-                <div class="rdv-date-big" id="dateRdv"></div>
-                <div class="rdv-time-big">{{ rdv.heure_rendez_vous }}</div>
-                <div class="rdv-motif">Motif : <span>{{ rdv.motif }}</span></div>
-                <div class="rdv-medecin">Medecin : <span>{{ medecin.titre if medecin else '' }} {{ medecin.nom if medecin else '' }}</span></div>
-            </div>
-
-            <!-- QR Code -->
-            <div class="flex-row">
-                <div class="left-col">
-                    <div class="section-title" style="border-bottom: none; margin-bottom: 4px;">Documents a apporter</div>
-                    <div class="documents-box">
-                        <ul>
-                            <li>Carnet de sante</li>
-                            <li>Ordonnances en cours</li>
-                            <li>Resultats d'analyses</li>
-                            <li>Piece d'identite</li>
-                            <li>Cartes d'assurance</li>
-                            <li>Examens complementaires</li>
-                        </ul>
-                    </div>
+            <div class="bas">
+                <div class="consignes">
+                    <div class="titre-section" style="margin-top:0;">À apporter le jour du rendez-vous</div>
+                    <ul>
+                        <li>Pièce d'identité</li>
+                        <li>Carte(s) d'assurance</li>
+                        <li>Carnet de santé</li>
+                        <li>Ordonnances en cours</li>
+                        <li>Résultats d'analyses</li>
+                        <li>Examens complémentaires</li>
+                    </ul>
+                    <div style="font-size:12px;color:var(--gris);margin-top:10px;">Merci d'arriver <strong style="color:var(--texte);">10 minutes avant</strong> l'heure du rendez-vous.</div>
                 </div>
-                <div class="qr-area">
-                    <img id="qrCodeImg" src="" alt="QR Code" width="130" height="130">
-                    <span class="qr-label">Scannez pour les details</span>
+                <div class="qr">
+                    <div id="qrcode"></div>
+                    <div class="legende">Scannez avec votre téléphone pour enregistrer ce rendez-vous dans votre agenda, avec l'adresse et le numéro à appeler.</div>
                 </div>
-            </div>
-
-            <div class="thank-you">Nous vous remercions pour votre confiance</div>
-
-            <div class="notice-box">
-                En cas d'empêchement, merci de nous prévenir au moins 24 heures à l'avance.
             </div>
         </div>
 
-        <div class="footer-recu">
-            <span>Genere le <span id="dateGeneration"></span></span>
-            <span class="right">{{ structure.nom if structure else 'Prenez soin de vous' }}</span>
+        <div class="rappel">En cas d'empêchement, merci de nous prévenir au moins 24 heures à l'avance{% if structure and structure.telephone %} au {{ structure.telephone }}{% endif %}.</div>
+        <div class="merci">Nous vous remercions de votre confiance.</div>
+
+        <div class="pied">
+            <span>Document établi le <span id="dateGeneration"></span></span>
+            <span class="droite">{{ structure.nom if structure else '' }}</span>
         </div>
     </div>
 
     <script>
-        // ============================================================
-        // JOURS ET MOIS EN FRANÇAIS
-        // ============================================================
-        
-        var jours = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
-        var mois = ['Janvier', 'Fevrier', 'Mars', 'Avril', 'Mai', 'Juin', 
-                    'Juillet', 'Aout', 'Septembre', 'Octobre', 'Novembre', 'Decembre'];
-        
-        function formaterDateFr(dateStr) {
-            var date = new Date(dateStr);
-            var jourSemaine = jours[date.getDay()];
-            var jour = date.getDate();
-            var moisNom = mois[date.getMonth()];
-            var annee = date.getFullYear();
-            return jourSemaine + ' ' + jour + ' ' + moisNom + ' ' + annee;
+        var JOURS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+        var MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+        var RDV = {
+            id: {{ rdv.id|tojson }},
+            dateIso: {{ rdv.date_rendez_vous.isoformat()|tojson }},
+            heure: {{ (rdv.heure_rendez_vous|string)|tojson }},
+            patient: {{ rdv.patient_nom|tojson }},
+            telephonePatient: {{ (rdv.patient_telephone or '')|tojson }},
+            motif: {{ (rdv.motif or '')|tojson }},
+            medecin: {{ nom_medecin|tojson }},
+            specialite: {{ (medecin.specialite if medecin else '')|tojson }},
+            structure: {{ (structure.nom if structure else 'Hôpital')|tojson }},
+            adresse: {{ (structure.adresse if structure else '')|tojson }},
+            telephone: {{ (structure.telephone if structure else '')|tojson }}
+        };
+
+        function formaterDateFr(iso) {
+            var d = new Date(iso + 'T00:00:00');
+            return JOURS[d.getDay()] + ' ' + d.getDate() + ' ' + MOIS[d.getMonth()] + ' ' + d.getFullYear();
         }
-        
-        // ============================================================
-        // GÉNÉRER LE QR CODE
-        // ============================================================
-        
-        function genererQRCode() {
-            var rdvId = '{{ rdv.id }}';
-            var patientNom = '{{ rdv.patient_nom }}';
-            var dateRdv = '{{ rdv.date_rendez_vous.isoformat() }}';
-            var heureRdv = '{{ rdv.heure_rendez_vous }}';
-            var motif = '{{ rdv.motif }}';
-            var medecinNom = '{{ medecin.titre if medecin else '' }} {{ medecin.nom if medecin else '' }}';
-            var structureNom = '{{ structure.nom if structure else 'Hopital' }}';
-            
-            var contenu = [
-                '=== CONFIRMATION DE RENDEZ-VOUS ===',
-                '',
-                'Structure: ' + structureNom,
-                'RDV: RDV-' + String(rdvId).padStart(4, '0'),
-                '',
-                'Patient: ' + patientNom,
-                'Date: ' + formaterDateFr(dateRdv),
-                'Heure: ' + heureRdv,
-                'Medecin: ' + medecinNom,
-                'Motif: ' + motif,
-                '',
-                'Merci de votre confiance.'
+
+        // ⭐ Contenu du QR : un événement d'agenda (format vCalendar, reconnu par
+        // les téléphones : « ajouter au calendrier ») avec la date, l'heure, le
+        // médecin, le lieu, le téléphone de la structure et le motif — bien plus
+        // utile que le simple texte d'avant (patron : "y mettant également
+        // d'autres informations").
+        function contenuQr() {
+            var ymd = RDV.dateIso.replace(/-/g, '');
+            var hm = (RDV.heure || '08:00').replace(':', '').slice(0, 4);
+            var h = parseInt(hm.slice(0, 2), 10), m = parseInt(hm.slice(2, 4), 10) || 0;
+            var fin = new Date(2000, 0, 1, h, m + 30);
+            var hmFin = ('0' + fin.getHours()).slice(-2) + ('0' + fin.getMinutes()).slice(-2);
+            var nettoyer = function (s) { return String(s || '').replace(/[\r\n]+/g, ' ').replace(/,/g, '\\,').replace(/;/g, '\\;'); };
+            var description = 'Patient : ' + RDV.patient + ' - Motif : ' + (RDV.motif || '-') + ' - N° RDV-' + String(RDV.id).padStart(4, '0') +
+                (RDV.telephone ? ' - Tél. ' + RDV.telephone : '') + ' - Prévenir 24 h à l\'avance en cas d\'empêchement.';
+            return [
+                'BEGIN:VEVENT',
+                'SUMMARY:' + nettoyer('Rendez-vous ' + RDV.structure + (RDV.medecin ? ' - ' + RDV.medecin : '')),
+                'DTSTART:' + ymd + 'T' + hm + '00',
+                'DTEND:' + ymd + 'T' + hmFin + '00',
+                'LOCATION:' + nettoyer(RDV.structure + (RDV.adresse ? ', ' + RDV.adresse : '')),
+                'DESCRIPTION:' + nettoyer(description),
+                'END:VEVENT'
             ].join('\n');
-            
-            var qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + encodeURIComponent(contenu);
-            document.getElementById('qrCodeImg').src = qrUrl;
         }
-        
-        // ============================================================
-        // CHARGEMENT
-        // ============================================================
-        
-        window.onload = function() {
-            // Formater la date du rendez-vous
-            var dateRdv = '{{ rdv.date_rendez_vous.isoformat() }}';
-            document.getElementById('dateRdv').textContent = formaterDateFr(dateRdv);
-            
-            // Date de generation
+
+        function dessinerQr() {
+            try {
+                new QRCode(document.getElementById('qrcode'), {
+                    text: contenuQr(), width: 140, height: 140,
+                    colorDark: '#1a2a6c', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M
+                });
+            } catch (e) {
+                document.querySelector('.qr').style.display = 'none';
+            }
+        }
+
+        window.onload = function () {
+            document.getElementById('dateRdv').textContent = formaterDateFr(RDV.dateIso);
             var now = new Date();
-            var dateStr = now.toLocaleDateString('fr-FR') + ' ' + now.toLocaleTimeString('fr-FR');
-            document.getElementById('dateGeneration').textContent = dateStr;
-            
-            // Générer le QR code
-            genererQRCode();
-            
-            // Impression automatique
-            setTimeout(function() {
+            document.getElementById('dateGeneration').textContent = now.toLocaleDateString('fr-FR') + ' à ' + now.toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'});
+            dessinerQr();
+            // Le QR est dessiné sur place (pas d'image distante à attendre) :
+            // on laisse juste le temps du rendu avant de lancer l'impression.
+            setTimeout(function () {
                 window.print();
-                setTimeout(function() {
-                    // ⭐ Renfort défensif (cohérence avec les autres pages
-                    // d'impression de l'appli) : window.close() est refusé
-                    // silencieusement par le navigateur si cette page n'a
-                    // pas été ouverte via window.open() — actuellement
-                    // toujours le cas ici, mais un lien direct/marque-page
-                    // laisserait sinon la page ouverte sans rien faire.
-                    try { window.close(); } catch (e) {}
-                }, 600);
-            }, 800);
+                setTimeout(function () { try { window.close(); } catch (e) {} }, 600);
+            }, 400);
         };
     </script>
 </body>
