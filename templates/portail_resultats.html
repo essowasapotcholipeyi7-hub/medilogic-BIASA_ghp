@@ -38,6 +38,12 @@
             <strong>Prochain rendez-vous :</strong> <span id="ppRdvTexte"></span>
         </div>
 
+        <!-- ⭐ Demander / suivre ses rendez-vous (patron, 2026-10-07) -->
+        <a href="{{ url_for('page_portail_rendez_vous') }}" class="btn btn-primary w-100 mb-3 py-2">
+            <i class="fas fa-calendar-plus me-1"></i> Mes rendez-vous — demander un rendez-vous
+            <span id="ppBadgeRdv" class="badge bg-danger ms-2" style="display:none;"></span>
+        </a>
+
         <div class="card">
             <div class="card-header bg-dark text-white">Résultats disponibles</div>
             <div class="card-body p-0" id="ppListeResultats">
@@ -236,6 +242,12 @@ fetch('/api/portail-patient/resultats').then(r => r.json()).then(data => {
             (data.prochain_rdv.medecin_nom ? ` avec Dr. ${data.prochain_rdv.medecin_nom}` : '') +
             (data.prochain_rdv.motif ? ` — ${data.prochain_rdv.motif}` : '');
         document.getElementById('ppProchainRdv').style.display = 'block';
+    }
+
+    if (data.rdv_non_lus) {
+        const b = document.getElementById('ppBadgeRdv');
+        b.textContent = data.rdv_non_lus + (data.rdv_non_lus > 1 ? ' réponses' : ' réponse');
+        b.style.display = '';
     }
 
     if (!data.pin_defini) {

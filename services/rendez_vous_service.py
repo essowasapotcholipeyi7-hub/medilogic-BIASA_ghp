@@ -10,7 +10,7 @@ from crypto_helper import dechiffrer_patients_orm
 class RendezVousService:
     """Service pour la gestion des rendez-vous"""
     
-    STATUTS_VALIDES = ['programme', 'confirme', 'termine', 'annule', 'reporte', 'absent']
+    STATUTS_VALIDES = ['programme', 'confirme', 'termine', 'annule', 'reporte', 'absent', 'demande']
     STATUTS_ACTIFS = ['programme', 'confirme']
     DUREE_MIN = 15
     DUREE_MAX = 120
@@ -91,6 +91,8 @@ class RendezVousService:
                               statut=None, medecin_id=None):
         """Récupère la liste des rendez-vous"""
         query = RendezVous.query.filter_by(structure_id=structure_id)
+        # ⭐ Les demandes du portail (statut 'demande') ont leur propre encadré
+        query = query.filter(RendezVous.statut != 'demande')
         
         if date_debut:
             query = query.filter(RendezVous.date_rendez_vous >= date_debut)
@@ -214,7 +216,8 @@ class RendezVousService:
                 'termine': [],
                 'annule': [],
                 'reporte': ['confirme', 'annule', 'programme'],
-                'absent': []
+                'absent': [],
+                'demande': ['confirme', 'annule', 'programme'],   # ⭐ demande du portail
             }
             
             if nouveau_statut not in transitions.get(rdv.statut, []):

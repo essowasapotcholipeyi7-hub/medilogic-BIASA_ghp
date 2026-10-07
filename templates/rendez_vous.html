@@ -393,6 +393,48 @@ body.modal-open {
         </div>
     </div>
 
+    <!-- ⭐ Demandes de rendez-vous reçues du portail patient (patron, 2026-10-07) :
+         le patient demande depuis chez lui, la structure examine ici, confirme
+         (date / heure / médecin / message) ou refuse ; le patient est notifié. -->
+    {% if demandes_portail %}
+    <div class="card shadow-sm mb-3 border-primary">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="fas fa-inbox me-2"></i> Demandes de rendez-vous reçues du portail patient</h6>
+            <span class="badge bg-light text-dark">{{ demandes_portail|length }} à examiner</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr><th>Reçue le</th><th>Patient</th><th>Téléphone</th><th>Date souhaitée</th><th>Créneau</th><th>Médecin souhaité</th><th>Motif / message</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for d in demandes_portail %}
+                        <tr>
+                            <td>{{ d.demande_le.strftime('%d/%m/%Y %H:%M') if d.demande_le else '-' }}</td>
+                            <td><strong>{{ d.patient_nom }}</strong></td>
+                            <td>{{ d.patient_telephone or '-' }}</td>
+                            <td>{{ d.date_rendez_vous.strftime('%d/%m/%Y') if d.date_rendez_vous else '-' }}</td>
+                            <td>{{ {'matin': 'Matin', 'apres_midi': 'Après-midi', 'indifferent': 'Indifférent'}.get(d.creneau_souhaite, '-') }}</td>
+                            <td>{% if d.medecin %}{{ d.medecin.get_nom_complet() }}{% else %}<span class="text-muted">Au choix de la structure</span>{% endif %}</td>
+                            <td>{{ d.motif }}{% if d.message_patient %}<div class="small text-muted">« {{ d.message_patient }} »</div>{% endif %}</td>
+                            <td class="text-nowrap">
+                                <button class="btn btn-sm btn-success" onclick='ouvrirConfirmerDemande({{ d.id }}, {{ d.date_rendez_vous.isoformat()|tojson }}, {{ (d.medecin_id or "")|tojson }}, {{ d.creneau_souhaite|tojson }}, {{ d.patient_nom|tojson }})'>
+                                    <i class="fas fa-check"></i> Confirmer
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" onclick="refuserDemandePortail({{ d.id }})">
+                                    <i class="fas fa-times"></i> Refuser
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Liste des rendez-vous -->
     <div class="card shadow-sm">
 <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
@@ -489,6 +531,34 @@ body.modal-open {
 
 
 <!-- Modal Reporter -->
+<!-- ⭐ Confirmation d'une demande reçue du portail patient -->
+<div class="modal fade" id="modalConfirmerDemande" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-check me-2"></i>Confirmer le rendez-vous de <span id="cdPatient"></span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="cdId">
+                <div class="row g-2">
+                    <div class="col-6"><label class="form-label small">Date</label><input type="date" class="form-control" id="cdDate"></div>
+                    <div class="col-6"><label class="form-label small">Heure</label><input type="time" class="form-control" id="cdHeure"></div>
+                    <div class="col-12"><label class="form-label small">Médecin <span class="text-danger">*</span></label>
+                        <select class="form-select" id="cdMedecin"><option value="">-- Choisir --</option>{% for m in medecins %}<option value="{{ m.id }}">{{ m.get_nom_complet() }}</option>{% endfor %}</select></div>
+                    <div class="col-12"><label class="form-label small">Message au patient (optionnel)</label>
+                        <textarea class="form-control" id="cdMessage" rows="2" placeholder="Ex. Venez à jeun. Apportez vos anciens examens."></textarea></div>
+                </div>
+                <div class="form-text mt-2">Le patient verra la confirmation sur son portail. S'il a un email, il le reçoit aussi. WhatsApp s'ouvrira ensuite avec le message prêt.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-success" onclick="envoyerConfirmationDemande()"><i class="fas fa-check me-1"></i> Confirmer et notifier</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="reporterModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -826,6 +896,50 @@ function ajouterRendezVous() {
 // ============================================================
 // CHANGEMENT DE STATUT
 // ============================================================
+
+// ===== ⭐ Demandes reçues du portail patient (patron, 2026-10-07) =====
+function ouvrirConfirmerDemande(id, dateIso, medecinId, creneau, patientNom) {
+    document.getElementById('cdId').value = id;
+    document.getElementById('cdPatient').textContent = patientNom;
+    document.getElementById('cdDate').value = dateIso || '';
+    document.getElementById('cdHeure').value = creneau === 'apres_midi' ? '14:00' : '08:00';
+    document.getElementById('cdMedecin').value = medecinId || '';
+    document.getElementById('cdMessage').value = '';
+    new bootstrap.Modal(document.getElementById('modalConfirmerDemande')).show();
+}
+async function envoyerConfirmationDemande() {
+    const id = document.getElementById('cdId').value;
+    const medecin = document.getElementById('cdMedecin').value;
+    if (!medecin) { showToast('Choisissez le médecin qui recevra le patient', 'warning'); return; }
+    showLoader('Confirmation...');
+    const r = await fetch(`/rendez_vous/api/${id}/confirmer-demande`, {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({date: document.getElementById('cdDate').value, heure: document.getElementById('cdHeure').value,
+                              medecin_id: medecin, message: document.getElementById('cdMessage').value})});
+    const d = await r.json();
+    hideLoader();
+    if (!d.success) { showToast(d.error || 'Erreur', 'danger'); return; }
+    bootstrap.Modal.getInstance(document.getElementById('modalConfirmerDemande')).hide();
+    await terminerReponseDemande(d, 'Rendez-vous confirmé. Le patient est prévenu sur son portail' + (d.email_envoye ? ' et par email' : '') + '.');
+}
+async function refuserDemandePortail(id) {
+    const motif = await demanderSaisie('Motif du refus (le patient le verra) :', '');
+    if (motif === null) return;
+    showLoader('Envoi...');
+    const r = await fetch(`/rendez_vous/api/${id}/refuser-demande`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({motif: motif})});
+    const d = await r.json();
+    hideLoader();
+    if (!d.success) { showToast(d.error || 'Erreur', 'danger'); return; }
+    await terminerReponseDemande(d, 'Demande refusée. Le patient est prévenu sur son portail' + (d.email_envoye ? ' et par email' : '') + '.');
+}
+async function terminerReponseDemande(d, texte) {
+    if (d.whatsapp_url) {
+        const ok = await demanderConfirmation(texte + ' Envoyer aussi le message par WhatsApp maintenant ?', {titre: 'Patient à prévenir', texteOk: 'Ouvrir WhatsApp', texteAnnuler: 'Non merci'});
+        if (ok) window.open(d.whatsapp_url, '_blank');
+    } else {
+        await afficherMessage(texte);
+    }
+    location.reload();
+}
 
 async function confirmerRendezVous(id) {
     if (!await demanderConfirmation('Confirmer ce rendez-vous ?')) return;

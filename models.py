@@ -1613,7 +1613,9 @@ class RendezVous(db.Model):
     patient_email = db.Column(db.String(100))
     
     # Médecin
-    medecin_id = db.Column(db.Integer, db.ForeignKey('medecins.id'), nullable=False)
+    # ⭐ Nullable depuis la demande de RDV par le portail (2026-10-07) : le
+    # patient peut ne pas choisir de médecin, la structure l'attribue en confirmant.
+    medecin_id = db.Column(db.Integer, db.ForeignKey('medecins.id'), nullable=True)
     
     # Date et heure
     date_rendez_vous = db.Column(db.Date, nullable=False)
@@ -1632,6 +1634,19 @@ class RendezVous(db.Model):
     # programme, confirme, termine, annule, reporte, absent
     
     # Suivi
+    # ⭐ Demande de rendez-vous par le patient depuis son portail (patron,
+    # 2026-10-07 : "le patient lui-même depuis chez lui puisse demander un
+    # rendez-vous, l'hôpital reçoit, examine et lui confirme, et le patient
+    # reçoit une notification"). statut 'demande' tant que la structure n'a
+    # pas répondu ; la réponse (confirmation ou refus) est conservée et
+    # affichée au patient jusqu'à ce qu'il l'ait vue.
+    source = db.Column(db.String(20), default='personnel')  # 'personnel' | 'portail'
+    demande_le = db.Column(db.DateTime)
+    creneau_souhaite = db.Column(db.String(20))  # 'matin' | 'apres_midi' | 'indifferent'
+    message_patient = db.Column(db.Text)
+    reponse_structure = db.Column(db.Text)
+    repondu_le = db.Column(db.DateTime)
+    vu_par_patient_le = db.Column(db.DateTime)
     rappel_envoye = db.Column(db.Boolean, default=False)
     date_rappel = db.Column(db.DateTime)
     confirme_le = db.Column(db.DateTime)
@@ -1669,7 +1684,8 @@ class RendezVous(db.Model):
             'termine': 'Terminé',
             'annule': 'Annulé',
             'reporte': 'Reporté',
-            'absent': 'Absent'
+            'absent': 'Absent',
+            'demande': 'Demande du patient'
         }
         return labels.get(self.statut, self.statut)
     
@@ -1681,7 +1697,8 @@ class RendezVous(db.Model):
             'termine': 'bg-secondary',
             'annule': 'bg-danger',
             'reporte': 'bg-info',
-            'absent': 'bg-dark'
+            'absent': 'bg-dark',
+            'demande': 'bg-primary'
         }
         return classes.get(self.statut, 'bg-secondary')
     

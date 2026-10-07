@@ -2977,6 +2977,11 @@ def page_accueil():
         if n:
             a_traiter.append({'texte': f"{n} rendez-vous aujourd'hui", 'icone': 'fa-calendar-day',
                               'url': url_for('rendez_vous'), 'urgent': False})
+        # ⭐ Demandes de rendez-vous reçues du portail patient (2026-10-07)
+        n = RendezVous.query.filter_by(structure_id=structure_id, statut='demande').count()
+        if n:
+            a_traiter.append({'texte': f"{n} demande{'s' if n > 1 else ''} de rendez-vous du portail", 'icone': 'fa-inbox',
+                              'url': url_for('rendez_vous'), 'urgent': True})
 
     # Heure serveur = heure du Togo (GMT, comme Render).
     maintenant = datetime.now()
@@ -7427,6 +7432,10 @@ def rendez_vous():
         medecin_id=medecin_id
     )
     
+    # ⭐ Demandes reçues du portail patient, à examiner (patron, 2026-10-07)
+    demandes_portail = RendezVous.query.filter_by(structure_id=structure_id, statut='demande') \
+        .order_by(RendezVous.demande_le.asc().nullsfirst()).all()
+
     # Récupérer les médecins et patients
     medecins = Medecin.query.filter_by(structure_id=structure_id, actif=True).all()
     patients = dechiffrer_patients_orm(Patient.query.filter_by(structure_id=structure_id).all())
@@ -7435,6 +7444,7 @@ def rendez_vous():
     return render_template(
         'rendez_vous.html',
         rendez_vous=rendez_vous,
+        demandes_portail=demandes_portail,
         medecins=medecins,
         patients=patients,
         periode=periode,
@@ -7606,6 +7616,143 @@ def api_confirmer_rendez_vous(rdv_id):
             'success': False,
             'error': resultat.get('error', 'Erreur lors de la confirmation')
         }), 400
+
+
+
+# ============================================================
+# ⭐ DEMANDES DE RENDEZ-VOUS DU PORTAIL PATIENT (patron, 2026-10-07)
+# Le patient demande depuis son portail ; la structure confirme (date,
+# heure, médecin, message) ou refuse ; le patient est notifié : réponse
+# visible sur son portail (jusqu'à lecture), email s'il en a un, et lien
+# WhatsApp prêt pour le personnel.
+# ============================================================
+
+def _envoyer_email_simple(destinataire, sujet, corps):
+    """Email texte, en tâche de fond, jamais bloquant : sans destinataire ou
+    sans serveur mail configuré, on n'envoie rien."""
+    if not destinataire or not app.config.get('MAIL_USERNAME'):
+        return False
+    import threading
+
+    def _tache():
+        try:
+            with app.app_context():
+                msg = Message(sujet, recipients=[destinataire], body=corps)
+                mail.send(msg)
+        except Exception as e:
+            print(f"⚠️ Email non envoyé à {destinataire} : {e}")
+    threading.Thread(target=_tache, daemon=True).start()
+    return True
+
+
+def _date_fr_longue(d):
+    jours = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche']
+    mois = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
+    return f"{jours[d.weekday()]} {d.day} {mois[d.month - 1]} {d.year}"
+
+
+def _lien_whatsapp(telephone, message):
+    tel = ''.join(ch for ch in str(telephone or '') if ch.isdigit())
+    if not tel:
+        return None
+    if len(tel) == 8:
+        tel = '228' + tel
+    from urllib.parse import quote
+    return f"https://wa.me/{tel}?text={quote(message)}"
+
+
+def _message_reponse_demande(rdv, structure, confirme):
+    nom = (rdv.patient_nom or '').strip()
+    if confirme:
+        medecin = db.session.get(Medecin, rdv.medecin_id) if rdv.medecin_id else None
+        corps = (f"Bonjour {nom},\n\nVotre demande de rendez-vous est CONFIRMÉE par {structure.get('nom', 'notre structure')} :\n"
+                 f"- Date : {_date_fr_longue(rdv.date_rendez_vous)}\n- Heure : {rdv.heure_rendez_vous}\n")
+        if medecin:
+            corps += f"- Médecin : {medecin.get_nom_complet()}\n"
+        corps += f"- Motif : {rdv.motif}\n"
+        if rdv.reponse_structure:
+            corps += f"\nMessage de la structure : {rdv.reponse_structure}\n"
+        if structure.get('adresse'):
+            corps += f"\nAdresse : {structure['adresse']}\n"
+        if structure.get('telephone'):
+            corps += f"Téléphone : {structure['telephone']}\n"
+        corps += "\nMerci d'arriver 10 minutes avant l'heure. En cas d'empêchement, prévenez-nous au moins 24 h à l'avance."
+    else:
+        corps = (f"Bonjour {nom},\n\nNous ne pouvons pas donner suite à votre demande de rendez-vous du "
+                 f"{_date_fr_longue(rdv.date_rendez_vous)} ({rdv.motif}).\n")
+        if rdv.reponse_structure:
+            corps += f"Motif : {rdv.reponse_structure}\n"
+        if structure.get('telephone'):
+            corps += f"\nVous pouvez nous appeler au {structure['telephone']} pour convenir d'une autre date."
+        corps += f"\n\n{structure.get('nom', '')}"
+    return corps
+
+
+@app.route('/rendez_vous/api/<int:rdv_id>/confirmer-demande', methods=['POST'])
+@login_required
+@permission_requise('rendez_vous')
+def api_confirmer_demande_portail(rdv_id):
+    structure_id = session.get('structure_id')
+    rdv = RendezVous.query.filter_by(id=rdv_id, structure_id=structure_id).first()
+    if not rdv:
+        return jsonify({'success': False, 'error': 'Demande introuvable'}), 404
+    if rdv.statut != 'demande':
+        return jsonify({'success': False, 'error': "Cette demande a déjà été traitée"}), 400
+    data = request.json or {}
+    try:
+        nouvelle_date = datetime.strptime(data.get('date') or rdv.date_rendez_vous.isoformat(), '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'success': False, 'error': 'Date invalide'}), 400
+    heure = (data.get('heure') or rdv.heure_rendez_vous or '08:00').strip()[:5]
+    medecin_id = data.get('medecin_id') or rdv.medecin_id
+    if medecin_id:
+        if not Medecin.query.filter_by(id=int(medecin_id), structure_id=structure_id).first():
+            return jsonify({'success': False, 'error': 'Médecin inconnu'}), 400
+        rdv.medecin_id = int(medecin_id)
+    else:
+        return jsonify({'success': False, 'error': 'Choisissez le médecin qui recevra le patient'}), 400
+    rdv.date_rendez_vous = nouvelle_date
+    rdv.heure_rendez_vous = heure
+    rdv.statut = 'confirme'
+    rdv.confirme_le = datetime.utcnow()
+    rdv.repondu_le = datetime.utcnow()
+    rdv.reponse_structure = (data.get('message') or '').strip() or None
+    rdv.vu_par_patient_le = None
+    try:
+        h, m = heure.split(':')
+        rdv.date_fin = datetime.combine(nouvelle_date, datetime.min.time()).replace(hour=int(h), minute=int(m)) + timedelta(minutes=rdv.duree or 30)
+    except Exception:
+        pass
+    db.session.commit()
+
+    structure = RappelsService._get_structure(structure_id) or {}
+    texte = _message_reponse_demande(rdv, structure, confirme=True)
+    email_envoye = _envoyer_email_simple(rdv.patient_email, f"Rendez-vous confirmé - {structure.get('nom', '')}", texte)
+    return jsonify({'success': True, 'whatsapp_url': _lien_whatsapp(rdv.patient_telephone, texte),
+                    'email_envoye': email_envoye, 'message': 'Demande confirmée'})
+
+
+@app.route('/rendez_vous/api/<int:rdv_id>/refuser-demande', methods=['POST'])
+@login_required
+@permission_requise('rendez_vous')
+def api_refuser_demande_portail(rdv_id):
+    structure_id = session.get('structure_id')
+    rdv = RendezVous.query.filter_by(id=rdv_id, structure_id=structure_id).first()
+    if not rdv:
+        return jsonify({'success': False, 'error': 'Demande introuvable'}), 404
+    if rdv.statut != 'demande':
+        return jsonify({'success': False, 'error': "Cette demande a déjà été traitée"}), 400
+    data = request.json or {}
+    rdv.statut = 'annule'
+    rdv.repondu_le = datetime.utcnow()
+    rdv.reponse_structure = (data.get('motif') or '').strip() or None
+    rdv.vu_par_patient_le = None
+    db.session.commit()
+    structure = RappelsService._get_structure(structure_id) or {}
+    texte = _message_reponse_demande(rdv, structure, confirme=False)
+    email_envoye = _envoyer_email_simple(rdv.patient_email, f"Votre demande de rendez-vous - {structure.get('nom', '')}", texte)
+    return jsonify({'success': True, 'whatsapp_url': _lien_whatsapp(rdv.patient_telephone, texte),
+                    'email_envoye': email_envoye, 'message': 'Demande refusée'})
 
 
 @app.route('/rendez_vous/api/<int:rdv_id>/print', methods=['GET'])
@@ -14417,7 +14564,10 @@ def api_portail_resultats():
     acces = AccesPortailPatient.query.filter_by(structure_id=structure_id, patient_id=patient_id).first()
     pin_defini = bool(acces and acces.pin_hash)
 
-    return jsonify({'success': True, 'resultats': resultats, 'prochain_rdv': prochain_rdv, 'pin_defini': pin_defini})
+    rdv_non_lus = RendezVous.query.filter_by(structure_id=structure_id, patient_id=patient_id) \
+        .filter(RendezVous.repondu_le.isnot(None), RendezVous.vu_par_patient_le.is_(None)).count()
+    return jsonify({'success': True, 'resultats': resultats, 'prochain_rdv': prochain_rdv, 'pin_defini': pin_defini,
+                    'rdv_non_lus': rdv_non_lus})
 
 
 @app.route('/api/portail-patient/resultats/<int:resultat_id>/telecharger', methods=['GET'])
@@ -14495,6 +14645,131 @@ def page_portail_imprimer_resultat(resultat_id):
     structure_info['adresse'] = sheets_helper.format_adresse(structure_info.get('adresse', ''))
 
     return render_template('portail_resultat_imprimer.html', resultat=resultat, demande=demande, structure=structure_info)
+
+
+
+# ---------- Portail patient : demander un rendez-vous, suivre les réponses ----------
+
+@app.route('/portail-patient/rendez-vous')
+def page_portail_rendez_vous():
+    if not session.get('portail_patient_id'):
+        return redirect(url_for('page_portail_patient'))
+    return render_template('portail_rendez_vous.html')
+
+
+def _rdv_portail_dict(rdv):
+    medecin = db.session.get(Medecin, rdv.medecin_id) if rdv.medecin_id else None
+    return {
+        'id': rdv.id, 'statut': rdv.statut, 'statut_label': rdv.get_statut_label(),
+        'date': rdv.date_rendez_vous.strftime('%d/%m/%Y') if rdv.date_rendez_vous else '',
+        'date_iso': rdv.date_rendez_vous.isoformat() if rdv.date_rendez_vous else '',
+        'heure': rdv.heure_rendez_vous or '', 'motif': rdv.motif or '',
+        'medecin': medecin.get_nom_complet() if medecin else '',
+        'source': rdv.source or 'personnel', 'creneau_souhaite': rdv.creneau_souhaite,
+        'message_patient': rdv.message_patient, 'reponse_structure': rdv.reponse_structure,
+        'repondu_le': rdv.repondu_le.strftime('%d/%m/%Y %H:%M') if rdv.repondu_le else None,
+        'non_lu': bool(rdv.repondu_le and not rdv.vu_par_patient_le),
+        'a_venir': bool(rdv.date_rendez_vous and rdv.date_rendez_vous >= date.today()),
+    }
+
+
+@app.route('/api/portail-patient/rendez-vous', methods=['GET'])
+def api_portail_rendez_vous():
+    patient_id = session.get('portail_patient_id')
+    structure_id = session.get('portail_structure_id')
+    if not patient_id:
+        return jsonify({'success': False, 'error': 'Non authentifié'}), 401
+    rdvs = RendezVous.query.filter_by(structure_id=structure_id, patient_id=patient_id) \
+        .order_by(RendezVous.date_rendez_vous.desc(), RendezVous.heure_rendez_vous.desc()).limit(60).all()
+    medecins = [{'id': m.id, 'nom': m.get_nom_complet(), 'specialite': m.specialite or ''}
+                for m in Medecin.query.filter_by(structure_id=structure_id, actif=True).order_by(Medecin.nom).all()]
+    structure = RappelsService._get_structure(structure_id) or {}
+    liste = [_rdv_portail_dict(r) for r in rdvs]
+    return jsonify({'success': True, 'rendez_vous': liste, 'medecins': medecins,
+                    'non_lus': sum(1 for r in liste if r['non_lu']),
+                    'demandes_en_attente': sum(1 for r in liste if r['statut'] == 'demande'),
+                    'structure': {'nom': structure.get('nom', ''), 'telephone': structure.get('telephone', '')},
+                    'aujourdhui': date.today().isoformat()})
+
+
+@app.route('/api/portail-patient/rendez-vous/demander', methods=['POST'])
+def api_portail_demander_rendez_vous():
+    patient_id = session.get('portail_patient_id')
+    structure_id = session.get('portail_structure_id')
+    if not patient_id:
+        return jsonify({'success': False, 'error': 'Non authentifié'}), 401
+    data = request.json or {}
+    try:
+        date_souhaitee = datetime.strptime((data.get('date') or '').strip(), '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'success': False, 'error': 'Indiquez la date souhaitée'}), 400
+    if date_souhaitee < date.today():
+        return jsonify({'success': False, 'error': 'La date souhaitée est déjà passée'}), 400
+    motif = (data.get('motif') or '').strip()
+    if len(motif) < 3:
+        return jsonify({'success': False, 'error': 'Indiquez le motif de la consultation'}), 400
+    creneau = data.get('creneau') if data.get('creneau') in ('matin', 'apres_midi', 'indifferent') else 'indifferent'
+    medecin_id = data.get('medecin_id') or None
+    if medecin_id and not Medecin.query.filter_by(id=int(medecin_id), structure_id=structure_id, actif=True).first():
+        return jsonify({'success': False, 'error': 'Médecin inconnu'}), 400
+    en_attente = RendezVous.query.filter_by(structure_id=structure_id, patient_id=patient_id, statut='demande').count()
+    if en_attente >= 3:
+        return jsonify({'success': False, 'error': "Vous avez déjà 3 demandes en attente de réponse"}), 400
+
+    patient = Patient.query.filter_by(id=patient_id, structure_id=structure_id).first()
+    if not patient:
+        return jsonify({'success': False, 'error': 'Patient introuvable'}), 404
+    dechiffrer_patients_orm([patient])
+    rdv = RendezVous(
+        structure_id=structure_id, patient_id=patient_id,
+        patient_nom=f"{patient.nom or ''} {patient.prenom or ''}".strip(),
+        patient_telephone=patient.telephone, patient_email=patient.email,
+        medecin_id=int(medecin_id) if medecin_id else None,
+        date_rendez_vous=date_souhaitee, heure_rendez_vous='14:00' if creneau == 'apres_midi' else '08:00',
+        duree=30, motif=motif[:255], notes='[demande du portail patient]',
+        statut='demande', source='portail', demande_le=datetime.utcnow(), creneau_souhaite=creneau,
+        message_patient=(data.get('message') or '').strip()[:1000] or None,
+    )
+    db.session.add(rdv)
+    db.session.commit()
+    # La structure est prévenue par email (si elle en a un) ; elle voit aussi la
+    # demande dans "À traiter" sur l'accueil et sur la page Rendez-vous.
+    structure = RappelsService._get_structure(structure_id) or {}
+    creneau_txt = {'matin': 'le matin', 'apres_midi': "l'après-midi", 'indifferent': 'à tout moment'}[creneau]
+    _envoyer_email_simple(structure.get('email'), f"Nouvelle demande de rendez-vous - {rdv.patient_nom}",
+                          f"{rdv.patient_nom} demande un rendez-vous le {_date_fr_longue(date_souhaitee)} ({creneau_txt}).\n"
+                          f"Motif : {motif}\n" + (f"Message : {rdv.message_patient}\n" if rdv.message_patient else '') +
+                          f"Téléphone : {patient.telephone or '-'}\n\nÀ traiter dans MediLogic > Rendez-vous.")
+    return jsonify({'success': True, 'rendez_vous': _rdv_portail_dict(rdv)})
+
+
+@app.route('/api/portail-patient/rendez-vous/<int:rdv_id>/vu', methods=['POST'])
+def api_portail_rendez_vous_vu(rdv_id):
+    patient_id = session.get('portail_patient_id')
+    if not patient_id:
+        return jsonify({'success': False, 'error': 'Non authentifié'}), 401
+    rdv = RendezVous.query.filter_by(id=rdv_id, patient_id=patient_id, structure_id=session.get('portail_structure_id')).first()
+    if rdv and rdv.repondu_le and not rdv.vu_par_patient_le:
+        rdv.vu_par_patient_le = datetime.utcnow()
+        db.session.commit()
+    return jsonify({'success': True})
+
+
+@app.route('/api/portail-patient/rendez-vous/<int:rdv_id>/annuler', methods=['POST'])
+def api_portail_rendez_vous_annuler(rdv_id):
+    """Le patient retire sa propre demande tant qu'elle n'a pas été traitée."""
+    patient_id = session.get('portail_patient_id')
+    if not patient_id:
+        return jsonify({'success': False, 'error': 'Non authentifié'}), 401
+    rdv = RendezVous.query.filter_by(id=rdv_id, patient_id=patient_id, structure_id=session.get('portail_structure_id')).first()
+    if not rdv or rdv.statut != 'demande':
+        return jsonify({'success': False, 'error': "Seule une demande encore en attente peut être retirée"}), 400
+    rdv.statut = 'annule'
+    rdv.reponse_structure = 'Demande retirée par le patient'
+    rdv.repondu_le = datetime.utcnow()
+    rdv.vu_par_patient_le = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'success': True})
 
 
 @app.route('/portail-patient/deconnexion')

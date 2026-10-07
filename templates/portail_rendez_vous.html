@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% set cacher_navigation = True %}
+
+{% block title %}Mes rendez-vous{% endblock %}
+
+{% block extra_css %}
+<link rel="manifest" href="{{ url_for('portail_manifest') }}">
+<meta name="theme-color" content="#1d6fa5">
+<style>
+    .rdv-item { border-left: 4px solid #cfd8e3; }
+    .rdv-item.confirme { border-left-color: #198754; }
+    .rdv-item.demande { border-left-color: #0d6efd; }
+    .rdv-item.annule { border-left-color: #dc3545; }
+    .rdv-item.non-lu { background: #fff8e6; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-7">
+        <div class="d-flex justify-content-between align-items-center mt-4 mb-3">
+            <h5 class="mb-0"><i class="fas fa-calendar-check me-2"></i>Mes rendez-vous</h5>
+            <a href="{{ url_for('page_portail_resultats') }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-1"></i> Retour</a>
+        </div>
+
+        <!-- ⭐ Réponses de la structure pas encore lues -->
+        <div id="ppNotifications"></div>
+
+        <div class="card mb-3">
+            <div class="card-header bg-primary text-white"><i class="fas fa-calendar-plus me-1"></i> Demander un rendez-vous</div>
+            <div class="card-body">
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label small mb-1">Date souhaitée <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control" id="ppDate">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small mb-1">Moment</label>
+                        <select class="form-select" id="ppCreneau">
+                            <option value="matin">Matin</option>
+                            <option value="apres_midi">Après-midi</option>
+                            <option value="indifferent" selected>Indifférent</option>
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small mb-1">Médecin (facultatif)</label>
+                        <select class="form-select" id="ppMedecin"><option value="">Au choix de la structure</option></select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small mb-1">Motif <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="ppMotif" maxlength="255" placeholder="Ex. consultation, contrôle, douleurs…">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small mb-1">Message (facultatif)</label>
+                        <textarea class="form-control" id="ppMessage" rows="2" maxlength="1000" placeholder="Précisions utiles pour la structure"></textarea>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-primary w-100 mt-3" id="ppBtnDemander" onclick="demanderRdv()">
+                    <i class="fas fa-paper-plane me-1"></i> Envoyer ma demande
+                </button>
+                <div class="form-text mt-2">La structure examine votre demande et vous confirme la date et l'heure. Vous verrez la réponse ici<span id="ppInfoEmail"></span>.</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header bg-dark text-white">Mes rendez-vous et demandes</div>
+            <div class="card-body p-0" id="ppListeRdv"><div class="text-center text-muted py-4">Chargement...</div></div>
+        </div>
+        <div class="text-center text-muted small mt-3" id="ppContactStructure"></div>
+    </div>
+</div>
+
+<script>
+const LIBELLES = {demande: 'Demande envoyée, en attente de réponse', confirme: 'Confirmé', programme: 'Programmé', reporte: 'Reporté', termine: 'Terminé', annule: 'Annulé / refusé', absent: 'Absent'};
+const CRENEAUX = {matin: 'le matin', apres_midi: "l'après-midi", indifferent: 'à tout moment'};
+
+function chargerRdv() {
+    fetch('/api/portail-patient/rendez-vous').then(r => r.json()).then(d => {
+        if (!d.success) { window.location.href = "{{ url_for('page_portail_patient') }}"; return; }
+        const sel = document.getElementById('ppMedecin');
+        if (sel.options.length <= 1) d.medecins.forEach(m => { const o = document.createElement('option'); o.value = m.id; o.textContent = m.nom + (m.specialite ? ' — ' + m.specialite : ''); sel.appendChild(o); });
+        const dateInput = document.getElementById('ppDate');
+        dateInput.min = d.aujourdhui;
+        if (!dateInput.value) { const t = new Date(d.aujourdhui + 'T00:00:00'); t.setDate(t.getDate() + 1); dateInput.value = t.toISOString().slice(0, 10); }
+        document.getElementById('ppContactStructure').textContent = d.structure.nom + (d.structure.telephone ? ' — ' + d.structure.telephone : '');
+
+        // Notifications : réponses non lues, marquées lues après affichage
+        const nonLus = d.rendez_vous.filter(r => r.non_lu);
+        document.getElementById('ppNotifications').innerHTML = nonLus.map(r => `
+            <div class="alert ${r.statut === 'confirme' ? 'alert-success' : 'alert-danger'} shadow-sm">
+                <strong><i class="fas fa-bell me-1"></i>${r.statut === 'confirme' ? 'Rendez-vous confirmé' : 'Demande non retenue'}</strong>
+                ${r.statut === 'confirme' ? ` : le <strong>${r.date}</strong> à <strong>${r.heure}</strong>${r.medecin ? ' avec ' + r.medecin : ''}.` : ` (demande du ${r.date}).`}
+                ${r.reponse_structure ? `<div class="mt-1">${r.reponse_structure}</div>` : ''}
+                <div class="small text-muted mt-1">Réponse du ${r.repondu_le}</div>
+            </div>`).join('');
+        nonLus.forEach(r => fetch(`/api/portail-patient/rendez-vous/${r.id}/vu`, {method: 'POST'}));
+
+        const zone = document.getElementById('ppListeRdv');
+        if (!d.rendez_vous.length) { zone.innerHTML = '<div class="text-center text-muted py-4">Aucun rendez-vous pour le moment.</div>'; return; }
+        zone.innerHTML = '<div class="list-group list-group-flush">' + d.rendez_vous.map(r => `
+            <div class="list-group-item rdv-item ${r.statut} ${r.non_lu ? 'non-lu' : ''}">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <div>
+                        <div class="fw-bold">${r.date}${r.statut === 'demande' ? ' (' + CRENEAUX[r.creneau_souhaite || 'indifferent'] + ')' : ' à ' + r.heure}</div>
+                        <div>${r.motif}${r.medecin ? ' — ' + r.medecin : ''}</div>
+                        ${r.reponse_structure && r.statut !== 'demande' ? `<div class="small text-muted mt-1"><i class="fas fa-comment me-1"></i>${r.reponse_structure}</div>` : ''}
+                    </div>
+                    <div class="text-end">
+                        <span class="badge ${r.statut === 'confirme' ? 'bg-success' : r.statut === 'demande' ? 'bg-primary' : r.statut === 'annule' ? 'bg-danger' : 'bg-secondary'}">${LIBELLES[r.statut] || r.statut_label}</span>
+                        ${r.statut === 'demande' ? `<div class="mt-1"><button class="btn btn-sm btn-link text-danger p-0" onclick="retirerDemande(${r.id})">Retirer</button></div>` : ''}
+                    </div>
+                </div>
+            </div>`).join('') + '</div>';
+    });
+}
+
+async function demanderRdv() {
+    const btn = document.getElementById('ppBtnDemander');
+    btn.disabled = true;
+    try {
+        const r = await fetch('/api/portail-patient/rendez-vous/demander', {method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({date: document.getElementById('ppDate').value, creneau: document.getElementById('ppCreneau').value,
+                                  medecin_id: document.getElementById('ppMedecin').value || null,
+                                  motif: document.getElementById('ppMotif').value.trim(), message: document.getElementById('ppMessage').value.trim()})});
+        const d = await r.json();
+        if (!d.success) { await afficherMessage(d.error || 'Erreur', {type: 'warning'}); return; }
+        document.getElementById('ppMotif').value = ''; document.getElementById('ppMessage').value = '';
+        await afficherMessage('Votre demande est envoyée. La structure vous répondra ici.', {type: 'success'});
+        chargerRdv();
+    } finally { btn.disabled = false; }
+}
+
+async function retirerDemande(id) {
+    if (!await demanderConfirmation('Retirer cette demande de rendez-vous ?')) return;
+    const r = await fetch(`/api/portail-patient/rendez-vous/${id}/annuler`, {method: 'POST'});
+    const d = await r.json();
+    if (!d.success) await afficherMessage(d.error || 'Erreur', {type: 'warning'});
+    chargerRdv();
+}
+
+chargerRdv();
+</script>
+{% endblock %}
