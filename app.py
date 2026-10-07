@@ -1992,6 +1992,38 @@ def health():
         return jsonify({'status': 'erreur', 'detail': str(e)[:300]}), 503
 
 
+# ⭐ En-têtes de référence d'une feuille struct_N_users. Lecture TOLÉRANTE :
+# une feuille dont l'en-tête a été abîmé (cases vides, doublons — vécu sur la
+# structure 14 le 2026-10-07 : « ID » effacé, deux en-têtes vides) faisait
+# échouer get_all_records() et la connexion répondait « Email non trouvé »
+# alors que les comptes étaient là. On reconstruit les noms manquants par
+# position au lieu de laisser tomber la feuille.
+ENTETES_UTILISATEURS = ['ID', 'nom', 'email', 'mot_de_passe', 'role', 'structure_id', 'created_at',
+                        'actif', 'derniere_connexion', 'reset_token', 'reset_token_expiry', 'webauthn_credentials']
+
+
+def _lire_feuille_utilisateurs(valeurs):
+    """valeurs = get_all_values() -> liste de dicts, comme get_all_records(),
+    mais sans jamais échouer sur un en-tête vide ou dupliqué."""
+    if not valeurs:
+        return []
+    entete_brut = list(valeurs[0])
+    entete, vus = [], set()
+    for i, nom in enumerate(entete_brut):
+        nom = (nom or '').strip()
+        if not nom or nom in vus:
+            nom = ENTETES_UTILISATEURS[i] if i < len(ENTETES_UTILISATEURS) and ENTETES_UTILISATEURS[i] not in vus else f'colonne_{i + 1}'
+        vus.add(nom)
+        entete.append(nom)
+    lignes = []
+    for ligne in valeurs[1:]:
+        if not any((c or '').strip() for c in ligne):
+            continue
+        ligne = list(ligne) + [''] * (len(entete) - len(ligne))
+        lignes.append({entete[i]: ligne[i] for i in range(len(entete))})
+    return lignes
+
+
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if 'user_id' in session:
@@ -2030,11 +2062,10 @@ def index():
                 print(f"📂 Vérification dans: {title}")
                 
                 try:
-                    row_count = len(worksheet.get_all_values())
-                    if row_count <= 1:
+                    valeurs = worksheet.get_all_values()
+                    if len(valeurs) <= 1:
                         continue
-                    
-                    records = worksheet.get_all_records()
+                    records = _lire_feuille_utilisateurs(valeurs)
                     if not records:
                         continue
                         
@@ -2060,8 +2091,9 @@ def index():
                             
                             # 🔥 METTRE À JOUR LA DERNIÈRE CONNEXION
                             try:
-                                cell = worksheet.find(str(row.get('ID')), in_column=1)
-                                if cell:
+                                cell = worksheet.find(str(row.get('ID')), in_column=1) if str(row.get('ID') or '').strip() else None
+                                # jamais la ligne 1 (l'en-tête) — une écriture dessus casse la feuille
+                                if cell and cell.row > 1:
                                     row_num = cell.row
                                     current_row = worksheet.row_values(row_num)
                                     
