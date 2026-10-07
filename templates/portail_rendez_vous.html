@@ -46,9 +46,34 @@
                         <label class="form-label small mb-1">Médecin (facultatif)</label>
                         <select class="form-select" id="ppMedecin"><option value="">Au choix de la structure</option></select>
                     </div>
+                    <!-- ⭐ Patron (2026-10-07) : motifs proposés ; « Consultation spécialisée »
+                         demande la spécialité ; « Autre » se précise librement. -->
                     <div class="col-12">
                         <label class="form-label small mb-1">Motif <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="ppMotif" maxlength="255" placeholder="Ex. consultation, contrôle, douleurs…">
+                        <select class="form-select" id="ppMotifType" onchange="majMotif()">
+                            <option value="">-- Choisir --</option>
+                            <option value="Consultation générale">Consultation générale</option>
+                            <option value="Consultation spécialisée">Consultation spécialisée</option>
+                            <option value="Contrôle / suivi">Contrôle / suivi</option>
+                            <option value="Résultats d'examens">Résultats d'examens</option>
+                            <option value="Analyses / examens">Analyses / examens</option>
+                            <option value="Vaccination">Vaccination</option>
+                            <option value="Pansement / soins">Pansement / soins</option>
+                            <option value="Certificat médical">Certificat médical</option>
+                            <option value="Suivi de grossesse">Suivi de grossesse</option>
+                            <option value="Autre">Autre (préciser)</option>
+                        </select>
+                    </div>
+                    <div class="col-12" id="ppBlocSpecialite" style="display:none;">
+                        <label class="form-label small mb-1">Spécialité <span class="text-danger">*</span></label>
+                        <select class="form-select" id="ppSpecialite" onchange="majMotif()">
+                            <option value="">-- Choisir la spécialité --</option>
+                        </select>
+                        <input type="text" class="form-control mt-2" id="ppSpecialiteAutre" maxlength="100" placeholder="Précisez la spécialité" style="display:none;">
+                    </div>
+                    <div class="col-12" id="ppBlocMotifAutre" style="display:none;">
+                        <label class="form-label small mb-1">Précisez le motif <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="ppMotifAutre" maxlength="200" placeholder="Ex. douleurs au ventre depuis 3 jours">
                     </div>
                     <div class="col-12">
                         <label class="form-label small mb-1">Message (facultatif)</label>
@@ -78,7 +103,12 @@ function chargerRdv() {
     fetch('/api/portail-patient/rendez-vous').then(r => r.json()).then(d => {
         if (!d.success) { window.location.href = "{{ url_for('page_portail_patient') }}"; return; }
         const sel = document.getElementById('ppMedecin');
-        if (sel.options.length <= 1) d.medecins.forEach(m => { const o = document.createElement('option'); o.value = m.id; o.textContent = m.nom + (m.specialite ? ' — ' + m.specialite : ''); sel.appendChild(o); });
+        if (sel.options.length <= 1) d.medecins.forEach(m => { const o = document.createElement('option'); o.value = m.id; o.textContent = m.nom + (m.specialite ? ' — ' + m.specialite : ''); o.dataset.specialite = (m.specialite || '').toLowerCase(); sel.appendChild(o); });
+        const selSpec = document.getElementById('ppSpecialite');
+        if (selSpec.options.length <= 1) {
+            (d.specialites || []).forEach(sp => { const o = document.createElement('option'); o.value = sp; o.textContent = sp; selSpec.appendChild(o); });
+            const autre = document.createElement('option'); autre.value = '__autre__'; autre.textContent = 'Autre spécialité (préciser)'; selSpec.appendChild(autre);
+        }
         const dateInput = document.getElementById('ppDate');
         dateInput.min = d.aujourdhui;
         if (!dateInput.value) { const t = new Date(d.aujourdhui + 'T00:00:00'); t.setDate(t.getDate() + 1); dateInput.value = t.toISOString().slice(0, 10); }
@@ -87,9 +117,9 @@ function chargerRdv() {
         // Notifications : réponses non lues, marquées lues après affichage
         const nonLus = d.rendez_vous.filter(r => r.non_lu);
         document.getElementById('ppNotifications').innerHTML = nonLus.map(r => `
-            <div class="alert ${r.statut === 'confirme' ? 'alert-success' : 'alert-danger'} shadow-sm">
-                <strong><i class="fas fa-bell me-1"></i>${r.statut === 'confirme' ? 'Rendez-vous confirmé' : 'Demande non retenue'}</strong>
-                ${r.statut === 'confirme' ? ` : le <strong>${r.date}</strong> à <strong>${r.heure}</strong>${r.medecin ? ' avec ' + r.medecin : ''}.` : ` (demande du ${r.date}).`}
+            <div class="alert ${r.statut === 'confirme' ? 'alert-success' : r.statut === 'reporte' ? 'alert-warning' : 'alert-danger'} shadow-sm">
+                <strong><i class="fas fa-bell me-1"></i>${r.statut === 'confirme' ? 'Rendez-vous confirmé' : r.statut === 'reporte' ? 'Rendez-vous modifié par la structure' : 'Demande non retenue'}</strong>
+                ${(r.statut === 'confirme' || r.statut === 'reporte') ? ` : le <strong>${r.date}</strong> à <strong>${r.heure}</strong>${r.medecin ? ' avec ' + r.medecin : ''}.` : ` (demande du ${r.date}).`}
                 ${r.reponse_structure ? `<div class="mt-1">${r.reponse_structure}</div>` : ''}
                 <div class="small text-muted mt-1">Réponse du ${r.repondu_le}</div>
             </div>`).join('');
@@ -114,17 +144,52 @@ function chargerRdv() {
     });
 }
 
+// ⭐ Motif : type choisi + spécialité ou précision -> un seul texte envoyé
+function majMotif() {
+    const type = document.getElementById('ppMotifType').value;
+    const blocSpec = document.getElementById('ppBlocSpecialite'), blocAutre = document.getElementById('ppBlocMotifAutre');
+    blocSpec.style.display = type === 'Consultation spécialisée' ? '' : 'none';
+    blocAutre.style.display = type === 'Autre' ? '' : 'none';
+    const spec = document.getElementById('ppSpecialite').value;
+    document.getElementById('ppSpecialiteAutre').style.display = (type === 'Consultation spécialisée' && spec === '__autre__') ? '' : 'none';
+    // Médecins filtrés sur la spécialité choisie (les autres restent accessibles via « Au choix de la structure »)
+    const sel = document.getElementById('ppMedecin');
+    [...sel.options].forEach(o => {
+        if (!o.value) return;
+        const cache = type === 'Consultation spécialisée' && spec && spec !== '__autre__' && o.dataset.specialite !== spec.toLowerCase();
+        o.hidden = cache;
+        if (cache && sel.value === o.value) sel.value = '';
+    });
+}
+function motifCompose() {
+    const type = document.getElementById('ppMotifType').value;
+    if (!type) return null;
+    if (type === 'Consultation spécialisée') {
+        const spec = document.getElementById('ppSpecialite').value;
+        const precision = spec === '__autre__' ? document.getElementById('ppSpecialiteAutre').value.trim() : spec;
+        if (!precision) return null;
+        return 'Consultation spécialisée — ' + precision;
+    }
+    if (type === 'Autre') {
+        const precision = document.getElementById('ppMotifAutre').value.trim();
+        return precision ? 'Autre : ' + precision : null;
+    }
+    return type;
+}
+
 async function demanderRdv() {
     const btn = document.getElementById('ppBtnDemander');
+    const motif = motifCompose();
+    if (!motif) { await afficherMessage("Choisissez le motif (et précisez la spécialité ou le détail si demandé).", {type: 'warning'}); return; }
     btn.disabled = true;
     try {
         const r = await fetch('/api/portail-patient/rendez-vous/demander', {method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({date: document.getElementById('ppDate').value, creneau: document.getElementById('ppCreneau').value,
                                   medecin_id: document.getElementById('ppMedecin').value || null,
-                                  motif: document.getElementById('ppMotif').value.trim(), message: document.getElementById('ppMessage').value.trim()})});
+                                  motif: motif, message: document.getElementById('ppMessage').value.trim()})});
         const d = await r.json();
         if (!d.success) { await afficherMessage(d.error || 'Erreur', {type: 'warning'}); return; }
-        document.getElementById('ppMotif').value = ''; document.getElementById('ppMessage').value = '';
+        document.getElementById('ppMotifType').value = ''; document.getElementById('ppMotifAutre').value = ''; document.getElementById('ppSpecialiteAutre').value = ''; document.getElementById('ppMessage').value = ''; majMotif();
         await afficherMessage('Votre demande est envoyée. La structure vous répondra ici.', {type: 'success'});
         chargerRdv();
     } finally { btn.disabled = false; }

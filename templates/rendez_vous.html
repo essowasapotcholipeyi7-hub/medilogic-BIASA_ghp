@@ -420,7 +420,7 @@ body.modal-open {
                             <td>{{ d.motif }}{% if d.message_patient %}<div class="small text-muted">« {{ d.message_patient }} »</div>{% endif %}</td>
                             <td class="text-nowrap">
                                 <button class="btn btn-sm btn-success" onclick='ouvrirConfirmerDemande({{ d.id }}, {{ d.date_rendez_vous.isoformat()|tojson }}, {{ (d.medecin_id or "")|tojson }}, {{ d.creneau_souhaite|tojson }}, {{ d.patient_nom|tojson }})'>
-                                    <i class="fas fa-check"></i> Confirmer
+                                    <i class="fas fa-search"></i> Examiner
                                 </button>
                                 <button class="btn btn-sm btn-outline-danger" onclick="refuserDemandePortail({{ d.id }})">
                                     <i class="fas fa-times"></i> Refuser

@@ -14717,7 +14717,9 @@ def api_portail_rendez_vous():
                 for m in Medecin.query.filter_by(structure_id=structure_id, actif=True).order_by(Medecin.nom).all()]
     structure = RappelsService._get_structure(structure_id) or {}
     liste = [_rdv_portail_dict(r) for r in rdvs]
-    return jsonify({'success': True, 'rendez_vous': liste, 'medecins': medecins,
+    # ⭐ Spécialités disponibles (pour « Consultation spécialisée » côté portail)
+    specialites = sorted({(m['specialite'] or '').strip() for m in medecins if (m['specialite'] or '').strip()}, key=str.lower)
+    return jsonify({'success': True, 'rendez_vous': liste, 'medecins': medecins, 'specialites': specialites,
                     'non_lus': sum(1 for r in liste if r['non_lu']),
                     'demandes_en_attente': sum(1 for r in liste if r['statut'] == 'demande'),
                     'structure': {'nom': structure.get('nom', ''), 'telephone': structure.get('telephone', '')},
