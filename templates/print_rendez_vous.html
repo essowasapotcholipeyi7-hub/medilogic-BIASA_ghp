@@ -97,8 +97,14 @@
             font-size: 10.5px; color: var(--gris);
         }
         .pied .droite { color: var(--bleu); font-weight: 600; }
+        /* ---- barre d'actions (jamais imprimée) ---- */
+        .actions { max-width: 720px; margin: 0 auto 12px; display: flex; gap: 10px; justify-content: flex-end; }
+        .actions button { border: none; border-radius: 6px; padding: 9px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }
+        .actions .imprimer { background: var(--bleu); color: #fff; }
+        .actions .fermer { background: #e4e8ef; color: var(--texte); }
         /* ---- impression : en haut de page, pas de centrage vertical, couleurs conservées ---- */
         @media print {
+            .actions { display: none !important; }
             @page { size: A4 portrait; margin: 10mm 12mm; }
             html, body { background: #fff; padding: 0; margin: 0; min-height: 0; height: auto; }
             .recu { max-width: 100%; border: none; border-radius: 0; margin: 0; }
@@ -115,6 +121,12 @@
 </head>
 <body>
     {% set nom_medecin = ((medecin.titre or 'Dr') ~ ' ' ~ (medecin.nom or '') ~ ' ' ~ (medecin.prenom or '')).strip() if medecin else '' %}
+    <!-- ⭐ Patron (2026-10-07) : l'impression ne se lance plus toute seule ;
+         la fenêtre se ferme d'elle-même une fois l'impression terminée. -->
+    <div class="actions">
+        <button type="button" class="fermer" onclick="window.close()">Fermer</button>
+        <button type="button" class="imprimer" onclick="window.print()">Imprimer</button>
+    </div>
     <div class="recu">
         <div class="entete">
             <div class="structure">
@@ -214,15 +226,19 @@
             var h = parseInt(hm.slice(0, 2), 10), m = parseInt(hm.slice(2, 4), 10) || 0;
             var fin = new Date(2000, 0, 1, h, m + 30);
             var hmFin = ('0' + fin.getHours()).slice(-2) + ('0' + fin.getMinutes()).slice(-2);
-            var nettoyer = function (s) { return String(s || '').replace(/[\r\n]+/g, ' ').replace(/,/g, '\\,').replace(/;/g, '\\;'); };
-            var description = 'Patient : ' + RDV.patient + ' - Motif : ' + (RDV.motif || '-') + ' - N° RDV-' + String(RDV.id).padStart(4, '0') +
-                (RDV.telephone ? ' - Tél. ' + RDV.telephone : '') + ' - Prévenir 24 h à l\'avance en cas d\'empêchement.';
+            // Sans accents ni caractères spéciaux, et court (< 300 caractères) :
+            // la bibliothèque QR dimensionne le code sur le nombre de caractères,
+            // un texte accentué ou trop long faisait échouer le dessin.
+            var sansAccents = function (s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7E]/g, ''); };
+            var nettoyer = function (s) { return sansAccents(String(s || '').replace(/[\r\n]+/g, ' ')).replace(/[,;\\]/g, ' ').replace(/\s+/g, ' ').trim(); };
+            var description = ('RDV-' + String(RDV.id).padStart(4, '0') + ' Patient: ' + RDV.patient +
+                (RDV.motif ? ' Motif: ' + RDV.motif : '') + (RDV.telephone ? ' Tel: ' + RDV.telephone : '')).slice(0, 110);
             return [
                 'BEGIN:VEVENT',
-                'SUMMARY:' + nettoyer('Rendez-vous ' + RDV.structure + (RDV.medecin ? ' - ' + RDV.medecin : '')),
+                'SUMMARY:' + nettoyer('RDV ' + RDV.structure + (RDV.medecin ? ' - ' + RDV.medecin : '')).slice(0, 70),
                 'DTSTART:' + ymd + 'T' + hm + '00',
                 'DTEND:' + ymd + 'T' + hmFin + '00',
-                'LOCATION:' + nettoyer(RDV.structure + (RDV.adresse ? ', ' + RDV.adresse : '')),
+                'LOCATION:' + nettoyer(RDV.structure + (RDV.adresse ? ' ' + RDV.adresse : '')).slice(0, 70),
                 'DESCRIPTION:' + nettoyer(description),
                 'END:VEVENT'
             ].join('\n');
@@ -244,13 +260,11 @@
             var now = new Date();
             document.getElementById('dateGeneration').textContent = now.toLocaleDateString('fr-FR') + ' à ' + now.toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'});
             dessinerQr();
-            // Le QR est dessiné sur place (pas d'image distante à attendre) :
-            // on laisse juste le temps du rendu avant de lancer l'impression.
-            setTimeout(function () {
-                window.print();
-                setTimeout(function () { try { window.close(); } catch (e) {} }, 600);
-            }, 400);
         };
+        // Fermeture automatique une fois l'impression terminée (ou annulée)
+        window.addEventListener('afterprint', function () {
+            setTimeout(function () { try { window.close(); } catch (e) {} }, 300);
+        });
     </script>
 </body>
 </html>
