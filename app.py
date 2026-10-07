@@ -36,7 +36,7 @@ from utils.grille_amu_hospitalisation import acte_virtuel_o101, CATEGORIES_SALLE
 # d'abonnement — voir admin_finances.html.
 ABONNEMENT_WHATSAPP_NUMERO = "22893850013"
 MOYENS_PAIEMENT_LABELS = {'mixx': 'Mixx by Yas', 'moov': 'Moov Money'}
-from models import RendezVous
+from models import RendezVous, LienPartageRendezVous
 from models import Medecin, Patient, Structure, DemandeEntentePrealable
 from utils.remplissage_pdf_amu import remplir_entente_prealable
 from models import DemandeTpc, MedicamentTpcMemorise, LieuResidenceMemorise
@@ -8041,6 +8041,82 @@ def api_reporter_rendez_vous():
             'success': False,
             'error': resultat.get('error', 'Erreur lors du report')
         }), 400
+
+
+# ---------- ⭐ Lien de consultation partagé aux médecins (patron, 2026-10-07) ----------
+
+def _rdv_calendrier_json(structure_id, debut, fin, avec_telephone=True):
+    q = RendezVous.query.filter_by(structure_id=structure_id).filter(
+        RendezVous.date_rendez_vous >= debut, RendezVous.date_rendez_vous <= fin)
+    if hasattr(RendezVous, 'archive'):
+        q = q.filter(db.or_(RendezVous.archive.is_(False), RendezVous.archive.is_(None)))
+    rdvs = q.order_by(RendezVous.date_rendez_vous, RendezVous.heure_rendez_vous).all()
+    return [{
+        'id': r.id, 'date': r.date_rendez_vous.isoformat(), 'heure': r.heure_rendez_vous or '',
+        'patient': r.patient_nom, 'telephone': (r.patient_telephone or '') if avec_telephone else '',
+        'medecin': r.medecin.get_nom_complet() if r.medecin else '', 'motif': r.motif or '',
+        'statut': r.statut, 'statut_label': r.get_statut_label(),
+    } for r in rdvs]
+
+
+def _url_partage_rdv(token):
+    """Lien absolu en https en production (derrière le proxy de Render le
+    schéma vu par Flask peut être http) ; http seulement en local."""
+    local = request.host.startswith(('localhost', '127.0.0.1'))
+    return url_for('page_rdv_partage', token=token, _external=True, _scheme='http' if local else 'https')
+
+
+@app.route('/rendez_vous/api/lien-partage', methods=['GET'])
+@login_required
+@permission_requise('rendez_vous')
+def api_rdv_lien_partage():
+    lien = LienPartageRendezVous.obtenir_ou_creer(session.get('structure_id'), session.get('user_name'))
+    return jsonify({'success': True, 'url': _url_partage_rdv(lien.token),
+                    'regenere_le': lien.regenere_le.strftime('%d/%m/%Y %H:%M') if lien.regenere_le else None})
+
+
+@app.route('/rendez_vous/api/lien-partage/regenerer', methods=['POST'])
+@login_required
+@permission_requise('rendez_vous')
+def api_rdv_lien_partage_regenerer():
+    lien = LienPartageRendezVous.obtenir_ou_creer(session.get('structure_id'), session.get('user_name')).regenerer()
+    return jsonify({'success': True, 'url': _url_partage_rdv(lien.token)})
+
+
+def _lien_partage_valide(token):
+    if not token or len(token) < 32:
+        return None
+    return LienPartageRendezVous.query.filter_by(token=token).first()
+
+
+@app.route('/rendez_vous/partage/<token>')
+def page_rdv_partage(token):
+    """Page publique (jeton) : rendez-vous + calendrier en lecture seule, pour
+    les médecins, sans connexion."""
+    lien = _lien_partage_valide(token)
+    if not lien:
+        return render_template('rdv_partage.html', token='', structure_nom='Lien invalide ou expiré', medecins=[]), 404
+    structure = RappelsService._get_structure(lien.structure_id) or {}
+    medecins = [{'id': m.id, 'nom_complet': m.get_nom_complet()}
+                for m in Medecin.query.filter_by(structure_id=lien.structure_id, actif=True).order_by(Medecin.nom).all()]
+    return render_template('rdv_partage.html', token=token, structure_nom=structure.get('nom', ''), medecins=medecins)
+
+
+@app.route('/rendez_vous/partage/<token>/api')
+def api_rdv_partage(token):
+    lien = _lien_partage_valide(token)
+    if not lien:
+        return jsonify({'success': False, 'error': 'Lien invalide ou expiré'}), 404
+    try:
+        debut = datetime.strptime(request.args.get('debut', ''), '%Y-%m-%d').date()
+        fin = datetime.strptime(request.args.get('fin', ''), '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'success': False, 'error': 'Dates invalides'}), 400
+    if (fin - debut).days > 62:
+        return jsonify({'success': False, 'error': 'Période trop longue'}), 400
+    # Sans téléphone : les médecins n'en ont pas besoin, et ce lien circule dans un groupe.
+    return jsonify({'success': True, 'rendez_vous': _rdv_calendrier_json(lien.structure_id, debut, fin, avec_telephone=False)})
+
 
 @app.route('/rendez_vous/api/calendrier', methods=['GET'])
 @login_required

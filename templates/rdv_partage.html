@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% set cacher_navigation = True %}
+
+{% block title %}Rendez-vous — {{ structure_nom }}{% endblock %}
+
+{% block extra_css %}
+<meta name="robots" content="noindex">
+<style>
+    /* ⭐ Page de consultation partagée aux médecins (lien envoyé par la secrétaire
+       dans le groupe WhatsApp, patron 2026-10-07) : lecture seule, sans connexion,
+       rendez-vous + calendrier uniquement. */
+    @media (min-width: 768px) { .row.justify-content-center > .col-md-8 { flex: 0 0 96%; max-width: 96%; } }
+    .cal-grille { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+    .cal-entete { background: #1a2a6c; color: #fff; text-align: center; font-weight: 600; font-size: 12px; padding: 6px 2px; border-radius: 4px; }
+    .cal-jour { background: #fff; border: 1px solid #dde3ec; border-radius: 4px; min-height: 92px; padding: 4px; }
+    .cal-jour.hors-mois { background: #f5f7fa; opacity: .6; }
+    .cal-jour.aujourdhui { border-color: #c0392b; box-shadow: inset 0 0 0 1px #c0392b; }
+    .cal-jour.semaine { min-height: 240px; }
+    .cal-num { font-size: 12px; font-weight: 700; color: #1a2a6c; display: flex; justify-content: space-between; }
+    .cal-num .nb { font-weight: 500; color: #6b7a8c; font-size: 11px; }
+    .cal-chip { display: block; font-size: 11px; line-height: 1.25; padding: 2px 5px; border-radius: 4px; margin-top: 3px; border-left: 3px solid #999; background: #f3f6fb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+    .cal-chip.confirme { border-left-color: #198754; background: #e9f7ef; }
+    .cal-chip.programme { border-left-color: #d4a017; background: #fff8e1; }
+    .cal-chip.reporte { border-left-color: #0d6efd; background: #e8f0fe; }
+    .cal-chip.demande { border-left-color: #0d6efd; border-left-style: dashed; background: #eef3ff; }
+    .cal-chip.termine { border-left-color: #6c757d; background: #f1f3f5; color: #6c757d; }
+    .cal-chip.annule, .cal-chip.absent { border-left-color: #dc3545; background: #fdecee; text-decoration: line-through; color: #8a2a33; }
+    .cal-chip.plus { background: none; border: none; color: #0d6efd; font-weight: 600; }
+    @media (max-width: 768px) { .cal-grille { grid-template-columns: repeat(2, 1fr); } .cal-entete { display: none; } .cal-jour.semaine { min-height: 0; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3 mb-2">
+            <div>
+                <h5 class="mb-0"><i class="fas fa-calendar-check me-2"></i>Rendez-vous — {{ structure_nom }}</h5>
+                <div class="small text-muted">Consultation seule, réservée aux médecins. Pour toute modification, contactez le secrétariat.</div>
+            </div>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <select class="form-select form-select-sm" id="filtreMedecin" style="width:auto;" onchange="calRendre(); rendreListe();">
+                    <option value="">Tous les médecins</option>
+                    {% for m in medecins %}<option value="{{ m.nom_complet }}">{{ m.nom_complet }}</option>{% endfor %}
+                </select>
+                <button class="btn btn-outline-secondary btn-sm" onclick="calCharger()"><i class="fas fa-sync-alt"></i></button>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header bg-primary text-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <div class="btn-group">
+                    <button class="btn btn-light btn-sm" id="calModeSemaine" onclick="calChangerMode('semaine')">Semaine</button>
+                    <button class="btn btn-light btn-sm" id="calModeMois" onclick="calChangerMode('mois')">Mois</button>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <button class="btn btn-light btn-sm" onclick="calNaviguer(-1)"><i class="fas fa-chevron-left"></i></button>
+                    <button class="btn btn-light btn-sm" onclick="calAujourdhui()">Aujourd'hui</button>
+                    <button class="btn btn-light btn-sm" onclick="calNaviguer(1)"><i class="fas fa-chevron-right"></i></button>
+                    <strong id="calTitre" class="ms-1"></strong>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="calGrille" class="cal-grille"></div>
+                <div id="calDetail" class="alert alert-light border mt-3 mb-0" style="display:none;"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header bg-dark text-white"><i class="fas fa-list me-1"></i> Liste de la période affichée</div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light"><tr><th>Date</th><th>Heure</th><th>Patient</th><th>Médecin</th><th>Motif</th><th>Statut</th></tr></thead>
+                    <tbody id="listeRdv"><tr><td colspan="6" class="text-center text-muted py-3">Chargement...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="text-center text-muted small my-3">Lien de consultation fourni par le secrétariat — ne pas le transmettre en dehors de l'équipe médicale.</div>
+    </div>
+</div>
+
+<script>
+const TOKEN = {{ token|tojson }};
+let calMode = 'semaine', calRef = new Date(), calDonnees = [], calDebut = null, calFin = null;
+const CAL_JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+const CAL_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+const calIso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+const fmtDate = iso => iso.split('-').reverse().join('/');
+function donneesFiltrees() { const m = document.getElementById('filtreMedecin').value; return m ? calDonnees.filter(r => r.medecin === m) : calDonnees; }
+function calChangerMode(mode) { calMode = mode; calCharger(); }
+function calAujourdhui() { calRef = new Date(); calCharger(); }
+function calNaviguer(sens) { if (calMode === 'semaine') calRef.setDate(calRef.getDate() + 7 * sens); else calRef.setMonth(calRef.getMonth() + sens, 1); calCharger(); }
+function calBornes() {
+    if (calMode === 'semaine') { const d = new Date(calRef); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); const f = new Date(d); f.setDate(d.getDate() + 6); return [d, f]; }
+    return [new Date(calRef.getFullYear(), calRef.getMonth(), 1), new Date(calRef.getFullYear(), calRef.getMonth() + 1, 0)];
+}
+function calCharger() {
+    document.getElementById('calModeSemaine').classList.toggle('active', calMode === 'semaine');
+    document.getElementById('calModeMois').classList.toggle('active', calMode === 'mois');
+    [calDebut, calFin] = calBornes();
+    document.getElementById('calTitre').textContent = calMode === 'semaine'
+        ? `Semaine du ${calDebut.getDate()} ${CAL_MOIS[calDebut.getMonth()]} au ${calFin.getDate()} ${CAL_MOIS[calFin.getMonth()]} ${calFin.getFullYear()}`
+        : `${CAL_MOIS[calRef.getMonth()].charAt(0).toUpperCase() + CAL_MOIS[calRef.getMonth()].slice(1)} ${calRef.getFullYear()}`;
+    document.getElementById('calDetail').style.display = 'none';
+    fetch(`/rendez_vous/partage/${TOKEN}/api?debut=${calIso(calDebut)}&fin=${calIso(calFin)}`).then(r => r.json()).then(d => {
+        if (!d.success) { document.getElementById('calGrille').innerHTML = '<div class="text-danger" style="grid-column:1/-1;">' + (d.error || 'Lien invalide') + '</div>'; return; }
+        calDonnees = d.rendez_vous; calRendre(); rendreListe();
+    });
+}
+function calRendre() {
+    const parJour = {};
+    donneesFiltrees().forEach(r => { (parJour[r.date] = parJour[r.date] || []).push(r); });
+    Object.values(parJour).forEach(l => l.sort((a, b) => a.heure.localeCompare(b.heure)));
+    const auj = calIso(new Date());
+    let html = CAL_JOURS.map(j => `<div class="cal-entete">${j}</div>`).join('');
+    const premier = new Date(calDebut);
+    if (calMode === 'mois') premier.setDate(premier.getDate() - ((premier.getDay() + 6) % 7));
+    const nbJours = calMode === 'semaine' ? 7 : 42, maxChips = calMode === 'semaine' ? 50 : 4;
+    for (let i = 0; i < nbJours; i++) {
+        const d = new Date(premier); d.setDate(premier.getDate() + i);
+        const iso = calIso(d), rdvs = parJour[iso] || [];
+        const horsMois = calMode === 'mois' && d.getMonth() !== calRef.getMonth();
+        if (calMode === 'mois' && i >= 35 && horsMois) break;
+        html += `<div class="cal-jour ${calMode} ${horsMois ? 'hors-mois' : ''} ${iso === auj ? 'aujourdhui' : ''}">
+            <div class="cal-num"><span>${d.getDate()}${calMode === 'semaine' ? ' ' + CAL_MOIS[d.getMonth()] : ''}</span>${rdvs.length ? `<span class="nb">${rdvs.length}</span>` : ''}</div>
+            ${rdvs.slice(0, maxChips).map(r => `<span class="cal-chip ${r.statut}" title="${r.patient} — ${r.motif}" onclick="calVoir(${r.id})"><strong>${r.heure}</strong> ${r.patient}</span>`).join('')}
+            ${rdvs.length > maxChips ? `<span class="cal-chip plus" onclick="calMode='semaine'; calRef=new Date('${iso}T00:00:00'); calCharger();">+ ${rdvs.length - maxChips} autre(s)…</span>` : ''}
+        </div>`;
+    }
+    document.getElementById('calGrille').innerHTML = html;
+}
+function calVoir(id) {
+    const r = calDonnees.find(x => x.id === id); if (!r) return;
+    const z = document.getElementById('calDetail');
+    z.innerHTML = `<strong>${r.patient}</strong> — ${fmtDate(r.date)} à ${r.heure}${r.medecin ? ' — ' + r.medecin : ''}<br>${r.motif} <span class="badge bg-secondary ms-1">${r.statut_label}</span>`;
+    z.style.display = '';
+}
+function rendreListe() {
+    const lignes = donneesFiltrees().slice().sort((a, b) => (a.date + a.heure).localeCompare(b.date + b.heure));
+    document.getElementById('listeRdv').innerHTML = lignes.length ? lignes.map(r => `<tr>
+        <td>${fmtDate(r.date)}</td><td><strong>${r.heure}</strong></td><td>${r.patient}</td><td>${r.medecin || '—'}</td><td>${r.motif}</td>
+        <td><span class="cal-chip ${r.statut}" style="display:inline-block;cursor:default;">${r.statut_label}</span></td></tr>`).join('')
+        : '<tr><td colspan="6" class="text-center text-muted py-3">Aucun rendez-vous sur cette période.</td></tr>';
+}
+calCharger();
+</script>
+{% endblock %}

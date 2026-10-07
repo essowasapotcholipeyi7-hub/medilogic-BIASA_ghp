@@ -1841,6 +1841,38 @@ class DisponibiliteMedecin(db.Model):
         return not (self.date_debut <= date <= self.date_fin)
 
 
+# ⭐ Lien de consultation des rendez-vous partagé aux médecins (patron,
+# 2026-10-07 : "que les secrétaires puissent envoyer dans le groupe WhatsApp
+# un lien pour que les médecins consultent les rdv et le calendrier
+# uniquement"). Un jeton par structure, lecture seule, sans connexion ;
+# régénérer le jeton invalide l'ancien lien.
+class LienPartageRendezVous(db.Model):
+    __tablename__ = 'liens_partage_rdv'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False, unique=True)
+    token = db.Column(db.String(80), nullable=False, unique=True)
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    regenere_le = db.Column(db.DateTime)
+
+    @classmethod
+    def obtenir_ou_creer(cls, structure_id, user_nom=None):
+        import secrets
+        lien = cls.query.filter_by(structure_id=structure_id).first()
+        if not lien:
+            lien = cls(structure_id=structure_id, token=secrets.token_hex(24), created_by=user_nom)
+            db.session.add(lien)
+            db.session.commit()
+        return lien
+
+    def regenerer(self):
+        import secrets
+        self.token = secrets.token_hex(24)
+        self.regenere_le = datetime.utcnow()
+        db.session.commit()
+        return self
+
+
 class RendezVousStats(db.Model):
     """
     Statistiques agrégées des rendez-vous (pour performance)

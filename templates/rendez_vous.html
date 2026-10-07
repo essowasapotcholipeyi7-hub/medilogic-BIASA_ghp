@@ -457,8 +457,13 @@ body.modal-open {
     <h6 class="mb-0"><i class="fas fa-list me-2"></i> Liste des rendez-vous</h6>
     <div>
         <span class="badge bg-light text-dark me-2">{{ total }} rendez-vous</span>
-        <button class="btn btn-warning btn-sm me-2 fw-semibold" onclick="ouvrirCalendrier('semaine')" title="Voir les rendez-vous de la semaine ou du mois en calendrier">
+        <!-- ⭐ Patron (2026-10-07) : bouton Calendrier bien visible ; lien de
+             consultation à envoyer aux médecins (groupe WhatsApp). -->
+        <button class="btn btn-danger me-2 fw-bold shadow" style="border:2px solid #fff;" onclick="ouvrirCalendrier('semaine')" title="Voir les rendez-vous de la semaine ou du mois en calendrier">
             <i class="fas fa-calendar-alt me-1"></i> Calendrier
+        </button>
+        <button class="btn btn-success btn-sm me-2 fw-semibold" onclick="ouvrirPartageMedecins()" title="Lien de consultation (lecture seule) à envoyer aux médecins">
+            <i class="fab fa-whatsapp me-1"></i> Partager aux médecins
         </button>
         <button class="btn btn-light btn-sm me-2" onclick="imprimerCalendrier()" title="Imprimer le planning de la période choisie dans le filtre">
             <i class="fas fa-print me-1"></i> Imprimer le planning
@@ -573,6 +578,30 @@ body.modal-open {
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
                 <button type="button" class="btn btn-success" onclick="envoyerConfirmationDemande()"><i class="fas fa-check me-1"></i> Confirmer et notifier</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ⭐ Lien de consultation des rendez-vous pour les médecins (patron, 2026-10-07) -->
+<div class="modal fade" id="modalPartage" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fab fa-whatsapp me-2"></i>Lien pour les médecins</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted">Ce lien ouvre, <strong>sans connexion</strong>, la liste des rendez-vous et le calendrier en <strong>lecture seule</strong> (noms des patients, heures, médecins, motifs ; pas de téléphone, aucune modification possible). Envoyez-le dans le groupe WhatsApp des médecins.</p>
+                <div class="input-group mb-2">
+                    <input type="text" class="form-control" id="partageUrl" readonly>
+                    <button class="btn btn-outline-secondary" onclick="copierLienPartage()"><i class="fas fa-copy"></i></button>
+                </div>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-success" onclick="envoyerLienPartageWhatsApp()"><i class="fab fa-whatsapp me-1"></i> Envoyer par WhatsApp (choisir le groupe)</button>
+                    <button class="btn btn-outline-danger btn-sm" onclick="regenererLienPartage()"><i class="fas fa-sync-alt me-1"></i> Régénérer le lien (l'ancien ne marchera plus)</button>
+                </div>
+                <div class="small text-muted mt-2" id="partageInfo"></div>
             </div>
         </div>
     </div>
@@ -1021,6 +1050,29 @@ async function terminerReponseDemande(d, texte) {
         await afficherMessage(texte);
     }
     location.reload();
+}
+
+// ===== ⭐ Lien de consultation pour les médecins (patron, 2026-10-07) =====
+async function ouvrirPartageMedecins() {
+    new bootstrap.Modal(document.getElementById('modalPartage')).show();
+    document.getElementById('partageUrl').value = 'Chargement...';
+    const d = await fetch('/rendez_vous/api/lien-partage').then(r => r.json());
+    document.getElementById('partageUrl').value = d.url || '';
+    document.getElementById('partageInfo').textContent = d.regenere_le ? 'Lien régénéré le ' + d.regenere_le : '';
+}
+async function copierLienPartage() {
+    const url = document.getElementById('partageUrl').value;
+    try { await navigator.clipboard.writeText(url); showToast('Lien copié', 'success'); } catch (e) { document.getElementById('partageUrl').select(); }
+}
+function envoyerLienPartageWhatsApp() {
+    const url = document.getElementById('partageUrl').value;
+    const texte = `Rendez-vous et calendrier de la structure (consultation seule, réservé aux médecins) :\n${url}`;
+    window.open('https://wa.me/?text=' + encodeURIComponent(texte), '_blank');
+}
+async function regenererLienPartage() {
+    if (!await demanderConfirmation("Régénérer le lien ? L'ancien lien envoyé aux médecins ne fonctionnera plus.")) return;
+    const d = await fetch('/rendez_vous/api/lien-partage/regenerer', {method: 'POST'}).then(r => r.json());
+    if (d.success) { document.getElementById('partageUrl').value = d.url; showToast('Nouveau lien prêt, renvoyez-le aux médecins', 'success'); }
 }
 
 // ===== ⭐ Calendrier semaine / mois (patron, 2026-10-07) =====
