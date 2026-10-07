@@ -249,8 +249,8 @@
                                     <i class="fas fa-trash-alt"></i>
                                 </button>
                                 <button class="btn btn-sm btn-outline-success"
-                                        onclick="envoyerLienPatient({{ patient.ID }}, '{{ patient.nom }} {{ patient.prenom }}', '{{ patient.telephone }}')"
-                                        title="Envoyer le lien WhatsApp">
+                                        onclick='envoyerLienPatient({{ patient.ID }}, {{ ((patient.nom or "") ~ " " ~ (patient.prenom or "")).strip()|tojson }}, {{ (patient.telephone or "")|tojson }})'
+                                        title="Envoyer par WhatsApp le lien et le code d'accès à son portail (résultats, rendez-vous)">
                                     <i class="fab fa-whatsapp"></i>
                                 </button>
                             </div>
@@ -2465,34 +2465,44 @@ function fermerModalDestination() {
 // ENVOI LIEN WHATSAPP
 // ============================================
 async function envoyerLienPatient(id, nom, telephone) {
+    // ⭐ Patron (2026-10-07) : "corrige bien pour que le lien marche". L'ancien
+    // message envoyait /patient/rendez_vous/<id>/<jeton>, une adresse qui
+    // n'existe plus : le patient tombait sur une page introuvable. On envoie
+    // maintenant le PORTAIL PATIENT (résultats + rendez-vous) avec son code
+    // d'accès personnel, créé à la volée s'il n'en a pas encore.
     if (!id || id === 'undefined') {
-        await afficherMessage('Erreur: ID patient invalide', {type: 'danger'});
+        await afficherMessage('Erreur : identifiant patient invalide', {type: 'danger'});
         return;
     }
-    
-    let tel = telephone.toString().replace(/\s/g, '').replace(/^\+/, '');
-    if (!tel.match(/^(228|229|221)/)) {
-        tel = '228' + tel;
+    let tel = (telephone || '').toString().replace(/\D/g, '');
+    if (!tel) {
+        await afficherMessage("Ce patient n'a pas de numéro de téléphone enregistré.", {type: 'warning'});
+        return;
     }
-    
-    let token = btoa(`${id}_${Date.now()}`);
-    let lien = `${window.location.origin}/patient/rendez_vous/${id}/${token}`;
-    
-    fetch('/api/structure/nom')
-        .then(response => response.json())
-        .then(data => {
-            let structureNom = data.nom || 'Notre établissement';
-            let message = `*${structureNom}*%0A%0A`;
-            message += `Bonjour *${nom}*,%0A%0A`;
-            message += `Voici votre lien pour consulter vos rendez-vous :%0A${lien}%0A%0A`;
-            message += `🔒 Ce lien est personnel et sécurisé.%0A%0A`;
-            message += `📞 Pour modifier ou annuler, veuillez nous contacter.`;
-            
-            window.open(`https://wa.me/${tel}?text=${message}`, '_blank');
-        })
-        .catch(async error => {
-            await afficherMessage('Erreur lors de l\'envoi', {type: 'danger'});
-        });
+    if (tel.length === 8) tel = '228' + tel;   // numéro togolais sans indicatif
+    try {
+        const [rCode, rNom] = await Promise.all([
+            fetch(`/api/patients/${id}/generer-code-portail`, {method: 'POST'}).then(r => r.json()),
+            fetch('/api/structure/nom').then(r => r.json()).catch(() => ({}))
+        ]);
+        if (!rCode.success || !rCode.code_acces) {
+            await afficherMessage('Impossible de préparer le code d\'accès : ' + (rCode.error || 'erreur inconnue'), {type: 'danger'});
+            return;
+        }
+        const structureNom = rNom.nom || 'Notre établissement';
+        const lien = `${window.location.origin}/portail-patient`;
+        const message =
+            `${structureNom}\n\n` +
+            `Bonjour ${nom},\n\n` +
+            `Voici votre accès personnel à votre espace patient (résultats d'examens, rendez-vous, demande de rendez-vous) :\n` +
+            `${lien}\n\n` +
+            `Code d'accès : ${rCode.code_acces}\n` +
+            `À l'ouverture, entrez votre numéro de téléphone puis ce code. Vous pourrez ensuite définir un code rapide.\n\n` +
+            `Ce code est personnel, ne le partagez pas.`;
+        window.open(`https://wa.me/${tel}?text=${encodeURIComponent(message)}`, '_blank');
+    } catch (e) {
+        await afficherMessage("Erreur lors de la préparation du message : " + e, {type: 'danger'});
+    }
 }
 
 // ============================================
