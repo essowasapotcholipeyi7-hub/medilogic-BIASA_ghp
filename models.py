@@ -1846,6 +1846,23 @@ class DisponibiliteMedecin(db.Model):
 # un lien pour que les médecins consultent les rdv et le calendrier
 # uniquement"). Un jeton par structure, lecture seule, sans connexion ;
 # régénérer le jeton invalide l'ancien lien.
+class ParametrageRendezVous(db.Model):
+    """Réglages du module rendez-vous propres à une structure. Pour l'instant
+    la règle de paiement du bon de consultation (patron, 2026-10-07) : un
+    contrôle du même type de consultation dans les N jours est sans frais,
+    au-delà (ou autre type de consultation) le patient repaie. N vient d'ici
+    s'il est renseigné, sinon 30 jours (structure publique, statut AMU) ou
+    15 jours (privée) — voir services/paiement_consultation_service.py."""
+    __tablename__ = 'parametrage_rendez_vous'
+
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False, unique=True)
+    delai_controle_jours = db.Column(db.Integer)            # NULL = délai par défaut selon public/privé
+    regle_paiement_active = db.Column(db.Boolean, nullable=False, default=True)
+    modifie_le = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    modifie_par = db.Column(db.String(150))
+
+
 class LienPartageRendezVous(db.Model):
     __tablename__ = 'liens_partage_rdv'
     id = db.Column(db.Integer, primary_key=True)

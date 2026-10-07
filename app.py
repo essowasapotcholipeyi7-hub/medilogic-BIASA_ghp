@@ -36,7 +36,8 @@ from utils.grille_amu_hospitalisation import acte_virtuel_o101, CATEGORIES_SALLE
 # d'abonnement — voir admin_finances.html.
 ABONNEMENT_WHATSAPP_NUMERO = "22893850013"
 MOYENS_PAIEMENT_LABELS = {'mixx': 'Mixx by Yas', 'moov': 'Moov Money'}
-from models import RendezVous, LienPartageRendezVous
+from models import RendezVous, LienPartageRendezVous, ParametrageRendezVous
+from services.paiement_consultation_service import PaiementConsultationService
 from models import Medecin, Patient, Structure, DemandeEntentePrealable
 from utils.remplissage_pdf_amu import remplir_entente_prealable
 from models import DemandeTpc, MedicamentTpcMemorise, LieuResidenceMemorise
@@ -7473,9 +7474,13 @@ def rendez_vous():
     patients = dechiffrer_patients_orm(Patient.query.filter_by(structure_id=structure_id).all())
     patients.sort(key=lambda p: ((p.nom or '').lower(), (p.prenom or '').lower()))
 
+    # ⭐ Règle de paiement du bon de consultation (badge dans la liste, texte
+    # repris dans le message WhatsApp) — patron 2026-10-07.
+    paiements = PaiementConsultationService.evaluer_liste(rendez_vous, structure_id)
     return render_template(
         'rendez_vous.html',
         rendez_vous=rendez_vous,
+        paiements=paiements,
         demandes_portail=demandes_portail,
         medecins=medecins,
         patients=patients,
@@ -7702,6 +7707,9 @@ def _message_reponse_demande(rdv, structure, confirme):
         if medecin:
             corps += f"- Médecin : {medecin.get_nom_complet()}\n"
         corps += f"- Motif : {rdv.motif}\n"
+        paiement = PaiementConsultationService.evaluer_rdv(rdv)
+        if paiement:
+            corps += f"\n{paiement['texte']}\n"
         if rdv.reponse_structure:
             corps += f"\nMessage de la structure : {rdv.reponse_structure}\n"
         if structure.get('adresse'):
@@ -7849,6 +7857,7 @@ def api_print_rendez_vous(rdv_id):
     return render_template(
         'print_rendez_vous.html',
         rdv=rdv,
+        paiement=PaiementConsultationService.evaluer_rdv(rdv),
         structure=structure,
         patient=patient,
         medecin=medecin,
@@ -8017,6 +8026,9 @@ def api_reporter_rendez_vous():
                     msg += f"Votre rendez-vous a été reporté au :%0A"
                     msg += f"Date : {date_formatee}%0A"
                     msg += f"Heure : {nouvelle_heure}%0A%0A"
+                    paiement = PaiementConsultationService.evaluer_rdv(rdv)
+                    if paiement:
+                        msg += f"{paiement['texte']}%0A%0A"
                     
                     if message and message.strip():
                         msg += f"Message: {message}%0A%0A"
@@ -8064,6 +8076,39 @@ def _url_partage_rdv(token):
     schéma vu par Flask peut être http) ; http seulement en local."""
     local = request.host.startswith(('localhost', '127.0.0.1'))
     return url_for('page_rdv_partage', token=token, _external=True, _scheme='http' if local else 'https')
+
+
+@app.route('/rendez_vous/api/regle-paiement', methods=['GET', 'POST'])
+@login_required
+@permission_requise('rendez_vous')
+def api_rdv_regle_paiement():
+    """⭐ Règle de paiement du bon de consultation (patron, 2026-10-07) :
+    délai en jours pendant lequel un contrôle du même type de consultation
+    est sans frais. GET = lecture ; POST {delai_jours|null, actif}."""
+    structure_id = session.get('structure_id')
+    if request.method == 'POST':
+        data = request.json or {}
+        delai = data.get('delai_jours')
+        if delai in ('', None):
+            delai = None
+        else:
+            try:
+                delai = int(delai)
+            except (TypeError, ValueError):
+                return jsonify({'success': False, 'error': 'Délai invalide'}), 400
+            if not 1 <= delai <= 365:
+                return jsonify({'success': False, 'error': 'Le délai doit être entre 1 et 365 jours'}), 400
+        p = ParametrageRendezVous.query.filter_by(structure_id=structure_id).first()
+        if not p:
+            p = ParametrageRendezVous(structure_id=structure_id)
+            db.session.add(p)
+        p.delai_controle_jours = delai
+        p.regle_paiement_active = bool(data.get('actif', True))
+        p.modifie_par = session.get('user_name')
+        db.session.commit()
+    delai, actif, delai_defaut, statut, perso = PaiementConsultationService.parametres(structure_id)
+    return jsonify({'success': True, 'delai_jours': delai, 'delai_personnalise': perso, 'delai_defaut': delai_defaut,
+                    'statut_structure': statut, 'actif': actif})
 
 
 @app.route('/rendez_vous/api/lien-partage', methods=['GET'])
@@ -14802,9 +14847,10 @@ def page_portail_rendez_vous():
     return render_template('portail_rendez_vous.html')
 
 
-def _rdv_portail_dict(rdv):
+def _rdv_portail_dict(rdv, paiement=None):
     medecin = db.session.get(Medecin, rdv.medecin_id) if rdv.medecin_id else None
     return {
+        'paiement': paiement,   # ⭐ règle de paiement du bon de consultation (None si sans objet)
         'id': rdv.id, 'statut': rdv.statut, 'statut_label': rdv.get_statut_label(),
         'date': rdv.date_rendez_vous.strftime('%d/%m/%Y') if rdv.date_rendez_vous else '',
         'date_iso': rdv.date_rendez_vous.isoformat() if rdv.date_rendez_vous else '',
@@ -14829,7 +14875,8 @@ def api_portail_rendez_vous():
     medecins = [{'id': m.id, 'nom': m.get_nom_complet(), 'specialite': m.specialite or ''}
                 for m in Medecin.query.filter_by(structure_id=structure_id, actif=True).order_by(Medecin.nom).all()]
     structure = RappelsService._get_structure(structure_id) or {}
-    liste = [_rdv_portail_dict(r) for r in rdvs]
+    paiements = PaiementConsultationService.evaluer_liste(rdvs, structure_id)
+    liste = [_rdv_portail_dict(r, paiements.get(r.id)) for r in rdvs]
     # ⭐ Spécialités disponibles (pour « Consultation spécialisée » côté portail)
     vues, specialites = set(), []
     for m in medecins:   # une seule fois par spécialité, quelle que soit la casse saisie
@@ -14892,7 +14939,7 @@ def api_portail_demander_rendez_vous():
                           f"{rdv.patient_nom} demande un rendez-vous le {_date_fr_longue(date_souhaitee)} ({creneau_txt}).\n"
                           f"Motif : {motif}\n" + (f"Message : {rdv.message_patient}\n" if rdv.message_patient else '') +
                           f"Téléphone : {patient.telephone or '-'}\n\nÀ traiter dans MediLogic > Rendez-vous.")
-    return jsonify({'success': True, 'rendez_vous': _rdv_portail_dict(rdv)})
+    return jsonify({'success': True, 'rendez_vous': _rdv_portail_dict(rdv, PaiementConsultationService.evaluer_rdv(rdv))})
 
 
 @app.route('/api/portail-patient/rendez-vous/<int:rdv_id>/vu', methods=['POST'])

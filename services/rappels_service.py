@@ -13,7 +13,10 @@ class RappelsService:
     """Service pour la gestion des rappels de rendez-vous"""
     
     @classmethod
-    def envoyer_rappel_manuel(cls, rdv_id, type_rappel='manuel'):
+    def envoyer_rappel_manuel(cls, rdv_id, type_rappel='manuel', structure_info=None):
+        # ⭐ structure_info : la route /rendez_vous/api/<id>/rappel l'envoie depuis
+        # toujours mais la méthode ne l'acceptait pas (TypeError -> erreur 500,
+        # corrigé 2026-10-07) ; utilisé en priorité s'il est fourni.
         """Envoie un rappel manuel pour un rendez-vous"""
         try:
             rdv = RendezVous.query.get(rdv_id)
@@ -29,7 +32,7 @@ class RappelsService:
                 return False, {'error': 'Numéro de téléphone manquant'}
             
             # Récupérer la structure depuis Google Sheets
-            structure = cls._get_structure(rdv.structure_id)
+            structure = structure_info or cls._get_structure(rdv.structure_id)
             
             if structure:
                 structure_nom = structure.get('nom', 'Notre établissement')
@@ -57,7 +60,8 @@ class RappelsService:
                 structure_telephone=structure_telephone,
                 structure_adresse=structure_adresse,
                 structure_email=structure_email,
-                jours_restants=jours_restants
+                jours_restants=jours_restants,
+                info_paiement=cls._info_paiement(rdv)
             )
             
             # Construire l'URL WhatsApp
@@ -88,6 +92,17 @@ class RappelsService:
     # MÉTHODE POUR RÉCUPÉRER LA STRUCTURE DEPUIS GOOGLE SHEETS
     # ============================================================
     
+    @staticmethod
+    def _info_paiement(rdv):
+        """Texte de la règle de paiement du bon de consultation, ou None."""
+        try:
+            from services.paiement_consultation_service import PaiementConsultationService
+            r = PaiementConsultationService.evaluer_rdv(rdv)
+            return r['texte'] if r else None
+        except Exception as e:
+            print(f"Règle de paiement non évaluée : {e}")
+            return None
+
     @classmethod
     def _get_structure(cls, structure_id):
         """Récupère les informations de la structure depuis Google Sheets"""
@@ -135,7 +150,8 @@ class RappelsService:
     
     @classmethod
     def _generer_message(cls, patient_nom, date_rdv, heure_rdv, motif,
-                         structure_nom, structure_telephone, structure_adresse, structure_email, jours_restants):
+                         structure_nom, structure_telephone, structure_adresse, structure_email, jours_restants,
+                         info_paiement=None):
         """Génère le message WhatsApp avec toutes les informations de la structure"""
         
         # Formater la date
@@ -176,6 +192,10 @@ class RappelsService:
         message.append(f"Heure : {heure_rdv}")
         message.append(f"Motif : {motif}")
         message.append("")
+        # ⭐ Règle de paiement du bon de consultation (patron, 2026-10-07)
+        if info_paiement:
+            message.append(info_paiement)
+            message.append("")
         
         message.append("Merci de votre ponctualite.")
         if structure_telephone:

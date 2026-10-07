@@ -465,6 +465,9 @@ body.modal-open {
         <button class="btn btn-light me-2 fw-bold shadow text-dark" style="border:2px solid #fff;" onclick="ouvrirPartageMedecins()" title="Lien de consultation (lecture seule) à envoyer aux médecins">
             <i class="fab fa-whatsapp me-1 text-success"></i> Partager aux médecins
         </button>
+        <button class="btn btn-light btn-sm me-2" onclick="ouvrirReglePaiement()" title="Délai pendant lequel un contrôle du même type de consultation est sans frais">
+            <i class="fas fa-coins me-1 text-warning"></i> Règle de paiement
+        </button>
         <button class="btn btn-light btn-sm me-2" onclick="imprimerCalendrier()" title="Imprimer le planning de la période choisie dans le filtre">
             <i class="fas fa-print me-1"></i> Imprimer le planning
         </button>
@@ -492,7 +495,8 @@ body.modal-open {
                     </thead>
                     <tbody id="rendezVousList">
                         {% for rdv in rendez_vous %}
-                        <tr data-id="{{ rdv.id }}" data-statut="{{ rdv.statut }}" data-date="{{ rdv.date_rendez_vous }}">
+                        {% set paiement = paiements.get(rdv.id) if paiements is defined else None %}
+                        <tr data-id="{{ rdv.id }}" data-statut="{{ rdv.statut }}" data-date="{{ rdv.date_rendez_vous }}" data-paiement="{{ paiement.texte if paiement else '' }}">
                             <td>{{ loop.index }}</td>
                             <td>{{ rdv.patient_nom }}</td>
                             <td>{{ rdv.patient_telephone or '-' }}</td>
@@ -510,6 +514,9 @@ body.modal-open {
                                 <span class="badge {{ rdv.get_statut_badge_class() }}">
                                     {{ rdv.get_statut_label() }}
                                 </span>
+                                {% if paiement %}
+                                <div class="mt-1"><span class="badge {{ 'bg-warning text-dark' if paiement.doit_payer else 'bg-success' }}" title="{{ paiement.texte }}" style="cursor:help;"><i class="fas {{ 'fa-coins' if paiement.doit_payer else 'fa-check' }} me-1"></i>{{ paiement.badge }}</span></div>
+                                {% endif %}
                             </td>
                             <td>
                                 <div class="btn-group btn-group-sm">
@@ -584,6 +591,35 @@ body.modal-open {
 </div>
 
 <!-- ⭐ Lien de consultation des rendez-vous pour les médecins (patron, 2026-10-07) -->
+<!-- ⭐ Règle de paiement du bon de consultation (patron, 2026-10-07) -->
+<div class="modal fade" id="modalReglePaiement" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title"><i class="fas fa-coins me-2 text-warning"></i>Règle de paiement du bon de consultation</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small mb-2">Un patient qui revient pour le <strong>même type de consultation</strong> (médecine générale, cardiologie, rhumatologie…) dans ce délai ne repaie pas le bon de consultation. Au-delà du délai, ou pour un autre type de consultation, il doit payer. Le résultat est indiqué sur l'impression du rendez-vous, dans les messages WhatsApp et sur le portail du patient.</p>
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" id="rpActif">
+                    <label class="form-check-label" for="rpActif">Afficher l'information de paiement sur les rendez-vous</label>
+                </div>
+                <label class="form-label fw-bold small mb-1">Délai de contrôle sans frais (jours)</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" id="rpDelai" min="1" max="365" placeholder="Par défaut">
+                    <span class="input-group-text">jours</span>
+                </div>
+                <div class="form-text" id="rpDefaut"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                <button type="button" class="btn btn-primary" onclick="enregistrerReglePaiement()"><i class="fas fa-save me-1"></i> Enregistrer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="modalPartage" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -1053,6 +1089,27 @@ async function terminerReponseDemande(d, texte) {
 }
 
 // ===== ⭐ Lien de consultation pour les médecins (patron, 2026-10-07) =====
+// ⭐ Règle de paiement du bon de consultation (patron, 2026-10-07)
+async function ouvrirReglePaiement() {
+    const d = await fetch('/rendez_vous/api/regle-paiement').then(r => r.json());
+    if (!d.success) { showToast(d.error || 'Erreur', 'danger'); return; }
+    document.getElementById('rpActif').checked = !!d.actif;
+    document.getElementById('rpDelai').value = d.delai_personnalise || '';
+    document.getElementById('rpDelai').placeholder = 'Par défaut : ' + d.delai_defaut;
+    document.getElementById('rpDefaut').textContent = 'Sans valeur : ' + d.delai_defaut + ' jours (' +
+        (d.statut_structure === 'public' ? 'structure publique selon le paramétrage AMU' : 'structure privée ; 30 jours si le paramétrage AMU indique « public »') + '). Délai appliqué actuellement : ' + d.delai_jours + ' jours.';
+    new bootstrap.Modal(document.getElementById('modalReglePaiement')).show();
+}
+async function enregistrerReglePaiement() {
+    const delai = document.getElementById('rpDelai').value;
+    const d = await fetch('/rendez_vous/api/regle-paiement', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({delai_jours: delai === '' ? null : parseInt(delai, 10), actif: document.getElementById('rpActif').checked})}).then(r => r.json());
+    if (!d.success) { showToast(d.error || 'Erreur', 'danger'); return; }
+    showToast('Règle enregistrée : ' + (d.actif ? d.delai_jours + ' jours' : 'désactivée'), 'success');
+    bootstrap.Modal.getInstance(document.getElementById('modalReglePaiement')).hide();
+    setTimeout(() => location.reload(), 600);
+}
+
 async function ouvrirPartageMedecins() {
     new bootstrap.Modal(document.getElementById('modalPartage')).show();
     document.getElementById('partageUrl').value = 'Chargement...';
@@ -1368,6 +1425,10 @@ function envoyerRappel(id) {
             message += `Date : ${date}%0A`;
             message += `Heure : ${heure}%0A`;
             message += `Motif : ${motif}%0A%0A`;
+            // ⭐ Règle de paiement du bon de consultation (patron, 2026-10-07)
+            if (row.dataset.paiement) {
+                message += `${encodeURIComponent(row.dataset.paiement)}%0A%0A`;
+            }
             message += `Merci de votre ponctualité !%0A%0A`;
             message += `Pour toute annulation, veuillez nous contacter.`;
             

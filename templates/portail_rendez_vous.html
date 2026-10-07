@@ -121,6 +121,7 @@ function chargerRdv() {
                 <strong><i class="fas fa-bell me-1"></i>${r.statut === 'confirme' ? 'Rendez-vous confirmé' : r.statut === 'reporte' ? 'Rendez-vous modifié par la structure' : 'Demande non retenue'}</strong>
                 ${(r.statut === 'confirme' || r.statut === 'reporte') ? ` : le <strong>${r.date}</strong> à <strong>${r.heure}</strong>${r.medecin ? ' avec ' + r.medecin : ''}.` : ` (demande du ${r.date}).`}
                 ${r.reponse_structure ? `<div class="mt-1">${r.reponse_structure}</div>` : ''}
+                ${r.paiement && r.statut !== 'annule' ? `<div class="mt-1 small"><i class="fas ${r.paiement.doit_payer ? 'fa-coins' : 'fa-check-circle'} me-1"></i>${r.paiement.texte}</div>` : ''}
                 <div class="small text-muted mt-1">Réponse du ${r.repondu_le}</div>
             </div>`).join('');
         nonLus.forEach(r => fetch(`/api/portail-patient/rendez-vous/${r.id}/vu`, {method: 'POST'}));
@@ -133,6 +134,7 @@ function chargerRdv() {
                     <div>
                         <div class="fw-bold">${r.date}${r.statut === 'demande' ? ' (' + CRENEAUX[r.creneau_souhaite || 'indifferent'] + ')' : ' à ' + r.heure}</div>
                         <div>${r.motif}${r.medecin ? ' — ' + r.medecin : ''}</div>
+                        ${r.paiement && r.a_venir && ['confirme', 'programme', 'reporte', 'demande'].includes(r.statut) ? `<div class="small mt-1 rounded px-2 py-1 ${r.paiement.doit_payer ? 'bg-warning-subtle text-warning-emphasis' : 'bg-success-subtle text-success-emphasis'}"><i class="fas ${r.paiement.doit_payer ? 'fa-coins' : 'fa-check-circle'} me-1"></i>${r.paiement.texte}</div>` : ''}
                         ${r.reponse_structure && r.statut !== 'demande' ? `<div class="small text-muted mt-1"><i class="fas fa-comment me-1"></i>${r.reponse_structure}</div>` : ''}
                     </div>
                     <div class="text-end">
