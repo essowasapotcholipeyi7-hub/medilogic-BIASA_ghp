@@ -362,6 +362,83 @@ def marquer_paie_payee(paie, mode_paiement='especes', user_nom='System', force=F
 
 
 # ============================================================
+# ⭐ CHARGE « SALAIRE DU PERSONNEL » LIÉE À LA RH (patron, 2026-10-09)
+# ============================================================
+# « dans l'ajout de charge, quand on choisit salaire du personnel, qu'on
+# puisse choisir l'employé concerné [...], faire une paie globale, et que
+# cette opération rejoigne le compte de salaire dans la comptabilité ».
+# L'aperçu sert au formulaire de charge (montant = net calculé par la paie) ;
+# le paiement passe par generer_ou_maj_paie + marquer_paie_payee, donc
+# exactement la même Dépense / écriture SAL (661...) qu'un paiement fait
+# depuis la page Paie de la RH.
+
+MOIS_FR = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+           'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
+
+
+def libelle_mois_paie(annee, mois):
+    return f"{MOIS_FR[int(mois)]} {int(annee)}"
+
+
+def apercu_salaires(structure_id, annee, mois):
+    """Pour chaque employé actif : net à payer du mois (bulletin existant,
+    sinon estimation sur le salaire de base), déjà payé ou non. Ne persiste
+    rien."""
+    employes = Employe.query.filter_by(structure_id=structure_id, statut='Actif') \
+        .order_by(Employe.nom, Employe.prenom).all()
+    parametrage = ParametragePaie.get_ou_creer(structure_id) if employes else None
+    lignes = []
+    for e in employes:
+        paie = Paie.query.filter_by(employe_id=e.id, annee=annee, mois=mois).first()
+        base = float(_d(e.salaire_base))
+        if paie:
+            net = float(_d(paie.net_a_payer))
+        elif base > 0:
+            net = float(calculer_paie(e, base, 0, 0, parametrage)['net_a_payer'])
+        else:
+            net = 0.0
+        deja_payee = bool(paie and paie.statut == 'payee')
+        a_payer = (not deja_payee) and net > 0
+        lignes.append({
+            'id': e.id, 'nom': e.nom, 'prenom': e.prenom, 'matricule': e.matricule, 'poste': e.poste or '',
+            'salaire_base': base, 'net_prevu': round(net), 'paie_id': paie.id if paie else None,
+            'paie_statut': paie.statut if paie else None, 'deja_payee': deja_payee, 'a_payer': a_payer,
+            'motif_blocage': 'Déjà payé' if deja_payee else ('' if net > 0 else 'Salaire de base non renseigné (fiche RH)'),
+        })
+    cibles = [l for l in lignes if l['a_payer']]
+    return {
+        'annee': int(annee), 'mois': int(mois), 'libelle_mois': libelle_mois_paie(annee, mois),
+        'employes': lignes, 'nb_a_payer': len(cibles), 'total_a_payer': round(sum(l['net_prevu'] for l in cibles)),
+    }
+
+
+def payer_salaires_depuis_charge(structure_id, employe_ids, annee, mois, user_nom='System'):
+    """Exécution (à la validation de la charge) : bulletin généré s'il
+    n'existe pas, puis payé (Dépense + écriture SAL / caisse). Lève
+    ValueError au premier problème (déjà payé, solde insuffisant...)."""
+    resultats = []
+    for eid in employe_ids:
+        e = Employe.query.filter_by(id=int(eid), structure_id=structure_id).first()
+        if not e:
+            raise ValueError(f"Employé #{eid} introuvable dans cette structure")
+        paie = Paie.query.filter_by(employe_id=e.id, annee=annee, mois=mois).first()
+        if paie and paie.statut == 'payee':
+            raise ValueError(f"Le salaire de {e.nom} {e.prenom} pour {libelle_mois_paie(annee, mois)} est déjà payé.")
+        if not paie:
+            if float(_d(e.salaire_base)) <= 0:
+                raise ValueError(f"Salaire de base non renseigné pour {e.nom} {e.prenom} (fiche RH).")
+            paie, erreur = generer_ou_maj_paie(structure_id, e.id, annee, mois, user_nom=user_nom)
+            if erreur:
+                raise ValueError(erreur)
+        paie, erreur = marquer_paie_payee(paie, mode_paiement='especes', user_nom=user_nom)
+        if erreur:
+            raise ValueError(erreur)
+        resultats.append({'paie_id': paie.id, 'depense_id': paie.depense_id, 'employe': f"{e.nom} {e.prenom}",
+                          'net': float(_d(paie.net_a_payer))})
+    return resultats
+
+
+# ============================================================
 # DÉCLARATIONS MENSUELLES (IRPP, CNSS/CRT, AMU-CNSS/AMU-INAM)
 # ============================================================
 # À déposer avant le 15 du mois suivant (délai usuel pour ces organismes au

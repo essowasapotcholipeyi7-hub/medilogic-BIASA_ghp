@@ -492,6 +492,32 @@
                         <label class="form-label">Précisez le motif</label>
                         <input type="text" class="form-control" id="depenseMotifPersonnalise" placeholder="Ex: Achat de matériel, Formation, etc...">
                     </div>
+                    <!-- ⭐ Patron (2026-10-09) : salaire lié à la paie RH (employé / paie globale) -->
+                    <div id="salaireDiv" style="display:none;">
+                        <div class="alert alert-info py-2 small mb-2">
+                            <i class="fas fa-id-card me-1"></i> Lié à la <strong>paie RH</strong> : choisissez l'employé (ou la paie globale du mois) —
+                            le montant est le <strong>net à payer</strong> calculé par la paie, le bulletin est généré/payé à la validation et la charge rejoint le compte
+                            <strong>Salaires (661)</strong> en comptabilité.
+                        </div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-md-4">
+                                <label class="form-label">Mois de paie *</label>
+                                <input type="month" class="form-control" id="salaireMois" onchange="chargerApercuSalaires()">
+                            </div>
+                            <div class="col-md-8">
+                                <label class="form-label">Qui payer ? *</label>
+                                <select class="form-control" id="salaireEmploye" onchange="appliquerChoixSalaire()">
+                                    <option value="">Chargement…</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="salaireAucunPersonnel" class="alert alert-warning py-2 small" style="display:none;">
+                            <i class="fas fa-users-slash me-1"></i> Aucun personnel enregistré dans les Ressources humaines.
+                            <a href="{{ url_for('rh.gestion_rh') }}#personnel" class="alert-link" target="_blank">Enregistrer le personnel</a> d'abord, puis revenez ici.
+                        </div>
+                        <div id="salaireDetail" class="small text-muted mb-2"></div>
+                    </div>
+                    <script src="{{ url_for('static', filename='js/charge_salaire.js') }}"></script>
 
                     <div id="justificatifPaiementDiv" style="display:none;">
                         <div class="alert alert-info py-2">
@@ -573,6 +599,7 @@ function toggleMotifPersonnalise() {
     const div = document.getElementById('motifPersonnaliseDiv');
     div.style.display = motif === 'autres' ? 'block' : 'none';
     document.getElementById('justificatifPaiementDiv').style.display = motif === 'abonnement_ssoftonev10' ? 'block' : 'none';
+    if (window.chargeSalaireToggle) chargeSalaireToggle(motif);   // ⭐ salaire lié à la RH
 
     const montantInput = document.getElementById('depenseMontant');
     const aide = document.getElementById('depenseMontantAide');
@@ -613,6 +640,8 @@ async function saveDepense() {
         motif_personnalise: motif === 'autres' ? motifPersonnalise : '',
         description: document.getElementById('depenseDescription').value
     };
+    // ⭐ Salaire lié à la RH : employé / paie globale + mois (patron, 2026-10-09)
+    if (motif === 'salaire' && window.chargeSalaireDonnees && !(await chargeSalaireDonnees(data))) return;
 
     if (motif === 'abonnement_ssoftonev10') {
         const moyen = document.getElementById('depenseMoyenPaiement').value;

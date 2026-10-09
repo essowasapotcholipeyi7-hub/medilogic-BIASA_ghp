@@ -87,7 +87,7 @@
         <div class="bloc-medecin">
             <div>
                 <div class="nom-med">{{ point.medecin_nom }}</div>
-                <div class="sub">{% if point.medecin and point.medecin.specialite %}{{ point.medecin.specialite }}{% endif %}{% if point.medecin and point.medecin.telephone %} · Tél. {{ point.medecin.telephone }}{% endif %}</div>
+                <div class="sub">{% if point.medecin and point.medecin.specialite %}{{ point.medecin.specialite }}{% endif %}{% if point.medecin and point.medecin.telephone %} · Tél. {{ point.medecin.telephone }}{% endif %}{% if point.medecin_nif %} · NIF {{ point.medecin_nif }}{% endif %}</div>
             </div>
             <div class="sub" style="text-align:right;">
                 {{ point.nb_actes }} prestation(s)<br>
@@ -138,7 +138,11 @@
 
         <div class="totaux">
             <div><span>Montant brut (part médecin)</span><strong>{{ '{:,.0f}'.format(point.brut).replace(',', ' ') }} F</strong></div>
-            <div class="rsps"><span>RSPS {{ point.taux_rsps|round(1)|string|replace('.0', '') }} % à verser à l'OTR</span><strong>− {{ '{:,.0f}'.format(point.rsps).replace(',', ' ') }} F</strong></div>
+            {% if point.rsps or point.taux_rsps %}
+            <div class="rsps"><span>RSPS {{ point.taux_rsps|round(1)|string|replace('.0', '') }} % à verser à l'OTR{% if not point.medecin_nif %} (médecin sans NIF){% endif %}</span><strong>− {{ '{:,.0f}'.format(point.rsps).replace(',', ' ') }} F</strong></div>
+            {% else %}
+            <div class="rsps"><span>RSPS : aucune retenue{% if not point.medecin_nif %} (médecin sans NIF){% endif %}</span><strong>0 F</strong></div>
+            {% endif %}
             <div class="net"><span>NET À PAYER AU MÉDECIN</span><span>{{ '{:,.0f}'.format(point.net).replace(',', ' ') }} F</span></div>
         </div>
 

@@ -1,7 +1,7 @@
 """Part médecin (patron, 2026-10-08) : taux par (acte, médecin) avec
 affectations, RSPS 5 % sur le brut / net au médecin, mapping comptable.
 Logique pure, sans base."""
-from services.part_medecin_service import calculer_rsps, taux_pour
+from services.part_medecin_service import calculer_rsps, taux_pour, taux_rsps_pour_medecin
 from utils.plan_comptable_syscohada import (COMPTE_HONORAIRES_MEDECINS, COMPTE_RSPS_A_REVERSER,
                                             PLAN_COMPTABLE_PAR_NUMERO, compte_charge_pour_motif)
 
@@ -33,3 +33,15 @@ def test_comptes_part_medecin_et_rsps():
     # « eau » dans un nom de médecin ne doit plus détourner vers 614
     assert compte_charge_pour_motif('Part médecin — Dr BEAUDOIN') == COMPTE_HONORAIRES_MEDECINS
     assert compte_charge_pour_motif('Facture eau du mois') == '61400000'
+
+
+def test_rsps_seulement_avec_nif():
+    """Patron (2026-10-09) : la RSPS concerne les médecins qui ont le NIF."""
+    assert taux_rsps_pour_medecin(5, 0, True, '1000123456') == (5.0, True)
+    assert taux_rsps_pour_medecin(5, 0, True, None) == (0.0, False)
+    assert taux_rsps_pour_medecin(5, 0, True, '   ') == (0.0, False)
+    # taux « sans NIF » paramétré par la structure
+    assert taux_rsps_pour_medecin(5, 10, True, '') == (10.0, True)
+    # RSPS désactivée : rien pour personne
+    assert taux_rsps_pour_medecin(5, 10, False, '1000123456') == (0.0, False)
+

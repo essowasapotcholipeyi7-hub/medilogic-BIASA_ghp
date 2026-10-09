@@ -115,6 +115,7 @@
                                 <th>Qualification</th>
                                 <th>Telephone</th>
                                 <th>Code prescripteur</th>
+                                <th>NIF</th>
                                 <th>Consultations</th>
                                 <th>Statut</th>
                                 <th>Actions</th>
@@ -131,6 +132,7 @@
                                 <td>{{ medecin.qualification or '-' }}</td>
                                 <td>{{ medecin.telephone or '-' }}</td>
                                 <td>{{ medecin.code_prescripteur or '-' }}</td>
+                                <td>{% if medecin.nif %}{{ medecin.nif }}{% else %}<span class="text-muted" title="Sans NIF : pas de RSPS retenue sur sa part">—</span>{% endif %}</td>
                                 <td class="text-center">
                                     <span class="badge bg-primary">{{ medecin.nb_consultations }}</span>
                                 </td>
@@ -231,6 +233,12 @@
                         <div class="col-md-6">
                             <label class="form-label">Honoraire consultation (FCFA)</label>
                             <input type="number" class="form-control" id="medecinHonoraire" value="0">
+                        </div>
+                        <!-- ⭐ Patron (2026-10-09) : la RSPS sur la part médecin concerne les médecins qui ont le NIF -->
+                        <div class="col-md-6">
+                            <label class="form-label">NIF (identification fiscale)</label>
+                            <input type="text" class="form-control" id="medecinNif" maxlength="30" placeholder="Ex. 1000123456">
+                            <div class="form-text">La <strong>RSPS</strong> (5 % par défaut) n'est retenue sur la part médecin que si le NIF est renseigné.</div>
                         </div>
                         <div class="col-md-12">
                             <div class="form-check form-switch">
@@ -395,6 +403,7 @@ function modifierMedecin(id) {
             document.getElementById('medecinTelephone').value = data.telephone || '';
             document.getElementById('medecinEmail').value = data.email || '';
             document.getElementById('medecinCodePrescripteur').value = data.code_prescripteur || '';
+            document.getElementById('medecinNif').value = data.nif || '';
             document.getElementById('medecinHonoraire').value = data.honoraire_consultation || 0;
             document.getElementById('medecinActif').checked = data.actif !== false;
             
@@ -416,6 +425,7 @@ async function enregistrerMedecin() {
         telephone: document.getElementById('medecinTelephone').value.trim(),
         email: document.getElementById('medecinEmail').value.trim(),
         code_prescripteur: document.getElementById('medecinCodePrescripteur').value.trim(),
+        nif: document.getElementById('medecinNif').value.trim(),
         honoraire_consultation: parseFloat(document.getElementById('medecinHonoraire').value) || 0,
         actif: document.getElementById('medecinActif').checked
     };

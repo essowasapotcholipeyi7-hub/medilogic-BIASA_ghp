@@ -20,6 +20,9 @@
     <!-- ⭐ Patron (2026-10-08) : RSPS 5 % par défaut sur le brut, à verser à l'OTR en fin de mois. -->
     La <strong>RSPS</strong> (<span id="tauxRspsAffiche">5</span> % par défaut) est retenue sur la part brute : le médecin reçoit le <strong>net</strong>,
     la retenue est reversée à l'OTR depuis le bloc ci-dessous.
+    <!-- ⭐ Patron (2026-10-09) : « ça concerne les médecins qui ont le NIF » -->
+    <br><i class="fas fa-id-card me-1"></i>Elle ne concerne que les <strong>médecins ayant un NIF</strong> (à renseigner dans la <a href="{{ url_for('gestion_medecins') }}">fiche du médecin</a>) ;
+    sans NIF, le taux « sans NIF » s'applique (<span id="tauxRspsSansNifAffiche">0</span> % = aucune retenue).
 </div>
 
 <!-- ⭐ RSPS à verser à l'OTR -->
@@ -27,9 +30,14 @@
     <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
         <span><i class="fas fa-landmark me-1"></i> RSPS à verser à l'OTR</span>
         <span class="d-flex align-items-center gap-2">
-            <span class="small">Taux RSPS :</span>
-            <div class="input-group input-group-sm" style="width:130px;">
+            <span class="small">Taux RSPS (avec NIF) :</span>
+            <div class="input-group input-group-sm" style="width:110px;">
                 <input type="number" class="form-control" id="paramTauxRsps" min="0" max="50" step="0.5">
+                <span class="input-group-text">%</span>
+            </div>
+            <span class="small">sans NIF :</span>
+            <div class="input-group input-group-sm" style="width:110px;" title="Médecins sans NIF — 0 = aucune retenue">
+                <input type="number" class="form-control" id="paramTauxRspsSansNif" min="0" max="50" step="0.5">
                 <span class="input-group-text">%</span>
             </div>
             <div class="form-check form-switch mb-0 small"><input class="form-check-input" type="checkbox" id="paramRspsActive"><label class="form-check-label" for="paramRspsActive">Active</label></div>
@@ -261,7 +269,7 @@ function ouvrirModalCloturer(medecinId, medecinNom, dateAncienne, dateRecente) {
     document.getElementById('clotDateFin').value = dateRecente;
     const ligne = enAttenteCache.find(l => l.medecin_id === medecinId);
     document.getElementById('clotApercu').textContent = ligne
-        ? `${ligne.nb_actes} acte(s), base ${F(ligne.base_calcul)} → part brute ${F(ligne.montant_reel)} (RSPS ${TAUX_RSPS} % retenue à la clôture)`
+        ? `${ligne.nb_actes} acte(s), base ${F(ligne.base_calcul)} → part brute ${F(ligne.montant_reel)} ` + (ligne.taux_rsps ? `(RSPS ${ligne.taux_rsps} % retenue à la clôture${ligne.medecin_nif ? '' : ' — taux sans NIF'})` : '(sans NIF : aucune RSPS retenue)')
         : '';
     new bootstrap.Modal(document.getElementById('modalCloturer')).show();
 }
@@ -365,7 +373,7 @@ function chargerEnAttente() {
             const nom = JSON.stringify(l.medecin_nom).replace(/'/g, "&apos;");
             return `
             <tr>
-                <td><strong>${l.medecin_nom}</strong><div class="small text-muted">du ${l.date_plus_ancienne.split('-').reverse().join('/')} au ${l.date_plus_recente.split('-').reverse().join('/')}</div></td>
+                <td><strong>${l.medecin_nom}</strong> ${l.medecin_nif ? '<span class="badge bg-light text-dark border" title="NIF ' + l.medecin_nif + ' — RSPS ' + l.taux_rsps + ' %">NIF · RSPS ' + l.taux_rsps + ' %</span>' : '<span class="badge bg-secondary" title="Pas de NIF : ' + (l.taux_rsps ? 'RSPS ' + l.taux_rsps + ' % (taux sans NIF)' : 'aucune RSPS retenue') + '">sans NIF' + (l.taux_rsps ? ' · ' + l.taux_rsps + ' %' : ' · 0 %') + '</span>'}<div class="small text-muted">du ${l.date_plus_ancienne.split('-').reverse().join('/')} au ${l.date_plus_recente.split('-').reverse().join('/')}</div></td>
                 <td class="text-end">${l.nb_actes}</td>
                 <td class="text-end">${F(l.base_calcul)}</td>
                 <td class="text-end fw-bold">${F(l.montant_reel)}</td>
@@ -443,14 +451,16 @@ function chargerParamRsps() {
     fetch('/api/part-medecin/parametres').then(r => r.json()).then(d => {
         TAUX_RSPS = d.rsps_active ? d.taux_rsps : 0;
         document.getElementById('tauxRspsAffiche').textContent = d.taux_rsps;
+        document.getElementById('tauxRspsSansNifAffiche').textContent = d.taux_rsps_sans_nif || 0;
         document.getElementById('paramTauxRsps').value = d.taux_rsps;
+        document.getElementById('paramTauxRspsSansNif').value = d.taux_rsps_sans_nif || 0;
         document.getElementById('paramRspsActive').checked = !!d.rsps_active;
-        if (!PEUT_VALIDER) { ['paramTauxRsps', 'paramRspsActive', 'btnParamRsps'].forEach(id => document.getElementById(id).disabled = true); }
+        if (!PEUT_VALIDER) { ['paramTauxRsps', 'paramTauxRspsSansNif', 'paramRspsActive', 'btnParamRsps'].forEach(id => document.getElementById(id).disabled = true); }
     });
 }
 async function enregistrerParamRsps() {
     const d = await fetch('/api/part-medecin/parametres', {method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({taux_rsps: parseFloat(document.getElementById('paramTauxRsps').value), rsps_active: document.getElementById('paramRspsActive').checked})}).then(r => r.json());
+        body: JSON.stringify({taux_rsps: parseFloat(document.getElementById('paramTauxRsps').value), taux_rsps_sans_nif: parseFloat(document.getElementById('paramTauxRspsSansNif').value) || 0, rsps_active: document.getElementById('paramRspsActive').checked})}).then(r => r.json());
     if (!d.success) { await afficherMessage('Erreur : ' + (d.error || 'inconnue'), {type: 'danger'}); return; }
     await afficherMessage('Taux de RSPS enregistré : ' + d.taux_rsps + ' %' + (d.rsps_active ? '' : ' (désactivée)'), {type: 'success'});
     chargerParamRsps();

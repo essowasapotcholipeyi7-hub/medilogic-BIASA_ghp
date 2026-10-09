@@ -1479,6 +1479,11 @@ class Medecin(db.Model):
     # propre à la structure — voir ParametrageAmuCnss.code_prestataire) :
     # réutilisé tel quel pour pré-remplir l'Entente Préalable.
     code_prescripteur = db.Column(db.String(50))
+    # ⭐ NIF (numéro d'identification fiscale) — patron (2026-10-09) : la RSPS
+    # retenue sur la part médecin « concerne les médecins qui ont le NIF ».
+    # Sans NIF : taux_rsps_sans_nif de la structure (0 par défaut) — voir
+    # services/part_medecin_service.parametres_rsps().
+    nif = db.Column(db.String(30))
     
     # Honoraires
     honoraire_consultation = db.Column(db.Float, default=0)
@@ -1876,6 +1881,10 @@ class ParametragePartMedecin(db.Model):
     structure_id = db.Column(db.Integer, nullable=False, unique=True)
     taux_rsps = db.Column(db.Numeric, default=5)
     rsps_active = db.Column(db.Boolean, nullable=False, default=True)
+    # ⭐ Médecin SANS NIF (patron, 2026-10-09 : la RSPS concerne les médecins
+    # qui ont le NIF) — 0 par défaut = aucune retenue ; modifiable si la
+    # règle fiscale de la structure prévoit un autre taux.
+    taux_rsps_sans_nif = db.Column(db.Numeric, default=0)
     modifie_le = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     modifie_par = db.Column(db.String(150))
 

@@ -336,10 +336,22 @@
                             L'écart avec le stock système est calculé automatiquement. Seules les lignes où la
                             quantité comptée diffère du stock système seront ajustées à la validation.
                         </div>
-                        <div class="mb-3">
+                        <!-- ⭐ Patron (2026-10-09) : les boutons Aperçu / Valider étaient en pied de
+                             liste (il fallait défiler toute la liste pour les atteindre) — remontés
+                             ici, à côté de la recherche. -->
+                        <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
                             <div class="input-group" style="max-width:400px;">
                                 <span class="input-group-text"><i class="fas fa-search"></i></span>
                                 <input type="text" id="searchInventaire" class="form-control" placeholder="Rechercher un médicament..." onkeyup="filterInventaire()">
+                            </div>
+                            <span id="inventaireEcartsResume" class="text-muted small"></span>
+                            <div class="ms-auto d-flex flex-wrap gap-2">
+                                <button class="btn btn-outline-secondary" onclick="apercuInventaire()">
+                                    <i class="fas fa-eye"></i> Aperçu des écarts / Imprimer
+                                </button>
+                                <button class="btn btn-secondary" id="btnValiderInventaire" onclick="validerInventaire()">
+                                    <i class="fas fa-check"></i> Valider l'inventaire
+                                </button>
                             </div>
                         </div>
                         <div class="table-responsive">
@@ -360,19 +372,8 @@
                             </table>
                         </div>
                     </div>
-                    <div class="card-footer d-flex justify-content-between align-items-center">
-                        <span id="inventaireEcartsResume" class="text-muted"></span>
-                        <div>
-                            <button class="btn btn-outline-dark me-2" onclick="imprimerFeuilleComptage()" title="Liste à imprimer pour aller compter : stock système + colonnes vides à remplir">
-                                <i class="fas fa-print"></i> Feuille de comptage
-                            </button>
-                            <button class="btn btn-outline-secondary me-2" onclick="apercuInventaire()">
-                                <i class="fas fa-eye"></i> Aperçu des écarts / Imprimer
-                            </button>
-                            <button class="btn btn-secondary" id="btnValiderInventaire" onclick="validerInventaire()">
-                                <i class="fas fa-check"></i> Valider l'inventaire
-                            </button>
-                        </div>
+                    <div class="card-footer text-end small text-muted">
+                        Les boutons <strong>Aperçu des écarts</strong> et <strong>Valider l'inventaire</strong> sont en haut de la liste.
                     </div>
                 </div>
             </div>
@@ -604,8 +605,15 @@
                     <button class="btn btn-primary btn-sm" onclick="chargerStockADate()">
                         <i class="fas fa-search"></i> Voir
                     </button>
+                    <!-- ⭐ Patron (2026-10-09) : ne montrer que les produits dont le stock a bougé,
+                         au lieu de faire défiler toute la liste pour les découvrir. -->
+                    <div class="form-check form-switch mb-0 small">
+                        <input class="form-check-input" type="checkbox" id="stockADateSeulementBouge" checked onchange="filterStockADate()">
+                        <label class="form-check-label" for="stockADateSeulementBouge">Seulement les produits dont le stock a bougé</label>
+                    </div>
                     <input type="text" id="searchStockADate" class="form-control form-control-sm ms-auto" placeholder="Rechercher un produit..." onkeyup="filterStockADate()" style="max-width:300px;">
                 </div>
+                <div id="stockADateCompteur" class="small text-muted mb-1"></div>
                 <div id="stockADateInfo" class="small text-muted mb-2"></div>
                 <div class="table-responsive">
                     <table class="table table-hover table-sm">
@@ -1290,7 +1298,7 @@ function chargerStockADate() {
                 return;
             }
             stockADateListe = data.produits || [];
-            afficherStockADate(stockADateListe);
+            filterStockADate();
 
             const infoEl = document.getElementById('stockADateInfo');
             if (data.historique_disponible_depuis && data.date <= data.historique_disponible_depuis) {
@@ -1307,10 +1315,20 @@ function chargerStockADate() {
 
 function afficherStockADate(produits) {
     const tbody = document.getElementById('stockADateList');
+    const compteur = document.getElementById('stockADateCompteur');
+    const seulementBouge = document.getElementById('stockADateSeulementBouge')?.checked;
+    if (compteur) {
+        const nbBouge = stockADateListe.filter(p => p.consomme !== null && p.consomme !== undefined && p.consomme !== 0).length;
+        compteur.innerHTML = `<strong>${nbBouge}</strong> produit(s) dont le stock a bougé sur ${stockADateListe.length}` + (seulementBouge ? '' : ' — tous affichés');
+    }
     if (!produits || produits.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center">Aucun produit</td></tr>';
+        tbody.innerHTML = seulementBouge
+            ? '<tr><td colspan="4" class="text-center text-muted">Aucun mouvement de stock depuis cette date (décochez le filtre pour voir tous les produits)</td></tr>'
+            : '<tr><td colspan="4" class="text-center">Aucun produit</td></tr>';
         return;
     }
+    // Les plus gros mouvements d'abord
+    produits = produits.slice().sort((a, b) => Math.abs(b.consomme || 0) - Math.abs(a.consomme || 0));
     tbody.innerHTML = produits.map(p => {
         const stockADate = p.stock_a_date === null || p.stock_a_date === undefined
             ? '<span class="text-muted">Non disponible</span>' : p.stock_a_date;
@@ -1339,7 +1357,9 @@ function afficherStockADate(produits) {
 
 function filterStockADate() {
     const search = document.getElementById('searchStockADate').value.toLowerCase();
-    const filtered = stockADateListe.filter(p => (p.nom || '').toLowerCase().includes(search));
+    const seulementBouge = document.getElementById('stockADateSeulementBouge')?.checked;
+    const filtered = stockADateListe.filter(p => (p.nom || '').toLowerCase().includes(search)
+        && (!seulementBouge || (p.consomme !== null && p.consomme !== undefined && p.consomme !== 0)));
     afficherStockADate(filtered);
 }
 

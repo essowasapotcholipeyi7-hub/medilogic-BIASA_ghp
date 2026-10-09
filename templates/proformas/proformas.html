@@ -2217,7 +2217,7 @@ function afficherModalConversion(data) {
                                 '<tr><td colspan="6" class="text-center text-muted">Aucun article</td></tr>' :
                                 panierConversion.map((item, index) => `
                                     <tr>
-                                        <td>${item.nom}${formatDatePrestationConversion(item)}</td>
+                                        <td>${item.nom}${formatDatePrestationConversion(item)}<div class="convert-couv">${celluleCouvertureConversion(item, index)}</div></td>
                                         <td><span class="badge ${item.type === 'acte' ? 'bg-primary' : 'bg-success'}">${item.type === 'acte' ? 'Acte' : 'Produit'}</span></td>
                                         <td>
                                             <input type="number" class="form-control form-control-sm" value="${item.quantite}" 
@@ -2818,7 +2818,52 @@ function afficherDecompositionTvaConversion(sousTotalTTC) {
     label.textContent = 'Sous-total TTC :';
 }
 
+// ⭐ Patron (2026-10-09) : « au moment de la conversion de la proforma en
+// vente, on n'a pas la possibilité d'appliquer ou pas l'assurance sur un
+// article donné comme dans acte vente et pharmacie » — mêmes boutons ✓/✗
+// par ligne ; prise_en_charge_amu/_cac partent déjà vers la vente créée.
+function couverturesConversionActives() {
+    const d = proformaConversionData || {};
+    const amu = !!(d.assurance_nom && d.assurance_nom !== 'non_assure' && d.assurance_nom !== 'Non assuré'
+        && tauxAssurancePrincipaleConversionActuel() > 0);
+    const cac = !!(d.assurance2_nom && assurance2ConversionActive() && tauxAssurance2ConversionActuel() > 0);
+    return {amu: amu, cac: cac, nomCac: d.assurance2_nom || 'Privée'};
+}
+function boutonCouvertureConversion(item, index, cle, libelle) {
+    const champ = cle === 'amu' ? 'prise_en_charge_amu' : 'prise_en_charge_cac';
+    const pris = item[champ] !== false;
+    const origine = item['_catalogue_' + champ];
+    const manuel = origine !== undefined && origine !== pris;
+    const titre = pris ? 'Cliquer si ' + libelle + ' ne prend pas cet article (plafond, refus...)' : 'Cliquer pour que ' + libelle + ' reprenne cet article';
+    return '<button type="button" class="btn btn-sm ' + (pris ? 'btn-outline-success' : 'btn-danger') + ' py-0 px-1" style="font-size:11px; white-space:nowrap;" title="' + titre.replace(/"/g, '&quot;') + '" onclick="basculerCouvertureConversion(' + index + ', \'' + cle + '\')">'
+        + (pris ? '✓ ' : '✗ ') + libelle + (manuel ? ' <small>(modifié)</small>' : (!pris ? ' <small>(proforma)</small>' : '')) + '</button>';
+}
+function celluleCouvertureConversion(item, index) {
+    if (!item) return '';
+    const c = couverturesConversionActives();
+    let html = '';
+    if (c.amu) html += boutonCouvertureConversion(item, index, 'amu', 'AMU') + ' ';
+    if (c.cac) html += boutonCouvertureConversion(item, index, 'cac', c.nomCac);
+    return html ? '<div class="mt-1">' + html + '</div>' : '';
+}
+function basculerCouvertureConversion(index, cle) {
+    const item = panierConversion[index];
+    if (!item) return;
+    const champ = cle === 'amu' ? 'prise_en_charge_amu' : 'prise_en_charge_cac';
+    if (item['_catalogue_' + champ] === undefined) item['_catalogue_' + champ] = item[champ] !== false;
+    item[champ] = item[champ] === false;
+    mettreAJourTotauxConversion();
+}
+// Les cellules sont relues par position (une suppression décale les index).
+function rafraichirCouverturesConversion() {
+    const tbody = document.getElementById('convertPanierBody');
+    if (!tbody) return;
+    const cellules = tbody.querySelectorAll('.convert-couv');
+    cellules.forEach((cel, i) => { cel.innerHTML = celluleCouvertureConversion(panierConversion[i], i); });
+}
+
 function mettreAJourTotauxConversion() {
+    rafraichirCouverturesConversion();
     const sousTotal = calculeSousTotalConversion();
     const priseEnCharge = calculePriseEnChargeConversion();
     const priseEnCharge2 = calculePriseEnCharge2Conversion();
@@ -2981,7 +3026,7 @@ async function ajouterArticleConversion() {
     const index = panierConversion.length - 1;
     const row = tbody.insertRow();
     row.innerHTML = `
-        <td>${nom}</td>
+        <td>${nom}<div class="convert-couv">${celluleCouvertureConversion(panierConversion[index], index)}</div></td>
         <td><span class="badge ${type === 'acte' ? 'bg-primary' : 'bg-success'}">${type === 'acte' ? 'Acte' : 'Produit'}</span></td>
         <td>
             <input type="number" class="form-control form-control-sm" value="${qte}" 

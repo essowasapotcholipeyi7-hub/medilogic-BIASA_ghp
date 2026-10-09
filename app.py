@@ -26,7 +26,7 @@ from services.tarification_service import repartir_ligne, repartir_panier
 from services.laboratoire_service import charger_classification_actes, determiner_type_prestation, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
 from services.part_medecin_service import (charger_taux_part_medecin, creer_lignes_part_medecin, prestations_en_attente,
                                            calculer_periode_part_medecin, charger_toujours_demander_medecin,
-                                           charger_affectations, charger_medecins_affectes_csv, parametres_rsps,
+                                           charger_affectations, charger_medecins_affectes_csv, parametres_rsps, parametres_rsps_structure,
                                            montant_net_periode, point_prestations, rsps_a_verser, enregistrer_versement_rsps)
 from services.service_acte_service import charger_services, deviner_service_acte, creer_lignes_service, generer_rapport_recettes_service
 from services.facturation_amu_service import generer_lignes_facture_amu_cnss, charger_classification_amu_cnss, generer_lignes_facture_amu
@@ -6689,12 +6689,12 @@ def gestion_medecins():
     medecins = db.execute_query("""
         SELECT
             id, nom, prenom, titre, specialite,
-            telephone, email, honoraire_consultation, actif, code_prescripteur
+            telephone, email, honoraire_consultation, actif, code_prescripteur, nif
         FROM medecins
         WHERE structure_id = %s
         ORDER BY nom
     """, (structure_id,))
-    
+
     medecins_list = []
     for m in medecins:
         # Si c'est un dictionnaire, utiliser .get()
@@ -6723,6 +6723,7 @@ def gestion_medecins():
                 'honoraire': m.get('honoraire_consultation', 0),
                 'actif': m.get('actif', True),
                 'code_prescripteur': m.get('code_prescripteur'),
+                'nif': m.get('nif'),
                 'nb_consultations': nb_consultations
             })
         else:
@@ -6790,9 +6791,10 @@ def api_ajouter_medecin():
                 email,
                 honoraire_consultation,
                 actif,
-                code_prescripteur
+                code_prescripteur,
+                nif
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             structure_id,
@@ -6805,9 +6807,10 @@ def api_ajouter_medecin():
             data.get('email', ''),
             data.get('honoraire_consultation', 0),
             data.get('actif', True),
-            data.get('code_prescripteur', '') or None
+            data.get('code_prescripteur', '') or None,
+            (data.get('nif') or '').strip()[:30] or None
         ))
-        
+
         if result and len(result) > 0:
             medecin_id = result[0]['id'] if isinstance(result[0], dict) else result[0][0]
             return jsonify({'success': True, 'id': medecin_id, 'message': 'Medecin ajoute avec succes'})
@@ -6850,7 +6853,8 @@ def api_modifier_medecin(id):
                 email = %s,
                 honoraire_consultation = %s,
                 actif = %s,
-                code_prescripteur = %s
+                code_prescripteur = %s,
+                nif = %s
             WHERE id = %s AND structure_id = %s
         """, (
             data.get('nom'),
@@ -6863,10 +6867,11 @@ def api_modifier_medecin(id):
             data.get('honoraire_consultation', 0),
             data.get('actif', True),
             data.get('code_prescripteur', '') or None,
+            (data.get('nif') or '').strip()[:30] or None,
             id,
             structure_id
         ))
-        
+
         return jsonify({'success': True, 'message': 'Medecin modifie avec succes'})
         
     except Exception as e:
@@ -7097,7 +7102,7 @@ def get_medecins():
     # Recuperer les medecins depuis Neon
     medecins = db.execute_query("""
         SELECT id, nom, prenom, titre, specialite, qualification,
-               telephone, email, honoraire_consultation, actif, code_prescripteur
+               telephone, email, honoraire_consultation, actif, code_prescripteur, nif
         FROM medecins
         WHERE structure_id = %s
         ORDER BY nom
@@ -7117,7 +7122,9 @@ def get_medecins():
             honoraire = m.get('honoraire_consultation', 0)
             actif = m.get('actif', True)
             code_prescripteur = m.get('code_prescripteur')
+            nif = m.get('nif')
         else:
+            nif = m[11] if len(m) > 11 else None
             med_id = m[0]
             nom = m[1]
             prenom = m[2]
@@ -7196,6 +7203,7 @@ def get_medecins():
             'honoraire_consultation': float(honoraire) if honoraire else 0,
             'actif': actif,
             'code_prescripteur': code_prescripteur,
+            'nif': nif,
             'nb_consultations': nb_total,
             'consultations_mois': nb_mois,
             'consultations_semaine': nb_semaine,
@@ -7226,6 +7234,7 @@ def get_medecin_details(id):
             m.honoraire_consultation,
             m.actif,
             m.code_prescripteur,
+            m.nif,
             COUNT(CASE WHEN r.statut = 'termine' THEN 1 END) as total_consultations,
             COUNT(CASE WHEN r.statut = 'termine'
                 AND EXTRACT(YEAR FROM COALESCE(r.date_rendez_vous, r.date_rdv)) = EXTRACT(YEAR FROM CURRENT_DATE)
@@ -7240,7 +7249,7 @@ def get_medecin_details(id):
         LEFT JOIN rendez_vous r ON m.id = r.medecin_id
         WHERE m.id = %s AND m.structure_id = %s
         GROUP BY m.id, m.nom, m.prenom, m.titre, m.specialite, m.qualification,
-                 m.telephone, m.email, m.honoraire_consultation, m.actif, m.code_prescripteur
+                 m.telephone, m.email, m.honoraire_consultation, m.actif, m.code_prescripteur, m.nif
     """, (id, structure_id))
     
     if not result or len(result) == 0:
@@ -7260,6 +7269,7 @@ def get_medecin_details(id):
             'honoraire_consultation': float(r.get('honoraire_consultation') or 0),
             'actif': r.get('actif', True),
             'code_prescripteur': r.get('code_prescripteur'),
+            'nif': r.get('nif'),
             'total_consultations': int(r.get('total_consultations') or 0),
             'consultations_mois': int(r.get('consultations_mois') or 0),
             'consultations_semaine': int(r.get('consultations_semaine') or 0),
@@ -15447,8 +15457,10 @@ def api_part_medecin_en_attente():
             continue
         base = sum(float(p.prix or 0) * int(p.quantite or 1) for p in lignes)
         montant = sum(float(p.montant_part_medecin or 0) for p in lignes)
+        taux_rsps_med, rsps_med_active = parametres_rsps(structure_id, m)   # ⭐ selon le NIF
         resultat.append({
             'medecin_id': m.id, 'medecin_nom': m.get_nom_complet(),
+            'medecin_nif': (m.nif or '').strip(), 'taux_rsps': taux_rsps_med if rsps_med_active else 0,
             'nb_actes': len(lignes), 'base_calcul': base, 'montant_reel': round(montant, 2),
             'date_plus_ancienne': min(p.created_at.date() for p in lignes).strftime('%Y-%m-%d'),
             'date_plus_recente': max(p.created_at.date() for p in lignes).strftime('%Y-%m-%d'),
@@ -15735,10 +15747,18 @@ def api_parametres_part_medecin():
             db.session.add(p)
         p.taux_rsps = taux
         p.rsps_active = bool(data.get('rsps_active', True))
+        # ⭐ Médecins sans NIF (patron, 2026-10-09) — 0 = pas de retenue
+        try:
+            sans_nif = float(data.get('taux_rsps_sans_nif', p.taux_rsps_sans_nif or 0) or 0)
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'Taux sans NIF invalide'}), 400
+        if sans_nif < 0 or sans_nif > 50:
+            return jsonify({'success': False, 'error': 'Le taux sans NIF doit être entre 0 et 50 %'}), 400
+        p.taux_rsps_sans_nif = sans_nif
         p.modifie_par = session.get('user_name')
         db.session.commit()
-    taux, actif = parametres_rsps(structure_id)
-    return jsonify({'success': True, 'taux_rsps': taux, 'rsps_active': actif})
+    taux, actif, sans_nif = parametres_rsps_structure(structure_id)
+    return jsonify({'success': True, 'taux_rsps': taux, 'rsps_active': actif, 'taux_rsps_sans_nif': sans_nif})
 
 
 @app.route('/part-medecin/point')
@@ -16812,6 +16832,46 @@ def api_add_depense():
         resume = (f"Dépense — Abonnement SSoftOneV10 — {int(montant):,} FCFA".replace(',', ' ') +
                   f" — {moyen_libelle} réf. {reference_paiement} du {date_paiement}")
 
+    # ⭐ Patron (2026-10-09) : charge « Salaire du personnel » liée à la RH —
+    # employé choisi (ou paie globale du mois) ; le montant est TOUJOURS le
+    # net calculé par la paie (jamais celui envoyé par le client). Voir
+    # services/paie_service.apercu_salaires / payer_salaires_depuis_charge.
+    if motif == 'salaire' and (data.get('employe_id') or data.get('paie_globale')):
+        from services.paie_service import apercu_salaires
+        mois_str = (data.get('mois') or '').strip()
+        try:
+            annee_paie, mois_paie = int(mois_str[:4]), int(mois_str[5:7])
+            assert 1 <= mois_paie <= 12
+        except (ValueError, AssertionError):
+            return jsonify({'success': False, 'error': 'Mois de paie invalide (format attendu AAAA-MM).'}), 400
+        apercu = apercu_salaires(structure_id, annee_paie, mois_paie)
+        if data.get('paie_globale'):
+            cibles = [e for e in apercu['employes'] if e['a_payer']]
+            if not cibles:
+                return jsonify({'success': False, 'error': "Aucun salaire à payer pour ce mois (déjà payés, ou salaire de base non renseigné dans la fiche RH)."}), 400
+            montant = float(sum(e['net_prevu'] for e in cibles))
+            payload.update({'paie_globale': True, 'mois': mois_str, 'montant': montant,
+                            'employe_ids': [e['id'] for e in cibles]})
+            resume = (f"Paie globale {apercu['libelle_mois']} — {len(cibles)} employé(s) — {int(montant):,} FCFA".replace(',', ' ')
+                      + ' — ' + ', '.join(f"{e['nom']} {e['prenom']}" for e in cibles))[:500]
+        else:
+            try:
+                employe_id = int(data.get('employe_id'))
+            except (TypeError, ValueError):
+                return jsonify({'success': False, 'error': 'Employé invalide'}), 400
+            e = next((x for x in apercu['employes'] if x['id'] == employe_id), None)
+            if not e:
+                return jsonify({'success': False, 'error': "Employé introuvable (ou plus actif) dans les Ressources humaines."}), 404
+            if e['deja_payee']:
+                return jsonify({'success': False, 'error': f"Le salaire de {e['nom']} {e['prenom']} pour {apercu['libelle_mois']} est déjà payé."}), 400
+            if not e['a_payer']:
+                return jsonify({'success': False, 'error': f"{e['motif_blocage']} — {e['nom']} {e['prenom']}."}), 400
+            montant = float(e['net_prevu'])
+            payload.update({'employe_id': employe_id, 'mois': mois_str, 'montant': montant})
+            resume = f"Salaire {apercu['libelle_mois']} — {e['nom']} {e['prenom']} ({e['matricule']}) — {int(montant):,} FCFA (net paie RH)".replace(',', ' ')
+        if not payload.get('description'):
+            payload['description'] = resume
+
     try:
         demande = _demander_validation(
             structure_id=structure_id, type_demande='depense',
@@ -16826,6 +16886,31 @@ def api_add_depense():
     except Exception as e:
         print(f"Erreur api_add_depense: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/depenses/salaire/apercu')
+@login_required
+def api_depenses_salaire_apercu():
+    """⭐ Patron (2026-10-09) : pour le formulaire de charge « Salaire du
+    personnel » — employés actifs de la RH avec le net à payer du mois
+    (bulletin existant, sinon estimé sur le salaire de base), déjà payés ou
+    non, + lien vers la RH pour enregistrer le personnel s'il n'y en a pas."""
+    role = session.get('role', 'caissier')
+    if role not in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable']:
+        return jsonify({'success': False, 'error': 'Non autorise'}), 403
+    from services.paie_service import apercu_salaires
+    mois_str = (request.args.get('mois') or '').strip() or datetime.now().strftime('%Y-%m')
+    try:
+        annee_paie, mois_paie = int(mois_str[:4]), int(mois_str[5:7])
+        assert 1 <= mois_paie <= 12
+    except (ValueError, AssertionError):
+        return jsonify({'success': False, 'error': 'Mois invalide (AAAA-MM)'}), 400
+    try:
+        apercu = apercu_salaires(session.get('structure_id'), annee_paie, mois_paie)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+    apercu.update({'success': True, 'rh_url': url_for('rh.gestion_rh') + '#personnel'})
+    return jsonify(apercu)
 
 
 @app.route('/api/abonnement/prix')
@@ -17018,12 +17103,36 @@ def admin_installation_recu(paiement_id):
 
 
 def _executer_ajout_depense(structure_id, montant, motif, motif_personnalise, description, user_name,
-                             moyen_paiement=None, reference_paiement=None, date_paiement=None):
+                             moyen_paiement=None, reference_paiement=None, date_paiement=None,
+                             employe_id=None, employe_ids=None, mois_paie=None):
     """Exécute réellement l'enregistrement de la dépense (caisse, écriture
     comptable...). Lève une exception en cas d'échec.
     moyen_paiement/reference_paiement/date_paiement : justificatif de
     paiement mobile money, renseigné pour la charge "Abonnement
-    SSoftOneV10" (voir api_add_depense), None pour les autres motifs."""
+    SSoftOneV10" (voir api_add_depense), None pour les autres motifs.
+    ⭐ employe_id / employe_ids + mois_paie (AAAA-MM) : charge « Salaire du
+    personnel » liée à la RH (patron, 2026-10-09) — le bulletin est généré
+    et payé par la paie RH (une Dépense par employé, écriture SAL 661...),
+    rien d'autre n'est inséré ici."""
+    if motif == 'salaire' and (employe_id or employe_ids) and mois_paie:
+        from services.paie_service import payer_salaires_depuis_charge
+        annee_p, mois_p = int(str(mois_paie)[:4]), int(str(mois_paie)[5:7])
+        ids = list(employe_ids or []) or [employe_id]
+        resultats = payer_salaires_depuis_charge(structure_id, ids, annee_p, mois_p, user_name)
+        # Solde de caisse (table caisse) recalculé comme pour toute dépense
+        db.execute_query("""
+            INSERT INTO caisse (structure_id, solde_actuel, date_mise_a_jour)
+            VALUES (%s,
+                (SELECT COALESCE(SUM(montant), 0) FROM recettes WHERE structure_id = %s AND (est_annulation IS NULL OR est_annulation = FALSE)) -
+                (SELECT COALESCE(SUM(montant), 0) FROM depenses WHERE structure_id = %s),
+                NOW())
+            ON CONFLICT (structure_id) DO UPDATE SET
+                solde_actuel = EXCLUDED.solde_actuel,
+                date_mise_a_jour = NOW()
+        """, (structure_id, structure_id, structure_id))
+        return {'success': True, 'id': resultats[0]['depense_id'] if resultats else None,
+                'paies': resultats, 'montant_total': sum(r['net'] for r in resultats)}
+
     if True:
         # 🔥 Verifier le solde suffisant (exclure annulations)
         recettes_total = db.execute_query("""
@@ -18191,6 +18300,10 @@ def api_valider_demande(demande_id):
                 moyen_paiement=payload.get('moyen_paiement'),
                 reference_paiement=payload.get('reference_paiement'),
                 date_paiement=payload.get('date_paiement'),
+                # ⭐ salaire lié à la RH (patron, 2026-10-09)
+                employe_id=payload.get('employe_id'),
+                employe_ids=payload.get('employe_ids'),
+                mois_paie=payload.get('mois'),
             )
         elif demande.type_demande == 'encaissement_assurance':
             resultat = _executer_paiement_assurance(

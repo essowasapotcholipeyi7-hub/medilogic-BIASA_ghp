@@ -82,13 +82,37 @@ def taux_pour(structure_id, nom_acte, medecin_id, taux_par_acte=None, affectatio
     return float(taux) if taux else None
 
 
-def parametres_rsps(structure_id):
-    """(taux_rsps, actif) — 5 % par défaut, modifiable par structure."""
+def taux_rsps_pour_medecin(taux_avec_nif, taux_sans_nif, actif, nif):
+    """⭐ Patron (2026-10-09) : « la RSPS concerne les médecins qui ont le
+    NIF ». (taux, actif) pour CE médecin : avec NIF -> taux de la structure ;
+    sans NIF -> taux_sans_nif (0 par défaut, donc pas de retenue)."""
+    if not actif:
+        return 0.0, False
+    if (nif or '').strip():
+        return float(taux_avec_nif or 0), bool(taux_avec_nif)
+    t = float(taux_sans_nif or 0)
+    return t, t > 0
+
+
+def parametres_rsps_structure(structure_id):
+    """(taux_rsps, actif, taux_rsps_sans_nif) — réglage de la structure."""
     p = ParametragePartMedecin.query.filter_by(structure_id=structure_id).first()
     if not p:
-        return TAUX_RSPS_DEFAUT, True
+        return TAUX_RSPS_DEFAUT, True, 0.0
     taux = float(p.taux_rsps) if p.taux_rsps is not None else TAUX_RSPS_DEFAUT
-    return taux, bool(p.rsps_active) if p.rsps_active is not None else True
+    actif = bool(p.rsps_active) if p.rsps_active is not None else True
+    sans_nif = float(p.taux_rsps_sans_nif) if p.taux_rsps_sans_nif is not None else 0.0
+    return taux, actif, sans_nif
+
+
+def parametres_rsps(structure_id, medecin=None):
+    """(taux_rsps, actif) — 5 % par défaut, modifiable par structure.
+    Avec `medecin` : taux réellement applicable à ce médecin selon son NIF
+    (voir taux_rsps_pour_medecin)."""
+    taux, actif, sans_nif = parametres_rsps_structure(structure_id)
+    if medecin is None:
+        return taux, actif
+    return taux_rsps_pour_medecin(taux, sans_nif, actif, getattr(medecin, 'nif', None))
 
 
 def calculer_rsps(montant_brut, taux_rsps, actif=True):
@@ -177,7 +201,7 @@ def calculer_periode_part_medecin(structure_id, medecin_id, date_debut, date_fin
 
     base_calcul = sum(float(p.prix or 0) * int(p.quantite or 1) for p in lignes)
     montant_total = round(sum(float(p.montant_part_medecin or 0) for p in lignes), 2)
-    taux_rsps, rsps_active = parametres_rsps(structure_id)
+    taux_rsps, rsps_active = parametres_rsps(structure_id, medecin)   # ⭐ selon le NIF du médecin
     montant_rsps, montant_net = calculer_rsps(montant_total, taux_rsps, rsps_active)
 
     periode = PeriodePartMedecin(
@@ -223,7 +247,7 @@ def point_prestations(structure_id, medecin_id=None, date_debut=None, date_fin=N
             lignes = [p for p in lignes if p.created_at.date() >= date_debut]
         if date_fin:
             lignes = [p for p in lignes if p.created_at.date() <= date_fin]
-        taux_rsps, actif = parametres_rsps(structure_id)
+        taux_rsps, actif = parametres_rsps(structure_id, Medecin.query.get(medecin_id) if medecin_id else None)
         if not actif:
             taux_rsps = 0
         montant_rsps = montant_net = None  # calculés plus bas sur le brut
@@ -253,6 +277,7 @@ def point_prestations(structure_id, medecin_id=None, date_debut=None, date_fin=N
     medecin = Medecin.query.get(medecin_id) if medecin_id else None
     return {
         'medecin': medecin, 'medecin_nom': medecin.get_nom_complet() if medecin else '—',
+        'medecin_nif': (medecin.nif or '').strip() if medecin else '',
         'date_debut': date_debut, 'date_fin': date_fin, 'periode': periode,
         'recap': list(recap.values()), 'details': details, 'nb_actes': sum(d['quantite'] for d in details),
         'base': base, 'brut': brut, 'taux_rsps': taux_rsps, 'rsps': montant_rsps, 'net': montant_net,
