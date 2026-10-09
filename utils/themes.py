@@ -262,6 +262,43 @@ a:not(.btn):not(.nav-link):not(.nav-link-top):not(.dropdown-item):not(.list-grou
 .nav-tabs .nav-link.active {{ background: {carte} !important; border-color: {_rgba(texte, 0.15)} {_rgba(texte, 0.15)} {carte} !important; }}
 hr {{ border-color: {_rgba(texte, 0.2)} !important; opacity: 1; }}
 ::-webkit-scrollbar {{ width: 10px; height: 10px; }} ::-webkit-scrollbar-track {{ background: {fond}; }} ::-webkit-scrollbar-thumb {{ background: {_rgba(texte, 0.25)}; border-radius: 6px; }}
+/* ⭐ menu déroulant du menu horizontal (survol) */
+.top-nav .mega-menu {{ background: {carte} !important; border: 1px solid {_rgba(texte, 0.15)} !important; box-shadow: none !important; backdrop-filter: none !important; }}
+.top-nav .mega-menu .menu-item, .top-nav .mega-menu .menu-item i {{ color: {texte} !important; }}
+.top-nav .mega-menu .menu-item:hover {{ background: {_rgba(p, 0.12)} !important; color: {p} !important; border-left-color: {p} !important; }}
+.top-nav .mega-menu .menu-item:hover i {{ color: {p} !important; }}
+.top-nav .mega-menu .menu-divider {{ background: {_rgba(texte, 0.12)} !important; }}
+.top-nav .mega-menu h6, .top-nav .mega-menu .menu-title, .top-nav .mega-menu .text-muted {{ color: {_rgba(texte, 0.65)} !important; }}
+/* barre des onglets du domaine (sous le menu) */
+.nav-domaine a {{ background: {carte} !important; color: {texte} !important; border-color: {_rgba(texte, 0.18)} !important; }}
+.nav-domaine a:hover {{ color: {p} !important; border-color: {p} !important; }}
+.nav-domaine a.actif {{ background: {_rgba(p, 0.18)} !important; color: {p} !important; border-color: {p} !important; }}
+.nav-domaine-titre, .nav-domaine a.nav-domaine-accueil {{ color: {_rgba(texte, 0.7)} !important; }}
+/* page d'accueil (hub) */
+.hub {{ --hub-navy: {texte}; --hub-vert: {p}; --hub-gris: {_rgba(texte, 0.7)}; --hub-bord: {_rgba(texte, 0.14)}; }}
+.hub-hero {{ background: {_eclaircir_sombre(carte)} !important; border: 1px solid {_rgba(texte, 0.12)}; }}
+.hub-hero .btn-tableau-bord {{ background: {_rgba(p, 0.15)} !important; color: {p} !important; border: 1px solid {p} !important; }}
+.hub-hero .btn-tableau-bord:hover {{ background: {p} !important; color: {bt} !important; }}
+.hub-recherche input {{ background: {_assombrir(carte, 0.8)} !important; color: {texte} !important; box-shadow: none !important; border: 1px solid {_rgba(texte, 0.2)} !important; }}
+.hub-recherche input::placeholder {{ color: {_rgba(texte, 0.5)}; }}
+.hub-recherche input:focus {{ outline-color: {_rgba(p, 0.6)} !important; }}
+.hub-resultats {{ background: {carte} !important; border-color: {_rgba(texte, 0.15)} !important; }}
+.hub-resultats a {{ color: {texte} !important; border-bottom-color: {_rgba(texte, 0.1)} !important; }}
+.hub-resultats a:hover, .hub-resultats a.selectionne {{ background: {_rgba(p, 0.12)} !important; }}
+.hub-resultats small, .hub-resultats .vide {{ color: {_rgba(texte, 0.65)} !important; }}
+.hub-a-traiter a {{ background: {_rgba(texte, 0.08)} !important; color: {texte} !important; border-color: {_rgba(texte, 0.2)} !important; }}
+.hub-a-traiter a.urgent {{ background: rgba(250, 213, 138, 0.18) !important; color: #FAD58A !important; border-color: transparent !important; }}
+.hub-recents a, .hub-etape, .hub-domaine {{ background: {carte} !important; border-color: {_rgba(texte, 0.14)} !important; color: {texte} !important; box-shadow: none !important; }}
+.hub-recents a:hover {{ color: {p} !important; border-color: {p} !important; }}
+.hub-etape a {{ background: {_rgba(texte, 0.06)} !important; color: {texte} !important; border-color: {_rgba(texte, 0.18)} !important; }}
+.hub-etape a:hover {{ background: {_rgba(p, 0.15)} !important; color: {p} !important; border-color: {p} !important; }}
+.hub-etape-icone {{ background: {_rgba(p, 0.15)} !important; color: {p} !important; }}
+.hub-etape-num {{ background: {p} !important; color: {bt} !important; }}
+.hub-etape:not(:last-child)::after {{ background: {_rgba(texte, 0.12)} !important; color: {_rgba(texte, 0.7)} !important; }}
+.hub-etape-titre, .hub-domaine-titre, .hub-domaine a {{ color: {texte} !important; }}
+.hub-etape-desc, .hub-domaine a small, .hub-section-titre, .hub-recents-titre {{ color: {_rgba(texte, 0.7)} !important; }}
+.hub-domaine a:hover {{ background: {_rgba(p, 0.12)} !important; color: {p} !important; }}
+.hub-domaine-icone {{ background: {_rgba(p, 0.15)} !important; color: {p} !important; }}
 .form-control, .form-select, .input-group-text {{ background-color: {_assombrir(carte, 0.8)} !important; color: {texte} !important; border-color: {_rgba(texte, 0.2)} !important; }}
 .form-control::placeholder {{ color: {_rgba(texte, 0.5)} !important; }}
 .text-muted, .text-dark, .text-secondary {{ color: {_rgba(texte, 0.7)} !important; }}
