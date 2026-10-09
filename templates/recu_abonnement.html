@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reçu abonnement SSoftOneV10 #{{ depense.id }}</title>
+    <title>Reçu {{ libelle_recu|default('Abonnement SSoftOneV10') }} #{{ depense.id }}</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- html2pdf pour l'export PDF — même pattern que factures/recu_paiement.html -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
@@ -127,7 +127,7 @@
         </div>
 
         <div class="montant-box">
-            <div style="font-size: 12px; color: #555;">Abonnement SSoftOneV10</div>
+            <div style="font-size: 12px; color: #555;">{{ libelle_recu|default('Abonnement SSoftOneV10') }}</div>
             <div class="montant">{{ '{:,}'.format(depense.montant|round(0)|int).replace(',', ' ') }} FCFA</div>
         </div>
 
@@ -189,7 +189,7 @@
         // fichier via un simple lien wa.me, il faut l'attacher à la main
         // dans la conversation une fois le fichier téléchargé.
         telechargerPDF();
-        const message = `Reçu de paiement — Abonnement SSoftOneV10\n` +
+        const message = `Reçu de paiement — {{ libelle_recu|default('Abonnement SSoftOneV10') }}\n` +
             `Structure : {{ structure_nom or '' }}\n` +
             `Montant : {{ '{:,}'.format(depense.montant|round(0)|int).replace(',', ' ') }} FCFA\n` +
             `Moyen : {{ MOYENS_PAIEMENT_LABELS.get(depense.moyen_paiement, depense.moyen_paiement) or '' }}\n` +

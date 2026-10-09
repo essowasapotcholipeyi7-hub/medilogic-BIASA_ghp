@@ -161,7 +161,9 @@ def catalogue_pour_structure(structure_id, utilisateur_id=None):
     out = []
     for t in catalogue():
         etat = etat_pour(structure_id, t)
+        lic = licence_pour(structure_id, t['cle']) if t['payant'] else None
         out.append({**t, 'etat': etat['etat'], 'utilisable': etat['utilisable'], 'jours_restants': etat['jours_restants'],
+                    'paye_verifie': bool(lic and lic.paye_verifie), 'moyen_paiement': (lic.moyen_paiement if lic else None),
                     'fin_essai': etat['fin_essai'].strftime('%d/%m/%Y') if etat['fin_essai'] else None,
                     'libelle_etat': libelle_etat(etat, t), 'actif': t['cle'] == actif['theme']['cle'] and not actif['bloque'],
                     'css': generer_css(t['variables_effectives'])})
@@ -299,6 +301,53 @@ def proposer_depuis_logo(url):
     return variables, palette
 
 
+# ------------------------------------------------------------------ paiement par la structure
+MOYENS_PAIEMENT_THEME = {'mixx': 'Mixx by Yas', 'moov': 'Moov Money', 'especes': 'Espèces', 'virement': 'Virement bancaire'}
+MOTIF_THEME = 'theme_logiciel'
+
+
+def payer_theme(structure_id, cle, moyen_paiement, reference_paiement, date_paiement, user_nom='', demande_id=None):
+    """⭐ La structure déclare le paiement d'un thème payant : licence payée
+    tout de suite (accès immédiat), marquée « à vérifier » par l'éditeur.
+    Lève ValueError (thème gratuit, déjà payé, justificatif manquant)."""
+    theme = theme_par_cle(cle)
+    if not theme or not theme['payant']:
+        raise ValueError("Ce thème n'est pas payant (ou n'existe pas).")
+    if moyen_paiement not in MOYENS_PAIEMENT_THEME:
+        raise ValueError('Moyen de paiement invalide.')
+    reference_paiement = (reference_paiement or '').strip()
+    if moyen_paiement in ('mixx', 'moov', 'virement') and not reference_paiement:
+        raise ValueError(f"La référence du paiement {MOYENS_PAIEMENT_THEME[moyen_paiement]} est obligatoire.")
+    if date_paiement > date.today():
+        raise ValueError('La date du paiement ne peut pas être dans le futur.')
+    lic = licence_pour(structure_id, cle)
+    if lic and lic.paye:
+        raise ValueError('Ce thème est déjà payé pour votre structure.')
+    if not lic:
+        lic = LicenceTheme(structure_id=structure_id, theme_cle=cle, debut_essai=date.today(), fin_essai=date.today())
+        db.session.add(lic)
+    lic.paye = True
+    lic.paye_verifie = False
+    lic.date_paiement = date_paiement
+    lic.montant_paye = float(theme['prix'] or 0)
+    lic.moyen_paiement = moyen_paiement
+    lic.reference_paiement = reference_paiement[:100] or None
+    lic.demande_id = demande_id
+    lic.note = f"Paiement déclaré par la structure ({MOYENS_PAIEMENT_THEME[moyen_paiement]}{' réf. ' + reference_paiement if reference_paiement else ''})"[:300]
+    lic.accorde_par = user_nom or 'structure'
+    db.session.commit()
+    invalider_cache(structure_id)
+    return lic
+
+
+def lier_depense_theme(structure_id, cle, depense_id):
+    """Après validation de la charge : rattache la Dépense à la licence."""
+    lic = licence_pour(structure_id, cle)
+    if lic:
+        lic.depense_id = depense_id
+        db.session.commit()
+
+
 # ------------------------------------------------------------------ super-admin
 def enregistrer_theme(data, nouveau=False):
     """Crée ou modifie un thème du catalogue (super-admin)."""
@@ -362,8 +411,13 @@ def accorder_licence(structure_id, cle, action, jours=None, montant=None, note='
         db.session.add(lic)
     if action == 'payer':
         lic.paye = True
-        lic.date_paiement = date.today()
-        lic.montant_paye = float(montant if montant is not None else theme['prix'] or 0)
+        lic.paye_verifie = True
+        lic.date_paiement = lic.date_paiement or date.today()
+        lic.montant_paye = float(montant if montant is not None else (lic.montant_paye or theme['prix'] or 0))
+    elif action == 'confirmer':
+        if not lic.paye:
+            raise ValueError("Aucun paiement déclaré à confirmer pour cette licence.")
+        lic.paye_verifie = True
     elif action == 'essai':
         j = int(jours or theme['jours_essai'] or 14)
         # essai en cours : prolongé de j jours après sa fin ; sinon j jours à partir d'aujourd'hui
@@ -391,7 +445,9 @@ def licences_toutes():
                     'debut_essai': lic.debut_essai.strftime('%d/%m/%Y') if lic.debut_essai else '',
                     'fin_essai': lic.fin_essai.strftime('%d/%m/%Y') if lic.fin_essai else '',
                     'paye': bool(lic.paye), 'date_paiement': lic.date_paiement.strftime('%d/%m/%Y') if lic.date_paiement else '',
-                    'montant_paye': float(lic.montant_paye or 0), 'note': lic.note or '', 'accorde_par': lic.accorde_par or ''})
+                    'montant_paye': float(lic.montant_paye or 0), 'note': lic.note or '', 'accorde_par': lic.accorde_par or '',
+                    'paye_verifie': bool(lic.paye_verifie), 'moyen_paiement': MOYENS_PAIEMENT_THEME.get(lic.moyen_paiement or '', lic.moyen_paiement or ''),
+                    'reference_paiement': lic.reference_paiement or '', 'depense_id': lic.depense_id, 'demande_id': lic.demande_id})
     return out
 
 

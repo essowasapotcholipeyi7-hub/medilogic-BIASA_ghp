@@ -218,6 +218,7 @@
                                     {% elif d.motif == 'fourniture' %}motif-fourniture
                                     {% else %}motif-autres{% endif %}">
                                     {% if d.motif == 'abonnement_ssoftonev10' %}Abonnement SSoftOneV10
+                                    {% elif d.motif == 'theme_logiciel' %}Thème du logiciel {{ d.motif_personnalise or '' }}
                                     {% elif d.motif == 'salaire' %}Salaire
                                     {% elif d.motif == 'assurance' %}Assurance
                                     {% elif d.motif == 'reparation' %}Reparation
@@ -236,7 +237,7 @@
                             <td>{{ d.description or '-' }}</td>
                             <td>{{ d.created_by_nom or '-' }}</td>
                             <td>
-                                {% if d.motif == 'abonnement_ssoftonev10' %}
+                                {% if d.motif in ('abonnement_ssoftonev10', 'theme_logiciel') %}
                                 <a href="{{ url_for('recu_abonnement', depense_id=d.id) }}" target="_blank"
                                    class="btn btn-sm btn-success" title="Voir le reçu (PDF / WhatsApp)">
                                     <i class="fas fa-receipt"></i>

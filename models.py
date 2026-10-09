@@ -4847,6 +4847,16 @@ class LicenceTheme(db.Model):
     montant_paye = db.Column(db.Numeric, default=0)
     note = db.Column(db.String(300))
     accorde_par = db.Column(db.String(150))
+    # ⭐ Paiement déclaré par la structure depuis la page Thème & apparence
+    # (patron, 2026-10-09 : « remplir un paiement de thème, référence si
+    # c'est Mixx, avec accès immédiat après paiement ») — enregistré comme
+    # charge (demande_id -> Depense après validation), accès immédiat,
+    # vérification ensuite par l'éditeur (paye_verifie).
+    moyen_paiement = db.Column(db.String(30))
+    reference_paiement = db.Column(db.String(100))
+    paye_verifie = db.Column(db.Boolean, default=False)
+    demande_id = db.Column(db.Integer)
+    depense_id = db.Column(db.Integer)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     __table_args__ = (db.UniqueConstraint('structure_id', 'theme_cle', name='uq_licence_theme_structure'),)
 

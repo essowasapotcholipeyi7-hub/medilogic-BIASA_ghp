@@ -61,6 +61,43 @@
     {% endif %}
 </div>
 
+<!-- ⭐ Modal paiement d'un thème (patron, 2026-10-09) -->
+<div class="modal fade" id="modalPaiementTheme" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning"><h5 class="modal-title" id="payTitre">Payer le thème</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <input type="hidden" id="payCle">
+                <div class="alert alert-info py-2 small">
+                    <i class="fas fa-bolt me-1"></i> <strong>Accès immédiat</strong> dès l'enregistrement du paiement. La charge correspondante part en validation (reçu disponible ensuite, écriture comptable) et l'éditeur SSoftOneV10 vérifie le paiement.
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small mb-0">Moyen de paiement *</label>
+                    <select class="form-select" id="payMoyen" onchange="majReferencePaiement()">
+                        <option value="mixx">Mixx by Yas</option>
+                        <option value="moov">Moov Money</option>
+                        <option value="virement">Virement bancaire</option>
+                        <option value="especes">Espèces</option>
+                    </select>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small mb-0">Référence du paiement</label>
+                    <input type="text" class="form-control" id="payReference" placeholder="Ex. numéro de la transaction">
+                    <div class="form-text" id="payReferenceAide"></div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small mb-0">Date du paiement *</label>
+                    <input type="date" class="form-control" id="payDate">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-warning" id="btnPayer" onclick="confirmerPaiement()"><i class="fas fa-check"></i> Enregistrer le paiement et activer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 const VARIABLES = {{ variables|tojson }};
 const POLICES = {{ polices|tojson }};
@@ -86,15 +123,47 @@ function apercuCarte(v) {
 
 function badgeEtat(t) {
     const cls = {gratuit: 'bg-success', paye: 'bg-success', essai: 'bg-warning text-dark', expire: 'bg-danger', aucune: 'bg-info text-dark'}[t.etat] || 'bg-secondary';
-    return `<span class="badge ${cls}">${esc(t.libelle_etat)}</span>`;
+    const suffixe = (t.etat === 'paye' && !t.paye_verifie) ? ' <small>(vérification du paiement par l\'éditeur en cours)</small>' : '';
+    return `<span class="badge ${cls}">${esc(t.libelle_etat)}${suffixe}</span>`;
 }
 
 function boutonTheme(t) {
     if (t.actif) return '<button class="btn btn-sm btn-success w-100" disabled><i class="fas fa-check"></i> Thème actif</button>';
     if (!t.payant || t.utilisable) return `<button class="btn btn-sm btn-primary w-100" onclick="choisir('${t.cle}')"><i class="fas fa-magic"></i> Utiliser ce thème</button>`;
     if (PORTEE !== 'structure') return `<button class="btn btn-sm btn-outline-secondary w-100" disabled title="Thème payant : à activer par l'administrateur de la structure"><i class="fas fa-lock"></i> À activer par l'administrateur</button>`;
-    if (t.etat === 'aucune') return `<button class="btn btn-sm btn-outline-primary w-100" onclick="choisir('${t.cle}')"><i class="fas fa-hourglass-start"></i> Essayer ${t.jours_essai} jour${t.jours_essai > 1 ? 's' : ''} gratuitement</button>`;
-    return `<button class="btn btn-sm btn-outline-secondary w-100" disabled title="Contactez l'éditeur SSoftOneV10 pour activer ce thème"><i class="fas fa-lock"></i> Essai terminé — activation par l'éditeur (${F(t.prix)} une fois)</button>`;
+    if (t.etat === 'aucune') return `<button class="btn btn-sm btn-outline-primary w-100" onclick="choisir('${t.cle}')"><i class="fas fa-hourglass-start"></i> Essayer ${t.jours_essai} jour${t.jours_essai > 1 ? 's' : ''} gratuitement</button>` + boutonPayer(t);
+    return `<button class="btn btn-sm btn-outline-secondary w-100" disabled title="Essai terminé"><i class="fas fa-lock"></i> Essai terminé</button>` + boutonPayer(t);
+}
+// ⭐ Paiement depuis l'application (patron, 2026-10-09) : Mixx / Moov / espèces / virement + référence, accès immédiat
+function boutonPayer(t) {
+    if (PORTEE !== 'structure' || !t.payant || t.etat === 'paye') return '';
+    return `<button class="btn btn-sm btn-warning w-100 mt-1" onclick="ouvrirPaiement('${t.cle}')"><i class="fas fa-mobile-screen-button"></i> Payer ${F(t.prix)} (une seule fois) — accès immédiat</button>`;
+}
+function ouvrirPaiement(cle) {
+    const t = DONNEES.themes.find(x => x.cle === cle); if (!t) return;
+    document.getElementById('payCle').value = cle;
+    document.getElementById('payTitre').textContent = `Payer le thème « ${t.nom} » — ${F(t.prix)} une seule fois`;
+    document.getElementById('payMoyen').value = 'mixx';
+    document.getElementById('payReference').value = '';
+    const d = document.getElementById('payDate'); d.value = new Date().toISOString().slice(0, 10); d.max = d.value;
+    majReferencePaiement();
+    new bootstrap.Modal(document.getElementById('modalPaiementTheme')).show();
+}
+function majReferencePaiement() {
+    const m = document.getElementById('payMoyen').value;
+    document.getElementById('payReferenceAide').textContent = m === 'especes' ? 'Référence facultative (reçu, quittance...).' : 'Référence obligatoire : numéro de la transaction ' + document.getElementById('payMoyen').selectedOptions[0].text + '.';
+}
+async function confirmerPaiement() {
+    const btn = document.getElementById('btnPayer'); btn.disabled = true;
+    const d = await fetch('/api/theme/payer', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+        cle: document.getElementById('payCle').value, moyen_paiement: document.getElementById('payMoyen').value,
+        reference_paiement: document.getElementById('payReference').value.trim(), date_paiement: document.getElementById('payDate').value})}).then(r => r.json()).catch(() => ({success: false, error: 'Erreur réseau'}));
+    btn.disabled = false;
+    if (!d.success) { await afficherMessage(d.error || 'Erreur', {type: 'danger'}); return; }
+    bootstrap.Modal.getInstance(document.getElementById('modalPaiementTheme')).hide();
+    appliquerCss(d.css);
+    await afficherMessage(d.message, {type: 'success'});
+    charger();
 }
 
 function afficher() {

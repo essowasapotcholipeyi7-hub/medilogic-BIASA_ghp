@@ -47,7 +47,7 @@
     <div class="card-header"><i class="fas fa-list me-1"></i> Licences (essais et activations)</div>
     <div class="table-responsive">
         <table class="table table-sm table-hover mb-0 align-middle">
-            <thead class="table-light"><tr><th>Structure</th><th>Thème</th><th>État</th><th>Essai</th><th>Paiement</th><th>Note</th><th></th></tr></thead>
+            <thead class="table-light"><tr><th>Structure</th><th>Thème</th><th>État</th><th>Essai</th><th>Paiement déclaré</th><th>Note</th><th></th></tr></thead>
             <tbody id="corpsLicences"></tbody>
         </table>
     </div>
@@ -119,11 +119,12 @@ function charger() {
         document.getElementById('corpsLicences').innerHTML = LICENCES.length ? LICENCES.map(l => `<tr>
             <td>${esc(nomStructure(l.structure_id))}${CHOISIS[String(l.structure_id)] === l.theme_cle ? ' <span class="badge bg-light text-dark border">en cours d\'utilisation</span>' : ''}</td>
             <td>${esc(l.theme_nom)}</td>
-            <td><span class="badge ${cls[l.etat] || 'bg-secondary'}">${esc(l.libelle_etat)}</span></td>
+            <td><span class="badge ${cls[l.etat] || 'bg-secondary'}">${esc(l.libelle_etat)}</span>${l.paye && !l.paye_verifie ? ' <span class="badge bg-danger">à vérifier</span>' : (l.paye ? ' <span class="badge bg-light text-dark border">vérifié</span>' : '')}</td>
             <td class="small">${l.debut_essai ? l.debut_essai + ' → ' + l.fin_essai : '—'}</td>
-            <td class="small">${l.paye ? 'Payé le ' + l.date_paiement + (l.montant_paye ? ' (' + F(l.montant_paye) + ')' : '') : '—'}</td>
+            <td class="small">${l.paye ? 'Payé le ' + l.date_paiement + (l.montant_paye ? ' (' + F(l.montant_paye) + ')' : '') + (l.moyen_paiement ? '<br>' + esc(l.moyen_paiement) + (l.reference_paiement ? ' réf. <strong>' + esc(l.reference_paiement) + '</strong>' : '') : '') + (l.depense_id ? '<br><span class="text-muted">charge n° ' + l.depense_id + ' validée</span>' : (l.demande_id ? '<br><span class="text-muted">charge en attente de validation</span>' : '')) : '—'}</td>
             <td class="small">${esc(l.note)}${l.accorde_par ? '<div class="text-muted">par ' + esc(l.accorde_par) + '</div>' : ''}</td>
             <td class="text-end text-nowrap">
+                ${l.paye && !l.paye_verifie ? `<button class="btn btn-sm btn-success" onclick="licence('confirmer', ${l.structure_id}, '${l.theme_cle}')" title="Confirmer le paiement déclaré (vérifié sur Mixx / Moov / banque)"><i class="fas fa-check-double"></i> Confirmer</button>` : ''}
                 ${!l.paye ? `<button class="btn btn-sm btn-success" onclick="licence('payer', ${l.structure_id}, '${l.theme_cle}')" title="Marquer payé"><i class="fas fa-check"></i></button>
                 <button class="btn btn-sm btn-outline-warning" onclick="licence('essai', ${l.structure_id}, '${l.theme_cle}')" title="Prolonger l'essai"><i class="fas fa-plus"></i> ${document.getElementById('licJours').value || 14} j</button>` : ''}
                 <button class="btn btn-sm btn-outline-danger" onclick="licence('revoquer', ${l.structure_id}, '${l.theme_cle}')" title="Révoquer (la structure repasse sur le thème d'origine)"><i class="fas fa-ban"></i></button>
@@ -187,7 +188,7 @@ async function licence(action, structure_id, cle) {
     cle = cle || document.getElementById('licTheme').value;
     if (!cle) { await afficherMessage('Choisissez un thème payant.'); return; }
     const jours = parseInt(document.getElementById('licJours').value, 10) || 14;
-    const libelles = {payer: 'Marquer ce thème comme PAYÉ (activation définitive) pour ' + nomStructure(structure_id) + ' ?', essai: `Accorder / prolonger un essai de ${jours} jour(s) pour ` + nomStructure(structure_id) + ' ?', revoquer: 'Révoquer la licence ? La structure repassera sur le thème d\'origine.'};
+    const libelles = {payer: 'Marquer ce thème comme PAYÉ (activation définitive) pour ' + nomStructure(structure_id) + ' ?', essai: `Accorder / prolonger un essai de ${jours} jour(s) pour ` + nomStructure(structure_id) + ' ?', revoquer: 'Révoquer la licence ? La structure repassera sur le thème d\'origine.', confirmer: 'Confirmer le paiement déclaré par ' + nomStructure(structure_id) + ' (vous l\'avez vérifié) ?'};
     if (!await demanderConfirmation(libelles[action])) return;
     const d = await fetch('/api/admin/themes/licence', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({structure_id, cle, action, jours})}).then(r => r.json());
     if (!d.success) { await afficherMessage(d.error || 'Erreur', {type: 'danger'}); return; }

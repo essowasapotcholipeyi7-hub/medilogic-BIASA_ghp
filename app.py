@@ -6315,6 +6315,68 @@ def api_theme_css_apercu():
     return jsonify({'success': True, 'css': theme_service.css_apercu(cle, data.get('personnalisation') or {})})
 
 
+@app.route('/api/theme/payer', methods=['POST'])
+@login_required
+def api_theme_payer():
+    """⭐ Paiement d'un thème payant déclaré par l'admin de la structure
+    (patron, 2026-10-09) : Mixx by Yas / Moov Money / espèces / virement +
+    référence. Enregistré comme CHARGE (même circuit que l'abonnement :
+    demande de validation -> dépense, caisse, comptabilité, reçu) et accès
+    IMMÉDIAT au thème ; l'éditeur vérifie ensuite depuis l'admin globale."""
+    if _portee_theme() != 'structure':
+        return jsonify({'success': False, 'error': "Seul l'administrateur de la structure peut payer un thème."}), 403
+    data = request.json or {}
+    structure_id = session.get('structure_id')
+    cle = (data.get('cle') or '').strip()
+    theme = theme_service.theme_par_cle(cle)
+    if not theme or not theme['payant']:
+        return jsonify({'success': False, 'error': "Thème introuvable ou gratuit."}), 400
+    moyen = (data.get('moyen_paiement') or '').strip()
+    reference = (data.get('reference_paiement') or '').strip()
+    try:
+        date_paiement = _parser_date_ymd(data.get('date_paiement') or date.today())
+    except ValueError:
+        return jsonify({'success': False, 'error': 'Date de paiement invalide.'}), 400
+    montant = float(theme['prix'] or 0)
+    libelle_moyen = theme_service.MOYENS_PAIEMENT_THEME.get(moyen, moyen)
+    try:
+        # contrôles (sans rien écrire) avant de créer la charge
+        lic = theme_service.licence_pour(structure_id, cle)
+        if lic and lic.paye:
+            return jsonify({'success': False, 'error': 'Ce thème est déjà payé pour votre structure.'}), 400
+        if moyen not in theme_service.MOYENS_PAIEMENT_THEME:
+            return jsonify({'success': False, 'error': 'Choisissez le moyen de paiement.'}), 400
+        if moyen in ('mixx', 'moov', 'virement') and not reference:
+            return jsonify({'success': False, 'error': f"La référence du paiement {libelle_moyen} est obligatoire."}), 400
+        if date_paiement > date.today():
+            return jsonify({'success': False, 'error': 'La date du paiement ne peut pas être dans le futur.'}), 400
+        resume = (f"Dépense — Thème du logiciel « {theme['nom']} » — {int(montant):,} FCFA (une seule fois)".replace(',', ' ')
+                  + f" — {libelle_moyen}" + (f" réf. {reference}" if reference else '') + f" du {date_paiement.strftime('%d/%m/%Y')}")
+        demande = _demander_validation(
+            structure_id=structure_id, type_demande='depense',
+            payload={'montant': montant, 'motif': theme_service.MOTIF_THEME,
+                     'motif_personnalise': f"Thème « {theme['nom']} »",
+                     'description': f"Thème du logiciel « {theme['nom']} » — {int(montant):,} FCFA, une seule fois — {libelle_moyen}".replace(',', ' ')
+                                    + (f" réf. {reference}" if reference else ''),
+                     'moyen_paiement': moyen, 'reference_paiement': reference,
+                     'date_paiement': date_paiement.strftime('%Y-%m-%d'), 'theme_cle': cle},
+            resume=resume[:500], user_id=session.get('user_id'), user_name=session.get('user_name', 'Admin'),
+        )
+        theme_service.payer_theme(structure_id, cle, moyen, reference, date_paiement, session.get('user_name', ''), demande_id=demande.id)
+        actif = theme_service.choisir_theme(structure_id, cle, session.get('user_name', ''), portee='structure')
+        from utils.themes import generer_css
+        return jsonify({'success': True, 'css': generer_css(actif['variables']), 'theme': cle, 'demande_id': demande.id,
+                        'message': f"Paiement de {int(montant):,} FCFA enregistré ({libelle_moyen}{' réf. ' + reference if reference else ''}). ".replace(',', ' ')
+                                   + f"Le thème « {theme['nom']} » est activé immédiatement pour toute la structure. "
+                                   + "La charge correspondante est en attente de validation (reçu disponible ensuite) et l'éditeur vérifiera le paiement."})
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/theme/couleurs-logo')
 @login_required
 def api_theme_couleurs_logo():
@@ -17130,10 +17192,12 @@ def recu_abonnement(depense_id):
         return redirect(url_for('dashboard'))
     structure_id = session.get('structure_id')
     depense = Depense.query.filter_by(id=depense_id, structure_id=structure_id).first()
-    if not depense or depense.motif != MOTIF_ABONNEMENT:
+    if not depense or depense.motif not in (MOTIF_ABONNEMENT, theme_service.MOTIF_THEME):
         flash('Reçu introuvable', 'danger')
         return redirect(url_for('dashboard'))
-    return render_template('recu_abonnement.html', depense=depense,
+    # ⭐ Même reçu pour le paiement d'un thème du logiciel (2026-10-09)
+    libelle_recu = ('Thème du logiciel ' + (depense.motif_personnalise or '')).strip() if depense.motif == theme_service.MOTIF_THEME else 'Abonnement SSoftOneV10'
+    return render_template('recu_abonnement.html', depense=depense, libelle_recu=libelle_recu,
                             structure_nom=session.get('structure_nom', ''))
 
 
@@ -18637,7 +18701,13 @@ def api_valider_demande(demande_id):
     # ⭐ Charge "Abonnement SSoftOneV10" validée : renvoie tout de suite ce
     # qu'il faut pour proposer le reçu (PDF) et l'envoi WhatsApp, sans aller
     # le rechercher ailleurs — voir validations_en_attente.html.
-    if demande.type_demande == 'depense' and payload.get('motif') == MOTIF_ABONNEMENT and isinstance(resultat, dict) and resultat.get('id'):
+    # ⭐ Thème du logiciel payé (patron, 2026-10-09) : dépense rattachée à la licence + même reçu
+    if demande.type_demande == 'depense' and payload.get('motif') == theme_service.MOTIF_THEME and isinstance(resultat, dict) and resultat.get('id'):
+        try:
+            theme_service.lier_depense_theme(structure_id, payload.get('theme_cle'), resultat['id'])
+        except Exception as e:
+            print(f"⚠️ Licence thème non rattachée à la dépense #{resultat['id']}: {e}")
+    if demande.type_demande == 'depense' and payload.get('motif') in (MOTIF_ABONNEMENT, theme_service.MOTIF_THEME) and isinstance(resultat, dict) and resultat.get('id'):
         reponse['recu'] = {
             'depense_id': resultat['id'],
             'structure_nom': session.get('structure_nom', ''),
