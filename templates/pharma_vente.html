@@ -664,6 +664,39 @@ function changerVariantePbrLigne(index, valeur) {
 // ⭐ PBR privé saisi à la main pour UNE ligne (patron, 2026-10-05) — voir
 // actes_vente.html (même règle) : proposé seulement sans PBR enregistré,
 // vide = taux sur le prix, PBR AMU jamais touché.
+// ⭐ Patron (2026-10-09) : « s'il y a plusieurs articles, on ne peut pas
+// sélectionner un ou plusieurs et dire que l'assurance a refusé de prendre »
+// (plafond du panier, refus...) : chaque ligne porte un bouton par assurance
+// active — ✓ prise / ✗ refusée pour CETTE vente. L'autre assurance continue
+// de prendre l'article. La valeur du catalogue est conservée pour affichage ;
+// le serveur reçoit prise_en_charge_amu / prise_en_charge_cac déjà par ligne.
+function basculerCouverture(index, cle) {
+    const champ = cle === 'amu' ? 'prise_en_charge_amu' : 'prise_en_charge_cac';
+    const item = panier[index];
+    if (item['_catalogue_' + champ] === undefined) item['_catalogue_' + champ] = item[champ] !== false;
+    item[champ] = item[champ] === false;
+    afficherPanier();
+    if (typeof calculerTotal === 'function') calculerTotal();
+    if (typeof calculerRendu === 'function') calculerRendu();
+}
+function boutonCouverture(item, index, cle, libelle) {
+    const champ = cle === 'amu' ? 'prise_en_charge_amu' : 'prise_en_charge_cac';
+    const pris = item[champ] !== false;
+    const origine = item['_catalogue_' + champ];
+    const manuel = origine !== undefined && origine !== pris;
+    const titre = pris
+        ? 'Cliquer si ' + libelle + ' ne prend pas cet article pour cette vente (plafond du panier, refus...)'
+        : 'Cliquer pour que ' + libelle + ' reprenne cet article';
+    return '<button type="button" class="btn btn-sm ' + (pris ? 'btn-outline-success' : 'btn-danger') + ' py-0 px-1 mb-1" style="font-size:11px; white-space:nowrap;" title="' + titre.replace(/"/g, '&quot;') + '" onclick="basculerCouverture(' + index + ', \'' + cle + '\')">'
+        + (pris ? '✓ ' : '✗ ') + libelle + (manuel ? ' <small>(modifié)</small>' : (!pris ? ' <small>(catalogue)</small>' : '')) + '</button>';
+}
+function celluleCouverturePharma(item, index, ctx) {
+    let html = '';
+    if (ctx.amu) html += boutonCouverture(item, index, 'amu', 'AMU') + ' ';
+    if (ctx.privee) html += boutonCouverture(item, index, 'cac', patientAssurance2 || 'Privée');
+    return html ? '<div class="mt-1">' + html + '</div>' : '';
+}
+
 function modifierPbrPrive(index, valeur) {
     const pbr = parseFloat(valeur);
     if (isNaN(pbr) || pbr <= 0) delete panier[index].pbr_prive_modifie;
@@ -1661,7 +1694,7 @@ function afficherPanier() {
         const row = tbody.insertRow();
 
         const cellNom = row.insertCell(0);
-        cellNom.innerHTML = `<strong>${item.nom}</strong>`;
+        cellNom.innerHTML = `<strong>${item.nom}</strong>` + celluleCouverturePharma(item, index, ctxPanier);
         cellNom.style.verticalAlign = 'middle';
 
         // ⭐ Patron (2026-10-04) : afficher directement le tarif ENREGISTRÉ

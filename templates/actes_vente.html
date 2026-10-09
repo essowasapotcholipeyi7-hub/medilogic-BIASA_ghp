@@ -124,6 +124,7 @@
                 data-taux-medecin="{{ acte.taux_medecin or '' }}"
                 data-medecin-obligatoire="{{ 'true' if acte.medecin_obligatoire else '' }}"
                 data-medecins-affectes="{{ acte.medecins_affectes or '' }}"
+                data-type-prestation="{{ acte.type_prestation or '' }}"
                 data-service-devine="{{ acte.service_devine or '' }}"
                 data-nom="{{ acte.nom }}"
                 data-statut="{{ acte.statut or 'direct' }}"
@@ -295,6 +296,13 @@
                                 <th colspan="6" class="text-end text-info">Prise en charge complémentaire :</th>
                                 <th id="priseEnCharge2" class="text-end text-info">0 FCFA</th>
                                 <th></th>
+                            </tr>
+                            <!-- ⭐ Patron (2026-10-09) : examens bio / imagerie > seuil avec une assurance privée -->
+                            <tr id="alerteExamensPrivee" style="display:none;">
+                                <th colspan="8" class="text-start" style="background:#fff4e5; color:#7a4a0c; font-weight:500;">
+                                    <i class="fas fa-exclamation-triangle me-1"></i><span id="alerteExamensTexte"></span>
+                                    <button type="button" class="btn btn-sm btn-warning ms-2" onclick="proposerProformaExamens(true)"><i class="fas fa-file-invoice me-1"></i>Faire une proforma</button>
+                                </th>
                             </tr>
                             <tr>
                                 <th colspan="6" class="text-end text-danger">À payer par le patient :</th>
@@ -1556,6 +1564,40 @@ function changerVariantePbrLigne(index, valeur) {
 // privé s'applique au prix clinique ; ce champ permet de fixer une autre
 // base. Vide = retour à la règle (taux sur le prix). Jamais proposé quand un
 // PBR est enregistré, et sans effet sur le PBR AMU.
+// ⭐ Patron (2026-10-09) : « s'il y a plusieurs articles, on ne peut pas
+// sélectionner un ou plusieurs et dire que l'assurance a refusé de prendre »
+// (plafond du panier, refus...) : chaque ligne porte un bouton par assurance
+// active — ✓ prise / ✗ refusée pour CETTE vente. L'autre assurance continue
+// de prendre l'article. La valeur du catalogue est conservée pour affichage ;
+// le serveur reçoit prise_en_charge_amu / prise_en_charge_cac déjà par ligne.
+function basculerCouverture(index, cle) {
+    const champ = cle === 'amu' ? 'prise_en_charge_amu' : 'prise_en_charge_cac';
+    const item = panier[index];
+    if (item['_catalogue_' + champ] === undefined) item['_catalogue_' + champ] = item[champ] !== false;
+    item[champ] = item[champ] === false;
+    afficherPanier();
+    if (typeof calculerTotal === 'function') calculerTotal();
+    if (typeof calculerRendu === 'function') calculerRendu();
+}
+function boutonCouverture(item, index, cle, libelle) {
+    const champ = cle === 'amu' ? 'prise_en_charge_amu' : 'prise_en_charge_cac';
+    const pris = item[champ] !== false;
+    const origine = item['_catalogue_' + champ];
+    const manuel = origine !== undefined && origine !== pris;
+    const titre = pris
+        ? 'Cliquer si ' + libelle + ' ne prend pas cet article pour cette vente (plafond du panier, refus...)'
+        : 'Cliquer pour que ' + libelle + ' reprenne cet article';
+    return '<button type="button" class="btn btn-sm ' + (pris ? 'btn-outline-success' : 'btn-danger') + ' py-0 px-1 mb-1" style="font-size:11px; white-space:nowrap;" title="' + titre.replace(/"/g, '&quot;') + '" onclick="basculerCouverture(' + index + ', \'' + cle + '\')">'
+        + (pris ? '✓ ' : '✗ ') + libelle + (manuel ? ' <small>(modifié)</small>' : (!pris ? ' <small>(catalogue)</small>' : '')) + '</button>';
+}
+function celluleCouvertureActes(item, index, ctx) {
+    let html = '';
+    if (ctx.amu) html += boutonCouverture(item, index, 'amu', 'AMU') + '<br>';
+    if (ctx.privee) html += boutonCouverture(item, index, 'cac', patientAssurance2 || 'Privée');
+    if (!html) html = (item.prise_en_charge_amu === false || item.prise_en_charge_cac === false) ? '<span class="text-muted small">non pris en charge</span>' : '<span class="text-muted small">—</span>';
+    return html;
+}
+
 function modifierPbrPrive(index, valeur) {
     const pbr = parseFloat(valeur);
     if (isNaN(pbr) || pbr <= 0) delete panier[index].pbr_prive_modifie;
@@ -1667,17 +1709,8 @@ function afficherPanier() {
 
         // 🔥 Ajouter une colonne pour l'état de prise en charge
         let cellPriseEnCharge = row.insertCell(1);
-        let status = '';
-        if (item.prise_en_charge_amu === false && item.prise_en_charge_cac === false) {
-            status = '🚫 AMU & CAC';
-        } else if (item.prise_en_charge_amu === false) {
-            status = '⚠️ AMU ❌';
-        } else if (item.prise_en_charge_cac === false) {
-            status = '⚠️ CAC ❌';
-        } else {
-            status = '✅ AMU & CAC';
-        }
-        cellPriseEnCharge.innerHTML = status;
+        cellPriseEnCharge.className = 'text-center';
+        cellPriseEnCharge.innerHTML = celluleCouvertureActes(item, index, ctxPanier);
 
         // ⭐ Tarif appliqué (prix de base modifiable ; tarif privé / prix non
         // assuré signalé quand il remplace le prix de base).
@@ -1752,6 +1785,7 @@ function afficherPanier() {
     }
     
     document.getElementById('baseRemboursement').innerHTML = Math.round(pbrTotal).toLocaleString('fr-FR') + ' FCFA';
+    majAlerteExamensPrivee(ctxPanier);
     calculerTotal();
     calculerRendu();
 }
@@ -2283,6 +2317,68 @@ function hideProgress() {
 // ============================================
 // FINALISER LA VENTE
 // ============================================
+// ============================================
+// ⭐ Patron (2026-10-09) : « pour les assurances privées quand le montant des
+// examens de biologie ou d'imagerie dépasse 60 000, que ça propose de faire une
+// facture proforma pour le patient — il va aller voir l'assurance d'abord ; si
+// on dit oui ça nous amène dans proforma, remplie des articles concernés.
+// L'AMU ne fait pas ce genre de plafond. »
+// ============================================
+const SEUIL_PROFORMA_EXAMENS = {{ seuil_proforma_examens|default(60000)|tojson }};
+const TYPE_PRESTATION_PAR_ACTE = {};
+document.querySelectorAll('#acteSelect option[data-type-prestation]').forEach(o => {
+    const t = o.getAttribute('data-type-prestation');
+    if (t) TYPE_PRESTATION_PAR_ACTE[o.getAttribute('data-nom')] = t;
+});
+function examensLaboImagerie(ctx) {
+    ctx = ctx || contexteTarificationActes();
+    const lignes = [];
+    let total = 0;
+    panier.forEach((item, index) => {
+        const type = item.type_prestation || TYPE_PRESTATION_PAR_ACTE[item.nom];
+        if (type !== 'analyse' && type !== 'examen') return;
+        const l = repartirLigneActes(item, ctx);
+        total += l.total;
+        lignes.push({ item: item, index: index, type: type, total: l.total, tarif: l.tarif });
+    });
+    return { lignes: lignes, total: total };
+}
+function majAlerteExamensPrivee(ctx) {
+    const row = document.getElementById('alerteExamensPrivee');
+    if (!row) return;
+    const ex = examensLaboImagerie(ctx);
+    const concerne = !!ctx.privee && ex.total > SEUIL_PROFORMA_EXAMENS;
+    row.style.display = concerne ? '' : 'none';
+    if (concerne) {
+        document.getElementById('alerteExamensTexte').innerHTML = 'Examens de biologie / imagerie : <strong>' + Math.round(ex.total).toLocaleString('fr-FR') + ' F</strong> (plus de ' + SEUIL_PROFORMA_EXAMENS.toLocaleString('fr-FR') + ' F) — l\'assurance <strong>' + (patientAssurance2 || 'privée') + '</strong> peut plafonner ce panier : proposez une proforma au patient, qu\'il aille voir son assurance d\'abord.';
+    }
+}
+async function proposerProformaExamens(forcer) {
+    const ctx = contexteTarificationActes();
+    const ex = examensLaboImagerie(ctx);
+    if (!forcer && !(ctx.privee && ex.total > SEUIL_PROFORMA_EXAMENS)) return false;
+    if (!ex.lignes.length) { await afficherMessage('Aucun examen de biologie / imagerie dans le panier.'); return false; }
+    const ok = await demanderConfirmation(
+        'Examens de biologie / imagerie : ' + Math.round(ex.total).toLocaleString('fr-FR') + ' F, au-delà de ' + SEUIL_PROFORMA_EXAMENS.toLocaleString('fr-FR') + ' F.\n\n'
+        + 'L\'assurance ' + (patientAssurance2 || 'privée') + ' peut plafonner ce panier. Faire une facture PROFORMA pour que le patient aille voir son assurance d\'abord ?\n\n'
+        + 'Oui : la proforma s\'ouvre déjà remplie avec ces examens. Non : continuer la vente.',
+        {type: 'warning', texteOk: 'Oui, faire la proforma', texteAnnuler: 'Non, continuer la vente'});
+    if (!ok) return false;
+    ouvrirProformaExamens(ex);
+    return true;
+}
+function ouvrirProformaExamens(ex) {
+    ex = ex || examensLaboImagerie();
+    const prefill = {
+        patient_id: patientId, patient_nom: (typeof patientName !== 'undefined' ? patientName : '') || '',
+        motif: 'Examens de biologie / imagerie à soumettre à l\'assurance ' + (patientAssurance2 || '') + ' (montant supérieur à ' + SEUIL_PROFORMA_EXAMENS.toLocaleString('fr-FR') + ' F)',
+        articles: ex.lignes.map(l => ({ nom: l.item.nom, prix: l.tarif, pbr: l.item.pbr, quantite: l.item.quantite,
+                                        prise_en_charge_amu: l.item.prise_en_charge_amu !== false, prise_en_charge_cac: l.item.prise_en_charge_cac !== false })),
+    };
+    try { sessionStorage.setItem('proformaPrefill', JSON.stringify(prefill)); } catch (e) {}
+    window.open('/proformas?prefill=1', '_blank');
+}
+
 async function finaliserVente() {
     console.log('=== FINALISATION VENTE ACTES ===');
     console.log('Panier:', panier);
@@ -2301,6 +2397,9 @@ async function finaliserVente() {
         await afficherMessage('Veuillez sélectionner un patient');
         return;
     }
+
+    // ⭐ Assurance privée + examens bio / imagerie > seuil : proposer la proforma
+    if (await proposerProformaExamens(false)) return;
 
     if (!await afficherRecapVente()) {
         return;

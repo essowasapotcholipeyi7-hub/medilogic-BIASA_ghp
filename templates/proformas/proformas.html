@@ -3824,6 +3824,28 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (idAConvertir) {
         await convertirEnVente(parseInt(idAConvertir, 10));
     }
+
+    // ⭐ Patron (2026-10-09) : proforma pré-remplie depuis Actes & Vente
+    // (examens de biologie / imagerie au-delà du seuil avec une assurance
+    // privée) — ?prefill=1 + sessionStorage.proformaPrefill {patient_id, articles, motif}.
+    const prefillBrut = paramsUrl.get('prefill') ? sessionStorage.getItem('proformaPrefill') : null;
+    if (prefillBrut) {
+        try {
+            const prefill = JSON.parse(prefillBrut);
+            sessionStorage.removeItem('proformaPrefill');
+            nouvelleProforma();
+            const select = document.getElementById('patientSelect');
+            const trouve = () => select.querySelector('option[value="' + prefill.patient_id + '"]');
+            for (let i = 0; i < 60 && !trouve(); i++) await new Promise(r => setTimeout(r, 250));
+            // la liste des patients est rechargée une 2e fois par nouvelleProforma() : laisser retomber
+            await new Promise(r => setTimeout(r, 900));
+            if (trouve()) { select.value = String(prefill.patient_id); chargerInfosPatient(); }
+            (prefill.articles || []).forEach(a => ajouterAuPanierComplet(a.nom, 'acte', parseFloat(a.prix) || 0, a.pbr, parseInt(a.quantite, 10) || 1, a.prise_en_charge_amu, a.prise_en_charge_cac));
+            if (prefill.motif) document.getElementById('proformaNotes').value = prefill.motif;
+            calculerTotal();
+            if (!trouve()) await afficherMessage('Patient introuvable dans la liste : sélectionnez-le à la main.', {type: 'warning'});
+        } catch (e) { console.error('Pré-remplissage proforma', e); }
+    }
 });
 </script>
 {% endblock %}

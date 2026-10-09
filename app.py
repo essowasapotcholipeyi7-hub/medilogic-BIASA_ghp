@@ -23,7 +23,7 @@ from utils.onglets_recherchables import onglets_recherchables
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
 from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure
 from services.tarification_service import repartir_ligne, repartir_panier
-from services.laboratoire_service import charger_classification_actes, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
+from services.laboratoire_service import charger_classification_actes, determiner_type_prestation, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
 from services.part_medecin_service import (charger_taux_part_medecin, creer_lignes_part_medecin, prestations_en_attente,
                                            calculer_periode_part_medecin, charger_toujours_demander_medecin,
                                            charger_affectations, charger_medecins_affectes_csv, parametres_rsps,
@@ -41,6 +41,12 @@ ABONNEMENT_WHATSAPP_NUMERO = "22893850013"
 MOYENS_PAIEMENT_LABELS = {'mixx': 'Mixx by Yas', 'moov': 'Moov Money'}
 from models import RendezVous, LienPartageRendezVous, ParametrageRendezVous
 from models import AffectationPartMedecin, ParametragePartMedecin, VersementRsps
+
+# ⭐ Patron (2026-10-09) : pour les assurances PRIVÉES seulement (l'AMU ne
+# plafonne pas), au-delà de ce montant d'examens de biologie / imagerie dans le
+# panier, Actes & Vente propose une proforma pour que le patient aille voir
+# son assurance d'abord.
+SEUIL_PROFORMA_EXAMENS_ASSURANCE_PRIVEE = 60000
 from services.paiement_consultation_service import PaiementConsultationService
 from models import Medecin, Patient, Structure, DemandeEntentePrealable
 from utils.remplissage_pdf_amu import remplir_entente_prealable
@@ -4029,6 +4035,7 @@ def actes_vente():
     # défini — voir data-medecin-obligatoire.
     toujours_demander_medecin_par_acte = charger_toujours_demander_medecin(structure_id)
     medecins_affectes_par_acte = charger_medecins_affectes_csv(structure_id)
+    classification_examens_par_acte = charger_classification_actes(structure_id)
 
     # ⭐ Recettes par service (patron, 2026-09-30) : {nom_acte: service_id}
     # deviné pour poser un data-service-devine sur chaque <option>, et
@@ -4119,6 +4126,7 @@ def actes_vente():
                 'taux_medecin': taux_part_medecin_par_acte.get(a.get('nom', '')) or None,
                 'medecin_obligatoire': bool(toujours_demander_medecin_par_acte.get(a.get('nom', ''))),
                 'medecins_affectes': medecins_affectes_par_acte.get(a.get('nom', '')) or '',
+                'type_prestation': determiner_type_prestation(a.get('nom', ''), classification_examens_par_acte),
                 'service_devine': (
                     classification_service_par_acte.get(a.get('nom', ''))
                     or (deviner_service_acte(a.get('nom', ''), services_liste_vente) or {}).get('id')
@@ -4244,6 +4252,7 @@ def actes_vente():
 
     return render_template('actes_vente.html',
                           actes=actes_filtres,
+                          seuil_proforma_examens=SEUIL_PROFORMA_EXAMENS_ASSURANCE_PRIVEE,
                           # ⭐ Prix non assuré par acte (patron, 2026-10-04) — miroir JS
                           # de services/tarification_service.py dans le panier.
                           prix_non_assure_par_acte=charger_prix_non_assure(structure_id),
@@ -15934,6 +15943,7 @@ def api_get_actes():
         taux_part_medecin_par_acte = charger_taux_part_medecin(structure_id)
         toujours_demander_medecin_par_acte = charger_toujours_demander_medecin(structure_id)
         medecins_affectes_par_acte = charger_medecins_affectes_csv(structure_id)
+        classification_examens_par_acte = charger_classification_actes(structure_id)
 
         # ⭐ Recettes par service (patron, 2026-09-30) : service deviné pour
         # chaque acte — utilisé pour pré-remplir le sélecteur "Service" côté
@@ -16078,6 +16088,7 @@ def api_get_actes():
                     'taux_medecin': taux_part_medecin_par_acte.get(str(acte_nom).strip()) or None,
                     'medecin_obligatoire': bool(toujours_demander_medecin_par_acte.get(str(acte_nom).strip())),
                     'medecins_affectes': medecins_affectes_par_acte.get(str(acte_nom).strip()) or '',
+                    'type_prestation': determiner_type_prestation(str(acte_nom).strip(), classification_examens_par_acte),
                     'choix_service_actif': parametrage_service.choix_service_actif,
                     'service_devine': (
                         classification_service.get(str(acte_nom).strip())
@@ -20047,6 +20058,7 @@ def page_hospitalisation_suivi(hospit_id):
     taux_part_medecin_par_acte = charger_taux_part_medecin(structure_id)
     toujours_demander_medecin_par_acte = charger_toujours_demander_medecin(structure_id)
     medecins_affectes_par_acte = charger_medecins_affectes_csv(structure_id)
+    classification_examens_par_acte = charger_classification_actes(structure_id)
     medecins_actifs_hospit = Medecin.query.filter_by(structure_id=structure_id, actif=True).order_by(Medecin.nom).all()
     medecins_liste = [{'id': m.id, 'nom_complet': m.get_nom_complet()} for m in medecins_actifs_hospit]
     medecin_du_jour = medecin_du_jour_actuel(structure_id)
@@ -20867,6 +20879,7 @@ def page_soins_ambulatoires_suivi(episode_id):
     taux_part_medecin_par_acte = charger_taux_part_medecin(structure_id)
     toujours_demander_medecin_par_acte = charger_toujours_demander_medecin(structure_id)
     medecins_affectes_par_acte = charger_medecins_affectes_csv(structure_id)
+    classification_examens_par_acte = charger_classification_actes(structure_id)
     medecins_actifs_ambu = Medecin.query.filter_by(structure_id=structure_id, actif=True).order_by(Medecin.nom).all()
     medecins_liste = [{'id': m.id, 'nom_complet': m.get_nom_complet()} for m in medecins_actifs_ambu]
     medecin_du_jour = medecin_du_jour_actuel(structure_id)
