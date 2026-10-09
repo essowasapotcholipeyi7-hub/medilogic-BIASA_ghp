@@ -16,7 +16,7 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, CorrespondanceSalleAmu, CodeBarreArticle, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient, FaqQuestion, FaqQuestionUtilisateur, JourFerie, TauxPartMedecin, PrestationMedecin, PeriodePartMedecin, MedecinDuJour, ParametrageService, ClassificationServiceActe, RecetteService
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, CorrespondanceSalleAmu, CodeBarreArticle, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient, FaqQuestion, FaqQuestionUtilisateur, JourFerie, TauxPartMedecin, PrestationMedecin, PeriodePartMedecin, MedecinDuJour, ParametrageService, ClassificationServiceActe, RecetteService, LogoStructure
 from utils.permissions import a_acces, PERMISSIONS
 from utils.themes import VARIABLES_THEME, POLICES
 from services import theme_service
@@ -6383,7 +6383,20 @@ def api_theme_couleurs_logo():
     """⭐ Palette proposée à partir du logo de la structure (patron : « régler
     en fonction des couleurs de son logo »)."""
     try:
-        variables, palette = theme_service.proposer_depuis_logo(session.get('structure_logo') or '')
+        structure_id = session.get('structure_id')
+        logo = LogoStructure.query.filter_by(structure_id=structure_id).first()
+        if logo:
+            variables, palette = theme_service.proposer_depuis_octets(bytes(logo.png))
+        else:
+            url = (session.get('structure_logo') or '').strip()
+            if not url:   # session périmée (logo saisi après connexion) : relire la fiche structure
+                try:
+                    url = (_structure_infos_sheet(structure_id).get('logo_url') or '').strip()
+                    if url:
+                        session['structure_logo'] = url
+                except Exception:
+                    url = ''
+            variables, palette = theme_service.proposer_depuis_logo(url)
         return jsonify({'success': True, 'variables': variables, 'palette': palette})
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -6726,6 +6739,93 @@ def api_delete_acte(acte_id):
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+# ============================================================
+# ⭐ LOGO DE LA STRUCTURE TÉLÉVERSÉ (patron, 2026-10-09) — voir utils/logo.py,
+# models.LogoStructure. Recadrage automatique + fond nettoyé, stocké en base,
+# servi par /structure/<id>/logo.png, URL écrite dans la fiche structure.
+# ============================================================
+def _ecrire_logo_url_fiche(structure_id, url):
+    """Écrit logo_url (colonne L) dans la feuille structures — non bloquant."""
+    try:
+        sheet_structures = sheets_helper.spreadsheet.worksheet("structures")
+        cell = sheet_structures.find(str(structure_id), in_column=1)
+        if not cell:
+            return False
+        row_num = cell.row
+        current_row = sheet_structures.row_values(row_num)
+        while len(current_row) <= 11:
+            current_row.append('')
+        current_row[11] = url
+        sheet_structures.update(f'A{row_num}:L{row_num}', [current_row[:12]])
+        return True
+    except Exception as e:
+        print(f"⚠️ logo_url non écrit dans la fiche structure {structure_id}: {e}")
+        return False
+
+
+@app.route('/structure/<int(signed=True):structure_id>/logo.png')
+def logo_structure(structure_id):
+    """Logo nettoyé de la structure — public (impressions, portail, WhatsApp)."""
+    logo = LogoStructure.query.filter_by(structure_id=structure_id).first()
+    if not logo:
+        return Response('Aucun logo', status=404)
+    resp = Response(bytes(logo.png), mimetype='image/png')
+    resp.headers['Cache-Control'] = 'public, max-age=86400'
+    resp.headers['Content-Disposition'] = f'inline; filename="logo_{structure_id}.png"'
+    return resp
+
+
+@app.route('/api/structure/logo', methods=['POST', 'DELETE'])
+@login_required
+@admin_required
+def api_structure_logo():
+    """Téléversement (n'importe quelle taille / format d'image) : recadrage
+    automatique sur le contenu, fond extérieur rendu transparent, réduction
+    à 512 px, puis l'URL servie par l'appli remplace logo_url partout."""
+    from utils.logo import nettoyer_logo
+    structure_id = session.get('structure_id')
+    if request.method == 'DELETE':
+        LogoStructure.query.filter_by(structure_id=structure_id).delete()
+        db.session.commit()
+        _ecrire_logo_url_fiche(structure_id, '')
+        session['structure_logo'] = ''
+        return jsonify({'success': True, 'url': ''})
+    fichier = request.files.get('logo')
+    if not fichier or not fichier.filename:
+        return jsonify({'success': False, 'error': 'Choisissez un fichier image (PNG, JPG, WEBP...).'}), 400
+    octets = fichier.read(6 * 1024 * 1024 + 1)
+    if len(octets) > 6 * 1024 * 1024:
+        return jsonify({'success': False, 'error': 'Image trop lourde (plus de 6 Mo).'}), 400
+    try:
+        png, largeur, hauteur = nettoyer_logo(octets)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': f"Image illisible ({e})."}), 400
+    try:
+        logo = LogoStructure.query.filter_by(structure_id=structure_id).first()
+        if not logo:
+            logo = LogoStructure(structure_id=structure_id, version=0)
+            db.session.add(logo)
+        logo.png = png
+        logo.largeur, logo.hauteur = largeur, hauteur
+        logo.version = int(logo.version or 0) + 1
+        logo.nom_fichier = (fichier.filename or '')[:200]
+        logo.modifie_le = datetime.utcnow()
+        logo.modifie_par = session.get('user_name', '')
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+    url = url_for('logo_structure', structure_id=structure_id, v=logo.version, _external=True)
+    fiche_ok = _ecrire_logo_url_fiche(structure_id, url)
+    session['structure_logo'] = url
+    theme_service.invalider_cache(structure_id)
+    return jsonify({'success': True, 'url': url, 'largeur': largeur, 'hauteur': hauteur, 'fiche_ok': fiche_ok,
+                    'message': f"Logo enregistré ({largeur}×{hauteur} px, recadré et fond nettoyé)."
+                               + ('' if fiche_ok else " L'URL n'a pas pu être écrite dans la fiche structure : enregistrez-la ci-dessous.")})
+
+
 @app.route('/api/admin/structure', methods=['PUT'])
 @login_required
 @admin_required
@@ -6767,6 +6867,12 @@ def api_update_structure():
 
             # Mettre à jour jusqu'à la colonne Q (index 16)
             sheet_structures.update(f'A{row_num}:Q{row_num}', [current_row])
+            # ⭐ La barre du haut lit session.structure_logo / structure_nom :
+            # rafraîchis tout de suite (avant : logo changé invisible jusqu'à la reconnexion)
+            session['structure_logo'] = data.get('logo_url', '') or ''
+            if data.get('nom'):
+                session['structure_nom'] = data.get('nom')
+            theme_service.invalider_cache(structure_id)
             return jsonify({'success': True})
         else:
             return jsonify({'success': False, 'error': 'Structure non trouvée'}), 404

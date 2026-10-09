@@ -277,6 +277,18 @@ def couleurs_depuis_image(donnees):
     return couleurs
 
 
+def proposer_depuis_octets(donnees):
+    """Palette de thème depuis les octets d'une image (logo stocké)."""
+    try:
+        couleurs = couleurs_depuis_image(donnees)
+    except Exception as e:
+        raise ValueError(f"Le logo n'est pas une image lisible ({e}).")
+    variables, palette = palette_vers_variables(couleurs)
+    if not variables:
+        raise ValueError("Le logo ne contient pas de couleur franche exploitable (noir, blanc ou gris seulement).")
+    return variables, palette
+
+
 def proposer_depuis_logo(url):
     """Télécharge le logo de la structure et propose des variables de thème.
     Retourne (variables, palette_hex) ou lève ValueError (message clair)."""

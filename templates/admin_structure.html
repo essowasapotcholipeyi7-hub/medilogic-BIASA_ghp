@@ -157,8 +157,26 @@
                                     <label class="form-label">Adresse</label>
                                     <input type="text" class="form-control" id="structureAdresse" value="{{ structure_info.get('adresse', '') if structure_info else '' }}">
                                 </div>
+                                <!-- ⭐ Patron (2026-10-09) : logo téléversé depuis l'interface, recadrage
+                                     automatique quelle que soit la taille, fond nettoyé (utils/logo.py). -->
                                 <div class="col-md-12 mb-3">
-                                    <label class="form-label">Logo URL</label>
+                                    <label class="form-label">Logo de la structure</label>
+                                    <div class="d-flex align-items-center gap-3 flex-wrap border rounded p-2 bg-light">
+                                        <div style="width:96px; height:96px; border-radius:12px; background:#fff; border:1px solid #dee2e6; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+                                            {% set _logo = structure_info.get('logo_url', '') if structure_info else '' %}
+                                            <img id="logoApercu" src="{{ _logo }}" alt="" style="max-width:92px; max-height:92px; {{ '' if _logo else 'display:none;' }}" onerror="this.style.display='none'; document.getElementById('logoVide').style.display='';">
+                                            <span id="logoVide" class="text-muted small" style="{{ 'display:none;' if _logo else '' }}">Aucun logo</span>
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <input type="file" class="form-control form-control-sm" id="logoFichier" accept="image/*">
+                                            <div class="form-text">N'importe quelle taille ou format (PNG, JPG, WEBP...). Le logo est <strong>recadré automatiquement</strong> sur son contenu, le fond autour est nettoyé et l'image réduite pour rester nette partout (barre du haut, factures, reçus, portail).</div>
+                                            <button type="button" class="btn btn-sm btn-primary mt-1" id="btnLogoUpload" onclick="televerserLogo()"><i class="fas fa-upload"></i> Téléverser et recadrer</button>
+                                            <button type="button" class="btn btn-sm btn-outline-danger mt-1" onclick="supprimerLogo()" title="Retirer le logo téléversé"><i class="fas fa-trash"></i></button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-12 mb-3">
+                                    <label class="form-label">Logo URL <small class="text-muted">(rempli automatiquement après téléversement ; vous pouvez aussi coller une adresse)</small></label>
                                     <input type="text" class="form-control" id="structureLogo" value="{{ structure_info.get('logo_url', '') if structure_info else '' }}" placeholder="https://...">
                                 </div>
                                 <!-- ⭐ Texte d'en-tête A4 (spécialités, labo...) — n'apparaît
@@ -603,6 +621,27 @@ async function deleteUser(id) {
 // arrivait quand même, getElementById('structureForm') vaudrait null pour
 // lui et l'erreur JS qui en résulte arrêterait l'exécution du reste du
 // script (y compris l'enregistrement du DOMContentLoaded plus bas).
+// ⭐ Téléversement du logo (recadrage automatique côté serveur)
+async function televerserLogo() {
+    const f = document.getElementById('logoFichier').files[0];
+    if (!f) { await afficherMessage('Choisissez d\'abord un fichier image.'); return; }
+    const btn = document.getElementById('btnLogoUpload'); btn.disabled = true;
+    const fd = new FormData(); fd.append('logo', f);
+    const d = await fetch('/api/structure/logo', {method: 'POST', body: fd}).then(r => r.json()).catch(() => ({success: false, error: 'Erreur réseau'}));
+    btn.disabled = false;
+    if (!d.success) { await afficherMessage(d.error || 'Erreur', {type: 'danger'}); return; }
+    document.getElementById('structureLogo').value = d.url;
+    const img = document.getElementById('logoApercu'); img.src = d.url; img.style.display = '';
+    document.getElementById('logoVide').style.display = 'none';
+    await afficherMessage(d.message, {type: 'success'});
+    location.reload();
+}
+async function supprimerLogo() {
+    if (!await demanderConfirmation('Retirer le logo de la structure ?')) return;
+    const d = await fetch('/api/structure/logo', {method: 'DELETE'}).then(r => r.json());
+    if (d.success) { document.getElementById('structureLogo').value = ''; location.reload(); }
+}
+
 document.getElementById('structureForm').addEventListener('submit', function(e) {
     e.preventDefault();
     const data = {

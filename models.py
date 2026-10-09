@@ -4816,6 +4816,26 @@ class ThemeStructure(db.Model):
     modifie_par = db.Column(db.String(150))
 
 
+class LogoStructure(db.Model):
+    """⭐ Logo téléversé depuis l'application (patron, 2026-10-09 : « que
+    chaque structure puisse uploader son logo depuis son interface avec un
+    recadrage automatique ») — PNG nettoyé/recadré (utils/logo.py), stocké
+    ici (pas de disque persistant sur l'hébergement) et servi par
+    /structure/<id>/logo.png ; cette URL est écrite dans logo_url de la
+    fiche structure (feuille) pour tous les usages existants (barre du
+    haut, impressions, portail...)."""
+    __tablename__ = 'logos_structure'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False, unique=True)
+    png = db.Column(db.LargeBinary, nullable=False)
+    largeur = db.Column(db.Integer)
+    hauteur = db.Column(db.Integer)
+    version = db.Column(db.Integer, default=1)
+    nom_fichier = db.Column(db.String(200))
+    modifie_le = db.Column(db.DateTime, default=datetime.utcnow)
+    modifie_par = db.Column(db.String(150))
+
+
 class ThemeUtilisateur(db.Model):
     """⭐ Apparence PERSONNELLE d'un utilisateur (patron, 2026-10-09 : « que
     les autres puissent aussi faire ce réglage mais que ça s'applique
