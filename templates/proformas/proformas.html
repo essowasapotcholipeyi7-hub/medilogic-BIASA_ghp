@@ -1493,6 +1493,32 @@ async function viderPanier() {
 // ============================================
 // AFFICHER PANIER
 // ============================================
+// ⭐ Patron (2026-10-09) : refus d'une assurance ligne par ligne, comme dans
+// Actes & Vente (plafond du panier, refus...) — l'autre assurance continue de
+// prendre l'article ; prise_en_charge_amu / _cac partent déjà par ligne.
+function basculerCouvertureProforma(index, cle) {
+    const champ = cle === 'amu' ? 'prise_en_charge_amu' : 'prise_en_charge_cac';
+    const item = panierArticles[index];
+    if (item['_catalogue_' + champ] === undefined) item['_catalogue_' + champ] = item[champ] !== false;
+    item[champ] = item[champ] === false;
+    afficherPanier();
+}
+function boutonCouvertureProforma(item, index, cle, libelle) {
+    const champ = cle === 'amu' ? 'prise_en_charge_amu' : 'prise_en_charge_cac';
+    const pris = item[champ] !== false;
+    const origine = item['_catalogue_' + champ];
+    const manuel = origine !== undefined && origine !== pris;
+    const titre = pris ? 'Cliquer si ' + libelle + ' ne prend pas cet article (plafond, refus...)' : 'Cliquer pour que ' + libelle + ' reprenne cet article';
+    return '<button type="button" class="btn btn-sm ' + (pris ? 'btn-outline-success' : 'btn-danger') + ' py-0 px-1" style="font-size:11px; white-space:nowrap;" title="' + titre.replace(/"/g, '&quot;') + '" onclick="basculerCouvertureProforma(' + index + ', \'' + cle + '\')">'
+        + (pris ? '✓ ' : '✗ ') + libelle + (manuel ? ' <small>(modifié)</small>' : (!pris ? ' <small>(catalogue)</small>' : '')) + '</button>';
+}
+function celluleCouvertureProforma(item, index, amuActive, cacActive) {
+    let html = '';
+    if (amuActive) html += boutonCouvertureProforma(item, index, 'amu', 'AMU') + ' ';
+    if (cacActive) html += boutonCouvertureProforma(item, index, 'cac', assurance2Nom || 'Privée');
+    return html ? '<div class="mt-1">' + html + '</div>' : '';
+}
+
 function afficherPanier() {
     const tbody = document.getElementById('panierBody');
     tbody.innerHTML = '';
@@ -1550,7 +1576,7 @@ function afficherPanier() {
 
         const row = tbody.insertRow();
         row.innerHTML = `
-            <td>${item.nom}</td>
+            <td>${item.nom}${celluleCouvertureProforma(item, index, estAssurePourPanier && tauxAMUPourPanier > 0, assurance2Active)}</td>
             <td>
                 <span class="badge ${item.type === 'acte' ? 'bg-primary' : 'bg-success'}">
                     ${item.type === 'acte' ? 'Acte' : 'Produit'}

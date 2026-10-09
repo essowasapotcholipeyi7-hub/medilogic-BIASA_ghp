@@ -20360,6 +20360,35 @@ def api_ajouter_soin_hospitalisation(hospit_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/hospitalisation/<int:hospit_id>/soins/<int:soin_id>/couverture', methods=['POST'])
+@login_required
+def api_couverture_soin_hospitalisation(hospit_id, soin_id):
+    """⭐ Patron (2026-10-09) : dire qu'une assurance ne prend pas / reprend
+    CETTE ligne du séjour (plafond du panier, refus...) — l'autre assurance
+    continue de la prendre. Seulement tant que la ligne est en cours."""
+    try:
+        structure_id = session.get('structure_id')
+        soin = SoinHospitalisation.query.filter_by(id=soin_id, hospitalisation_id=hospit_id, structure_id=structure_id).first()
+        if not soin:
+            return jsonify({'success': False, 'error': 'Ligne introuvable'}), 404
+        if soin.statut != 'en_cours':
+            return jsonify({'success': False, 'error': 'Cette ligne est déjà facturée'}), 400
+        data = request.json or {}
+        assurance = data.get('assurance')
+        if assurance not in ('amu', 'cac'):
+            return jsonify({'success': False, 'error': "assurance doit être 'amu' ou 'cac'"}), 400
+        prise = bool(data.get('prise'))
+        if assurance == 'amu':
+            soin.prise_en_charge_amu = prise
+        else:
+            soin.prise_en_charge_cac = prise
+        db.session.commit()
+        return jsonify({'success': True, 'prise_en_charge_amu': bool(soin.prise_en_charge_amu), 'prise_en_charge_cac': bool(soin.prise_en_charge_cac)})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/hospitalisation/<int:hospit_id>/soins/<int:soin_id>', methods=['DELETE'])
 @login_required
 def api_supprimer_soin_hospitalisation(hospit_id, soin_id):
@@ -21058,6 +21087,34 @@ def api_ajouter_ligne_soin_ambulatoire(episode_id):
         db.session.rollback()
         print(f"❌ Erreur ajout ligne soins ambulatoires: {e}")
         import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/soins-ambulatoires/<int:episode_id>/lignes/<int:ligne_id>/couverture', methods=['POST'])
+@login_required
+def api_couverture_ligne_soin_ambulatoire(episode_id, ligne_id):
+    """⭐ Patron (2026-10-09) : refus / reprise d'une assurance sur CETTE
+    ligne de l'épisode, tant qu'elle est en cours."""
+    try:
+        structure_id = session.get('structure_id')
+        ligne = LigneSoinAmbulatoire.query.filter_by(id=ligne_id, soins_ambulatoires_id=episode_id, structure_id=structure_id).first()
+        if not ligne:
+            return jsonify({'success': False, 'error': 'Ligne introuvable'}), 404
+        if ligne.statut != 'en_cours':
+            return jsonify({'success': False, 'error': 'Cette ligne est déjà facturée'}), 400
+        data = request.json or {}
+        assurance = data.get('assurance')
+        if assurance not in ('amu', 'cac'):
+            return jsonify({'success': False, 'error': "assurance doit être 'amu' ou 'cac'"}), 400
+        prise = bool(data.get('prise'))
+        if assurance == 'amu':
+            ligne.prise_en_charge_amu = prise
+        else:
+            ligne.prise_en_charge_cac = prise
+        db.session.commit()
+        return jsonify({'success': True, 'prise_en_charge_amu': bool(ligne.prise_en_charge_amu), 'prise_en_charge_cac': bool(ligne.prise_en_charge_cac)})
+    except Exception as e:
+        db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 

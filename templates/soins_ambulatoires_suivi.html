@@ -375,9 +375,15 @@
                         <td class="text-end">{{ '{:,}'.format(l.prix|round(0)|int).replace(',', ' ') }}</td>
                         <td class="text-end">{{ '{:,}'.format(l.total|round(0)|int).replace(',', ' ') }}</td>
                         <td>
+                            {# ⭐ Patron (2026-10-09) : tant que la ligne est en cours, un clic dit que l'assurance ne prend pas / reprend cette ligne #}
+                            {% if l.statut == 'en_cours' and (patient_a_amu or patient_a_cac) %}
+                                {% if patient_a_amu %}<button type="button" class="btn btn-sm {{ 'btn-outline-success' if l.prise_en_charge_amu else 'btn-danger' }} py-0 px-1" style="font-size:11px;" title="{{ 'Cliquer si l\'AMU ne prend pas cette ligne' if l.prise_en_charge_amu else 'Cliquer pour que l\'AMU reprenne cette ligne' }}" onclick="basculerCouvertureLigne({{ l.id }}, 'amu', {{ 'false' if l.prise_en_charge_amu else 'true' }})">{{ '✓' if l.prise_en_charge_amu else '✗' }} AMU</button>{% endif %}
+                                {% if patient_a_cac %}<button type="button" class="btn btn-sm {{ 'btn-outline-success' if l.prise_en_charge_cac else 'btn-danger' }} py-0 px-1" style="font-size:11px;" title="{{ 'Cliquer si la complémentaire ne prend pas cette ligne' if l.prise_en_charge_cac else 'Cliquer pour que la complémentaire reprenne cette ligne' }}" onclick="basculerCouvertureLigne({{ l.id }}, 'cac', {{ 'false' if l.prise_en_charge_cac else 'true' }})">{{ '✓' if l.prise_en_charge_cac else '✗' }} CAC</button>{% endif %}
+                            {% else %}
                             {% if patient_a_amu and l.prise_en_charge_amu %}<span class="badge bg-primary" title="AMU">AMU</span>{% endif %}
                             {% if patient_a_cac and l.prise_en_charge_cac %}<span class="badge bg-info" title="CAC">CAC</span>{% endif %}
                             {% if not (patient_a_amu and l.prise_en_charge_amu) and not (patient_a_cac and l.prise_en_charge_cac) %}<span class="text-muted small">—</span>{% endif %}
+                            {% endif %}
                         </td>
                         <td class="text-end"><span class="badge bg-warning text-dark">{{ '{:,}'.format(l.part_patient_ligne|round(0)|int).replace(',', ' ') }}</span></td>
                         <td><small>{{ l.enregistre_par or '-' }}</small></td>
@@ -609,6 +615,13 @@ async function ajouterLigne(type, confirmerDoublon) {
         }
     })
     .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
+}
+
+// ⭐ Patron (2026-10-09) : refus d'une assurance ligne par ligne (plafond, refus...)
+function basculerCouvertureLigne(ligneId, assurance, prise) {
+    fetch(`/api/soins-ambulatoires/${EPISODE_ID}/lignes/${ligneId}/couverture`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assurance: assurance, prise: prise }) })
+        .then(r => r.json())
+        .then(async data => { if (data.success) window.location.reload(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'}); });
 }
 
 async function supprimerLigne(ligneId) {

@@ -4095,7 +4095,9 @@ if ('serviceWorker' in navigator) {
      lire d'abord"). Fond statique + Échap désactivé : impossible de fermer en
      cliquant à côté, il faut répondre. Chaque fonction renvoie une Promise ;
      les appelants font `await` pour garder l'ordre "lire puis continuer". -->
-<div class="modal fade" id="dialogueCommun" tabindex="-1" aria-modal="true" role="dialog" data-bs-backdrop="static" data-bs-keyboard="false">
+<!-- ⭐ z-index au-dessus des autres modals (1055) : les messages d'erreur et confirmations
+     s'affichaient DERRIÈRE un modal ouvert (ex. nouvelle proforma de chirurgie) — patron, 2026-10-09 -->
+<div class="modal fade" id="dialogueCommun" tabindex="-1" aria-modal="true" role="dialog" data-bs-backdrop="static" data-bs-keyboard="false" style="z-index: 1090;">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header py-2" id="dialogueCommunEntete">

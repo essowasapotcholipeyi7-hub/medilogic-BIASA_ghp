@@ -97,11 +97,15 @@
 
         <h6 class="mt-3 mb-1">Hospitalisation</h6>
         <div class="row g-2 mb-2">
-          <div class="col-md-3">
-            <label class="form-label small mb-0">Type de chambre</label>
-            <select id="fChambreChoix" class="form-select form-select-sm" onchange="choisirChambre()"></select>
+          <!-- ⭐ Patron (2026-10-09) : « pas la peine de reconfigurer les chambres » —
+               la chambre se choisit dans le catalogue des actes (P160 Hospi..., les
+               mêmes tarifs que le séjour d'hospitalisation), le prix par jour suit. -->
+          <div class="col-md-4 position-relative">
+            <label class="form-label small mb-0">Chambre (catalogue des actes)</label>
+            <input id="fChambreSearch" class="form-control form-control-sm" placeholder="Rechercher : P160 Hospi, cabine, salle..." autocomplete="off">
+            <div id="fChambreResultats" class="list-group position-absolute w-100" style="z-index:1060; max-height:220px; overflow-y:auto; display:none;"></div>
           </div>
-          <div class="col-md-4">
+          <div class="col-md-3">
             <label class="form-label small mb-0">Libellé imprimé</label>
             <input id="fChambreNom" class="form-control form-control-sm" placeholder="Chambre à deux lits" oninput="planifierCalcul()">
           </div>
@@ -193,9 +197,8 @@
       <div class="modal-body">
         <p class="small text-muted">Valeurs proposées par défaut à chaque nouvelle proforma (modifiables ensuite sur chaque proforma).</p>
         <div class="row g-2 mb-3" id="rParametres"></div>
-        <h6 class="mb-1">Chambres</h6>
-        <table class="table table-sm mb-1"><tbody id="rChambres"></tbody></table>
-        <button class="btn btn-outline-primary btn-sm mb-3" type="button" onclick="ajouterLigneReglage('rChambres', {nom:'', prix:''})"><i class="fas fa-plus"></i> Ajouter une chambre</button>
+        <!-- ⭐ Plus de liste de chambres ici : elles viennent du catalogue des actes (P160 Hospi...) -->
+        <p class="small text-muted mb-3"><i class="fas fa-bed me-1"></i>Les chambres et leur prix par jour sont ceux du <strong>catalogue des actes</strong> (ex. P160 Hospi…), comme pour les séjours : rien à configurer ici.</p>
         <h6 class="mb-1">Frais proposés par défaut</h6>
         <table class="table table-sm mb-1"><tbody id="rForfaits"></tbody></table>
         <button class="btn btn-outline-primary btn-sm mb-3" type="button" onclick="ajouterLigneReglage('rForfaits', {nom:'', montant:0})"><i class="fas fa-plus"></i> Ajouter un frais</button>
@@ -352,19 +355,35 @@ function lireParametres(conteneurId) {
     return p;
 }
 
-function remplirChambres(nomActuel) {
-    const sel = document.getElementById('fChambreChoix');
-    sel.innerHTML = '<option value="">Autre / personnalisé</option>' +
-        (REGLAGES.chambres || []).map((c, i) => '<option value="' + i + '"' + (c.nom === nomActuel ? ' selected' : '') + '>' + esc(c.nom) + ' — ' + fmtF(c.prix) + '</option>').join('');
-}
-function choisirChambre() {
-    const c = (REGLAGES.chambres || [])[document.getElementById('fChambreChoix').value];
-    if (c) {
-        document.getElementById('fChambreNom').value = c.nom;
-        document.getElementById('fChambrePrix').value = c.prix;
-    }
+// ⭐ Chambre depuis le catalogue des actes (même recherche que le séjour
+// d'hospitalisation) : libellé et prix par jour pré-remplis, modifiables.
+let debounceChambreChir = null;
+document.getElementById('fChambreSearch')?.addEventListener('input', function() {
+    const q = this.value.trim();
+    clearTimeout(debounceChambreChir);
+    const box = document.getElementById('fChambreResultats');
+    if (q.length < 2) { box.style.display = 'none'; return; }
+    debounceChambreChir = setTimeout(() => {
+        fetch('/api/actes?search=' + encodeURIComponent(q) + '&limit=20').then(r => r.json()).then(data => {
+            const liste = data.data || [];
+            if (!liste.length) { box.style.display = 'none'; return; }
+            box.innerHTML = liste.map(a => '<a href="#" class="list-group-item list-group-item-action py-1" onclick=\'choisirChambreCatalogue(' + JSON.stringify({nom: a.nom, prix: a.prix}).replace(/\'/g, '&apos;') + '); return false;\'>'
+                + '<div class="d-flex justify-content-between"><span>' + esc(a.nom) + '</span><strong>' + fmtF(a.prix) + '</strong></div></a>').join('');
+            box.style.display = 'block';
+        }).catch(() => { box.style.display = 'none'; });
+    }, 250);
+});
+function choisirChambreCatalogue(a) {
+    document.getElementById('fChambreNom').value = a.nom;
+    document.getElementById('fChambrePrix').value = Math.round(parseFloat(a.prix) || 0);
+    document.getElementById('fChambreSearch').value = a.nom;
+    document.getElementById('fChambreResultats').style.display = 'none';
     planifierCalcul();
 }
+document.addEventListener('click', function(e) {
+    const box = document.getElementById('fChambreResultats');
+    if (box && !e.target.closest('#fChambreSearch') && !e.target.closest('#fChambreResultats')) box.style.display = 'none';
+});
 
 function remplirFormulaire(d) {
     const p = patients.find(x => x.id === d.patient_id);
@@ -375,8 +394,9 @@ function remplirFormulaire(d) {
     (d.actes && d.actes.length ? d.actes : [{}]).forEach(ligneActe);
     document.getElementById('fCoef').value = d.coef_supp || '';
     remplirParametres('fParametres', Object.assign({}, REGLAGES.parametres, d.parametres || {}), planifierCalcul);
-    const chambre = d.chambre_nom !== undefined ? {nom: d.chambre_nom, prix: d.chambre_prix} : (REGLAGES.chambres || [])[0] || {nom: '', prix: ''};
-    remplirChambres(chambre.nom);
+    const chambre = d.chambre_nom !== undefined ? {nom: d.chambre_nom, prix: d.chambre_prix} : {nom: '', prix: ''};
+    document.getElementById('fChambreSearch').value = chambre.nom || '';
+    document.getElementById('fChambreResultats').style.display = 'none';
     document.getElementById('fChambreNom').value = chambre.nom || '';
     document.getElementById('fChambrePrix').value = chambre.prix || '';
     document.getElementById('fJours').value = d.jours || '';
@@ -637,8 +657,6 @@ function ajouterLigneReglage(tbodyId, v) {
 
 function ouvrirReglages() {
     remplirParametres('rParametres', REGLAGES.parametres || {});
-    document.getElementById('rChambres').innerHTML = '';
-    (REGLAGES.chambres || []).forEach(c => ajouterLigneReglage('rChambres', c));
     document.getElementById('rForfaits').innerHTML = '';
     (REGLAGES.forfaits || []).forEach(f => ajouterLigneReglage('rForfaits', f));
     ['service', 'ville', 'sigle', 'signature', 'note'].forEach(k => {
@@ -651,7 +669,7 @@ async function enregistrerReglages() {
     const lire = id => [...document.querySelectorAll('#' + id + ' tr')].map(tr => [tr.querySelector('.r-nom').value, tr.querySelector('.r-val').value]);
     const corps = {
         parametres: lireParametres('rParametres'),
-        chambres: lire('rChambres').map(([nom, prix]) => ({nom, prix})),
+        chambres: [],
         forfaits: lire('rForfaits').map(([nom, montant]) => ({nom, montant})),
         service: document.getElementById('rService').value, ville: document.getElementById('rVille').value,
         sigle: document.getElementById('rSigle').value, signature: document.getElementById('rSignature').value,
