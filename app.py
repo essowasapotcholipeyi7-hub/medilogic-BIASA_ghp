@@ -6817,7 +6817,10 @@ def api_structure_logo():
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
-    url = url_for('logo_structure', structure_id=structure_id, v=logo.version, _external=True)
+    # ⭐ https forcé en production (derrière le proxy de Render le schéma vu par Flask
+    # peut être http -> image bloquée sur une page https) ; http seulement en local.
+    local = request.host.startswith(('localhost', '127.0.0.1'))
+    url = url_for('logo_structure', structure_id=structure_id, v=logo.version, _external=True, _scheme='http' if local else 'https')
     fiche_ok = _ecrire_logo_url_fiche(structure_id, url)
     session['structure_logo'] = url
     theme_service.invalider_cache(structure_id)
