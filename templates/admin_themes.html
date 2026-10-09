@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block title %}Admin — Thèmes{% endblock %}
+
+{% block content %}
+<!-- ⭐ Patron (2026-10-09) : thèmes commercialisables, contrôlés depuis la
+     page admin (prix, jours d'essai, activation payée par structure). -->
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h1 class="h3 mb-0"><i class="fas fa-palette me-2"></i>Thèmes du logiciel</h1>
+    <a href="{{ url_for('admin_global') }}" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i> Administration globale</a>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="fas fa-swatchbook me-1"></i> Catalogue des thèmes</span>
+        <button class="btn btn-sm btn-primary" onclick="editerTheme(null)"><i class="fas fa-plus"></i> Nouveau thème</button>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 align-middle">
+            <thead class="table-light"><tr><th>Aperçu</th><th>Thème</th><th>Clé</th><th>Payant</th><th class="text-end">Prix</th><th class="text-end">Essai (j)</th><th>Structures</th><th>Actif</th><th></th></tr></thead>
+            <tbody id="corpsThemes"></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header"><i class="fas fa-key me-1"></i> Accorder un thème payant à une structure</div>
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label small">Structure</label>
+                <select class="form-select form-select-sm" id="licStructure">
+                    {% for s in structures %}<option value="{{ s.ID }}">{{ s.ID }} — {{ s.nom }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3"><label class="form-label small">Thème</label><select class="form-select form-select-sm" id="licTheme"></select></div>
+            <div class="col-md-2"><label class="form-label small">Jours (essai)</label><input type="number" class="form-control form-control-sm" id="licJours" min="1" value="14"></div>
+            <div class="col-md-3 d-flex gap-1">
+                <button class="btn btn-sm btn-success" onclick="licence('payer')" title="Activation définitive (payée)"><i class="fas fa-check"></i> Marquer payé</button>
+                <button class="btn btn-sm btn-outline-warning" onclick="licence('essai')" title="Démarrer / prolonger un essai"><i class="fas fa-hourglass-half"></i> Essai</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><i class="fas fa-list me-1"></i> Licences (essais et activations)</div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 align-middle">
+            <thead class="table-light"><tr><th>Structure</th><th>Thème</th><th>État</th><th>Essai</th><th>Paiement</th><th>Note</th><th></th></tr></thead>
+            <tbody id="corpsLicences"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal édition thème -->
+<div class="modal fade" id="modalTheme" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title" id="modalThemeTitre">Thème</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <div class="row g-2 mb-3">
+                    <div class="col-md-3"><label class="form-label small">Clé (identifiant)</label><input class="form-control form-control-sm" id="tCle" placeholder="ex. lagune"></div>
+                    <div class="col-md-5"><label class="form-label small">Nom</label><input class="form-control form-control-sm" id="tNom"></div>
+                    <div class="col-md-2"><label class="form-label small">Ordre</label><input type="number" class="form-control form-control-sm" id="tOrdre" value="10"></div>
+                    <div class="col-md-2 pt-4"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="tActif" checked><label class="form-check-label small" for="tActif">Actif</label></div></div>
+                    <div class="col-12"><label class="form-label small">Description</label><input class="form-control form-control-sm" id="tDescription"></div>
+                    <div class="col-md-3 pt-4"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="tPayant"><label class="form-check-label small" for="tPayant">Payant</label></div></div>
+                    <div class="col-md-3"><label class="form-label small">Prix (F)</label><input type="number" class="form-control form-control-sm" id="tPrix" min="0" value="0"></div>
+                    <div class="col-md-3"><label class="form-label small">Jours d'essai</label><input type="number" class="form-control form-control-sm" id="tJours" min="0" value="14"></div>
+                </div>
+                <h6 class="small text-uppercase text-muted">Couleurs et présentation</h6>
+                <div class="row g-2" id="tVariables"></div>
+                <div class="mt-3" id="tApercu"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline-danger me-auto" id="btnSupprimerTheme" onclick="supprimerTheme()"><i class="fas fa-trash"></i> Supprimer</button>
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-primary" onclick="enregistrerTheme()"><i class="fas fa-save"></i> Enregistrer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const VARIABLES = {{ variables|tojson }};
+const POLICES = {{ polices|tojson }};
+const NOMS_STRUCTURES = {{ noms_structures|tojson }};
+let THEMES = [], LICENCES = [], CHOISIS = {}, themeEdite = null;
+const F = n => Math.round(n || 0).toLocaleString('fr-FR') + ' F';
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const nomStructure = id => (NOMS_STRUCTURES[String(id)] ? NOMS_STRUCTURES[String(id)] + ' (' + id + ')' : 'Structure ' + id);
+
+function apercuCarte(v) {
+    return `<div style="width:120px; border-radius:6px; overflow:hidden; border:1px solid rgba(0,0,0,.1); font-size:8px;">
+        <div style="background:${v.navbar_fond}; color:${v.navbar_texte}; padding:3px 5px; font-weight:600;">SI ●●●</div>
+        <div style="background:${v.fond}; padding:5px;"><div style="background:${v.carte_fond}; color:${v.texte}; border-radius:4px; padding:4px;">
+            <span style="color:${v.primaire}; font-weight:600;">Titre</span> <span style="background:${v.bouton}; color:${v.bouton_texte}; border-radius:3px; padding:1px 4px;">OK</span></div></div></div>`;
+}
+
+function charger() {
+    fetch('/api/admin/themes').then(r => r.json()).then(d => {
+        THEMES = d.themes; LICENCES = d.licences; CHOISIS = d.choisis || {};
+        const parTheme = {};
+        Object.entries(CHOISIS).forEach(([sid, cle]) => { (parTheme[cle] = parTheme[cle] || []).push(sid); });
+        document.getElementById('corpsThemes').innerHTML = THEMES.map(t => `<tr>
+            <td>${apercuCarte(t.variables_effectives)}</td>
+            <td><strong>${esc(t.nom)}</strong><div class="small text-muted">${esc(t.description)}</div></td>
+            <td><code>${esc(t.cle)}</code></td>
+            <td>${t.payant ? '<span class="badge bg-warning text-dark">Payant</span>' : '<span class="badge bg-success">Gratuit</span>'}</td>
+            <td class="text-end">${t.payant ? F(t.prix) : '—'}</td>
+            <td class="text-end">${t.payant ? t.jours_essai : '—'}</td>
+            <td class="small">${(parTheme[t.cle] || []).map(nomStructure).join(', ') || '<span class="text-muted">—</span>'}</td>
+            <td>${t.actif ? '<i class="fas fa-check text-success"></i>' : '<i class="fas fa-times text-danger"></i>'}</td>
+            <td class="text-end"><button class="btn btn-sm btn-outline-primary" onclick="editerTheme('${t.cle}')"><i class="fas fa-pen"></i></button></td>
+        </tr>`).join('');
+        document.getElementById('licTheme').innerHTML = THEMES.filter(t => t.payant).map(t => `<option value="${t.cle}">${esc(t.nom)} — ${F(t.prix)}</option>`).join('') || '<option value="">Aucun thème payant</option>';
+        const cls = {paye: 'bg-success', essai: 'bg-warning text-dark', expire: 'bg-danger'};
+        document.getElementById('corpsLicences').innerHTML = LICENCES.length ? LICENCES.map(l => `<tr>
+            <td>${esc(nomStructure(l.structure_id))}${CHOISIS[String(l.structure_id)] === l.theme_cle ? ' <span class="badge bg-light text-dark border">en cours d\'utilisation</span>' : ''}</td>
+            <td>${esc(l.theme_nom)}</td>
+            <td><span class="badge ${cls[l.etat] || 'bg-secondary'}">${esc(l.libelle_etat)}</span></td>
+            <td class="small">${l.debut_essai ? l.debut_essai + ' → ' + l.fin_essai : '—'}</td>
+            <td class="small">${l.paye ? 'Payé le ' + l.date_paiement + (l.montant_paye ? ' (' + F(l.montant_paye) + ')' : '') : '—'}</td>
+            <td class="small">${esc(l.note)}${l.accorde_par ? '<div class="text-muted">par ' + esc(l.accorde_par) + '</div>' : ''}</td>
+            <td class="text-end text-nowrap">
+                ${!l.paye ? `<button class="btn btn-sm btn-success" onclick="licence('payer', ${l.structure_id}, '${l.theme_cle}')" title="Marquer payé"><i class="fas fa-check"></i></button>
+                <button class="btn btn-sm btn-outline-warning" onclick="licence('essai', ${l.structure_id}, '${l.theme_cle}')" title="Prolonger l'essai"><i class="fas fa-plus"></i> ${document.getElementById('licJours').value || 14} j</button>` : ''}
+                <button class="btn btn-sm btn-outline-danger" onclick="licence('revoquer', ${l.structure_id}, '${l.theme_cle}')" title="Révoquer (la structure repasse sur le thème d'origine)"><i class="fas fa-ban"></i></button>
+            </td>
+        </tr>`).join('') : '<tr><td colspan="7" class="text-center text-muted py-3">Aucune licence pour le moment.</td></tr>';
+    });
+}
+
+function editerTheme(cle) {
+    themeEdite = cle ? THEMES.find(t => t.cle === cle) : null;
+    const t = themeEdite || {cle: '', nom: '', description: '', ordre: 10, actif: true, payant: false, prix: 0, jours_essai: 14, variables_effectives: null};
+    document.getElementById('modalThemeTitre').textContent = themeEdite ? 'Modifier le thème ' + t.nom : 'Nouveau thème';
+    document.getElementById('tCle').value = t.cle; document.getElementById('tCle').readOnly = !!themeEdite;
+    document.getElementById('tNom').value = t.nom; document.getElementById('tOrdre').value = t.ordre; document.getElementById('tActif').checked = t.actif;
+    document.getElementById('tDescription').value = t.description; document.getElementById('tPayant').checked = t.payant;
+    document.getElementById('tPrix').value = t.prix; document.getElementById('tJours').value = t.jours_essai;
+    document.getElementById('btnSupprimerTheme').style.display = (themeEdite && themeEdite.cle !== 'classique') ? '' : 'none';
+    const defaut = THEMES.find(x => x.cle === 'classique');
+    const v = t.variables_effectives || (defaut ? defaut.variables_effectives : {});
+    document.getElementById('tVariables').innerHTML = VARIABLES.map(([cle, libelle, type, , aide]) => {
+        const val = v[cle];
+        let champ;
+        if (type === 'color') champ = `<input type="color" class="form-control form-control-color" id="tv_${cle}" value="${val}" oninput="apercuEdition()">`;
+        else if (type === 'bool') champ = `<div class="form-check form-switch mt-1"><input class="form-check-input" type="checkbox" id="tv_${cle}" ${val ? 'checked' : ''} onchange="apercuEdition()"><label class="form-check-label small" for="tv_${cle}">${esc(aide || 'Activer')}</label></div>`;
+        else if (type === 'number') champ = `<input type="number" class="form-control form-control-sm" id="tv_${cle}" min="0" max="40" value="${val}" oninput="apercuEdition()">`;
+        else champ = `<select class="form-select form-select-sm" id="tv_${cle}" onchange="apercuEdition()">${POLICES.map(p => `<option ${p === val ? 'selected' : ''}>${p}</option>`).join('')}</select>`;
+        return `<div class="col-6 col-md-3"><label class="form-label small mb-1">${esc(libelle)}</label>${champ}</div>`;
+    }).join('');
+    apercuEdition();
+    new bootstrap.Modal(document.getElementById('modalTheme')).show();
+}
+
+function lireVariables() {
+    const v = {};
+    VARIABLES.forEach(([cle, , type]) => { const el = document.getElementById('tv_' + cle); v[cle] = type === 'bool' ? el.checked : (type === 'number' ? parseInt(el.value, 10) : el.value); });
+    return v;
+}
+function apercuEdition() { document.getElementById('tApercu').innerHTML = apercuCarte(lireVariables()); }
+
+async function enregistrerTheme() {
+    const data = {cle: document.getElementById('tCle').value.trim(), nom: document.getElementById('tNom').value.trim(), description: document.getElementById('tDescription').value.trim(),
+        ordre: parseInt(document.getElementById('tOrdre').value, 10) || 0, actif: document.getElementById('tActif').checked, payant: document.getElementById('tPayant').checked,
+        prix: parseFloat(document.getElementById('tPrix').value) || 0, jours_essai: parseInt(document.getElementById('tJours').value, 10) || 0, variables: lireVariables(), nouveau: !themeEdite};
+    const d = await fetch('/api/admin/themes/enregistrer', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)}).then(r => r.json());
+    if (!d.success) { await afficherMessage(d.error || 'Erreur', {type: 'danger'}); return; }
+    bootstrap.Modal.getInstance(document.getElementById('modalTheme')).hide();
+    await afficherMessage('Thème enregistré.', {type: 'success'});
+    charger();
+}
+
+async function supprimerTheme() {
+    if (!themeEdite || !await demanderConfirmation(`Supprimer le thème « ${themeEdite.nom} » ? Les structures qui l'utilisent repasseront sur le thème d'origine.`)) return;
+    const d = await fetch('/api/admin/themes/supprimer', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({cle: themeEdite.cle})}).then(r => r.json());
+    if (!d.success) { await afficherMessage(d.error || 'Erreur', {type: 'danger'}); return; }
+    bootstrap.Modal.getInstance(document.getElementById('modalTheme')).hide();
+    charger();
+}
+
+async function licence(action, structure_id, cle) {
+    structure_id = structure_id || parseInt(document.getElementById('licStructure').value, 10);
+    cle = cle || document.getElementById('licTheme').value;
+    if (!cle) { await afficherMessage('Choisissez un thème payant.'); return; }
+    const jours = parseInt(document.getElementById('licJours').value, 10) || 14;
+    const libelles = {payer: 'Marquer ce thème comme PAYÉ (activation définitive) pour ' + nomStructure(structure_id) + ' ?', essai: `Accorder / prolonger un essai de ${jours} jour(s) pour ` + nomStructure(structure_id) + ' ?', revoquer: 'Révoquer la licence ? La structure repassera sur le thème d\'origine.'};
+    if (!await demanderConfirmation(libelles[action])) return;
+    const d = await fetch('/api/admin/themes/licence', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({structure_id, cle, action, jours})}).then(r => r.json());
+    if (!d.success) { await afficherMessage(d.error || 'Erreur', {type: 'danger'}); return; }
+    charger();
+}
+
+document.addEventListener('DOMContentLoaded', charger);
+</script>
+{% endblock %}

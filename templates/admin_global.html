@@ -11,6 +11,9 @@
         <a href="{{ url_for('guide_utilisation_superadmin') }}" class="btn btn-sm btn-light me-2" title="Guide d'utilisation complet, avec tous les détails techniques">
             <i class="fas fa-book-open"></i> Guide complet
         </a>
+        <a href="{{ url_for('page_admin_themes') }}" class="btn btn-sm btn-light me-2" title="Thèmes du logiciel : catalogue, prix, essais et activations par structure">
+            <i class="fas fa-palette"></i> Thèmes
+        </a>
         <a href="{{ url_for('page_admin_faq') }}" class="btn btn-sm btn-light me-2" title="Gérer la FAQ et répondre aux questions des structures">
             <i class="fas fa-circle-question"></i> FAQ
             {% if faq_en_attente_count %}

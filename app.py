@@ -18,6 +18,8 @@ from models import Vente
 from db_helper import db as db_helper
 from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, CorrespondanceSalleAmu, CodeBarreArticle, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient, FaqQuestion, FaqQuestionUtilisateur, JourFerie, TauxPartMedecin, PrestationMedecin, PeriodePartMedecin, MedecinDuJour, ParametrageService, ClassificationServiceActe, RecetteService
 from utils.permissions import a_acces, PERMISSIONS
+from utils.themes import VARIABLES_THEME, POLICES
+from services import theme_service
 from utils.modules_structure import MODULES_STRUCTURE
 from utils.onglets_recherchables import onglets_recherchables
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
@@ -6271,6 +6273,161 @@ def admin_structure():
                          structure_info=structure_info)
 
 
+# ============================================================
+# ⭐ THÈME / APPARENCE PAR STRUCTURE (patron, 2026-10-09)
+# ============================================================
+@app.route('/parametres/theme')
+@login_required
+@roles_required('admin')
+def page_parametres_theme():
+    """Choix du thème (gratuit / payant avec essai) et réglages de couleurs
+    propres à la structure — admin de la structure uniquement."""
+    return render_template('parametres_theme.html', variables=VARIABLES_THEME, polices=POLICES)
+
+
+@app.route('/api/theme')
+@login_required
+def api_theme():
+    try:
+        d = theme_service.catalogue_pour_structure(session.get('structure_id'))
+        return jsonify({'success': True, **d})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/theme/css', methods=['POST'])
+@login_required
+def api_theme_css_apercu():
+    """Aperçu : CSS d'une personnalisation sans rien enregistrer."""
+    data = request.json or {}
+    actif = theme_service.theme_actif(session.get('structure_id'))
+    cle = data.get('cle') or actif['theme']['cle']
+    return jsonify({'success': True, 'css': theme_service.css_apercu(cle, data.get('personnalisation') or {})})
+
+
+def _reponse_theme(actif, message=''):
+    from utils.themes import generer_css
+    return jsonify({'success': True, 'message': message, 'css': generer_css(actif['variables']),
+                    'theme': actif['theme']['cle'], 'bloque': actif['bloque']})
+
+
+@app.route('/api/theme/choisir', methods=['POST'])
+@login_required
+@roles_required('admin')
+def api_theme_choisir():
+    data = request.json or {}
+    try:
+        actif = theme_service.choisir_theme(session.get('structure_id'), (data.get('cle') or '').strip(), session.get('user_name', ''))
+        t = actif['theme']
+        etat = theme_service.etat_pour(session.get('structure_id'), t)
+        msg = f"Thème « {t['nom']} » appliqué à toute la structure."
+        if etat['etat'] == 'essai':
+            msg += f" Essai gratuit : {etat['jours_restants']} jour(s) restant(s) (jusqu'au {etat['fin_essai'].strftime('%d/%m/%Y')})."
+        return _reponse_theme(actif, msg)
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/theme/personnaliser', methods=['POST'])
+@login_required
+@roles_required('admin')
+def api_theme_personnaliser():
+    data = request.json or {}
+    try:
+        return _reponse_theme(theme_service.personnaliser(session.get('structure_id'), data.get('personnalisation') or {}, session.get('user_name', '')))
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/theme/reinitialiser', methods=['POST'])
+@login_required
+@roles_required('admin')
+def api_theme_reinitialiser():
+    data = request.json or {}
+    try:
+        return _reponse_theme(theme_service.reinitialiser(session.get('structure_id'), session.get('user_name', ''),
+                                                          garder_theme=bool(data.get('garder_theme', True))))
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/admin_global/themes')
+def page_admin_themes():
+    """Super-admin : catalogue (prix, essai, couleurs) et licences par structure."""
+    if 'super_admin' not in session:
+        return redirect(url_for('admin_login'))
+    structures = [s for s in sheets_helper.get_all_records('structures', use_prefix=False) if str(s.get('ID') or '').strip()]
+    noms = {str(s.get('ID')): s.get('nom', '') for s in structures}
+    return render_template('admin_themes.html', structures=structures, noms_structures=noms,
+                           variables=VARIABLES_THEME, polices=POLICES)
+
+
+@app.route('/api/admin/themes')
+def api_admin_themes():
+    if 'super_admin' not in session:
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    try:
+        return jsonify({'success': True, 'themes': theme_service.catalogue(inclure_inactifs=True),
+                        'licences': theme_service.licences_toutes(),
+                        'choisis': {str(k): v for k, v in theme_service.themes_choisis().items()}})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/admin/themes/enregistrer', methods=['POST'])
+def api_admin_themes_enregistrer():
+    if 'super_admin' not in session:
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    data = request.json or {}
+    try:
+        return jsonify({'success': True, 'theme': theme_service.enregistrer_theme(data, nouveau=bool(data.get('nouveau')))})
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/admin/themes/supprimer', methods=['POST'])
+def api_admin_themes_supprimer():
+    if 'super_admin' not in session:
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    try:
+        theme_service.supprimer_theme((request.json or {}).get('cle') or '')
+        return jsonify({'success': True})
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/admin/themes/licence', methods=['POST'])
+def api_admin_themes_licence():
+    """Marquer payé / accorder ou prolonger un essai / révoquer."""
+    if 'super_admin' not in session:
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    data = request.json or {}
+    try:
+        theme_service.accorder_licence(int(data.get('structure_id')), data.get('cle') or '', data.get('action') or '',
+                                       jours=data.get('jours'), montant=data.get('montant'), note=data.get('note') or '',
+                                       user_nom=session.get('super_admin_nom') or 'super-admin')
+        return jsonify({'success': True})
+    except (ValueError, TypeError) as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/admin/jours-feries', methods=['GET', 'POST'])
 @login_required
 @roles_required('admin', 'gestionnaire')
@@ -8791,6 +8948,18 @@ def _guide_section_visible(section_id):
     if roles_autorises is None:
         return True
     return session.get('role') in roles_autorises
+
+
+@app.context_processor
+def injecter_theme_structure():
+    """⭐ CSS du thème choisi par la structure (patron, 2026-10-09) — injecté
+    dans <head> par base.html ; cache 60 s par structure, vide si apparence
+    d'origine ; jamais d'exception (une page ne doit pas casser pour un
+    thème)."""
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return {'theme_css': ''}
+    return {'theme_css': theme_service.css_pour_structure(structure_id)}
 
 
 @app.context_processor

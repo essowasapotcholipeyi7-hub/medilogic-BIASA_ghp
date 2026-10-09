@@ -4785,6 +4785,56 @@ class FaqQuestionUtilisateur(db.Model):
     repondue_at = db.Column(db.DateTime)
 
 
+class ThemeCatalogue(db.Model):
+    """⭐ Thèmes / apparence du logiciel (patron, 2026-10-09) — catalogue géré
+    par le super-admin (/admin_global/themes) : couleurs (JSON `variables`,
+    voir utils/themes.py), gratuit ou payant (prix + jours d'essai). Copié
+    depuis utils.themes.THEMES_DEFAUT au premier usage."""
+    __tablename__ = 'themes_catalogue'
+    id = db.Column(db.Integer, primary_key=True)
+    cle = db.Column(db.String(40), unique=True, nullable=False)
+    nom = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.String(500))
+    payant = db.Column(db.Boolean, nullable=False, default=False)
+    prix = db.Column(db.Numeric, default=0)
+    jours_essai = db.Column(db.Integer, default=14)
+    variables = db.Column(db.JSON, default=dict)
+    actif = db.Column(db.Boolean, nullable=False, default=True)
+    ordre = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ThemeStructure(db.Model):
+    """⭐ Thème choisi par une structure + ses réglages propres (couleur de
+    fond, boutons... qui priment sur le thème) — une ligne par structure."""
+    __tablename__ = 'theme_structure'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False, unique=True)
+    theme_cle = db.Column(db.String(40))
+    personnalisation = db.Column(db.JSON, default=dict)
+    modifie_le = db.Column(db.DateTime, default=datetime.utcnow)
+    modifie_par = db.Column(db.String(150))
+
+
+class LicenceTheme(db.Model):
+    """⭐ Droit d'une structure sur un thème PAYANT : essai (debut/fin) puis
+    activation payée (paye=True), posée par le super-admin — voir
+    services/theme_service.accorder_licence."""
+    __tablename__ = 'licences_theme'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    theme_cle = db.Column(db.String(40), nullable=False)
+    debut_essai = db.Column(db.Date)
+    fin_essai = db.Column(db.Date)
+    paye = db.Column(db.Boolean, nullable=False, default=False)
+    date_paiement = db.Column(db.Date)
+    montant_paye = db.Column(db.Numeric, default=0)
+    note = db.Column(db.String(300))
+    accorde_par = db.Column(db.String(150))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint('structure_id', 'theme_cle', name='uq_licence_theme_structure'),)
+
+
 class JourFerie(db.Model):
     """Jours fériés déclarés par une structure — utilisé par
     est_tarif_nuit_actif() (app.py) pour savoir si le tarif majoré
