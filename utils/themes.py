@@ -70,6 +70,9 @@ THEMES_DEFAUT = [
     _t('bordeaux', 'Bordeaux', 'Rouge bordeaux et crème, élégant.', 7,
        {'primaire': '#8B1E3F', 'primaire_fonce': '#5E1229', 'bouton': '#8B1E3F', 'fond': '#F8F1F3', 'fond_image': False,
         'carte_fond': '#FFFDFD', 'texte': '#3A1420', 'navbar_fond': '#5E1229', 'navbar_texte': '#FBE9EE', 'rayon': 12, 'police': 'Lato'}),
+    _t('noir', 'Noir', 'Noir profond et plat, cartes à fine bordure, accent vert — style des interfaces modernes.', 9,
+       {'primaire': '#00E599', 'primaire_fonce': '#00B377', 'bouton': '#00E599', 'bouton_texte': '#0A0A0A', 'fond': '#0A0A0A', 'fond_image': False,
+        'carte_fond': '#141414', 'texte': '#E8E8E8', 'navbar_fond': '#0A0A0A', 'navbar_texte': '#F2F2F2', 'rayon': 10, 'mode_sombre': True}),
     _t('lavande', 'Lavande', 'Violet doux et gris perle, reposant.', 8,
        {'primaire': '#7C5CBF', 'primaire_fonce': '#5A3F94', 'bouton': '#7C5CBF', 'fond': '#F3F0FA', 'fond_image': False,
         'texte': '#2E2447', 'navbar_fond': '#FFFFFF', 'navbar_texte': '#5A3F94', 'rayon': 16, 'police': 'Nunito'}),
@@ -127,6 +130,11 @@ def _rgba(hexa, a):
 def _assombrir(hexa, facteur=0.75):
     r, g, b = _rgb(hexa)
     return '#%02X%02X%02X' % (int(r * facteur), int(g * facteur), int(b * facteur))
+
+
+def _eclaircir_sombre(hexa):
+    """En-têtes de carte en mode sombre : un cran plus clair que la carte."""
+    return _eclaircir(hexa, 0.06)
 
 
 def _eclaircir(hexa, facteur=0.9):
@@ -229,9 +237,31 @@ a:not(.btn):not(.nav-link):not(.nav-link-top):not(.dropdown-item):not(.list-grou
     if v['mode_sombre']:
         css.append(f"""/* mode sombre */
 .main-content, .card, .modal-content, .dropdown-menu, .list-group-item, .offcanvas, .accordion-item, .table, .table-light, .table > :not(caption) > * > * {{ background-color: {carte} !important; color: {texte} !important; }}
-.card-header, .card-footer, .modal-header, .modal-footer {{ background-color: {_assombrir(carte, 0.85)} !important; color: {texte} !important; border-color: {_rgba(texte, 0.1)} !important; }}
-.card-header.bg-primary, .modal-header.bg-primary {{ background-color: {p} !important; }}
-.card-header.bg-success, .card-header.bg-danger, .card-header.bg-warning, .card-header.bg-info, .card-header.bg-dark, .card-header.bg-secondary, .modal-header.bg-success, .modal-header.bg-danger, .modal-header.bg-info, .modal-header.bg-dark, .modal-header.bg-secondary {{ background-color: inherit; }}
+/* ⭐ plat et net (référence patron : interface Neon) — pas de dégradés, pas d'ombres, fines bordures */
+.main-content {{ backdrop-filter: none !important; box-shadow: none !important; border: 1px solid {_rgba(texte, 0.10)} !important; }}
+.card, .card-modern, .modal-content, .dropdown-menu, .list-group-item, .accordion-item {{ border: 1px solid {_rgba(texte, 0.12)} !important; box-shadow: none !important; }}
+.navbar, .top-nav, .sidebar {{ box-shadow: none !important; backdrop-filter: none !important; }}
+.navbar {{ border-bottom: 1px solid {_rgba(texte, 0.10)} !important; }}
+.sidebar {{ background: {carte} !important; border: 1px solid {_rgba(texte, 0.12)} !important; }}
+.sidebar .nav-link.active, .sidebar .nav-link:hover {{ background: {_rgba(p, 0.12)} !important; color: {p} !important; }}
+.card-header, .card-footer, .modal-header, .modal-footer {{ background-color: {_eclaircir_sombre(carte)} !important; color: {texte} !important; border-color: {_rgba(texte, 0.12)} !important; background-image: none !important; }}
+.card-header[class*="bg-"], .modal-header[class*="bg-"], .card-header.text-white, .modal-header.text-white {{ background-color: {_eclaircir_sombre(carte)} !important; color: {texte} !important; background-image: none !important; }}
+.card-header[class*="bg-"] *, .modal-header[class*="bg-"] * {{ color: {texte}; }}
+.card-header[class*="bg-"] i, .modal-header[class*="bg-"] i, .card-header .text-white i {{ color: {p} !important; }}
+.card-header .btn-light, .card-header .btn-outline-light, .modal-header .btn-light {{ background: {_rgba(texte, 0.08)} !important; color: {texte} !important; border-color: {_rgba(texte, 0.25)} !important; }}
+.card-header .btn-close, .modal-header .btn-close {{ filter: invert(1) grayscale(1) brightness(1.6); }}
+.btn-primary {{ background: {b} !important; color: {bt} !important; border-color: {b} !important; }}
+.btn-primary:hover, .btn-primary:focus {{ background: {_assombrir(b, 0.85)} !important; color: {bt} !important; box-shadow: none !important; transform: none !important; }}
+.btn {{ box-shadow: none !important; }}
+.btn:hover {{ transform: none !important; }}
+.stat-card, .kpi-card, .dashboard-card {{ background: {carte} !important; border: 1px solid {_rgba(texte, 0.12)} !important; box-shadow: none !important; color: {texte} !important; }}
+.table {{ --bs-table-bg: transparent; --bs-table-color: {texte}; --bs-table-border-color: {_rgba(texte, 0.12)}; }}
+.table thead th {{ background: {_eclaircir_sombre(carte)} !important; border-bottom: 1px solid {_rgba(texte, 0.18)} !important; }}
+.badge.bg-light, .badge.bg-white {{ background-color: {_rgba(texte, 0.10)} !important; color: {texte} !important; border: 1px solid {_rgba(texte, 0.2)}; }}
+.nav-tabs {{ border-bottom-color: {_rgba(texte, 0.15)} !important; }}
+.nav-tabs .nav-link.active {{ background: {carte} !important; border-color: {_rgba(texte, 0.15)} {_rgba(texte, 0.15)} {carte} !important; }}
+hr {{ border-color: {_rgba(texte, 0.2)} !important; opacity: 1; }}
+::-webkit-scrollbar {{ width: 10px; height: 10px; }} ::-webkit-scrollbar-track {{ background: {fond}; }} ::-webkit-scrollbar-thumb {{ background: {_rgba(texte, 0.25)}; border-radius: 6px; }}
 .form-control, .form-select, .input-group-text {{ background-color: {_assombrir(carte, 0.8)} !important; color: {texte} !important; border-color: {_rgba(texte, 0.2)} !important; }}
 .form-control::placeholder {{ color: {_rgba(texte, 0.5)} !important; }}
 .text-muted, .text-dark, .text-secondary {{ color: {_rgba(texte, 0.7)} !important; }}
