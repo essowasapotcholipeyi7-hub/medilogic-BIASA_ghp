@@ -233,7 +233,26 @@ a:not(.btn):not(.nav-link):not(.nav-link-top):not(.dropdown-item):not(.list-grou
 .form-control:focus, .form-select:focus {{ border-color: {p} !important; box-shadow: 0 0 0 0.2rem {_rgba(p, 0.2)} !important; }}
 .page-item.active .page-link {{ background-color: {p} !important; border-color: {p} !important; }}
 .navbar-brand span {{ color: {nb_texte} !important; }}
-.table thead th {{ background: {_rgba(p, 0.07)} !important; color: {texte} !important; }}""")
+.table thead th {{ background: {_rgba(p, 0.07)} !important; color: {texte} !important; }}
+/* ⭐ menu déroulant, barre des onglets et page d'accueil : couleurs du thème (tous les thèmes) */
+.top-nav .mega-menu {{ background: {carte} !important; }}
+.top-nav .mega-menu .menu-item, .top-nav .mega-menu .menu-item i {{ color: {texte} !important; }}
+.top-nav .mega-menu .menu-item:hover, .top-nav .mega-menu .menu-item:hover i {{ color: {p} !important; }}
+.top-nav .mega-menu .menu-item:hover {{ background: {_rgba(p, 0.08)} !important; border-left-color: {p} !important; }}
+.nav-domaine a {{ background: {carte} !important; color: {texte} !important; border-color: {_rgba(texte, 0.18)} !important; }}
+.nav-domaine a:hover {{ color: {p} !important; border-color: {p} !important; }}
+.nav-domaine a.actif {{ background: {pf} !important; border-color: {pf} !important; color: {bt} !important; }}
+.hub {{ --hub-navy: {texte}; --hub-vert: {p}; --hub-bord: {_rgba(texte, 0.14)}; }}
+.hub-hero {{ background: linear-gradient(135deg, {_assombrir(pf, 0.85)} 0%, {pf} 55%, {p} 100%) !important; }}
+.hub-hero .btn-tableau-bord:hover {{ color: {pf} !important; }}
+.hub-recents a, .hub-etape, .hub-domaine, .hub-resultats {{ background: {carte} !important; }}
+.hub-recents a:hover, .hub-etape a:hover {{ color: {p} !important; border-color: {p} !important; }}
+.hub-etape a {{ background: {_rgba(p, 0.06)} !important; color: {texte} !important; border-color: {_rgba(p, 0.25)} !important; }}
+.hub-etape-icone, .hub-domaine-icone {{ background: {_rgba(p, 0.12)} !important; color: {p} !important; }}
+.hub-etape-num {{ background: {pf} !important; color: {bt} !important; }}
+.hub-etape-titre, .hub-domaine-titre, .hub-domaine a {{ color: {texte} !important; }}
+.hub-domaine a:hover {{ background: {_rgba(p, 0.08)} !important; color: {p} !important; }}
+.hub-resultats a:hover, .hub-resultats a.selectionne {{ background: {_rgba(p, 0.08)} !important; }}""")
     if v['mode_sombre']:
         css.append(f"""/* mode sombre */
 .main-content, .card, .modal-content, .dropdown-menu, .list-group-item, .offcanvas, .accordion-item, .table, .table-light, .table > :not(caption) > * > * {{ background-color: {carte} !important; color: {texte} !important; }}
