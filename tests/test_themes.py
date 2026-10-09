@@ -53,5 +53,31 @@ def test_etat_licence_gratuit_essai_paye_expire():
     assert e['etat'] == 'expire' and not e['utilisable']
     e = etat_licence(True, {'paye': True, 'fin_essai': date(2026, 10, 8)}, auj)
     assert e['etat'] == 'paye' and e['utilisable']
-    assert libelle_etat({'etat': 'aucune'}, {'prix': 15000, 'jours_essai': 14}) == 'Payant — 15 000 F / essai 14 jours'
+    assert libelle_etat({'etat': 'aucune'}, {'prix': 15000, 'jours_essai': 14}) == 'Payant — 15 000 F (une seule fois) / essai 14 jours'
     assert fin_essai_depuis(date(2026, 10, 1), 14) == date(2026, 10, 14)
+
+
+def test_prix_payant_10000_une_fois():
+    from utils.themes import PRIX_THEME_PAYANT, libelle_prix
+    assert PRIX_THEME_PAYANT == 10000
+    for t in THEMES_DEFAUT:
+        assert (not t['payant']) or t['prix'] == 10000
+    assert libelle_prix({'prix': 10000}) == '10 000 F (une seule fois)'
+    assert len(THEMES_DEFAUT) >= 15 and len({t['cle'] for t in THEMES_DEFAUT}) == len(THEMES_DEFAUT)
+
+
+def test_palette_depuis_logo():
+    from utils.themes import palette_vers_variables
+    # logo : beaucoup de blanc, un bleu dominant, un orange, du noir (contours)
+    v, palette = palette_vers_variables([(5000, (255, 255, 255)), (900, (20, 90, 200)), (300, (240, 120, 30)), (400, (10, 10, 10)), (200, (128, 128, 128))])
+    assert palette[0] == '#145AC8' and palette[1] == '#F0781E'
+    assert v['primaire'] == '#145AC8' and v['bouton'] == '#F0781E' and v['fond_image'] is False
+    assert v['navbar_fond'] == v['primaire_fonce'] and v['navbar_texte'] == '#FFFFFF'
+    # rien d'exploitable
+    assert palette_vers_variables([(100, (255, 255, 255)), (50, (0, 0, 0))]) == (None, [])
+
+
+def test_css_nom_structure_lisible():
+    css = generer_css({'navbar_fond': '#0B1220', 'navbar_texte': '#E2E8F0'})
+    assert '.navbar .structure-brand .structure-name { color: #E2E8F0 !important; }' in css
+    assert '.navbar .structure-brand { background: rgba(226, 232, 240, 0.1)' in css

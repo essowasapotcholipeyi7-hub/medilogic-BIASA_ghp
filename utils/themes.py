@@ -5,11 +5,16 @@ d'une structure, couleur de fond d'écran, couleur des boutons, la
 présentation... chaque structure pourra régler ; on peut même
 commercialiser certains thèmes (payer, avec une ou deux semaines
 d'essai), contrôlé depuis la page admin ».
+Complément (même jour) : thèmes payants à 10 000 F une seule fois ; chaque
+utilisateur peut régler SON apparence (seul l'admin règle celle de toute la
+structure) ; palette proposée à partir des couleurs du logo.
 
 Ce module est PUR (aucune base) : définition des variables, catalogue par
 défaut, génération de la feuille CSS injectée dans base.html, état d'une
-licence. La persistance et le cache sont dans services/theme_service.py.
+licence, palette depuis les couleurs d'un logo. La persistance et le cache
+sont dans services/theme_service.py.
 """
+import colorsys
 from datetime import date, timedelta
 
 # (clé, libellé, type, valeur par défaut, aide)
@@ -23,7 +28,7 @@ VARIABLES_THEME = [
     ('carte_fond', 'Fond des pages / cartes', 'color', '#FFFFFF', 'Zone de contenu'),
     ('texte', 'Couleur du texte', 'color', '#0A3D5C', 'Titres et textes du contenu'),
     ('navbar_fond', 'Fond de la barre du haut', 'color', '#FFFFFF', 'Barre avec le nom de la structure et le menu'),
-    ('navbar_texte', 'Texte de la barre du haut', 'color', '#0A3D5C', ''),
+    ('navbar_texte', 'Texte de la barre du haut', 'color', '#0A3D5C', 'Nom de la structure, menu'),
     ('rayon', 'Arrondi des cartes (px)', 'number', 15, '0 = angles droits, 24 = très arrondi'),
     ('police', 'Police de caractères', 'select', 'Inter', ''),
     ('mode_sombre', 'Mode sombre', 'bool', False, 'Fond et cartes sombres, texte clair'),
@@ -33,36 +38,62 @@ POLICES_GOOGLE = {'Roboto', 'Poppins', 'Nunito', 'Montserrat', 'Lato', 'Open San
 
 DEFAUT = {cle: val for cle, _, _, val, _ in VARIABLES_THEME}
 THEME_DEFAUT_CLE = 'classique'
+PRIX_THEME_PAYANT = 10000   # ⭐ patron : « pour les thèmes payants mets juste 10 mil une seule fois »
+JOURS_ESSAI_DEFAUT = 14
 
-# Catalogue de départ — copié en base au premier appel (le super-admin peut
-# ensuite modifier prix / essai / couleurs, désactiver, ajouter).
+
+def _t(cle, nom, description, ordre, variables, payant=False, jours_essai=JOURS_ESSAI_DEFAUT):
+    return {'cle': cle, 'nom': nom, 'description': description, 'payant': payant,
+            'prix': PRIX_THEME_PAYANT if payant else 0, 'jours_essai': jours_essai, 'ordre': ordre, 'variables': variables}
+
+
+# Catalogue de départ — copié en base au premier appel, complété ensuite par
+# les clés manquantes (le super-admin peut modifier prix / essai / couleurs,
+# désactiver, ajouter les siens).
 THEMES_DEFAUT = [
-    {'cle': 'classique', 'nom': 'Classique SSoftOneV10', 'description': "L'apparence d'origine : vert et bleu, image de fond.",
-     'payant': False, 'prix': 0, 'jours_essai': 14, 'ordre': 1, 'variables': {}},
-    {'cle': 'ocean', 'nom': 'Océan', 'description': 'Bleus profonds, fond uni clair, très lisible.',
-     'payant': False, 'prix': 0, 'jours_essai': 14, 'ordre': 2,
-     'variables': {'primaire': '#1E6FD9', 'primaire_fonce': '#174F9B', 'bouton': '#1E6FD9', 'fond': '#E8F0FB', 'fond_image': False,
-                   'texte': '#102A43', 'navbar_fond': '#174F9B', 'navbar_texte': '#FFFFFF', 'rayon': 12}},
-    {'cle': 'foret', 'nom': 'Forêt', 'description': 'Verts sobres et naturels, barre du haut vert sombre.',
-     'payant': False, 'prix': 0, 'jours_essai': 14, 'ordre': 3,
-     'variables': {'primaire': '#2E7D32', 'primaire_fonce': '#1B5E20', 'bouton': '#2E7D32', 'fond': '#EEF5EE', 'fond_image': False,
-                   'texte': '#1B3A1F', 'navbar_fond': '#1B5E20', 'navbar_texte': '#FFFFFF', 'rayon': 10}},
-    {'cle': 'sable', 'nom': 'Sable', 'description': 'Tons chauds beige et terracotta, doux pour les yeux.',
-     'payant': False, 'prix': 0, 'jours_essai': 14, 'ordre': 4,
-     'variables': {'primaire': '#C0612B', 'primaire_fonce': '#8F4620', 'bouton': '#C0612B', 'fond': '#F6EFE6', 'fond_image': False,
-                   'carte_fond': '#FFFBF6', 'texte': '#4A2E1C', 'navbar_fond': '#FFF8F0', 'navbar_texte': '#4A2E1C', 'rayon': 18, 'police': 'Nunito'}},
-    {'cle': 'nuit', 'nom': 'Nuit', 'description': 'Mode sombre complet : fond anthracite, texte clair, accents turquoise.',
-     'payant': True, 'prix': 15000, 'jours_essai': 14, 'ordre': 5,
-     'variables': {'primaire': '#2DD4BF', 'primaire_fonce': '#14B8A6', 'bouton': '#2DD4BF', 'bouton_texte': '#0B1220', 'fond': '#0F172A', 'fond_image': False,
-                   'carte_fond': '#1E293B', 'texte': '#E2E8F0', 'navbar_fond': '#0B1220', 'navbar_texte': '#E2E8F0', 'rayon': 12, 'mode_sombre': True}},
-    {'cle': 'royal', 'nom': 'Royal', 'description': 'Violet et or, présentation premium.',
-     'payant': True, 'prix': 10000, 'jours_essai': 14, 'ordre': 6,
-     'variables': {'primaire': '#6D28D9', 'primaire_fonce': '#4C1D95', 'bouton': '#B45309', 'fond': '#F3EFFA', 'fond_image': False,
-                   'texte': '#2E1065', 'navbar_fond': '#4C1D95', 'navbar_texte': '#FDE68A', 'rayon': 20, 'police': 'Poppins'}},
-    {'cle': 'corail', 'nom': 'Corail', 'description': 'Rose corail et marine, moderne et chaleureux.',
-     'payant': True, 'prix': 10000, 'jours_essai': 7, 'ordre': 7,
-     'variables': {'primaire': '#E11D48', 'primaire_fonce': '#9F1239', 'bouton': '#E11D48', 'fond': '#FFF1F2', 'fond_image': False,
-                   'texte': '#1E293B', 'navbar_fond': '#1E293B', 'navbar_texte': '#FFE4E6', 'rayon': 16, 'police': 'Montserrat'}},
+    _t('classique', 'Classique SSoftOneV10', "L'apparence d'origine : vert et bleu, image de fond.", 1, {}),
+    _t('ocean', 'Océan', 'Bleus profonds, fond uni clair, très lisible.', 2,
+       {'primaire': '#1E6FD9', 'primaire_fonce': '#174F9B', 'bouton': '#1E6FD9', 'fond': '#E8F0FB', 'fond_image': False,
+        'texte': '#102A43', 'navbar_fond': '#174F9B', 'navbar_texte': '#FFFFFF', 'rayon': 12}),
+    _t('foret', 'Forêt', 'Verts sobres et naturels, barre du haut vert sombre.', 3,
+       {'primaire': '#2E7D32', 'primaire_fonce': '#1B5E20', 'bouton': '#2E7D32', 'fond': '#EEF5EE', 'fond_image': False,
+        'texte': '#1B3A1F', 'navbar_fond': '#1B5E20', 'navbar_texte': '#FFFFFF', 'rayon': 10}),
+    _t('sable', 'Sable', 'Tons chauds beige et terracotta, doux pour les yeux.', 4,
+       {'primaire': '#C0612B', 'primaire_fonce': '#8F4620', 'bouton': '#C0612B', 'fond': '#F6EFE6', 'fond_image': False,
+        'carte_fond': '#FFFBF6', 'texte': '#4A2E1C', 'navbar_fond': '#FFF8F0', 'navbar_texte': '#4A2E1C', 'rayon': 18, 'police': 'Nunito'}),
+    _t('lagune', 'Lagune', 'Turquoise et sable clair, ambiance bord de mer.', 5,
+       {'primaire': '#0E9AA7', 'primaire_fonce': '#0B6F79', 'bouton': '#0E9AA7', 'fond': '#E9F7F8', 'fond_image': False,
+        'texte': '#0F3A3F', 'navbar_fond': '#0B6F79', 'navbar_texte': '#FFFFFF', 'rayon': 14}),
+    _t('ardoise', 'Ardoise', 'Gris ardoise et bleu acier, sobre et professionnel.', 6,
+       {'primaire': '#3B5B7A', 'primaire_fonce': '#2A4257', 'bouton': '#3B5B7A', 'fond': '#EEF1F4', 'fond_image': False,
+        'carte_fond': '#FFFFFF', 'texte': '#1F2D3A', 'navbar_fond': '#2A4257', 'navbar_texte': '#F1F5F9', 'rayon': 8, 'police': 'Roboto'}),
+    _t('bordeaux', 'Bordeaux', 'Rouge bordeaux et crème, élégant.', 7,
+       {'primaire': '#8B1E3F', 'primaire_fonce': '#5E1229', 'bouton': '#8B1E3F', 'fond': '#F8F1F3', 'fond_image': False,
+        'carte_fond': '#FFFDFD', 'texte': '#3A1420', 'navbar_fond': '#5E1229', 'navbar_texte': '#FBE9EE', 'rayon': 12, 'police': 'Lato'}),
+    _t('lavande', 'Lavande', 'Violet doux et gris perle, reposant.', 8,
+       {'primaire': '#7C5CBF', 'primaire_fonce': '#5A3F94', 'bouton': '#7C5CBF', 'fond': '#F3F0FA', 'fond_image': False,
+        'texte': '#2E2447', 'navbar_fond': '#FFFFFF', 'navbar_texte': '#5A3F94', 'rayon': 16, 'police': 'Nunito'}),
+    _t('nuit', 'Nuit', 'Mode sombre complet : fond anthracite, texte clair, accents turquoise.', 20,
+       {'primaire': '#2DD4BF', 'primaire_fonce': '#14B8A6', 'bouton': '#2DD4BF', 'bouton_texte': '#0B1220', 'fond': '#0F172A', 'fond_image': False,
+        'carte_fond': '#1E293B', 'texte': '#E2E8F0', 'navbar_fond': '#0B1220', 'navbar_texte': '#E2E8F0', 'rayon': 12, 'mode_sombre': True}, payant=True),
+    _t('royal', 'Royal', 'Violet et or, présentation premium.', 21,
+       {'primaire': '#6D28D9', 'primaire_fonce': '#4C1D95', 'bouton': '#B45309', 'fond': '#F3EFFA', 'fond_image': False,
+        'texte': '#2E1065', 'navbar_fond': '#4C1D95', 'navbar_texte': '#FDE68A', 'rayon': 20, 'police': 'Poppins'}, payant=True),
+    _t('corail', 'Corail', 'Rose corail et marine, moderne et chaleureux.', 22,
+       {'primaire': '#E11D48', 'primaire_fonce': '#9F1239', 'bouton': '#E11D48', 'fond': '#FFF1F2', 'fond_image': False,
+        'texte': '#1E293B', 'navbar_fond': '#1E293B', 'navbar_texte': '#FFE4E6', 'rayon': 16, 'police': 'Montserrat'}, payant=True, jours_essai=7),
+    _t('soleil', 'Soleil', 'Orange et jaune solaire, barre du haut sombre, très énergique.', 23,
+       {'primaire': '#EA580C', 'primaire_fonce': '#9A3412', 'bouton': '#F59E0B', 'bouton_texte': '#1F1300', 'fond': '#FFF7ED', 'fond_image': False,
+        'texte': '#3B2410', 'navbar_fond': '#1F1300', 'navbar_texte': '#FDE68A', 'rayon': 14, 'police': 'Poppins'}, payant=True),
+    _t('minuit', 'Minuit', 'Mode sombre bleu nuit, accents or.', 24,
+       {'primaire': '#F2C14E', 'primaire_fonce': '#C9962A', 'bouton': '#F2C14E', 'bouton_texte': '#0B1220', 'fond': '#0B1F3A', 'fond_image': False,
+        'carte_fond': '#132C4E', 'texte': '#E6EEF8', 'navbar_fond': '#071428', 'navbar_texte': '#F2C14E', 'rayon': 10, 'mode_sombre': True, 'police': 'Montserrat'}, payant=True),
+    _t('emeraude', 'Émeraude', 'Mode sombre vert profond, accents émeraude.', 25,
+       {'primaire': '#34D399', 'primaire_fonce': '#059669', 'bouton': '#34D399', 'bouton_texte': '#04281B', 'fond': '#06261C', 'fond_image': False,
+        'carte_fond': '#0F3A2C', 'texte': '#E3F7EE', 'navbar_fond': '#04281B', 'navbar_texte': '#D1FAE5', 'rayon': 12, 'mode_sombre': True}, payant=True),
+    _t('graphite', 'Graphite', 'Mode sombre gris graphite, accents orange, très contrasté.', 26,
+       {'primaire': '#FB923C', 'primaire_fonce': '#EA580C', 'bouton': '#FB923C', 'bouton_texte': '#1A1A1A', 'fond': '#1A1A1A', 'fond_image': False,
+        'carte_fond': '#262626', 'texte': '#F5F5F5', 'navbar_fond': '#111111', 'navbar_texte': '#F5F5F5', 'rayon': 6, 'mode_sombre': True, 'police': 'Roboto'}, payant=True),
 ]
 
 
@@ -84,6 +115,10 @@ def _rgb(hexa):
     return tuple(int(hexa[i:i + 2], 16) for i in (1, 3, 5))
 
 
+def _vers_hex(rgb):
+    return '#%02X%02X%02X' % tuple(max(0, min(255, int(round(c)))) for c in rgb)
+
+
 def _rgba(hexa, a):
     r, g, b = _rgb(hexa)
     return f'rgba({r}, {g}, {b}, {a})'
@@ -92,6 +127,17 @@ def _rgba(hexa, a):
 def _assombrir(hexa, facteur=0.75):
     r, g, b = _rgb(hexa)
     return '#%02X%02X%02X' % (int(r * facteur), int(g * facteur), int(b * facteur))
+
+
+def _eclaircir(hexa, facteur=0.9):
+    """Mélange avec du blanc (facteur = part de blanc)."""
+    r, g, b = _rgb(hexa)
+    return _vers_hex((r + (255 - r) * facteur, g + (255 - g) * facteur, b + (255 - b) * facteur))
+
+
+def luminance(hexa):
+    r, g, b = (c / 255.0 for c in _rgb(hexa))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 
 def _bool(v):
@@ -121,7 +167,7 @@ def normaliser_variables(variables):
 
 
 def variables_effectives(theme_variables, personnalisation=None):
-    """Thème + réglages propres à la structure (qui priment)."""
+    """Thème + réglages propres (structure ou utilisateur), qui priment."""
     base = dict(DEFAUT)
     base.update(theme_variables or {})
     base.update({k: v for k, v in (personnalisation or {}).items() if v is not None and v != ''})
@@ -155,7 +201,12 @@ body {{ background-color: {fond} !important; {'background-image: none !important
 .card {{ border-radius: {max(4, rayon - 3)}px !important; }}
 .btn {{ border-radius: {max(4, rayon // 2 + 2)}px !important; }}
 .navbar {{ background: {nb_fond} !important; }}
-.navbar .structure-name, .navbar .nav-link, .navbar .navbar-brand, .navbar .text-dark {{ color: {nb_texte} !important; }}
+.navbar .nav-link, .navbar .navbar-brand, .navbar .text-dark {{ color: {nb_texte} !important; }}
+/* ⭐ Nom de la structure (pastille) : même lisibilité que le reste de la barre, quel que soit le fond */
+.navbar .structure-brand {{ background: {_rgba(nb_texte, 0.10)} !important; border-color: {_rgba(nb_texte, 0.45)} !important; box-shadow: none !important; }}
+.navbar .structure-brand .structure-name {{ color: {nb_texte} !important; }}
+.navbar .structure-brand .structure-badge, .navbar .structure-brand .structure-icon {{ background: {p} !important; color: {bt} !important; }}
+.navbar .structure-brand .structure-logo {{ border-color: {_rgba(nb_texte, 0.35)} !important; }}
 .top-nav {{ background: {nb_fond} !important; border-bottom-color: {_rgba(nb_texte, 0.12)} !important; }}
 .top-nav .nav-link-top {{ color: {nb_texte} !important; }}
 .top-nav .nav-link-top:hover, .top-nav .nav-link-top.active {{ color: {p} !important; border-bottom-color: {p} !important; background: {_rgba(p, 0.08)} !important; }}
@@ -194,6 +245,45 @@ body::after {{ color: {_rgba(p, 0.25)} !important; }}""")
     return '\n'.join(css)
 
 
+# ------------------------------------------------------------------ palette depuis un logo
+def palette_vers_variables(couleurs):
+    """⭐ Patron : « que chaque structure puisse régler en fonction des
+    couleurs de son logo ». `couleurs` : [(poids, (r, g, b)), ...] (ex. palette
+    quantifiée d'une image). Retourne (variables proposées, palette hex
+    retenue) — les teintes trop claires / trop foncées / grises sont ignorées
+    (fond blanc, contours noirs)."""
+    candidats = []
+    for poids, rgb in couleurs or []:
+        r, g, b = (max(0, min(255, int(c))) for c in rgb)
+        h, l, s = colorsys.rgb_to_hls(r / 255.0, g / 255.0, b / 255.0)
+        if l > 0.92 or l < 0.08 or s < 0.18:
+            continue
+        candidats.append((float(poids) * (0.5 + s), (r, g, b), h))
+    if not candidats:
+        return None, []
+    candidats.sort(key=lambda c: -c[0])
+    retenues = []
+    for poids, rgb, h in candidats:   # teintes distinctes seulement
+        if all(min(abs(h - h2), 1 - abs(h - h2)) > 0.06 for _, _, h2 in retenues):
+            retenues.append((poids, rgb, h))
+        if len(retenues) == 4:
+            break
+    hexs = [_vers_hex(rgb) for _, rgb, _ in retenues]
+    primaire = hexs[0]
+    bouton = hexs[1] if len(hexs) > 1 else primaire
+    fonce = _assombrir(primaire, 0.72)
+    sombre_sur_clair = luminance(primaire) < 0.5
+    variables = {
+        'primaire': primaire, 'primaire_fonce': fonce, 'bouton': bouton,
+        'bouton_texte': '#FFFFFF' if luminance(bouton) < 0.6 else '#1A1A1A',
+        'fond': _eclaircir(primaire, 0.92), 'fond_image': False, 'carte_fond': '#FFFFFF',
+        'texte': _assombrir(primaire, 0.35) if sombre_sur_clair else '#1F2937',
+        'navbar_fond': fonce if sombre_sur_clair else '#FFFFFF',
+        'navbar_texte': '#FFFFFF' if sombre_sur_clair else fonce,
+    }
+    return normaliser_variables({**DEFAUT, **variables}), hexs
+
+
 # ------------------------------------------------------------------ licences
 def etat_licence(payant, licence=None, aujourd_hui=None):
     """État d'utilisation d'un thème pour une structure :
@@ -219,6 +309,10 @@ def fin_essai_depuis(debut, jours):
     return debut + timedelta(days=max(0, int(jours or 0)) - 1)
 
 
+def libelle_prix(theme):
+    return f"{int(theme.get('prix') or 0):,} F (une seule fois)".replace(',', ' ')
+
+
 def libelle_etat(etat_info, theme=None):
     e = etat_info['etat']
     if e == 'gratuit':
@@ -231,5 +325,5 @@ def libelle_etat(etat_info, theme=None):
     if e == 'expire':
         return 'Essai terminé'
     if theme:
-        return f"Payant — {int(theme.get('prix') or 0):,} F / essai {theme.get('jours_essai') or 0} jours".replace(',', ' ')
+        return f"Payant — {libelle_prix(theme)} / essai {theme.get('jours_essai') or 0} jours"
     return 'Payant'

@@ -1,35 +1,46 @@
 # -*- coding: utf-8 -*-
-"""⭐ Thèmes / apparence par structure (patron, 2026-10-09) — persistance,
-licences (thèmes payants avec période d'essai), CSS mis en cache par
-structure. Logique pure dans utils/themes.py.
+"""⭐ Thèmes / apparence (patron, 2026-10-09) — persistance, licences (thèmes
+payants : 10 000 F une seule fois, avec période d'essai), CSS mis en cache.
+Logique pure dans utils/themes.py.
 
-Tables : ThemeCatalogue (défini par le super-admin : nom, couleurs, payant,
-prix, jours d'essai), ThemeStructure (choix + réglages d'une structure),
-LicenceTheme (essai / payé par structure et thème payant).
+Portée : l'ADMIN règle le thème de toute la structure (ThemeStructure) ;
+tout autre utilisateur peut régler le sien, qui ne s'applique qu'à lui
+(ThemeUtilisateur) — patron : « que les autres puissent aussi faire ce
+réglage mais que ça s'applique uniquement chez eux ; global uniquement si
+c'est l'admin qui règle ». Les licences des thèmes payants restent au
+niveau de la structure (un utilisateur ne peut pas démarrer un essai).
 """
+import io
 import time
 from datetime import date, datetime, timedelta
 
-from models import db, ThemeCatalogue, ThemeStructure, LicenceTheme
+from models import db, ThemeCatalogue, ThemeStructure, ThemeUtilisateur, LicenceTheme
 from utils.themes import (THEMES_DEFAUT, THEME_DEFAUT_CLE, generer_css, variables_effectives,
-                          normaliser_variables, etat_licence, fin_essai_depuis, libelle_etat)
+                          normaliser_variables, etat_licence, fin_essai_depuis, libelle_etat,
+                          palette_vers_variables)
 
-_CACHE_CSS = {}      # structure_id -> (expire, css)
+_CACHE_CSS = {}      # (structure_id, utilisateur_id) -> (expire, css)
 _TTL = 60
 
 
 def invalider_cache(structure_id=None):
     if structure_id is None:
         _CACHE_CSS.clear()
-    else:
-        _CACHE_CSS.pop(int(structure_id), None)
+        return
+    sid = int(structure_id)
+    for cle in [k for k in _CACHE_CSS if k[0] == sid]:
+        _CACHE_CSS.pop(cle, None)
 
 
 def assurer_catalogue():
-    """Copie le catalogue par défaut en base s'il est vide (une fois)."""
-    if ThemeCatalogue.query.first():
+    """Copie le catalogue par défaut en base, puis complète les thèmes
+    manquants (nouveaux thèmes livrés après coup) sans toucher aux réglages
+    que le super-admin a faits sur les existants."""
+    existants = {t.cle for t in db.session.query(ThemeCatalogue.cle).all()}
+    manquants = [t for t in THEMES_DEFAUT if t['cle'] not in existants]
+    if not manquants:
         return
-    for t in THEMES_DEFAUT:
+    for t in manquants:
         db.session.add(ThemeCatalogue(cle=t['cle'], nom=t['nom'], description=t['description'], payant=t['payant'],
                                       prix=t['prix'], jours_essai=t['jours_essai'], ordre=t['ordre'],
                                       variables=t['variables'], actif=True))
@@ -71,12 +82,15 @@ def reglage_structure(structure_id):
     return ThemeStructure.query.filter_by(structure_id=structure_id).first()
 
 
-def theme_actif(structure_id):
-    """Thème réellement appliqué (repli sur le thème par défaut si la
-    licence n'est plus valable ou le thème désactivé) + réglages propres +
-    indication de blocage."""
-    reglage = reglage_structure(structure_id)
-    cle = (reglage.theme_cle if reglage and reglage.theme_cle else THEME_DEFAUT_CLE)
+def reglage_utilisateur(structure_id, utilisateur_id):
+    if utilisateur_id in (None, ''):
+        return None
+    return ThemeUtilisateur.query.filter_by(structure_id=structure_id, utilisateur_id=str(utilisateur_id)).first()
+
+
+def _resoudre(structure_id, cle, personnalisation):
+    """Thème utilisable pour cette clé (repli sur le défaut si licence non
+    valable / thème désactivé) + variables effectives + motif de blocage."""
     theme = theme_par_cle(cle)
     bloque = None
     if theme is None:
@@ -88,32 +102,53 @@ def theme_actif(structure_id):
         if not etat['utilisable']:
             bloque = etat['etat']   # 'expire' | 'aucune'
             theme = theme_par_cle(THEME_DEFAUT_CLE) or theme
-    personnalisation = (reglage.personnalisation or {}) if reglage else {}
+    return theme, bloque, variables_effectives(theme.get('variables') or {}, personnalisation)
+
+
+def theme_actif(structure_id, utilisateur_id=None):
+    """Apparence réellement appliquée à cet utilisateur : son réglage
+    personnel s'il en a un, sinon celui de la structure."""
+    rs = reglage_structure(structure_id)
+    cle_structure = (rs.theme_cle if rs and rs.theme_cle else THEME_DEFAUT_CLE)
+    perso_structure = (rs.personnalisation or {}) if rs else {}
+    ru = reglage_utilisateur(structure_id, utilisateur_id)
+    if ru and (ru.theme_cle or ru.personnalisation):
+        source = 'utilisateur'
+        cle = ru.theme_cle or cle_structure
+        personnalisation = ru.personnalisation or {}
+    else:
+        source, cle, personnalisation = 'structure', cle_structure, perso_structure
+    theme, bloque, variables = _resoudre(structure_id, cle, personnalisation)
     return {'theme': theme, 'cle_choisie': cle, 'personnalisation': personnalisation, 'bloque': bloque,
-            'variables': variables_effectives(theme.get('variables') or {}, personnalisation)}
+            'variables': variables, 'source': source, 'cle_structure': cle_structure,
+            'reglage_personnel': bool(ru and (ru.theme_cle or ru.personnalisation))}
 
 
-def css_pour_structure(structure_id):
-    """CSS à injecter dans base.html — mis en cache 60 s par structure ;
+def css_pour(structure_id, utilisateur_id=None):
+    """CSS à injecter dans base.html — cache 60 s par (structure, utilisateur) ;
     chaîne vide = apparence d'origine. Ne lève jamais."""
     if not structure_id:
         return ''
-    sid = int(structure_id)
+    cle = (int(structure_id), str(utilisateur_id or ''))
     now = time.time()
-    hit = _CACHE_CSS.get(sid)
+    hit = _CACHE_CSS.get(cle)
     if hit and hit[0] > now:
         return hit[1]
     try:
-        css = generer_css(theme_actif(sid)['variables'])
+        css = generer_css(theme_actif(cle[0], utilisateur_id)['variables'])
     except Exception as e:   # jamais casser une page pour un thème
-        print(f"⚠️ Thème structure {sid} : {e}")
+        print(f"⚠️ Thème structure {cle[0]} : {e}")
         css = ''
         try:
             db.session.rollback()
         except Exception:
             pass
-    _CACHE_CSS[sid] = (now + _TTL, css)
+    _CACHE_CSS[cle] = (now + _TTL, css)
     return css
+
+
+def css_pour_structure(structure_id):
+    return css_pour(structure_id, None)
 
 
 def css_apercu(cle, personnalisation):
@@ -121,19 +156,25 @@ def css_apercu(cle, personnalisation):
     return generer_css(variables_effectives(theme.get('variables') or {}, personnalisation))
 
 
-def catalogue_pour_structure(structure_id):
-    actif = theme_actif(structure_id)
+def catalogue_pour_structure(structure_id, utilisateur_id=None):
+    actif = theme_actif(structure_id, utilisateur_id)
     out = []
     for t in catalogue():
         etat = etat_pour(structure_id, t)
         out.append({**t, 'etat': etat['etat'], 'utilisable': etat['utilisable'], 'jours_restants': etat['jours_restants'],
                     'fin_essai': etat['fin_essai'].strftime('%d/%m/%Y') if etat['fin_essai'] else None,
-                    'libelle_etat': libelle_etat(etat, t), 'actif': t['cle'] == actif['theme']['cle'],
+                    'libelle_etat': libelle_etat(etat, t), 'actif': t['cle'] == actif['theme']['cle'] and not actif['bloque'],
                     'css': generer_css(t['variables_effectives'])})
     return {'themes': out, 'actif': actif}
 
 
-def _reglage_ou_creer(structure_id):
+def _reglage_ou_creer(structure_id, portee, utilisateur_id):
+    if portee == 'utilisateur':
+        r = reglage_utilisateur(structure_id, utilisateur_id)
+        if not r:
+            r = ThemeUtilisateur(structure_id=structure_id, utilisateur_id=str(utilisateur_id))
+            db.session.add(r)
+        return r
     r = reglage_structure(structure_id)
     if not r:
         r = ThemeStructure(structure_id=structure_id)
@@ -141,17 +182,19 @@ def _reglage_ou_creer(structure_id):
     return r
 
 
-def choisir_theme(structure_id, cle, user_nom='', demarrer_essai=True):
-    """La structure choisit un thème. Payant : licence payée ou essai en
-    cours requis ; sans licence, un essai (jours_essai du thème) démarre
-    automatiquement si demarrer_essai. Lève ValueError sinon."""
+def choisir_theme(structure_id, cle, user_nom='', demarrer_essai=True, portee='structure', utilisateur_id=None):
+    """Choix d'un thème. portee='structure' (admin) : s'applique à tout le
+    monde ; un thème payant sans licence démarre un essai (jours_essai).
+    portee='utilisateur' : ne s'applique qu'à cet utilisateur ; un thème
+    payant exige une licence (essai en cours ou payée) de la structure.
+    Lève ValueError sinon."""
     theme = theme_par_cle(cle)
     if not theme:
         raise ValueError('Thème introuvable ou désactivé')
     if theme['payant']:
         lic = licence_pour(structure_id, cle)
         etat = etat_licence(True, lic)
-        if etat['etat'] == 'aucune' and demarrer_essai:
+        if etat['etat'] == 'aucune' and demarrer_essai and portee == 'structure':
             if (theme['jours_essai'] or 0) <= 0:
                 raise ValueError("Ce thème est payant et n'a pas de période d'essai : demandez son activation à l'éditeur.")
             lic = LicenceTheme(structure_id=structure_id, theme_cle=cle, debut_essai=date.today(),
@@ -160,32 +203,50 @@ def choisir_theme(structure_id, cle, user_nom='', demarrer_essai=True):
             db.session.flush()
             etat = etat_licence(True, lic)
         if not etat['utilisable']:
-            raise ValueError(f"L'essai de ce thème est terminé ({etat['fin_essai'].strftime('%d/%m/%Y') if etat['fin_essai'] else ''}). "
-                             f"Pour continuer à l'utiliser, demandez son activation à l'éditeur ({int(theme['prix']):,} F).".replace(',', ' '))
-    r = _reglage_ou_creer(structure_id)
+            prix = f"{int(theme['prix']):,} F une seule fois".replace(',', ' ')
+            if portee == 'utilisateur':
+                raise ValueError(f"Thème payant ({prix}) : demandez à l'administrateur de la structure de l'activer "
+                                 f"(essai gratuit de {theme['jours_essai']} jours possible) — il sera alors disponible pour vous.")
+            if etat['etat'] == 'expire':
+                raise ValueError(f"L'essai de ce thème est terminé ({etat['fin_essai'].strftime('%d/%m/%Y') if etat['fin_essai'] else ''}). "
+                                 f"Pour continuer à l'utiliser, demandez son activation à l'éditeur ({prix}).")
+            raise ValueError(f"Ce thème est payant ({prix}) : demandez son activation à l'éditeur.")
+    r = _reglage_ou_creer(structure_id, portee, utilisateur_id)
     r.theme_cle = cle
     r.modifie_par = user_nom
     r.modifie_le = datetime.utcnow()
     db.session.commit()
     invalider_cache(structure_id)
-    return theme_actif(structure_id)
+    return theme_actif(structure_id, utilisateur_id if portee == 'utilisateur' else None)
 
 
-def personnaliser(structure_id, personnalisation, user_nom=''):
-    r = _reglage_ou_creer(structure_id)
+def personnaliser(structure_id, personnalisation, user_nom='', portee='structure', utilisateur_id=None):
+    r = _reglage_ou_creer(structure_id, portee, utilisateur_id)
     perso = personnalisation or {}
-    # on ne garde que les clés connues, normalisées
     norm = normaliser_variables(perso)
     r.personnalisation = {k: norm[k] for k in norm if k in perso}
     r.modifie_par = user_nom
     r.modifie_le = datetime.utcnow()
     db.session.commit()
     invalider_cache(structure_id)
-    return theme_actif(structure_id)
+    return theme_actif(structure_id, utilisateur_id if portee == 'utilisateur' else None)
 
 
-def reinitialiser(structure_id, user_nom='', garder_theme=True):
-    r = _reglage_ou_creer(structure_id)
+def reinitialiser(structure_id, user_nom='', garder_theme=True, portee='structure', utilisateur_id=None):
+    """garder_theme=False : structure -> retour au thème d'origine ;
+    utilisateur -> suppression du réglage personnel (retour à celui de la structure)."""
+    if portee == 'utilisateur':
+        r = reglage_utilisateur(structure_id, utilisateur_id)
+        if r:
+            if garder_theme:
+                r.personnalisation = {}
+                r.modifie_le = datetime.utcnow()
+            else:
+                db.session.delete(r)
+            db.session.commit()
+        invalider_cache(structure_id)
+        return theme_actif(structure_id, utilisateur_id)
+    r = _reglage_ou_creer(structure_id, 'structure', None)
     r.personnalisation = {}
     if not garder_theme:
         r.theme_cle = THEME_DEFAUT_CLE
@@ -193,7 +254,49 @@ def reinitialiser(structure_id, user_nom='', garder_theme=True):
     r.modifie_le = datetime.utcnow()
     db.session.commit()
     invalider_cache(structure_id)
-    return theme_actif(structure_id)
+    return theme_actif(structure_id, None)
+
+
+# ------------------------------------------------------------------ couleurs du logo
+def couleurs_depuis_image(donnees):
+    """Palette quantifiée d'une image (bytes) -> [(poids, (r, g, b)), ...]."""
+    from PIL import Image
+    img = Image.open(io.BytesIO(donnees))
+    img = img.convert('RGBA')
+    fond = Image.new('RGBA', img.size, (255, 255, 255, 255))
+    fond.paste(img, mask=img.split()[3])   # transparence -> blanc (ignoré ensuite)
+    img = fond.convert('RGB')
+    img.thumbnail((96, 96))
+    q = img.quantize(colors=12, method=Image.Quantize.MEDIANCUT if hasattr(Image, 'Quantize') else 0)
+    palette = q.getpalette()
+    couleurs = []
+    for count, idx in q.getcolors(96 * 96) or []:
+        couleurs.append((count, tuple(palette[idx * 3: idx * 3 + 3])))
+    return couleurs
+
+
+def proposer_depuis_logo(url):
+    """Télécharge le logo de la structure et propose des variables de thème.
+    Retourne (variables, palette_hex) ou lève ValueError (message clair)."""
+    if not (url or '').strip():
+        raise ValueError("Aucun logo n'est enregistré pour la structure (Administration générale → Ma structure → Logo URL).")
+    try:
+        import requests
+        r = requests.get(url.strip(), timeout=10, stream=True, headers={'User-Agent': 'SSoftOneV10'})
+        r.raise_for_status()
+        donnees = r.raw.read(3 * 1024 * 1024 + 1, decode_content=True)
+    except Exception as e:
+        raise ValueError(f"Impossible de télécharger le logo ({e}).")
+    if len(donnees) > 3 * 1024 * 1024:
+        raise ValueError('Logo trop lourd (plus de 3 Mo).')
+    try:
+        couleurs = couleurs_depuis_image(donnees)
+    except Exception as e:
+        raise ValueError(f"Le logo n'est pas une image lisible ({e}).")
+    variables, palette = palette_vers_variables(couleurs)
+    if not variables:
+        raise ValueError("Le logo ne contient pas de couleur franche exploitable (noir, blanc ou gris seulement).")
+    return variables, palette
 
 
 # ------------------------------------------------------------------ super-admin
@@ -233,6 +336,7 @@ def supprimer_theme(cle):
         raise ValueError('Thème introuvable')
     LicenceTheme.query.filter_by(theme_cle=cle).delete()
     ThemeStructure.query.filter_by(theme_cle=cle).update({'theme_cle': THEME_DEFAUT_CLE})
+    ThemeUtilisateur.query.filter_by(theme_cle=cle).update({'theme_cle': None})
     db.session.delete(t)
     db.session.commit()
     invalider_cache()

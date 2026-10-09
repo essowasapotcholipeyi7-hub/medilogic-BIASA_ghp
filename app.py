@@ -6276,20 +6276,29 @@ def admin_structure():
 # ============================================================
 # ⭐ THÈME / APPARENCE PAR STRUCTURE (patron, 2026-10-09)
 # ============================================================
+def _portee_theme():
+    """⭐ L'admin règle pour toute la structure, les autres pour eux seuls."""
+    return 'structure' if (session.get('is_admin') or session.get('role') == 'admin') else 'utilisateur'
+
+
+def _utilisateur_theme():
+    return None if _portee_theme() == 'structure' else session.get('user_id')
+
+
 @app.route('/parametres/theme')
 @login_required
-@roles_required('admin')
 def page_parametres_theme():
-    """Choix du thème (gratuit / payant avec essai) et réglages de couleurs
-    propres à la structure — admin de la structure uniquement."""
-    return render_template('parametres_theme.html', variables=VARIABLES_THEME, polices=POLICES)
+    """Choix du thème (gratuit / payant avec essai) et réglages de couleurs :
+    pour toute la structure (admin) ou pour soi seul (autres rôles)."""
+    return render_template('parametres_theme.html', variables=VARIABLES_THEME, polices=POLICES, portee=_portee_theme())
 
 
 @app.route('/api/theme')
 @login_required
 def api_theme():
     try:
-        d = theme_service.catalogue_pour_structure(session.get('structure_id'))
+        d = theme_service.catalogue_pour_structure(session.get('structure_id'), session.get('user_id'))
+        d['portee'] = _portee_theme()
         return jsonify({'success': True, **d})
     except Exception as e:
         db.session.rollback()
@@ -6301,9 +6310,23 @@ def api_theme():
 def api_theme_css_apercu():
     """Aperçu : CSS d'une personnalisation sans rien enregistrer."""
     data = request.json or {}
-    actif = theme_service.theme_actif(session.get('structure_id'))
+    actif = theme_service.theme_actif(session.get('structure_id'), session.get('user_id'))
     cle = data.get('cle') or actif['theme']['cle']
     return jsonify({'success': True, 'css': theme_service.css_apercu(cle, data.get('personnalisation') or {})})
+
+
+@app.route('/api/theme/couleurs-logo')
+@login_required
+def api_theme_couleurs_logo():
+    """⭐ Palette proposée à partir du logo de la structure (patron : « régler
+    en fonction des couleurs de son logo »)."""
+    try:
+        variables, palette = theme_service.proposer_depuis_logo(session.get('structure_logo') or '')
+        return jsonify({'success': True, 'variables': variables, 'palette': palette})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 def _reponse_theme(actif, message=''):
@@ -6314,15 +6337,16 @@ def _reponse_theme(actif, message=''):
 
 @app.route('/api/theme/choisir', methods=['POST'])
 @login_required
-@roles_required('admin')
 def api_theme_choisir():
     data = request.json or {}
     try:
-        actif = theme_service.choisir_theme(session.get('structure_id'), (data.get('cle') or '').strip(), session.get('user_name', ''))
+        portee = _portee_theme()
+        actif = theme_service.choisir_theme(session.get('structure_id'), (data.get('cle') or '').strip(), session.get('user_name', ''),
+                                            portee=portee, utilisateur_id=_utilisateur_theme())
         t = actif['theme']
         etat = theme_service.etat_pour(session.get('structure_id'), t)
-        msg = f"Thème « {t['nom']} » appliqué à toute la structure."
-        if etat['etat'] == 'essai':
+        msg = f"Thème « {t['nom']} » appliqué à toute la structure." if portee == 'structure' else f"Thème « {t['nom']} » appliqué pour vous seulement."
+        if etat['etat'] == 'essai' and portee == 'structure':
             msg += f" Essai gratuit : {etat['jours_restants']} jour(s) restant(s) (jusqu'au {etat['fin_essai'].strftime('%d/%m/%Y')})."
         return _reponse_theme(actif, msg)
     except ValueError as e:
@@ -6335,11 +6359,11 @@ def api_theme_choisir():
 
 @app.route('/api/theme/personnaliser', methods=['POST'])
 @login_required
-@roles_required('admin')
 def api_theme_personnaliser():
     data = request.json or {}
     try:
-        return _reponse_theme(theme_service.personnaliser(session.get('structure_id'), data.get('personnalisation') or {}, session.get('user_name', '')))
+        return _reponse_theme(theme_service.personnaliser(session.get('structure_id'), data.get('personnalisation') or {}, session.get('user_name', ''),
+                                                          portee=_portee_theme(), utilisateur_id=_utilisateur_theme()))
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -6347,12 +6371,12 @@ def api_theme_personnaliser():
 
 @app.route('/api/theme/reinitialiser', methods=['POST'])
 @login_required
-@roles_required('admin')
 def api_theme_reinitialiser():
     data = request.json or {}
     try:
         return _reponse_theme(theme_service.reinitialiser(session.get('structure_id'), session.get('user_name', ''),
-                                                          garder_theme=bool(data.get('garder_theme', True))))
+                                                          garder_theme=bool(data.get('garder_theme', True)),
+                                                          portee=_portee_theme(), utilisateur_id=_utilisateur_theme()))
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -8959,7 +8983,7 @@ def injecter_theme_structure():
     structure_id = session.get('structure_id')
     if not structure_id:
         return {'theme_css': ''}
-    return {'theme_css': theme_service.css_pour_structure(structure_id)}
+    return {'theme_css': theme_service.css_pour(structure_id, session.get('user_id'))}
 
 
 @app.context_processor

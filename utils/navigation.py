@@ -204,7 +204,7 @@ DOMAINES = [
                visible=lambda c: c.role in ('admin', 'gestionnaire'), bloquable=False),
         Onglet('theme', 'Thème & apparence', 'page_parametres_theme', 'fa-palette',
                'Couleurs, boutons, fond, police', 'thème apparence couleur design fond bouton police sombre',
-               visible=lambda c: c.role == 'admin', bloquable=False),
+               visible=lambda c: True, bloquable=False),
         Onglet('rh', 'Ressources humaines', 'rh.gestion_rh', 'fa-id-card',
                'Employés, congés, permissions', 'employé congé salaire',
                visible=lambda c: c.a_acces('rh') and not c.onglet_cache('rh')),

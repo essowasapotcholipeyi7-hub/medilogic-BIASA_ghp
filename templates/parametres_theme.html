@@ -6,15 +6,33 @@
 <!-- ⭐ Patron (2026-10-09) : « un système de réglage de thème ou design du
      logiciel à la convenance d'une structure (couleur de fond d'écran,
      couleur des boutons, présentation...) dans Paramètres ; certains thèmes
-     commercialisés avec une ou deux semaines d'essai, contrôlés depuis la
-     page admin ». Voir services/theme_service.py et utils/themes.py. -->
+     commercialisés (10 000 F une seule fois) avec période d'essai, contrôlés
+     depuis la page admin ». L'admin règle pour toute la structure ; les
+     autres utilisateurs règlent pour eux seuls. Palette proposée depuis les
+     couleurs du logo. Voir services/theme_service.py et utils/themes.py. -->
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <h1 class="h3 mb-0"><i class="fas fa-palette me-2 text-primary"></i>Thème & apparence du logiciel</h1>
+    {% if portee == 'structure' %}
     <a href="{{ url_for('admin_structure') }}" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i> Administration</a>
+    {% else %}
+    <a href="{{ url_for('page_accueil') }}" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i> Accueil</a>
+    {% endif %}
 </div>
-<p class="text-muted small">Le thème choisi s'applique à <strong>tous les utilisateurs</strong> de votre structure. Les thèmes payants s'essaient gratuitement pendant la période indiquée ; pour les garder ensuite, demandez l'activation à l'éditeur.</p>
+{% if portee == 'structure' %}
+<div class="alert alert-info py-2">
+    <i class="fas fa-building me-1"></i> Vous êtes <strong>administrateur</strong> : le thème et les réglages choisis ici s'appliquent à <strong>toute la structure</strong>
+    (chaque utilisateur peut ensuite, depuis cette même page, choisir une apparence personnelle qui ne vaut que pour lui).
+    Les thèmes payants coûtent <strong>10 000 F une seule fois</strong> et s'essaient gratuitement pendant la période indiquée ; pour les garder ensuite, demandez l'activation à l'éditeur.
+</div>
+{% else %}
+<div class="alert alert-info py-2">
+    <i class="fas fa-user me-1"></i> Les réglages faits ici ne s'appliquent <strong>qu'à vous</strong> (sur tous vos appareils). Le thème commun de la structure est réglé par l'administrateur.
+    Un thème payant doit d'abord être activé par l'administrateur pour la structure.
+</div>
+{% endif %}
 
 <div id="alerteBloque" class="alert alert-warning" style="display:none;"></div>
+<div id="infoSource" class="small text-muted mb-2"></div>
 
 <h5 class="mt-3"><i class="fas fa-swatchbook me-1"></i> Choisir un thème</h5>
 <div class="row g-3" id="grilleThemes"></div>
@@ -22,24 +40,31 @@
 <div class="card mt-4" id="cartePerso">
     <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
         <span><i class="fas fa-sliders-h me-1"></i> Personnaliser le thème actif : <strong id="persoThemeNom"></strong></span>
-        <span>
+        <span class="d-flex flex-wrap gap-1">
+            <button class="btn btn-sm btn-outline-info" onclick="couleursLogo()" title="Propose des couleurs à partir du logo de la structure"><i class="fas fa-image"></i> Couleurs de mon logo</button>
             <button class="btn btn-sm btn-outline-secondary" onclick="apercuPerso()"><i class="fas fa-eye"></i> Aperçu</button>
             <button class="btn btn-sm btn-primary" onclick="enregistrerPerso()"><i class="fas fa-save"></i> Enregistrer</button>
             <button class="btn btn-sm btn-outline-danger" onclick="reinitialiserPerso()" title="Revenir au thème tel quel"><i class="fas fa-undo"></i> Réinitialiser</button>
         </span>
     </div>
     <div class="card-body">
+        <div id="paletteLogo" class="mb-3" style="display:none;"></div>
         <div class="row g-3" id="formPerso"></div>
-        <div class="form-text mt-2">Les réglages ci-dessus priment sur les couleurs du thème. « Aperçu » applique les couleurs à cette page sans rien enregistrer.</div>
+        <div class="form-text mt-2">Les réglages ci-dessus priment sur les couleurs du thème. « Aperçu » applique les couleurs à cette page sans rien enregistrer. « Couleurs de mon logo » remplit les champs à partir du logo de la structure : vérifiez l'aperçu puis enregistrez.</div>
     </div>
 </div>
 <div class="mt-3 text-end">
+    {% if portee == 'structure' %}
     <button class="btn btn-sm btn-link text-muted" onclick="revenirDefaut()">Revenir à l'apparence d'origine (thème Classique, sans réglage)</button>
+    {% else %}
+    <button class="btn btn-sm btn-link text-muted" onclick="revenirDefaut()">Supprimer mon réglage personnel (reprendre l'apparence de la structure)</button>
+    {% endif %}
 </div>
 
 <script>
 const VARIABLES = {{ variables|tojson }};
 const POLICES = {{ polices|tojson }};
+const PORTEE = {{ portee|tojson }};
 let DONNEES = null;
 const F = n => Math.round(n || 0).toLocaleString('fr-FR') + ' F';
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -67,8 +92,9 @@ function badgeEtat(t) {
 function boutonTheme(t) {
     if (t.actif) return '<button class="btn btn-sm btn-success w-100" disabled><i class="fas fa-check"></i> Thème actif</button>';
     if (!t.payant || t.utilisable) return `<button class="btn btn-sm btn-primary w-100" onclick="choisir('${t.cle}')"><i class="fas fa-magic"></i> Utiliser ce thème</button>`;
+    if (PORTEE !== 'structure') return `<button class="btn btn-sm btn-outline-secondary w-100" disabled title="Thème payant : à activer par l'administrateur de la structure"><i class="fas fa-lock"></i> À activer par l'administrateur</button>`;
     if (t.etat === 'aucune') return `<button class="btn btn-sm btn-outline-primary w-100" onclick="choisir('${t.cle}')"><i class="fas fa-hourglass-start"></i> Essayer ${t.jours_essai} jour${t.jours_essai > 1 ? 's' : ''} gratuitement</button>`;
-    return `<button class="btn btn-sm btn-outline-secondary w-100" disabled title="Contactez l'éditeur SSoftOneV10 pour activer ce thème"><i class="fas fa-lock"></i> Essai terminé — activation par l'éditeur (${F(t.prix)})</button>`;
+    return `<button class="btn btn-sm btn-outline-secondary w-100" disabled title="Contactez l'éditeur SSoftOneV10 pour activer ce thème"><i class="fas fa-lock"></i> Essai terminé — activation par l'éditeur (${F(t.prix)} une fois)</button>`;
 }
 
 function afficher() {
@@ -81,7 +107,7 @@ function afficher() {
                     <div class="d-flex justify-content-between align-items-center mt-2">
                         <strong>${esc(t.nom)}</strong> ${badgeEtat(t)}
                     </div>
-                    <div class="small text-muted mb-2">${esc(t.description)}${t.payant && t.etat !== 'paye' ? ` — <strong>${F(t.prix)}</strong>${t.fin_essai && t.etat === 'essai' ? ', essai jusqu\'au ' + t.fin_essai : ''}` : ''}</div>
+                    <div class="small text-muted mb-2">${esc(t.description)}${t.payant && t.etat !== 'paye' ? ` — <strong>${F(t.prix)} une seule fois</strong>${t.fin_essai && t.etat === 'essai' ? ', essai jusqu\'au ' + t.fin_essai : ''}` : ''}</div>
                     ${boutonTheme(t)}
                 </div>
             </div>
@@ -91,12 +117,19 @@ function afficher() {
     if (a.bloque) {
         alerte.style.display = '';
         alerte.innerHTML = a.bloque === 'expire'
-            ? `<i class="fas fa-lock me-1"></i> La période d'essai du thème <strong>${esc(a.cle_choisie)}</strong> est terminée : l'apparence d'origine est appliquée en attendant. Contactez l'éditeur SSoftOneV10 pour l'activer.`
-            : `<i class="fas fa-info-circle me-1"></i> Le thème choisi (<strong>${esc(a.cle_choisie)}</strong>) n'est plus disponible : l'apparence d'origine est appliquée.`;
+            ? `<i class="fas fa-lock me-1"></i> La période d'essai du thème <strong>${esc(a.cle_choisie)}</strong> est terminée : l'apparence d'origine est appliquée en attendant. Contactez l'éditeur SSoftOneV10 pour l'activer (10 000 F une seule fois).`
+            : `<i class="fas fa-info-circle me-1"></i> Le thème choisi (<strong>${esc(a.cle_choisie)}</strong>) n'est pas (ou plus) disponible : l'apparence d'origine est appliquée.`;
     } else alerte.style.display = 'none';
+    document.getElementById('infoSource').innerHTML = PORTEE === 'structure'
+        ? `Thème de la structure : <strong>${esc(a.theme.nom)}</strong>.`
+        : (a.source === 'utilisateur'
+            ? `Vous utilisez votre <strong>réglage personnel</strong> (thème ${esc(a.theme.nom)}). Thème commun de la structure : <strong>${esc(a.cle_structure)}</strong>.`
+            : `Vous utilisez l'apparence de la structure (thème <strong>${esc(a.theme.nom)}</strong>). Choisissez un thème ci-dessous pour une apparence personnelle.`);
     document.getElementById('persoThemeNom').textContent = a.theme.nom;
-    const perso = a.personnalisation || {};
-    const eff = a.variables;
+    remplirFormulaire(a.personnalisation || {}, a.variables);
+}
+
+function remplirFormulaire(perso, eff) {
     document.getElementById('formPerso').innerHTML = VARIABLES.map(([cle, libelle, type, defaut, aide]) => {
         const val = perso[cle] !== undefined ? perso[cle] : eff[cle];
         let champ;
@@ -132,7 +165,7 @@ async function choisir(cle) {
     const d = await fetch('/api/theme/choisir', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({cle})}).then(r => r.json());
     if (!d.success) { await afficherMessage(d.error || 'Erreur', {type: 'danger'}); return; }
     appliquerCss(d.css);
-    await afficherMessage(d.message || 'Thème appliqué à toute la structure.', {type: 'success'});
+    await afficherMessage(d.message || 'Thème appliqué.', {type: 'success'});
     charger();
 }
 
@@ -145,20 +178,33 @@ async function enregistrerPerso() {
     const d = await fetch('/api/theme/personnaliser', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({personnalisation: lirePerso()})}).then(r => r.json());
     if (!d.success) { await afficherMessage(d.error || 'Erreur', {type: 'danger'}); return; }
     appliquerCss(d.css);
-    await afficherMessage('Réglages enregistrés pour toute la structure.', {type: 'success'});
+    await afficherMessage(PORTEE === 'structure' ? 'Réglages enregistrés pour toute la structure.' : 'Vos réglages personnels sont enregistrés.', {type: 'success'});
     charger();
 }
 
 async function reinitialiserPerso() {
-    if (!await demanderConfirmation('Supprimer vos réglages et revenir au thème tel quel ?')) return;
+    if (!await demanderConfirmation('Supprimer les réglages de couleurs et revenir au thème tel quel ?')) return;
     const d = await fetch('/api/theme/reinitialiser', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({garder_theme: true})}).then(r => r.json());
-    if (d.success) { appliquerCss(d.css); charger(); }
+    if (d.success) { appliquerCss(d.css); document.getElementById('paletteLogo').style.display = 'none'; charger(); }
 }
 
 async function revenirDefaut() {
-    if (!await demanderConfirmation("Revenir à l'apparence d'origine du logiciel ?")) return;
+    const q = PORTEE === 'structure' ? "Revenir à l'apparence d'origine du logiciel pour toute la structure ?" : "Supprimer votre réglage personnel et reprendre l'apparence de la structure ?";
+    if (!await demanderConfirmation(q)) return;
     const d = await fetch('/api/theme/reinitialiser', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({garder_theme: false})}).then(r => r.json());
     if (d.success) { appliquerCss(d.css); charger(); }
+}
+
+// ⭐ Palette depuis le logo de la structure (patron : « régler en fonction des couleurs de son logo »)
+async function couleursLogo() {
+    const bloc = document.getElementById('paletteLogo');
+    bloc.style.display = ''; bloc.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Analyse du logo…';
+    const d = await fetch('/api/theme/couleurs-logo').then(r => r.json()).catch(() => ({success: false, error: 'Erreur réseau'}));
+    if (!d.success) { bloc.innerHTML = '<span class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i>' + esc(d.error || 'Erreur') + '</span>'; return; }
+    bloc.innerHTML = '<span class="small me-2">Couleurs trouvées dans le logo :</span>' + d.palette.map(c => `<span title="${c}" style="display:inline-block; width:26px; height:26px; border-radius:50%; background:${c}; border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.15); vertical-align:middle; margin-right:4px;"></span>`).join('')
+        + ' <span class="small text-muted ms-2">Champs remplis avec ces couleurs : cliquez sur « Aperçu » puis « Enregistrer ».</span>';
+    remplirFormulaire(d.variables, d.variables);
+    apercuPerso();
 }
 
 document.addEventListener('DOMContentLoaded', charger);

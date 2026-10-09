@@ -4816,6 +4816,22 @@ class ThemeStructure(db.Model):
     modifie_par = db.Column(db.String(150))
 
 
+class ThemeUtilisateur(db.Model):
+    """⭐ Apparence PERSONNELLE d'un utilisateur (patron, 2026-10-09 : « que
+    les autres puissent aussi faire ce réglage mais que ça s'applique
+    uniquement chez eux ; global uniquement si c'est l'admin qui règle »).
+    utilisateur_id = ID de la ligne de la feuille users (texte, pas de FK)."""
+    __tablename__ = 'theme_utilisateur'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    utilisateur_id = db.Column(db.String(50), nullable=False)
+    theme_cle = db.Column(db.String(40))
+    personnalisation = db.Column(db.JSON, default=dict)
+    modifie_le = db.Column(db.DateTime, default=datetime.utcnow)
+    modifie_par = db.Column(db.String(150))
+    __table_args__ = (db.UniqueConstraint('structure_id', 'utilisateur_id', name='uq_theme_utilisateur'),)
+
+
 class LicenceTheme(db.Model):
     """⭐ Droit d'une structure sur un thème PAYANT : essai (debut/fin) puis
     activation payée (paye=True), posée par le super-admin — voir
