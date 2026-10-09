@@ -2385,6 +2385,11 @@
                     Factures Proforma
                 </a>
                 {% endif %}
+                {% if not onglet_cache('proformas_chirurgie') and not _bloq %}
+                <a class="menu-item" href="{{ url_for('chirurgie.page_proformas_chirurgie') }}">
+                    Proformas chirurgie
+                </a>
+                {% endif %}
                 <!-- ⭐ FIX : ce lien était affiché pour tout non-admin, mais
                      page_factures_assurances (app.py) est réservée à
                      caissier/secretaire — un gestionnaire ou comptable non-

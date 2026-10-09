@@ -34,6 +34,7 @@ MODULES_STRUCTURE = {
     'pharmacie':            {'label': 'Pharmacie & Vente',               'endpoints': ['pharma_vente', 'gestion_stock']},
     'factures':             {'label': 'Factures clients & Créances',     'endpoints': ['factures']},
     'proformas':            {'label': 'Factures Proforma',               'endpoints': ['proformas']},
+    'proformas_chirurgie':  {'label': 'Proformas chirurgie (cotation K)', 'endpoints': ['chirurgie.page_proformas_chirurgie']},
     'historique_ventes':    {'label': 'Historique des ventes',           'endpoints': ['historique_ventes']},
     'medecins_activites':   {'label': 'Médecins & Activités',            'endpoints': ['gestion_medecins']},
     'protocoles':           {'label': 'Protocoles et Modèles',           'endpoints': ['protocoles.page_protocoles']},

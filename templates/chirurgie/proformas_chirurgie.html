@@ -1,0 +1,672 @@
+{% extends "base.html" %}
+
+{% block title %}Proformas chirurgie{% endblock %}
+
+{% block extra_css %}
+<style>
+    .pfc-k { font-variant-numeric: tabular-nums; }
+    #formProforma table td, #formProforma table th { vertical-align: middle; }
+    #formProforma .form-control-sm, #formProforma .form-select-sm { min-width: 0; }
+    .pfc-apercu { background: #f6f8fc; border: 1px solid #dfe5f1; border-radius: 8px; padding: 10px 12px; }
+    .pfc-apercu table td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .pfc-total { font-size: 1.15rem; font-weight: 700; }
+    .pfc-statut { font-size: 11px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="card mb-3">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <h5 class="mb-0"><i class="fas fa-user-doctor"></i> Proformas d'intervention chirurgicale</h5>
+      <div class="d-flex gap-2 flex-wrap">
+        {% if peut_regler %}
+        <button class="btn btn-light btn-sm" onclick="ouvrirReglages()"><i class="fas fa-sliders"></i> Réglages</button>
+        {% endif %}
+        <button class="btn btn-warning btn-sm" onclick="nouvelleProforma()"><i class="fas fa-plus"></i> Nouvelle proforma</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="d-flex gap-2 flex-wrap align-items-center mb-2">
+        <input type="search" id="recherche" class="form-control form-control-sm" style="max-width:320px" placeholder="Patient, motif, numéro…" oninput="afficherListe()">
+        <div class="form-check m-0">
+          <input class="form-check-input" type="checkbox" id="voirArchives" onchange="chargerListe()">
+          <label class="form-check-label small" for="voirArchives">Voir les archives</label>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr><th>N°</th><th>Date</th><th>Patient</th><th>Motif</th><th class="text-end">Total des K</th><th class="text-end">Total</th><th>Suite</th><th class="text-end">Actions</th></tr>
+          </thead>
+          <tbody id="liste"><tr><td colspan="8" class="text-center text-muted">Chargement…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Formulaire ===== -->
+<div class="modal fade" id="modalProforma" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="titreForm">Nouvelle proforma d'intervention</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+      </div>
+      <div class="modal-body" id="formProforma">
+        <div class="row g-2 mb-2">
+          <div class="col-md-5">
+            <label class="form-label small mb-0">Patient</label>
+            <input id="fPatient" class="form-control form-control-sm" list="listePatients" placeholder="Nom du patient" autocomplete="off" oninput="majPatient()">
+            <datalist id="listePatients"></datalist>
+            <div class="small" id="fPatientInfo"></div>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small mb-0">Service</label>
+            <input id="fService" class="form-control form-control-sm">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small mb-0">Partir d'un modèle</label>
+            <div class="input-group input-group-sm">
+              <select id="fModele" class="form-select form-select-sm"><option value="">—</option></select>
+              <button class="btn btn-outline-secondary" type="button" onclick="appliquerModele()">Appliquer</button>
+            </div>
+          </div>
+          <div class="col-12">
+            <label class="form-label small mb-0">Motif de l'intervention (imprimé « relative à … »)</label>
+            <textarea id="fMotif" class="form-control form-control-sm" rows="2" placeholder="une coxarthrose secondaire à une nécrose de la tête fémorale…" oninput="planifierCalcul()"></textarea>
+          </div>
+        </div>
+
+        <h6 class="mt-3 mb-1">Cotation des actes</h6>
+        <table class="table table-sm mb-1">
+          <thead class="table-light"><tr><th>Acte</th><th style="width:110px">K</th><th style="width:130px">Compté</th><th style="width:100px" class="text-end">Retenu</th><th style="width:40px"></th></tr></thead>
+          <tbody id="fActes"></tbody>
+        </table>
+        <div class="d-flex flex-wrap gap-3 align-items-center mb-2">
+          <button class="btn btn-outline-primary btn-sm" type="button" onclick="ajouterActe()"><i class="fas fa-plus"></i> Ajouter un acte</button>
+          <div class="d-flex align-items-center gap-2">
+            <label class="small mb-0" for="fCoef">Coefficient supplémentaire</label>
+            <input id="fCoef" type="number" min="0" step="0.5" class="form-control form-control-sm" style="width:90px" oninput="planifierCalcul()"> <span class="small">% du total des K</span>
+          </div>
+        </div>
+
+        <h6 class="mt-3 mb-1">Valeurs et pourcentages <small class="text-muted">(modifiables pour cette intervention)</small></h6>
+        <div class="row g-2 mb-2" id="fParametres"></div>
+
+        <h6 class="mt-3 mb-1">Hospitalisation</h6>
+        <div class="row g-2 mb-2">
+          <div class="col-md-3">
+            <label class="form-label small mb-0">Type de chambre</label>
+            <select id="fChambreChoix" class="form-select form-select-sm" onchange="choisirChambre()"></select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small mb-0">Libellé imprimé</label>
+            <input id="fChambreNom" class="form-control form-control-sm" placeholder="Chambre à deux lits" oninput="planifierCalcul()">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small mb-0">Prix par jour (F)</label>
+            <input id="fChambrePrix" type="number" min="0" class="form-control form-control-sm" oninput="planifierCalcul()">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label small mb-0">Nombre de jours</label>
+            <input id="fJours" type="number" min="0" step="1" class="form-control form-control-sm" oninput="planifierCalcul()">
+          </div>
+        </div>
+
+        <h6 class="mt-3 mb-1">Autres frais (forfaits) <small class="text-muted">— une ligne à 0 n'est pas imprimée</small></h6>
+        <table class="table table-sm mb-1">
+          <tbody id="fForfaits"></tbody>
+        </table>
+        <button class="btn btn-outline-primary btn-sm mb-2" type="button" onclick="ajouterForfait()"><i class="fas fa-plus"></i> Ajouter un frais</button>
+
+        <div class="mb-2">
+          <label class="form-label small mb-0">Texte « NB » imprimé en bas</label>
+          <textarea id="fNote" class="form-control form-control-sm" rows="3"></textarea>
+        </div>
+
+        <div class="pfc-apercu mt-3">
+          <div class="d-flex justify-content-between flex-wrap gap-2">
+            <strong>Aperçu du calcul</strong>
+            <span class="pfc-k" id="apercuK"></span>
+          </div>
+          <table class="table table-sm mb-0 mt-2"><thead><tr><th>Désignation</th><th class="text-end">Détail</th><th class="text-end">Nbre</th><th class="text-end">Total</th></tr></thead>
+            <tbody id="apercuLignes"></tbody></table>
+          <div class="text-end pfc-total mt-1">Total : <span id="apercuTotal">0 F</span></div>
+        </div>
+      </div>
+      <div class="modal-footer d-flex justify-content-between flex-wrap gap-2">
+        <button class="btn btn-outline-secondary btn-sm" type="button" onclick="enregistrerModele()"><i class="fas fa-bookmark"></i> Enregistrer comme modèle</button>
+        <div class="d-flex gap-2">
+          <button class="btn btn-secondary btn-sm" type="button" data-bs-dismiss="modal">Fermer</button>
+          <button class="btn btn-outline-primary btn-sm" type="button" onclick="enregistrer(false)"><i class="fas fa-save"></i> Enregistrer</button>
+          <button class="btn btn-primary btn-sm" type="button" onclick="enregistrer(true)"><i class="fas fa-print"></i> Enregistrer et imprimer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Transformation (facture réelle / hospitalisation) ===== -->
+<div class="modal fade" id="modalConversion" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="titreConversion"></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-2" id="aideConversion"></p>
+        <div class="mb-2" id="blocPatientConversion">
+          <label class="form-label small mb-0">Patient enregistré <span class="text-danger">*</span></label>
+          <input id="cPatient" class="form-control form-control-sm" list="listePatients" placeholder="Choisissez le patient dans la liste" autocomplete="off">
+          <div class="small text-muted">Cette proforma a été faite pour un nom non enregistré : choisissez la fiche du patient (créez-la d'abord dans « Patients » si besoin).</div>
+        </div>
+        <div class="mb-2" id="blocDateEntree">
+          <label class="form-label small mb-0">Date d'entrée</label>
+          <input id="cDateEntree" type="date" class="form-control form-control-sm" style="max-width:200px">
+        </div>
+        <table class="table table-sm mb-0">
+          <thead class="table-light"><tr><th style="width:36px"></th><th>Ligne</th><th class="text-end">Montant</th></tr></thead>
+          <tbody id="cLignes"></tbody>
+        </table>
+        <div class="small text-danger mt-2" id="cErreur"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" type="button" data-bs-dismiss="modal">Annuler</button>
+        <button class="btn btn-primary btn-sm" type="button" id="btnConversion" onclick="executerConversion()"></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if peut_regler %}
+<!-- ===== Réglages de la structure ===== -->
+<div class="modal fade" id="modalReglages" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Réglages des proformas chirurgie</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted">Valeurs proposées par défaut à chaque nouvelle proforma (modifiables ensuite sur chaque proforma).</p>
+        <div class="row g-2 mb-3" id="rParametres"></div>
+        <h6 class="mb-1">Chambres</h6>
+        <table class="table table-sm mb-1"><tbody id="rChambres"></tbody></table>
+        <button class="btn btn-outline-primary btn-sm mb-3" type="button" onclick="ajouterLigneReglage('rChambres', {nom:'', prix:''})"><i class="fas fa-plus"></i> Ajouter une chambre</button>
+        <h6 class="mb-1">Frais proposés par défaut</h6>
+        <table class="table table-sm mb-1"><tbody id="rForfaits"></tbody></table>
+        <button class="btn btn-outline-primary btn-sm mb-3" type="button" onclick="ajouterLigneReglage('rForfaits', {nom:'', montant:0})"><i class="fas fa-plus"></i> Ajouter un frais</button>
+        <div class="row g-2">
+          <div class="col-md-6"><label class="form-label small mb-0">Service par défaut</label><input id="rService" class="form-control form-control-sm"></div>
+          <div class="col-md-3"><label class="form-label small mb-0">Ville (« Fait à … »)</label><input id="rVille" class="form-control form-control-sm"></div>
+          <div class="col-md-3"><label class="form-label small mb-0">Sigle du numéro</label><input id="rSigle" class="form-control form-control-sm" placeholder="CCL"></div>
+          <div class="col-md-6"><label class="form-label small mb-0">Signature</label><input id="rSignature" class="form-control form-control-sm"></div>
+          <div class="col-12"><label class="form-label small mb-0">Texte « NB »</label><textarea id="rNote" class="form-control form-control-sm" rows="3"></textarea></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" type="button" data-bs-dismiss="modal">Annuler</button>
+        <button class="btn btn-primary btn-sm" type="button" onclick="enregistrerReglages()"><i class="fas fa-save"></i> Enregistrer les réglages</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<script>
+let REGLAGES = {{ reglages|tojson }};
+let MODELES = {{ modeles|tojson }};
+const PARAMS = [
+    ['valeur_k', 'Valeur du K (F)'], ['valeur_k_bloc', 'Valeur du K bloc (F)'],
+    ['pct_second', '% second chirurgien'], ['pct_anesthesie', '% anesthésie'], ['pct_bloc', '% bloc'],
+    ['k_aide', 'K aide opératoire'], ['soins_jour', 'Soins infirmiers / jour (F)'],
+];
+let proformas = [];
+let patients = [];
+let enEdition = null;       // id de la proforma modifiée (null = nouvelle)
+let conversion = null;      // {mode, proforma}
+
+const esc = s => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
+const fmtF = n => Math.round(n || 0).toLocaleString('fr-FR') + ' F';
+const fmtK = n => (Math.round((n || 0) * 1000) / 1000).toLocaleString('fr-FR', {maximumFractionDigits: 3});
+const nomPatient = p => ((p.nom || '') + ' ' + (p.prenom || '')).trim();
+const libellePatient = p => nomPatient(p) + (p.numero_local ? ' — n° ' + p.numero_local : '');
+
+// ---------------------------------------------------------------- liste
+function chargerListe() {
+    const archive = document.getElementById('voirArchives').checked ? '1' : '0';
+    fetch('/api/chirurgie/proformas?archive=' + archive).then(r => r.json()).then(res => {
+        proformas = res.data || [];
+        afficherListe();
+    }).catch(() => {
+        document.getElementById('liste').innerHTML = '<tr><td colspan="8" class="text-center text-danger">Chargement impossible. Rechargez la page.</td></tr>';
+    });
+}
+
+function afficherListe() {
+    const q = (document.getElementById('recherche').value || '').toLowerCase();
+    const lignes = proformas.filter(p => !q || (p.patient_nom + ' ' + p.motif + ' ' + p.numero_affiche).toLowerCase().includes(q));
+    if (!lignes.length) {
+        document.getElementById('liste').innerHTML = '<tr><td colspan="8" class="text-center text-muted">Aucune proforma. Cliquez sur « Nouvelle proforma » pour commencer.</td></tr>';
+        return;
+    }
+    const archives = document.getElementById('voirArchives').checked;
+    document.getElementById('liste').innerHTML = lignes.map(p => {
+        const suite = [];
+        if (p.proforma_id) suite.push('<span class="badge bg-success pfc-statut">Facture : proforma créée</span>');
+        if (p.hospitalisation_id) suite.push('<a class="badge bg-info text-dark pfc-statut" href="/hospitalisation/' + p.hospitalisation_id + '">Hospitalisé</a>');
+        const motif = p.motif.length > 60 ? p.motif.slice(0, 57) + '…' : p.motif;
+        return '<tr>' +
+            '<td><strong>' + esc(p.numero_affiche) + '</strong></td>' +
+            '<td>' + esc(p.created_at ? new Date(p.created_at).toLocaleDateString('fr-FR') : '') + '</td>' +
+            '<td>' + esc(p.patient_nom) + (p.patient_id ? '' : ' <span class="badge bg-light text-dark border pfc-statut">non enregistré</span>') + '</td>' +
+            '<td class="small" title="' + esc(p.motif) + '">' + esc(motif) + '</td>' +
+            '<td class="text-end pfc-k">K' + fmtK(p.total_k) + '</td>' +
+            '<td class="text-end pfc-k"><strong>' + fmtF(p.total) + '</strong></td>' +
+            '<td>' + (suite.join(' ') || '<span class="text-muted small">—</span>') + '</td>' +
+            '<td class="text-end text-nowrap">' +
+              '<a class="btn btn-sm btn-outline-secondary" href="/chirurgie/proformas/' + p.id + '/imprimer" title="Imprimer"><i class="fas fa-print"></i></a> ' +
+              '<button class="btn btn-sm btn-outline-primary" onclick="modifierProforma(' + p.id + ')" title="Modifier"><i class="fas fa-pen"></i></button> ' +
+              '<button class="btn btn-sm btn-outline-success" onclick="ouvrirConversion(' + p.id + ', \'facture\')" title="Transformer en facture réelle"><i class="fas fa-file-invoice-dollar"></i></button> ' +
+              '<button class="btn btn-sm btn-outline-info" onclick="ouvrirConversion(' + p.id + ', \'hospitalisation\')" title="Transformer en hospitalisation"><i class="fas fa-bed"></i></button> ' +
+              '<button class="btn btn-sm btn-outline-dark" onclick="archiver(' + p.id + ', ' + (!archives) + ')" title="' + (archives ? 'Désarchiver' : 'Archiver') + '"><i class="fas fa-' + (archives ? 'box-open' : 'box-archive') + '"></i></button>' +
+            '</td></tr>';
+    }).join('');
+}
+
+async function archiver(id, archive) {
+    if (archive && !await demanderConfirmation('Archiver cette proforma ? Elle restera consultable dans « Voir les archives ».')) return;
+    await fetch('/api/chirurgie/proformas/' + id + '/archiver', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({archive})});
+    chargerListe();
+}
+
+// ---------------------------------------------------------------- patients
+function chargerPatients() {
+    return fetch('/api/patients').then(r => r.json()).then(liste => {
+        patients = Array.isArray(liste) ? liste : (liste.data || []);
+        document.getElementById('listePatients').innerHTML = patients.map(p => '<option value="' + esc(libellePatient(p)) + '"></option>').join('');
+    }).catch(() => {});
+}
+
+function patientDepuisSaisie(texte) {
+    const t = (texte || '').trim().toLowerCase();
+    return patients.find(p => libellePatient(p).toLowerCase() === t) || null;
+}
+
+function majPatient() {
+    const p = patientDepuisSaisie(document.getElementById('fPatient').value);
+    const info = document.getElementById('fPatientInfo');
+    if (p) {
+        info.innerHTML = '<span class="text-success"><i class="fas fa-check"></i> Patient enregistré' +
+            (p.type_assurance && p.type_assurance !== 'non_assure' ? ' — ' + esc(p.type_assurance.replace('_', '-').toUpperCase()) : '') + '</span>';
+    } else if (document.getElementById('fPatient').value.trim()) {
+        info.innerHTML = '<span class="text-muted">Nom libre (patient non enregistré) : il faudra choisir sa fiche pour facturer ou hospitaliser.</span>';
+    } else {
+        info.innerHTML = '';
+    }
+}
+
+// ---------------------------------------------------------------- formulaire
+function ligneActe(a) {
+    const tr = document.createElement('tr');
+    const div = Number(a.diviseur || 1);
+    tr.innerHTML =
+        '<td><input class="form-control form-control-sm a-nom" placeholder="Arthroplastie…" value="' + esc(a.nom || '') + '"></td>' +
+        '<td><input class="form-control form-control-sm a-k" type="number" min="0" step="0.5" value="' + esc(a.k ?? '') + '"></td>' +
+        '<td><select class="form-select form-select-sm a-div">' +
+            [[1, 'En entier'], [2, 'Moitié (1/2)'], [3, 'Un tiers (1/3)'], [4, 'Un quart (1/4)']]
+              .map(o => '<option value="' + o[0] + '"' + (o[0] === div ? ' selected' : '') + '>' + o[1] + '</option>').join('') +
+        '</select></td>' +
+        '<td class="text-end pfc-k a-retenu"></td>' +
+        '<td><button class="btn btn-sm btn-outline-danger" type="button" aria-label="Retirer l\'acte"><i class="fas fa-times"></i></button></td>';
+    tr.querySelector('button').onclick = () => { tr.remove(); planifierCalcul(); };
+    tr.querySelectorAll('input,select').forEach(el => el.addEventListener('input', planifierCalcul));
+    document.getElementById('fActes').appendChild(tr);
+}
+function ajouterActe() { ligneActe({}); }
+
+function ligneForfait(f) {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+        '<td><input class="form-control form-control-sm f-nom" value="' + esc(f.nom || '') + '" placeholder="Désignation"></td>' +
+        '<td style="width:170px"><input class="form-control form-control-sm f-montant text-end" type="number" min="0" value="' + esc(f.montant || '') + '" placeholder="0"></td>' +
+        '<td style="width:40px"><button class="btn btn-sm btn-outline-danger" type="button" aria-label="Retirer"><i class="fas fa-times"></i></button></td>';
+    tr.querySelector('button').onclick = () => { tr.remove(); planifierCalcul(); };
+    tr.querySelectorAll('input').forEach(el => el.addEventListener('input', planifierCalcul));
+    document.getElementById('fForfaits').appendChild(tr);
+}
+function ajouterForfait() { ligneForfait({}); }
+
+function remplirParametres(conteneurId, valeurs, auChangement) {
+    document.getElementById(conteneurId).innerHTML = PARAMS.map(([cle, lib]) =>
+        '<div class="col-6 col-md-3 col-lg"><label class="form-label small mb-0">' + lib + '</label>' +
+        '<input type="number" min="0" step="0.5" class="form-control form-control-sm" data-param="' + cle + '" value="' + esc(valeurs[cle] ?? '') + '"></div>').join('');
+    if (auChangement) document.querySelectorAll('#' + conteneurId + ' input').forEach(el => el.addEventListener('input', auChangement));
+}
+function lireParametres(conteneurId) {
+    const p = {};
+    document.querySelectorAll('#' + conteneurId + ' input[data-param]').forEach(el => { p[el.dataset.param] = el.value; });
+    return p;
+}
+
+function remplirChambres(nomActuel) {
+    const sel = document.getElementById('fChambreChoix');
+    sel.innerHTML = '<option value="">Autre / personnalisé</option>' +
+        (REGLAGES.chambres || []).map((c, i) => '<option value="' + i + '"' + (c.nom === nomActuel ? ' selected' : '') + '>' + esc(c.nom) + ' — ' + fmtF(c.prix) + '</option>').join('');
+}
+function choisirChambre() {
+    const c = (REGLAGES.chambres || [])[document.getElementById('fChambreChoix').value];
+    if (c) {
+        document.getElementById('fChambreNom').value = c.nom;
+        document.getElementById('fChambrePrix').value = c.prix;
+    }
+    planifierCalcul();
+}
+
+function remplirFormulaire(d) {
+    const p = patients.find(x => x.id === d.patient_id);
+    document.getElementById('fPatient').value = p ? libellePatient(p) : (d.patient_nom || '');
+    document.getElementById('fService').value = d.service ?? REGLAGES.service ?? '';
+    document.getElementById('fMotif').value = d.motif || '';
+    document.getElementById('fActes').innerHTML = '';
+    (d.actes && d.actes.length ? d.actes : [{}]).forEach(ligneActe);
+    document.getElementById('fCoef').value = d.coef_supp || '';
+    remplirParametres('fParametres', Object.assign({}, REGLAGES.parametres, d.parametres || {}), planifierCalcul);
+    const chambre = d.chambre_nom !== undefined ? {nom: d.chambre_nom, prix: d.chambre_prix} : (REGLAGES.chambres || [])[0] || {nom: '', prix: ''};
+    remplirChambres(chambre.nom);
+    document.getElementById('fChambreNom').value = chambre.nom || '';
+    document.getElementById('fChambrePrix').value = chambre.prix || '';
+    document.getElementById('fJours').value = d.jours || '';
+    document.getElementById('fForfaits').innerHTML = '';
+    (d.forfaits || REGLAGES.forfaits || []).forEach(ligneForfait);
+    document.getElementById('fNote').value = d.note || REGLAGES.note || '';
+    document.getElementById('fModele').innerHTML = '<option value="">—</option>' + MODELES.map(m => '<option value="' + m.id + '">' + esc(m.nom) + '</option>').join('');
+    majPatient();
+    calculer();
+}
+
+function lireFormulaire() {
+    const p = patientDepuisSaisie(document.getElementById('fPatient').value);
+    return {
+        patient_id: p ? p.id : null,
+        patient_nom: p ? nomPatient(p) : document.getElementById('fPatient').value.trim(),
+        service: document.getElementById('fService').value,
+        motif: document.getElementById('fMotif').value,
+        actes: [...document.querySelectorAll('#fActes tr')].map(tr => ({
+            nom: tr.querySelector('.a-nom').value, k: tr.querySelector('.a-k').value, diviseur: tr.querySelector('.a-div').value})),
+        coef_supp: document.getElementById('fCoef').value,
+        parametres: lireParametres('fParametres'),
+        chambre_nom: document.getElementById('fChambreNom').value,
+        chambre_prix: document.getElementById('fChambrePrix').value,
+        jours: document.getElementById('fJours').value,
+        forfaits: [...document.querySelectorAll('#fForfaits tr')].map(tr => ({
+            nom: tr.querySelector('.f-nom').value, montant: tr.querySelector('.f-montant').value})),
+        note: document.getElementById('fNote').value,
+    };
+}
+
+let minuterieCalcul = null;
+function planifierCalcul() { clearTimeout(minuterieCalcul); minuterieCalcul = setTimeout(calculer, 250); }
+
+function calculer() {
+    fetch('/api/chirurgie/calculer', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(lireFormulaire())})
+        .then(r => r.json()).then(c => {
+            // retenu par acte (les lignes vides sont ignorées côté serveur : on aligne par nom+K)
+            const actes = (c.actes || []).slice();
+            document.querySelectorAll('#fActes tr').forEach(tr => {
+                const k = tr.querySelector('.a-k').value;
+                const div = Number(tr.querySelector('.a-div').value) || 1;
+                tr.querySelector('.a-retenu').textContent = k !== '' ? 'K' + fmtK(Number(String(k).replace(',', '.')) / div) : '';
+            });
+            const parts = actes.map(a => fmtK(a.retenu));
+            if (c.k_supp) parts.push(fmtK(c.k_supp));
+            document.getElementById('apercuK').textContent = actes.length ? 'Total des K = (' + parts.join(' + ') + ') = K' + fmtK(c.total_k) : '';
+            document.getElementById('apercuLignes').innerHTML = (c.lignes || []).map(l =>
+                '<tr><td>' + esc(l.designation) + '</td><td class="n">' + (l.detail ? Math.round(l.detail).toLocaleString('fr-FR') : '') +
+                '</td><td class="n">' + (l.nombre ? fmtK(l.nombre) : '') + '</td><td class="n">' + fmtF(l.total) + '</td></tr>').join('') ||
+                '<tr><td colspan="4" class="text-muted">Renseignez les actes en K pour voir le calcul.</td></tr>';
+            document.getElementById('apercuTotal').textContent = fmtF(c.total);
+        }).catch(() => {});
+}
+
+function nouvelleProforma() {
+    enEdition = null;
+    document.getElementById('titreForm').textContent = "Nouvelle proforma d'intervention";
+    remplirFormulaire({});
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalProforma')).show();
+}
+
+function modifierProforma(id) {
+    const p = proformas.find(x => x.id === id);
+    if (!p) return;
+    enEdition = id;
+    document.getElementById('titreForm').textContent = 'Modifier la proforma ' + p.numero_affiche;
+    remplirFormulaire(p);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalProforma')).show();
+}
+
+function appliquerModele() {
+    const m = MODELES.find(x => String(x.id) === document.getElementById('fModele').value);
+    if (!m) return;
+    const actuel = lireFormulaire();
+    const c = m.contenu || {};
+    remplirFormulaire(Object.assign({}, c, {
+        patient_id: actuel.patient_id, patient_nom: actuel.patient_nom,
+        motif: actuel.motif || c.motif || '', note: actuel.note,
+        service: c.service || actuel.service,
+    }));
+}
+
+async function enregistrer(imprimer) {
+    const data = lireFormulaire();
+    if (!data.patient_nom) { await afficherMessage('Indiquez le nom du patient.'); return; }
+    const url = enEdition ? '/api/chirurgie/proformas/' + enEdition : '/api/chirurgie/proformas';
+    const r = await fetch(url, {method: enEdition ? 'PUT' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)});
+    const res = await r.json();
+    if (!res.success) { await afficherMessage(res.error || 'Enregistrement impossible.', {type: 'danger'}); return; }
+    bootstrap.Modal.getInstance(document.getElementById('modalProforma')).hide();
+    chargerListe();
+    if (imprimer) window.location.href = '/chirurgie/proformas/' + res.data.id + '/imprimer';
+    else await afficherMessage('Proforma ' + res.data.numero_affiche + ' enregistrée — total ' + fmtF(res.data.total) + '.');
+}
+
+async function enregistrerModele() {
+    const nom = prompt('Nom du modèle (par ex. « Prothèse de hanche ») :', '');
+    if (!nom || !nom.trim()) return;
+    const d = lireFormulaire();
+    const r = await fetch('/api/chirurgie/modeles', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({nom: nom.trim(), contenu: d})});
+    const res = await r.json();
+    if (!res.success) { await afficherMessage(res.error || 'Enregistrement impossible.', {type: 'danger'}); return; }
+    MODELES = MODELES.filter(m => m.id !== res.data.id).concat([res.data]).sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+    document.getElementById('fModele').innerHTML = '<option value="">—</option>' + MODELES.map(m => '<option value="' + m.id + '">' + esc(m.nom) + '</option>').join('');
+    await afficherMessage('Modèle « ' + res.data.nom + ' » enregistré : il sera proposé dans « Partir d\'un modèle ».');
+}
+
+// ---------------------------------------------------------------- transformation
+function lignesConvertibles(p, mode) {
+    const lignes = [];
+    (p.lignes || []).forEach(l => {
+        const base = {designation: l.designation, total: l.total, groupe: l.groupe, detail: l.detail, nombre: l.nombre};
+        if (l.groupe === 'chambre') {
+            base.libelle = mode === 'hospitalisation'
+                ? 'Tarif de chambre : ' + (p.chambre_nom || 'Chambre') + ' — ' + fmtF(p.chambre_prix) + ' / jour (compté chaque nuit par le séjour)'
+                : 'Chambre (' + (p.chambre_nom || '') + ') — ' + p.jours + ' jour(s) × ' + fmtF(p.chambre_prix);
+            base.coche = true;
+        } else if (l.groupe === 'k') {
+            base.libelle = l.designation + ' (' + fmtK(l.nombre) + ' × ' + fmtF(l.detail) + ')';
+            base.coche = true;
+        } else if (l.groupe === 'soins') {
+            base.libelle = 'Soins infirmiers — ' + p.jours + ' jour(s) × ' + fmtF(l.detail);
+            base.coche = true;
+        } else {
+            base.libelle = l.designation;
+            base.coche = mode === 'facture' || !/^pr[ée]vision/i.test(l.designation);
+        }
+        lignes.push(base);
+    });
+    return lignes;
+}
+
+function ouvrirConversion(id, mode) {
+    const p = proformas.find(x => x.id === id);
+    if (!p) return;
+    conversion = {mode, proforma: p, lignes: lignesConvertibles(p, mode)};
+    const deja = mode === 'facture' ? p.proforma_id : p.hospitalisation_id;
+    document.getElementById('titreConversion').textContent = (mode === 'facture' ? 'Transformer en facture réelle — ' : 'Transformer en hospitalisation — ') + p.numero_affiche;
+    document.getElementById('aideConversion').innerHTML = (deja ? '<span class="text-warning"><i class="fas fa-triangle-exclamation"></i> Déjà fait une fois pour cette proforma : continuer en créera une seconde.</span><br>' : '') +
+        (mode === 'facture'
+            ? 'Les lignes cochées deviennent une proforma ordinaire dans « Factures proforma », avec les assurances du patient. Vous pourrez la vérifier puis cliquer sur « Convertir » pour encaisser et produire la facture.'
+            : 'Un séjour est ouvert pour le patient : la chambre est facturée par nuit selon le tarif ci-dessous et les lignes cochées sont ajoutées aux soins du séjour, datées du jour d\'entrée. Les « prévisions » restent décochées : les vrais médicaments et examens s\'ajouteront pendant le séjour.');
+    document.getElementById('blocPatientConversion').style.display = p.patient_id ? 'none' : '';
+    document.getElementById('cPatient').value = '';
+    document.getElementById('blocDateEntree').style.display = mode === 'hospitalisation' ? '' : 'none';
+    document.getElementById('cDateEntree').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('cLignes').innerHTML = conversion.lignes.map((l, i) =>
+        '<tr><td><input class="form-check-input" type="checkbox" id="cl' + i + '"' + (l.coche ? ' checked' : '') + '></td>' +
+        '<td><label for="cl' + i + '" class="mb-0">' + esc(l.libelle) + '</label></td><td class="text-end pfc-k">' + fmtF(l.total) + '</td></tr>').join('');
+    document.getElementById('cErreur').textContent = '';
+    document.getElementById('btnConversion').innerHTML = mode === 'facture' ? '<i class="fas fa-file-invoice-dollar"></i> Créer la proforma à facturer' : '<i class="fas fa-bed"></i> Ouvrir le séjour';
+    document.getElementById('btnConversion').disabled = false;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalConversion')).show();
+}
+
+async function executerConversion() {
+    const {mode, proforma} = conversion;
+    const erreur = document.getElementById('cErreur');
+    erreur.textContent = '';
+    let patient = patients.find(x => x.id === proforma.patient_id);
+    if (!patient) patient = patientDepuisSaisie(document.getElementById('cPatient').value);
+    if (!patient) { erreur.textContent = 'Choisissez le patient dans la liste (fiche enregistrée).'; return; }
+    const choisies = conversion.lignes.filter((l, i) => document.getElementById('cl' + i).checked);
+    if (!choisies.length) { erreur.textContent = 'Cochez au moins une ligne.'; return; }
+    const bouton = document.getElementById('btnConversion');
+    bouton.disabled = true;
+    try {
+        if (mode === 'facture') await versFacture(proforma, patient, choisies);
+        else await versHospitalisation(proforma, patient, choisies);
+    } catch (e) {
+        erreur.textContent = String(e.message || e);
+        bouton.disabled = false;
+    }
+}
+
+async function postJSON(url, corps) {
+    const r = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(corps)});
+    let res = {};
+    try { res = await r.json(); } catch (e) {}
+    if (!r.ok || res.success === false) throw new Error(res.error || ('Erreur ' + r.status));
+    return res;
+}
+
+async function versFacture(p, patient, choisies) {
+    const articles = choisies.map(l => {
+        const parJour = l.groupe === 'chambre' || l.groupe === 'soins';
+        const nom = l.groupe === 'chambre' ? 'Chambre (' + (p.chambre_nom || '') + ')'
+            : l.groupe === 'k' ? l.designation + ' (K' + fmtK(l.nombre) + ')' : l.designation;
+        const prix = parJour ? Number(l.detail) : Number(l.total);
+        const quantite = parJour ? Number(l.nombre) : 1;
+        return {nom, type: 'acte', quantite, prix, prix_unitaire: prix, pbr: prix, total: Math.round(prix * quantite),
+                prise_en_charge_amu: true, prise_en_charge_cac: true};
+    });
+    const aAssurance2 = !!patient.assurance2_nom;
+    const res = await postJSON('/api/proformas', {
+        patient_id: patient.id, patient_nom: nomPatient(patient).slice(0, 200), patient_telephone: (patient.telephone || '').slice(0, 50),
+        assurance_nom: patient.type_assurance && patient.type_assurance !== 'non_assure' ? patient.type_assurance : 'Non assuré',
+        taux_assurance: Number(patient.taux_prise_charge || 0), numero_assure: patient.numero_assure || '',
+        assurance2_nom: aAssurance2 ? patient.assurance2_nom : '', taux_assurance2: aAssurance2 ? Number(patient.taux_assurance2 || 0) : 0,
+        numero_assure2: patient.numero_assure2 || '', assurance2_active: aAssurance2,
+        articles, type: 'actes', assurance_principale_active: true,
+        notes: 'Intervention chirurgicale — ' + p.numero_affiche + (p.motif ? ' : ' + p.motif : ''),
+    });
+    await postJSON('/api/chirurgie/proformas/' + p.id + '/lien', {proforma_id: res.id, patient_id: patient.id});
+    bootstrap.Modal.getInstance(document.getElementById('modalConversion')).hide();
+    chargerListe();
+    if (await demanderConfirmation('Proforma n° ' + (res.numero || res.id) + ' créée dans « Factures proforma » (net à payer ' +
+            fmtF(res.net_a_payer) + '). Vérifiez-la puis cliquez sur « Convertir » pour encaisser. Ouvrir « Factures proforma » maintenant ?')) {
+        window.location.href = '/proformas';
+    }
+}
+
+async function versHospitalisation(p, patient, choisies) {
+    const dateEntree = document.getElementById('cDateEntree').value;
+    if (!dateEntree) throw new Error("Indiquez la date d'entrée.");
+    const res = await postJSON('/api/hospitalisation', {patient_id: patient.id, date_entree: dateEntree});
+    const hid = res.hospitalisation_id;
+    const echecs = [];
+    // Le lien est mémorisé tout de suite : même si une ligne échoue ensuite, le séjour reste rattaché.
+    await postJSON('/api/chirurgie/proformas/' + p.id + '/lien', {hospitalisation_id: hid, patient_id: patient.id});
+    for (const l of choisies) {
+        try {
+            if (l.groupe === 'chambre') {
+                await postJSON('/api/hospitalisation/' + hid + '/chambre_tarif', {nom: p.chambre_nom || 'Chambre', prix: p.chambre_prix, pbr: p.chambre_prix});
+            } else {
+                const parJour = l.groupe === 'soins';
+                await postJSON('/api/hospitalisation/' + hid + '/soins', {
+                    type: 'acte',
+                    nom: l.groupe === 'k' ? l.designation + ' (K' + fmtK(l.nombre) + ')' : l.designation,
+                    prix: parJour ? Number(l.detail) : Number(l.total),
+                    quantite: parJour ? Math.max(1, Math.round(Number(l.nombre))) : 1,
+                    date_prestation: dateEntree, confirmer_doublon: true,
+                    note: 'Proforma chirurgie ' + p.numero_affiche,
+                });
+            }
+        } catch (e) { echecs.push(l.designation + ' : ' + e.message); }
+    }
+    bootstrap.Modal.getInstance(document.getElementById('modalConversion')).hide();
+    chargerListe();
+    const msg = 'Séjour n° ' + (res.numero_local || hid) + ' ouvert pour ' + nomPatient(patient) + '.' +
+        (echecs.length ? '\nLignes non ajoutées (à saisir dans le suivi du séjour) :\n- ' + echecs.join('\n- ') : '') +
+        '\nOuvrir le suivi du séjour maintenant ?';
+    if (await demanderConfirmation(msg)) window.location.href = '/hospitalisation/' + hid;
+}
+
+// ---------------------------------------------------------------- réglages
+function ajouterLigneReglage(tbodyId, v) {
+    const tr = document.createElement('tr');
+    const champ2 = tbodyId === 'rChambres' ? 'prix' : 'montant';
+    tr.innerHTML = '<td><input class="form-control form-control-sm r-nom" value="' + esc(v.nom || '') + '" placeholder="Désignation"></td>' +
+        '<td style="width:170px"><input class="form-control form-control-sm r-val text-end" type="number" min="0" value="' + esc(v[champ2] || '') + '" placeholder="' + (champ2 === 'prix' ? 'Prix / jour' : '0') + '"></td>' +
+        '<td style="width:40px"><button class="btn btn-sm btn-outline-danger" type="button" aria-label="Retirer"><i class="fas fa-times"></i></button></td>';
+    tr.querySelector('button').onclick = () => tr.remove();
+    document.getElementById(tbodyId).appendChild(tr);
+}
+
+function ouvrirReglages() {
+    remplirParametres('rParametres', REGLAGES.parametres || {});
+    document.getElementById('rChambres').innerHTML = '';
+    (REGLAGES.chambres || []).forEach(c => ajouterLigneReglage('rChambres', c));
+    document.getElementById('rForfaits').innerHTML = '';
+    (REGLAGES.forfaits || []).forEach(f => ajouterLigneReglage('rForfaits', f));
+    ['service', 'ville', 'sigle', 'signature', 'note'].forEach(k => {
+        document.getElementById('r' + k.charAt(0).toUpperCase() + k.slice(1)).value = REGLAGES[k] || '';
+    });
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalReglages')).show();
+}
+
+async function enregistrerReglages() {
+    const lire = id => [...document.querySelectorAll('#' + id + ' tr')].map(tr => [tr.querySelector('.r-nom').value, tr.querySelector('.r-val').value]);
+    const corps = {
+        parametres: lireParametres('rParametres'),
+        chambres: lire('rChambres').map(([nom, prix]) => ({nom, prix})),
+        forfaits: lire('rForfaits').map(([nom, montant]) => ({nom, montant})),
+        service: document.getElementById('rService').value, ville: document.getElementById('rVille').value,
+        sigle: document.getElementById('rSigle').value, signature: document.getElementById('rSignature').value,
+        note: document.getElementById('rNote').value,
+    };
+    const r = await fetch('/api/chirurgie/reglages', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(corps)});
+    const res = await r.json();
+    if (!res.success) { await afficherMessage(res.error || 'Enregistrement impossible.', {type: 'danger'}); return; }
+    REGLAGES = res.reglages;
+    bootstrap.Modal.getInstance(document.getElementById('modalReglages')).hide();
+    await afficherMessage('Réglages enregistrés : ils seront proposés pour les prochaines proformas.');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    chargerPatients().then(chargerListe);
+});
+</script>
+{% endblock %}

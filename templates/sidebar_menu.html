@@ -101,6 +101,13 @@
                 </a>
                 {% endif %}
 
+                <!-- ===== PROFORMAS CHIRURGIE (cotation en K) ===== -->
+                {% if not onglet_cache('proformas_chirurgie') and not _bloq %}
+                <a class="nav-link {% if request.endpoint == 'chirurgie.page_proformas_chirurgie' %}active{% endif %}" href="{{ url_for('chirurgie.page_proformas_chirurgie') }}">
+                    <span class="menu-text">Proformas chirurgie</span>
+                </a>
+                {% endif %}
+
 
                 <!-- ===== RÉFÉRENTIELS AMU ===== -->
                 {% if not _bloq %}

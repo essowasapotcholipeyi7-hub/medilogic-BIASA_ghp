@@ -3985,6 +3985,64 @@ class ProformaLunette(db.Model):
     numero_affiliation = db.Column(db.String(255))
 
 
+# ⭐ Proforma d'intervention chirurgicale (patron, 2026-10-09) : devis
+# calculé à partir de la cotation des actes en K (lettre clé), comme le
+# document papier "FACTURE PROFORMA DE L'INTERVENTION" des cliniques
+# chirurgicales. Calcul centralisé dans services/chirurgie_service.py ;
+# `lignes`, `total_k` et `total` sont l'instantané calculé à
+# l'enregistrement (ce qui a été remis au patient). Peut ensuite devenir
+# une proforma ordinaire (facture réelle) et/ou une hospitalisation.
+class ProformaChirurgie(db.Model):
+    __tablename__ = 'proformas_chirurgie'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    numero = db.Column(db.Integer, nullable=False)
+    numero_affiche = db.Column(db.String(50))
+    patient_id = db.Column(db.Integer)
+    patient_nom = db.Column(db.String(255), nullable=False)
+    service = db.Column(db.String(255))
+    motif = db.Column(db.Text)
+    actes = db.Column(db.JSON, nullable=False, default=list)       # [{nom, k, diviseur}]
+    coef_supp = db.Column(db.Numeric, default=0)                    # % du total des K
+    parametres = db.Column(db.JSON, nullable=False, default=dict)   # valeurs du K, pourcentages...
+    chambre_nom = db.Column(db.String(255))
+    chambre_prix = db.Column(db.Numeric, default=0)
+    jours = db.Column(db.Integer, default=0)
+    forfaits = db.Column(db.JSON, nullable=False, default=list)    # [{nom, montant}]
+    lignes = db.Column(db.JSON, nullable=False, default=list)      # tableau calculé
+    total_k = db.Column(db.Numeric, default=0)
+    total = db.Column(db.Numeric, default=0)
+    note = db.Column(db.Text)
+    proforma_id = db.Column(db.Integer)          # proforma ordinaire créée (facture réelle)
+    hospitalisation_id = db.Column(db.Integer)   # séjour créé
+    archive = db.Column(db.Boolean, default=False)
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# Modèle réutilisable ("Prothèse de hanche"...) : actes en K, forfaits et
+# paramètres habituels d'une intervention.
+class ModeleInterventionChirurgie(db.Model):
+    __tablename__ = 'modeles_intervention_chirurgie'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    nom = db.Column(db.String(255), nullable=False)
+    contenu = db.Column(db.JSON, nullable=False, default=dict)  # service, motif, actes, coef_supp, parametres, chambre, jours, forfaits
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# Réglages par défaut de la structure (une ligne par structure).
+class ParametrageChirurgie(db.Model):
+    __tablename__ = 'parametrage_chirurgie'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False, unique=True)
+    reglages = db.Column(db.JSON, nullable=False, default=dict)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Recette(db.Model):
     __tablename__ = 'recettes'
     id = db.Column(db.Integer, primary_key=True)

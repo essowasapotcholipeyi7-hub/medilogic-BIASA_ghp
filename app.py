@@ -251,6 +251,10 @@ app.register_blueprint(journal_bp)
 from routes.chat import chat_bp
 app.register_blueprint(chat_bp)
 
+# ⭐ Proformas d'intervention chirurgicale (cotation en K)
+from routes.chirurgie import chirurgie_bp
+app.register_blueprint(chirurgie_bp)
+
 
 @app.after_request
 def auto_commit_after_request(response):

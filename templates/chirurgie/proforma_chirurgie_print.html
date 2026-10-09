@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% set cacher_navigation = True %}
+
+{% block title %}Proforma {{ p.numero_affiche }}{% endblock %}
+
+{% block extra_css %}
+{% with a4_taille_tableau=13 %}{% include 'partials/impression_a4.html' %}{% endwith %}
+<style>
+    @media print {
+        @page { size: A4; margin: 10mm 12mm; }
+        .no-print, nav, .navbar, footer { display: none !important; }
+        body { background: #fff !important; }
+        #pdfWrapper .card { border: none !important; box-shadow: none !important; }
+        /* Toute la largeur de la feuille : le document tient sur une page A4. */
+        #pdfWrapper > div { flex: 0 0 100% !important; max-width: 100% !important; }
+        #pdfWrapper .card-body { padding: 0 4px !important; }
+        .recu-header { margin: 0 0 10px 0 !important; padding: 12px 18px !important; }
+        .pfc-titre { margin-top: 8px !important; }
+        .pfc-motif { margin: 8px 20px 10px !important; }
+        table.pfc-tableau th, table.pfc-tableau td { padding: 1px 8px !important; line-height: 1.25 !important; }
+        #pdfWrapper .card-body { font-size: 13px !important; }
+        .pfc-actes, .pfc-motif { font-size: 14px !important; }
+        .pfc-actes li { margin: 0 !important; }
+        .pfc-nb { margin-top: 10px !important; }
+        .pfc-pied { margin-top: 12px !important; }
+    }
+    #pdfWrapper .card-body { padding: 20px; font-size: 14px; }
+    .recu-header { background: #1a2a6c; padding: 18px 26px; color: #fff; margin: -20px -20px 16px -20px; }
+    .recu-header .top-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+    .recu-header .logo-area { display: flex; align-items: center; gap: 15px; }
+    .recu-header .logo-area img { max-height: 56px; max-width: 110px; object-fit: contain; background: #fff; padding: 4px; border-radius: 6px; }
+    .recu-header .logo-area h1 { font-size: 20px; font-weight: 700; margin: 0; color: #fff; }
+    .recu-header .infos-droite { text-align: right; font-size: 12px; }
+    .recu-header .sub-info { margin-top: 8px; font-size: 11px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+    .pfc-service { font-weight: 700; text-transform: uppercase; padding: 6px 10px; }
+    .pfc-patient { font-style: italic; margin: 10px 0 4px; }
+    .pfc-titre { text-align: center; margin: 14px 0 4px; }
+    .pfc-titre h2 { font-size: 20px; font-weight: 700; text-decoration: underline; margin: 0; letter-spacing: .5px; }
+    .pfc-titre .numero { font-size: 18px; font-weight: 700; text-decoration: underline; }
+    .pfc-motif { text-align: center; margin: 12px 30px 14px; font-size: 15px; }
+    .pfc-actes { margin: 0 0 12px; padding: 0; list-style: none; font-size: 15px; }
+    .pfc-actes li { margin: 2px 0; }
+    .pfc-total-k { font-weight: 700; font-style: italic; }
+    .pfc-sous-titre { font-weight: 700; text-transform: uppercase; margin: 6px 0 4px 2px; }
+    table.pfc-tableau { width: 100%; border-collapse: collapse; }
+    table.pfc-tableau th, table.pfc-tableau td { border: 1px solid #555; padding: 3px 8px; }
+    table.pfc-tableau th { text-transform: uppercase; }
+    table.pfc-tableau td.n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    table.pfc-tableau td.d { text-transform: uppercase; font-weight: 600; }
+    table.pfc-tableau tr.total td { font-weight: 800; }
+    .pfc-nb { font-style: italic; margin-top: 14px; white-space: pre-line; }
+    .pfc-pied { display: flex; justify-content: space-between; margin-top: 18px; font-size: 15px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center" id="pdfWrapper">
+  <div class="col-lg-9">
+    <div class="card">
+      <div class="card-body">
+        <div class="recu-header">
+          <div class="top-row">
+            <div class="logo-area">
+              {% if structure_logo %}<img src="{{ structure_logo }}" alt="Logo">{% endif %}
+              <div>
+                <h1>{{ structure_nom }}</h1>
+                {% if structure_entete_a4 %}<p style="margin: 2px 0 0; font-size: 10px; white-space: pre-line;">{{ structure_entete_a4 }}</p>{% endif %}
+              </div>
+            </div>
+            <div class="infos-droite">FACTURE PROFORMA<br>{{ p.numero_affiche }}</div>
+          </div>
+          <div class="sub-info">
+            {% if structure_adresse %}<span>{{ structure_adresse }}</span>{% endif %}
+            {% if structure_telephone %}<span>Tél : {{ structure_telephone }}</span>{% endif %}
+            {% if structure_email %}<span>Email : {{ structure_email }}</span>{% endif %}
+          </div>
+        </div>
+
+        <div class="pfc-service">{{ p.service or reglages.service }}</div>
+
+        <div class="pfc-patient">Nom et prénoms du patient : <strong>{{ p.patient_nom }}</strong></div>
+
+        <div class="pfc-titre">
+          <h2>FACTURE PROFORMA DE L'INTERVENTION</h2>
+          <div class="numero">{{ p.numero_affiche }}</div>
+        </div>
+
+        {% if p.motif %}<div class="pfc-motif">relative à {{ p.motif }}</div>{% endif %}
+
+        <ul class="pfc-actes">
+          {% for a in calcul.actes %}
+          <li>* {{ a.nom }} :
+            {% if a.diviseur != 1 %}K{{ format_k(a.k) }}/{{ format_k(a.diviseur) }} = <strong>K{{ format_k(a.retenu) }}</strong>
+            {% else %}<strong>K{{ format_k(a.k) }}</strong>{% endif %}</li>
+          {% endfor %}
+          {% if calcul.k_supp %}
+          <li>* Coefficient supplémentaire : {{ format_k(p.coef_supp) }} % K{{ format_k(calcul.base_k) }} = K{{ format_k(calcul.k_supp) }}</li>
+          {% endif %}
+          <li class="pfc-total-k">TOTAL DES K = ({% for a in calcul.actes %}{{ format_k(a.retenu) }}{% if not loop.last %} + {% endif %}{% endfor %}{% if calcul.k_supp %} + {{ format_k(calcul.k_supp) }}{% endif %}) = K{{ format_k(calcul.total_k) }}</li>
+        </ul>
+
+        <div class="pfc-sous-titre">1 - Hospitalisation{% if p.chambre_nom %} {{ p.chambre_nom }}{% endif %}</div>
+        <table class="pfc-tableau">
+          <thead><tr><th>Désignation</th><th style="width:16%">Détail</th><th style="width:14%">Nbre</th><th style="width:18%">Total</th></tr></thead>
+          <tbody>
+            {% for l in calcul.lignes %}
+            <tr>
+              <td class="d">{{ l.designation }}</td>
+              <td class="n">{% if l.detail %}{{ fmt(l.detail) }}{% endif %}</td>
+              <td class="n">{% if l.nombre %}{{ format_k(l.nombre) }}{% endif %}</td>
+              <td class="n">{{ fmt(l.total) }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="total"><td class="d">Total</td><td></td><td></td><td class="n">{{ fmt(calcul.total) }}</td></tr>
+          </tbody>
+        </table>
+
+        <div class="pfc-nb"><strong><u>NB</u> :</strong> {{ p.note or reglages.note }}</div>
+
+        <div class="pfc-pied">
+          <span>Fait à {{ reglages.ville }} le : {{ p.created_at.strftime('%d/%m/%Y') if p.created_at else '' }}</span>
+          <span>{{ reglages.signature }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="text-center mt-3 mb-4 no-print">
+      {% include 'partials/boutons_impression_a4.html' %}
+      <a href="{{ url_for('chirurgie.page_proformas_chirurgie') }}" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Retour aux proformas chirurgie</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
