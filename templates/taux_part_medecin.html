@@ -5,7 +5,7 @@
 {% block content %}
 
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-    <h4 class="mb-0"><i class="fas fa-user-md me-2"></i>Part Médecin — configuration des taux par acte</h4>
+    <h4 class="mb-0"><i class="fas fa-user-md me-2"></i>Part Médecin — actes, taux et médecins réalisateurs</h4>
     <div>
         <a href="{{ url_for('page_part_medecin') }}" class="btn btn-outline-dark btn-sm me-2">
             <i class="fas fa-arrow-left me-1"></i> Part Médecin
@@ -18,15 +18,23 @@
 
 <div class="alert alert-info">
     <i class="fas fa-info-circle me-1"></i>
-    Un acte configuré ici affiche automatiquement un sélecteur "Réalisé par" dans
+    Un acte configuré ici affiche un sélecteur "Réalisé par" dans
     <a href="{{ url_for('actes_vente') }}">Actes &amp; Vente</a> — le pourcentage indiqué revient au médecin qui
-    a réalisé l'acte, le reste à la clinique. Un acte non configuré ici continue de se comporter exactement comme avant.
+    a réalisé l'acte, le reste à la clinique.
+    <!-- ⭐ Patron (2026-10-08) : « à la configuration des actes qu'on puisse les
+         assigner à un ou plusieurs médecins » — consultations de plusieurs
+         spécialités, échographie réalisée par plusieurs médecins, chacun sa part. -->
+    <strong>Affectez l'acte à un ou plusieurs médecins</strong> : seuls ces médecins seront proposés à la vente
+    (pré-rempli s'il n'y en a qu'un), et chacun peut avoir son propre taux. Sans affectation, tous les médecins restent proposés.
 </div>
 
 <div class="card">
     <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
         <span><i class="fas fa-percentage me-1"></i> Actes configurés</span>
-        <span class="badge bg-light text-dark" id="totalTaux">0</span>
+        <span>
+            <input type="text" class="form-control form-control-sm d-inline-block me-2" style="width:220px;" id="rechercheTaux" placeholder="Filtrer (acte ou médecin)" oninput="rendreTaux()">
+            <span class="badge bg-light text-dark" id="totalTaux">0</span>
+        </span>
     </div>
     <div class="card-body p-0">
         <div id="listeTaux"><div class="text-center text-muted py-4">Chargement...</div></div>
@@ -35,7 +43,7 @@
 
 <!-- Modal configurer un acte -->
 <div class="modal fade" id="modalTaux" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title"><i class="fas fa-user-md me-2"></i>Configurer un acte</h5>
@@ -50,18 +58,34 @@
                 <div id="tauxChoisiBloc" style="display:none;" class="mb-2 p-2 border rounded bg-light">
                     <strong id="tauxChoisiNom"></strong>
                 </div>
-                <div class="mb-2">
-                    <label class="form-label mb-1">Taux pour le réalisateur (%)</label>
-                    <input type="number" class="form-control" id="tauxValeur" min="1" max="100" step="1" placeholder="ex: 60">
-                    <div class="form-text">Le reste (100 - ce taux) revient à la clinique.</div>
+                <div class="row g-2">
+                    <div class="col-md-5">
+                        <label class="form-label mb-1">Taux de l'acte pour le réalisateur (%)</label>
+                        <input type="number" class="form-control" id="tauxValeur" min="1" max="100" step="1" placeholder="ex: 60">
+                        <div class="form-text">Le reste (100 - ce taux) revient à la clinique. S'applique à chaque médecin affecté sans taux propre.</div>
+                    </div>
+                    <div class="col-md-7">
+                        <div class="form-check mt-md-4 pt-md-2">
+                            <input type="checkbox" class="form-check-input" id="tauxToujoursDemander">
+                            <label class="form-check-label" for="tauxToujoursDemander">
+                                Toujours demander le médecin ligne par ligne (ignore le "médecin du jour")
+                            </label>
+                            <div class="form-text">Pour un acte comme l'infiltration, où le réalisateur change à chaque ligne.</div>
+                        </div>
+                    </div>
                 </div>
-                <div class="mb-2 form-check">
-                    <input type="checkbox" class="form-check-input" id="tauxToujoursDemander">
-                    <label class="form-check-label" for="tauxToujoursDemander">
-                        Toujours demander le médecin ligne par ligne (ignore le "médecin du jour")
-                    </label>
-                    <div class="form-text">À cocher pour un acte comme l'infiltration, où le réalisateur peut changer à chaque ligne.</div>
+
+                <hr>
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label class="form-label mb-0 fw-bold"><i class="fas fa-users me-1"></i>Médecins réalisateurs de cet acte</label>
+                    <span class="small"><span id="nbMedecinsCoches" class="fw-bold">0</span> coché(s)
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-2" onclick="cocherTousMedecins(false)">Tout décocher</button></span>
                 </div>
+                <input type="text" class="form-control form-control-sm mb-1" id="filtreMedecins" placeholder="Filtrer les médecins..." oninput="rendreMedecins()">
+                <div class="border rounded" style="max-height:260px; overflow-y:auto;" id="listeMedecins">
+                    {% if not medecins %}<div class="text-muted small p-2">Aucun médecin actif — <a href="{{ url_for('gestion_medecins') }}">enregistrez-en d'abord</a>.</div>{% endif %}
+                </div>
+                <div class="form-text">Cochez un ou plusieurs médecins. Taux propre facultatif : vide = taux de l'acte ci-dessus.</div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
@@ -74,16 +98,54 @@
 </div>
 
 <script>
+const MEDECINS = {{ medecins|tojson }};
 let tauxChoisi = null;
 let debounceTaux = null;
+let TOUS_TAUX = [];
+// état du modal : {medecin_id: {coche: bool, taux: ''|nombre}}
+let etatMedecins = {};
 
-function ouvrirModalTaux() {
+function ouvrirModalTaux(ligne) {
+    tauxChoisi = null;
+    etatMedecins = {};
     document.getElementById('tauxSearch').value = '';
     document.getElementById('tauxValeur').value = '';
     document.getElementById('tauxToujoursDemander').checked = false;
+    document.getElementById('filtreMedecins').value = '';
     viderTauxChoisi();
+    if (ligne) {
+        choisirActeTaux(ligne.nom_acte);
+        document.getElementById('tauxValeur').value = ligne.taux_medecin;
+        document.getElementById('tauxToujoursDemander').checked = !!ligne.toujours_demander_medecin;
+        (ligne.medecins || []).forEach(m => { etatMedecins[m.medecin_id] = {coche: true, taux: m.taux == null ? '' : m.taux}; });
+    }
+    rendreMedecins();
     new bootstrap.Modal(document.getElementById('modalTaux')).show();
 }
+
+function rendreMedecins() {
+    const q = (document.getElementById('filtreMedecins').value || '').trim().toLowerCase();
+    const liste = MEDECINS.filter(m => !q || (m.nom_complet + ' ' + m.specialite).toLowerCase().includes(q));
+    const zone = document.getElementById('listeMedecins');
+    if (!MEDECINS.length) return;
+    zone.innerHTML = liste.map(m => {
+        const e = etatMedecins[m.id] || {coche: false, taux: ''};
+        return `<div class="d-flex align-items-center gap-2 px-2 py-1 border-bottom">
+            <input type="checkbox" class="form-check-input mt-0" id="med${m.id}" ${e.coche ? 'checked' : ''} onchange="toggleMedecin(${m.id}, this.checked)">
+            <label for="med${m.id}" class="flex-grow-1 mb-0" style="cursor:pointer;">${m.nom_complet}${m.specialite ? ' <span class="text-muted small">— ' + m.specialite + '</span>' : ''}</label>
+            <div class="input-group input-group-sm" style="width:150px;">
+                <input type="number" class="form-control" min="1" max="100" step="1" placeholder="Taux propre" value="${e.taux}" ${e.coche ? '' : 'disabled'} oninput="etatMedecins[${m.id}] = etatMedecins[${m.id}] || {coche:true}; etatMedecins[${m.id}].taux = this.value;">
+                <span class="input-group-text">%</span>
+            </div>
+        </div>`;
+    }).join('') || '<div class="text-muted small p-2">Aucun médecin ne correspond.</div>';
+    document.getElementById('nbMedecinsCoches').textContent = Object.values(etatMedecins).filter(e => e.coche).length;
+}
+function toggleMedecin(id, coche) {
+    etatMedecins[id] = Object.assign(etatMedecins[id] || {taux: ''}, {coche: coche});
+    rendreMedecins();
+}
+function cocherTousMedecins(etat) { Object.keys(etatMedecins).forEach(k => etatMedecins[k].coche = etat); rendreMedecins(); }
 
 function viderTauxChoisi() {
     tauxChoisi = null;
@@ -115,6 +177,14 @@ function choisirActeTaux(nom) {
     document.getElementById('tauxChoisiBloc').style.display = '';
     document.getElementById('tauxResultats').style.display = 'none';
     document.getElementById('tauxSearch').value = nom;
+    // acte déjà configuré : reprendre ses médecins
+    const existante = TOUS_TAUX.find(l => l.nom_acte === nom);
+    if (existante && !Object.keys(etatMedecins).length) {
+        document.getElementById('tauxValeur').value = existante.taux_medecin;
+        document.getElementById('tauxToujoursDemander').checked = !!existante.toujours_demander_medecin;
+        (existante.medecins || []).forEach(m => { etatMedecins[m.medecin_id] = {coche: true, taux: m.taux == null ? '' : m.taux}; });
+        rendreMedecins();
+    }
 }
 
 async function enregistrerTaux() {
@@ -124,10 +194,17 @@ async function enregistrerTaux() {
         await afficherMessage('Entrez un taux entre 1 et 100.');
         return;
     }
+    const medecins = [];
+    for (const [id, e] of Object.entries(etatMedecins)) {
+        if (!e.coche) continue;
+        const t = e.taux === '' || e.taux == null ? null : parseFloat(e.taux);
+        if (t !== null && (isNaN(t) || t <= 0 || t > 100)) { await afficherMessage('Taux propre invalide pour un médecin (1 à 100).'); return; }
+        medecins.push({medecin_id: parseInt(id, 10), taux: t});
+    }
     const toujours_demander_medecin = document.getElementById('tauxToujoursDemander').checked;
     fetch('/api/taux-part-medecin', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nom_acte: tauxChoisi, taux_medecin: taux_medecin, toujours_demander_medecin: toujours_demander_medecin })
+        body: JSON.stringify({ nom_acte: tauxChoisi, taux_medecin: taux_medecin, toujours_demander_medecin: toujours_demander_medecin, medecins: medecins })
     })
     .then(r => r.json())
     .then(async data => {
@@ -142,29 +219,42 @@ async function enregistrerTaux() {
 }
 
 async function supprimerTaux(id) {
-    if (!await demanderConfirmation('Retirer ce taux ? Le sélecteur "Réalisé par" disparaîtra pour cet acte.')) return;
+    if (!await demanderConfirmation('Retirer ce taux ? Le sélecteur "Réalisé par" disparaîtra pour cet acte et ses affectations seront supprimées.')) return;
     fetch('/api/taux-part-medecin/' + id, { method: 'DELETE' })
         .then(r => r.json())
         .then(async data => { if (data.success) chargerTaux(); else await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'}); });
 }
 
+function modifierTaux(id) { const l = TOUS_TAUX.find(x => x.id === id); if (l) ouvrirModalTaux(l); }
+
 function chargerTaux() {
-    fetch('/api/taux-part-medecin').then(r => r.json()).then(lignes => {
-        document.getElementById('totalTaux').textContent = lignes.length;
-        document.getElementById('listeTaux').innerHTML = lignes.length
-            ? '<div class="list-group list-group-flush">' + lignes.map(l => `
-                <div class="list-group-item d-flex justify-content-between align-items-center">
-                    <span>${l.nom_acte}</span>
-                    <span>
-                        <span class="badge bg-success me-2">${l.taux_medecin}% médecin</span>
-                        ${l.toujours_demander_medecin ? '<span class="badge bg-warning text-dark me-2">Toujours demander</span>' : ''}
-                        <button class="btn btn-sm btn-outline-danger" onclick="supprimerTaux(${l.id})" title="Retirer">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </span>
-                </div>`).join('') + '</div>'
-            : '<div class="text-center text-muted py-4">Aucun acte configuré pour le moment.</div>';
-    });
+    fetch('/api/taux-part-medecin').then(r => r.json()).then(lignes => { TOUS_TAUX = lignes; rendreTaux(); });
+}
+
+function rendreTaux() {
+    const q = (document.getElementById('rechercheTaux').value || '').trim().toLowerCase();
+    const lignes = TOUS_TAUX.filter(l => !q || l.nom_acte.toLowerCase().includes(q) || (l.medecins || []).some(m => m.nom.toLowerCase().includes(q)));
+    document.getElementById('totalTaux').textContent = lignes.length;
+    document.getElementById('listeTaux').innerHTML = lignes.length
+        ? '<div class="list-group list-group-flush">' + lignes.map(l => `
+            <div class="list-group-item d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                <div>
+                    <div><strong>${l.nom_acte}</strong>
+                        <span class="badge bg-success ms-1">${l.taux_medecin}% médecin</span>
+                        ${l.toujours_demander_medecin ? '<span class="badge bg-warning text-dark ms-1">Toujours demander</span>' : ''}
+                    </div>
+                    <div class="small mt-1">
+                        ${(l.medecins && l.medecins.length)
+                            ? l.medecins.map(m => `<span class="badge bg-light text-dark border me-1"><i class="fas fa-user-md me-1"></i>${m.nom}${m.taux != null ? ' · ' + m.taux + ' %' : ''}</span>`).join('')
+                            : '<span class="text-muted">Tous les médecins proposés (aucune affectation)</span>'}
+                    </div>
+                </div>
+                <span class="text-nowrap">
+                    <button class="btn btn-sm btn-outline-primary" onclick="modifierTaux(${l.id})" title="Modifier (taux, médecins)"><i class="fas fa-edit"></i></button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="supprimerTaux(${l.id})" title="Retirer"><i class="fas fa-trash"></i></button>
+                </span>
+            </div>`).join('') + '</div>'
+        : '<div class="text-center text-muted py-4">Aucun acte configuré pour le moment.</div>';
 }
 
 document.addEventListener('click', function(e) {

@@ -10,6 +10,9 @@
         <a href="{{ url_for('page_rapport_recettes_service') }}" class="btn btn-outline-dark btn-sm">
             <i class="fas fa-chart-bar me-1"></i> Voir le rapport
         </a>
+        <button class="btn btn-primary btn-sm" onclick="ouvrirModalClassificationLot()" title="Cocher plusieurs actes et les affecter d'un coup à un service">
+            <i class="fas fa-layer-group me-1"></i> Classer plusieurs actes
+        </button>
         <button class="btn btn-dark btn-sm" onclick="ouvrirModalClassification()">
             <i class="fas fa-plus me-1"></i> Classer un acte
         </button>
@@ -46,6 +49,52 @@
     </div>
     <div class="card-body p-0">
         <div id="listeClassifications"><div class="text-center text-muted py-4">Chargement...</div></div>
+    </div>
+</div>
+
+<!-- ⭐ Modal classer PLUSIEURS actes d'un coup (patron, 2026-10-08 : « assigner
+     plusieurs actes en même temps à un service au lieu de le faire un à un ») -->
+<div class="modal fade" id="modalClassificationLot" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-layer-group me-2"></i>Classer plusieurs actes</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2 mb-2">
+                    <div class="col-md-5">
+                        <label class="form-label mb-1 fw-bold">Service <span class="text-danger">*</span></label>
+                        <select class="form-select" id="lotServiceSelect">
+                            <option value="">-- Choisir un service --</option>
+                            {% for s in services_liste %}
+                            <option value="{{ s.id }}">{{ s.nom }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-7">
+                        <label class="form-label mb-1 fw-bold">Filtrer les actes</label>
+                        <input type="text" class="form-control" id="lotFiltre" placeholder="Tapez pour filtrer (nom ou code)..." autocomplete="off" oninput="lotRendre()">
+                    </div>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-1 small">
+                    <span><span id="lotNbCoches" class="fw-bold">0</span> acte(s) coché(s)</span>
+                    <span>
+                        <button type="button" class="btn btn-link btn-sm p-0 me-2" onclick="lotCocherVisibles(true)">Tout cocher (visibles)</button>
+                        <button type="button" class="btn btn-link btn-sm p-0" onclick="lotCocherVisibles(false)">Tout décocher</button>
+                    </span>
+                </div>
+                <div id="lotListe" class="border rounded" style="max-height:380px; overflow-y:auto;">
+                    <div class="text-center text-muted py-4">Chargement du catalogue...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="enregistrerClassificationLot()">
+                    <i class="fas fa-check me-1"></i> Affecter les actes cochés
+                </button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -92,6 +141,54 @@
 </div>
 
 <script>
+// ⭐ Classement par lot (2026-10-08)
+let LOT_CATALOGUE = null;
+const LOT_COCHES = new Set();
+
+async function ouvrirModalClassificationLot() {
+    document.getElementById('lotServiceSelect').value = '';
+    document.getElementById('lotFiltre').value = '';
+    LOT_COCHES.clear();
+    new bootstrap.Modal(document.getElementById('modalClassificationLot')).show();
+    if (!LOT_CATALOGUE) {
+        const d = await fetch('/api/actes?limit=5000').then(r => r.json()).catch(() => ({}));
+        LOT_CATALOGUE = (d.data || []).map(a => a.nom).filter(Boolean).sort((a, b) => a.localeCompare(b, 'fr'));
+    }
+    lotRendre();
+}
+
+function lotRendre() {
+    const q = (document.getElementById('lotFiltre').value || '').trim().toLowerCase();
+    const liste = (LOT_CATALOGUE || []).filter(n => !q || n.toLowerCase().includes(q));
+    const dejaClasses = {};
+    (window.CLASSIFICATIONS_ACTUELLES || []).forEach(l => { dejaClasses[l.nom_acte] = l.service_nom; });
+    document.getElementById('lotListe').innerHTML = liste.length ? liste.slice(0, 600).map((n, i) => `
+        <label class="d-flex align-items-center gap-2 px-2 py-1 border-bottom mb-0" style="cursor:pointer;">
+            <input type="checkbox" class="form-check-input mt-0 lot-check" value="${n.replace(/"/g, '&quot;')}" ${LOT_COCHES.has(n) ? 'checked' : ''} onchange="lotToggle(this)">
+            <span class="flex-grow-1">${n}</span>
+            ${dejaClasses[n] ? `<span class="badge bg-secondary">${dejaClasses[n]}</span>` : ''}
+        </label>`).join('') + (liste.length > 600 ? '<div class="text-muted small p-2">Affinez le filtre pour voir le reste…</div>' : '')
+        : '<div class="text-center text-muted py-4">Aucun acte ne correspond.</div>';
+    document.getElementById('lotNbCoches').textContent = LOT_COCHES.size;
+}
+
+function lotToggle(cb) { if (cb.checked) LOT_COCHES.add(cb.value); else LOT_COCHES.delete(cb.value); document.getElementById('lotNbCoches').textContent = LOT_COCHES.size; }
+function lotCocherVisibles(etat) { document.querySelectorAll('.lot-check').forEach(cb => { cb.checked = etat; lotToggle(cb); }); }
+
+async function enregistrerClassificationLot() {
+    const serviceId = document.getElementById('lotServiceSelect').value;
+    if (!serviceId) { await afficherMessage('Choisissez un service.'); return; }
+    if (!LOT_COCHES.size) { await afficherMessage('Cochez au moins un acte.'); return; }
+    const d = await fetch('/api/classification-services/lot', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ service_id: serviceId, noms_actes: Array.from(LOT_COCHES) })
+    }).then(r => r.json()).catch(e => ({ success: false, error: String(e) }));
+    if (!d.success) { await afficherMessage('Erreur : ' + (d.error || 'inconnue'), {type: 'danger'}); return; }
+    bootstrap.Modal.getInstance(document.getElementById('modalClassificationLot')).hide();
+    await afficherMessage(`${d.nb} acte(s) affecté(s) au service.`, {type: 'success'});
+    chargerClassifications();
+}
+
 let classifChoisi = null;
 let debounceClassif = null;
 
@@ -183,6 +280,7 @@ async function supprimerClassification(id) {
 
 function chargerClassifications() {
     fetch('/api/classification-services').then(r => r.json()).then(lignes => {
+        window.CLASSIFICATIONS_ACTUELLES = lignes;
         document.getElementById('totalClassifies').textContent = lignes.length;
         document.getElementById('listeClassifications').innerHTML = lignes.length
             ? '<div class="list-group list-group-flush">' + lignes.map(l => `

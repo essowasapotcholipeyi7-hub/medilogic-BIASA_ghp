@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Point des prestations — {{ point.medecin_nom }}</title>
+    <!-- ⭐ Patron (2026-10-08) : « un détail ou point des prestations d'un médecin
+         donné avec libellé, nombre et PU ... avec le détail des dates ... sur le
+         montant brut une RSPS de 5 % à verser à l'OTR ... net à payer au
+         médecin ; en bas signature comptable, médecin au milieu et Direction à
+         droite ». -->
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root { --bleu: #1a2a6c; --gris: #6b7a8c; --bord: #d9e0ea; }
+        body { font-family: 'Segoe UI', Arial, Helvetica, sans-serif; color: #1f2d3d; background: #eef1f5; padding: 20px; }
+        .actions { max-width: 1000px; margin: 0 auto 12px; display: flex; gap: 10px; justify-content: flex-end; }
+        .actions button { border: none; border-radius: 6px; padding: 9px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }
+        .actions .imprimer { background: var(--bleu); color: #fff; }
+        .actions .fermer { background: #e4e8ef; color: #1f2d3d; }
+        .page { max-width: 1000px; margin: 0 auto; background: #fff; border: 1px solid var(--bord); padding: 18px 26px 22px; }
+        .entete { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 4px solid var(--bleu); padding-bottom: 10px; margin-bottom: 14px; }
+        .entete .structure { display: flex; align-items: center; gap: 12px; }
+        .entete img { max-height: 56px; max-width: 110px; object-fit: contain; }
+        .entete .nom { font-size: 19px; font-weight: 700; color: var(--bleu); }
+        .entete .coord { font-size: 11.5px; color: var(--gris); white-space: pre-line; }
+        .entete .titre { text-align: right; }
+        .entete .titre .libelle { font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--gris); font-weight: 600; }
+        .entete .titre .periode { font-size: 17px; font-weight: 700; color: var(--bleu); }
+        .bloc-medecin { background: #eef2fb; border-left: 5px solid var(--bleu); border-radius: 6px; padding: 10px 14px; margin-bottom: 14px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+        .bloc-medecin .nom-med { font-size: 18px; font-weight: 700; color: var(--bleu); }
+        .bloc-medecin .sub { font-size: 12px; color: var(--gris); }
+        h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--gris); border-bottom: 1px solid var(--bord); padding-bottom: 4px; margin: 14px 0 8px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid var(--bord); padding: 5px 8px; font-size: 12.5px; vertical-align: top; }
+        th { background: #f3f6fb; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--gris); }
+        td.num, th.num { text-align: right; white-space: nowrap; }
+        tfoot td { font-weight: 700; background: #f8f9fb; }
+        .totaux { margin-top: 14px; margin-left: auto; width: 360px; border: 1px solid var(--bord); border-radius: 6px; overflow: hidden; }
+        .totaux div { display: flex; justify-content: space-between; padding: 6px 12px; font-size: 13px; border-bottom: 1px solid var(--bord); }
+        .totaux div:last-child { border-bottom: none; }
+        .totaux .rsps { color: #b02a37; }
+        .totaux .net { background: #e9f7ef; font-weight: 800; font-size: 15px; color: #14532d; }
+        .signatures { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; margin-top: 36px; text-align: center; }
+        .signatures .sig { border-top: 1px solid #333; padding-top: 6px; font-size: 12.5px; font-weight: 700; }
+        .signatures .sig small { display: block; font-weight: 400; color: var(--gris); margin-top: 2px; }
+        .signatures .espace { height: 60px; }
+        .pied { margin-top: 14px; padding-top: 8px; border-top: 1px solid var(--bord); font-size: 10.5px; color: var(--gris); display: flex; justify-content: space-between; }
+        .vide { padding: 10px; color: var(--gris); font-style: italic; font-size: 12px; }
+        @media print {
+            @page { size: A4 portrait; margin: 10mm 11mm; }
+            body { background: #fff; padding: 0; }
+            .actions { display: none !important; }
+            .page { max-width: 100%; border: none; padding: 0; }
+            .bloc-medecin, th, tfoot td, .totaux .net { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            thead { display: table-header-group; }
+            tr { page-break-inside: avoid; }
+            .signatures { page-break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+    <div class="actions">
+        <button type="button" class="fermer" onclick="window.close()">Fermer</button>
+        <button type="button" class="imprimer" onclick="window.print()">Imprimer</button>
+    </div>
+    <div class="page">
+        <div class="entete">
+            <div class="structure">
+                {% if structure and structure.logo_url %}<img src="{{ structure.logo_url }}" alt="">{% endif %}
+                <div>
+                    <div class="nom">{{ structure.nom if structure else 'Hôpital' }}</div>
+                    <div class="coord">{% if structure and structure.adresse %}{{ structure.adresse }}
+{% endif %}{% if structure and structure.telephone %}Tél. {{ structure.telephone }}{% endif %}{% if structure and structure.email %}  ·  {{ structure.email }}{% endif %}</div>
+                </div>
+            </div>
+            <div class="titre">
+                <div class="libelle">{{ titre }}</div>
+                <div class="periode">
+                    {% if point.date_debut and point.date_fin %}du {{ point.date_debut.strftime('%d/%m/%Y') }} au {{ point.date_fin.strftime('%d/%m/%Y') }}
+                    {% elif point.date_debut %}depuis le {{ point.date_debut.strftime('%d/%m/%Y') }}
+                    {% elif point.date_fin %}jusqu'au {{ point.date_fin.strftime('%d/%m/%Y') }}
+                    {% else %}toutes les prestations non clôturées{% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="bloc-medecin">
+            <div>
+                <div class="nom-med">{{ point.medecin_nom }}</div>
+                <div class="sub">{% if point.medecin and point.medecin.specialite %}{{ point.medecin.specialite }}{% endif %}{% if point.medecin and point.medecin.telephone %} · Tél. {{ point.medecin.telephone }}{% endif %}</div>
+            </div>
+            <div class="sub" style="text-align:right;">
+                {{ point.nb_actes }} prestation(s)<br>
+                {% if point.periode %}Clôture N° {{ "%05d"|format(point.periode.id) }} — {{ {'calculee': 'calculée', 'validee': 'validée', 'payee': 'payée'}.get(point.periode.statut, point.periode.statut) }}{% else %}Prestations non encore clôturées{% endif %}
+            </div>
+        </div>
+
+        <h3>Récapitulatif par prestation</h3>
+        {% if point.recap %}
+        <table>
+            <thead><tr><th>Libellé</th><th class="num">Nombre</th><th class="num">PU</th><th class="num">Montant</th><th class="num">Taux</th><th class="num">Part médecin</th></tr></thead>
+            <tbody>
+                {% for r in point.recap %}
+                <tr>
+                    <td>{{ r.libelle }}</td>
+                    <td class="num">{{ r.nombre }}</td>
+                    <td class="num">{{ '{:,.0f}'.format(r.pu).replace(',', ' ') }} F</td>
+                    <td class="num">{{ '{:,.0f}'.format(r.montant).replace(',', ' ') }} F</td>
+                    <td class="num">{{ r.taux|round(1)|string|replace('.0', '') }} %</td>
+                    <td class="num">{{ '{:,.0f}'.format(r.part).replace(',', ' ') }} F</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot><tr><td>Total</td><td class="num">{{ point.nb_actes }}</td><td></td><td class="num">{{ '{:,.0f}'.format(point.base).replace(',', ' ') }} F</td><td></td><td class="num">{{ '{:,.0f}'.format(point.brut).replace(',', ' ') }} F</td></tr></tfoot>
+        </table>
+        {% else %}<div class="vide">Aucune prestation sur cette période.</div>{% endif %}
+
+        {% if point.details %}
+        <h3>Détail des prestations (dates)</h3>
+        <table>
+            <thead><tr><th>Date</th><th>Libellé</th><th class="num">Qté</th><th class="num">PU</th><th class="num">Montant</th><th class="num">Taux</th><th class="num">Part</th><th class="num">Vente</th></tr></thead>
+            <tbody>
+                {% for d in point.details %}
+                <tr>
+                    <td style="white-space:nowrap;">{{ d.date.strftime('%d/%m/%Y %H:%M') if d.date else '' }}</td>
+                    <td>{{ d.libelle }}</td>
+                    <td class="num">{{ d.quantite }}</td>
+                    <td class="num">{{ '{:,.0f}'.format(d.pu).replace(',', ' ') }}</td>
+                    <td class="num">{{ '{:,.0f}'.format(d.montant).replace(',', ' ') }}</td>
+                    <td class="num">{{ d.taux|round(1)|string|replace('.0', '') }} %</td>
+                    <td class="num">{{ '{:,.0f}'.format(d.part).replace(',', ' ') }}</td>
+                    <td class="num">{% if d.vente_id %}N° {{ d.vente_id }}{% else %}—{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        <div class="totaux">
+            <div><span>Montant brut (part médecin)</span><strong>{{ '{:,.0f}'.format(point.brut).replace(',', ' ') }} F</strong></div>
+            <div class="rsps"><span>RSPS {{ point.taux_rsps|round(1)|string|replace('.0', '') }} % à verser à l'OTR</span><strong>− {{ '{:,.0f}'.format(point.rsps).replace(',', ' ') }} F</strong></div>
+            <div class="net"><span>NET À PAYER AU MÉDECIN</span><span>{{ '{:,.0f}'.format(point.net).replace(',', ' ') }} F</span></div>
+        </div>
+
+        <div class="signatures">
+            <div><div class="espace"></div><div class="sig">Le Comptable<small>Nom, date et signature</small></div></div>
+            <div><div class="espace"></div><div class="sig">Le Médecin<small>{{ point.medecin_nom }}</small></div></div>
+            <div><div class="espace"></div><div class="sig">La Direction<small>Nom, date et signature</small></div></div>
+        </div>
+
+        <div class="pied">
+            <span>Édité le {{ now.strftime('%d/%m/%Y à %H:%M') }}</span>
+            <span>{{ structure.nom if structure else '' }}</span>
+        </div>
+    </div>
+</body>
+</html>

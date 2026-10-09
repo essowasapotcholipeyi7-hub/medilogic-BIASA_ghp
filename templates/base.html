@@ -4132,11 +4132,18 @@ if ('serviceWorker' in navigator) {
     let fileAttente = Promise.resolve();
     let resoudreCourant = null;
     let modeCourant = 'message';
+    // ⭐ (2026-10-08) Bootstrap ignore show() tant que l'animation de fermeture
+    // de la boîte précédente n'est pas finie : la 2e boîte enchaînée (ex. EP :
+    // « Annuler » puis « remplir l'EP maintenant ? ») ne s'affichait plus et
+    // bloquait la file. On attend donc hidden.bs.modal avant de rouvrir.
+    let fermetureEnCours = false;
+    el.addEventListener('hidden.bs.modal', function() { fermetureEnCours = false; });
 
     function fermer(valeur) {
         if (!resoudreCourant) return;
         const r = resoudreCourant;
         resoudreCourant = null;
+        fermetureEnCours = true;
         bsModal.hide();
         r(valeur);
     }
@@ -4174,7 +4181,8 @@ if ('serviceWorker' in navigator) {
                     btnAnnuler.hidden = (mode === 'message');
                     saisieEl.hidden = (mode !== 'saisie');
                     saisieEl.value = (mode === 'saisie' && options.valeurDefaut != null) ? String(options.valeurDefaut) : '';
-                    bsModal.show();
+                    if (fermetureEnCours) el.addEventListener('hidden.bs.modal', function() { bsModal.show(); }, {once: true});
+                    else bsModal.show();
                 });
             });
         });

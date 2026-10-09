@@ -1846,6 +1846,59 @@ class DisponibiliteMedecin(db.Model):
 # un lien pour que les médecins consultent les rdv et le calendrier
 # uniquement"). Un jeton par structure, lecture seule, sans connexion ;
 # régénérer le jeton invalide l'ancien lien.
+class AffectationPartMedecin(db.Model):
+    """⭐ Un acte affecté à UN OU PLUSIEURS médecins réalisateurs (patron,
+    2026-10-08 : « plusieurs spécialités que les patients peuvent consulter
+    en même temps ; plusieurs médecins réalisent l'échographie pelvienne,
+    et chacun a sa part »). À la vente, le sélecteur « Réalisé par » ne
+    propose que ces médecins (pré-rempli s'il n'y en a qu'un). taux_medecin
+    vide = taux de l'acte (TauxPartMedecin), sinon taux propre à ce médecin."""
+    __tablename__ = 'affectations_part_medecin'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    nom_acte = db.Column(db.String(255), nullable=False)
+    medecin_id = db.Column(db.Integer, nullable=False)
+    taux_medecin = db.Column(db.Numeric)
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('structure_id', 'nom_acte', 'medecin_id', name='uq_affectation_part_medecin'),
+    )
+
+
+class ParametragePartMedecin(db.Model):
+    """⭐ RSPS (retenue à la source sur prestations de services) appliquée
+    par défaut sur la part brute du médecin — 5 % à reverser à l'OTR
+    (patron, 2026-10-08). Une ligne par structure."""
+    __tablename__ = 'parametrage_part_medecin'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False, unique=True)
+    taux_rsps = db.Column(db.Numeric, default=5)
+    rsps_active = db.Column(db.Boolean, nullable=False, default=True)
+    modifie_le = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    modifie_par = db.Column(db.String(150))
+
+
+class VersementRsps(db.Model):
+    """⭐ Versement groupé à l'OTR de la RSPS retenue sur les parts médecins
+    payées (en général un versement par mois) : dépense + écriture
+    comptable (447 RSPS à reverser / caisse), les clôtures concernées
+    pointent dessus (PeriodePartMedecin.rsps_versement_id)."""
+    __tablename__ = 'versements_rsps'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    libelle = db.Column(db.String(255))
+    montant = db.Column(db.Numeric, nullable=False)
+    nb_periodes = db.Column(db.Integer, default=0)
+    depense_id = db.Column(db.Integer)
+    date_versement = db.Column(db.Date)
+    mode_paiement = db.Column(db.String(20))
+    reference_paiement = db.Column(db.String(100))
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class ParametrageRendezVous(db.Model):
     """Réglages du module rendez-vous propres à une structure. Pour l'instant
     la règle de paiement du bon de consultation (patron, 2026-10-07) : un
@@ -3748,6 +3801,12 @@ class PeriodePartMedecin(db.Model):
     base_calcul = db.Column(db.Numeric, default=0)
     montant_total = db.Column(db.Numeric, default=0)
     nb_actes = db.Column(db.Integer, default=0)
+    # ⭐ RSPS (2026-10-08) : retenue sur la part brute (montant_total), net payé
+    # au médecin ; rsps_versement_id = versement groupé à l'OTR (VersementRsps).
+    taux_rsps = db.Column(db.Numeric)
+    montant_rsps = db.Column(db.Numeric, default=0)
+    montant_net = db.Column(db.Numeric)
+    rsps_versement_id = db.Column(db.Integer)
     statut = db.Column(db.String(20), default='calculee')  # 'calculee' | 'validee' | 'payee'
     calculee_par = db.Column(db.String(255))
     calculee_le = db.Column(db.DateTime, default=datetime.utcnow)

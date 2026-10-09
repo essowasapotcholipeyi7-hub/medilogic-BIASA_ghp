@@ -8,13 +8,21 @@
     @media print {
         @page { size: A4; margin: 12mm; }
         .no-print { display: none !important; }
+        .signatures-recu { page-break-inside: avoid; }
     }
+    .signatures-recu { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-top: 34px; text-align: center; font-size: 12.5px; }
+    .signatures-recu .sig { border-top: 1px solid #333; padding-top: 6px; font-weight: 700; }
+    .signatures-recu .sig small { display: block; font-weight: 400; color: #6b7a8c; }
+    .signatures-recu .espace { height: 56px; }
 </style>
 {% endblock %}
 
 {% block content %}
+{% set brut = periode.montant_total|float %}
+{% set rsps = (periode.montant_rsps or 0)|float %}
+{% set net = (periode.montant_net if periode.montant_net is not none else periode.montant_total)|float %}
 <div class="row justify-content-center">
-    <div class="col-md-7">
+    <div class="col-md-8">
         <div class="card" id="recuContenu">
             <div class="card-body" style="font-family: 'Segoe UI', Arial, sans-serif;">
 
@@ -38,27 +46,32 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                 </div>
 
                 <div style="font-size: 13px; margin-bottom: 14px; padding: 8px 12px; background: #f8f9fa; border-radius: 6px;">
-                    <strong>Médecin réalisateur :</strong> {{ medecin.get_nom_complet() if medecin else '—' }}<br>
+                    <strong>Médecin réalisateur :</strong> {{ medecin.get_nom_complet() if medecin else '—' }}{% if medecin and medecin.specialite %} — {{ medecin.specialite }}{% endif %}<br>
                     {% if medecin and medecin.telephone %}<strong>Téléphone :</strong> {{ medecin.telephone }}<br>{% endif %}
                     <strong>Période :</strong> du {{ periode.date_debut.strftime('%d/%m/%Y') }} au {{ periode.date_fin.strftime('%d/%m/%Y') }}
                 </div>
 
+                <!-- ⭐ Récapitulatif par prestation : libellé, nombre, PU (patron, 2026-10-08) -->
                 <table style="width:100%; border-collapse: collapse; font-size: 12px;">
                     <thead>
                         <tr style="background:#f8f9fa; border-bottom: 2px solid #dee2e6;">
-                            <th style="padding:6px; text-align:left;">Acte</th>
-                            <th style="padding:6px; text-align:right;">Prix</th>
+                            <th style="padding:6px; text-align:left;">Prestation</th>
+                            <th style="padding:6px; text-align:right;">Nombre</th>
+                            <th style="padding:6px; text-align:right;">PU</th>
+                            <th style="padding:6px; text-align:right;">Montant</th>
                             <th style="padding:6px; text-align:right;">Taux</th>
                             <th style="padding:6px; text-align:right;">Part médecin</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for l in lignes %}
+                        {% for r in point.recap %}
                         <tr style="border-bottom:1px solid #eee;">
-                            <td style="padding:6px;">{{ l.nom_acte }}</td>
-                            <td style="padding:6px; text-align:right;">{{ (l.prix|float * l.quantite)|round(0)|int }} F</td>
-                            <td style="padding:6px; text-align:right;">{{ l.taux_medecin_applique }} %</td>
-                            <td style="padding:6px; text-align:right;">{{ l.montant_part_medecin|round(0)|int }} F</td>
+                            <td style="padding:6px;">{{ r.libelle }}</td>
+                            <td style="padding:6px; text-align:right;">{{ r.nombre }}</td>
+                            <td style="padding:6px; text-align:right;">{{ r.pu|round(0)|int }} F</td>
+                            <td style="padding:6px; text-align:right;">{{ r.montant|round(0)|int }} F</td>
+                            <td style="padding:6px; text-align:right;">{{ r.taux|round(1)|string|replace('.0', '') }} %</td>
+                            <td style="padding:6px; text-align:right;">{{ r.part|round(0)|int }} F</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -67,11 +80,21 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                 <div style="margin-top:14px; font-size:13px;">
                     <div style="display:flex; justify-content:space-between;">
                         <span>Base de calcul ({{ periode.nb_actes }} acte(s)) :</span>
-                        <span><strong>{{ periode.base_calcul|round(0)|int }} FCFA</strong></span>
+                        <span>{{ periode.base_calcul|round(0)|int }} FCFA</span>
                     </div>
-                    <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:8px; padding-top:8px; border-top:2px solid #ddd;">
-                        <span>MONTANT PAYÉ :</span>
-                        <span style="color:#1d6fa5;">{{ periode.montant_total|round(0)|int }} FCFA</span>
+                    <div style="display:flex; justify-content:space-between; margin-top:6px;">
+                        <span>Part médecin brute :</span>
+                        <span><strong>{{ brut|round(0)|int }} FCFA</strong></span>
+                    </div>
+                    {% if rsps %}
+                    <div style="display:flex; justify-content:space-between; margin-top:4px; color:#b02a37;">
+                        <span>RSPS {{ (periode.taux_rsps or 0)|float|round(1)|string|replace('.0', '') }} % retenue (à reverser à l'OTR) :</span>
+                        <span>− {{ rsps|round(0)|int }} FCFA</span>
+                    </div>
+                    {% endif %}
+                    <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:8px; padding:8px 10px; border-top:2px solid #ddd; background:#e9f7ef; border-radius:6px;">
+                        <span>NET PAYÉ AU MÉDECIN :</span>
+                        <span style="color:#14532d; font-size:15px;">{{ net|round(0)|int }} FCFA</span>
                     </div>
                     <div style="margin-top:10px; padding:8px 12px; background:#f8f9fa; border-radius:6px; font-size:12px;">
                         <strong>Mode de paiement :</strong>
@@ -83,23 +106,25 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                     </div>
                 </div>
 
-                <div class="mt-4" style="font-size:13px;">
-                    <div style="display:flex; justify-content:space-between; border-top:1px solid #ccc; padding-top:40px;">
-                        <span>Signature du réalisateur (émargement) :</span>
-                        <span>________________________</span>
-                    </div>
+                <!-- ⭐ Signatures : comptable à gauche, médecin au milieu, direction à droite -->
+                <div class="signatures-recu">
+                    <div><div class="espace"></div><div class="sig">Le Comptable<small>Nom et signature</small></div></div>
+                    <div><div class="espace"></div><div class="sig">Le Médecin<small>{{ medecin.get_nom_complet() if medecin else '' }}</small></div></div>
+                    <div><div class="espace"></div><div class="sig">La Direction<small>Nom et signature</small></div></div>
                 </div>
 
                 <hr>
                 <div class="text-center text-muted small">
                     Calculée par {{ periode.calculee_par }} — Validée par {{ periode.validee_par }} — Payée par {{ periode.payee_par }}
+                    {% if now %} · Édité le {{ now.strftime('%d/%m/%Y à %H:%M') }}{% endif %}
                 </div>
             </div>
         </div>
 
         <div class="text-center mt-3 no-print">
             <button onclick="window.print()" class="btn btn-primary btn-sm"><i class="fas fa-print"></i> Imprimer</button>
-            <a href="{{ url_for('page_part_medecin') }}" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</a>
+            <a href="/part-medecin/{{ periode.id }}/point" class="btn btn-outline-secondary btn-sm"><i class="fas fa-file-invoice"></i> Point détaillé (dates)</a>
+            <button onclick="window.close()" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</button>
         </div>
     </div>
 </div>

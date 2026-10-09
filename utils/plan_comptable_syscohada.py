@@ -82,6 +82,7 @@ PLAN_COMPTABLE = [
     {'numero': '44310000', 'nom': "État — TVA collectée sur ventes", 'type': 'passif', 'classe': '4'},
     {'numero': '44520000', 'nom': "État — TVA récupérable sur achats", 'type': 'actif', 'classe': '4'},
     {'numero': '44700000', 'nom': "État — IRPP à reverser", 'type': 'passif', 'classe': '4'},
+    {'numero': '44710000', 'nom': "État — RSPS retenue sur parts médecins, à reverser (OTR)", 'type': 'passif', 'classe': '4'},
     {'numero': '47130000', 'nom': "Écarts et opérations d'attente (caisse)", 'type': 'actif', 'classe': '4'},
 
     # ---------------- CLASSE 5 — Trésorerie ----------------
@@ -105,6 +106,7 @@ PLAN_COMPTABLE = [
     {'numero': '62600000', 'nom': "Frais postaux et de télécommunications", 'type': 'charge', 'classe': '6'},
     {'numero': '62700000', 'nom': "Services bancaires et assimilés", 'type': 'charge', 'classe': '6'},
     {'numero': '62800000', 'nom': "Fournitures de bureau et charges diverses", 'type': 'charge', 'classe': '6'},
+    {'numero': '63240000', 'nom': "Honoraires — part des médecins réalisateurs", 'type': 'charge', 'classe': '6'},
     {'numero': '63100000', 'nom': "Impôts et taxes directs", 'type': 'charge', 'classe': '6'},
     {'numero': '63500000', 'nom': "Autres impôts et taxes", 'type': 'charge', 'classe': '6'},
     {'numero': '66100000', 'nom': "Salaires et appointements du personnel", 'type': 'charge', 'classe': '6'},
@@ -240,6 +242,8 @@ COMPTE_CHARGE_DIVERSE = '62800000'
 # compte de charge. Reprend le même schéma de sous-comptes que le reste du
 # plan (8 chiffres).
 COMPTE_PAR_MOTIF_DEPENSE = {
+    # ⭐ en tête : « part médecin » doit l'emporter sur toute autre sous-chaîne
+    'part médecin': '63240000', 'part medecin': '63240000', 'honoraire': '63240000',
     'salaire': '66100000', 'salaires': '66100000',
     'loyer': '61300000', 'location': '61300000',
     'eau': '61400000', 'electricite': '61400000', 'électricité': '61400000',
@@ -287,6 +291,8 @@ COMPTES_AMU_PAR_ORGANISME = {
 COMPTE_FORMATION_PRO_CHARGE = '66650000'
 COMPTE_FORMATION_PRO_A_REVERSER = '43190000'
 COMPTE_IRPP_A_REVERSER = '44700000'
+COMPTE_RSPS_A_REVERSER = '44710000'   # ⭐ RSPS 5 % retenue sur la part des médecins (OTR)
+COMPTE_HONORAIRES_MEDECINS = '63240000'
 COMPTE_PERSONNEL_AVANCES = '42110000'   # prêts / acomptes / autres retenues sur salaire
 COMPTE_PERSONNEL_A_PAYER = '42310000'   # net à payer — dette avant décaissement (journal SAL -> CAI/BQ)
 

@@ -8,16 +8,43 @@
     <h4 class="mb-0"><i class="fas fa-user-md me-2"></i>Part Médecin — rétrocession aux réalisateurs</h4>
     <div>
         <a href="{{ url_for('page_taux_part_medecin') }}" class="btn btn-outline-dark btn-sm">
-            <i class="fas fa-percentage me-1"></i> Configurer les taux
+            <i class="fas fa-percentage me-1"></i> Configurer les actes et médecins
         </a>
     </div>
 </div>
 
 <div class="alert alert-info">
     <i class="fas fa-info-circle me-1"></i>
-    Circuit : <strong>calcul</strong> (secrétaire/caissière) → <strong>validation</strong> (admin, gestionnaire ou comptable) →
-    <strong>paiement</strong> (Mobile Money avec référence, ou espèces) → <strong>reçu</strong>.
-    Cochez une ou plusieurs clôtures dans l'historique pour imprimer une liste d'émargement groupée.
+    Circuit : <strong>point / clôture</strong> (secrétaire/caissière) → <strong>validation</strong> (admin, gestionnaire ou comptable) →
+    <strong>paiement du net</strong> (Mobile Money avec référence, ou espèces) → <strong>reçu</strong>.
+    <!-- ⭐ Patron (2026-10-08) : RSPS 5 % par défaut sur le brut, à verser à l'OTR en fin de mois. -->
+    La <strong>RSPS</strong> (<span id="tauxRspsAffiche">5</span> % par défaut) est retenue sur la part brute : le médecin reçoit le <strong>net</strong>,
+    la retenue est reversée à l'OTR depuis le bloc ci-dessous.
+</div>
+
+<!-- ⭐ RSPS à verser à l'OTR -->
+<div class="card mb-4 border-danger">
+    <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span><i class="fas fa-landmark me-1"></i> RSPS à verser à l'OTR</span>
+        <span class="d-flex align-items-center gap-2">
+            <span class="small">Taux RSPS :</span>
+            <div class="input-group input-group-sm" style="width:130px;">
+                <input type="number" class="form-control" id="paramTauxRsps" min="0" max="50" step="0.5">
+                <span class="input-group-text">%</span>
+            </div>
+            <div class="form-check form-switch mb-0 small"><input class="form-check-input" type="checkbox" id="paramRspsActive"><label class="form-check-label" for="paramRspsActive">Active</label></div>
+            <button class="btn btn-sm btn-light" id="btnParamRsps" onclick="enregistrerParamRsps()" title="Enregistrer le taux par défaut"><i class="fas fa-save"></i></button>
+        </span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm mb-0 align-middle">
+                <thead class="table-light"><tr><th>Mois de paiement</th><th class="text-end">Parts payées</th><th class="text-end">RSPS à verser</th><th></th></tr></thead>
+                <tbody id="corpsRsps"><tr><td colspan="4" class="text-center text-muted py-3">Chargement...</td></tr></tbody>
+            </table>
+        </div>
+        <div class="px-3 py-2 small text-muted border-top" id="historiqueRsps"></div>
+    </div>
 </div>
 
 <div class="card mb-4">
@@ -26,7 +53,7 @@
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
                 <thead class="table-light">
-                    <tr><th>Médecin</th><th class="text-end">Actes réalisés</th><th class="text-end">Base</th><th class="text-end">Montant à clôturer</th><th></th></tr>
+                    <tr><th>Médecin</th><th class="text-end">Actes réalisés</th><th class="text-end">Base</th><th class="text-end">Part brute</th><th></th></tr>
                 </thead>
                 <tbody id="corpsEnAttente"><tr><td colspan="5" class="text-center text-muted py-4">Chargement...</td></tr></tbody>
             </table>
@@ -51,10 +78,34 @@
         <div class="table-responsive">
             <table class="table table-sm mb-0 align-middle">
                 <thead class="table-light">
-                    <tr><th style="width:30px;"></th><th>Médecin</th><th>Période</th><th class="text-end">Montant</th><th>Statut</th><th>Détail paiement</th><th></th></tr>
+                    <tr><th style="width:30px;"></th><th>Médecin</th><th>Période</th><th class="text-end">Brut</th><th class="text-end">RSPS</th><th class="text-end">Net</th><th>Statut</th><th>Détail paiement</th><th></th></tr>
                 </thead>
-                <tbody id="corpsHistorique"><tr><td colspan="7" class="text-center text-muted py-4">Chargement...</td></tr></tbody>
+                <tbody id="corpsHistorique"><tr><td colspan="9" class="text-center text-muted py-4">Chargement...</td></tr></tbody>
             </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal point (prestations non clôturées) -->
+<div class="modal fade" id="modalPoint" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-file-invoice me-2"></i>Point des prestations — <span id="pointMedecinNom"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="pointMedecinId">
+                <p class="small text-muted mb-2">Récapitulatif par acte (libellé, nombre, PU), détail daté de chaque prestation, brut, RSPS et net à payer — avec les signatures Comptable / Médecin / Direction.</p>
+                <div class="row">
+                    <div class="col-md-6 mb-2"><label class="form-label mb-1">Du</label><input type="date" class="form-control" id="pointDateDebut"></div>
+                    <div class="col-md-6 mb-2"><label class="form-label mb-1">Au</label><input type="date" class="form-control" id="pointDateFin"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="ouvrirPoint()"><i class="fas fa-print me-1"></i> Ouvrir le point</button>
+            </div>
         </div>
     </div>
 </div>
@@ -101,6 +152,7 @@
             </div>
             <div class="modal-body">
                 <input type="hidden" id="paieId">
+                <div class="alert alert-light border small" id="paieApercu"></div>
                 <div class="mb-2">
                     <label class="form-label mb-1">Mode de paiement</label>
                     <div class="btn-group w-100" role="group">
@@ -139,9 +191,68 @@
     </div>
 </div>
 
+<!-- ⭐ Modal versement RSPS à l'OTR -->
+<div class="modal fade" id="modalRsps" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-landmark me-2"></i>Verser la RSPS à l'OTR</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="rspsMois">
+                <div class="alert alert-light border" id="rspsApercu"></div>
+                <div class="table-responsive mb-2" style="max-height:200px; overflow:auto;">
+                    <table class="table table-sm small mb-0"><thead class="table-light"><tr><th>Médecin</th><th>Payé le</th><th class="text-end">Brut</th><th class="text-end">RSPS</th></tr></thead><tbody id="rspsDetail"></tbody></table>
+                </div>
+                <div class="row g-2">
+                    <div class="col-md-6">
+                        <label class="form-label mb-1">Mode de versement</label>
+                        <select class="form-select" id="rspsMode" onchange="document.getElementById('rspsRefBloc').style.display = this.value === 'especes' ? 'none' : ''">
+                            <option value="especes">Espèces</option>
+                            <option value="mobile_money">Mobile Money</option>
+                            <option value="virement">Virement bancaire</option>
+                            <option value="cheque">Chèque</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label mb-1">Date du versement <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control" id="rspsDate">
+                    </div>
+                    <div class="col-12" id="rspsRefBloc" style="display:none;">
+                        <label class="form-label mb-1">Référence (quittance, transaction, virement) <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="rspsReference" placeholder="Ex. quittance OTR n° ...">
+                    </div>
+                </div>
+                <div class="form-text mt-2">Une dépense « RSPS part médecins — OTR » est créée, la caisse est mise à jour et l'écriture comptable (447 RSPS à reverser / caisse) est passée automatiquement.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-danger" onclick="confirmerVersementRsps()"><i class="fas fa-check me-1"></i> Décaisser et verser</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 const PEUT_VALIDER = {{ 'true' if session.is_admin or session.role in ['admin', 'gestionnaire', 'comptable'] else 'false' }};
+const PEUT_PAYER = {{ 'true' if session.is_admin or session.role in ['admin', 'secretaire', 'caissier'] else 'false' }};
 let enAttenteCache = [];
+const F = n => Math.round(n || 0).toLocaleString('fr-FR') + ' F';
+
+function ouvrirModalPoint(medecinId, medecinNom, dateAncienne, dateRecente) {
+    document.getElementById('pointMedecinId').value = medecinId;
+    document.getElementById('pointMedecinNom').textContent = medecinNom;
+    document.getElementById('pointDateDebut').value = dateAncienne;
+    document.getElementById('pointDateFin').value = dateRecente;
+    new bootstrap.Modal(document.getElementById('modalPoint')).show();
+}
+function ouvrirPoint() {
+    const id = document.getElementById('pointMedecinId').value;
+    const url = '/part-medecin/point?medecin_id=' + id + '&debut=' + document.getElementById('pointDateDebut').value + '&fin=' + document.getElementById('pointDateFin').value;
+    bootstrap.Modal.getInstance(document.getElementById('modalPoint')).hide();
+    window.open(url, '_blank', 'width=1100,height=800');
+}
 
 function ouvrirModalCloturer(medecinId, medecinNom, dateAncienne, dateRecente) {
     document.getElementById('clotMedecinId').value = medecinId;
@@ -150,7 +261,7 @@ function ouvrirModalCloturer(medecinId, medecinNom, dateAncienne, dateRecente) {
     document.getElementById('clotDateFin').value = dateRecente;
     const ligne = enAttenteCache.find(l => l.medecin_id === medecinId);
     document.getElementById('clotApercu').textContent = ligne
-        ? `${ligne.nb_actes} acte(s), base ${Math.round(ligne.base_calcul).toLocaleString('fr-FR')} F → montant ${Math.round(ligne.montant_reel).toLocaleString('fr-FR')} F`
+        ? `${ligne.nb_actes} acte(s), base ${F(ligne.base_calcul)} → part brute ${F(ligne.montant_reel)} (RSPS ${TAUX_RSPS} % retenue à la clôture)`
         : '';
     new bootstrap.Modal(document.getElementById('modalCloturer')).show();
 }
@@ -166,7 +277,7 @@ function confirmerCloture() {
         .then(async data => {
             if (data.success) {
                 bootstrap.Modal.getInstance(document.getElementById('modalCloturer')).hide();
-                await afficherMessage('Clôture calculée : ' + Math.round(data.montant_total).toLocaleString('fr-FR') + 'FCFA. À faire valider.');
+                await afficherMessage('Clôture calculée : part brute ' + F(data.montant_total) + '. À faire valider.');
                 chargerTout();
             } else {
                 await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
@@ -199,7 +310,9 @@ function toggleModePaiement() {
 }
 
 function ouvrirModalPaiement(id) {
+    const l = TOUT_HISTORIQUE.find(x => x.id === id);
     document.getElementById('paieId').value = id;
+    document.getElementById('paieApercu').innerHTML = l ? `<strong>${l.medecin_nom}</strong> — brut ${F(l.montant_total)}${l.montant_rsps ? ` − RSPS ${l.taux_rsps} % ${F(l.montant_rsps)}` : ''} = <strong>net à payer ${F(l.montant_net)}</strong>` : '';
     document.getElementById('paieEspeces').checked = true;
     document.getElementById('paieOperateur').value = 'Tmoney';
     document.getElementById('paieReference').value = '';
@@ -220,14 +333,19 @@ async function confirmerPaiement() {
         payload.reference_paiement = document.getElementById('paieReference').value.trim();
         if (!payload.reference_paiement) { await afficherMessage('La référence de transaction est obligatoire.'); return; }
     }
-    fetch('/api/part-medecin/' + document.getElementById('paieId').value + '/payer', {
+    const id = document.getElementById('paieId').value;
+    fetch('/api/part-medecin/' + id + '/payer', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
     })
     .then(r => r.json())
     .then(async data => {
         if (data.success) {
             bootstrap.Modal.getInstance(document.getElementById('modalPaiement')).hide();
-            chargerHistorique();
+            chargerHistorique(); chargerRsps();
+            // ⭐ reçu imprimable tout de suite, comme avant
+            if (await demanderConfirmation('Paiement enregistré. Imprimer le reçu maintenant ?', {type: 'success', texteOk: 'Imprimer le reçu', texteAnnuler: 'Plus tard'})) {
+                window.open('/part-medecin/' + id + '/recu', '_blank', 'width=1000,height=800');
+            }
         } else {
             await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
@@ -243,18 +361,24 @@ function chargerEnAttente() {
             corps.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">Rien en attente de clôture.</td></tr>';
             return;
         }
-        corps.innerHTML = lignes.map(l => `
+        corps.innerHTML = lignes.map(l => {
+            const nom = JSON.stringify(l.medecin_nom).replace(/'/g, "&apos;");
+            return `
             <tr>
-                <td><strong>${l.medecin_nom}</strong></td>
+                <td><strong>${l.medecin_nom}</strong><div class="small text-muted">du ${l.date_plus_ancienne.split('-').reverse().join('/')} au ${l.date_plus_recente.split('-').reverse().join('/')}</div></td>
                 <td class="text-end">${l.nb_actes}</td>
-                <td class="text-end">${Math.round(l.base_calcul).toLocaleString('fr-FR')} F</td>
-                <td class="text-end fw-bold">${Math.round(l.montant_reel).toLocaleString('fr-FR')} F</td>
-                <td class="text-end">
-                    <button class="btn btn-sm btn-warning" onclick='ouvrirModalCloturer(${l.medecin_id}, ${JSON.stringify(l.medecin_nom).replace(/'/g, "&apos;")}, ${JSON.stringify(l.date_plus_ancienne)}, ${JSON.stringify(l.date_plus_recente)})'>
+                <td class="text-end">${F(l.base_calcul)}</td>
+                <td class="text-end fw-bold">${F(l.montant_reel)}</td>
+                <td class="text-end text-nowrap">
+                    <button class="btn btn-sm btn-outline-primary" onclick='ouvrirModalPoint(${l.medecin_id}, ${nom}, ${JSON.stringify(l.date_plus_ancienne)}, ${JSON.stringify(l.date_plus_recente)})' title="Point détaillé des prestations (imprimable)">
+                        <i class="fas fa-file-invoice"></i> Point
+                    </button>
+                    <button class="btn btn-sm btn-warning" onclick='ouvrirModalCloturer(${l.medecin_id}, ${nom}, ${JSON.stringify(l.date_plus_ancienne)}, ${JSON.stringify(l.date_plus_recente)})'>
                         <i class="fas fa-stopwatch"></i> Clôturer
                     </button>
                 </td>
-            </tr>`).join('');
+            </tr>`;
+        }).join('');
     });
 }
 
@@ -272,7 +396,7 @@ function filtrerHistorique() {
     const lignes = !q ? TOUT_HISTORIQUE : TOUT_HISTORIQUE.filter(l => (l.medecin_nom || '').toLowerCase().includes(q));
     const corps = document.getElementById('corpsHistorique');
     if (!lignes.length) {
-        corps.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">Aucune clôture.</td></tr>';
+        corps.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Aucune clôture.</td></tr>';
         return;
     }
     const badgeStatut = (s) => ({
@@ -281,25 +405,28 @@ function filtrerHistorique() {
         payee: '<span class="badge bg-success">Payée</span>',
     }[s] || s);
     corps.innerHTML = lignes.map(l => {
-        let actions = '';
-        if (l.statut === 'calculee') actions = PEUT_VALIDER ? `
+        let actions = `<a href="/part-medecin/${l.id}/point" target="_blank" class="btn btn-sm btn-outline-secondary" title="Point détaillé"><i class="fas fa-file-invoice"></i></a> `;
+        if (l.statut === 'calculee') actions += PEUT_VALIDER ? `
             <button class="btn btn-sm btn-outline-danger" onclick="annulerPeriode(${l.id})" title="Annuler la clôture"><i class="fas fa-undo"></i></button>
             <button class="btn btn-sm btn-info" onclick="validerPeriode(${l.id})"><i class="fas fa-check"></i> Valider</button>`
             : '<span class="text-muted small">En attente de validation</span>';
-        else if (l.statut === 'validee') actions = `<button class="btn btn-sm btn-success" onclick="ouvrirModalPaiement(${l.id})"><i class="fas fa-money-check"></i> Payer</button>`;
-        else if (l.statut === 'payee') actions = `<a href="/part-medecin/${l.id}/recu" target="_blank" class="btn btn-sm btn-outline-primary"><i class="fas fa-receipt"></i> Reçu</a>`;
+        else if (l.statut === 'validee') actions += PEUT_PAYER ? `<button class="btn btn-sm btn-success" onclick="ouvrirModalPaiement(${l.id})"><i class="fas fa-money-check"></i> Payer</button>` : '<span class="text-muted small">À payer (caisse)</span>';
+        else if (l.statut === 'payee') actions += `<a href="/part-medecin/${l.id}/recu" target="_blank" class="btn btn-sm btn-outline-primary"><i class="fas fa-receipt"></i> Reçu</a>`;
         const detailPaiement = l.statut === 'payee'
             ? (l.mode_paiement === 'especes' ? `Espèces — ${l.date_paiement}` : `${l.operateur_mobile} — Réf. ${l.reference_paiement} — ${l.date_paiement}`)
+              + (l.montant_rsps ? (l.rsps_versee ? ' <span class="badge bg-success">RSPS versée</span>' : ' <span class="badge bg-warning text-dark">RSPS à verser</span>') : '')
             : '-';
         return `
             <tr>
                 <td><input type="checkbox" class="form-check-input emargement-check" value="${l.id}"></td>
                 <td>${l.medecin_nom}</td>
                 <td>${l.date_debut} → ${l.date_fin}</td>
-                <td class="text-end fw-bold">${Math.round(l.montant_total).toLocaleString('fr-FR')} F</td>
+                <td class="text-end">${F(l.montant_total)}</td>
+                <td class="text-end text-danger">${l.montant_rsps ? '− ' + F(l.montant_rsps) + ' <span class="small text-muted">(' + l.taux_rsps + ' %)</span>' : '—'}</td>
+                <td class="text-end fw-bold">${F(l.montant_net)}</td>
                 <td>${badgeStatut(l.statut)}</td>
                 <td class="small text-muted">${detailPaiement}</td>
-                <td class="text-end">${actions}</td>
+                <td class="text-end text-nowrap">${actions}</td>
             </tr>`;
     }).join('');
 }
@@ -310,7 +437,67 @@ async function imprimerEmargement() {
     window.open('/part-medecin/emargement?ids=' + ids.join(','), '_blank');
 }
 
-function chargerTout() { chargerEnAttente(); chargerHistorique(); }
+// ⭐ RSPS / OTR
+let TAUX_RSPS = 5, RSPS_A_VERSER = [];
+function chargerParamRsps() {
+    fetch('/api/part-medecin/parametres').then(r => r.json()).then(d => {
+        TAUX_RSPS = d.rsps_active ? d.taux_rsps : 0;
+        document.getElementById('tauxRspsAffiche').textContent = d.taux_rsps;
+        document.getElementById('paramTauxRsps').value = d.taux_rsps;
+        document.getElementById('paramRspsActive').checked = !!d.rsps_active;
+        if (!PEUT_VALIDER) { ['paramTauxRsps', 'paramRspsActive', 'btnParamRsps'].forEach(id => document.getElementById(id).disabled = true); }
+    });
+}
+async function enregistrerParamRsps() {
+    const d = await fetch('/api/part-medecin/parametres', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({taux_rsps: parseFloat(document.getElementById('paramTauxRsps').value), rsps_active: document.getElementById('paramRspsActive').checked})}).then(r => r.json());
+    if (!d.success) { await afficherMessage('Erreur : ' + (d.error || 'inconnue'), {type: 'danger'}); return; }
+    await afficherMessage('Taux de RSPS enregistré : ' + d.taux_rsps + ' %' + (d.rsps_active ? '' : ' (désactivée)'), {type: 'success'});
+    chargerParamRsps();
+}
+function chargerRsps() {
+    fetch('/api/part-medecin/rsps').then(r => r.json()).then(d => {
+        RSPS_A_VERSER = d.a_verser || [];
+        const corps = document.getElementById('corpsRsps');
+        corps.innerHTML = RSPS_A_VERSER.length ? RSPS_A_VERSER.map(g => `
+            <tr>
+                <td><strong>${g.libelle}</strong></td>
+                <td class="text-end">${g.nb}</td>
+                <td class="text-end fw-bold text-danger">${F(g.montant)}</td>
+                <td class="text-end">${PEUT_PAYER ? `<button class="btn btn-sm btn-danger" onclick="ouvrirModalRsps('${g.mois}')"><i class="fas fa-landmark me-1"></i> Verser à l'OTR</button>` : '<span class="text-muted small">À verser (caisse)</span>'}</td>
+            </tr>`).join('')
+            : '<tr><td colspan="4" class="text-center text-muted py-3">Aucune RSPS en attente de versement.</td></tr>';
+        const h = document.getElementById('historiqueRsps');
+        h.innerHTML = (d.versements || []).length
+            ? '<strong>Versements effectués :</strong> ' + d.versements.slice(0, 12).map(v => `${v.libelle} — ${F(v.montant)} le ${v.date_versement}${v.reference_paiement ? ' (réf. ' + v.reference_paiement + ')' : ''}`).join(' · ')
+            : 'Aucun versement enregistré pour le moment.';
+    });
+}
+function ouvrirModalRsps(mois) {
+    const g = RSPS_A_VERSER.find(x => x.mois === mois); if (!g) return;
+    document.getElementById('rspsMois').value = mois;
+    document.getElementById('rspsApercu').innerHTML = `<strong>${g.libelle}</strong> — ${g.nb} part(s) médecin payée(s) — <strong class="text-danger">RSPS à verser : ${F(g.montant)}</strong>`;
+    document.getElementById('rspsDetail').innerHTML = g.medecins.map(m => `<tr><td>${m.medecin}</td><td>${m.date_paiement}</td><td class="text-end">${F(m.brut)}</td><td class="text-end">${F(m.rsps)}</td></tr>`).join('');
+    document.getElementById('rspsMode').value = 'especes';
+    document.getElementById('rspsRefBloc').style.display = 'none';
+    document.getElementById('rspsReference').value = '';
+    document.getElementById('rspsDate').value = new Date().toISOString().slice(0, 10);
+    new bootstrap.Modal(document.getElementById('modalRsps')).show();
+}
+async function confirmerVersementRsps() {
+    const payload = {mois: document.getElementById('rspsMois').value, mode_paiement: document.getElementById('rspsMode').value,
+                     reference_paiement: document.getElementById('rspsReference').value.trim(), date_paiement: document.getElementById('rspsDate').value};
+    if (!payload.date_paiement) { await afficherMessage('La date du versement est obligatoire.'); return; }
+    if (payload.mode_paiement !== 'especes' && !payload.reference_paiement) { await afficherMessage('La référence du versement est obligatoire.'); return; }
+    if (!await demanderConfirmation('Décaisser et enregistrer ce versement à l\'OTR ?', {type: 'warning'})) return;
+    const d = await fetch('/api/part-medecin/rsps/verser', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)}).then(r => r.json());
+    if (!d.success) { await afficherMessage('Erreur : ' + (d.error || 'inconnue'), {type: 'danger'}); return; }
+    bootstrap.Modal.getInstance(document.getElementById('modalRsps')).hide();
+    await afficherMessage('Versement enregistré : ' + F(d.montant) + ' (dépense n° ' + d.depense_id + ', écriture comptable passée).', {type: 'success'});
+    chargerRsps(); chargerHistorique();
+}
+
+function chargerTout() { chargerParamRsps(); chargerRsps(); chargerEnAttente(); chargerHistorique(); }
 chargerTout();
 </script>
 

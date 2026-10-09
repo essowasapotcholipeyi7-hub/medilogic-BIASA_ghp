@@ -24,7 +24,10 @@ from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, ong
 from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure
 from services.tarification_service import repartir_ligne, repartir_panier
 from services.laboratoire_service import charger_classification_actes, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
-from services.part_medecin_service import charger_taux_part_medecin, creer_lignes_part_medecin, prestations_en_attente, calculer_periode_part_medecin, charger_toujours_demander_medecin
+from services.part_medecin_service import (charger_taux_part_medecin, creer_lignes_part_medecin, prestations_en_attente,
+                                           calculer_periode_part_medecin, charger_toujours_demander_medecin,
+                                           charger_affectations, charger_medecins_affectes_csv, parametres_rsps,
+                                           montant_net_periode, point_prestations, rsps_a_verser, enregistrer_versement_rsps)
 from services.service_acte_service import charger_services, deviner_service_acte, creer_lignes_service, generer_rapport_recettes_service
 from services.facturation_amu_service import generer_lignes_facture_amu_cnss, charger_classification_amu_cnss, generer_lignes_facture_amu
 from utils.categories_amu_cnss import CATEGORIES_AMU_CNSS, CATEGORIES_AMU_CNSS_DICT
@@ -37,6 +40,7 @@ from utils.grille_amu_hospitalisation import acte_virtuel_o101, CATEGORIES_SALLE
 ABONNEMENT_WHATSAPP_NUMERO = "22893850013"
 MOYENS_PAIEMENT_LABELS = {'mixx': 'Mixx by Yas', 'moov': 'Moov Money'}
 from models import RendezVous, LienPartageRendezVous, ParametrageRendezVous
+from models import AffectationPartMedecin, ParametragePartMedecin, VersementRsps
 from services.paiement_consultation_service import PaiementConsultationService
 from models import Medecin, Patient, Structure, DemandeEntentePrealable
 from utils.remplissage_pdf_amu import remplir_entente_prealable
@@ -4020,6 +4024,7 @@ def actes_vente():
     # ligne par ligne (ex: infiltration), même si un médecin du jour est
     # défini — voir data-medecin-obligatoire.
     toujours_demander_medecin_par_acte = charger_toujours_demander_medecin(structure_id)
+    medecins_affectes_par_acte = charger_medecins_affectes_csv(structure_id)
 
     # ⭐ Recettes par service (patron, 2026-09-30) : {nom_acte: service_id}
     # deviné pour poser un data-service-devine sur chaque <option>, et
@@ -4109,6 +4114,7 @@ def actes_vente():
                 'prix_nuit': prix_nuit or None,
                 'taux_medecin': taux_part_medecin_par_acte.get(a.get('nom', '')) or None,
                 'medecin_obligatoire': bool(toujours_demander_medecin_par_acte.get(a.get('nom', ''))),
+                'medecins_affectes': medecins_affectes_par_acte.get(a.get('nom', '')) or '',
                 'service_devine': (
                     classification_service_par_acte.get(a.get('nom', ''))
                     or (deviner_service_acte(a.get('nom', ''), services_liste_vente) or {}).get('id')
@@ -12930,6 +12936,38 @@ def api_creer_classification_service():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/classification-services/lot', methods=['POST'])
+@admin_required
+def api_classification_services_lot():
+    """⭐ Plusieurs actes d'un coup vers un service (patron, 2026-10-08)."""
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        service_id = data.get('service_id')
+        noms = [str(n).strip() for n in (data.get('noms_actes') or []) if str(n).strip()]
+        if not service_id:
+            return jsonify({'success': False, 'error': 'Service requis'}), 400
+        if not noms:
+            return jsonify({'success': False, 'error': 'Aucun acte'}), 400
+        if str(service_id) not in {str(x['id']) for x in charger_services(structure_id)}:
+            return jsonify({'success': False, 'error': 'Service inconnu'}), 400
+        existantes = {l.nom_acte: l for l in ClassificationServiceActe.query.filter(
+            ClassificationServiceActe.structure_id == structure_id, ClassificationServiceActe.nom_acte.in_(noms)).all()}
+        nb = 0
+        for nom in dict.fromkeys(noms):
+            if nom in existantes:
+                existantes[nom].service_id = service_id
+            else:
+                db.session.add(ClassificationServiceActe(structure_id=structure_id, nom_acte=nom, service_id=service_id,
+                                                         created_by=session.get('user_name', 'System')))
+            nb += 1
+        db.session.commit()
+        return jsonify({'success': True, 'nb': nb})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/classification-services/<int:ligne_id>', methods=['DELETE'])
 @admin_required
 def api_supprimer_classification_service(ligne_id):
@@ -13010,7 +13048,9 @@ def print_rapport_recettes_service():
 @login_required
 @roles_required('admin', 'gestionnaire')
 def page_taux_part_medecin():
-    return render_template('taux_part_medecin.html')
+    medecins = Medecin.query.filter_by(structure_id=session.get('structure_id'), actif=True).order_by(Medecin.nom).all()
+    return render_template('taux_part_medecin.html',
+                           medecins=[{'id': m.id, 'nom_complet': m.get_nom_complet(), 'specialite': m.specialite or ''} for m in medecins])
 
 
 @app.route('/api/taux-part-medecin', methods=['GET'])
@@ -13018,9 +13058,14 @@ def page_taux_part_medecin():
 def api_lister_taux_part_medecin():
     structure_id = session.get('structure_id')
     lignes = TauxPartMedecin.query.filter_by(structure_id=structure_id).order_by(TauxPartMedecin.nom_acte).all()
+    affectations = charger_affectations(structure_id)
+    noms = {m.id: m.get_nom_complet() for m in Medecin.query.filter_by(structure_id=structure_id).all()}
     return jsonify([{
         'id': l.id, 'nom_acte': l.nom_acte, 'taux_medecin': float(l.taux_medecin or 0), 'actif': l.actif,
         'toujours_demander_medecin': bool(l.toujours_demander_medecin),
+        # ⭐ médecins affectés à cet acte (vide = tous proposés, comme avant)
+        'medecins': [{'medecin_id': a['medecin_id'], 'nom': noms.get(a['medecin_id'], '—'), 'taux': a['taux']}
+                     for a in affectations.get(l.nom_acte, [])],
     } for l in lignes])
 
 
@@ -13028,6 +13073,8 @@ def api_lister_taux_part_medecin():
 @login_required
 @roles_required('admin', 'gestionnaire')
 def api_creer_taux_part_medecin():
+    """Taux de l'acte + ⭐ affectation à un ou plusieurs médecins (chacun
+    avec éventuellement son propre taux) — patron, 2026-10-08."""
     try:
         structure_id = session.get('structure_id')
         data = request.json or {}
@@ -13043,22 +13090,49 @@ def api_creer_taux_part_medecin():
         if taux_medecin <= 0 or taux_medecin > 100:
             return jsonify({'success': False, 'error': 'Le taux doit être entre 0 (exclu) et 100 %'}), 400
 
+        medecins_valides = {m.id for m in Medecin.query.filter_by(structure_id=structure_id).all()}
+        affectations = []
+        for m in (data.get('medecins') or []):
+            try:
+                mid = int(m.get('medecin_id'))
+            except (TypeError, ValueError, AttributeError):
+                return jsonify({'success': False, 'error': 'Médecin invalide'}), 400
+            if mid not in medecins_valides:
+                return jsonify({'success': False, 'error': 'Médecin inconnu dans cette structure'}), 400
+            taux_propre = m.get('taux')
+            if taux_propre in (None, ''):
+                taux_propre = None
+            else:
+                try:
+                    taux_propre = float(taux_propre)
+                except (TypeError, ValueError):
+                    return jsonify({'success': False, 'error': 'Taux propre invalide'}), 400
+                if taux_propre <= 0 or taux_propre > 100:
+                    return jsonify({'success': False, 'error': 'Le taux propre doit être entre 0 (exclu) et 100 %'}), 400
+            if mid not in [a[0] for a in affectations]:
+                affectations.append((mid, taux_propre))
+
         existante = TauxPartMedecin.query.filter_by(structure_id=structure_id, nom_acte=nom_acte).first()
         if existante:
             existante.taux_medecin = taux_medecin
             existante.actif = True
             existante.toujours_demander_medecin = toujours_demander_medecin
-            db.session.commit()
-            return jsonify({'success': True, 'id': existante.id, 'mis_a_jour': True})
+            ligne, mis_a_jour = existante, True
+        else:
+            ligne = TauxPartMedecin(
+                structure_id=structure_id, nom_acte=nom_acte, taux_medecin=taux_medecin,
+                toujours_demander_medecin=toujours_demander_medecin,
+                created_by=session.get('user_name', 'System'),
+            )
+            db.session.add(ligne)
+            mis_a_jour = False
 
-        ligne = TauxPartMedecin(
-            structure_id=structure_id, nom_acte=nom_acte, taux_medecin=taux_medecin,
-            toujours_demander_medecin=toujours_demander_medecin,
-            created_by=session.get('user_name', 'System'),
-        )
-        db.session.add(ligne)
+        AffectationPartMedecin.query.filter_by(structure_id=structure_id, nom_acte=nom_acte).delete()
+        for mid, taux_propre in affectations:
+            db.session.add(AffectationPartMedecin(structure_id=structure_id, nom_acte=nom_acte, medecin_id=mid,
+                                                  taux_medecin=taux_propre, created_by=session.get('user_name', 'System')))
         db.session.commit()
-        return jsonify({'success': True, 'id': ligne.id, 'mis_a_jour': False})
+        return jsonify({'success': True, 'id': ligne.id, 'mis_a_jour': mis_a_jour, 'nb_medecins': len(affectations)})
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -13073,6 +13147,7 @@ def api_supprimer_taux_part_medecin(ligne_id):
         ligne = TauxPartMedecin.query.filter_by(id=ligne_id, structure_id=structure_id).first()
         if not ligne:
             return jsonify({'success': False, 'error': 'Introuvable'}), 404
+        AffectationPartMedecin.query.filter_by(structure_id=structure_id, nom_acte=ligne.nom_acte).delete()
         db.session.delete(ligne)
         db.session.commit()
         return jsonify({'success': True})
@@ -15401,6 +15476,8 @@ def api_lister_part_medecin():
             'medecin_telephone': medecin.telephone if medecin else None,
             'date_debut': l.date_debut.strftime('%d/%m/%Y'), 'date_fin': l.date_fin.strftime('%d/%m/%Y'),
             'base_calcul': float(l.base_calcul or 0), 'montant_total': float(l.montant_total or 0),
+            'taux_rsps': float(l.taux_rsps or 0), 'montant_rsps': float(l.montant_rsps or 0),
+            'montant_net': montant_net_periode(l), 'rsps_versee': bool(l.rsps_versement_id),
             'nb_actes': l.nb_actes, 'statut': l.statut, 'calculee_par': l.calculee_par,
             'validee_par': l.validee_par, 'mode_paiement': l.mode_paiement,
             'operateur_mobile': l.operateur_mobile, 'reference_paiement': l.reference_paiement,
@@ -15501,10 +15578,15 @@ def api_payer_part_medecin(periode_id):
         medecin = Medecin.query.get(periode.medecin_id)
         nom_medecin = medecin.get_nom_complet() if medecin else 'Médecin'
         motif = f"Part médecin — {nom_medecin}"
-        montant_total = float(periode.montant_total or 0)
+        # ⭐ RSPS (2026-10-08) : on décaisse le NET ; la retenue reste due à l'OTR
+        # (compte 447 RSPS à reverser) jusqu'au versement groupé du mois.
+        montant_brut = float(periode.montant_total or 0)
+        montant_rsps = float(periode.montant_rsps or 0)
+        montant_total = montant_net_periode(periode)
         description = (f"Part médecin {periode.date_debut.strftime('%d/%m/%Y')} au "
                         f"{periode.date_fin.strftime('%d/%m/%Y')} — {nom_medecin} "
-                        f"({periode.nb_actes} acte(s))")
+                        f"({periode.nb_actes} acte(s)) — brut {int(round(montant_brut))} F"
+                        + (f", RSPS {periode.taux_rsps or 0} % = {int(round(montant_rsps))} F, net {int(round(montant_total))} F" if montant_rsps else ""))
 
         recettes_total = db.execute_query("""
             SELECT COALESCE(SUM(montant), 0) as total FROM recettes
@@ -15540,10 +15622,23 @@ def api_payer_part_medecin(periode_id):
         """, (structure_id, structure_id, structure_id))
 
         try:
-            from services.comptabilite_service import generer_ecriture_depense
+            from services.comptabilite_service import generer_ecriture_depense, creer_ecriture
             depense_orm = Depense.query.get(depense_id)
             if depense_orm:
-                ecriture_dep = generer_ecriture_depense(depense_orm, user_nom=user_name)
+                if montant_rsps > 0:
+                    from utils.plan_comptable_syscohada import COMPTE_HONORAIRES_MEDECINS, COMPTE_RSPS_A_REVERSER, COMPTE_CAISSE
+                    ecriture_dep = creer_ecriture(
+                        structure_id=structure_id, date_ecriture=date_paiement,
+                        libelle=f"Part médecin — {nom_medecin} (brut {int(round(montant_brut))} F, RSPS {int(round(montant_rsps))} F)",
+                        lignes=[
+                            {'numero_compte': COMPTE_HONORAIRES_MEDECINS, 'nom_compte': 'Honoraires — part des médecins réalisateurs', 'type_compte': 'charge', 'libelle': motif, 'debit': montant_brut},
+                            {'numero_compte': COMPTE_CAISSE, 'libelle': motif, 'credit': montant_total},
+                            {'numero_compte': COMPTE_RSPS_A_REVERSER, 'nom_compte': 'État — RSPS retenue sur parts médecins, à reverser (OTR)', 'type_compte': 'passif', 'libelle': f"RSPS {periode.taux_rsps or 0} % — {nom_medecin}", 'credit': montant_rsps},
+                        ],
+                        journal_code='CAI', piece_justificative=f"DEP-{depense_id}", auto=True,
+                        source_type='depense', source_id=depense_id, user_nom=user_name)
+                else:
+                    ecriture_dep = generer_ecriture_depense(depense_orm, user_nom=user_name)
                 if ecriture_dep:
                     print(f"🧾 Écriture comptable #{ecriture_dep.id} générée pour la part médecin #{periode_id} (dépense #{depense_id})")
         except Exception as e:
@@ -15594,7 +15689,190 @@ def page_recu_part_medecin(periode_id):
     structure_info['adresse'] = sheets_helper.format_adresse(structure_info.get('adresse', ''))
 
     return render_template('recu_part_medecin.html', periode=periode, medecin=medecin,
-                            lignes=lignes, structure=structure_info)
+                            lignes=lignes, structure=structure_info,
+                            point=point_prestations(structure_id, periode=periode), now=datetime.now())
+
+
+def _structure_infos_sheet(structure_id):
+    structures = sheets_helper.get_all_records('structures', use_prefix=False)
+    structure_info = dict(next((x for x in structures if str(x.get('ID')) == str(structure_id)), {}))
+    structure_info['adresse'] = sheets_helper.format_adresse(structure_info.get('adresse', ''))
+    return structure_info
+
+
+@app.route('/api/part-medecin/parametres', methods=['GET', 'POST'])
+@login_required
+def api_parametres_part_medecin():
+    """⭐ RSPS par défaut (5 %) appliquée sur la part brute à la clôture —
+    modifiable par admin / gestionnaire / comptable (patron, 2026-10-08)."""
+    structure_id = session.get('structure_id')
+    if request.method == 'POST':
+        if not _peut_valider_part_medecin():
+            return jsonify({'success': False, 'error': 'Accès non autorisé pour votre rôle.'}), 403
+        data = request.json or {}
+        try:
+            taux = float(data.get('taux_rsps'))
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'Taux invalide'}), 400
+        if taux < 0 or taux > 50:
+            return jsonify({'success': False, 'error': 'Le taux de RSPS doit être entre 0 et 50 %'}), 400
+        p = ParametragePartMedecin.query.filter_by(structure_id=structure_id).first()
+        if not p:
+            p = ParametragePartMedecin(structure_id=structure_id)
+            db.session.add(p)
+        p.taux_rsps = taux
+        p.rsps_active = bool(data.get('rsps_active', True))
+        p.modifie_par = session.get('user_name')
+        db.session.commit()
+    taux, actif = parametres_rsps(structure_id)
+    return jsonify({'success': True, 'taux_rsps': taux, 'rsps_active': actif})
+
+
+@app.route('/part-medecin/point')
+@login_required
+def page_point_part_medecin():
+    """⭐ Point des prestations d'un médecin (récap par acte + détail daté,
+    brut / RSPS / net, signatures comptable – médecin – direction) sur les
+    prestations NON clôturées, période libre (patron, 2026-10-08)."""
+    if session.get('role') not in ('admin', 'secretaire', 'caissier', 'gestionnaire', 'comptable') and not session.get('is_admin'):
+        flash('Accès non autorisé pour votre rôle.', 'danger')
+        return redirect(url_for('dashboard'))
+    structure_id = session.get('structure_id')
+    medecin_id = request.args.get('medecin_id', type=int)
+    if not medecin_id or not Medecin.query.filter_by(id=medecin_id, structure_id=structure_id).first():
+        flash('Médecin introuvable', 'danger')
+        return redirect(url_for('page_part_medecin'))
+
+    def _d(nom):
+        v = request.args.get(nom)
+        try:
+            return datetime.strptime(v, '%Y-%m-%d').date() if v else None
+        except ValueError:
+            return None
+    point = point_prestations(structure_id, medecin_id=medecin_id, date_debut=_d('debut'), date_fin=_d('fin'))
+    return render_template('point_part_medecin.html', point=point, structure=_structure_infos_sheet(structure_id),
+                           now=datetime.now(), titre='Point des prestations (non clôturées)')
+
+
+@app.route('/part-medecin/<int:periode_id>/point')
+@login_required
+def page_point_periode_part_medecin(periode_id):
+    structure_id = session.get('structure_id')
+    periode = PeriodePartMedecin.query.filter_by(id=periode_id, structure_id=structure_id).first()
+    if not periode:
+        flash('Introuvable', 'danger')
+        return redirect(url_for('page_part_medecin'))
+    point = point_prestations(structure_id, periode=periode)
+    return render_template('point_part_medecin.html', point=point, structure=_structure_infos_sheet(structure_id),
+                           now=datetime.now(), titre='Point des prestations — clôture N° %05d' % periode.id)
+
+
+@app.route('/api/part-medecin/rsps', methods=['GET'])
+@login_required
+def api_rsps_part_medecin():
+    """⭐ Récapitulatif de la RSPS à verser à l'OTR (par mois de paiement)
+    et historique des versements."""
+    structure_id = session.get('structure_id')
+    versements = VersementRsps.query.filter_by(structure_id=structure_id).order_by(VersementRsps.created_at.desc()).limit(36).all()
+    return jsonify({
+        'success': True,
+        'a_verser': rsps_a_verser(structure_id),
+        'versements': [{
+            'id': v.id, 'libelle': v.libelle, 'montant': float(v.montant or 0), 'nb_periodes': v.nb_periodes,
+            'date_versement': v.date_versement.strftime('%d/%m/%Y') if v.date_versement else '',
+            'mode_paiement': v.mode_paiement, 'reference_paiement': v.reference_paiement, 'depense_id': v.depense_id,
+            'created_by': v.created_by,
+        } for v in versements],
+    })
+
+
+@app.route('/api/part-medecin/rsps/verser', methods=['POST'])
+@login_required
+def api_verser_rsps():
+    """⭐ « Quand on clique, ça décaisse et les écritures comptables
+    suivent » : dépense RSPS → OTR pour un mois donné, caisse mise à jour,
+    écriture 447 RSPS à reverser / caisse, clôtures marquées reversées."""
+    if session.get('role') not in ('admin', 'secretaire', 'caissier', 'gestionnaire', 'comptable') and not session.get('is_admin'):
+        return jsonify({'success': False, 'error': 'Accès non autorisé pour votre rôle.'}), 403
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        mois = (data.get('mois') or '').strip()
+        groupe = next((g for g in rsps_a_verser(structure_id) if g['mois'] == mois), None)
+        if not groupe:
+            return jsonify({'success': False, 'error': 'Rien à verser pour ce mois'}), 400
+        montant = round(float(groupe['montant']))
+        if montant <= 0:
+            return jsonify({'success': False, 'error': 'Montant nul'}), 400
+
+        mode_paiement = data.get('mode_paiement') or 'especes'
+        reference_paiement = (data.get('reference_paiement') or '').strip() or None
+        if mode_paiement not in ('especes', 'mobile_money', 'virement', 'cheque'):
+            return jsonify({'success': False, 'error': 'Mode de paiement invalide'}), 400
+        if mode_paiement != 'especes' and not reference_paiement:
+            return jsonify({'success': False, 'error': 'La référence du versement est obligatoire hors espèces'}), 400
+        date_str = data.get('date_paiement')
+        date_paiement = datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else date.today()
+        user_name = session.get('user_name', 'System')
+        libelle = f"RSPS {groupe['libelle']} — versement OTR"
+        motif = "RSPS part médecins — OTR"
+        description = f"Versement à l'OTR de la RSPS retenue sur {groupe['nb']} part(s) médecin payée(s) en {groupe['libelle']}"
+
+        recettes_total = db.execute_query("""
+            SELECT COALESCE(SUM(montant), 0) as total FROM recettes
+            WHERE structure_id = %s AND (est_annulation IS NULL OR est_annulation = FALSE)
+        """, (structure_id,))
+        depenses_total = db.execute_query("SELECT COALESCE(SUM(montant), 0) as total FROM depenses WHERE structure_id = %s", (structure_id,))
+        solde = (recettes_total[0]['total'] if recettes_total else 0) - (depenses_total[0]['total'] if depenses_total else 0)
+        if montant > solde:
+            return jsonify({'success': False, 'error': f'Solde de caisse insuffisant. Solde actuel : {int(solde):,} FCFA'.replace(',', ' ')}), 400
+
+        result = db.execute_query("""
+            INSERT INTO depenses (structure_id, montant, motif, motif_personnalise, description, created_by_nom,
+                                   moyen_paiement, reference_paiement, date_paiement)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (structure_id, montant, motif, None, description, user_name, mode_paiement, reference_paiement, date_paiement))
+        depense_id = result[0]['id']
+        db.execute_query("""
+            INSERT INTO caisse (structure_id, solde_actuel, date_mise_a_jour)
+            VALUES (%s,
+                (SELECT COALESCE(SUM(montant), 0) FROM recettes WHERE structure_id = %s AND (est_annulation IS NULL OR est_annulation = FALSE)) -
+                (SELECT COALESCE(SUM(montant), 0) FROM depenses WHERE structure_id = %s),
+                NOW())
+            ON CONFLICT (structure_id) DO UPDATE SET solde_actuel = EXCLUDED.solde_actuel, date_mise_a_jour = NOW()
+        """, (structure_id, structure_id, structure_id))
+
+        try:
+            from services.comptabilite_service import creer_ecriture
+            from utils.plan_comptable_syscohada import COMPTE_RSPS_A_REVERSER, COMPTE_CAISSE
+            ecriture = creer_ecriture(
+                structure_id=structure_id, date_ecriture=date_paiement, libelle=libelle,
+                lignes=[
+                    {'numero_compte': COMPTE_RSPS_A_REVERSER, 'nom_compte': 'État — RSPS retenue sur parts médecins, à reverser (OTR)', 'type_compte': 'passif', 'libelle': libelle, 'debit': montant},
+                    {'numero_compte': COMPTE_CAISSE, 'libelle': libelle, 'credit': montant},
+                ],
+                journal_code='CAI', piece_justificative=f"DEP-{depense_id}", auto=True,
+                source_type='depense', source_id=depense_id, user_nom=user_name)
+            if ecriture:
+                print(f"🧾 Écriture comptable #{ecriture.id} générée pour le versement RSPS (dépense #{depense_id})")
+        except Exception as e:
+            print(f"⚠️ Erreur écriture comptable versement RSPS (dépense #{depense_id} conservée): {e}")
+
+        try:
+            from services.journal_service import JournalService
+            JournalService.creer_mouvement(
+                structure_id=structure_id, categorie='rsps_versee', description=libelle, montant=montant,
+                type_montant='debit', reference_type='versement_rsps', reference_id=depense_id, utilisateur_nom=user_name)
+        except Exception as e:
+            print(f"⚠️ Erreur journal d'activité (versement RSPS): {e}")
+
+        v = enregistrer_versement_rsps(structure_id, groupe['periode_ids'], libelle, montant, depense_id,
+                                       date_paiement, mode_paiement, reference_paiement, user_name)
+        return jsonify({'success': True, 'versement_id': v.id, 'depense_id': depense_id, 'montant': montant})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/part-medecin/emargement')
@@ -15651,6 +15929,7 @@ def api_get_actes():
         # ici, impossible d'y proposer le sélecteur "Réalisé par".
         taux_part_medecin_par_acte = charger_taux_part_medecin(structure_id)
         toujours_demander_medecin_par_acte = charger_toujours_demander_medecin(structure_id)
+        medecins_affectes_par_acte = charger_medecins_affectes_csv(structure_id)
 
         # ⭐ Recettes par service (patron, 2026-09-30) : service deviné pour
         # chaque acte — utilisé pour pré-remplir le sélecteur "Service" côté
@@ -15794,6 +16073,7 @@ def api_get_actes():
                     'statut': statut,  # 🔥 NOUVEAU
                     'taux_medecin': taux_part_medecin_par_acte.get(str(acte_nom).strip()) or None,
                     'medecin_obligatoire': bool(toujours_demander_medecin_par_acte.get(str(acte_nom).strip())),
+                    'medecins_affectes': medecins_affectes_par_acte.get(str(acte_nom).strip()) or '',
                     'choix_service_actif': parametrage_service.choix_service_actif,
                     'service_devine': (
                         classification_service.get(str(acte_nom).strip())
@@ -19762,6 +20042,7 @@ def page_hospitalisation_suivi(hospit_id):
     # posés sur chaque option du catalogue, plus bas dans ce même fichier.
     taux_part_medecin_par_acte = charger_taux_part_medecin(structure_id)
     toujours_demander_medecin_par_acte = charger_toujours_demander_medecin(structure_id)
+    medecins_affectes_par_acte = charger_medecins_affectes_csv(structure_id)
     medecins_actifs_hospit = Medecin.query.filter_by(structure_id=structure_id, actif=True).order_by(Medecin.nom).all()
     medecins_liste = [{'id': m.id, 'nom_complet': m.get_nom_complet()} for m in medecins_actifs_hospit]
     medecin_du_jour = medecin_du_jour_actuel(structure_id)
@@ -20581,6 +20862,7 @@ def page_soins_ambulatoires_suivi(episode_id):
     # commentaire équivalent).
     taux_part_medecin_par_acte = charger_taux_part_medecin(structure_id)
     toujours_demander_medecin_par_acte = charger_toujours_demander_medecin(structure_id)
+    medecins_affectes_par_acte = charger_medecins_affectes_csv(structure_id)
     medecins_actifs_ambu = Medecin.query.filter_by(structure_id=structure_id, actif=True).order_by(Medecin.nom).all()
     medecins_liste = [{'id': m.id, 'nom_complet': m.get_nom_complet()} for m in medecins_actifs_ambu]
     medecin_du_jour = medecin_du_jour_actuel(structure_id)

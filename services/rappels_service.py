@@ -103,32 +103,49 @@ class RappelsService:
             print(f"Règle de paiement non évaluée : {e}")
             return None
 
+    _CACHE_STRUCTURES = {'quand': None, 'par_id': {}}
+
     @classmethod
     def _get_structure(cls, structure_id):
-        """Récupère les informations de la structure depuis Google Sheets"""
+        """Informations de la structure (nom, adresse, téléphone, email,
+        logo) depuis la feuille Google Sheets `structures` — la SEULE
+        source fiable : la table Postgres du même nom ne contient que des
+        libellés techniques (« Structure 14 »), d'où des messages et un
+        lien médecins qui disaient « Structure 14 » au lieu du nom de la
+        clinique (patron, 2026-10-08 : « grave anomalie »). Cache 60 s
+        (les rappels en boucle ne relisent pas la feuille à chaque
+        message) ; repli Postgres si la feuille est injoignable."""
+        from datetime import datetime as _dt
+        cache = cls._CACHE_STRUCTURES
         try:
-            # Utiliser sheets_helper pour récupérer les structures
-            # Décommentez la ligne ci-dessous si sheets_helper est disponible
-            # structures = sheets_helper.get_all_records('structures', use_prefix=False)
-            
-            # Alternative: utiliser une requête directe si vous avez un autre moyen
-            # Pour l'instant, on retourne None et on utilisera la base de données comme fallback
-            
-            # Si vous utilisez sheets_helper, décommentez ce bloc:
-            """
-            structures = sheets_helper.get_all_records('structures', use_prefix=False)
-            for s in structures:
-                if str(s.get('ID')) == str(structure_id):
-                    return {
-                        'nom': s.get('nom') or 'Hopital',
-                        'adresse': s.get('adresse') or '',
-                        'telephone': s.get('telephone') or '',
-                        'email': s.get('email') or '',
-                        'logo_url': s.get('logo_url') or ''
+            if not cache['quand'] or (_dt.utcnow() - cache['quand']).total_seconds() > 60:
+                from sheets_helper import sheets_helper
+                par_id = {}
+                for s in sheets_helper.get_all_records('structures', use_prefix=False) or []:
+                    sid = str(s.get('ID') or '').strip()
+                    if not sid:
+                        continue
+                    adresse = s.get('adresse') or ''
+                    try:
+                        adresse = sheets_helper.format_adresse(adresse) or adresse
+                    except Exception:
+                        pass
+                    par_id[sid] = {
+                        'nom': str(s.get('nom') or '').strip() or 'Hopital',
+                        'adresse': str(adresse or '').strip(),
+                        'telephone': str(s.get('telephone') or '').strip(),
+                        'email': str(s.get('email') or '').strip(),
+                        'logo_url': str(s.get('logo_url') or '').strip(),
                     }
-            """
-            
-            # Fallback: essayer depuis la base de données
+                cache['par_id'] = par_id
+                cache['quand'] = _dt.utcnow()
+            infos = cache['par_id'].get(str(structure_id))
+            if infos:
+                return dict(infos)
+        except Exception as e:
+            print(f"Erreur lecture feuille structures: {e}")
+
+        try:
             structure = Structure.query.get(structure_id)
             if structure:
                 return {
@@ -138,16 +155,14 @@ class RappelsService:
                     'email': structure.email or '',
                     'logo_url': getattr(structure, 'logo_url', '') or ''
                 }
-                
         except Exception as e:
             print(f"Erreur récupération structure: {e}")
-        
         return None
-    
+
     # ============================================================
     # GÉNÉRATION DU MESSAGE
     # ============================================================
-    
+
     @classmethod
     def _generer_message(cls, patient_nom, date_rdv, heure_rdv, motif,
                          structure_nom, structure_telephone, structure_adresse, structure_email, jours_restants,
