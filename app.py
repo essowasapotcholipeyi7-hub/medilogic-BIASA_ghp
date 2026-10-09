@@ -9153,8 +9153,13 @@ def injecter_theme_structure():
     thème)."""
     structure_id = session.get('structure_id')
     if not structure_id:
-        return {'theme_css': ''}
-    return {'theme_css': theme_service.css_pour(structure_id, session.get('user_id'))}
+        return {'theme_css': '', 'theme_sombre': False}
+    css = theme_service.css_pour(structure_id, session.get('user_id'))
+    # ⭐ Thème sombre : base.html pose data-bs-theme="dark" sur <html> pour que
+    # Bootstrap passe lui aussi en sombre (aides sous les champs, descriptions,
+    # menus déroulants, modals, tableaux) — patron : « certaines écritures ne
+    # sont plus visibles » sur un thème sombre.
+    return {'theme_css': css, 'theme_sombre': '/* mode sombre */' in css}
 
 
 @app.context_processor

@@ -235,11 +235,12 @@ a:not(.btn):not(.nav-link):not(.nav-link-top):not(.dropdown-item):not(.list-grou
 .form-control, .form-select, .input-group-text {{ background-color: {_assombrir(carte, 0.8)} !important; color: {texte} !important; border-color: {_rgba(texte, 0.2)} !important; }}
 .form-control::placeholder {{ color: {_rgba(texte, 0.5)} !important; }}
 .text-muted, .text-dark, .text-secondary {{ color: {_rgba(texte, 0.7)} !important; }}
-.bg-light, .table-light, .alert-light, .bg-white {{ background-color: {_assombrir(carte, 0.85)} !important; color: {texte} !important; }}
+:root, [data-bs-theme=dark] {{ --bs-body-color: {texte}; --bs-body-bg: {carte}; --bs-secondary-color: {_rgba(texte, 0.78)}; --bs-tertiary-color: {_rgba(texte, 0.62)}; --bs-emphasis-color: #FFFFFF; --bs-border-color: {_rgba(texte, 0.18)}; --bs-heading-color: {texte}; --bs-link-color: {p}; --bs-link-hover-color: {pf}; }}
+.form-text, .form-check-label, .input-group-text, .breadcrumb-item, .dropdown-item, .list-group-item, .accordion-button, .nav-tabs .nav-link, .page-link, .small, small, .card-text, .text-body, .text-body-secondary {{ color: {_rgba(texte, 0.85)} !important; }}
+.bg-light, .table-light, .bg-white, .bg-body, .bg-body-tertiary {{ background-color: {_assombrir(carte, 0.85)} !important; color: {texte} !important; }}
 h1, h2, h3, h4, h5, h6, label, .form-label, .nav-tabs .nav-link {{ color: {texte}; }}
 .table-hover > tbody > tr:hover > * {{ background-color: {_rgba(p, 0.12)} !important; color: {texte} !important; }}
 .btn-light, .btn-outline-secondary, .btn-secondary {{ background-color: {_assombrir(carte, 0.8)} !important; color: {texte} !important; border-color: {_rgba(texte, 0.25)} !important; }}
-.alert-info, .alert-warning, .alert-success, .alert-danger {{ color: #111 !important; }}
 .card-modern .card-header {{ color: {texte} !important; }}
 body::after {{ color: {_rgba(p, 0.25)} !important; }}""")
     return '\n'.join(css)
