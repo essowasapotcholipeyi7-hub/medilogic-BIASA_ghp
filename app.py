@@ -18019,6 +18019,9 @@ def payer_facture_assurance(facture_id):
     date_versement = data.get('date_versement')
     if not numero_reference_versement or not date_versement:
         return jsonify({'success': False, 'error': "Le numéro de référence du versement et la date de versement sont obligatoires pour tracer l'encaissement."}), 400
+    erreur_date = _erreur_date_versement_pour_facture(structure_id, facture_id, date_versement)   # ⭐ dépôt / virement
+    if erreur_date:
+        return jsonify({'success': False, 'error': erreur_date}), 400
 
     facture_apercu = db.execute_query("""
         SELECT assurance, mois_reference FROM factures_assurance WHERE id = %s AND structure_id = %s
@@ -18054,6 +18057,87 @@ def payer_facture_assurance(facture_id):
 # templates/statistiques_assurance_print.html). Jamais de date auto —
 # uniquement celle que l'utilisateur indique. Simple champ informatif,
 # aucun effet caisse/comptabilité (contrairement à /payer).
+# ============================================================
+# ⭐ COHÉRENCE DES DATES DÉPÔT / VIREMENT (patron, 2026-10-09 : « date de
+# dépôt le 10/10/2026 et date de virement le 09/10/2026, mais ça a marché »)
+# — aucune des deux dates ne peut être dans le futur, et l'assureur ne peut
+# pas virer avant le dépôt du bordereau. Appliqué aux bordereaux
+# complémentaires (FactureAssurance) ET aux factures AMU mensuelles
+# (FactureAmuMensuelle, dont l'encaissement passe par la FactureAssurance
+# amu_<type> du même mois).
+# ============================================================
+def _parser_date_ymd(valeur):
+    """'AAAA-MM-JJ' (ou datetime/date) -> date ; ValueError si invalide."""
+    if isinstance(valeur, datetime):
+        return valeur.date()
+    if isinstance(valeur, date):
+        return valeur
+    return datetime.strptime(str(valeur or '').strip()[:10], '%Y-%m-%d').date()
+
+
+def _fr(d):
+    return d.strftime('%d/%m/%Y') if d else ''
+
+
+def _controler_date_depot(date_depot, date_versement_existante=None):
+    """None si cohérente, sinon le message à afficher."""
+    if date_depot > date.today():
+        return f"La date de dépôt ({_fr(date_depot)}) est dans le futur : indiquez la date réelle du dépôt du bordereau."
+    if date_versement_existante and date_depot > date_versement_existante:
+        return (f"La date de dépôt ({_fr(date_depot)}) est postérieure à la date du virement déjà encaissé "
+                f"({_fr(date_versement_existante)}) : le bordereau est forcément déposé avant d'être payé.")
+    return None
+
+
+def _controler_date_versement(date_versement, date_depot=None):
+    """None si cohérente, sinon le message à afficher."""
+    if date_versement > date.today():
+        return f"La date de virement ({_fr(date_versement)}) est dans le futur : indiquez la date réelle du virement."
+    if date_depot and date_versement < date_depot:
+        return (f"La date de virement ({_fr(date_versement)}) est antérieure à la date de dépôt du bordereau "
+                f"({_fr(date_depot)}) : l'assureur ne peut pas payer avant d'avoir reçu la facture. Vérifiez les deux dates.")
+    return None
+
+
+def _facture_amu_liee(fa):
+    """FactureAmuMensuelle du même mois/type qu'une FactureAssurance amu_<type> (ou None)."""
+    if not fa or not (fa.assurance or '').startswith('amu_') or not fa.mois_reference:
+        return None
+    try:
+        annee, mois = int(str(fa.mois_reference)[:4]), int(str(fa.mois_reference)[5:7])
+    except ValueError:
+        return None
+    return FactureAmuMensuelle.query.filter_by(structure_id=fa.structure_id, type_amu=fa.assurance[4:], annee=annee, mois=mois).first()
+
+
+def _date_depot_facture_assurance(structure_id, facture_id):
+    """Date de dépôt connue pour un encaissement : celle du bordereau, sinon
+    celle de la facture AMU mensuelle du même mois."""
+    fa = FactureAssurance.query.filter_by(id=facture_id, structure_id=structure_id).first()
+    if not fa:
+        return None
+    if fa.date_depot:
+        return fa.date_depot
+    amu = _facture_amu_liee(fa)
+    return _parser_date_ymd(amu.date_depot) if (amu and amu.date_depot) else None
+
+
+def _date_versement_facture_amu(brouillon):
+    """Date du dernier virement encaissé sur la FactureAssurance amu_<type> du même mois (ou None)."""
+    fa = FactureAssurance.query.filter_by(structure_id=brouillon.structure_id, assurance=f"amu_{brouillon.type_amu}",
+                                          mois_reference=f"{brouillon.annee}-{brouillon.mois:02d}").first()
+    return fa.date_versement if fa else None
+
+
+def _erreur_date_versement_pour_facture(structure_id, facture_id, date_versement_str):
+    """Message d'erreur (ou None) pour un encaissement : parse + contrôles."""
+    try:
+        dv = _parser_date_ymd(date_versement_str)
+    except ValueError:
+        return 'Date de versement invalide (format attendu AAAA-MM-JJ).'
+    return _controler_date_versement(dv, _date_depot_facture_assurance(structure_id, facture_id))
+
+
 @app.route('/api/assurances/factures/<int:facture_id>/marquer_depose', methods=['POST'])
 @login_required
 def api_marquer_depose_facture_assurance(facture_id):
@@ -18069,9 +18153,13 @@ def api_marquer_depose_facture_assurance(facture_id):
         if not date_depot_str:
             return jsonify({'success': False, 'error': 'Date de dépôt requise'}), 400
         try:
-            facture.date_depot = datetime.strptime(date_depot_str, '%Y-%m-%d').date()
+            dd = datetime.strptime(date_depot_str, '%Y-%m-%d').date()
         except ValueError:
             return jsonify({'success': False, 'error': 'Date invalide'}), 400
+        erreur = _controler_date_depot(dd, facture.date_versement)   # ⭐ cohérence dépôt / virement
+        if erreur:
+            return jsonify({'success': False, 'error': erreur}), 400
+        facture.date_depot = dd
         db.session.commit()
         return jsonify({'success': True, 'date_depot': facture.date_depot.isoformat()})
     except Exception as e:
@@ -18101,9 +18189,13 @@ def api_cloturer_facture_assurance(facture_id):
         if not date_depot_str:
             return jsonify({'success': False, 'error': 'Date de dépôt requise pour clôturer'}), 400
         try:
-            facture.date_depot = datetime.strptime(date_depot_str, '%Y-%m-%d').date()
+            dd = datetime.strptime(date_depot_str, '%Y-%m-%d').date()
         except ValueError:
             return jsonify({'success': False, 'error': 'Date invalide'}), 400
+        erreur = _controler_date_depot(dd, facture.date_versement)   # ⭐ cohérence dépôt / virement
+        if erreur:
+            return jsonify({'success': False, 'error': erreur}), 400
+        facture.date_depot = dd
         facture.cloturee = True
         db.session.commit()
         return jsonify({'success': True, 'date_depot': facture.date_depot.isoformat()})
@@ -18124,6 +18216,10 @@ def _executer_paiement_assurance(facture_id, structure_id, montant, numero_refer
 
         if not facture or len(facture) == 0:
             raise ValueError('Facture non trouvee')
+
+        erreur_date = _erreur_date_versement_pour_facture(structure_id, facture_id, date_versement)   # ⭐ dépôt / virement
+        if erreur_date:
+            raise ValueError(erreur_date)
 
         f = facture[0]
         # ⭐ FIX : f.get(cle, 0) ne renvoie 0 que si la clé est absente, pas
@@ -18322,6 +18418,10 @@ def payer_facture_assurance_globale(assurance):
     factures_ouvertes = _factures_ouvertes_compagnie(structure_id, assurance)
     if not factures_ouvertes:
         return jsonify({'success': False, 'error': 'Aucune facture en attente pour cette compagnie'}), 400
+    for fo in factures_ouvertes:   # ⭐ cohérence dépôt / virement pour chaque bordereau concerné
+        erreur_date = _erreur_date_versement_pour_facture(structure_id, fo['id'], date_versement)
+        if erreur_date:
+            return jsonify({'success': False, 'error': f"{fo['societe']} : {erreur_date}"}), 400
 
     total_reste = sum(f['reste'] for f in factures_ouvertes)
     if montant_total > total_reste + 0.01:
@@ -22124,11 +22224,15 @@ def api_deposer_facture_amu_cnss(facture_id):
         date_depot_str = (data.get('date_depot') or '').strip()
         if date_depot_str:
             try:
-                brouillon.date_depot = datetime.strptime(date_depot_str, '%Y-%m-%d')
+                dd = datetime.strptime(date_depot_str, '%Y-%m-%d')
             except ValueError:
                 return jsonify({'success': False, 'error': 'Date invalide'}), 400
         else:
-            brouillon.date_depot = datetime.now()
+            dd = datetime.now()
+        erreur = _controler_date_depot(dd.date(), _date_versement_facture_amu(brouillon))   # ⭐ cohérence dépôt / virement
+        if erreur:
+            return jsonify({'success': False, 'error': erreur}), 400
+        brouillon.date_depot = dd
         brouillon.statut = 'deposee'
         db.session.commit()
         return jsonify({'success': True, 'date_depot': brouillon.date_depot.isoformat()})
@@ -22163,9 +22267,13 @@ def api_cloturer_facture_amu(facture_id):
         if not date_depot_str:
             return jsonify({'success': False, 'error': 'Date de dépôt requise pour clôturer'}), 400
         try:
-            brouillon.date_depot = datetime.strptime(date_depot_str, '%Y-%m-%d')
+            dd = datetime.strptime(date_depot_str, '%Y-%m-%d')
         except ValueError:
             return jsonify({'success': False, 'error': 'Date invalide'}), 400
+        erreur = _controler_date_depot(dd.date(), _date_versement_facture_amu(brouillon))   # ⭐ cohérence dépôt / virement
+        if erreur:
+            return jsonify({'success': False, 'error': erreur}), 400
+        brouillon.date_depot = dd
         brouillon.statut = 'cloturee'
         db.session.commit()
         return jsonify({'success': True, 'date_depot': brouillon.date_depot.isoformat()})
@@ -22467,11 +22575,15 @@ def api_deposer_facture_amu_inam(facture_id):
         date_depot_str = (data.get('date_depot') or '').strip()
         if date_depot_str:
             try:
-                brouillon.date_depot = datetime.strptime(date_depot_str, '%Y-%m-%d')
+                dd = datetime.strptime(date_depot_str, '%Y-%m-%d')
             except ValueError:
                 return jsonify({'success': False, 'error': 'Date invalide'}), 400
         else:
-            brouillon.date_depot = datetime.now()
+            dd = datetime.now()
+        erreur = _controler_date_depot(dd.date(), _date_versement_facture_amu(brouillon))   # ⭐ cohérence dépôt / virement
+        if erreur:
+            return jsonify({'success': False, 'error': erreur}), 400
+        brouillon.date_depot = dd
         brouillon.statut = 'deposee'
         db.session.commit()
         return jsonify({'success': True, 'date_depot': brouillon.date_depot.isoformat()})

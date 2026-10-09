@@ -86,7 +86,7 @@
                             </span>
                             {% if peut_encaisser %}
                             <button type="button" class="btn btn-sm btn-success ms-1"
-                                    onclick="showPaiementModal({{ f.encaissement.facture_assurance_id }}, '{{ f.type_libelle }}', '{{ f.periode }}', {{ f.encaissement.montant_total }}, {{ f.encaissement.montant_rembourse }})">
+                                    onclick="showPaiementModal({{ f.encaissement.facture_assurance_id }}, '{{ f.type_libelle }}', '{{ f.periode }}', {{ f.encaissement.montant_total }}, {{ f.encaissement.montant_rembourse }}, '{{ f.date_depot.strftime('%Y-%m-%d') if f.date_depot else '' }}')">
                                 <i class="fas fa-cash-register"></i> Encaisser
                             </button>
                             {% endif %}
@@ -168,6 +168,7 @@
                     <div class="mb-3">
                         <label class="form-label">Date de versement</label>
                         <input type="date" class="form-control" id="paiementDateVersement" required>
+                        <div class="form-text" id="paiementDateVersementAide"></div>
                     </div>
                 </form>
             </div>
@@ -213,7 +214,14 @@ document.getElementById('rechercheNumero').addEventListener('input', function() 
 
 // ⭐ Copie conforme de showPaiementModal/enregistrerPaiement
 // (assurances_factures.html) — même modal, même endpoint.
-function showPaiementModal(id, assurance, mois, total, deja) {
+function showPaiementModal(id, assurance, mois, total, deja, dateDepot) {
+    // ⭐ Cohérence des dates (patron, 2026-10-09) : virement jamais avant le dépôt, jamais dans le futur
+    const champDate = document.getElementById('paiementDateVersement');
+    champDate.max = new Date().toISOString().slice(0, 10);
+    champDate.min = dateDepot || '';
+    document.getElementById('paiementDateVersementAide').textContent = dateDepot
+        ? 'Bordereau déposé le ' + dateDepot.split('-').reverse().join('/') + ' : la date de virement doit être ce jour ou après.'
+        : '';
     document.getElementById('paiementFactureId').value = id;
     document.getElementById('paiementAssurance').value = assurance;
     document.getElementById('paiementMois').value = mois;
@@ -278,6 +286,7 @@ let _clotureEndpoint = null;
 function ouvrirModalCloture(factureId, dateDepotActuelle, endpoint) {
     _clotureEndpoint = endpoint;
     document.getElementById('clotureDateDepot').value = dateDepotActuelle || new Date().toISOString().slice(0, 10);
+    document.getElementById('clotureDateDepot').max = new Date().toISOString().slice(0, 10);   // ⭐ pas de dépôt dans le futur
     document.getElementById('modalCloture').style.display = 'flex';
 }
 function fermerModalCloture() {

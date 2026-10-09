@@ -338,6 +338,7 @@ function voirBordereauFacture(assurance, societe, moisReference) {
 }
 
 function showPaiementModal(id, assurance, mois, total, deja) {
+    document.getElementById('paiementDateVersement').max = new Date().toISOString().slice(0, 10);   // ⭐ jamais dans le futur
     document.getElementById('paiementFactureId').value = id;
     document.getElementById('paiementAssurance').value = assurance;
     document.getElementById('paiementMois').value = mois;
@@ -451,6 +452,7 @@ function chargerFacturesOuvertesCompagnie() {
             document.getElementById('globalMontant').value = Math.round(result.total_reste);
             document.getElementById('globalReference').value = '';
             document.getElementById('globalDateVersement').value = '';
+            document.getElementById('globalDateVersement').max = new Date().toISOString().slice(0, 10);   // ⭐ jamais dans le futur
             previsualiserRepartition();
         });
 }

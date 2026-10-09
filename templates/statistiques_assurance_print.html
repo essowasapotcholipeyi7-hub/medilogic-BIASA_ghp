@@ -355,6 +355,7 @@
         // de cliquer sur ok ou cloturer".
         function ouvrirModalCloture() {
             document.getElementById('clotureDateDepot').value = {{ (facture_assurance.date_depot.strftime('%Y-%m-%d') if facture_assurance.date_depot else '')|tojson }} || new Date().toISOString().slice(0, 10);
+        document.getElementById('clotureDateDepot').max = new Date().toISOString().slice(0, 10);   // ⭐ pas de dépôt dans le futur
             document.getElementById('modalCloture').style.display = 'flex';
         }
         function fermerModalCloture() {

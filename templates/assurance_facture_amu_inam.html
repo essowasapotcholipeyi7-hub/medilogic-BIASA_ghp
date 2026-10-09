@@ -294,6 +294,7 @@ let _clotureEndpoint = null;
 function ouvrirModalCloture(factureId, dateDepotActuelle, endpoint) {
     _clotureEndpoint = endpoint;
     document.getElementById('clotureDateDepot').value = dateDepotActuelle || new Date().toISOString().slice(0, 10);
+    document.getElementById('clotureDateDepot').max = new Date().toISOString().slice(0, 10);   // ⭐ pas de dépôt dans le futur
     document.getElementById('modalCloture').style.display = 'flex';
 }
 function fermerModalCloture() {
