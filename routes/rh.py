@@ -363,6 +363,9 @@ def api_employe_detail(structure_id, id):
         'poste': employe.poste,
         'numero_poste': employe.numero_poste,
         'date_embauche': employe.date_embauche.strftime('%d/%m/%Y') if employe.date_embauche else '',
+        'reprise_annee': employe.reprise_annee,
+        'reprise_conges_jours': float(employe.reprise_conges_jours or 0),
+        'reprise_convenance_jours': float(employe.reprise_convenance_jours or 0),
         # ⭐ CORRECTION : utiliser la méthode calculer_anciennete()
         'anciennete': employe.calculer_anciennete() if hasattr(employe, 'calculer_anciennete') else 0,
         'type_contrat': employe.type_contrat,
@@ -514,7 +517,11 @@ def employe_ajouter(structure_id):
             secteur_paie=data.get('secteur_paie', 'prive') if data.get('secteur_paie') in ('prive', 'public') else 'prive',
             personnes_a_charge=_clamp_personnes_a_charge(data.get('personnes_a_charge', 0)),
         )
-        
+        try:
+            _appliquer_reprise(employe, data)
+        except ValueError as e:
+            return jsonify({'success': False, 'error': str(e)}), 400
+
         db.session.add(employe)
         db.session.commit()
 
@@ -580,6 +587,10 @@ def api_modifier_employe(structure_id, id):
             employe.numero_poste = data['numero_poste'].strip()
         if 'date_embauche' in data and data['date_embauche']:
             employe.date_embauche = datetime.strptime(data['date_embauche'], '%Y-%m-%d').date()
+        try:
+            _appliquer_reprise(employe, data)
+        except ValueError as e:
+            return jsonify({'success': False, 'error': str(e)}), 400
         if 'type_contrat' in data:
             employe.type_contrat = data['type_contrat']
         if 'date_fin_contrat' in data:
@@ -1774,7 +1785,10 @@ def _feries(structure_id):
 
 
 def _compteur_convenance(employe_id, annee, exclure_id=None):
-    """Jours de permission de convenance (en attente + approuvées) de l'année civile."""
+    """Jours de permission de convenance (en attente + approuvées) de l'année
+    civile, plus ceux déjà pris avant le logiciel (reprise de l'historique)."""
+    employe = Employe.query.get(employe_id)
+    reprise = employe.reprise_pour(annee, 'reprise_convenance_jours') if employe else 0.0
     q = db.session.query(func.sum(Permission.nombre_jours)).filter(
         Permission.employe_id == employe_id,
         Permission.nature == 'convenance',
@@ -1783,7 +1797,7 @@ def _compteur_convenance(employe_id, annee, exclure_id=None):
     )
     if exclure_id:
         q = q.filter(Permission.id != exclure_id)
-    return float(q.scalar() or 0)
+    return float(q.scalar() or 0) + reprise
 
 
 def _lire_justificatif(data):
@@ -1955,6 +1969,34 @@ def dossier_demande(structure_id, type_demande, id):
     contexte = _contexte_lettre(objet, type_demande, structure_id)
     contexte['justificatif'] = bool(getattr(objet, 'justificatif_nom', None))
     return render_template('rh/dossier_demande.html', **contexte)
+
+
+def _appliquer_reprise(employe, data):
+    """Reprise de l'historique (jours déjà pris avant le logiciel). Lève ValueError."""
+    if not any(k in data for k in ('reprise_annee', 'reprise_conges_jours', 'reprise_convenance_jours')):
+        return
+    def nombre(cle):
+        v = data.get(cle)
+        if v in (None, ''):
+            return 0.0
+        try:
+            n = float(str(v).replace(',', '.'))
+        except ValueError:
+            raise ValueError("Reprise de l'historique : nombre de jours invalide.")
+        if n < 0 or n > 365:
+            raise ValueError("Reprise de l'historique : le nombre de jours doit être entre 0 et 365.")
+        return n
+    conges, convenance = nombre('reprise_conges_jours'), nombre('reprise_convenance_jours')
+    annee = data.get('reprise_annee')
+    try:
+        annee = int(annee) if annee not in (None, '') else (date.today().year if (conges or convenance) else None)
+    except ValueError:
+        raise ValueError("Reprise de l'historique : année invalide.")
+    if annee and not (2000 <= annee <= date.today().year + 1):
+        raise ValueError("Reprise de l'historique : année invalide.")
+    employe.reprise_annee = annee
+    employe.reprise_conges_jours = conges
+    employe.reprise_convenance_jours = convenance
 
 
 def _superieur_nom(employe):
@@ -2257,7 +2299,10 @@ def api_alertes_absences(structure_id):
         Employe.structure_id == structure_id, Permission.nature == 'convenance',
         Permission.statut.in_(['en_attente', 'approuve']), extract('year', Permission.date_debut) == annee,
     ).group_by(Permission.employe_id).all()
-    for employe_id, total in lignes:
+    totaux = {employe_id: float(total or 0) for employe_id, total in lignes}
+    for e in Employe.query.filter(Employe.structure_id == structure_id, Employe.reprise_annee == annee).all():
+        totaux[e.id] = totaux.get(e.id, 0) + e.reprise_pour(annee, 'reprise_convenance_jours')
+    for employe_id, total in totaux.items():
         if float(total or 0) > regles['convenance_max_jours']:
             e = Employe.query.get(employe_id)
             alertes.append({'type': 'convenance_plafond', 'employe_id': employe_id,

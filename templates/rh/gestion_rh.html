@@ -954,8 +954,32 @@
                                     </div>
                                     <div class="row g-2">
                                         <div class="col-md-6">
-                                            <label class="form-label small">Date embauche *</label>
+                                            <label class="form-label small">Date embauche * <span class="text-muted">(date réelle, même avant le logiciel)</span></label>
                                             <input type="date" class="form-control form-control-sm" id="empDateEmbauche" required>
+                                        </div>
+                                        <!-- ⭐ Reprise de l'historique (patron, 2026-10-10) : employé déjà présent
+                                             avant le logiciel — jours déjà pris cette année, comptés dans le
+                                             solde de congé et dans le plafond des permissions de convenance. -->
+                                        <div class="col-12 order-last">
+                                            <details class="border rounded p-2 mt-1" id="empRepriseBloc">
+                                                <summary class="small fw-semibold"><i class="fas fa-clock-rotate-left me-1"></i>Reprise de l'historique — employé déjà présent avant le logiciel</summary>
+                                                <div class="row g-2 mt-1">
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small mb-0">Année concernée</label>
+                                                        <input type="number" class="form-control form-control-sm" id="empRepriseAnnee" min="2000" max="2100" placeholder="Année en cours">
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small mb-0">Congés annuels déjà pris (jours)</label>
+                                                        <input type="number" class="form-control form-control-sm" id="empRepriseConges" min="0" max="365" step="0.5" placeholder="0">
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small mb-0">Permissions de convenance déjà prises (jours)</label>
+                                                        <input type="number" class="form-control form-control-sm" id="empRepriseConvenance" min="0" max="365" step="0.5" placeholder="0">
+                                                    </div>
+                                                </div>
+                                                <small class="text-muted">Jours déjà pris avant la saisie dans le logiciel : ils sont retirés du solde de congé
+                                                    (30 jours) et comptés dans le plafond annuel des permissions de convenance de cette année.</small>
+                                            </details>
                                         </div>
                                         <div class="col-md-6">
                                             <label class="form-label small">Type contrat</label>
@@ -1903,6 +1927,10 @@ function modifierEmploye(id) {
                 }
 
                 document.getElementById('empTypeContrat').value = data.type_contrat || 'CDI';
+                document.getElementById('empRepriseAnnee').value = data.reprise_annee || '';
+                document.getElementById('empRepriseConges').value = data.reprise_conges_jours || '';
+                document.getElementById('empRepriseConvenance').value = data.reprise_convenance_jours || '';
+                document.getElementById('empRepriseBloc').open = !!(data.reprise_conges_jours || data.reprise_convenance_jours);
                 // ⭐ date_fin_contrat vient déjà en ISO (YYYY-MM-DD) depuis
                 // /api/employes/<id>, contrairement aux autres dates de cet
                 // endpoint (DD/MM/YYYY) — pas de conversion nécessaire.
@@ -2057,6 +2085,9 @@ async function sauvegarderEmploye() {
         service_id: document.getElementById('empService').value,
         poste: document.getElementById('empPoste').value.trim(),
         date_embauche: document.getElementById('empDateEmbauche').value,
+        reprise_annee: document.getElementById('empRepriseAnnee').value,
+        reprise_conges_jours: document.getElementById('empRepriseConges').value,
+        reprise_convenance_jours: document.getElementById('empRepriseConvenance').value,
         type_contrat: document.getElementById('empTypeContrat').value,
         date_fin_contrat: document.getElementById('empDateFinContrat').value,
         compte_utilisateur_id: document.getElementById('empCompteUtilisateur').value || null,

@@ -383,7 +383,21 @@ class Employe(db.Model):
     conges_annuels = db.Column(db.Integer, default=30)
     conges_pris_annee = db.Column(db.Integer, default=0)
     annee_reference = db.Column(db.Integer, default=lambda: datetime.now().year)
-    
+
+    # ⭐ Reprise de l'historique (patron, 2026-10-10 : « les employés étaient là
+    # avant l'arrivée du logiciel ») : jours déjà pris AVANT la saisie dans le
+    # logiciel, pour l'année `reprise_annee` — comptés dans le solde de congé
+    # (get_solde_detail) et dans le plafond annuel des permissions de convenance.
+    reprise_annee = db.Column(db.Integer)
+    reprise_conges_jours = db.Column(db.Numeric(6, 2), default=0)
+    reprise_convenance_jours = db.Column(db.Numeric(6, 2), default=0)
+
+    def reprise_pour(self, annee, champ):
+        """Jours repris (avant le logiciel) pour cette année, 0 sinon."""
+        if not self.reprise_annee or int(self.reprise_annee) != int(annee):
+            return 0.0
+        return float(getattr(self, champ) or 0)
+
 
     def calculer_age(self):
         if self.date_naissance:
@@ -515,7 +529,9 @@ class Employe(db.Model):
                 *filtre_annee, Permission.nature.is_(None)
             ).scalar() or 0
         permissions_pris = float(permissions_imputees) + float(permissions_anciennes)
-        conges_pris = float(conges_pris)
+        # ⭐ + congés déjà pris avant le logiciel (reprise de l'historique)
+        reprise_conges = self.reprise_pour(annee, 'reprise_conges_jours')
+        conges_pris = float(conges_pris) + reprise_conges
 
         total_annuel = self.conges_annuels or 30
         total_pris = conges_pris + permissions_pris
@@ -528,6 +544,7 @@ class Employe(db.Model):
             'permissions_pris': permissions_pris,
             'total_annuel': total_annuel,
             'permissions_deduites': deduire_permissions,
+            'reprise_conges': reprise_conges,
         }
 
     def get_solde_par_annee(self, annee):
