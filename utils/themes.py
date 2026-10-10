@@ -288,8 +288,10 @@ a:not(.btn):not(.nav-link):not(.nav-link-top):not(.dropdown-item):not(.list-grou
 .hub-etape-titre, .hub-domaine-titre, .hub-domaine a {{ color: {texte} !important; }}
 .hub-domaine a:hover {{ background: {_rgba(p, 0.08)} !important; color: {p} !important; }}
 .hub-resultats a:hover, .hub-resultats a.selectionne {{ background: {_rgba(p, 0.08)} !important; }}
-/* ⭐ Bouton de filtre actif (ex. « Toutes » des factures) : restait bleu Bootstrap (audit des thèmes, 2026-10-10) */
-.btn-outline-primary.active, .btn-check:checked + .btn-outline-primary {{ background: {b} !important; color: {bt} !important; border-color: {b} !important; }}""")
+/* ⭐ Bouton de filtre actif / case cochée en bouton (« Toutes » des factures, Acte/Médicament
+   et compagnies des PBR) : restait bleu Bootstrap (audit des thèmes, 2026-10-10), puis
+   « trop vert » en aplat (patron) — teinte douce, comme .btn-primary des thèmes clairs. */
+.btn-outline-primary.active, .btn-check:checked + .btn-outline-primary {{ background: {_rgba(b, 0.16)} !important; color: {_assombrir(b, 0.8)} !important; border-color: {b} !important; font-weight: 600; }}""")
     if not v['mode_sombre']:
         # ⭐ Audit des thèmes (patron, 2026-10-10 : « les autres thèmes s'appliquent-ils
         # partout comme le Noir ? ») : ces éléments gardaient le turquoise / violet
@@ -318,6 +320,9 @@ a:not(.btn):not(.nav-link):not(.nav-link-top):not(.dropdown-item):not(.list-grou
 .card-header .btn-light, .card-header .btn-outline-light, .modal-header .btn-light {{ background: {_rgba(texte, 0.08)} !important; color: {texte} !important; border-color: {_rgba(texte, 0.25)} !important; }}
 .card-header .btn-close, .modal-header .btn-close {{ filter: invert(1) grayscale(1) brightness(1.6); }}
 .btn-primary {{ background: {b} !important; color: {bt} !important; border-color: {b} !important; }}
+.btn-outline-primary {{ color: {_rgba(texte, 0.85)} !important; border-color: {_rgba(texte, 0.28)} !important; }}
+.btn-outline-primary:hover {{ background: {_rgba(p, 0.10)} !important; color: {p} !important; border-color: {_rgba(p, 0.6)} !important; }}
+.btn-outline-primary.active, .btn-check:checked + .btn-outline-primary {{ background: {_rgba(p, 0.16)} !important; color: {p} !important; border-color: {_rgba(p, 0.7)} !important; }}
 .btn-primary:hover, .btn-primary:focus {{ background: {_assombrir(b, 0.85)} !important; color: {bt} !important; box-shadow: none !important; transform: none !important; }}
 .btn {{ box-shadow: none !important; }}
 .btn:hover {{ transform: none !important; }}
