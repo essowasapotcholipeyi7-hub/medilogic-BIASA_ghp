@@ -6296,6 +6296,9 @@ def sync_gestion_patients_config():
                          base_url=BASE_URL)
 
 
+GESTION_PATIENTS_URL_DEFAUT = 'https://consultation.medilogicghp.com'   # = gestion-patients-1-olej.onrender.com
+
+
 @app.route('/sync/gestion-patients/activer', methods=['POST'])
 @login_required
 def sync_gestion_patients_activer():
@@ -6310,7 +6313,10 @@ def sync_gestion_patients_activer():
 
     import secrets
     structure_id = session.get('structure_id')
-    api_url_gp = (request.form.get('api_url') or '').strip() or 'https://gestion-patients.onrender.com'
+    # ⭐ Vraie adresse de gestion_patients (2026-10-10) : « gestion-patients.onrender.com »
+    # est un autre service Render, sans route de synchro (404) — les résultats
+    # d'examens n'arrivaient plus depuis fin septembre.
+    api_url_gp = (request.form.get('api_url') or '').strip().rstrip('/') or GESTION_PATIENTS_URL_DEFAUT
 
     mapping = StructureMapping.query.filter_by(
         local_structure_id=structure_id,
