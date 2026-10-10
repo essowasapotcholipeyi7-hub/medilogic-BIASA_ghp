@@ -20,7 +20,7 @@ from utils.themes import (THEMES_DEFAUT, THEME_DEFAUT_CLE, generer_css, variable
                           palette_vers_variables)
 
 _CACHE_CSS = {}      # (structure_id, utilisateur_id) -> (expire, css)
-_TTL = 60
+_TTL = 10   # court : plusieurs processus serveur, chacun son cache — un changement se voit partout en quelques secondes
 
 
 def invalider_cache(structure_id=None):
@@ -215,6 +215,7 @@ def choisir_theme(structure_id, cle, user_nom='', demarrer_essai=True, portee='s
             raise ValueError(f"Ce thème est payant ({prix}) : demandez son activation à l'éditeur.")
     r = _reglage_ou_creer(structure_id, portee, utilisateur_id)
     r.theme_cle = cle
+    r.personnalisation = {}   # ⭐ un nouveau thème repart propre (les réglages étaient relatifs à l'ancien)
     r.modifie_par = user_nom
     r.modifie_le = datetime.utcnow()
     if portee == 'structure':
@@ -247,7 +248,13 @@ def personnaliser(structure_id, personnalisation, user_nom='', portee='structure
     r = _reglage_ou_creer(structure_id, portee, utilisateur_id)
     perso = personnalisation or {}
     norm = normaliser_variables(perso)
-    r.personnalisation = {k: norm[k] for k in norm if k in perso}
+    # ⭐ Ne garder que ce qui DIFFÈRE du thème actif (patron, 2026-10-10 : le
+    # formulaire renvoie tous les champs ; sans ce filtre, enregistrer sous
+    # Noir figeait toute la palette noire en réglages, qui restaient
+    # appliqués après retour au thème clair — « ça ne revient pas »).
+    actif = theme_actif(structure_id, utilisateur_id if portee == 'utilisateur' else None)
+    base = variables_effectives(actif['theme'].get('variables') or {})
+    r.personnalisation = {k: norm[k] for k in norm if k in perso and norm[k] != base.get(k)}
     r.modifie_par = user_nom
     r.modifie_le = datetime.utcnow()
     db.session.commit()
