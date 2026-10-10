@@ -254,6 +254,49 @@ def _retenue_absences(structure_id, employe_id, annee, mois, salaire_base, param
     return {'libelle': f"{LIBELLE_RETENUE_ABSENCES} — {jours_absents}j", 'montant': montant}
 
 
+LIBELLE_RETENUE_PERMISSIONS = 'Permissions de convenance personnelle'
+
+
+def _retenue_permissions_convenance(structure_id, employe_id, annee, mois, salaire_base, parametrage):
+    """⭐ Code du travail (patron, 2026-10-10) : les jours de permission de
+    convenance personnelle APPROUVÉS et imputés sur le salaire
+    (Permission.deduction='salaire') sont retenus sur le bulletin du mois où
+    ils tombent — jours ouvrables du mois × salaire journalier (salaire de
+    base / diviseur des règles, 26 par défaut). Les permissions
+    exceptionnelles ne sont jamais retenues."""
+    try:
+        import calendar as _calendar
+        from models import Permission, JourFerie
+        from utils.regles_absences import fusionner_regles, jours_dans_le_mois, jours_ouvrables, salaire_journalier
+        regles = fusionner_regles(parametrage.regles_absences)
+        premier = date(annee, mois, 1)
+        dernier = date(annee, mois, _calendar.monthrange(annee, mois)[1])
+        permissions = Permission.query.filter(
+            Permission.employe_id == employe_id, Permission.statut == 'approuve',
+            Permission.nature == 'convenance', Permission.deduction == 'salaire',
+            Permission.date_debut <= dernier, Permission.date_fin >= premier,
+        ).all()
+        if not permissions:
+            return None
+        feries = frozenset(j.date for j in JourFerie.query.filter_by(structure_id=structure_id).all())
+        jours = 0.0
+        for perm in permissions:
+            if perm.type_permission == 'heures':
+                jours += float(perm.nombre_jours or 0.5)
+            else:
+                jours += jours_dans_le_mois(perm.date_debut, perm.date_fin, annee, mois, feries)
+        if jours <= 0:
+            return None
+        journalier = salaire_journalier(salaire_base, regles, jours_ouvrables(premier, dernier, feries))
+        montant = round(journalier * jours, 2)
+        if montant <= 0:
+            return None
+        return {'libelle': f"{LIBELLE_RETENUE_PERMISSIONS} — {jours:g}j", 'montant': montant}
+    except Exception as e:
+        print(f"⚠️ Retenue permissions non calculée (paie {employe_id} {annee}-{mois}): {e}")
+        return None
+
+
 def generer_ou_maj_paie(structure_id, employe_id, annee, mois, salaire_base=None,
                          primes=0, indemnites=0, prets=0, acomptes=0,
                          autres_retenues=None, personnes_a_charge=None, user_nom='System'):
@@ -271,10 +314,14 @@ def generer_ou_maj_paie(structure_id, employe_id, annee, mois, salaire_base=None
     # de doublon si generer_ou_maj_paie est rappelé plusieurs fois) avant
     # d'en réinjecter une à jour si le réglage est actif.
     autres_retenues = [r for r in (autres_retenues or [])
-                        if not (isinstance(r, dict) and str(r.get('libelle', '')).startswith(LIBELLE_RETENUE_ABSENCES))]
+                        if not (isinstance(r, dict) and str(r.get('libelle', '')).startswith(
+                            (LIBELLE_RETENUE_ABSENCES, LIBELLE_RETENUE_PERMISSIONS)))]
     retenue_absences = _retenue_absences(structure_id, employe_id, annee, mois, base, parametrage)
     if retenue_absences:
         autres_retenues.append(retenue_absences)
+    retenue_permissions = _retenue_permissions_convenance(structure_id, employe_id, annee, mois, base, parametrage)
+    if retenue_permissions:
+        autres_retenues.append(retenue_permissions)
 
     calc = calculer_paie(employe, base, primes, indemnites, parametrage,
                           prets=prets, acomptes=acomptes, autres_retenues=autres_retenues,

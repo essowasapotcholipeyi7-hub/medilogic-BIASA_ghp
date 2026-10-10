@@ -10,6 +10,8 @@ from models import (db, Employe, Service, Conge, Permission, DocumentRH, Signatu
                      Paie, ParametragePaie, EmpreinteEmploye, ParametragePointage, Pointage, VisageEmploye,
                      TYPES_CONGE_DEDUCTIBLES, MOTIFS_DEPART, EvaluationRH, SanctionDisciplinaire, TYPES_SANCTION)
 from utils.permissions import a_acces
+from utils.regles_absences import (fusionner_regles, droit_conge_annuel, jours_ouvrables, controler_permission,
+                                   mode_deduction_convenance, evenement as evenement_regles, NATURES_PERMISSION)
 
 rh_bp = Blueprint('rh', __name__, url_prefix='/rh')
 
@@ -1253,6 +1255,27 @@ def conge_demander(structure_id):
             return jsonify({'success': False, 'error': f"Type de congé inconnu: {type_conge}"}), 400
         motif = data.get('motif', '').strip()
 
+        # ⭐ Code du travail : congé annuel acquis après 12 mois de service ;
+        # entre 6 et 12 mois, seulement avec l'accord exprès de l'employeur
+        # (dérogation motivée) ; avant 6 mois, jamais.
+        derogation_motif = None
+        if type_conge == 'annuel':
+            regles = _regles(structure_id)
+            droit = droit_conge_annuel(employe.date_embauche, date_debut, regles)
+            if droit['statut'] == 'bloque':
+                return jsonify({'success': False, 'error': droit['message'], 'anciennete_insuffisante': True}), 400
+            if droit['statut'] == 'derogation':
+                if not data.get('derogation'):
+                    return jsonify({'success': False, 'error': droit['message'], 'derogation_possible': True,
+                                    'derogation_admin': regles['derogation_reservee_admin']}), 400
+                if regles['derogation_reservee_admin'] and not session.get('is_admin'):
+                    return jsonify({'success': False, 'error': "Seule la direction (administrateur) peut accorder un congé "
+                                    "avant 12 mois de service."}), 403
+                derogation_motif = (data.get('derogation_motif') or '').strip()
+                if not derogation_motif:
+                    return jsonify({'success': False, 'error': "Indiquez le motif de l'accord de l'employeur.",
+                                    'derogation_possible': True}), 400
+
         # ⭐ Vérification des doublons (chevauchement avec un AUTRE congé)
         conges_existants = Conge.query.filter(
             Conge.employe_id == employe_id,
@@ -1356,6 +1379,10 @@ def conge_demander(structure_id):
             nombre_jours=jours_ouvres,
             statut='en_attente'
         )
+        if derogation_motif:
+            conge.derogation_anciennete = True
+            conge.derogation_motif = derogation_motif
+            conge.derogation_par = session.get('user_name', 'Admin')
         # ⭐ La date de reprise SUGGÉRÉE (jour suivant si la fin tombe un
         # dimanche/férié) reste modifiable dès la création — patron :
         # "pouvoir ajuster la date de reprise s'il le faut [...] un
@@ -1681,8 +1708,9 @@ def api_permissions(structure_id):
         query = query.filter(Permission.statut == statut)
     
     permissions = query.order_by(Permission.created_at.desc()).all()
+    regles_liste = _regles(structure_id)
     result = []
-    
+
     for p in permissions:
         result.append({
             'id': p.id,
@@ -1694,71 +1722,134 @@ def api_permissions(structure_id):
             'heure_fin': p.heure_fin.strftime('%H:%M') if p.heure_fin else '',
             'date_debut': p.date_debut.strftime('%d/%m/%Y') if p.date_debut else '',
             'date_fin': p.date_fin.strftime('%d/%m/%Y') if p.date_fin else '',
-            'nombre_jours': p.nombre_jours or 1,
+            'nombre_jours': float(p.nombre_jours) if p.nombre_jours is not None else 1,
             'motif': p.motif,
             'statut': p.statut,
-            'signataire': p.signataire
+            'signataire': p.signataire,
+            'nature': p.nature,
+            'nature_libelle': NATURES_PERMISSION.get(p.nature, 'Non classée (ancienne)'),
+            'evenement': p.evenement,
+            'evenement_libelle': (evenement_regles(regles_liste, p.evenement) or {}).get('libelle', p.evenement or ''),
+            'deduction': p.deduction,
+            'justificatif': bool(p.justificatif_nom),
+            'justificatif_nom': p.justificatif_nom or '',
+            'avis_superieur': p.avis_superieur,
+            'avis_superieur_par': p.avis_superieur_par or '',
+            'superieur': _superieur_nom(p.employe)
         })
     
     return jsonify(result)
 
 
+# ============================================================
+# ⭐ RÈGLES CONGÉS / PERMISSIONS — Code du travail togolais (patron,
+# 2026-10-10 : « je veux une vraie GRH »). Calculs dans
+# utils/regles_absences.py ; seuils et choix par structure dans
+# ParametragePaie.regles_absences (écran « Paramètres paie & RH »).
+# ============================================================
+TAILLE_MAX_JUSTIFICATIF = 5 * 1024 * 1024
+MIMES_JUSTIFICATIF = ('application/pdf', 'image/jpeg', 'image/png', 'image/webp')
+
+
+def _regles(structure_id):
+    p = ParametragePaie.query.filter_by(structure_id=structure_id).first()
+    return fusionner_regles(p.regles_absences if p else None)
+
+
+def _feries(structure_id):
+    try:
+        from models import JourFerie
+        return frozenset(j.date for j in JourFerie.query.filter_by(structure_id=structure_id).all())
+    except Exception:
+        return frozenset()
+
+
+def _compteur_convenance(employe_id, annee, exclure_id=None):
+    """Jours de permission de convenance (en attente + approuvées) de l'année civile."""
+    q = db.session.query(func.sum(Permission.nombre_jours)).filter(
+        Permission.employe_id == employe_id,
+        Permission.nature == 'convenance',
+        Permission.statut.in_(['en_attente', 'approuve']),
+        extract('year', Permission.date_debut) == annee,
+    )
+    if exclure_id:
+        q = q.filter(Permission.id != exclure_id)
+    return float(q.scalar() or 0)
+
+
+def _lire_justificatif(data):
+    """(nom, mime, octets) depuis un envoi JSON base64, ou None. Lève ValueError."""
+    contenu = data.get('justificatif_b64')
+    if not contenu:
+        return None
+    if ',' in contenu[:100]:
+        contenu = contenu.split(',', 1)[1]   # data:...;base64,
+    try:
+        octets = base64.b64decode(contenu)
+    except Exception:
+        raise ValueError("Justificatif illisible : choisissez un fichier PDF ou une photo.")
+    mime = (data.get('justificatif_mime') or '').lower()
+    if mime not in MIMES_JUSTIFICATIF:
+        raise ValueError("Justificatif : seuls les PDF et les photos (JPG, PNG) sont acceptés.")
+    if len(octets) > TAILLE_MAX_JUSTIFICATIF:
+        raise ValueError("Justificatif trop lourd (5 Mo maximum) : réduisez la photo ou le scan.")
+    return ((data.get('justificatif_nom') or 'justificatif')[:255], mime, octets)
+
+
+def _superieur_nom(employe):
+    m = getattr(employe, 'manager', None)
+    return f"{m.nom} {m.prenom}".strip() if m else ''
+
+
 @rh_bp.route('/permission/demander', methods=['POST'])
 @require_structure
 def permission_demander(structure_id):
-    """Demander une permission"""
+    """Demander une permission : exceptionnelle (événement familial, payée,
+    non déduite du congé, justificatif) ou convenance personnelle (plafond
+    annuel, déduite du salaire ou du congé selon les règles de la structure)."""
     try:
-        data = request.json
-        
-        # ⭐ Validation du signataire
-        signataire = data.get('signataire', '').strip()
+        data = request.json or {}
+
+        signataire = (data.get('signataire') or '').strip()
         if not signataire:
-            return jsonify({
-                'success': False,
-                'error': 'Le nom du signataire est obligatoire'
-            }), 400
-        
-        # ⭐ Validation de l'employé
+            return jsonify({'success': False, 'error': 'Le nom du signataire est obligatoire'}), 400
+
         employe_id = data.get('employe_id')
         if not employe_id:
-            return jsonify({
-                'success': False,
-                'error': 'Veuillez sélectionner un employé'
-            }), 400
-        
+            return jsonify({'success': False, 'error': 'Veuillez sélectionner un employé'}), 400
         employe = Employe.query.filter_by(id=employe_id, structure_id=structure_id).first()
         if not employe:
-            return jsonify({
-                'success': False,
-                'error': 'Employé non trouvé dans cette structure'
-            }), 404
-        
+            return jsonify({'success': False, 'error': 'Employé non trouvé dans cette structure'}), 404
+
         type_permission = data.get('type_permission', 'heures')
-        motif = data.get('motif', '').strip()
-        
+        if type_permission not in ('heures', 'journee', 'plusieurs_jours'):
+            return jsonify({'success': False, 'error': 'Durée de permission inconnue'}), 400
+        motif = (data.get('motif') or '').strip()
         if not motif:
-            return jsonify({
-                'success': False,
-                'error': 'Le motif est obligatoire'
-            }), 400
-        
-        # ⭐ Calcul des jours selon le type
-        if type_permission == 'heures':
-            date_permission = datetime.strptime(data.get('date_permission'), '%Y-%m-%d').date()
-            date_debut = date_permission
-            date_fin = date_permission
-            nombre_jours = 0.5  # Demi-journée
-        else:
-            date_debut = datetime.strptime(data.get('date_debut'), '%Y-%m-%d').date()
-            date_fin = datetime.strptime(data.get('date_fin'), '%Y-%m-%d').date()
-            nombre_jours = (date_fin - date_debut).days + 1
+            return jsonify({'success': False, 'error': 'Le motif est obligatoire'}), 400
+        nature = data.get('nature') or 'convenance'
+        regles = _regles(structure_id)
+
+        # ⭐ Jours OUVRABLES (lundi à samedi, hors fériés) comme les congés —
+        # avant : jours calendaires (un week-end comptait comme pris).
+        try:
+            if type_permission == 'heures':
+                date_permission = datetime.strptime(data.get('date_permission'), '%Y-%m-%d').date()
+                date_debut = date_fin = date_permission
+                nombre_jours = 0.5
+            else:
+                date_debut = datetime.strptime(data.get('date_debut'), '%Y-%m-%d').date()
+                date_fin = datetime.strptime(data.get('date_fin') or data.get('date_debut'), '%Y-%m-%d').date()
+                if date_fin < date_debut:
+                    return jsonify({'success': False, 'error': 'La date de fin doit être après la date de début'}), 400
+                nombre_jours = jours_ouvrables(date_debut, date_fin, _feries(structure_id))
+                if nombre_jours <= 0:
+                    return jsonify({'success': False, 'error': "Aucun jour ouvrable sur cette période (dimanche ou jour férié)."}), 400
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'Dates de la permission invalides'}), 400
 
         # ⭐ Patron : "un employé en congés on ne peut plus le programmer
-        # pour la même période" — bloque une permission "journée(s)"
-        # pendant un congé approuvé/en attente. Les permissions "heures"
-        # ne bloquent/ne sont pas bloquées par un congé (une absence de
-        # quelques heures le jour du départ/retour de congé n'a pas de
-        # sens à interdire spécifiquement ici).
+        # pour la même période" (permissions « heures » tolérées).
         if type_permission != 'heures':
             conges_existants = Conge.query.filter(
                 Conge.employe_id == employe_id,
@@ -1767,104 +1858,100 @@ def permission_demander(structure_id):
                 Conge.date_fin >= date_debut,
             ).all()
             if conges_existants:
-                chevauchement = [
-                    f"{c.date_debut.strftime('%d/%m/%Y')} -> {c.date_fin.strftime('%d/%m/%Y')} ({c.statut})"
-                    for c in conges_existants
-                ]
-                return jsonify({
-                    'success': False,
-                    'error': f"L'employé est déjà en congé sur cette période: {', '.join(chevauchement)}"
-                }), 400
+                chevauchement = [f"{c.date_debut.strftime('%d/%m/%Y')} -> {c.date_fin.strftime('%d/%m/%Y')} ({c.statut})"
+                                 for c in conges_existants]
+                return jsonify({'success': False,
+                                'error': f"L'employé est déjà en congé sur cette période: {', '.join(chevauchement)}"}), 400
 
-        # ⭐ Vérification du solde — seulement si les permissions décomptent
-        # réellement le solde de congés (patron : "qu'on décide s'il faut
-        # enlever les jours de permission dans les congés ou pas", voir
-        # ParametragePaie.deduire_permissions_des_conges). Si désactivé,
-        # les permissions sont un droit totalement séparé, aucune raison
-        # de les bloquer faute de solde de congé.
-        annee_courante = date_debut.year
-        parametrage = ParametragePaie.query.filter_by(structure_id=structure_id).first()
-        deduire_permissions = bool(parametrage.deduire_permissions_des_conges) if parametrage else True
+        try:
+            justificatif = _lire_justificatif(data)
+        except ValueError as e:
+            return jsonify({'success': False, 'error': str(e)}), 400
 
-        if deduire_permissions:
-            verification = verifier_solde_avec_anticipation(employe_id, nombre_jours, annee_courante)
+        deja_pris = _compteur_convenance(employe_id, date_debut.year) if nature == 'convenance' else 0
+        code_evenement = data.get('evenement') if nature == 'exceptionnelle' else None
+        controle = controler_permission(nature, nombre_jours, regles, deja_pris, code_evenement, bool(justificatif))
+        if controle['erreurs']:
+            return jsonify({'success': False, 'error': ' '.join(controle['erreurs'])}), 400
 
-            if not verification['disponible']:
-                return jsonify({
-                    'success': False,
-                    'error': f'Solde de congés insuffisant pour {annee_courante}',
-                    'solde_insuffisant': True,
-                    'solde_actuel': verification['solde_actuel'],
-                    'jours_demandes': verification['jours_demandes'],
-                    'annee_courante': verification['annee'],
-                    'annees_futures': verification['annees_proposees'],
-                    'message': verification['message']
-                }), 400
+        solde_info = employe.get_solde_detail(date_debut.year)
+        if nature == 'exceptionnelle':
+            deduction = 'aucune'
+        else:
+            droit_acquis = droit_conge_annuel(employe.date_embauche, date_debut, regles)['statut'] == 'acquis'
+            deduction = mode_deduction_convenance(regles, data.get('deduction'), droit_acquis,
+                                                  solde_info['solde'], nombre_jours)
 
-        # ⭐ Créer la permission
         permission = Permission(
-            employe_id=employe_id,
-            structure_id=structure_id,
-            type_permission=type_permission,
-            motif=motif,
-            signataire=signataire,
-            nombre_jours=nombre_jours,
-            statut='en_attente'
+            employe_id=employe_id, structure_id=structure_id, type_permission=type_permission,
+            motif=motif, signataire=signataire, nombre_jours=nombre_jours, statut='en_attente',
+            nature=nature, evenement=code_evenement, deduction=deduction,
+            date_debut=date_debut, date_fin=date_fin,
         )
-        
         if type_permission == 'heures':
             permission.date_permission = date_permission
             permission.heure_debut = datetime.strptime(data.get('heure_debut'), '%H:%M').time() if data.get('heure_debut') else None
             permission.heure_fin = datetime.strptime(data.get('heure_fin'), '%H:%M').time() if data.get('heure_fin') else None
-            permission.date_debut = date_permission
-            permission.date_fin = date_permission
-        else:
-            permission.date_debut = date_debut
-            permission.date_fin = date_fin
-        
+        if justificatif:
+            permission.justificatif_nom, permission.justificatif_mime, permission.justificatif_data = justificatif
+            permission.justificatif_le = datetime.utcnow()
+
         db.session.add(permission)
         db.session.commit()
-        
+
+        libelle_deduction = {'aucune': "payée, sans effet sur le congé ni le salaire",
+                             'salaire': "retenue sur le salaire du mois",
+                             'conge': "décomptée du solde de congé"}[deduction]
         return jsonify({
             'success': True,
             'id': permission.id,
-            'message': 'Permission demandée avec succès',
-            'solde_restant': verification['solde_actuel'] - nombre_jours
+            'message': f"Permission enregistrée ({nombre_jours:g} jour(s) ouvrable(s), {libelle_deduction}).",
+            'avertissements': controle['avertissements'],
+            'deduction': deduction,
+            'nombre_jours': nombre_jours,
+            'convenance_pris_annee': deja_pris + (nombre_jours if nature == 'convenance' else 0),
+            'convenance_plafond': regles['convenance_max_jours'],
+            'solde_restant': solde_info['solde'] - (nombre_jours if deduction == 'conge' else 0),
         })
-        
+
     except Exception as e:
         db.session.rollback()
         print(f"❌ Erreur permission_demander: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @rh_bp.route('/permission/<int:id>/statut', methods=['PUT'])
 @require_structure
 def permission_changer_statut(structure_id, id):
-    """Changer le statut d'une permission"""
+    """Changer le statut d'une permission (approbation : justificatif et avis
+    du supérieur exigés selon les règles de la structure)."""
     try:
-        data = request.json
+        data = request.json or {}
         nouveau_statut = data.get('statut')
-        
         if nouveau_statut not in ['en_attente', 'approuve', 'refuse']:
             return jsonify({'error': 'Statut invalide'}), 400
-        
+
         permission = Permission.query.join(Employe).filter(
-            Permission.id == id,
-            Employe.structure_id == structure_id
+            Permission.id == id, Employe.structure_id == structure_id
         ).first()
-        
         if not permission:
             return jsonify({'error': 'Permission non trouvée'}), 404
-        
+
+        if nouveau_statut == 'approuve':
+            regles = _regles(structure_id)
+            if (permission.nature == 'exceptionnelle' and regles['justificatif_exceptionnelle'] != 'facultatif'
+                    and not permission.justificatif_data):
+                return jsonify({'success': False, 'error': "Justificatif obligatoire avant l'approbation d'une permission "
+                                "exceptionnelle (acte de mariage, de naissance, de décès...) : ajoutez-le d'abord."}), 400
+            if regles['validation_superieur'] and permission.nature and permission.avis_superieur != 'favorable':
+                return jsonify({'success': False, 'error': "Avis favorable du supérieur hiérarchique requis avant "
+                                "l'approbation : enregistrez d'abord son avis."}), 400
+
         permission.statut = nouveau_statut
         permission.approuve_par = session.get('user_name', 'System')
         permission.date_approbation = date.today()
         permission.commentaire = data.get('commentaire', '')
-
         db.session.commit()
 
         # ⭐ JOURNAL D'ACTIVITÉ
@@ -1881,15 +1968,144 @@ def permission_changer_statut(structure_id, id):
             except Exception as e:
                 print(f"⚠️ Erreur journal d'activité (permission #{permission.id}): {e}")
 
-        return jsonify({
-            'success': True,
-            'message': f'Statut de la permission mis à jour en "{nouveau_statut}"'
-        })
-        
+        return jsonify({'success': True, 'message': f'Statut de la permission mis à jour en "{nouveau_statut}"'})
+
     except Exception as e:
         db.session.rollback()
         print(f"❌ Erreur permission_changer_statut: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@rh_bp.route('/permission/<int:id>/avis', methods=['PUT'])
+@require_structure
+def permission_avis_superieur(structure_id, id):
+    """Avis du supérieur hiérarchique (N+1 de l'organigramme) — étape avant
+    l'approbation finale quand les règles l'exigent. Défavorable = refus."""
+    data = request.json or {}
+    avis = data.get('avis')
+    if avis not in ('favorable', 'defavorable'):
+        return jsonify({'success': False, 'error': 'Avis invalide'}), 400
+    permission = Permission.query.join(Employe).filter(Permission.id == id, Employe.structure_id == structure_id).first()
+    if not permission:
+        return jsonify({'success': False, 'error': 'Permission non trouvée'}), 404
+    if permission.statut != 'en_attente':
+        return jsonify({'success': False, 'error': "Cette permission n'est plus en attente."}), 400
+    superieur = _superieur_nom(permission.employe)
+    saisi_par = session.get('user_name', 'System')
+    permission.avis_superieur = avis
+    permission.avis_superieur_par = (f"{superieur} (saisi par {saisi_par})" if superieur else saisi_par)[:100]
+    permission.avis_superieur_le = datetime.utcnow()
+    permission.avis_superieur_commentaire = (data.get('commentaire') or '').strip()
+    if avis == 'defavorable':
+        permission.statut = 'refuse'
+        permission.approuve_par = saisi_par
+        permission.date_approbation = date.today()
+        permission.commentaire = f"Avis défavorable du supérieur hiérarchique. {permission.avis_superieur_commentaire}".strip()
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+@rh_bp.route('/permission/<int:id>/justificatif', methods=['POST'])
+@require_structure
+def permission_ajouter_justificatif(structure_id, id):
+    permission = Permission.query.join(Employe).filter(Permission.id == id, Employe.structure_id == structure_id).first()
+    if not permission:
+        return jsonify({'success': False, 'error': 'Permission non trouvée'}), 404
+    try:
+        justificatif = _lire_justificatif(request.json or {})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    if not justificatif:
+        return jsonify({'success': False, 'error': 'Choisissez le fichier du justificatif.'}), 400
+    permission.justificatif_nom, permission.justificatif_mime, permission.justificatif_data = justificatif
+    permission.justificatif_le = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+@rh_bp.route('/permission/<int:id>/justificatif', methods=['GET'])
+@require_structure
+def permission_voir_justificatif(structure_id, id):
+    permission = Permission.query.join(Employe).filter(Permission.id == id, Employe.structure_id == structure_id).first()
+    if not permission or not permission.justificatif_data:
+        return jsonify({'error': 'Aucun justificatif'}), 404
+    nom = (permission.justificatif_nom or 'justificatif').replace('"', '')
+    return Response(bytes(permission.justificatif_data), mimetype=permission.justificatif_mime or 'application/octet-stream',
+                    headers={'Content-Disposition': f'inline; filename="{nom}"'})
+
+
+@rh_bp.route('/api/regles-absences', methods=['GET'])
+@require_structure
+def api_regles_absences(structure_id):
+    return jsonify({'success': True, 'regles': _regles(structure_id), 'natures': NATURES_PERMISSION})
+
+
+@rh_bp.route('/api/regles-absences', methods=['PUT'])
+@require_structure
+def api_maj_regles_absences(structure_id):
+    if not session.get('is_admin'):
+        return jsonify({'success': False, 'error': "Réservé à l'administrateur."}), 403
+    p = ParametragePaie.get_ou_creer(structure_id)
+    p.regles_absences = fusionner_regles(request.json or {})
+    p.updated_by = session.get('user_name', 'Admin')
+    db.session.commit()
+    return jsonify({'success': True, 'regles': p.regles_absences})
+
+
+@rh_bp.route('/api/employes/<int:employe_id>/droits-absences')
+@require_structure
+def api_droits_absences(structure_id, employe_id):
+    """Pour le formulaire : droit au congé annuel (ancienneté), compteur des
+    permissions de convenance de l'année, solde, supérieur hiérarchique."""
+    employe = Employe.query.filter_by(id=employe_id, structure_id=structure_id).first()
+    if not employe:
+        return jsonify({'success': False, 'error': 'Employé non trouvé'}), 404
+    regles = _regles(structure_id)
+    try:
+        jour = datetime.strptime(request.args.get('date') or '', '%Y-%m-%d').date()
+    except ValueError:
+        jour = date.today()
+    pris = _compteur_convenance(employe_id, jour.year)
+    return jsonify({
+        'success': True,
+        'droit_conge': droit_conge_annuel(employe.date_embauche, jour, regles),
+        'convenance_pris': pris,
+        'convenance_plafond': regles['convenance_max_jours'],
+        'convenance_restant': max(0, regles['convenance_max_jours'] - pris),
+        'solde_conge': employe.get_solde_detail(jour.year)['solde'],
+        'superieur': _superieur_nom(employe),
+        'date_embauche': employe.date_embauche.strftime('%d/%m/%Y') if employe.date_embauche else '',
+    })
+
+
+@rh_bp.route('/api/alertes-absences')
+@require_structure
+def api_alertes_absences(structure_id):
+    """Alertes du tableau de bord RH : plafond annuel des permissions de
+    convenance dépassé, permissions exceptionnelles sans justificatif."""
+    regles = _regles(structure_id)
+    annee = date.today().year
+    alertes = []
+    lignes = db.session.query(Permission.employe_id, func.sum(Permission.nombre_jours)).join(Employe).filter(
+        Employe.structure_id == structure_id, Permission.nature == 'convenance',
+        Permission.statut.in_(['en_attente', 'approuve']), extract('year', Permission.date_debut) == annee,
+    ).group_by(Permission.employe_id).all()
+    for employe_id, total in lignes:
+        if float(total or 0) > regles['convenance_max_jours']:
+            e = Employe.query.get(employe_id)
+            alertes.append({'type': 'convenance_plafond', 'employe_id': employe_id,
+                            'message': f"{e.nom} {e.prenom} : {float(total):g} jours de permission de convenance en {annee} "
+                                       f"(plafond {regles['convenance_max_jours']})."})
+    if regles['justificatif_exceptionnelle'] != 'facultatif':
+        sans = Permission.query.join(Employe).filter(
+            Employe.structure_id == structure_id, Permission.nature == 'exceptionnelle',
+            Permission.statut.in_(['en_attente', 'approuve']), Permission.justificatif_data.is_(None),
+        ).all()
+        for p in sans:
+            alertes.append({'type': 'justificatif_manquant', 'employe_id': p.employe_id, 'permission_id': p.id,
+                            'message': f"{p.employe.nom} {p.employe.prenom} : justificatif manquant pour la permission "
+                                       f"exceptionnelle du {p.date_debut.strftime('%d/%m/%Y') if p.date_debut else '?'}."})
+    return jsonify({'success': True, 'alertes': alertes})
 
 
 @rh_bp.route('/permission/<int:id>/autorisation')

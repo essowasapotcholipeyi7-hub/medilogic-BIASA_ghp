@@ -709,6 +709,11 @@
                                         <option value="approuve">Approuvé</option>
                                         <option value="refuse">Refusé</option>
                                     </select>
+                                    <select class="form-select form-select-sm mt-1" id="filtreNaturePermission" onchange="filtrerPermissions()">
+                                        <option value="">Toutes les natures</option>
+                                        <option value="exceptionnelle">Exceptionnelles</option>
+                                        <option value="convenance">Convenance personnelle</option>
+                                    </select>
                                 </div>
                                 <div class="col-md-5 text-end">
                                     <span class="badge bg-secondary" id="totalPermissions">0</span>
@@ -1220,11 +1225,44 @@
                 <form id="permissionForm" onsubmit="return false;">
                     <div class="mb-2">
                         <label class="form-label small">Employé *</label>
-                        <select class="form-select form-select-sm" id="permEmploye" required>
+                        <select class="form-select form-select-sm" id="permEmploye" required onchange="majDroitsPermission()">
                             <option value="">Sélectionner</option>
                         </select>
                     </div>
-                    
+
+                    <!-- ⭐ Code du travail togolais (patron, 2026-10-10) : exceptionnelle (événement
+                         familial, payée, justificatif) ou convenance personnelle (plafond annuel,
+                         retenue sur salaire) — règles dans Paramètres paie & RH. -->
+                    <div class="mb-2">
+                        <label class="form-label small">Nature de la permission *</label>
+                        <select class="form-select form-select-sm" id="permNature" onchange="majNaturePermission()">
+                            <option value="convenance">Convenance personnelle (affaires personnelles, voyage...)</option>
+                            <option value="exceptionnelle">Exceptionnelle — événement familial (mariage, naissance, décès...)</option>
+                        </select>
+                    </div>
+                    <div id="permBlocExceptionnelle" class="border rounded p-2 mb-2" style="display:none;">
+                        <label class="form-label small mb-0">Événement *</label>
+                        <select class="form-select form-select-sm mb-1" id="permEvenement" onchange="majEvenementPermission()"></select>
+                        <div class="small text-muted mb-2" id="permEvenementInfo"></div>
+                        <label class="form-label small mb-0">Justificatif (acte de mariage, de naissance, de décès...) <span id="permJustifObligatoire" class="text-danger"></span></label>
+                        <input type="file" class="form-control form-control-sm" id="permJustificatif" accept="application/pdf,image/jpeg,image/png,image/webp">
+                        <div class="small text-success mt-1"><i class="fas fa-circle-check me-1"></i>Payée, sans effet sur le congé ni sur le salaire.</div>
+                    </div>
+                    <div id="permBlocConvenance" class="border rounded p-2 mb-2">
+                        <div class="small" id="permCompteur">Choisissez l'employé pour voir son compteur annuel.</div>
+                        <div class="mt-1" id="permChoixDeduction" style="display:none;">
+                            <span class="small me-2">Jours pris :</span>
+                            <div class="form-check form-check-inline small m-0">
+                                <input class="form-check-input" type="radio" name="permDeduction" id="permDedSalaire" value="salaire" checked>
+                                <label class="form-check-label" for="permDedSalaire">retenus sur le salaire</label>
+                            </div>
+                            <div class="form-check form-check-inline small m-0">
+                                <input class="form-check-input" type="radio" name="permDeduction" id="permDedConge" value="conge">
+                                <label class="form-check-label" for="permDedConge">pris sur le congé</label>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="mb-2">
                         <label class="form-label small">Type de permission *</label>
                         <select class="form-select form-select-sm" id="permType" required onchange="changerTypePermission()">
@@ -1267,7 +1305,7 @@
                             </div>
                         </div>
                         <div class="mb-2">
-                            <label class="form-label small">Nombre de jours</label>
+                            <label class="form-label small">Nombre de jours ouvrables <span class="text-muted">(lundi à samedi)</span></label>
                             <input type="text" class="form-control form-control-sm" id="permNbJours" readonly>
                         </div>
                     </div>
@@ -2484,6 +2522,25 @@ async function sauvegarderConge() {
             await afficherMessage(`Demande de congé soumise avec succès !\nSolde restant: ${result.solde_restant} jours`);
             bootstrap.Modal.getInstance(document.getElementById('congeModal')).hide();
             chargerConges();
+        } else if (result.derogation_possible && !data.derogation) {
+            // ⭐ Code du travail : entre 6 et 12 mois de service, congé seulement
+            // avec l'accord exprès de l'employeur (dérogation motivée).
+            if (!await demanderConfirmation(result.error + '\n\nAccorder ce congé par dérogation (accord de l\'employeur) ?')) return;
+            const motifDerog = await demanderSaisie("Motif de l'accord de l'employeur (gardé dans l'historique) :", '');
+            if (!motifDerog || !motifDerog.trim()) return;
+            data.derogation = true;
+            data.derogation_motif = motifDerog.trim();
+            showLoader('Envoi de la demande...');
+            const r2 = await fetch('/rh/conge/demander', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)});
+            const res2 = await r2.json();
+            hideLoader();
+            if (res2.success) {
+                await afficherMessage('Congé enregistré par dérogation (accord de l\'employeur).');
+                bootstrap.Modal.getInstance(document.getElementById('congeModal')).hide();
+                chargerConges();
+            } else {
+                await afficherMessage('Erreur: ' + (res2.error || 'Erreur inconnue'), {type: 'danger'});
+            }
         } else if (result.solde_insuffisant && result.annees_futures) {
             // Proposer les années futures
             let options = result.annees_futures.map(a => 
@@ -2637,7 +2694,7 @@ function afficherPermissions() {
             typeLabel = 'Heures';
             periode = p.date_permission || '-';
             heures = `${p.heure_debut || '-'} → ${p.heure_fin || '-'}`;
-            jours = '1';
+            jours = String(p.nombre_jours ?? '0.5');
         } else if (p.type_permission === 'journee') {
             typeLabel = 'Journée';
             periode = p.date_debut || '-';
@@ -2649,6 +2706,22 @@ function afficherPermissions() {
         }
         
         const actions = [];
+        // ⭐ Avis du supérieur (si exigé), justificatif (permissions exceptionnelles)
+        if (p.statut === 'en_attente' && p.nature && (reglesAbsences || {}).validation_superieur && !p.avis_superieur) {
+            actions.push(`
+                <button class="btn btn-sm btn-outline-success" onclick="donnerAvisSuperieur(${p.id}, 'favorable')" title="Avis FAVORABLE du supérieur${p.superieur ? ' (' + p.superieur + ')' : ''}">
+                    <i class="fas fa-thumbs-up"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger" onclick="donnerAvisSuperieur(${p.id}, 'defavorable')" title="Avis DÉFAVORABLE du supérieur (refuse la demande)">
+                    <i class="fas fa-thumbs-down"></i>
+                </button>
+            `);
+        }
+        if (p.nature === 'exceptionnelle') {
+            actions.push(p.justificatif
+                ? `<button class="btn btn-sm btn-outline-secondary" onclick="window.open('/rh/permission/${p.id}/justificatif', '_blank')" title="Voir le justificatif : ${p.justificatif_nom}"><i class="fas fa-paperclip"></i></button>`
+                : `<button class="btn btn-sm btn-outline-warning" onclick="ajouterJustificatifPermission(${p.id})" title="Ajouter le justificatif"><i class="fas fa-file-arrow-up"></i></button>`);
+        }
         if (p.statut === 'en_attente') {
             actions.push(`
                 <button class="btn btn-sm btn-success" onclick="changerStatutPermission(${p.id}, 'approuve')" title="Approuver">
@@ -2667,14 +2740,26 @@ function afficherPermissions() {
             `);
         }
         
+        let natureHtml = `<span class="badge bg-info">${typeLabel}</span>`;
+        if (p.nature === 'exceptionnelle') {
+            natureHtml = `<span class="badge bg-success">Exceptionnelle</span><br><small>${p.evenement_libelle || ''}</small>` +
+                         (p.justificatif ? '' : '<br><small class="text-danger"><i class="fas fa-triangle-exclamation"></i> justificatif manquant</small>');
+        } else if (p.nature === 'convenance') {
+            natureHtml = `<span class="badge bg-warning text-dark">Convenance</span><br><small>${p.deduction === 'conge' ? 'sur le congé' : 'retenue salaire'}</small>`;
+        }
+        natureHtml += `<br><small class="text-muted">${typeLabel}</small>`;
+        let avisHtml = '';
+        if (p.avis_superieur) {
+            avisHtml = `<br><small class="${p.avis_superieur === 'favorable' ? 'text-success' : 'text-danger'}">Avis N+1 ${p.avis_superieur === 'favorable' ? 'favorable' : 'défavorable'}</small>`;
+        }
         tbody.innerHTML += `
             <tr>
                 <td><strong>${p.employe_nom}</strong></td>
-                <td><span class="badge bg-info">${typeLabel}</span></td>
+                <td>${natureHtml}</td>
                 <td>${periode}</td>
                 <td>${heures}</td>
                 <td>${jours}</td>
-                <td>${p.motif || '-'}</td>
+                <td>${p.motif || '-'}${avisHtml}</td>
                 <td>${getStatutBadge(p.statut)}</td>
                 <td class="text-center">
                     <div class="btn-group btn-group-sm">
@@ -2694,6 +2779,8 @@ function filtrerPermissions() {
         let match = true;
         if (search && !p.employe_nom.toLowerCase().includes(search)) match = false;
         if (statut && p.statut !== statut) match = false;
+        const natureFiltre = (document.getElementById('filtreNaturePermission') || {}).value;
+        if (natureFiltre && p.nature !== natureFiltre) match = false;
         return match;
     });
     
@@ -2727,6 +2814,7 @@ function ouvrirDemandePermission() {
                 document.getElementById('permissionForm').reset();
                 document.getElementById('permHeuresSection').style.display = 'block';
                 document.getElementById('permJoursSection').style.display = 'none';
+                chargerReglesAbsences().then(() => { majNaturePermission(); majDroitsPermission(); });
                 new bootstrap.Modal(document.getElementById('permissionModal')).show();
                 reactiver();
             })
@@ -2787,9 +2875,126 @@ function calculerJoursPermission() {
         return;
     }
     
-    const diffTime = Math.abs(d2 - d1);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-    document.getElementById('permNbJours').value = diffDays + ' jour(s)';
+    // ⭐ Jours OUVRABLES (lundi à samedi) comme les congés — les jours fériés
+    // déclarés sont retirés par le serveur à l'enregistrement.
+    let ouvrables = 0;
+    for (let d = new Date(d1); d <= d2; d.setDate(d.getDate() + 1)) {
+        if (d.getDay() !== 0) ouvrables++;
+    }
+    document.getElementById('permNbJours').value = ouvrables + ' jour(s) ouvrable(s)';
+    majEvenementPermission();
+}
+
+// ============================================
+// ⭐ RÈGLES CONGÉS / PERMISSIONS (Code du travail togolais)
+// ============================================
+let reglesAbsences = null;
+let droitsPermission = null;
+
+function chargerReglesAbsences() {
+    return fetch('/rh/api/regles-absences').then(r => r.json()).then(d => { reglesAbsences = d.regles || null; })
+        .catch(() => { reglesAbsences = null; });
+}
+
+function majNaturePermission() {
+    const nature = document.getElementById('permNature').value;
+    document.getElementById('permBlocExceptionnelle').style.display = nature === 'exceptionnelle' ? '' : 'none';
+    document.getElementById('permBlocConvenance').style.display = nature === 'convenance' ? '' : 'none';
+    const sel = document.getElementById('permEvenement');
+    if (reglesAbsences && !sel.options.length) {
+        sel.innerHTML = '<option value="">Choisir l\'événement</option>' + (reglesAbsences.evenements || [])
+            .map(e => `<option value="${e.code}">${e.libelle} — ${e.jours} jour(s)</option>`).join('');
+    }
+    const oblig = reglesAbsences ? reglesAbsences.justificatif_exceptionnelle : 'avant_approbation';
+    document.getElementById('permJustifObligatoire').textContent =
+        oblig === 'a_la_demande' ? '* obligatoire' : (oblig === 'avant_approbation' ? '(obligatoire avant l\'approbation)' : '(facultatif)');
+    majEvenementPermission();
+    majDroitsPermission();
+}
+
+function majEvenementPermission() {
+    const info = document.getElementById('permEvenementInfo');
+    if (!info || !reglesAbsences) return;
+    const ev = (reglesAbsences.evenements || []).find(e => e.code === document.getElementById('permEvenement').value);
+    if (!ev) { info.textContent = ''; return; }
+    const motif = document.getElementById('permMotif');
+    if (!motif.value.trim()) motif.value = ev.libelle;
+    const jours = parseFloat(document.getElementById('permNbJours').value) || 0;
+    info.innerHTML = `Durée prévue : <strong>${ev.jours} jour(s) ouvrable(s)</strong>` +
+        (jours > ev.jours ? ` — <span class="text-danger">la période en compte ${jours} : le surplus relève d'une permission de convenance</span>` : '');
+}
+
+function majDroitsPermission() {
+    const employeId = document.getElementById('permEmploye').value;
+    const zone = document.getElementById('permCompteur');
+    const choix = document.getElementById('permChoixDeduction');
+    if (!zone) return;
+    if (!employeId) { zone.textContent = "Choisissez l'employé pour voir son compteur annuel."; choix.style.display = 'none'; return; }
+    const jour = document.getElementById('permDateDebut').value || document.getElementById('permDate').value || '';
+    fetch(`/rh/api/employes/${employeId}/droits-absences?date=${jour}`).then(r => r.json()).then(d => {
+        if (!d.success) return;
+        droitsPermission = d;
+        const plafond = d.convenance_plafond;
+        zone.innerHTML = `Convenance personnelle cette année : <strong>${d.convenance_pris} / ${plafond} jours</strong> ` +
+            (d.convenance_restant > 0 ? `(reste ${d.convenance_restant})` : '<span class="text-danger">(plafond atteint)</span>') +
+            `<br><small class="text-muted">Embauche : ${d.date_embauche || '?'} — congé annuel : ` +
+            (d.droit_conge.statut === 'acquis' ? `acquis, solde ${d.solde_conge} j` : `pas encore acquis (${d.droit_conge.mois} mois de service)`) +
+            (d.superieur ? ` — N+1 : ${d.superieur}` : '') + '</small>';
+        const auChoix = reglesAbsences && reglesAbsences.convenance_deduction === 'au_choix' && d.droit_conge.statut === 'acquis';
+        choix.style.display = auChoix ? '' : 'none';
+        if (!auChoix) document.getElementById('permDedSalaire').checked = true;
+    }).catch(() => {});
+}
+
+function lireFichierBase64(input) {
+    const f = input && input.files && input.files[0];
+    if (!f) return Promise.resolve(null);
+    return new Promise((ok, ko) => {
+        const lecteur = new FileReader();
+        lecteur.onload = () => ok({nom: f.name, mime: f.type, b64: lecteur.result});
+        lecteur.onerror = () => ko(lecteur.error);
+        lecteur.readAsDataURL(f);
+    });
+}
+
+async function donnerAvisSuperieur(id, avis) {
+    const commentaire = await demanderSaisie(avis === 'favorable'
+        ? 'Avis FAVORABLE du supérieur hiérarchique. Commentaire (facultatif) :'
+        : 'Avis DÉFAVORABLE du supérieur hiérarchique : la demande sera refusée. Motif :', '');
+    if (commentaire === null || commentaire === undefined) return;
+    const r = await fetch(`/rh/permission/${id}/avis`, {method: 'PUT', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({avis, commentaire})});
+    const res = await r.json();
+    if (!res.success) { await afficherMessage('Erreur : ' + (res.error || 'inconnue'), {type: 'danger'}); return; }
+    chargerPermissions();
+}
+
+function ajouterJustificatifPermission(id) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/pdf,image/jpeg,image/png,image/webp';
+    input.onchange = async () => {
+        const f = await lireFichierBase64(input);
+        if (!f) return;
+        showLoader('Envoi du justificatif...');
+        const r = await fetch(`/rh/permission/${id}/justificatif`, {method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({justificatif_nom: f.nom, justificatif_mime: f.mime, justificatif_b64: f.b64})});
+        const res = await r.json();
+        hideLoader();
+        if (!res.success) { await afficherMessage('Erreur : ' + (res.error || 'inconnue'), {type: 'danger'}); return; }
+        await afficherMessage('Justificatif ajouté.');
+        chargerPermissions();
+    };
+    input.click();
+}
+
+function ajouterAlertesAbsences(container, aucuneAlerteAvant) {
+    fetch('/rh/api/alertes-absences').then(r => r.json()).then(d => {
+        const alertes = (d && d.alertes) || [];
+        if (!alertes.length) return;
+        const html = alertes.map(a => `<div class="alert alert-warning py-1 mb-1" style="font-size:13px;"><i class="fas fa-user-clock me-1"></i> ${a.message}</div>`).join('');
+        if (aucuneAlerteAvant) container.innerHTML = html; else container.insertAdjacentHTML('beforeend', html);
+    }).catch(() => {});
 }
 
 async function sauvegarderPermission() {
@@ -2802,13 +3007,24 @@ async function sauvegarderPermission() {
     }
     
     const type = document.getElementById('permType').value;
+    const nature = document.getElementById('permNature').value;
     const data = {
         employe_id: document.getElementById('permEmploye').value,
         type_permission: type,
         motif: document.getElementById('permMotif').value.trim(),
-        signataire: signataire
+        signataire: signataire,
+        nature: nature,
+        evenement: nature === 'exceptionnelle' ? document.getElementById('permEvenement').value : null,
+        deduction: (document.querySelector('input[name="permDeduction"]:checked') || {}).value || 'salaire',
     };
-    
+    if (nature === 'exceptionnelle') {
+        if (!data.evenement) { await afficherMessage("Choisissez l'événement familial."); return; }
+        try {
+            const f = await lireFichierBase64(document.getElementById('permJustificatif'));
+            if (f) { data.justificatif_nom = f.nom; data.justificatif_mime = f.mime; data.justificatif_b64 = f.b64; }
+        } catch (e) { await afficherMessage('Justificatif illisible : choisissez un autre fichier.', {type: 'danger'}); return; }
+    }
+
     if (!data.employe_id) {
         await afficherMessage('Veuillez sélectionner un employé');
         return;
@@ -2850,7 +3066,8 @@ async function sauvegarderPermission() {
     .then(async result => {
         hideLoader();
         if (result.success) {
-            await afficherMessage('Demande de permission soumise avec succès !');
+            const avert = (result.avertissements || []).length ? '\n\nAttention : ' + result.avertissements.join(' ') : '';
+            await afficherMessage((result.message || 'Demande de permission soumise.') + avert, avert ? {type: 'warning'} : undefined);
             bootstrap.Modal.getInstance(document.getElementById('permissionModal')).hide();
             chargerPermissions();
         } else {
@@ -2978,6 +3195,7 @@ function chargerAlertes(contratsARenouveler) {
                     } else {
                         container.innerHTML = html;
                     }
+                    ajouterAlertesAbsences(container, !html);
                 });
         })
         .catch(error => {

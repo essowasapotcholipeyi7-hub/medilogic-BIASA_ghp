@@ -496,13 +496,26 @@ class Employe(db.Model):
         except Exception:
             pass
 
-        permissions_pris = db.session.query(db.func.sum(Permission.nombre_jours)).filter(
+        # ⭐ Code du travail (2026-10-10, utils/regles_absences.py) : une
+        # permission EXCEPTIONNELLE ne touche jamais le congé ; une permission
+        # de CONVENANCE ne le touche que si elle a été imputée sur le congé
+        # (deduction='conge'). Les permissions antérieures à ces règles
+        # (nature NULL) gardent l'ancien réglage deduire_permissions.
+        filtre_annee = [
             Permission.employe_id == self.id,
             db.extract('year', Permission.date_debut) == annee,
-            Permission.statut.in_(['en_attente', 'approuve'])
+            Permission.statut.in_(['en_attente', 'approuve']),
+        ]
+        permissions_imputees = db.session.query(db.func.sum(Permission.nombre_jours)).filter(
+            *filtre_annee, Permission.deduction == 'conge'
         ).scalar() or 0
-        if not deduire_permissions:
-            permissions_pris = 0
+        permissions_anciennes = 0
+        if deduire_permissions:
+            permissions_anciennes = db.session.query(db.func.sum(Permission.nombre_jours)).filter(
+                *filtre_annee, Permission.nature.is_(None)
+            ).scalar() or 0
+        permissions_pris = float(permissions_imputees) + float(permissions_anciennes)
+        conges_pris = float(conges_pris)
 
         total_annuel = self.conges_annuels or 30
         total_pris = conges_pris + permissions_pris
@@ -708,6 +721,13 @@ class Conge(db.Model):
     date_approbation = db.Column(db.Date)
     commentaire = db.Column(db.Text)
 
+    # ⭐ Code du travail (patron, 2026-10-10) : congé annuel avant 12 mois de
+    # service = seulement avec l'accord exprès de l'employeur, après 6 mois
+    # (voir utils/regles_absences.droit_conge_annuel).
+    derogation_anciennete = db.Column(db.Boolean, default=False)
+    derogation_motif = db.Column(db.Text)
+    derogation_par = db.Column(db.String(100))
+
     # ⭐ Patron : "validation à plusieurs niveaux (SignatureRH) codée mais
     # jamais branchée" — lien vers le DocumentRH qui porte la chaîne de
     # signatures (SignatureRH) quand ParametragePaie.niveaux_validation_conges
@@ -821,17 +841,35 @@ class Permission(db.Model):
     date_debut = db.Column(db.Date, nullable=True)
     date_fin = db.Column(db.Date, nullable=True)
     
-    nombre_jours = db.Column(db.Integer, default=1)
+    # ⭐ Numeric (était Integer) : la demi-journée d'une permission « heures »
+    # (0,5) était tronquée à 0 à l'enregistrement.
+    nombre_jours = db.Column(db.Numeric(6, 2), default=1)
 
     motif = db.Column(db.Text, nullable=False)
     signataire = db.Column(db.String(100))
-    
+
     statut = db.Column(db.String(20), default='en_attente')
     approuve_par = db.Column(db.String(100))
     date_approbation = db.Column(db.Date)
     commentaire = db.Column(db.Text)
-    
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # ⭐ Code du travail togolais (patron, 2026-10-10 — utils/regles_absences.py) :
+    # 'exceptionnelle' (événement familial, payée, non déduite du congé,
+    # justificatif) | 'convenance' (plafond annuel, déduite du salaire ou du
+    # congé). NULL = permission enregistrée avant ces règles (ancien calcul).
+    nature = db.Column(db.String(30))
+    evenement = db.Column(db.String(60))          # code de l'événement (permission exceptionnelle)
+    deduction = db.Column(db.String(20))          # 'aucune' | 'salaire' | 'conge'
+    justificatif_nom = db.Column(db.String(255))
+    justificatif_mime = db.Column(db.String(100))
+    justificatif_data = db.Column(db.LargeBinary)
+    justificatif_le = db.Column(db.DateTime)
+    avis_superieur = db.Column(db.String(20))     # None | 'favorable' | 'defavorable'
+    avis_superieur_par = db.Column(db.String(100))
+    avis_superieur_le = db.Column(db.DateTime)
+    avis_superieur_commentaire = db.Column(db.Text)
 
 
 class DocumentRH(db.Model):
@@ -4505,6 +4543,10 @@ class ParametragePaie(db.Model):
     # les niveaux validés (voir _valider_conge, routes/rh.py). Un refus à
     # n'importe quel niveau refuse le congé immédiatement.
     niveaux_validation_conges = db.Column(db.Integer, default=1)
+
+    # ⭐ Règles congés / permissions (Code du travail togolais) — seuils et
+    # choix de la structure, complétés par utils/regles_absences.REGLES_DEFAUT.
+    regles_absences = db.Column(db.JSON)
 
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     updated_by = db.Column(db.String(100))
