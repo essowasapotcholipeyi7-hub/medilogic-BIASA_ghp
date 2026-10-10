@@ -1999,7 +1999,7 @@
        en thème sombre, theme_sombre.js corrige en plus les fonds blancs / textes
        sombres que la feuille ne connaît pas (pages à styles propres, AJAX). #}
     {% if theme_css %}<style id="themeStructure">{{ theme_css|safe }}</style>{% endif %}
-    {% if theme_sombre %}<script src="{{ url_for('static', filename='js/theme_sombre.js') }}" defer></script>{% endif %}
+    {% if session.user_id %}<script src="{{ url_for('static', filename='js/theme_sombre.js') }}?v=3" defer></script>{% endif %}
 </head>
 <body>
 
@@ -2254,8 +2254,8 @@ function appliquerThemeEnDirect(css, sombre) {
         if (window.themeSombreDemarrer) themeSombreDemarrer();
         else { const s = document.createElement('script'); s.src = '{{ url_for('static', filename='js/theme_sombre.js') }}'; document.head.appendChild(s); }
     } else {
-        if (window.themeSombreAnnuler) themeSombreAnnuler();
         html.removeAttribute('data-bs-theme');
+        if (window.themeClairDemarrer) themeClairDemarrer(); else if (window.themeSombreAnnuler) themeSombreAnnuler();
     }
     const groupe = document.getElementById('themeSoleilLune');
     if (groupe) { groupe.querySelector('.th-soleil').classList.toggle('actif', !sombre); groupe.querySelector('.th-lune').classList.toggle('actif', !!sombre); }

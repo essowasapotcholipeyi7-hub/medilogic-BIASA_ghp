@@ -187,12 +187,32 @@ def est_defaut(variables):
 
 
 # ------------------------------------------------------------------ CSS
+def _douceur_claire(p, pf, texte):
+    """Couleurs vives adoucies sur fond clair — pour tous les thèmes clairs, Classique compris."""
+    return f"""/* ⭐ couleurs vives adoucies, thèmes clairs (patron : « même logique pour les autres thèmes ») */
+.text-warning {{ color: #B8860B !important; }} .text-danger {{ color: #C0392B !important; }} .text-success {{ color: #1E7F4E !important; }} .text-info {{ color: #1C7A99 !important; }}
+.badge.bg-warning {{ background-color: #F7E8B5 !important; color: #6B4E00 !important; }}
+.badge.bg-danger {{ background-color: #F8D7DA !important; color: #842029 !important; }}
+.badge.bg-success {{ background-color: #D1E7DD !important; color: #0F5132 !important; }}
+.badge.bg-info {{ background-color: #CFF4FC !important; color: #055160 !important; }}
+.badge.bg-primary {{ background-color: {_rgba(p, 0.15)} !important; color: {pf} !important; }}
+.badge.bg-secondary, .badge.bg-dark {{ background-color: {_rgba(texte, 0.12)} !important; color: {texte} !important; }}
+.btn-warning {{ background: rgba(184, 134, 11, 0.12) !important; color: #7A5A00 !important; border: 1px solid rgba(184, 134, 11, 0.35) !important; }}
+.btn-warning:hover {{ background: #D4A017 !important; color: #1A1A1A !important; }}
+.btn-info {{ background: rgba(28, 122, 153, 0.10) !important; color: #1C7A99 !important; border: 1px solid rgba(28, 122, 153, 0.3) !important; }}
+.btn-info:hover {{ background: #1C7A99 !important; color: #FFFFFF !important; }}
+.bg-warning:not(.badge):not(.btn), .bg-danger:not(.badge):not(.btn), .bg-success:not(.badge):not(.btn), .bg-info:not(.badge):not(.btn) {{ filter: saturate(0.75); }}"""
+
+
 def generer_css(variables):
     """Feuille CSS injectée dans <head> (après les styles de base.html) —
     chaîne vide si tout est à la valeur d'origine (aucun impact)."""
     v = normaliser_variables(variables)
     if est_defaut(v):
-        return ''
+        # ⭐ Apparence d'origine : rien d'autre que la douceur des couleurs
+        # (patron, 2026-10-10 : « dans le thème clair aussi, certaines couleurs
+        # sont trop vives »). Pas de « mode sombre » ici, donc Bootstrap reste clair.
+        return '/* douceur clair */\n' + _douceur_claire(v['primaire'], v['primaire_fonce'], v['texte'])
     p, pf, b, bt = v['primaire'], v['primaire_fonce'], v['bouton'], v['bouton_texte']
     fond, carte, texte = v['fond'], v['carte_fond'], v['texte']
     nb_fond, nb_texte, rayon = v['navbar_fond'], v['navbar_texte'], v['rayon']
@@ -234,19 +254,7 @@ a:not(.btn):not(.nav-link):not(.nav-link-top):not(.dropdown-item):not(.list-grou
 .page-item.active .page-link {{ background-color: {p} !important; border-color: {p} !important; }}
 .navbar-brand span {{ color: {nb_texte} !important; }}
 .table thead th {{ background: {_rgba(p, 0.07)} !important; color: {texte} !important; }}
-/* ⭐ couleurs vives adoucies, thèmes clairs (patron : « même logique pour les autres thèmes ») */
-.text-warning {{ color: #B8860B !important; }} .text-danger {{ color: #C0392B !important; }} .text-success {{ color: #1E7F4E !important; }} .text-info {{ color: #1C7A99 !important; }}
-.badge.bg-warning {{ background-color: #F7E8B5 !important; color: #6B4E00 !important; }}
-.badge.bg-danger {{ background-color: #F8D7DA !important; color: #842029 !important; }}
-.badge.bg-success {{ background-color: #D1E7DD !important; color: #0F5132 !important; }}
-.badge.bg-info {{ background-color: #CFF4FC !important; color: #055160 !important; }}
-.badge.bg-primary {{ background-color: {_rgba(p, 0.15)} !important; color: {pf} !important; }}
-.badge.bg-secondary, .badge.bg-dark {{ background-color: {_rgba(texte, 0.12)} !important; color: {texte} !important; }}
-.btn-warning {{ background: rgba(184, 134, 11, 0.12) !important; color: #7A5A00 !important; border: 1px solid rgba(184, 134, 11, 0.35) !important; }}
-.btn-warning:hover {{ background: #D4A017 !important; color: #1A1A1A !important; }}
-.btn-info {{ background: rgba(28, 122, 153, 0.10) !important; color: #1C7A99 !important; border: 1px solid rgba(28, 122, 153, 0.3) !important; }}
-.btn-info:hover {{ background: #1C7A99 !important; color: #FFFFFF !important; }}
-.bg-warning:not(.badge):not(.btn), .bg-danger:not(.badge):not(.btn), .bg-success:not(.badge):not(.btn), .bg-info:not(.badge):not(.btn) {{ filter: saturate(0.75); }}
+{_douceur_claire(p, pf, texte)}
 /* ⭐ menu déroulant, barre des onglets et page d'accueil : couleurs du thème (tous les thèmes) */
 .top-nav .mega-menu {{ background: {carte} !important; }}
 .top-nav .mega-menu .menu-item, .top-nav .mega-menu .menu-item i {{ color: {texte} !important; }}

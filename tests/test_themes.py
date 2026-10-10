@@ -5,9 +5,12 @@ from utils.themes import (generer_css, normaliser_variables, variables_effective
                           fin_essai_depuis, DEFAUT, THEMES_DEFAUT, libelle_etat)
 
 
-def test_apparence_origine_ne_genere_aucun_css():
-    assert generer_css(DEFAUT) == ''
-    assert generer_css({}) == ''
+def test_apparence_origine_seulement_douceur():
+    # ⭐ Classique : seules les couleurs vives sont adoucies (pas de thème, pas de mode sombre)
+    css = generer_css(DEFAUT)
+    assert css.startswith('/* douceur clair */') and '.text-warning' in css and '.badge.bg-warning' in css
+    assert '--th-primaire' not in css and 'mode sombre' not in css
+    assert generer_css({}) == css
 
 
 def test_css_reflete_les_couleurs_choisies():
