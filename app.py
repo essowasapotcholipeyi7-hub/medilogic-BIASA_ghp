@@ -2041,6 +2041,54 @@ def _lire_feuille_utilisateurs(valeurs):
     return lignes
 
 
+def _maj_derniere_connexion_en_fond(feuille, id_ligne, nb_colonnes, index_colonne):
+    """⭐ Date de dernière connexion écrite EN TÂCHE DE FOND (patron,
+    2026-10-10 : « en voulant se connecter, ça ne passe pas vite ») : trois
+    appels Google Sheets (chercher la ligne, la lire, la réécrire, ~1 s) se
+    faisaient avant d'ouvrir la session. `feuille` : objet feuille ou nom de
+    feuille (résolu dans la tâche, c'est aussi un appel réseau)."""
+    id_ligne = str(id_ligne or '').strip()
+    if not id_ligne:
+        return
+
+    def tache():
+        nom = feuille if isinstance(feuille, str) else getattr(feuille, 'title', '?')
+        try:
+            ws = sheets_helper.spreadsheet.worksheet(feuille) if isinstance(feuille, str) else feuille
+            cell = ws.find(id_ligne, in_column=1)
+            if not cell or cell.row <= 1:   # jamais la ligne 1 (l'en-tête) — une écriture dessus casse la feuille
+                return
+            ligne = ws.row_values(cell.row)
+            while len(ligne) < nb_colonnes:
+                ligne.append('')
+            ligne[index_colonne] = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+            derniere_col = chr(ord('A') + nb_colonnes - 1)
+            ws.update(range_name=f'A{cell.row}:{derniere_col}{cell.row}', values=[ligne[:nb_colonnes]])
+        except Exception as e:
+            print(f"⚠️ Dernière connexion ({nom}) : {e}")
+
+    threading.Thread(target=tache, daemon=True).start()
+
+
+def _lire_feuilles_utilisateurs_groupees(feuilles):
+    """⭐ Toutes les feuilles struct_N_users en UN SEUL appel Google Sheets
+    (0,5 s mesuré) au lieu d'un appel par feuille (11 feuilles = 5 s mesurées
+    le 2026-10-10, et de plus en plus lent à chaque nouvelle structure). Renvoie
+    {titre: valeurs} ; {} si l'appel groupé échoue (la connexion relit alors
+    feuille par feuille, comme avant)."""
+    if not feuilles:
+        return {}
+    try:
+        reponse = sheets_helper.spreadsheet.values_batch_get([f"'{f.title}'" for f in feuilles])
+        plages = reponse.get('valueRanges', [])
+        if len(plages) != len(feuilles):
+            return {}
+        return {f.title: plage.get('values', []) for f, plage in zip(feuilles, plages)}
+    except Exception as e:
+        print(f"⚠️ Lecture groupée des feuilles utilisateurs impossible ({e}) : lecture feuille par feuille")
+        return {}
+
+
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if 'user_id' in session:
@@ -2071,15 +2119,17 @@ def index():
         
         user_trouve = False
         mdp_ok = False
-        
+
         # ========== 1. RECHERCHE DANS LES FEUILLES UTILISATEURS ==========
+        valeurs_par_feuille = _lire_feuilles_utilisateurs_groupees(
+            [w for w in all_worksheets if w.title.endswith('_users')])
         for worksheet in all_worksheets:
             title = worksheet.title
             if title.endswith('_users'):
                 print(f"📂 Vérification dans: {title}")
-                
+
                 try:
-                    valeurs = worksheet.get_all_values()
+                    valeurs = valeurs_par_feuille[title] if title in valeurs_par_feuille else worksheet.get_all_values()
                     if len(valeurs) <= 1:
                         continue
                     records = _lire_feuille_utilisateurs(valeurs)
@@ -2106,24 +2156,8 @@ def index():
                             mdp_ok = True
                             print("✅ Mot de passe OK")
                             
-                            # 🔥 METTRE À JOUR LA DERNIÈRE CONNEXION
-                            try:
-                                cell = worksheet.find(str(row.get('ID')), in_column=1) if str(row.get('ID') or '').strip() else None
-                                # jamais la ligne 1 (l'en-tête) — une écriture dessus casse la feuille
-                                if cell and cell.row > 1:
-                                    row_num = cell.row
-                                    current_row = worksheet.row_values(row_num)
-                                    
-                                    while len(current_row) < 9:
-                                        current_row.append('')
-                                    
-                                    date_connexion = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
-                                    current_row[8] = date_connexion
-                                    
-                                    worksheet.update(range_name=f'A{row_num}:I{row_num}', values=[current_row])
-                                    print(f"✅ Dernière connexion mise à jour: {date_connexion}")
-                            except Exception as e:
-                                print(f"⚠️ Erreur mise à jour dernière connexion: {e}")
+                            # 🔥 METTRE À JOUR LA DERNIÈRE CONNEXION (colonne I) — en tâche de fond
+                            _maj_derniere_connexion_en_fond(worksheet, row.get('ID'), 9, 8)
                             
                             try:
                                 structure_id = int(title.split('_')[1])
@@ -2172,19 +2206,8 @@ def index():
                     if structure.get('mot_de_passe') == hash_password(password):
                         mdp_ok = True
                         if structure.get('statut') == 'active':
-                            # Mettre à jour la connexion admin
-                            try:
-                                sheet_structures = sheets_helper.spreadsheet.worksheet("structures")
-                                cell = sheet_structures.find(str(structure.get('ID')), in_column=1)
-                                if cell:
-                                    row_num = cell.row
-                                    current_row = sheet_structures.row_values(row_num)
-                                    while len(current_row) < 13:
-                                        current_row.append('')
-                                    current_row[12] = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
-                                    sheet_structures.update(range_name=f'A{row_num}:M{row_num}', values=[current_row])
-                            except:
-                                pass
+                            # Mettre à jour la connexion admin (colonne M) — en tâche de fond
+                            _maj_derniere_connexion_en_fond('structures', structure.get('ID'), 13, 12)
 
                             _reinitialiser_echecs(email)
                             session.permanent = se_souvenir
