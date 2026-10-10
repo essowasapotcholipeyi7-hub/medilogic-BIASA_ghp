@@ -234,7 +234,19 @@ a:not(.btn):not(.nav-link):not(.nav-link-top):not(.dropdown-item):not(.list-grou
 .page-item.active .page-link {{ background-color: {p} !important; border-color: {p} !important; }}
 .navbar-brand span {{ color: {nb_texte} !important; }}
 .table thead th {{ background: {_rgba(p, 0.07)} !important; color: {texte} !important; }}
-.text-warning {{ color: #B8860B !important; }}
+/* ⭐ couleurs vives adoucies, thèmes clairs (patron : « même logique pour les autres thèmes ») */
+.text-warning {{ color: #B8860B !important; }} .text-danger {{ color: #C0392B !important; }} .text-success {{ color: #1E7F4E !important; }} .text-info {{ color: #1C7A99 !important; }}
+.badge.bg-warning {{ background-color: #F7E8B5 !important; color: #6B4E00 !important; }}
+.badge.bg-danger {{ background-color: #F8D7DA !important; color: #842029 !important; }}
+.badge.bg-success {{ background-color: #D1E7DD !important; color: #0F5132 !important; }}
+.badge.bg-info {{ background-color: #CFF4FC !important; color: #055160 !important; }}
+.badge.bg-primary {{ background-color: {_rgba(p, 0.15)} !important; color: {pf} !important; }}
+.badge.bg-secondary, .badge.bg-dark {{ background-color: {_rgba(texte, 0.12)} !important; color: {texte} !important; }}
+.btn-warning {{ background: rgba(184, 134, 11, 0.12) !important; color: #7A5A00 !important; border: 1px solid rgba(184, 134, 11, 0.35) !important; }}
+.btn-warning:hover {{ background: #D4A017 !important; color: #1A1A1A !important; }}
+.btn-info {{ background: rgba(28, 122, 153, 0.10) !important; color: #1C7A99 !important; border: 1px solid rgba(28, 122, 153, 0.3) !important; }}
+.btn-info:hover {{ background: #1C7A99 !important; color: #FFFFFF !important; }}
+.bg-warning:not(.badge):not(.btn), .bg-danger:not(.badge):not(.btn), .bg-success:not(.badge):not(.btn), .bg-info:not(.badge):not(.btn) {{ filter: saturate(0.75); }}
 /* ⭐ menu déroulant, barre des onglets et page d'accueil : couleurs du thème (tous les thèmes) */
 .top-nav .mega-menu {{ background: {carte} !important; }}
 .top-nav .mega-menu .menu-item, .top-nav .mega-menu .menu-item i {{ color: {texte} !important; }}
