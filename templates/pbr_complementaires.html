@@ -59,31 +59,27 @@
                 <div id="pbrChoisiBloc" style="display:none;" class="mb-2 p-2 border rounded bg-light">
                     <strong id="pbrChoisiNom"></strong>
                 </div>
-                <div class="position-relative mb-2">
-                    <label class="form-label mb-1">Compagnie complémentaire</label>
-                    <!-- ⭐ Choix dans la liste CANONIQUE déjà connue (fiches
-                         patients + entrées PBR précédentes), voir
-                         /api/compagnies-complementaires et
-                         upsert_compagnie_complementaire() (app.py) — évite
-                         qu'une même compagnie soit tapée "SUNU" ici et
-                         "SUNOU" à la fiche patient, ce qui romprait
-                         silencieusement le rapprochement. Taper un nom
-                         inédit reste possible : il rejoint alors la liste
-                         canonique pour la prochaine fois.
-
-                         ⭐ Liste déroulante MAISON (comme #pbrSearch
-                         ci-dessus) au lieu d'un <datalist> natif : constaté
-                         en direct que le <datalist> ne s'ouvrait ni au clic
-                         ni en tapant à l'intérieur de CE modal Bootstrap
-                         (rien ne s'affichait bien que les options soient
-                         correctement chargées dans le DOM) — comportement
-                         connu des navigateurs Chromium quand le champ est
-                         dans un ancêtre avec transform/overflow, ce
-                         qu'utilise l'animation d'un modal Bootstrap. Signalé
-                         par le patron ("xa n'apparait pas comme une liste
-                         pour choisir ni xa ne vient pas par recherche"). -->
-                    <input type="text" class="form-control" id="pbrCompagnie" placeholder="Ex. SUNU" autocomplete="off">
-                    <div id="pbrCompagnieResultats" class="list-group position-absolute w-100" style="z-index:1000; max-height:180px; overflow-y:auto; display:none;"></div>
+                <!-- ⭐ Plusieurs compagnies d'un coup (patron, 2026-10-10 : « sélectionner
+                     plusieurs assurances sous un même acte pour appliquer un même PBR ») —
+                     liste CANONIQUE (fiches patients + entrées PBR précédentes, voir
+                     /api/compagnies-complementaires) à cocher ; une compagnie inédite
+                     s'ajoute par le champ du bas et rejoint la liste pour la suite. -->
+                <div class="mb-2">
+                    <div class="d-flex justify-content-between align-items-end flex-wrap gap-1">
+                        <label class="form-label mb-1">Compagnies complémentaires <span class="text-muted">— cochez une ou plusieurs</span></label>
+                        <span class="small">
+                            <a href="#" onclick="cocherToutesCompagnies(true); return false;">Tout cocher</a> ·
+                            <a href="#" onclick="cocherToutesCompagnies(false); return false;">Tout décocher</a>
+                        </span>
+                    </div>
+                    <div id="pbrCompagniesListe" class="border rounded p-2 d-flex flex-wrap gap-2" style="max-height:170px; overflow-y:auto;">
+                        <span class="text-muted small">Chargement…</span>
+                    </div>
+                    <div class="input-group input-group-sm mt-2">
+                        <input type="text" class="form-control" id="pbrNouvelleCompagnie" placeholder="Autre compagnie (absente de la liste)" autocomplete="off">
+                        <button class="btn btn-outline-secondary" type="button" onclick="ajouterNouvelleCompagnie()"><i class="fas fa-plus me-1"></i>Ajouter</button>
+                    </div>
+                    <div class="small text-muted mt-1" id="pbrDejaConfigure"></div>
                 </div>
                 <!-- ⭐ Patron (2026-10-04) : "pour chaque acte et chaque assurance
                      privée : tarif privé, présence ou non d'un PBR, montant du
@@ -135,7 +131,8 @@ function typePbrChange() {
 
 function ouvrirModalPbr() {
     document.getElementById('pbrSearch').value = '';
-    document.getElementById('pbrCompagnie').value = '';
+    document.getElementById('pbrNouvelleCompagnie').value = '';
+    document.getElementById('pbrTarifPrive').value = '';
     document.getElementById('pbrValeur1').value = '';
     document.getElementById('pbrValeur2').value = '';
     viderPbrChoisi();
@@ -146,39 +143,61 @@ function ouvrirModalPbr() {
 function chargerCompagniesConnues() {
     fetch('/api/compagnies-complementaires')
         .then(r => r.json())
-        .then(noms => { compagniesConnues = noms || []; })
-        .catch(() => { compagniesConnues = []; });
+        .then(noms => { compagniesConnues = noms || []; afficherCompagnies([]); })
+        .catch(() => { compagniesConnues = []; afficherCompagnies([]); });
 }
 
-// ⭐ Affiche la liste déroulante maison (voir #pbrCompagnieResultats) —
-// TOUTES les compagnies connues si le champ est vide (clic direct), sinon
-// filtrées par sous-chaîne insensible à la casse pendant la frappe. Taper
-// un nom qui ne correspond à rien reste possible : il n'apparaît juste pas
-// dans la liste (nouvelle compagnie).
-function filtrerCompagnies() {
-    const q = document.getElementById('pbrCompagnie').value.trim().toLowerCase();
-    const box = document.getElementById('pbrCompagnieResultats');
-    const resultats = q === ''
-        ? compagniesConnues
-        : compagniesConnues.filter(n => n.toLowerCase().includes(q));
-    if (!resultats.length) { box.style.display = 'none'; return; }
-    box.innerHTML = resultats.map(n => `
-        <a href="#" class="list-group-item list-group-item-action" onclick='choisirCompagnie(${JSON.stringify(n).replace(/'/g, "&apos;")}); return false;'>
-            ${n}
-        </a>`).join('');
-    box.style.display = 'block';
+function echapper(t) { const d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
+
+// Cases à cocher des compagnies (style bouton) — `cochees` reste coché ; une
+// pastille marque celles déjà configurées pour l'acte choisi.
+function afficherCompagnies(cochees) {
+    const box = document.getElementById('pbrCompagniesListe');
+    if (!compagniesConnues.length) {
+        box.innerHTML = '<span class="text-muted small">Aucune compagnie connue pour le moment : ajoutez-la ci-dessous.</span>';
+        document.getElementById('pbrDejaConfigure').innerHTML = '';
+        return;
+    }
+    const dejaPourActe = {};
+    if (pbrChoisi) toutesLesEntrees.filter(e => e.nom_acte === pbrChoisi && e.type === pbrTypeActuel).forEach(e => { dejaPourActe[e.compagnie] = e; });
+    box.innerHTML = compagniesConnues.map((n, i) => {
+        const e = dejaPourActe[n];
+        const titre = e ? 'Déjà configuré pour cet acte — tarif privé ' + (e.tarif_prive ?? '—') + ', PBR ' + (e.pbr_1 ?? '—') + ' (remplacé si coché)' : '';
+        return '<input type="checkbox" class="btn-check pbr-cie" id="cie' + i + '" value="' + echapper(n) + '"' + (cochees.includes(n) ? ' checked' : '') + '>' +
+               '<label class="btn btn-sm btn-outline-primary" for="cie' + i + '"' + (titre ? ' title="' + echapper(titre) + '"' : '') + '>' +
+               echapper(n) + (e ? ' <i class="fas fa-circle-check ms-1" aria-hidden="true"></i>' : '') + '</label>';
+    }).join('');
+    const noms = Object.keys(dejaPourActe);
+    document.getElementById('pbrDejaConfigure').innerHTML = noms.length
+        ? '<i class="fas fa-circle-check me-1"></i>Déjà configuré pour cet acte : ' + noms.map(echapper).join(', ') + ' — cocher l’une d’elles remplace ses valeurs.'
+        : '';
 }
 
-function choisirCompagnie(nom) {
-    document.getElementById('pbrCompagnie').value = nom;
-    document.getElementById('pbrCompagnieResultats').style.display = 'none';
+function compagniesCochees() {
+    return [...document.querySelectorAll('.pbr-cie:checked')].map(c => c.value);
+}
+
+function cocherToutesCompagnies(etat) {
+    document.querySelectorAll('.pbr-cie').forEach(c => { c.checked = etat; });
+}
+
+function ajouterNouvelleCompagnie() {
+    const champ = document.getElementById('pbrNouvelleCompagnie');
+    const nom = champ.value.trim();
+    if (!nom) return;
+    const cochees = compagniesCochees();
+    const existante = compagniesConnues.find(n => n.toLowerCase() === nom.toLowerCase());
+    if (!existante) compagniesConnues.push(nom);
+    cochees.push(existante || nom);
+    afficherCompagnies(cochees);
+    champ.value = '';
 }
 
 function viderPbrChoisi() {
     pbrChoisi = null;
     document.getElementById('pbrChoisiBloc').style.display = 'none';
     document.getElementById('pbrResultats').style.display = 'none';
-    document.getElementById('pbrCompagnieResultats').style.display = 'none';
+    afficherCompagnies(compagniesCochees());
 }
 
 document.getElementById('pbrSearch').addEventListener('input', function() {
@@ -208,14 +227,17 @@ function choisirPbrArticle(nom) {
     document.getElementById('pbrChoisiBloc').style.display = '';
     document.getElementById('pbrResultats').style.display = 'none';
     document.getElementById('pbrSearch').value = nom;
+    afficherCompagnies(compagniesCochees());
 }
 
-document.getElementById('pbrCompagnie').addEventListener('input', filtrerCompagnies);
-document.getElementById('pbrCompagnie').addEventListener('focus', filtrerCompagnies);
-document.getElementById('pbrCompagnie').addEventListener('click', filtrerCompagnies);
+document.getElementById('pbrNouvelleCompagnie').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); ajouterNouvelleCompagnie(); }
+});
 
 async function enregistrerPbr() {
-    const compagnie = document.getElementById('pbrCompagnie').value.trim();
+    // Un nom tapé mais pas encore « Ajouté » compte aussi.
+    if (document.getElementById('pbrNouvelleCompagnie').value.trim()) ajouterNouvelleCompagnie();
+    const compagnies = compagniesCochees();
     const tarifPriveRaw = document.getElementById('pbrTarifPrive').value.trim();
     const tarifPrive = tarifPriveRaw === '' ? null : parseFloat(tarifPriveRaw);
     const pbr1Raw = document.getElementById('pbrValeur1').value.trim();
@@ -223,7 +245,7 @@ async function enregistrerPbr() {
     const pbr2Raw = document.getElementById('pbrValeur2').value.trim();
     const pbr2 = pbr2Raw === '' ? null : parseFloat(pbr2Raw);
     if (!pbrChoisi) { await afficherMessage('Choisissez un acte ou un médicament dans la liste.'); return; }
-    if (!compagnie) { await afficherMessage('Indiquez la compagnie complémentaire.'); return; }
+    if (!compagnies.length) { await afficherMessage('Cochez au moins une compagnie complémentaire.'); return; }
     if (tarifPrive !== null && (isNaN(tarifPrive) || tarifPrive <= 0)) { await afficherMessage('Tarif privé invalide.'); return; }
     if (pbr1 !== null && (isNaN(pbr1) || pbr1 < 0)) { await afficherMessage('PBR habituel invalide.'); return; }
     if (pbr1 === null && tarifPrive === null) { await afficherMessage('Indiquez au moins un tarif privé ou un PBR habituel.'); return; }
@@ -231,13 +253,20 @@ async function enregistrerPbr() {
 
     fetch('/api/pbr-complementaires', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: pbrTypeActuel, nom_acte: pbrChoisi, compagnie: compagnie, pbr_1: pbr1, pbr_2: pbr2, tarif_prive: tarifPrive })
+        body: JSON.stringify({ type: pbrTypeActuel, nom_acte: pbrChoisi, compagnies: compagnies, pbr_1: pbr1, pbr_2: pbr2, tarif_prive: tarifPrive })
     })
     .then(r => r.json())
     .then(async data => {
         if (data.success) {
             bootstrap.Modal.getInstance(document.getElementById('modalPbr')).hide();
             chargerPbrComplementaires();
+            const crees = data.crees || [], maj = data.mises_a_jour || [];
+            if (crees.length + maj.length > 1) {
+                await afficherMessage('« ' + pbrChoisi + ' » : ' +
+                    (crees.length ? 'ajouté pour ' + crees.join(', ') : '') +
+                    (crees.length && maj.length ? ' ; ' : '') +
+                    (maj.length ? 'mis à jour pour ' + maj.join(', ') : '') + '.');
+            }
         } else {
             await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
@@ -310,9 +339,6 @@ function chargerPbrComplementaires() {
 document.addEventListener('click', function(e) {
     const box = document.getElementById('pbrResultats');
     if (box && !e.target.closest('#pbrSearch') && !e.target.closest('#pbrResultats')) box.style.display = 'none';
-
-    const boxCompagnie = document.getElementById('pbrCompagnieResultats');
-    if (boxCompagnie && !e.target.closest('#pbrCompagnie') && !e.target.closest('#pbrCompagnieResultats')) boxCompagnie.style.display = 'none';
 });
 
 chargerPbrComplementaires();

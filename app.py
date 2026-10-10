@@ -13176,12 +13176,20 @@ def api_creer_pbr_complementaire():
         data = request.json or {}
         type_ = data.get('type', 'acte')
         nom_acte = (data.get('nom_acte') or '').strip()
-        compagnie = (data.get('compagnie') or '').strip()
+        # ⭐ Plusieurs compagnies d'un coup (patron, 2026-10-10 : « sélectionner
+        # plusieurs assurances sous un même acte pour appliquer un même PBR »)
+        # — `compagnies` (liste) ; `compagnie` (une seule) reste accepté.
+        compagnies = data.get('compagnies')
+        if not isinstance(compagnies, list):
+            compagnies = [data.get('compagnie')]
+        vues = set()
+        compagnies = [c for c in ((str(x or '')).strip() for x in compagnies)
+                      if c and not (c.lower() in vues or vues.add(c.lower()))]
         pbr_1 = data.get('pbr_1')
         pbr_2 = data.get('pbr_2')
         tarif_prive = data.get('tarif_prive')
 
-        if not nom_acte or not compagnie:
+        if not nom_acte or not compagnies:
             return jsonify({'success': False, 'error': "Acte et compagnie requis"}), 400
         # ⭐ Patron (2026-10-04) : "tarif privé, présence ou non d'un PBR,
         # montant du PBR" — le PBR habituel devient optionnel, mais il faut au
@@ -13216,28 +13224,36 @@ def api_creer_pbr_complementaire():
         else:
             pbr_2 = None
 
-        # ⭐ Garde la compagnie dans la liste canonique — évite qu'une entrée
+        # ⭐ Garde les compagnies dans la liste canonique — évite qu'une entrée
         # PBR référence une compagnie jamais vue à la fiche patient (ou vice-
-        # versa), voir upsert_compagnie_complementaire().
-        upsert_compagnie_complementaire(structure_id, compagnie)
+        # versa), voir upsert_compagnie_complementaire(). Fait AVANT les lignes
+        # PBR : cette fonction valide (commit) ou annule sa propre écriture.
+        for compagnie in compagnies:
+            upsert_compagnie_complementaire(structure_id, compagnie)
 
-        existante = PbrComplementaire.query.filter_by(
-            structure_id=structure_id, type=type_, nom_acte=nom_acte, compagnie=compagnie
-        ).first()
-        if existante:
-            existante.pbr_1 = pbr_1
-            existante.pbr_2 = pbr_2
-            existante.tarif_prive = tarif_prive
-            db.session.commit()
-            return jsonify({'success': True, 'id': existante.id, 'mis_a_jour': True})
-
-        ligne = PbrComplementaire(
-            structure_id=structure_id, type=type_, nom_acte=nom_acte,
-            compagnie=compagnie, pbr_1=pbr_1, pbr_2=pbr_2, tarif_prive=tarif_prive, created_by=user_name,
-        )
-        db.session.add(ligne)
+        crees, mis_a_jour, ids = [], [], []
+        for compagnie in compagnies:
+            existante = PbrComplementaire.query.filter_by(
+                structure_id=structure_id, type=type_, nom_acte=nom_acte, compagnie=compagnie
+            ).first()
+            if existante:
+                existante.pbr_1 = pbr_1
+                existante.pbr_2 = pbr_2
+                existante.tarif_prive = tarif_prive
+                mis_a_jour.append(compagnie)
+                ligne = existante
+            else:
+                ligne = PbrComplementaire(
+                    structure_id=structure_id, type=type_, nom_acte=nom_acte,
+                    compagnie=compagnie, pbr_1=pbr_1, pbr_2=pbr_2, tarif_prive=tarif_prive, created_by=user_name,
+                )
+                db.session.add(ligne)
+                crees.append(compagnie)
+            db.session.flush()
+            ids.append(ligne.id)
         db.session.commit()
-        return jsonify({'success': True, 'id': ligne.id, 'mis_a_jour': False})
+        return jsonify({'success': True, 'id': ids[0], 'ids': ids, 'mis_a_jour': bool(mis_a_jour) and not crees,
+                        'crees': crees, 'mises_a_jour': mis_a_jour})
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
