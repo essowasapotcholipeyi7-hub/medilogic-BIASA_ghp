@@ -6281,8 +6281,22 @@ def _portee_theme():
     return 'structure' if (session.get('is_admin') or session.get('role') == 'admin') else 'utilisateur'
 
 
+def _cle_utilisateur_theme():
+    """⭐ Clé du réglage PERSONNEL : l'ID de la ligne utilisateur, sinon son
+    e-mail (patron, 2026-10-10 : « si une secrétaire met un thème, ça prend
+    pour tout le monde » — des comptes sans ID dans la feuille partageaient
+    le même réglage)."""
+    # L'e-mail est l'identifiant de connexion (unique par définition) : clé principale ;
+    # l'ID de ligne ne sert que s'il n'y a pas d'e-mail en session.
+    email = (session.get('email') or '').strip().lower()
+    if email:
+        return email
+    uid = session.get('user_id')
+    return f"{uid}" if uid not in (None, '', 'None') else None
+
+
 def _utilisateur_theme():
-    return None if _portee_theme() == 'structure' else session.get('user_id')
+    return None if _portee_theme() == 'structure' else _cle_utilisateur_theme()
 
 
 @app.route('/parametres/theme')
@@ -6297,7 +6311,7 @@ def page_parametres_theme():
 @login_required
 def api_theme():
     try:
-        d = theme_service.catalogue_pour_structure(session.get('structure_id'), session.get('user_id'))
+        d = theme_service.catalogue_pour_structure(session.get('structure_id'), _cle_utilisateur_theme())
         d['portee'] = _portee_theme()
         return jsonify({'success': True, **d})
     except Exception as e:
@@ -6310,7 +6324,7 @@ def api_theme():
 def api_theme_css_apercu():
     """Aperçu : CSS d'une personnalisation sans rien enregistrer."""
     data = request.json or {}
-    actif = theme_service.theme_actif(session.get('structure_id'), session.get('user_id'))
+    actif = theme_service.theme_actif(session.get('structure_id'), _cle_utilisateur_theme())
     cle = data.get('cle') or actif['theme']['cle']
     return jsonify({'success': True, 'css': theme_service.css_apercu(cle, data.get('personnalisation') or {})})
 
@@ -9195,7 +9209,7 @@ def injecter_theme_structure():
     structure_id = session.get('structure_id')
     if not structure_id:
         return {'theme_css': '', 'theme_sombre': False}
-    css = theme_service.css_pour(structure_id, session.get('user_id'))
+    css = theme_service.css_pour(structure_id, _cle_utilisateur_theme())
     # ⭐ Thème sombre : base.html pose data-bs-theme="dark" sur <html> pour que
     # Bootstrap passe lui aussi en sombre (aides sous les champs, descriptions,
     # menus déroulants, modals, tableaux) — patron : « certaines écritures ne

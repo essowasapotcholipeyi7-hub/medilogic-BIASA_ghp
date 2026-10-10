@@ -32,12 +32,20 @@ def invalider_cache(structure_id=None):
         _CACHE_CSS.pop(cle, None)
 
 
+_catalogue_verifie = False
+
+
 def assurer_catalogue():
     """Copie le catalogue par défaut en base, puis complète les thèmes
     manquants (nouveaux thèmes livrés après coup) sans toucher aux réglages
-    que le super-admin a faits sur les existants."""
+    que le super-admin a faits sur les existants. ⭐ Vérifié une seule fois
+    par processus (appelé à chaque lecture de thème : une requête de moins)."""
+    global _catalogue_verifie
+    if _catalogue_verifie:
+        return
     existants = {t.cle for t in db.session.query(ThemeCatalogue.cle).all()}
     manquants = [t for t in THEMES_DEFAUT if t['cle'] not in existants]
+    _catalogue_verifie = True
     if not manquants:
         return
     for t in manquants:
@@ -54,28 +62,52 @@ def _theme_dict(t):
             'variables_effectives': variables_effectives(t.variables or {})}
 
 
-def catalogue(inclure_inactifs=False):
+# ⭐ Catalogue en mémoire (30 s) : lu à chaque page et plusieurs fois par
+# action ; avec une base distante, chaque requête coûte ~0,2 s — patron :
+# « le réglage ne prend pas bien » (réponses de 3 à 4 s qui se chevauchaient).
+_CACHE_CATALOGUE = None   # (expire, [dicts de tous les thèmes, actifs ou non])
+_TTL_CATALOGUE = 30
+
+
+def invalider_catalogue():
+    global _CACHE_CATALOGUE
+    _CACHE_CATALOGUE = None
+
+
+def _catalogue_complet():
+    global _CACHE_CATALOGUE
+    now = time.time()
+    if _CACHE_CATALOGUE and _CACHE_CATALOGUE[0] > now:
+        return _CACHE_CATALOGUE[1]
     assurer_catalogue()
-    q = ThemeCatalogue.query
-    if not inclure_inactifs:
-        q = q.filter_by(actif=True)
-    return [_theme_dict(t) for t in q.order_by(ThemeCatalogue.ordre, ThemeCatalogue.id).all()]
+    liste = [_theme_dict(t) for t in ThemeCatalogue.query.order_by(ThemeCatalogue.ordre, ThemeCatalogue.id).all()]
+    _CACHE_CATALOGUE = (now + _TTL_CATALOGUE, liste)
+    return liste
+
+
+def catalogue(inclure_inactifs=False):
+    return [t for t in _catalogue_complet() if inclure_inactifs or t['actif']]
 
 
 def theme_par_cle(cle, inclure_inactifs=False):
-    assurer_catalogue()
-    t = ThemeCatalogue.query.filter_by(cle=cle).first()
-    if not t or (not inclure_inactifs and not t.actif):
-        return None
-    return _theme_dict(t)
+    for t in _catalogue_complet():
+        if t['cle'] == cle:
+            return t if (inclure_inactifs or t['actif']) else None
+    return None
 
 
 def licence_pour(structure_id, cle):
     return LicenceTheme.query.filter_by(structure_id=structure_id, theme_cle=cle).first()
 
 
-def etat_pour(structure_id, theme):
-    return etat_licence(theme['payant'], licence_pour(structure_id, theme['cle']))
+def licences_structure(structure_id):
+    """Toutes les licences de la structure en une requête : {cle: licence}."""
+    return {l.theme_cle: l for l in LicenceTheme.query.filter_by(structure_id=structure_id).all()}
+
+
+def etat_pour(structure_id, theme, licences=None):
+    lic = licences.get(theme['cle']) if licences is not None else licence_pour(structure_id, theme['cle'])
+    return etat_licence(theme['payant'], lic)
 
 
 def reglage_structure(structure_id):
@@ -158,10 +190,11 @@ def css_apercu(cle, personnalisation):
 
 def catalogue_pour_structure(structure_id, utilisateur_id=None):
     actif = theme_actif(structure_id, utilisateur_id)
+    licences = licences_structure(structure_id)   # ⭐ une seule requête pour tous les thèmes
     out = []
     for t in catalogue():
-        etat = etat_pour(structure_id, t)
-        lic = licence_pour(structure_id, t['cle']) if t['payant'] else None
+        etat = etat_pour(structure_id, t, licences)
+        lic = licences.get(t['cle']) if t['payant'] else None
         out.append({**t, 'etat': etat['etat'], 'utilisable': etat['utilisable'], 'jours_restants': etat['jours_restants'],
                     'paye_verifie': bool(lic and lic.paye_verifie), 'moyen_paiement': (lic.moyen_paiement if lic else None),
                     'fin_essai': etat['fin_essai'].strftime('%d/%m/%Y') if etat['fin_essai'] else None,
@@ -445,6 +478,7 @@ def enregistrer_theme(data, nouveau=False):
         t.variables = normaliser_variables(data.get('variables') or {}) if cle != THEME_DEFAUT_CLE else {}
     db.session.commit()
     invalider_cache()
+    invalider_catalogue()
     return _theme_dict(t)
 
 
@@ -454,12 +488,15 @@ def supprimer_theme(cle):
     t = ThemeCatalogue.query.filter_by(cle=cle).first()
     if not t:
         raise ValueError('Thème introuvable')
+    global _catalogue_verifie
+    _catalogue_verifie = False
     LicenceTheme.query.filter_by(theme_cle=cle).delete()
     ThemeStructure.query.filter_by(theme_cle=cle).update({'theme_cle': THEME_DEFAUT_CLE})
     ThemeUtilisateur.query.filter_by(theme_cle=cle).update({'theme_cle': None})
     db.session.delete(t)
     db.session.commit()
     invalider_cache()
+    invalider_catalogue()
 
 
 def accorder_licence(structure_id, cle, action, jours=None, montant=None, note='', user_nom='super-admin'):

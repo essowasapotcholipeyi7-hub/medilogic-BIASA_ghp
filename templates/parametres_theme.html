@@ -229,13 +229,21 @@ function lirePerso() {
 }
 
 function appliquerCss(css) {
+    // ⭐ Patron (2026-10-10) : choisir un thème ou revenir à Classique doit aussi basculer Bootstrap
+    // (clair / sombre), le script de douceur et l'interrupteur Soleil / Lune — comme la bascule en direct.
+    const sombre = (css || '').includes('/* mode sombre */');
+    if (window.appliquerThemeEnDirect) { appliquerThemeEnDirect(css, sombre); return; }
     let st = document.getElementById('themeStructure');
     if (!st) { st = document.createElement('style'); st.id = 'themeStructure'; document.head.appendChild(st); }
     st.textContent = css || '';
 }
 
+let chargerSeq = 0;
 function charger() {
-    fetch('/api/theme').then(r => r.json()).then(d => { if (!d.success) { afficherMessage('Erreur : ' + d.error, {type: 'danger'}); return; } DONNEES = d; afficher(); });
+    // ⭐ Une réponse plus ancienne qu'une demande plus récente est ignorée (sinon,
+    // avec une base lente, un clic rapide affichait l'état précédent).
+    const seq = ++chargerSeq;
+    fetch('/api/theme').then(r => r.json()).then(d => { if (seq !== chargerSeq) return; if (!d.success) { afficherMessage('Erreur : ' + d.error, {type: 'danger'}); return; } DONNEES = d; afficher(); });
 }
 
 async function choisir(cle) {
