@@ -243,11 +243,19 @@
                                         title="Modifier">
                                     <i class="fas fa-pen"></i>
                                 </button>
-                                <button class="btn btn-sm btn-outline-danger"
-                                        onclick="supprimerPatient({{ patient.ID }})"
-                                        title="Supprimer">
-                                    <i class="fas fa-trash-alt"></i>
-                                </button>
+                                <!-- ⭐ Raccourcis vers les 4 destinations (patron, 2026-10-10) :
+                                     remplacent le bouton Supprimer, inutile. Un clic sélectionne
+                                     ce patient et ouvre directement la page choisie. -->
+                                <div class="raccourcis-patient" role="group" aria-label="Aller directement avec ce patient"
+                                     data-id="{{ patient.ID }}" data-nom="{{ patient.nom }} {{ patient.prenom }}"
+                                     data-assurance="{{ patient.type_assurance }}" data-taux="{{ patient.taux_prise_charge or 0 }}"
+                                     data-assurance2="{{ patient.assurance2_nom or '' }}" data-taux2="{{ patient.taux_assurance2 or 0 }}"
+                                     data-societe="{{ patient.societe_assurance2 or '' }}">
+                                    <button type="button" class="raccourci-dest raccourci-actes" onclick="raccourciPatient(this, 'actes')" title="Vente d'actes" aria-label="Vente d'actes"><i class="fas fa-stethoscope"></i></button>
+                                    <button type="button" class="raccourci-dest raccourci-pharma" onclick="raccourciPatient(this, 'pharma')" title="Pharmacie" aria-label="Pharmacie"><i class="fas fa-pills"></i></button>
+                                    <button type="button" class="raccourci-dest raccourci-hospitalisation" onclick="raccourciPatient(this, 'hospitalisation')" title="Hospitalisation" aria-label="Hospitalisation"><i class="fas fa-bed"></i></button>
+                                    <button type="button" class="raccourci-dest raccourci-soins_ambulatoires" onclick="raccourciPatient(this, 'soins_ambulatoires')" title="Soins ambulatoires" aria-label="Soins ambulatoires"><i class="fas fa-heart-pulse"></i></button>
+                                </div>
                                 <button class="btn btn-sm btn-outline-success"
                                         onclick='envoyerLienPatient({{ patient.ID }}, {{ ((patient.nom or "") ~ " " ~ (patient.prenom or "")).strip()|tojson }}, {{ (patient.telephone or "")|tojson }})'
                                         title="Envoyer par WhatsApp le lien et le code d'accès à son portail (résultats, rendez-vous)">
@@ -1631,48 +1639,6 @@ function modifierDepuisDetails() {
 }
 
 // ============================================
-// SUPPRIMER PATIENT
-// ============================================
-async function supprimerPatient(id) {
-    if (!id || id === 'undefined') {
-        await afficherMessage('Erreur: ID patient invalide', {type: 'danger'});
-        return;
-    }
-    
-    const row = document.querySelector(`tr.patient-row[data-id="${id}"]`);
-    if (!row) {
-        await afficherMessage('Patient non trouvé');
-        return;
-    }
-    
-    const nomComplet = row.cells[1].innerText.trim();
-    
-    if (!await demanderConfirmation(`Supprimer définitivement le patient "${nomComplet}" ?\n\nCette action est irréversible.`)) {
-        return;
-    }
-    
-    showLoader('Suppression du patient...');
-    
-    fetch(`/api/patients/${id}`, {
-        method: 'DELETE'
-    })
-    .then(response => response.json())
-    .then(async data => {
-        hideLoader();
-        if(data.success) {
-            await afficherMessage('Patient supprimé avec succès !');
-            location.reload();
-        } else {
-            await afficherMessage('Erreur: ' + (data.error || 'Erreur inconnue'), {type: 'danger'});
-        }
-    })
-    .catch(async error => {
-        hideLoader();
-        await afficherMessage('Erreur lors de la suppression: ' + error, {type: 'danger'});
-    });
-}
-
-// ============================================
 // GESTION ASSURANCE PRINCIPALE
 // ============================================
 function toggleTaux() {
@@ -2277,16 +2243,7 @@ async function selectPatient(id, nom, assurance, taux, assurance2, taux2, societ
         return;
     }
 
-    sessionStorage.setItem('selectedPatientId', String(id));
-    sessionStorage.setItem('selectedPatientName', nom);
-    sessionStorage.setItem('selectedPatientPrenom', '');
-    sessionStorage.setItem('selectedPatientAssurance', assurance || 'non_assure');
-    sessionStorage.setItem('selectedPatientTaux', String(taux || 0));
-    sessionStorage.setItem('selectedPatientNumero', '');
-    sessionStorage.setItem('selectedPatientAssurance2', assurance2 || '');
-    sessionStorage.setItem('selectedPatientTaux2', String(taux2 || 0));
-    sessionStorage.setItem('selectedPatientNumero2', '');
-    sessionStorage.setItem('selectedPatientSocieteAssurance2', societeAssurance2 || '');
+    memoriserPatient(id, nom, assurance, taux, assurance2, taux2, societeAssurance2);
 
     console.log('✅ Patient sélectionné:', { id, nom, assurance, taux, assurance2, taux2, societeAssurance2 });
 
@@ -2297,6 +2254,37 @@ async function selectPatient(id, nom, assurance, taux, assurance2, taux2, societ
     }
 
     showPatientDestinationModal(id, nom, assurance, taux, assurance2, taux2);
+}
+
+// Patient choisi -> mémorisé pour les pages de vente/séjour (même clés
+// que lues par actes_vente, pharma_vente, hospitalisation, soins ambulatoires).
+function memoriserPatient(id, nom, assurance, taux, assurance2, taux2, societeAssurance2) {
+    sessionStorage.setItem('selectedPatientId', String(id));
+    sessionStorage.setItem('selectedPatientName', nom);
+    sessionStorage.setItem('selectedPatientPrenom', '');
+    sessionStorage.setItem('selectedPatientAssurance', assurance || 'non_assure');
+    sessionStorage.setItem('selectedPatientTaux', String(taux || 0));
+    sessionStorage.setItem('selectedPatientNumero', '');
+    sessionStorage.setItem('selectedPatientAssurance2', assurance2 || '');
+    sessionStorage.setItem('selectedPatientTaux2', String(taux2 || 0));
+    sessionStorage.setItem('selectedPatientNumero2', '');
+    sessionStorage.setItem('selectedPatientSocieteAssurance2', societeAssurance2 || '');
+}
+
+// ⭐ Raccourcis de la ligne patient (Actes / Pharmacie / Hospitalisation /
+// Soins ambulatoires) : sélection + accès direct, sans passer par la
+// fenêtre « Où voulez-vous aller ? ».
+function raccourciPatient(bouton, destination) {
+    const d = bouton.closest('.raccourcis-patient').dataset;
+    if (!d.id) return;
+    memoriserPatient(d.id, d.nom.trim(), d.assurance || 'non_assure', parseFloat(d.taux) || 0,
+                     d.assurance2 || '', parseFloat(d.taux2) || 0, d.societe || '');
+    if (FINALISER_ATTENTE_ID) {
+        const route = FINALISER_ATTENTE_TYPE === 'pharmacie' ? '/pharma_vente' : '/actes_vente';
+        window.location.href = `${route}?finaliser_attente=${encodeURIComponent(FINALISER_ATTENTE_ID)}`;
+        return;
+    }
+    redirigerVers(destination);
 }
 
 // ============================================
@@ -2544,6 +2532,25 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 <style>
+/* ⭐ Raccourcis de la ligne patient (Actes, Pharmacie, Hospitalisation,
+   Soins ambulatoires) — mêmes couleurs que la fenêtre de destination. */
+.raccourcis-patient { display: inline-flex; gap: 3px; }
+.raccourci-dest {
+    width: 28px; height: 28px; padding: 0; display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 7px; border: 1px solid; font-size: 13px; cursor: pointer; line-height: 1;
+    transition: transform .1s ease, filter .1s ease;
+}
+.raccourci-dest:hover { filter: brightness(.95); transform: translateY(-1px); }
+.raccourci-dest:focus-visible { outline: 2px solid #0d6efd; outline-offset: 1px; }
+.raccourci-actes { color: #0d6efd; background: #eef4ff; border-color: #c9dbfb; }
+.raccourci-pharma { color: #0E9D67; background: #ecf8f2; border-color: #c4e7d6; }
+.raccourci-hospitalisation { color: #334155; background: #eef1f5; border-color: #d3d9e2; }
+.raccourci-soins_ambulatoires { color: #0891b2; background: #e6f6f9; border-color: #bfe6ee; }
+[data-bs-theme="dark"] .raccourci-actes { color: #8ab4ff; background: rgba(13,110,253,.16); border-color: rgba(13,110,253,.45); }
+[data-bs-theme="dark"] .raccourci-pharma { color: #5fd3a3; background: rgba(14,157,103,.16); border-color: rgba(14,157,103,.45); }
+[data-bs-theme="dark"] .raccourci-hospitalisation { color: #cbd5e1; background: rgba(148,163,184,.14); border-color: rgba(148,163,184,.4); }
+[data-bs-theme="dark"] .raccourci-soins_ambulatoires { color: #67d4ea; background: rgba(8,145,178,.16); border-color: rgba(8,145,178,.45); }
+
 /* ⭐ Nouvelles cartes de destination (aperçu validé avant implémentation —
    patron : "améliore-moi les boutons quand on sélectionne un patient...
    deux boutons actes et pharmacie en haut et les trois [puis deux, une
