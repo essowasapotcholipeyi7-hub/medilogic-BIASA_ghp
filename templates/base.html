@@ -1982,8 +1982,12 @@
     {# ⭐ Thème / apparence choisi par la structure (patron, 2026-10-09) — voir
        injecter_theme_structure() (app.py) et services/theme_service.py ;
        vide tant que la structure garde l'apparence d'origine. #}
-    {% if theme_css %}<style id="themeStructure">{{ theme_css|safe }}</style>{% endif %}
     {% block extra_css %}{% endblock %}
+    {# ⭐ Feuille du thème APRÈS les styles propres à la page, pour primer sur eux ;
+       en thème sombre, theme_sombre.js corrige en plus les fonds blancs / textes
+       sombres que la feuille ne connaît pas (pages à styles propres, AJAX). #}
+    {% if theme_css %}<style id="themeStructure">{{ theme_css|safe }}</style>{% endif %}
+    {% if theme_sombre %}<script src="{{ url_for('static', filename='js/theme_sombre.js') }}" defer></script>{% endif %}
 </head>
 <body>
 
