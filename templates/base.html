@@ -2219,6 +2219,7 @@
                     {% if a_acces('rendez_vous') %}
                     <li><a class="dropdown-item" href="{{ url_for('rendez_vous') }}"><i class="fas fa-calendar-alt"></i> Rendez-vous</a></li>
                     {% endif %}
+                    <li><a class="dropdown-item" href="{{ url_for('page_changer_mot_de_passe') }}"><i class="fas fa-key"></i> Changer mon mot de passe</a></li>
                     <li><a class="dropdown-item" href="#" onclick="ouvrirModalSecurite(); return false;"><i class="fas fa-shield-alt"></i> Sécurité de connexion</a></li>
                     <li><a class="dropdown-item text-danger" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Déconnexion</a></li>
                     <li><a class="dropdown-item" href="#" onclick="toggleFullscreenMode(); return false;"><i class="fas fa-expand" id="fullscreenModeIcon"></i> <span id="fullscreenModeText">Mode plein écran</span></a></li>
@@ -2757,7 +2758,8 @@ async function appliquerPropositionTheme() {
         <!-- ⭐ Même répertoire que sidebar_menu.html ("Paramètres") — rien
              de déplacé, chaque lien existe déjà ailleurs, juste un accès
              rapide de plus. -->
-        {% set _parametres_visible_top = (session.role in ['admin', 'gestionnaire']) or (session.role in ['admin', 'comptable', 'gestionnaire']) or (session.role in ['laborantin', 'radiologue', 'secretaire']) or session.is_admin %}
+        {# ⭐ Visible pour tous (2026-10-10) : chacun y change son mot de passe et règle son thème. #}
+        {% set _parametres_visible_top = True %}
         {% if _parametres_visible_top and not _bloq %}
         <li class="nav-item nav-item-parametres">
             <span class="nav-link-top">
@@ -2773,6 +2775,9 @@ async function appliquerPropositionTheme() {
                      l'admin règle la structure, les autres leur propre apparence. -->
                 <a class="menu-item" href="{{ url_for('page_parametres_theme') }}">
                     <i class="fas fa-palette"></i> Thème & apparence
+                </a>
+                <a class="menu-item" href="{{ url_for('page_changer_mot_de_passe') }}">
+                    <i class="fas fa-key"></i> Mon mot de passe
                 </a>
                 {% if session.is_admin %}
                 <a class="menu-item" href="{{ url_for('page_classification_actes') }}">

@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Mon mot de passe{% endblock %}
+
+{% block extra_css %}
+<style>
+    .mdp-carte { max-width: 520px; }
+    .mdp-regles { list-style: none; padding: 0; margin: 6px 0 0; font-size: 13px; }
+    .mdp-regles li { padding: 1px 0; color: var(--bs-secondary-color, #6c757d); }
+    .mdp-regles li i { width: 18px; }
+    .mdp-regles li.ok { color: var(--bs-success, #198754); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="card mdp-carte mx-auto">
+    <div class="card-header bg-primary text-white">
+      <h5 class="mb-0"><i class="fas fa-key me-2"></i>Changer mon mot de passe</h5>
+    </div>
+    <div class="card-body">
+      <p class="small text-muted mb-3">Compte : <strong>{{ session.user_name }}</strong>. Le nouveau mot de passe servira dès votre prochaine connexion.</p>
+      <form id="formMdp" onsubmit="changerMotDePasse(event)" autocomplete="off">
+        {% for champ, libelle, auto in [('ancien', 'Mot de passe actuel', 'current-password'), ('nouveau', 'Nouveau mot de passe', 'new-password'), ('confirmation', 'Confirmer le nouveau mot de passe', 'new-password')] %}
+        <div class="mb-3">
+          <label class="form-label mb-1" for="{{ champ }}">{{ libelle }}</label>
+          <div class="input-group">
+            <input type="password" class="form-control" id="{{ champ }}" autocomplete="{{ auto }}" required{% if champ != 'ancien' %} maxlength="6"{% endif %}>
+            <button class="btn btn-outline-secondary" type="button" onclick="basculerVisibilite('{{ champ }}', this)" aria-label="Afficher ou masquer"><i class="fas fa-eye"></i></button>
+          </div>
+          {% if champ == 'nouveau' %}
+          <ul class="mdp-regles" id="regles">
+            <li data-regle="longueur"><i class="fas fa-circle"></i>De 4 à 6 caractères</li>
+            <li data-regle="arobase"><i class="fas fa-circle"></i>Contient un @</li>
+            <li data-regle="espace"><i class="fas fa-circle"></i>Sans espace</li>
+          </ul>
+          {% endif %}
+          {% if champ == 'confirmation' %}
+          <div class="small mt-1" id="identiques"></div>
+          {% endif %}
+        </div>
+        {% endfor %}
+        <div class="small text-danger mb-2" id="erreurMdp"></div>
+        <button type="submit" class="btn btn-primary w-100" id="btnMdp"><i class="fas fa-check me-1"></i>Changer le mot de passe</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+// Mêmes règles que valider_mot_de_passe_utilisateur (app.py) : 4 à 6 caractères avec un @.
+const REGLES = {
+    longueur: v => v.length >= 4 && v.length <= 6,
+    arobase: v => v.includes('@'),
+    espace: v => v.length > 0 && !/\s/.test(v),
+};
+
+function basculerVisibilite(id, bouton) {
+    const champ = document.getElementById(id);
+    champ.type = champ.type === 'password' ? 'text' : 'password';
+    bouton.querySelector('i').className = champ.type === 'password' ? 'fas fa-eye' : 'fas fa-eye-slash';
+}
+
+function majIndications() {
+    const v = document.getElementById('nouveau').value;
+    document.querySelectorAll('#regles li').forEach(li => {
+        const ok = REGLES[li.dataset.regle](v);
+        li.classList.toggle('ok', ok);
+        li.querySelector('i').className = ok ? 'fas fa-check' : 'fas fa-circle';
+    });
+    const c = document.getElementById('confirmation').value;
+    const zone = document.getElementById('identiques');
+    if (!c) { zone.innerHTML = ''; return; }
+    zone.innerHTML = c === v
+        ? '<span class="text-success"><i class="fas fa-check me-1"></i>Identiques</span>'
+        : '<span class="text-danger"><i class="fas fa-xmark me-1"></i>Pas identiques</span>';
+}
+['nouveau', 'confirmation', 'ancien'].forEach(id => document.getElementById(id).addEventListener('input', () => {
+    majIndications();
+    document.getElementById('erreurMdp').textContent = '';
+}));
+
+async function changerMotDePasse(e) {
+    e.preventDefault();
+    const erreur = document.getElementById('erreurMdp');
+    const ancien = document.getElementById('ancien').value;
+    const nouveau = document.getElementById('nouveau').value;
+    const confirmation = document.getElementById('confirmation').value;
+    erreur.textContent = '';
+    if (!Object.values(REGLES).every(r => r(nouveau))) { erreur.textContent = 'Le nouveau mot de passe ne respecte pas toutes les règles indiquées.'; return; }
+    if (nouveau !== confirmation) { erreur.textContent = 'Le nouveau mot de passe et sa confirmation ne sont pas identiques.'; return; }
+    const bouton = document.getElementById('btnMdp');
+    bouton.disabled = true;
+    try {
+        const r = await fetch('/api/parametres/mot-de-passe', {method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ancien, nouveau, confirmation})});
+        const res = await r.json();
+        if (!res.success) { erreur.textContent = res.error || 'Changement impossible.'; return; }
+        document.getElementById('formMdp').reset();
+        majIndications();
+        await afficherMessage(res.message, {type: 'success'});
+    } catch (err) {
+        erreur.textContent = 'Connexion au serveur impossible : réessayez.';
+    } finally {
+        bouton.disabled = false;
+    }
+}
+</script>
+{% endblock %}

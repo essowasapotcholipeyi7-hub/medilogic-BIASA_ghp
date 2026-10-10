@@ -2902,6 +2902,113 @@ def reset_password():
     return render_template('reset_password.html', token=token)
 
 
+# ============================================================
+# ⭐ CHANGER SON MOT DE PASSE (patron, 2026-10-10 : « permettre aux
+# utilisateurs de changer leur mot de passe : ils mettent l'ancien, le
+# nouveau et ils confirment — réglage dans Paramètres »)
+# ============================================================
+MDP_ECHECS_MAX = 5
+MDP_BLOCAGE_MINUTES = 15
+
+
+def valider_mot_de_passe_utilisateur(password):
+    """⭐ Règle choisie par le patron (2026-10-10) pour le changement de mot de
+    passe : « de 4 à 6 lettres avec un @ ». (La création de compte garde
+    valider_mot_de_passe.) La connexion est protégée par le blocage après
+    plusieurs mots de passe faux (_verrouillage_actif)."""
+    if not 4 <= len(password) <= 6:
+        return False, "Le mot de passe doit faire de 4 à 6 caractères"
+    if '@' not in password:
+        return False, "Le mot de passe doit contenir un @"
+    if password.strip() != password or ' ' in password:
+        return False, "Le mot de passe ne doit pas contenir d'espace"
+    return True, "OK"
+
+
+def _feuille_compte_connecte():
+    """(nom de feuille, ID) du compte connecté : la feuille `structures` pour
+    le responsable (compte propriétaire), struct_N_users pour les autres."""
+    type_compte = session.get('type_compte')
+    user_id = str(session.get('user_id') or '').strip()
+    if not user_id or type_compte not in ('structure', 'user'):
+        return None, None
+    if type_compte == 'structure':
+        return 'structures', user_id
+    return f"struct_{session.get('structure_id')}_users", user_id
+
+
+@app.route('/parametres/mot-de-passe')
+@login_required
+def page_changer_mot_de_passe():
+    return render_template('parametres_mot_de_passe.html')
+
+
+@app.route('/api/parametres/mot-de-passe', methods=['POST'])
+@login_required
+def api_changer_mot_de_passe():
+    import time
+    data = request.json or {}
+    ancien = data.get('ancien') or ''
+    nouveau = data.get('nouveau') or ''
+    confirmation = data.get('confirmation') or ''
+
+    bloque_jusqua = session.get('mdp_bloque_jusqua') or 0
+    if bloque_jusqua > time.time():
+        minutes = int((bloque_jusqua - time.time()) // 60) + 1
+        return jsonify({'success': False, 'error': f"Trop d'essais avec un ancien mot de passe faux. Réessayez dans {minutes} min."}), 429
+    if not ancien or not nouveau or not confirmation:
+        return jsonify({'success': False, 'error': 'Remplissez les trois champs.'}), 400
+    if nouveau != confirmation:
+        return jsonify({'success': False, 'error': 'Le nouveau mot de passe et sa confirmation ne sont pas identiques.'}), 400
+    valide, message = valider_mot_de_passe_utilisateur(nouveau)
+    if not valide:
+        return jsonify({'success': False, 'error': message + '.'}), 400
+    if nouveau == ancien:
+        return jsonify({'success': False, 'error': "Le nouveau mot de passe doit être différent de l'ancien."}), 400
+
+    nom_feuille, user_id = _feuille_compte_connecte()
+    if not nom_feuille:
+        return jsonify({'success': False, 'error': 'Session trop ancienne : déconnectez-vous puis reconnectez-vous, et réessayez.'}), 400
+    try:
+        feuille = sheets_helper.spreadsheet.worksheet(nom_feuille)
+        valeurs = feuille.get_all_values()
+        entete = [(c or '').strip() for c in (valeurs[0] if valeurs else [])]
+        if 'mot_de_passe' in entete:
+            col_mdp = entete.index('mot_de_passe')
+        elif nom_feuille != 'structures':
+            col_mdp = ENTETES_UTILISATEURS.index('mot_de_passe')   # en-tête abîmé : position standard
+        else:
+            return jsonify({'success': False, 'error': 'Colonne du mot de passe introuvable : contactez l\'éditeur.'}), 500
+        ligne_num = next((i + 1 for i, ligne in enumerate(valeurs) if i > 0 and ligne and str(ligne[0]).strip() == user_id), None)
+        if not ligne_num:
+            return jsonify({'success': False, 'error': 'Compte introuvable : contactez votre administrateur.'}), 404
+        ligne = valeurs[ligne_num - 1]
+        actuel = ligne[col_mdp] if len(ligne) > col_mdp else ''
+
+        if actuel != hash_password(ancien):
+            echecs = int(session.get('mdp_echecs') or 0) + 1
+            if echecs >= MDP_ECHECS_MAX:
+                session['mdp_bloque_jusqua'] = time.time() + MDP_BLOCAGE_MINUTES * 60
+                session['mdp_echecs'] = 0
+                return jsonify({'success': False, 'error': f"Ancien mot de passe incorrect. Trop d'essais : changement bloqué {MDP_BLOCAGE_MINUTES} min."}), 429
+            session['mdp_echecs'] = echecs
+            return jsonify({'success': False, 'error': f"Ancien mot de passe incorrect ({MDP_ECHECS_MAX - echecs} essai(s) restant(s))."}), 400
+
+        nouveau_hash = hash_password(nouveau)
+        feuille.update_cell(ligne_num, col_mdp + 1, nouveau_hash)
+        # Relecture : un mot de passe ne doit jamais être annoncé changé sans l'être.
+        if feuille.cell(ligne_num, col_mdp + 1).value != nouveau_hash:
+            return jsonify({'success': False, 'error': "L'enregistrement n'a pas pu être vérifié : réessayez."}), 500
+        sheets_helper.clear_cache(nom_feuille)
+        session.pop('mdp_echecs', None)
+        session.pop('mdp_bloque_jusqua', None)
+        print(f"🔑 Mot de passe changé : {nom_feuille} ID {user_id}")
+        return jsonify({'success': True, 'message': 'Mot de passe changé. Utilisez le nouveau à votre prochaine connexion.'})
+    except Exception as e:
+        print(f"❌ Changement de mot de passe : {e}")
+        return jsonify({'success': False, 'error': 'Google Sheets ne répond pas pour le moment : réessayez dans un instant.'}), 503
+
+
 def send_verification_code_email(email, code, nom):
     """Envoyer un email avec le code de vérification"""
     try:
