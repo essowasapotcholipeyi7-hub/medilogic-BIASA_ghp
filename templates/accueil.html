@@ -18,10 +18,11 @@
     .hub-hero h1 { font-size: 24px; font-weight: 700; margin: 2px 0 0; color: #fff; letter-spacing: -.01em; }
     .hub-hero .btn-tableau-bord {
         display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 10px;
-        border: 1px solid rgba(255,255,255,.55); color: #fff; text-decoration: none; font-size: 13.5px; font-weight: 600;
-        background: rgba(255,255,255,.08);
+        /* ⭐ Bouton plein (patron, 2026-10-10 : « visible quel que soit le thème ») */
+        border: 1px solid #fff; color: #0A3D5C; text-decoration: none; font-size: 13.5px; font-weight: 700;
+        background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.15);
     }
-    .hub-hero .btn-tableau-bord:hover { background: #fff; color: #0A3D5C; }
+    .hub-hero .btn-tableau-bord:hover { background: rgba(255,255,255,.88); color: #0A3D5C; }
 
     .hub-recherche { position: relative; margin: 16px 0 12px; }
     .hub-recherche i.fa-magnifying-glass { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #5d7684; }

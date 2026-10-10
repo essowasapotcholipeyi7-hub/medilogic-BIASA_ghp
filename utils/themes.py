@@ -272,6 +272,14 @@ a:not(.btn):not(.nav-link):not(.nav-link-top):not(.dropdown-item):not(.list-grou
 .hub {{ --hub-navy: {texte}; --hub-vert: {p}; --hub-bord: {_rgba(texte, 0.14)}; }}
 .hub-hero {{ background: linear-gradient(135deg, {_assombrir(pf, 0.85)} 0%, {pf} 55%, {p} 100%) !important; }}
 .hub-hero .btn-tableau-bord:hover {{ color: {pf} !important; }}
+/* ⭐ Bouton « Tableau de bord » et pastilles « à traiter » du bandeau d'accueil (patron,
+   2026-10-10 : invisibles selon le thème) — la règle générale des liens (a:not(.btn)...)
+   les colorait de la couleur du thème, celle-là même du bandeau. */
+.hub-hero .btn-tableau-bord, .hub-hero .btn-tableau-bord i {{ color: {pf} !important; }}
+.hub-hero .btn-tableau-bord {{ background: #FFFFFF !important; border: 1px solid #FFFFFF !important; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); }}
+.hub-hero .btn-tableau-bord:hover {{ background: rgba(255, 255, 255, 0.88) !important; }}
+.hub-a-traiter a:not(.urgent) {{ color: {_texte_sur(p)} !important; background: {_rgba(_texte_sur(p), 0.16)} !important; border-color: {_rgba(_texte_sur(p), 0.3)} !important; }}
+.hub-a-traiter a.urgent {{ color: #633806 !important; }}
 .hub-recents a, .hub-etape, .hub-domaine, .hub-resultats {{ background: {carte} !important; }}
 .hub-recents a:hover, .hub-etape a:hover {{ color: {p} !important; border-color: {p} !important; }}
 .hub-etape a {{ background: {_rgba(p, 0.06)} !important; color: {texte} !important; border-color: {_rgba(p, 0.25)} !important; }}
