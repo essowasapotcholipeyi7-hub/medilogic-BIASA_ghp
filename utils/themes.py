@@ -122,6 +122,12 @@ def _vers_hex(rgb):
     return '#%02X%02X%02X' % tuple(max(0, min(255, int(round(c)))) for c in rgb)
 
 
+def _texte_sur(hexa):
+    """Texte lisible sur un fond de cette couleur (noir sur fond clair, blanc sinon)."""
+    r, g, b = _rgb(hexa)
+    return '#0A0A0A' if (0.299 * r + 0.587 * g + 0.114 * b) > 150 else '#FFFFFF'
+
+
 def _rgba(hexa, a):
     r, g, b = _rgb(hexa)
     return f'rgba({r}, {g}, {b}, {a})'
@@ -273,7 +279,20 @@ a:not(.btn):not(.nav-link):not(.nav-link-top):not(.dropdown-item):not(.list-grou
 .hub-etape-num {{ background: {pf} !important; color: {bt} !important; }}
 .hub-etape-titre, .hub-domaine-titre, .hub-domaine a {{ color: {texte} !important; }}
 .hub-domaine a:hover {{ background: {_rgba(p, 0.08)} !important; color: {p} !important; }}
-.hub-resultats a:hover, .hub-resultats a.selectionne {{ background: {_rgba(p, 0.08)} !important; }}""")
+.hub-resultats a:hover, .hub-resultats a.selectionne {{ background: {_rgba(p, 0.08)} !important; }}
+/* ⭐ Bouton de filtre actif (ex. « Toutes » des factures) : restait bleu Bootstrap (audit des thèmes, 2026-10-10) */
+.btn-outline-primary.active, .btn-check:checked + .btn-outline-primary {{ background: {b} !important; color: {bt} !important; border-color: {b} !important; }}""")
+    if not v['mode_sombre']:
+        # ⭐ Audit des thèmes (patron, 2026-10-10 : « les autres thèmes s'appliquent-ils
+        # partout comme le Noir ? ») : ces éléments gardaient le turquoise / violet
+        # d'origine sur les thèmes clairs. En sombre, le bloc « mode sombre » ci-
+        # dessous les uniformise déjà.
+        tp = _texte_sur(p)
+        css.append(f"""/* éléments restés aux couleurs d'origine (thèmes clairs) */
+.card-header.bg-info, .modal-header.bg-info, .card.bg-info, .bg-gradient-primary {{ background: linear-gradient(135deg, {pf} 0%, {p} 100%) !important; color: {_texte_sur(pf)} !important; }}
+.card.bg-info .card-body, .card.bg-info h1, .card.bg-info h2, .card.bg-info h3, .card.bg-info h4, .card.bg-info h5, .card.bg-info small {{ color: {_texte_sur(pf)} !important; }}
+.nav-pills .nav-link.active, .nav-pills .show > .nav-link {{ background: {p} !important; color: {tp} !important; }}
+#statsTab .nav-link.active {{ background: linear-gradient(135deg, {pf}, {p}) !important; color: {_texte_sur(pf)} !important; }}""")
     if v['mode_sombre']:
         css.append(f"""/* mode sombre */
 .main-content, .card, .modal-content, .dropdown-menu, .list-group-item, .offcanvas, .accordion-item, .table, .table-light, .table > :not(caption) > * > * {{ background-color: {carte} !important; color: {texte} !important; }}
