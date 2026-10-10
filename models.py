@@ -392,6 +392,11 @@ class Employe(db.Model):
     # avant l'arrivée du logiciel ») : jours déjà pris AVANT la saisie dans le
     # logiciel, pour l'année `reprise_annee` — comptés dans le solde de congé
     # (get_solde_detail) et dans le plafond annuel des permissions de convenance.
+    # ⭐ Dispensé de pointage (patron, 2026-10-10 : « certaines personnes peuvent
+    # ne pas pointer ») : jamais compté absent par le pointage ni retenu sur la paie.
+    dispense_pointage = db.Column(db.Boolean, default=False)
+    dispense_pointage_motif = db.Column(db.String(255))
+
     reprise_annee = db.Column(db.Integer)
     reprise_conges_jours = db.Column(db.Numeric(6, 2), default=0)
     reprise_convenance_jours = db.Column(db.Numeric(6, 2), default=0)

@@ -262,11 +262,15 @@ def domaines_visibles(ctx):
     """Domaines et onglets que CET utilisateur verrait aussi dans le menu,
     sans les domaines devenus vides."""
     labo_radio = ctx.role in ('laborantin', 'radiologue')
+    role_rh = ctx.role in ('agent_rh', 'responsable_rh')   # ⭐ comptes RH cloisonnés
     resultat = []
     for domaine in DOMAINES:
         if labo_radio and not domaine.pour_labo_radio:
             continue
-        onglets = [o for o in domaine.onglets if _onglet_visible(o, ctx)]
+        if role_rh and domaine.id != 'administration':
+            continue
+        onglets = [o for o in domaine.onglets if _onglet_visible(o, ctx)
+                   and (not role_rh or o.id in ('rh', 'theme', 'mot_de_passe'))]
         if onglets:
             resultat.append((domaine, onglets))
     return resultat

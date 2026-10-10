@@ -23,6 +23,11 @@ def onglets_recherchables(role, is_admin, a_acces, onglet_cache_fn, bloq):
     circulaire avec app.py. `onglet_cache_fn` doit déjà être fixée sur la
     structure courante (ex: `lambda cle: onglet_cache(structure_id, cle)`)."""
     role_labo_radio = role in ('laborantin', 'radiologue')
+    if role in ('agent_rh', 'responsable_rh'):
+        # ⭐ comptes RH cloisonnés : la GRH et leur compte, rien d'autre
+        return [{'label': 'Ressources humaines', 'endpoint': 'rh.gestion_rh', 'kwargs': {}},
+                {'label': 'Pointage du personnel', 'endpoint': 'rh.gestion_rh', 'kwargs': {}},
+                {'label': 'Mon mot de passe', 'endpoint': 'page_changer_mot_de_passe', 'kwargs': {}}]
     resultat = []
 
     def ajouter(label, endpoint, condition, **kwargs):

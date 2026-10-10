@@ -90,8 +90,10 @@ def options_enregistrement(request, employe):
         rp_id=rp_id,
         rp_name=RP_NAME,
         user_id=str(employe.id).encode('utf-8'),
-        user_name=employe.matricule or f"employe-{employe.id}",
-        user_display_name=f"{employe.prenom or ''} {employe.nom}".strip(),
+        # ⭐ Windows affiche ce nom dans la liste « choisissez votre compte » au
+        # pointage : le nom de l'employé (avant : son matricule, illisible).
+        user_name=f"{employe.prenom or ''} {employe.nom}".strip() or employe.matricule or f"employe-{employe.id}",
+        user_display_name=f"{employe.prenom or ''} {employe.nom} ({employe.matricule})".strip(),
         authenticator_selection=AuthenticatorSelectionCriteria(
             # ⭐ Sans authenticator_attachment, le navigateur propose AUSSI
             # une "clé de sécurité" externe (USB/FIDO2) en plus du capteur
@@ -101,7 +103,7 @@ def options_enregistrement(request, employe):
             # Touch ID, capteur Android...), seule option pertinente pour
             # une borne de pointage.
             authenticator_attachment=AuthenticatorAttachment.PLATFORM,
-            resident_key=ResidentKeyRequirement.DISCOURAGED,
+            resident_key=ResidentKeyRequirement.PREFERRED,
             user_verification=UserVerificationRequirement.REQUIRED,
         ),
         exclude_credentials=exclude,
@@ -186,7 +188,8 @@ def verifier_pointage(request, structure_id, credential_json, challenge_b64):
         credential_id=_b64(raw_id), structure_id=structure_id, actif=True
     ).first()
     if not empreinte:
-        raise ValueError("Empreinte non reconnue pour cette structure.")
+        raise ValueError("Empreinte non reconnue : elle n'a pas été enregistrée sur ce poste (ou a été révoquée). "
+                         "Enregistrez-la depuis l'onglet Pointage, sur ce même poste.")
 
     verification = webauthn.verify_authentication_response(
         credential=credential_json,
@@ -214,6 +217,13 @@ def verifier_pointage(request, structure_id, credential_json, challenge_b64):
 
 class AbsenceEnCours(ValueError):
     """Pointage refusé : l'employé est en congé ou en permission ce jour-là."""
+
+
+class DejaPointe(ValueError):
+    """Rien à enregistrer : arrivée toute récente, ou arrivée et départ déjà faits."""
+
+
+DELAI_MIN_DEPART_MINUTES = 30
 
 
 LIBELLES_CONGE = {'annuel': 'congé annuel', 'maladie': 'congé maladie', 'maternite': 'congé de maternité',
@@ -322,7 +332,16 @@ def enregistrer_pointage(employe, methode='empreinte', maintenant=None):
         }
 
     if pointage.heure_depart:
-        raise ValueError("Arrivée ET départ déjà enregistrés aujourd'hui pour cet employé.")
+        raise DejaPointe(f"{employe.prenom or nom}, votre arrivée ({pointage.heure_arrivee.strftime('%H:%M')}) et votre départ "
+                         f"({pointage.heure_depart.strftime('%H:%M')}) sont déjà enregistrés aujourd'hui.")
+
+    # ⭐ Borne : la personne qui vient de pointer reste quelques secondes devant
+    # la caméra — avant, un 2e passage enregistrait aussitôt un « départ ».
+    # Le départ n'est accepté qu'après un délai (le RH garde la saisie manuelle).
+    arrivee = datetime.combine(aujourdhui, pointage.heure_arrivee)
+    if methode != 'manuel' and maintenant - arrivee < timedelta(minutes=DELAI_MIN_DEPART_MINUTES):
+        raise DejaPointe(f"{employe.prenom or nom}, votre arrivée est déjà enregistrée à "
+                         f"{pointage.heure_arrivee.strftime('%H:%M')}. Le départ se pointe en partant.")
 
     # Départ
     pointage.heure_depart = heure_actuelle
@@ -398,7 +417,8 @@ def resume_periode(structure_id, date_debut, date_fin, employe_id=None):
         jours_retard = sum(1 for p in pointages if p.statut_arrivee == 'retard')
         non_pointes = [j for j in passes if j not in par_date]
         jours_justifies = sum(1 for j in non_pointes if justifie(j))
-        jours_absents = len(non_pointes) - jours_justifies
+        # ⭐ dispensé de pointage : ses jours sans pointage ne sont jamais des absences
+        jours_absents = 0 if emp.dispense_pointage else len(non_pointes) - jours_justifies
         minutes_totales = sum(p.duree_travaillee_minutes or 0 for p in pointages)
 
         resultats.append({
@@ -409,6 +429,7 @@ def resume_periode(structure_id, date_debut, date_fin, employe_id=None):
             'jours_retard': jours_retard,
             'jours_absents': jours_absents,
             'jours_justifies': jours_justifies,
+            'dispense': bool(emp.dispense_pointage),
             'heures_travaillees': round(minutes_totales / 60, 1),
         })
     return resultats
@@ -436,8 +457,20 @@ def _valider_descripteur(descripteur):
 
 
 def enregistrer_visage(employe, descripteur, libelle=None):
-    """Enregistre un nouveau visage de référence pour un employé."""
+    """Enregistre un nouveau visage de référence pour un employé. ⭐ Refuse un
+    visage qui ressemble trop à celui d'un AUTRE employé (mauvaise personne
+    devant la caméra, ou photo de mauvaise qualité)."""
+    from utils.visage import SEUIL_DOUBLON_ENREGISTREMENT
     _valider_descripteur(descripteur)
+    autres = (VisageEmploye.query.join(Employe, Employe.id == VisageEmploye.employe_id)
+              .filter(VisageEmploye.structure_id == employe.structure_id, VisageEmploye.actif == True,  # noqa: E712
+                      VisageEmploye.employe_id != employe.id,
+                      Employe.statut.in_(Employe.STATUTS_EN_SERVICE)).all())
+    for v in autres:
+        if _distance_euclidienne(descripteur, v.descripteur) < SEUIL_DOUBLON_ENREGISTREMENT:
+            autre = Employe.query.get(v.employe_id)
+            raise ValueError(f"Ce visage ressemble trop à celui déjà enregistré pour {autre.prenom or ''} {autre.nom} : "
+                             "vérifiez que c'est bien la bonne personne devant la caméra, puis réessayez.")
     visage = VisageEmploye(
         structure_id=employe.structure_id,
         employe_id=employe.id,
@@ -467,17 +500,19 @@ def identifier_par_visage(structure_id, descripteur):
     if not visages:
         raise ValueError("Aucun visage enregistré pour cette structure.")
 
-    meilleur, meilleure_distance = None, None
-    for v in visages:
-        d = _distance_euclidienne(descripteur, v.descripteur)
-        if meilleure_distance is None or d < meilleure_distance:
-            meilleure_distance, meilleur = d, v
+    from utils.visage import choisir_employe
+    distances = [(v, _distance_euclidienne(descripteur, v.descripteur)) for v in visages]
+    employe_id, meilleure_distance, raison = choisir_employe([(v.employe_id, d) for v, d in distances])
+    if raison == 'ambigu':
+        raise ValueError("Visage pas assez net pour être sûr de la personne : placez-vous bien face à la caméra, dans la lumière, et réessayez.")
+    if employe_id is None:
+        raise ValueError("Visage non reconnu. Placez-vous face à la caméra et réessayez — "
+                         "si cela persiste, faites enregistrer votre visage par le service RH.")
 
-    if meilleur is None or meilleure_distance > SEUIL_DISTANCE_VISAGE:
-        raise ValueError("Visage non reconnu. Rapprochez-vous de la caméra et réessayez.")
-
-    meilleur.derniere_utilisation = datetime.utcnow()
-    employe = Employe.query.get(meilleur.employe_id)
+    for v, d in distances:
+        if v.employe_id == employe_id and d == meilleure_distance:
+            v.derniere_utilisation = datetime.utcnow()
+    employe = Employe.query.get(employe_id)
     resultat = enregistrer_pointage(employe, methode='visage')
     db.session.commit()
     resultat['employe_nom'] = f"{employe.prenom or ''} {employe.nom}".strip()

@@ -15,7 +15,7 @@
             overflow: hidden;
         }
         .borne {
-            width: 100%; max-width: 520px; padding: 20px;
+            width: 100%; max-width: 680px; padding: 20px;
             text-align: center; color: white;
         }
         .structure-nom { font-size: 18px; opacity: .85; margin-bottom: 4px; }
@@ -52,10 +52,21 @@
         .btn-pointer:hover:not(:disabled) { transform: translateY(-2px); }
         .btn-pointer:disabled { opacity: .6; cursor: wait; }
 
-        #videoVisage {
-            width: 100%; max-width: 320px; border-radius: 14px;
-            transform: scaleX(-1); background: rgba(0,0,0,0.2);
+        /* ⭐ Grand cadre caméra (avant : 320 px) avec guide ovale et contour du visage. */
+        .cadre-visage {
+            position: relative; width: 100%; max-width: 620px; margin: 0 auto;
+            aspect-ratio: 4 / 3; border-radius: 18px; overflow: hidden; background: rgba(0,0,0,0.3);
         }
+        .cadre-visage video, .cadre-visage canvas {
+            position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);
+        }
+        .cadre-visage .guide {
+            position: absolute; left: 50%; top: 50%; width: 44%; height: 72%; transform: translate(-50%, -50%);
+            border: 3px dashed rgba(255,255,255,0.6); border-radius: 50%; pointer-events: none;
+        }
+        .consigne-visage { font-size: 20px; font-weight: 700; margin-top: 12px; min-height: 28px; }
+        .carte.mode-visage { padding: 18px; }
+        @media (max-height: 760px) { .horloge { font-size: 34px; } .date-jour { margin-bottom: 10px; } }
         .pastille-scan {
             font-size: 13px; opacity: .8; margin-top: 10px;
             display: flex; align-items: center; justify-content: center; gap: 8px;
@@ -69,6 +80,7 @@
         .resultat { margin-top: 20px; font-size: 17px; min-height: 26px; }
         .resultat.succes { color: #b6ffcf; }
         .resultat.erreur { color: #ffd0d0; }
+        .resultat.deja { color: #e8f4ff; }
         /* ⭐ Employé en congé / permission : message bien visible, rien n'est pointé. */
         .resultat.absence { color: #3b2a00; background: #ffd666; border-radius: 12px; padding: 14px 16px;
                             font-size: 19px; font-weight: 600; line-height: 1.45; text-align: left; }
@@ -106,7 +118,12 @@
 
             <!-- Mode visage -->
             <div id="panneauVisage" hidden>
-                <video id="videoVisage" autoplay muted playsinline></video>
+                <div class="cadre-visage">
+                    <video id="videoVisage" autoplay muted playsinline></video>
+                    <canvas id="canvasVisage"></canvas>
+                    <div class="guide"></div>
+                </div>
+                <div class="consigne-visage" id="consigneVisage"></div>
                 <div class="pastille-scan" id="pastilleScan"><span class="point"></span> Recherche d'un visage...</div>
             </div>
 
@@ -119,6 +136,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@simplewebauthn/browser@10.0.0/dist/bundle/index.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <script src="{{ url_for('static', filename='js/pointage_biometrie.js') }}"></script>
     <script>
         function majHorloge() {
             const maintenant = new Date();
@@ -142,6 +160,7 @@
             document.getElementById('btnModeVisage').classList.toggle('actif', mode === 'visage');
             document.getElementById('panneauEmpreinte').hidden = mode !== 'empreinte';
             document.getElementById('panneauVisage').hidden = mode !== 'visage';
+            document.querySelector('.carte').classList.toggle('mode-visage', mode === 'visage');
             document.getElementById('resultat').className = 'resultat';
             document.getElementById('resultat').textContent = '';
 
@@ -172,6 +191,7 @@
 
             try {
                 const rOpt = await fetch('/rh/api/pointage/webauthn/options', {method: 'POST'});
+                if (rOpt.status === 401) throw {message: "La borne n'est plus connectée : reconnectez-vous au logiciel sur ce poste."};
                 const dOpt = await rOpt.json();
                 if (!dOpt.success) {
                     resultat.className = 'resultat erreur';
@@ -190,7 +210,7 @@
             } catch (err) {
                 console.error(err);
                 resultat.className = 'resultat erreur';
-                resultat.textContent = "Échec : " + (err.message || err);
+                resultat.textContent = err && err.name ? PointageBiometrie.messageErreurEmpreinte(err) : ("Échec : " + (err.message || err));
             } finally {
                 btn.disabled = false;
             }
@@ -199,92 +219,79 @@
         // ============================================================
         // MODE VISAGE (webcam + face-api.js, détection automatique)
         // ============================================================
-        const MODELES_VISAGE_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
-        let modelesVisageCharges = false;
         let fluxCameraVisage = null;
         let boucleVisageActive = false;
-        let enCooldownVisage = false;
 
         async function demarrerModeVisage() {
             const pastille = document.getElementById('pastilleScan');
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                pastille.textContent = "Caméra non disponible sur ce poste/navigateur.";
+                pastille.textContent = "Caméra non disponible sur ce poste/navigateur (nécessite https ou http://localhost).";
                 return;
             }
-
-            pastille.innerHTML = '<span class="point"></span> Chargement des modèles...';
-            if (!modelesVisageCharges) {
-                try {
-                    await Promise.all([
-                        faceapi.nets.tinyFaceDetector.loadFromUri(MODELES_VISAGE_URL),
-                        faceapi.nets.faceLandmark68Net.loadFromUri(MODELES_VISAGE_URL),
-                        faceapi.nets.faceRecognitionNet.loadFromUri(MODELES_VISAGE_URL),
-                    ]);
-                    modelesVisageCharges = true;
-                } catch (err) {
-                    pastille.textContent = "Échec du chargement des modèles (connexion internet ?).";
-                    return;
-                }
+            pastille.innerHTML = '<span class="point"></span> Chargement de la reconnaissance faciale...';
+            if (!await PointageBiometrie.chargerModeles()) {
+                pastille.textContent = "Échec du chargement de la reconnaissance faciale (connexion internet ?).";
+                return;
             }
-
             try {
-                fluxCameraVisage = await navigator.mediaDevices.getUserMedia({video: {width: 320, height: 240}});
-                document.getElementById('videoVisage').srcObject = fluxCameraVisage;
-                pastille.innerHTML = '<span class="point"></span> Recherche d\'un visage...';
+                fluxCameraVisage = await PointageBiometrie.ouvrirCamera(document.getElementById('videoVisage'));
             } catch (err) {
-                pastille.textContent = "Accès caméra refusé ou indisponible.";
+                pastille.textContent = "Accès à la caméra refusé ou indisponible : autorisez la caméra pour ce site.";
                 return;
             }
-
+            if (modeActuel !== 'visage') { arreterModeVisage(); return; }
+            pastille.innerHTML = '<span class="point"></span> Caméra prête';
             boucleVisageActive = true;
             boucleDetectionVisage();
         }
 
         function arreterModeVisage() {
             boucleVisageActive = false;
-            if (fluxCameraVisage) {
-                fluxCameraVisage.getTracks().forEach(t => t.stop());
-                fluxCameraVisage = null;
-            }
+            PointageBiometrie.fermerCamera(fluxCameraVisage);
+            fluxCameraVisage = null;
+            PointageBiometrie.dessiner(document.getElementById('canvasVisage'), null);
         }
+
+        const pause = ms => new Promise(r => setTimeout(r, ms));
 
         async function boucleDetectionVisage() {
             const video = document.getElementById('videoVisage');
-            const pastille = document.getElementById('pastilleScan');
-
+            const canvas = document.getElementById('canvasVisage');
+            const consigne = document.getElementById('consigneVisage');
+            let okConsecutifs = 0;
             while (boucleVisageActive) {
-                await new Promise(r => setTimeout(r, 1200));
-                if (!boucleVisageActive || enCooldownVisage) continue;
+                let r;
+                try { r = await PointageBiometrie.analyser(video); } catch (e) { r = {etat: 'aucun'}; }
+                if (!boucleVisageActive) break;
+                PointageBiometrie.dessiner(canvas, r);
+                consigne.textContent = PointageBiometrie.CONSIGNES[r.etat];
+                okConsecutifs = r.etat === 'ok' ? okConsecutifs + 1 : 0;
+                if (okConsecutifs < 2) { await pause(220); continue; }
 
-                let detection;
-                try {
-                    detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
-                        .withFaceLandmarks().withFaceDescriptor();
-                } catch (err) {
+                // visage bien placé deux fois de suite : 3 images moyennées, puis vérification
+                okConsecutifs = 0;
+                consigne.textContent = 'Vérification…';
+                const ech = await PointageBiometrie.echantillonner(video, 3, rr => PointageBiometrie.dessiner(canvas, rr));
+                if (!boucleVisageActive) break;
+                if (ech.erreur) {
+                    afficherResultatPointage({success: false, message: ech.erreur});
+                    await pause(1800);
                     continue;
                 }
-                if (!detection || !boucleVisageActive) continue;
-
-                pastille.innerHTML = '<span class="point"></span> Visage détecté, vérification...';
-                enCooldownVisage = true;
-
                 try {
-                    const r = await fetch('/rh/api/pointage/facial/verifier', {
+                    const rep = await fetch('/rh/api/pointage/facial/verifier', {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({descripteur: Array.from(detection.descriptor)})
+                        body: JSON.stringify({descripteur: ech.descripteur})
                     });
-                    const d = await r.json();
-                    afficherResultatPointage(d);
+                    if (rep.status === 401) afficherResultatPointage({success: false, message: "La borne n'est plus connectée : reconnectez-vous au logiciel sur ce poste."});
+                    else afficherResultatPointage(await rep.json());
                 } catch (err) {
-                    document.getElementById('resultat').className = 'resultat erreur';
-                    document.getElementById('resultat').textContent = 'Erreur réseau.';
+                    afficherResultatPointage({success: false, message: 'Erreur réseau : vérifiez la connexion.'});
                 }
-
-                // Pause de quelques secondes pour laisser le temps de lire le
-                // résultat et éviter de re-pointer la même personne en boucle.
-                await new Promise(r => setTimeout(r, 4000));
-                enCooldownVisage = false;
-                if (boucleVisageActive) pastille.innerHTML = '<span class="point"></span> Recherche d\'un visage...';
+                // le temps de lire le résultat et de laisser la place à la personne suivante
+                PointageBiometrie.dessiner(canvas, null);
+                consigne.textContent = 'Personne suivante dans un instant…';
+                await pause(4500);
             }
         }
 
@@ -303,6 +310,10 @@
                     resultat.innerHTML = `<i class="fas fa-circle-check"></i> Au revoir ${d.employe_nom} — départ ${d.heure}`;
                 }
                 chargerListeJour();
+            } else if (reponse.deja) {
+                resultat.className = 'resultat deja';
+                resultat.innerHTML = '<i class="fas fa-circle-info"></i> ';
+                resultat.appendChild(document.createTextNode(reponse.message));
             } else if (reponse.absence) {
                 // ⭐ En congé / permission : pas de pointage, passage signalé à la RH.
                 resultat.className = 'resultat absence';

@@ -56,6 +56,32 @@ def _verifier_role_rh():
             return jsonify({'error': 'Accès non autorisé pour votre rôle'}), 403
         flash("Accès non autorisé pour votre rôle.", 'danger')
         return redirect(url_for('dashboard'))
+    # ⭐ Agent RH : saisie seulement — les décisions restent au responsable RH
+    # (et à l'administrateur).
+    if session.get('role') == 'agent_rh' and (request.endpoint or '').split('.')[-1] in ENDPOINTS_RESPONSABLE_RH:
+        message = "Réservé au responsable RH : votre compte d'agent RH permet la saisie, pas cette décision."
+        if chemin_api or request.method != 'GET':
+            return jsonify({'success': False, 'error': message, 'message': message}), 403
+        flash(message, 'warning')
+        return redirect(url_for('rh.gestion_rh'))
+
+
+# Décisions et données sensibles : interdites à l'agent RH (voir utils/permissions.ROLES_RH).
+ENDPOINTS_RESPONSABLE_RH = {
+    # dossier de l'employé : départ, suppression, évaluations, sanctions
+    'api_supprimer_employe', 'api_enregistrer_depart', 'api_reintegrer_employe',
+    'api_ajouter_evaluation', 'api_supprimer_evaluation', 'api_ajouter_sanction', 'api_supprimer_sanction',
+    # décisions sur les congés et permissions
+    'conge_changer_statut', 'permission_changer_statut', 'permission_avis_superieur',
+    # réglages
+    'api_maj_regles_absences', 'api_ajouter_service', 'api_modifier_service', 'api_supprimer_service',
+    'api_maj_parametrage_pointage', 'api_dispense_pointage',
+    'api_supprimer_empreinte', 'api_supprimer_visage',
+    # paie et déclarations sociales
+    'page_paie', 'page_parametres_paie', 'api_get_parametres_paie', 'api_maj_parametres_paie',
+    'api_liste_paies', 'api_generer_paie', 'api_generer_paie_masse', 'api_detail_paie', 'api_payer_paie',
+    'bulletin_paie', 'page_declarations', 'api_declarations_summary', 'declaration_print',
+}
 
 
 # ============================================================
@@ -218,6 +244,35 @@ def verifier_solde_avec_anticipation(employe_id, jours_demandes, annee_demande):
 def gestion_rh(structure_id):
     """Page principale de gestion RH"""
     return render_template('rh/gestion_rh.html')
+
+
+# ⭐ Dispensés de pointage (patron, 2026-10-10) : jamais comptés absents.
+@rh_bp.route('/api/pointage/dispenses', methods=['GET'])
+@require_structure
+def api_liste_dispenses_pointage(structure_id):
+    employes = Employe.query.filter(Employe.structure_id == structure_id,
+                                    Employe.statut.in_(Employe.STATUTS_EN_SERVICE)).order_by(Employe.nom).all()
+    return jsonify({'success': True, 'employes': [{
+        'id': e.id, 'nom': f"{e.prenom or ''} {e.nom}".strip(), 'poste': e.poste or '',
+        'dispense': bool(e.dispense_pointage), 'motif': e.dispense_pointage_motif or '',
+    } for e in employes]})
+
+
+@rh_bp.route('/api/employes/<int:id>/dispense-pointage', methods=['PUT'])
+@require_structure
+def api_dispense_pointage(structure_id, id):
+    employe = Employe.query.filter_by(id=id, structure_id=structure_id).first()
+    if not employe:
+        return jsonify({'success': False, 'error': 'Employé introuvable'}), 404
+    data = request.json or {}
+    dispense = bool(data.get('dispense'))
+    motif = (data.get('motif') or '').strip()[:255]
+    if dispense and not motif:
+        return jsonify({'success': False, 'error': 'Indiquez le motif de la dispense (ex. : directeur, travail hors site).'}), 400
+    employe.dispense_pointage = dispense
+    employe.dispense_pointage_motif = motif if dispense else None
+    db.session.commit()
+    return jsonify({'success': True})
 
 
 @rh_bp.route('/employes')
@@ -3403,8 +3458,13 @@ def api_liste_pointages(structure_id):
                                       Permission.type_permission != 'heures', Permission.date_debut <= jour,
                                       Permission.date_fin >= jour).all()} if ids_tous else set()
     sans_pointage, en_absence = [], []
+    dispenses = []
     for e in tous:
         if e.id in ids_pointes or (e.date_embauche and e.date_embauche > jour):
+            continue
+        if e.dispense_pointage:
+            dispenses.append({'employe_id': e.id, 'employe_nom': f"{e.prenom or ''} {e.nom}".strip(),
+                              'motif': e.dispense_pointage_motif or ''})
             continue
         absence = absence_du_jour(e, jour) if e.id in peut_etre_absents else None
         nom = f"{e.prenom or ''} {e.nom}".strip()
@@ -3435,6 +3495,7 @@ def api_liste_pointages(structure_id):
         } for p in pointages],
         'absents': [{'employe_id': e.id, 'employe_nom': f"{e.prenom or ''} {e.nom}".strip()} for e in sans_pointage],
         'en_absence': en_absence,
+        'dispenses': dispenses,
         'tentatives': [_tentative_json(t) for t in tentatives],
     })
 
@@ -3553,8 +3614,10 @@ def api_options_enregistrement_empreinte(structure_id):
         return jsonify({'success': False, 'message': 'Employé introuvable'}), 404
 
     options_json, challenge = options_enregistrement(request, employe)
-    session['pointage_challenge'] = challenge
-    session['pointage_employe_id'] = employe.id
+    # ⭐ Clés propres à l'enregistrement : une borne ouverte dans le même navigateur
+    # écrasait le défi en cours (« Session expirée » à l'enregistrement).
+    session['empreinte_enrolement_challenge'] = challenge
+    session['empreinte_enrolement_employe_id'] = employe.id
     return jsonify({'success': True, 'options': json.loads(options_json)})
 
 
@@ -3564,8 +3627,8 @@ def api_verifier_enregistrement_empreinte(structure_id):
     from services.pointage_service import verifier_enregistrement
 
     data = request.get_json(force=True) or {}
-    challenge = session.pop('pointage_challenge', None)
-    employe_id = session.pop('pointage_employe_id', None)
+    challenge = session.pop('empreinte_enrolement_challenge', None)
+    employe_id = session.pop('empreinte_enrolement_employe_id', None)
     if not challenge or not employe_id:
         return jsonify({'success': False, 'message': 'Session expirée, recommencez.'}), 400
 
@@ -3600,7 +3663,7 @@ def api_options_pointage(structure_id):
 @rh_bp.route('/api/pointage/webauthn/verifier', methods=['POST'])
 @require_structure
 def api_verifier_pointage(structure_id):
-    from services.pointage_service import verifier_pointage, AbsenceEnCours
+    from services.pointage_service import verifier_pointage, AbsenceEnCours, DejaPointe
 
     data = request.get_json(force=True) or {}
     challenge = session.pop('pointage_challenge', None)
@@ -3612,7 +3675,8 @@ def api_verifier_pointage(structure_id):
         return jsonify({'success': True, 'data': resultat})
     except ValueError as e:
         db.session.rollback()
-        return jsonify({'success': False, 'message': str(e), 'absence': isinstance(e, AbsenceEnCours)}), 400
+        return jsonify({'success': False, 'message': str(e), 'absence': isinstance(e, AbsenceEnCours),
+                        'deja': isinstance(e, DejaPointe)}), 400
     except Exception as e:
         db.session.rollback()
         traceback.print_exc()
@@ -3675,7 +3739,7 @@ def api_enregistrer_visage(structure_id):
 @rh_bp.route('/api/pointage/facial/verifier', methods=['POST'])
 @require_structure
 def api_verifier_pointage_facial(structure_id):
-    from services.pointage_service import identifier_par_visage, AbsenceEnCours
+    from services.pointage_service import identifier_par_visage, AbsenceEnCours, DejaPointe
 
     data = request.get_json(force=True) or {}
     try:
@@ -3683,7 +3747,8 @@ def api_verifier_pointage_facial(structure_id):
         return jsonify({'success': True, 'data': resultat})
     except ValueError as e:
         db.session.rollback()
-        return jsonify({'success': False, 'message': str(e), 'absence': isinstance(e, AbsenceEnCours)}), 400
+        return jsonify({'success': False, 'message': str(e), 'absence': isinstance(e, AbsenceEnCours),
+                        'deja': isinstance(e, DejaPointe)}), 400
     except Exception as e:
         db.session.rollback()
         traceback.print_exc()

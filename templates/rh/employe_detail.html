@@ -96,6 +96,20 @@
 {% endblock %}
 
 {% block content %}
+{% if est_agent_rh %}
+<style>
+/* ⭐ Compte agent RH : saisie seulement — les boutons de décision (réservés au
+   responsable RH, refusés aussi par le serveur) ne sont pas affichés. */
+[onclick^="changerStatutConge"], [onclick^="changerStatutPermission"], [onclick^="donnerAvisSuperieur"],
+[onclick^="reintegrerEmploye"], [onclick^="ouvrirDepart"], [onclick^="supprimerEmploye"],
+[onclick^="ouvrirAjoutService"], [onclick^="modifierService"], [onclick^="supprimerService"],
+[onclick^="supprimerEmpreinte"], [onclick^="supprimerVisage"], [onclick^="sauvegarderParametragePointage"],
+[onclick^="dispenserPointage"], [onclick^="retirerDispense"],
+[onclick^="ouvrirAjoutEvaluation"], [onclick^="supprimerEvaluation"],
+[onclick^="ouvrirAjoutSanction"], [onclick^="supprimerSanction"], .rh-resp { display: none !important; }
+</style>
+{% endif %}
+
         <div class="card shadow-sm">
             <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">

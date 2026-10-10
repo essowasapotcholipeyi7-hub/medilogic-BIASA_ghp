@@ -179,6 +179,40 @@ def _absorber_reveil_neon():
 # les before_request des blueprints.
 app.jinja_env.globals['a_acces'] = a_acces
 
+
+# ⭐ Rôles RH cloisonnés (patron, 2026-10-10 : « ces gens n'ont pas besoin de
+# voir les patients, leurs rendez-vous etc. ils ont juste besoin de voir ce
+# qui les concerne ») — liste BLANCHE : la GRH, plus le strict nécessaire
+# commun (connexion, mot de passe, thème, FAQ, guide, messagerie interne).
+# Tout le reste renvoie vers la GRH (page) ou 403 (appel /api/).
+CHEMINS_AUTORISES_ROLES_RH = (
+    '/rh/', '/static/', '/logout', '/faq', '/api/faq/', '/guide',
+    '/parametres/mot-de-passe', '/api/parametres/mot-de-passe',
+    '/parametres/theme', '/api/theme', '/api/structure/', '/api/webauthn/',
+    '/api/recherche-globale', '/chat/',
+)
+
+
+@app.before_request
+def _cloisonner_roles_rh():
+    from utils.permissions import est_role_rh
+    if not est_role_rh() or request.endpoint in (None, 'static', 'health'):
+        return None
+    chemin = request.path
+    if chemin in ('/', '/rh') or chemin.startswith(CHEMINS_AUTORISES_ROLES_RH):
+        return None
+    if chemin.startswith('/api/') or 'application/json' in request.headers.get('Accept', ''):
+        return jsonify({'success': False, 'error': 'Réservé aux autres services : votre compte donne accès à la GRH seulement.'}), 403
+    if request.endpoint not in ('page_accueil', 'dashboard'):
+        flash("Votre compte donne accès à la gestion des ressources humaines seulement.", 'warning')
+    return redirect(url_for('rh.gestion_rh'))
+
+
+@app.context_processor
+def injecter_role_rh():
+    from utils.permissions import est_role_rh
+    return {'role_rh_seul': est_role_rh(), 'est_agent_rh': session.get('role') == 'agent_rh'}
+
 # ⭐ abonnement()/onglet_cache() : mêmes globals Jinja, pour le verrou
 # d'abonnement mensuel et le masquage d'onglets par le super-admin — voir
 # services/abonnement_service.py. `abonnement()` est mémoïsé sur flask.g
@@ -793,6 +827,7 @@ FAQ_ROLES_LABELS = {
     'paramedical': 'Paramédical', 'pharmacien': 'Pharmacien', 'laborantin': 'Laborantin',
     'radiologue': 'Radiologue', 'gestionnaire': 'Gestionnaire',
     'sous_comptable': 'Sous-comptable', 'comptable': 'Comptable',
+    'agent_rh': 'Agent RH', 'responsable_rh': 'Responsable RH',
 }
 
 
@@ -3433,6 +3468,9 @@ def api_recherche_globale():
                 })
     except Exception as e:
         print(f"❌ Recherche globale (onglets): {e}")
+    from utils.permissions import est_role_rh
+    if est_role_rh():
+        return jsonify(resultats)   # ⭐ comptes RH : onglets seulement, jamais de patients
 
     try:
         # ⭐ nom/prenom/telephone sont chiffrés en base (voir crypto_helper.py)
@@ -9331,7 +9369,7 @@ GUIDE_ACCES_SECTIONS = {
     'proformas': ['caissier', 'secretaire', 'gestionnaire'],
     'historique': ['caissier', 'pharmacien', 'gestionnaire', 'sous_comptable', 'comptable'],
     'statistiques': ['gestionnaire', 'sous_comptable', 'comptable'],
-    'rh': [],
+    'rh': ['agent_rh', 'responsable_rh'],
     'comptabilite': ['sous_comptable', 'comptable'],
     'journal': ['gestionnaire', 'sous_comptable', 'comptable'],
     'administration': [],
@@ -9342,7 +9380,8 @@ GUIDE_ROLES_LABELS = {
     'caissier': 'Caissier', 'secretaire': 'Secrétaire', 'medecin': 'Médecin',
     'paramedical': 'Paramédical', 'pharmacien': 'Pharmacien', 'laborantin': 'Laborantin',
     'radiologue': 'Radiologue', 'gestionnaire': 'Gestionnaire',
-    'sous_comptable': 'Sous-comptable', 'comptable': 'Comptable', 'admin': 'Administrateur',
+    'sous_comptable': 'Sous-comptable', 'comptable': 'Comptable',
+    'agent_rh': 'Agent RH', 'responsable_rh': 'Responsable RH', 'admin': 'Administrateur',
 }
 
 

@@ -53,7 +53,7 @@ ROLES_PAR_DEFAUT = {
     'statistiques':       {'admin', 'comptable', 'sous_comptable', 'gestionnaire'},
     'annulations':        {'admin', 'comptable', 'sous_comptable', 'gestionnaire'},
     'journal':            {'admin', 'comptable', 'sous_comptable', 'gestionnaire'},
-    'rh':                 {'admin', 'comptable', 'gestionnaire'},
+    'rh':                 {'admin', 'comptable', 'gestionnaire', 'agent_rh', 'responsable_rh'},
     # ⭐ Circuit Laboratoire/Radiologie — cloisonnement strict demandé :
     # le laborantin ne voit jamais une demande de radiologie et
     # inversement (médecin/admin gardent les deux, ce sont eux qui
@@ -70,6 +70,22 @@ ROLES_PAR_DEFAUT = {
     'entente_prealable':    {'admin', 'secretaire', 'caissier', 'medecin', 'gestionnaire'},
     'tpc':                  {'admin', 'secretaire', 'caissier', 'medecin', 'gestionnaire'},
 }
+
+
+# ⭐ Rôles de la GRH (patron, 2026-10-10 : « agent RH, responsable RH et
+# l'administrateur, tout comme au niveau de la comptabilité ») : comptes
+# cloisonnés qui ne voient QUE la gestion des ressources humaines — ni
+# patients, ni rendez-vous, ni caisse (garde serveur : app.py
+# _cloisonner_roles_rh ; menus : base.html / sidebar_menu.html). L'agent RH
+# saisit (employés, demandes, pointage) ; le responsable RH décide en plus
+# (approbations, paie, départs, sanctions, réglages du pointage) — voir
+# routes/rh.py ENDPOINTS_RESPONSABLE_RH.
+ROLES_RH = ('agent_rh', 'responsable_rh')
+LIBELLES_ROLES_RH = {'agent_rh': 'Agent RH', 'responsable_rh': 'Responsable RH'}
+
+
+def est_role_rh(role=None):
+    return (role if role is not None else session.get('role')) in ROLES_RH
 
 
 def a_acces(permission_cle):

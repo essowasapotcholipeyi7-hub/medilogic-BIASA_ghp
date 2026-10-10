@@ -203,6 +203,20 @@
 {% endblock %}
 
 {% block content %}
+{% if est_agent_rh %}
+<style>
+/* ⭐ Compte agent RH : saisie seulement — les boutons de décision (réservés au
+   responsable RH, refusés aussi par le serveur) ne sont pas affichés. */
+[onclick^="changerStatutConge"], [onclick^="changerStatutPermission"], [onclick^="donnerAvisSuperieur"],
+[onclick^="reintegrerEmploye"], [onclick^="ouvrirDepart"], [onclick^="supprimerEmploye"],
+[onclick^="ouvrirAjoutService"], [onclick^="modifierService"], [onclick^="supprimerService"],
+[onclick^="supprimerEmpreinte"], [onclick^="supprimerVisage"], [onclick^="sauvegarderParametragePointage"],
+[onclick^="dispenserPointage"], [onclick^="retirerDispense"],
+[onclick^="ouvrirAjoutEvaluation"], [onclick^="supprimerEvaluation"],
+[onclick^="ouvrirAjoutSanction"], [onclick^="supprimerSanction"], .rh-resp { display: none !important; }
+</style>
+{% endif %}
+
 
             <!-- ⭐ Patron : "le tableau est retracté vers la gauche, corrige
                  pour que ça cadre bien avec le contenant" — cette carte était
@@ -290,6 +304,7 @@
                                 <i class="fas fa-sitemap me-1"></i> Organigramme
                             </a>
                         </li>
+                        {% if not est_agent_rh %}
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('rh.page_paie') }}">
                                 <i class="fas fa-money-check-dollar me-1"></i> Paie
@@ -300,7 +315,15 @@
                                 <i class="fas fa-file-invoice me-1"></i> Déclarations
                             </a>
                         </li>
+                        {% endif %}
                     </ul>
+                    {% if est_agent_rh %}
+                    <div class="alert alert-light border small py-2 mb-3">
+                        <i class="fas fa-user-pen me-1"></i>Compte <strong>agent RH</strong> : vous saisissez les employés, les demandes
+                        de congé et de permission et le pointage ; les décisions (approbations, départs, paie, réglages)
+                        reviennent au responsable RH.
+                    </div>
+                    {% endif %}
 
                     <!-- ========================================= -->
                     <!-- CONTENU DES ONGLETS                      -->
@@ -537,6 +560,27 @@
                                 </div>
                             </div>
 
+                            <!-- ⭐ Patron (2026-10-10) : certaines personnes peuvent ne pas pointer
+                                 (direction, travail hors site...) — jamais comptées absentes. -->
+                            <div class="row g-3 mb-3">
+                                <div class="col-12">
+                                    <div class="card border-0 shadow-sm">
+                                        <div class="card-header bg-light">
+                                            <i class="fas fa-user-shield me-2"></i>Dispensés de pointage
+                                            <small class="text-muted ms-1">— jamais comptés absents, ni retenus sur la paie pour absence</small>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="input-group input-group-sm mb-2 rh-resp">
+                                                <select class="form-select" id="selectDispense" style="max-width:280px;"></select>
+                                                <input type="text" class="form-control" id="motifDispense" placeholder="Motif (ex. : directeur, travail hors site, médecin vacataire)">
+                                                <button class="btn btn-outline-primary" onclick="dispenserPointage()"><i class="fas fa-user-shield me-1"></i>Dispenser</button>
+                                            </div>
+                                            <div id="listeDispenses" class="small"><span class="text-muted">Chargement...</span></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="row g-3 mb-4">
                                 <!-- Empreintes enregistrées -->
                                 <div class="col-lg-6">
@@ -551,6 +595,19 @@
                                                     <i class="fas fa-fingerprint me-1"></i> Enregistrer une empreinte
                                                 </button>
                                             </div>
+                                            <!-- ⭐ Fonctionnement réel du capteur d'un PC Windows (Windows Hello) -->
+                                            <details class="small text-muted mb-2">
+                                                <summary>Comment ça marche sur un PC Windows ?</summary>
+                                                <ol class="mb-0 ps-3 mt-1">
+                                                    <li>Sur le PC de la borne, ajoutez le doigt de l'employé dans Windows :
+                                                        <em>Paramètres › Comptes › Options de connexion › Empreinte digitale</em>
+                                                        (Windows accepte jusqu'à 10 doigts par compte).</li>
+                                                    <li>Puis enregistrez-le ici, <strong>sur ce même PC</strong> et à la même adresse que la borne.</li>
+                                                    <li>Au pointage, Windows affiche la liste des noms : l'employé choisit le sien puis pose le doigt.</li>
+                                                </ol>
+                                                Windows vérifie que le doigt fait partie des doigts enregistrés sur le PC, mais c'est le nom choisi qui
+                                                identifie la personne : pour une identification stricte, préférez le pointage par visage.
+                                            </details>
                                             <div id="listeEmpreintes" style="max-height:220px; overflow-y:auto;">
                                                 <p class="text-muted small">Chargement...</p>
                                             </div>
@@ -572,7 +629,13 @@
                                                 </button>
                                             </div>
                                             <div id="zoneCaptureVisage" style="display:none;" class="text-center mb-2 p-2 bg-light rounded">
-                                                <video id="videoEnrolementVisage" autoplay muted playsinline style="width:100%; max-width:280px; border-radius:8px; transform:scaleX(-1);"></video>
+                                                <!-- ⭐ Grand cadre (avant : 280 px) : guide ovale + contour du visage en direct -->
+                                                <div style="position:relative; width:100%; max-width:520px; margin:0 auto; aspect-ratio:4/3; border-radius:12px; overflow:hidden; background:#111;">
+                                                    <video id="videoEnrolementVisage" autoplay muted playsinline style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1);"></video>
+                                                    <canvas id="canvasEnrolementVisage" style="position:absolute; inset:0; width:100%; height:100%; transform:scaleX(-1);"></canvas>
+                                                    <div style="position:absolute; left:50%; top:50%; width:44%; height:72%; transform:translate(-50%,-50%); border:3px dashed rgba(255,255,255,.6); border-radius:50%; pointer-events:none;"></div>
+                                                </div>
+                                                <div class="fw-semibold mt-2" id="consigneEnrolementVisage"></div>
                                                 <div class="mt-2">
                                                     <button class="btn btn-sm btn-primary" onclick="capturerVisage()"><i class="fas fa-check"></i> Capturer</button>
                                                     <button class="btn btn-sm btn-outline-secondary" onclick="fermerCaptureVisage()">Annuler</button>
@@ -3504,7 +3567,7 @@ async function enregistrerEmpreinte() {
         }
     } catch (err) {
         console.error(err);
-        await afficherMessage("Échec de l'enregistrement de l'empreinte : " + (err.message || err));
+        await afficherMessage(PointageBiometrie.messageErreurEmpreinte(err, true), {type: 'danger'});
     }
 }
 
@@ -3551,13 +3614,53 @@ async function pointer() {
         }
     } catch (err) {
         console.error(err);
-        resultat.innerHTML = '<span class="text-danger">Échec : ' + (err.message || err) + '</span>';
+        resultat.innerHTML = '<span class="text-danger">' + PointageBiometrie.messageErreurEmpreinte(err) + '</span>';
     } finally {
         btn.disabled = false;
     }
 }
 
+function chargerDispenses() {
+    fetch('/rh/api/pointage/dispenses').then(r => r.json()).then(d => {
+        if (!d.success) return;
+        const non = d.employes.filter(e => !e.dispense);
+        const oui = d.employes.filter(e => e.dispense);
+        document.getElementById('selectDispense').innerHTML = '<option value="">Choisir un employé…</option>'
+            + non.map(e => `<option value="${e.id}">${e.nom}${e.poste ? ' — ' + e.poste : ''}</option>`).join('');
+        document.getElementById('listeDispenses').innerHTML = oui.length
+            ? oui.map(e => `<div class="d-flex justify-content-between align-items-center border-bottom py-1">
+                    <span><strong>${e.nom}</strong> <span class="text-muted">— ${e.motif}</span></span>
+                    <button class="btn btn-sm btn-outline-danger py-0" onclick="retirerDispense(${e.id})" title="Il devra de nouveau pointer"><i class="fas fa-xmark me-1"></i>Retirer</button>
+                </div>`).join('')
+            : '<span class="text-muted">Aucune personne dispensée : tout le monde doit pointer.</span>';
+    }).catch(() => {});
+}
+
+async function majDispense(id, dispense, motif) {
+    const r = await fetch(`/rh/api/employes/${id}/dispense-pointage`, {
+        method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({dispense, motif})});
+    const d = await r.json();
+    if (!d.success) { await afficherMessage(d.error || d.message || 'Erreur', {type: 'danger'}); return false; }
+    chargerDispenses();
+    chargerPointageDuJour();
+    return true;
+}
+
+async function dispenserPointage() {
+    const id = document.getElementById('selectDispense').value;
+    const motif = document.getElementById('motifDispense').value.trim();
+    if (!id) { await afficherMessage('Choisissez un employé.'); return; }
+    if (!motif) { await afficherMessage('Indiquez le motif de la dispense.'); document.getElementById('motifDispense').focus(); return; }
+    if (await majDispense(id, true, motif)) document.getElementById('motifDispense').value = '';
+}
+
+async function retirerDispense(id) {
+    if (!await demanderConfirmation("Retirer la dispense ? Cette personne devra de nouveau pointer, et ses jours sans pointage compteront comme absences.")) return;
+    await majDispense(id, false, '');
+}
+
 function chargerPointageDuJour() {
+    if (!chargerPointageDuJour._dispenses) { chargerPointageDuJour._dispenses = true; chargerDispenses(); }
     const jour = document.getElementById('datePointage').value || new Date().toISOString().split('T')[0];
     fetch('/rh/api/pointage/liste?date=' + jour)
         .then(r => r.json())
@@ -3587,6 +3690,9 @@ function chargerPointageDuJour() {
                 ? '<i class="fas fa-umbrella-beach me-1"></i>En congé / permission : ' + d.en_absence.map(a => `${a.employe_nom} (${a.absence})`).join(', ')
                 : '';
             afficherTentativesPointage(d.tentatives || []);
+            document.getElementById('enAbsenceDuJour').innerHTML += (d.dispenses || []).length > 0
+                ? '<div class="text-secondary mt-1"><i class="fas fa-user-shield me-1"></i>Dispensés de pointage : ' + d.dispenses.map(a => a.employe_nom).join(', ') + '</div>'
+                : '';
         })
         .catch(err => console.error('Erreur chargement pointages du jour:', err));
 }
@@ -3641,7 +3747,7 @@ function chargerResumePointage() {
             }
             tbody.innerHTML = d.data.map(r => `
                 <tr>
-                    <td>${r.employe_nom}</td>
+                    <td>${r.employe_nom}${r.dispense ? ' <span class="badge bg-secondary" title="Dispensé de pointage : jamais compté absent">dispensé</span>' : ''}</td>
                     <td>${r.jours_ouvres}</td>
                     <td>${r.jours_presents}</td>
                     <td>${r.jours_retard > 0 ? `<span class="text-warning fw-bold">${r.jours_retard}</span>` : 0}</td>
@@ -3657,25 +3763,11 @@ function chargerResumePointage() {
 // POINTAGE PAR VISAGE (webcam standard, face-api.js)
 // ============================================================
 
-const MODELES_VISAGE_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
-let modelesVisageCharges = false;
 let fluxCameraEnrolement = null;
+let boucleEnrolementActive = false;
 
 async function chargerModelesVisage() {
-    if (modelesVisageCharges) return true;
-    if (typeof faceapi === 'undefined') return false;
-    try {
-        await Promise.all([
-            faceapi.nets.tinyFaceDetector.loadFromUri(MODELES_VISAGE_URL),
-            faceapi.nets.faceLandmark68Net.loadFromUri(MODELES_VISAGE_URL),
-            faceapi.nets.faceRecognitionNet.loadFromUri(MODELES_VISAGE_URL),
-        ]);
-        modelesVisageCharges = true;
-        return true;
-    } catch (err) {
-        console.error('Erreur chargement modèles reconnaissance faciale:', err);
-        return false;
-    }
+    return PointageBiometrie.chargerModeles();
 }
 
 function chargerListeVisages() {
@@ -3718,73 +3810,89 @@ async function supprimerVisage(visageId) {
 async function ouvrirCaptureVisage() {
     const employeId = document.getElementById('selectEmployeVisage').value;
     if (!employeId) { await afficherMessage('Sélectionnez un employé.'); return; }
-
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        await afficherMessage("Caméra non disponible sur ce poste/navigateur (nécessite http://localhost ou HTTPS).");
+        await afficherMessage("Caméra non disponible sur ce poste/navigateur (nécessite https ou http://localhost).");
         return;
     }
-
     const zone = document.getElementById('zoneCaptureVisage');
     const statut = document.getElementById('statutCaptureVisage');
     zone.style.display = '';
-    statut.textContent = 'Chargement des modèles de reconnaissance...';
-
-    const ok = await chargerModelesVisage();
-    if (!ok) {
-        statut.textContent = "Échec du chargement des modèles (vérifiez la connexion internet).";
+    statut.textContent = 'Chargement de la reconnaissance faciale...';
+    if (!await chargerModelesVisage()) {
+        statut.textContent = "Échec du chargement de la reconnaissance faciale (vérifiez la connexion internet).";
         return;
     }
-
     try {
-        fluxCameraEnrolement = await navigator.mediaDevices.getUserMedia({video: {width: 320, height: 240}});
-        const video = document.getElementById('videoEnrolementVisage');
-        video.srcObject = fluxCameraEnrolement;
-        statut.textContent = 'Positionnez le visage bien en face, puis cliquez sur Capturer.';
+        fluxCameraEnrolement = await PointageBiometrie.ouvrirCamera(document.getElementById('videoEnrolementVisage'));
     } catch (err) {
-        console.error(err);
         statut.textContent = "Impossible d'accéder à la caméra : " + (err.message || err);
+        return;
+    }
+    statut.textContent = "Visage bien en face, dans la lumière, sans lunettes de soleil — cliquez sur Capturer quand le contour est vert.";
+    boucleEnrolementActive = true;
+    suivreVisageEnrolement();
+}
+
+// Contour et consignes en direct pendant que la caméra est ouverte.
+async function suivreVisageEnrolement() {
+    const video = document.getElementById('videoEnrolementVisage');
+    const canvas = document.getElementById('canvasEnrolementVisage');
+    const consigne = document.getElementById('consigneEnrolementVisage');
+    while (boucleEnrolementActive) {
+        if (!suivreVisageEnrolement.enCapture) {
+            let r;
+            try { r = await PointageBiometrie.analyser(video); } catch (e) { r = {etat: 'aucun'}; }
+            if (!boucleEnrolementActive) break;
+            PointageBiometrie.dessiner(canvas, r);
+            consigne.textContent = PointageBiometrie.CONSIGNES[r.etat] === PointageBiometrie.CONSIGNES.ok
+                ? 'Visage bien placé : cliquez sur Capturer' : PointageBiometrie.CONSIGNES[r.etat];
+        }
+        await new Promise(res => setTimeout(res, 300));
     }
 }
 
 function fermerCaptureVisage() {
-    if (fluxCameraEnrolement) {
-        fluxCameraEnrolement.getTracks().forEach(t => t.stop());
-        fluxCameraEnrolement = null;
-    }
+    boucleEnrolementActive = false;
+    PointageBiometrie.fermerCamera(fluxCameraEnrolement);
+    fluxCameraEnrolement = null;
+    PointageBiometrie.dessiner(document.getElementById('canvasEnrolementVisage'), null);
+    document.getElementById('consigneEnrolementVisage').textContent = '';
     document.getElementById('zoneCaptureVisage').style.display = 'none';
 }
 
 async function capturerVisage() {
     const employeId = document.getElementById('selectEmployeVisage').value;
     const video = document.getElementById('videoEnrolementVisage');
+    const canvas = document.getElementById('canvasEnrolementVisage');
     const statut = document.getElementById('statutCaptureVisage');
 
-    statut.textContent = 'Analyse du visage...';
-    const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
-        .withFaceLandmarks().withFaceDescriptor();
-
-    if (!detection) {
-        statut.textContent = "Aucun visage détecté — repositionnez-vous et réessayez.";
-        return;
-    }
+    // ⭐ 5 images moyennées (avant : une seule) — reconnaissance bien plus fiable ensuite
+    suivreVisageEnrolement.enCapture = true;
+    statut.textContent = 'Prise du visage : ne bougez plus…';
+    const ech = await PointageBiometrie.echantillonner(video, 5, (r, n) => {
+        PointageBiometrie.dessiner(canvas, r);
+        statut.textContent = `Prise du visage : ne bougez plus… (${n}/5)`;
+    });
+    suivreVisageEnrolement.enCapture = false;
+    if (ech.erreur) { statut.textContent = ech.erreur; return; }
 
     const libelle = await demanderSaisie("Nom de cet enregistrement (ex : lumière du matin)", "Visage principal") || 'Visage principal';
-
-    fetch('/rh/api/visages/enregistrer', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({employe_id: parseInt(employeId), descripteur: Array.from(detection.descriptor), libelle})
-    })
-    .then(r => r.json())
-    .then(async d => {
+    try {
+        const r = await fetch('/rh/api/visages/enregistrer', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({employe_id: parseInt(employeId), descripteur: ech.descripteur, libelle})
+        });
+        const d = await r.json();
         if (d.success) {
-            await afficherMessage('Visage enregistré avec succès.');
+            await afficherMessage('Visage enregistré avec succès. Conseil : ajoutez un 2e enregistrement avec une autre lumière (matin / soir).');
             fermerCaptureVisage();
             chargerListeVisages();
         } else {
             statut.textContent = 'Échec : ' + d.message;
         }
-    })
-    .catch(err => { statut.textContent = 'Erreur réseau : ' + err; });
+    } catch (err) {
+        statut.textContent = 'Erreur réseau : ' + err;
+    }
 }
 
 // ⭐ Rafraîchir sur demande
@@ -3831,4 +3939,5 @@ function rafraichirTout() {
      photo elle-même ne quitte jamais l'appareil. Modèles chargés à la
      demande (pas au chargement de la page) par chargerModelesVisage(). -->
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script src="{{ url_for('static', filename='js/pointage_biometrie.js') }}"></script>
 {% endblock %}

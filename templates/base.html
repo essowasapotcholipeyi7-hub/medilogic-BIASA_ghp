@@ -2350,7 +2350,7 @@ async function appliquerPropositionTheme() {
                 Accueil
             </a>
         </li>
-        {% if session.role not in ['laborantin', 'radiologue'] %}
+        {% if session.role not in ['laborantin', 'radiologue', 'agent_rh', 'responsable_rh'] %}
         <li class="nav-item">
             <a class="nav-link-top" href="{{ url_for('dashboard') }}">
                 Tableau de bord
@@ -2363,7 +2363,7 @@ async function appliquerPropositionTheme() {
              Patients/Actes&Vente/Pharmacie/Finances depuis ici. Bloc
              entier masqué pour ces 2 rôles, même principe que
              sidebar_menu.html. -->
-        {% if session.role not in ['laborantin', 'radiologue'] %}
+        {% if session.role not in ['laborantin', 'radiologue', 'agent_rh', 'responsable_rh'] %}
         {% if not onglet_cache('patients') and not _bloq %}
         <li class="nav-item nav-item-patients">
             <a class="nav-link-top" href="#" onclick="return false;">
@@ -2854,6 +2854,18 @@ async function appliquerPropositionTheme() {
             </a>
         </li>
         {% endif %}
+        {% if role_rh_seul %}{# ⭐ agent / responsable RH : accès direct à leur module #}
+        <li class="nav-item">
+            <a class="nav-link-top" href="{{ url_for('rh.gestion_rh') }}">
+                <i class="fas fa-id-card"></i> Ressources humaines
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link-top" href="{{ url_for('rh.gestion_rh') }}#pointage">
+                <i class="fas fa-fingerprint"></i> Pointage
+            </a>
+        </li>
+        {% endif %}
     </ul>
 </div>
 {% endif %}
@@ -2949,7 +2961,7 @@ async function appliquerPropositionTheme() {
             {% for o in _dom.onglets %}
             <a href="{{ o.url }}" class="{{ 'actif' if o.id == _nav.onglet_actif }}" {% if o.id == _nav.onglet_actif %}aria-current="page"{% endif %}>{{ o.libelle }}</a>
             {% endfor %}
-            {% if session.role not in ['laborantin', 'radiologue'] %}{# leur accueil les renvoie au labo/radio #}
+            {% if session.role not in ['laborantin', 'radiologue', 'agent_rh', 'responsable_rh'] %}{# leur accueil les renvoie à leur module #}
             <a href="{{ url_for('page_accueil') }}" class="nav-domaine-accueil"><i class="fas fa-table-cells-large me-1" aria-hidden="true"></i>Tous les onglets</a>
             {% endif %}
         </nav>
@@ -3630,12 +3642,14 @@ document.addEventListener('click', function(e) {
 // ============================================================
 
 document.addEventListener('DOMContentLoaded', function() {
+    {% if not role_rh_seul %}{# comptes RH : ni proformas ni ventes #}
     chargerProformaBadge();
     chargerVenteAttenteBadge();
 
     // Rafraîchir les badges toutes les 60 secondes
     setInterval(chargerProformaBadge, 60000);
     setInterval(chargerVenteAttenteBadge, 60000);
+    {% endif %}
 });
 
 // ============================================
