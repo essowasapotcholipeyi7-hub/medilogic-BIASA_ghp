@@ -6296,7 +6296,23 @@ def _cle_utilisateur_theme():
 
 
 def _utilisateur_theme():
+    """⭐ Clé à utiliser pour LIRE comme pour ENREGISTRER le thème : None pour
+    l'admin (il règle toute la structure, il doit donc voir le réglage de la
+    structure). Corrige (patron, 2026-10-10) : « quand je choisis le thème
+    noir et que je clique sur un autre onglet, ça repasse en clair ». La
+    bascule enregistrait sur la structure mais chaque page relisait un
+    réglage PERSONNEL : le compte propriétaire a pour user_id l'ID de la
+    structure (ex. 1), le même numéro qu'une ligne de struct_1_users qui
+    s'était mise en Classique — le noir était aussitôt remplacé."""
     return None if _portee_theme() == 'structure' else _cle_utilisateur_theme()
+
+
+def _marquer_theme_modifie():
+    """Le serveur tourne en plusieurs processus, chacun avec son cache de
+    CSS (10 s) : sans ce repère dans la session, la page suivante pouvait
+    encore afficher l'ancien thème à celui qui vient d'en changer."""
+    import time
+    session['theme_maj'] = time.time()
 
 
 @app.route('/parametres/theme')
@@ -6311,7 +6327,7 @@ def page_parametres_theme():
 @login_required
 def api_theme():
     try:
-        d = theme_service.catalogue_pour_structure(session.get('structure_id'), _cle_utilisateur_theme())
+        d = theme_service.catalogue_pour_structure(session.get('structure_id'), _utilisateur_theme())
         d['portee'] = _portee_theme()
         return jsonify({'success': True, **d})
     except Exception as e:
@@ -6324,7 +6340,7 @@ def api_theme():
 def api_theme_css_apercu():
     """Aperçu : CSS d'une personnalisation sans rien enregistrer."""
     data = request.json or {}
-    actif = theme_service.theme_actif(session.get('structure_id'), _cle_utilisateur_theme())
+    actif = theme_service.theme_actif(session.get('structure_id'), _utilisateur_theme())
     cle = data.get('cle') or actif['theme']['cle']
     return jsonify({'success': True, 'css': theme_service.css_apercu(cle, data.get('personnalisation') or {})})
 
@@ -6379,6 +6395,7 @@ def api_theme_payer():
         theme_service.payer_theme(structure_id, cle, moyen, reference, date_paiement, session.get('user_name', ''), demande_id=demande.id)
         actif = theme_service.choisir_theme(structure_id, cle, session.get('user_name', ''), portee='structure')
         from utils.themes import generer_css
+        _marquer_theme_modifie()
         return jsonify({'success': True, 'css': generer_css(actif['variables']), 'theme': cle, 'demande_id': demande.id,
                         'message': f"Paiement de {int(montant):,} FCFA enregistré ({libelle_moyen}{' réf. ' + reference if reference else ''}). ".replace(',', ' ')
                                    + f"Le thème « {theme['nom']} » est activé immédiatement pour toute la structure. "
@@ -6405,6 +6422,7 @@ def api_theme_basculer():
                                        portee=_portee_theme(), utilisateur_id=_utilisateur_theme())
         from utils.themes import generer_css
         css = generer_css(actif['variables'])
+        _marquer_theme_modifie()
         return jsonify({'success': True, 'css': css, 'sombre': '/* mode sombre */' in css, 'theme': actif['theme']['cle'],
                         'nom': actif['theme']['nom'], 'portee': _portee_theme()})
     except ValueError as e:
@@ -6461,6 +6479,7 @@ def api_theme_couleurs_logo():
 
 def _reponse_theme(actif, message=''):
     from utils.themes import generer_css
+    _marquer_theme_modifie()
     return jsonify({'success': True, 'message': message, 'css': generer_css(actif['variables']),
                     'theme': actif['theme']['cle'], 'bloque': actif['bloque']})
 
@@ -9209,7 +9228,7 @@ def injecter_theme_structure():
     structure_id = session.get('structure_id')
     if not structure_id:
         return {'theme_css': '', 'theme_sombre': False}
-    css = theme_service.css_pour(structure_id, _cle_utilisateur_theme())
+    css = theme_service.css_pour(structure_id, _utilisateur_theme(), pas_avant=session.get('theme_maj'))
     # ⭐ Thème sombre : base.html pose data-bs-theme="dark" sur <html> pour que
     # Bootstrap passe lui aussi en sombre (aides sous les champs, descriptions,
     # menus déroulants, modals, tableaux) — patron : « certaines écritures ne

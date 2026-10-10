@@ -156,15 +156,18 @@ def theme_actif(structure_id, utilisateur_id=None):
             'reglage_personnel': bool(ru and (ru.theme_cle or ru.personnalisation))}
 
 
-def css_pour(structure_id, utilisateur_id=None):
-    """CSS à injecter dans base.html — cache 60 s par (structure, utilisateur) ;
-    chaîne vide = apparence d'origine. Ne lève jamais."""
+def css_pour(structure_id, utilisateur_id=None, pas_avant=None):
+    """CSS à injecter dans base.html — cache court par (structure, utilisateur) ;
+    chaîne vide = apparence d'origine. Ne lève jamais. `pas_avant` (horodatage
+    du dernier changement de thème fait par CET utilisateur, gardé en session)
+    : une entrée de cache plus ancienne est ignorée — un autre processus
+    serveur ne lui ressert pas l'ancien thème."""
     if not structure_id:
         return ''
     cle = (int(structure_id), str(utilisateur_id or ''))
     now = time.time()
     hit = _CACHE_CSS.get(cle)
-    if hit and hit[0] > now:
+    if hit and hit[0] > now and not (pas_avant and hit[0] - _TTL < float(pas_avant)):
         return hit[1]
     try:
         css = generer_css(theme_actif(cle[0], utilisateur_id)['variables'])
