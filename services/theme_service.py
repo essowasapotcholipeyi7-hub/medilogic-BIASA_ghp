@@ -217,9 +217,30 @@ def choisir_theme(structure_id, cle, user_nom='', demarrer_essai=True, portee='s
     r.theme_cle = cle
     r.modifie_par = user_nom
     r.modifie_le = datetime.utcnow()
+    if portee == 'structure':
+        r.proposition_vue = True   # un thème a été choisi : plus de proposition à la connexion
     db.session.commit()
     invalider_cache(structure_id)
     return theme_actif(structure_id, utilisateur_id if portee == 'utilisateur' else None)
+
+
+THEME_PROPOSE_CLE = 'noir'
+
+
+def proposition_a_faire(structure_id):
+    """⭐ True si la structure est encore en apparence d'origine, n'a jamais
+    tranché, et que le thème proposé existe (actif)."""
+    r = reglage_structure(structure_id)
+    if r and (r.proposition_vue or (r.theme_cle and r.theme_cle != THEME_DEFAUT_CLE)):
+        return False
+    return theme_par_cle(THEME_PROPOSE_CLE) is not None
+
+
+def marquer_proposition_vue(structure_id, user_nom=''):
+    r = _reglage_ou_creer(structure_id, 'structure', None)
+    r.proposition_vue = True
+    r.modifie_par = user_nom
+    db.session.commit()
 
 
 def personnaliser(structure_id, personnalisation, user_nom='', portee='structure', utilisateur_id=None):

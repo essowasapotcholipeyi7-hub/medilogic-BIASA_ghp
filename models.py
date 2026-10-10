@@ -4814,6 +4814,11 @@ class ThemeStructure(db.Model):
     personnalisation = db.Column(db.JSON, default=dict)
     modifie_le = db.Column(db.DateTime, default=datetime.utcnow)
     modifie_par = db.Column(db.String(150))
+    # ⭐ Proposition du thème Noir à la connexion (patron, 2026-10-10 : « qu'on
+    # propose ce thème sombre par défaut, eux-mêmes cliquent pour mettre à
+    # jour dès la connexion ») — True une fois qu'un thème a été choisi ou que
+    # l'admin a cliqué « Ne plus proposer ».
+    proposition_vue = db.Column(db.Boolean, default=False)
 
 
 class LogoStructure(db.Model):

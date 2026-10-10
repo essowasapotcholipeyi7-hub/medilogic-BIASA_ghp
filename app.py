@@ -6377,6 +6377,23 @@ def api_theme_payer():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/theme/proposition', methods=['POST'])
+@login_required
+def api_theme_proposition():
+    """Réponse à la proposition du thème Noir : 'plus_tard' (reproposé à la
+    prochaine connexion) ou 'jamais' (ne plus proposer)."""
+    action = (request.json or {}).get('action') or ''
+    if action == 'plus_tard':
+        session['theme_proposition_plus_tard'] = True
+        return jsonify({'success': True})
+    if action == 'jamais':
+        if _portee_theme() != 'structure':
+            return jsonify({'success': False, 'error': "Réservé à l'administrateur."}), 403
+        theme_service.marquer_proposition_vue(session.get('structure_id'), session.get('user_name', ''))
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'Action inconnue'}), 400
+
+
 @app.route('/api/theme/couleurs-logo')
 @login_required
 def api_theme_couleurs_logo():
@@ -9159,7 +9176,16 @@ def injecter_theme_structure():
     # Bootstrap passe lui aussi en sombre (aides sous les champs, descriptions,
     # menus déroulants, modals, tableaux) — patron : « certaines écritures ne
     # sont plus visibles » sur un thème sombre.
-    return {'theme_css': css, 'theme_sombre': '/* mode sombre */' in css}
+    # ⭐ Proposition du thème Noir à la connexion — admin de la structure, sur
+    # l'accueil / le tableau de bord seulement, tant qu'elle n'a pas tranché.
+    proposition = False
+    if (session.get('is_admin') or session.get('role') == 'admin') and not session.get('theme_proposition_plus_tard') \
+            and request.endpoint in ('page_accueil', 'dashboard'):
+        try:
+            proposition = theme_service.proposition_a_faire(structure_id)
+        except Exception:
+            proposition = False
+    return {'theme_css': css, 'theme_sombre': '/* mode sombre */' in css, 'theme_proposition': proposition}
 
 
 @app.context_processor
