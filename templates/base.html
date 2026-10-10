@@ -2855,8 +2855,13 @@ async function appliquerPropositionTheme() {
 
 <!-- ============================================
      BANDEAU PATIENT
+     ⭐ Affiché seulement sur les 4 destinations d'une sélection de patient
+     (vente d'actes, pharmacie, hospitalisation, soins ambulatoires) —
+     patron, 2026-10-10 : il restait visible sur des onglets sans rapport
+     ("c'est pas pro"). La sélection, elle, est conservée : en revenant
+     sur une vente, le patient est toujours là.
      ============================================ -->
-{% if session.user_id %}
+{% if session.user_id and request.endpoint in ['actes_vente', 'pharma_vente', 'page_hospitalisation', 'page_soins_ambulatoires'] %}
 <div class="container-fluid px-3 mt-2">
     <div id="selectedPatientBadge" class="alert py-3 mb-0 fade-in" style="display:none;">
         <div class="row align-items-center">
