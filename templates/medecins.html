@@ -345,6 +345,10 @@
     </div>
 </div>
 
+<!-- ⭐ Chart.js n'était chargé nulle part (patron, 2026-10-10 : « au niveau de l'historique
+     ça met erreur ») : le graphique des consultations par mois plantait (Chart is not
+     defined) dès qu'un médecin avait des consultations, et tout l'historique tombait. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 let currentMedecinId = null;
 let historiqueChart = null;
@@ -572,6 +576,7 @@ function voirHistorique(id) {
         })
         .catch(async error => {
             hideLoader();
+            console.error('Historique médecin :', error);
             await showToast('Erreur lors du chargement de l\'historique', 'danger');
         });
 }
@@ -598,7 +603,17 @@ function creerGraphiqueHistorique(data) {
         return;
     }
 
+    // Bibliothèque de graphiques injoignable (hors ligne...) : l'historique
+    // s'affiche quand même, sans le graphique.
+    if (typeof Chart === 'undefined') {
+        canvas.style.display = 'none';
+        messageVide.textContent = 'Graphique indisponible (connexion internet requise)';
+        messageVide.style.display = 'block';
+        return;
+    }
+
     canvas.style.display = 'block';
+    messageVide.textContent = 'Aucune donnee mensuelle';
     messageVide.style.display = 'none';
     const ctx = canvas.getContext('2d');
 
