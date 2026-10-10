@@ -278,6 +278,16 @@ a:not(.btn):not(.nav-link):not(.nav-link-top):not(.dropdown-item):not(.list-grou
 .table thead th {{ background: {_eclaircir_sombre(carte)} !important; border-bottom: 1px solid {_rgba(texte, 0.18)} !important; }}
 .badge.bg-light, .badge.bg-white {{ background-color: {_rgba(texte, 0.10)} !important; color: {texte} !important; border: 1px solid {_rgba(texte, 0.2)}; }}
 .nav-tabs {{ border-bottom-color: {_rgba(texte, 0.15)} !important; }}
+.nav-tabs .nav-link, .nav-pills .nav-link {{ background: transparent !important; color: {_rgba(texte, 0.85)} !important; transition: none !important; }}
+.nav-pills .nav-link.active {{ background: {_rgba(p, 0.18)} !important; color: {p} !important; }}
+/* ⭐ boutons sombres / clairs / neutres : lisibles sur fond sombre (patron : billet d'hospitalisation, fourrière, liste des patients) */
+.btn-dark, .btn-outline-dark, .btn-light, .btn-outline-light, .btn-white, .btn-secondary, .btn-outline-secondary, .btn-default {{ background: {_rgba(texte, 0.10)} !important; color: {texte} !important; border: 1px solid {_rgba(texte, 0.30)} !important; }}
+.btn-dark:hover, .btn-outline-dark:hover, .btn-light:hover, .btn-outline-light:hover, .btn-white:hover, .btn-secondary:hover, .btn-outline-secondary:hover, .btn-default:hover {{ background: {_rgba(p, 0.18)} !important; color: {p} !important; border-color: {p} !important; }}
+.btn-dark i, .btn-outline-dark i, .btn-light i, .btn-secondary i, .btn-outline-secondary i {{ color: inherit !important; }}
+.badge.bg-dark, .badge.bg-secondary {{ background-color: {_rgba(texte, 0.22)} !important; color: {texte} !important; }}
+.bg-dark:not(.card-header):not(.modal-header) {{ background-color: {_eclaircir_sombre(carte)} !important; color: {texte} !important; }}
+.btn-close {{ filter: invert(1) grayscale(1) brightness(1.6); }}
+.text-dark {{ color: {texte} !important; }}
 .nav-tabs .nav-link.active {{ background: {carte} !important; border-color: {_rgba(texte, 0.15)} {_rgba(texte, 0.15)} {carte} !important; }}
 hr {{ border-color: {_rgba(texte, 0.2)} !important; opacity: 1; }}
 ::-webkit-scrollbar {{ width: 10px; height: 10px; }} ::-webkit-scrollbar-track {{ background: {fond}; }} ::-webkit-scrollbar-thumb {{ background: {_rgba(texte, 0.25)}; border-radius: 6px; }}

@@ -14,7 +14,7 @@
     const CARTE = (cs.getPropertyValue('--th-carte') || '').trim() || '#1E1E1E';
     const TEXTE = (cs.getPropertyValue('--th-texte') || '').trim() || '#E8E8E8';
     const SKIP = new Set(['IMG', 'SVG', 'PATH', 'G', 'CANVAS', 'VIDEO', 'INPUT', 'SELECT', 'TEXTAREA', 'OPTION', 'SCRIPT', 'STYLE', 'I', 'BR', 'HR']);
-    const SKIP_SEL = '.badge, .btn, .modal-backdrop, .form-check-input, .structure-brand, .alert, .progress, .spinner-border, .toast, .swal2-container, [data-th-garder]';
+    const SKIP_SEL = '.badge, .modal-backdrop, .form-check-input, .structure-brand, .alert, .progress, .spinner-border, .toast, .swal2-container, [data-th-garder]';
 
     function rgb(s) {
         const m = s && s.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)(?:[,\s/]+([\d.]+))?/);
@@ -39,11 +39,14 @@
         const bg = rgb(st.backgroundColor);
         if (bg && bg.a > 0.5 && lum(bg) > 0.86 && !(st.backgroundImage || '').includes('gradient')) {
             el.style.setProperty('background-color', CARTE, 'important');
+            el.style.setProperty('transition', 'none', 'important');   // sinon la transition de la page masque le changement
+            el.dataset.thSombre = '1';
             if (st.borderColor && lum(rgb(st.borderColor) || {r: 0, g: 0, b: 0}) > 0.8) el.style.setProperty('border-color', 'rgba(255,255,255,.14)', 'important');
         }
         const col = rgb(st.color);
         if (col && lum(col) < 0.28 && fondEffectif(el) < 0.4) {
             el.style.setProperty('color', TEXTE, 'important');
+            el.dataset.thSombre = '1';
         }
     }
 
@@ -73,7 +76,8 @@
         new MutationObserver(muts => {
             muts.forEach(m => {
                 m.addedNodes.forEach(n => { if (n.nodeType === 1) planifier(n); });
-                if (m.type === 'attributes' && m.target.nodeType === 1 && !m.target.dataset.thVu) planifier(m.target);
+                // nos propres écritures de style ne doivent pas nous relancer (boucle) ; un changement de classe, si
+                if (m.type === 'attributes' && m.target.nodeType === 1 && !(m.attributeName === 'style' && m.target.dataset.thSombre)) planifier(m.target);
             });
         }).observe(document.body, {childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class']});
     }
