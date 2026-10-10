@@ -276,13 +276,16 @@ def est_sombre(theme):
 
 def basculer(structure_id, mode, user_nom='', portee='structure', utilisateur_id=None):
     """⭐ Soleil / Lune : mode 'sombre' -> dernier thème sombre utilisé (sinon
-    Noir) ; mode 'clair' -> dernier thème clair utilisé (sinon Classique).
-    Un thème payant devenu inaccessible est remplacé par le défaut du mode."""
+    Noir) ; mode 'clair' -> TOUJOURS le Classique du logiciel, sans réglage
+    (patron, 2026-10-10 : « quand on clique sur le thème clair, ça garde le
+    thème qu'on vient de choisir au lieu de prendre le clair classique du
+    logiciel »). Un thème payant devenu inaccessible est remplacé par le
+    défaut du mode."""
     r = reglage_utilisateur(structure_id, utilisateur_id) if portee == 'utilisateur' else reglage_structure(structure_id)
     if mode == 'sombre':
         candidats = [r.derniere_cle_sombre if r else None, THEME_SOMBRE_DEFAUT]
     else:
-        candidats = [r.derniere_cle_claire if r else None, THEME_DEFAUT_CLE]
+        candidats = [THEME_DEFAUT_CLE]
     for cle in candidats:
         if not cle:
             continue

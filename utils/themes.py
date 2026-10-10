@@ -298,6 +298,10 @@ a:not(.btn):not(.nav-link):not(.nav-link-top):not(.dropdown-item):not(.list-grou
 .table {{ --bs-table-bg: transparent; --bs-table-color: {texte}; --bs-table-border-color: {_rgba(texte, 0.12)}; }}
 .table thead th {{ background: {_eclaircir_sombre(carte)} !important; border-bottom: 1px solid {_rgba(texte, 0.18)} !important; }}
 .badge.bg-light, .badge.bg-white {{ background-color: {_rgba(texte, 0.10)} !important; color: {texte} !important; border: 1px solid {_rgba(texte, 0.2)}; }}
+/* ⭐ Bandeau « Patient actuel » (patron, 2026-10-10 : illisible en sombre — texte clair sur le vert pâle d'origine) */
+#selectedPatientBadge {{ background: {_rgba(p, 0.10)} !important; color: {texte} !important; border: 1px solid {_rgba(p, 0.30)} !important; border-left: 4px solid {p} !important; box-shadow: none !important; }}
+#selectedPatientBadge strong, #selectedPatientBadge #currentPatientName {{ color: {texte} !important; }}
+#selectedPatientBadge .fa-user-check {{ color: {p} !important; }}
 .nav-tabs {{ border-bottom-color: {_rgba(texte, 0.15)} !important; }}
 .nav-tabs .nav-link, .nav-pills .nav-link {{ background: transparent !important; color: {_rgba(texte, 0.85)} !important; transition: none !important; }}
 .nav-pills .nav-link.active {{ background: {_rgba(p, 0.18)} !important; color: {p} !important; }}
