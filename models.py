@@ -258,6 +258,10 @@ MOTIFS_DEPART = {
 
 class Employe(db.Model):
     __tablename__ = 'employes'
+    # ⭐ Toujours au service de la structure (un employé en congé est payé, figure
+    # dans l'organigramme, et la borne doit le reconnaître pour lui dire qu'il
+    # est en congé) — seul 'Inactif' (départ) le sort des listes.
+    STATUTS_EN_SERVICE = ('Actif', 'En conge')
     
     id = db.Column(db.Integer, primary_key=True)
     structure_id = db.Column(db.Integer, db.ForeignKey('structures.id'), nullable=False)
@@ -435,7 +439,7 @@ class Employe(db.Model):
         limite = date.today() + timedelta(days=seuil_jours)
         return cls.query.filter(
             cls.structure_id == structure_id,
-            cls.statut == 'Actif',
+            cls.statut.in_(cls.STATUTS_EN_SERVICE),
             cls.date_fin_contrat.isnot(None),
             cls.date_fin_contrat <= limite,
         ).order_by(cls.date_fin_contrat.asc()).all()
@@ -618,67 +622,25 @@ class Employe(db.Model):
 
  
     def mettre_a_jour_statut(self):
-        """Met à jour le statut de l'employé en fonction des congés"""
+        """Statut selon les congés APPROUVÉS : 'En conge' du début du congé à la
+        veille de la reprise, sinon 'Actif'. ⭐ Un employé parti (statut
+        'Inactif' ou date de départ passée) le reste — avant, le tableau de
+        bord RH remettait « Actif » tous les employés à chaque ouverture, y
+        compris ceux qui avaient quitté la structure (ils revenaient dans la
+        paie et la borne de pointage les reconnaissait encore)."""
+        from utils.regles_absences import absent_ce_jour
         today = date.today()
-        
-        # ⭐ 1. Vérifier si l'employé a un congé en cours (approuvé)
-        conge_en_cours = Conge.query.filter(
-            Conge.employe_id == self.id,
-            Conge.statut == 'approuve',
-            Conge.date_debut <= today,
-            Conge.date_fin >= today
-        ).first()
-        
-        if conge_en_cours:
-            self.statut = 'En conge'
+        if self.statut == 'Inactif' or (self.date_depart and self.date_depart < today):
+            nouveau = 'Inactif'
+        else:
+            conges = Conge.query.filter(Conge.employe_id == self.id, Conge.statut == 'approuve',
+                                        Conge.date_debut <= today).all()
+            nouveau = 'En conge' if any(absent_ce_jour(today, c.date_debut, c.date_fin, c.date_reprise)
+                                        for c in conges) else 'Actif'
+        if self.statut != nouveau:
+            self.statut = nouveau
             db.session.commit()
-            return 'En conge'
-        
-        # ⭐ 2. Vérifier si l'employé a un congé approuvé qui commence aujourd'hui
-        conge_commence = Conge.query.filter(
-            Conge.employe_id == self.id,
-            Conge.statut == 'approuve',
-            Conge.date_debut == today
-        ).first()
-        
-        if conge_commence:
-            self.statut = 'En conge'
-            db.session.commit()
-            return 'En conge'
-        
-        # ⭐ 3. Vérifier si l'employé était en congé et que la reprise est passée
-        conge_termine = Conge.query.filter(
-            Conge.employe_id == self.id,
-            Conge.statut == 'approuve',
-            Conge.date_fin < today
-        ).order_by(Conge.date_fin.desc()).first()
-        
-        if conge_termine:
-            # Vérifier si la date de reprise est passée
-            if conge_termine.date_reprise and conge_termine.date_reprise <= today:
-                self.statut = 'Actif'
-                db.session.commit()
-                return 'Actif'
-        
-        # ⭐ 4. Vérifier si l'employé a un solde négatif (a dépassé ses congés)
-        solde = self.solde_conges_restant()
-        if solde < 0:
-            # Vérifier s'il a un congé en attente ou approuvé
-            conges_actifs = Conge.query.filter(
-                Conge.employe_id == self.id,
-                Conge.statut.in_(['en_attente', 'approuve']),
-                Conge.date_fin >= today
-            ).first()
-            
-            if conges_actifs:
-                self.statut = 'En conge'
-                db.session.commit()
-                return 'En conge'
-        
-        # ⭐ 5. Par défaut, Actif
-        self.statut = 'Actif'
-        db.session.commit()
-        return 'Actif'
+        return nouveau
 
 
 # ⭐ Congés conventionnels — patron : "les congés conventionnels tu les
@@ -4782,6 +4744,36 @@ class Pointage(db.Model):
         if self.statut_arrivee == 'retard':
             return f"Retard ({self.retard_minutes} min)"
         return 'À l\'heure'
+
+
+class TentativePointage(db.Model):
+    """⭐ Patron (2026-10-10) : un employé en congé ou en permission qui passe
+    devant la borne ne doit PAS pointer — la borne lui dit qu'il n'est pas
+    censé être là, et son passage est signalé ici à la RH (onglet Pointage).
+    Une ligne par employé et par jour (les passages répétés incrémentent
+    `nombre`)."""
+    __tablename__ = 'tentatives_pointage'
+
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    employe_id = db.Column(db.Integer, db.ForeignKey('employes.id'), nullable=False)
+    date_jour = db.Column(db.Date, nullable=False)
+    premiere_heure = db.Column(db.Time)
+    derniere_heure = db.Column(db.Time)
+    nombre = db.Column(db.Integer, default=1)
+    methode = db.Column(db.String(20))           # 'empreinte' | 'visage'
+    absence_type = db.Column(db.String(20))      # 'conge' | 'permission'
+    absence_id = db.Column(db.Integer)
+    motif = db.Column(db.String(255))            # « en congé annuel jusqu'au … »
+    vue_par = db.Column(db.String(100))
+    vue_le = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    employe = db.relationship('Employe')
+
+    __table_args__ = (
+        db.UniqueConstraint('employe_id', 'date_jour', name='uq_tentative_pointage_employe_jour'),
+    )
 
 
 class VisageEmploye(db.Model):

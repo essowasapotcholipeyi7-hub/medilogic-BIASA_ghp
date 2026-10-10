@@ -126,3 +126,16 @@ def test_periode_et_vie_de_l_employe():
     assert 'avant l\'embauche' in controler_periode_employe(date(2020, 1, 1), date(2020, 1, 5), date(2021, 1, 1))
     assert 'quitté' in controler_periode_employe(date(2026, 10, 1), date(2026, 10, 9), date(2021, 1, 1), date(2026, 10, 5))
     assert controler_periode_employe(date(2026, 10, 1), date(2026, 10, 3), date(2021, 1, 1)) is None
+
+
+def test_absent_ce_jour_jusqu_a_la_veille_de_la_reprise():
+    from utils.regles_absences import absent_ce_jour
+    debut, fin = date(2026, 10, 5), date(2026, 10, 9)          # lundi -> vendredi
+    assert absent_ce_jour(date(2026, 10, 5), debut, fin)
+    assert not absent_ce_jour(date(2026, 10, 4), debut, fin)
+    assert not absent_ce_jour(date(2026, 10, 10), debut, fin)
+    # reprise fixée au mardi : le samedi et le lundi restent couverts
+    assert absent_ce_jour(date(2026, 10, 12), debut, fin, date(2026, 10, 13))
+    assert not absent_ce_jour(date(2026, 10, 13), debut, fin, date(2026, 10, 13))
+    # reprise le dimanche (médecin de garde) : il pointe le dimanche
+    assert not absent_ce_jour(date(2026, 10, 11), debut, date(2026, 10, 10), date(2026, 10, 11))

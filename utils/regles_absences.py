@@ -252,3 +252,12 @@ def controler_periode_employe(debut, fin, date_embauche, date_depart=None):
     if date_depart and fin > date_depart:
         return f"L'employé a quitté la structure le {date_depart.strftime('%d/%m/%Y')} : période impossible."
     return None
+
+
+def absent_ce_jour(jour, debut, fin, reprise=None):
+    """Une absence (congé, permission à la journée) couvre `jour` : de son début
+    jusqu'à la veille de la reprise (ou jusqu'à la fin si la reprise n'est pas
+    connue). Sert à la borne de pointage et au récapitulatif des absences."""
+    if not debut or jour < debut:
+        return False
+    return jour <= fin or bool(reprise and jour < reprise)

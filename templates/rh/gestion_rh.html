@@ -260,6 +260,7 @@
                                     data-bs-toggle="tab" data-bs-target="#pointage"
                                     type="button" role="tab" onclick="chargerPointageDuJour()">
                                 <i class="fas fa-fingerprint me-1"></i> Pointage
+                                <span class="badge bg-warning text-dark ms-1" id="badgeTentativesPointage" style="display:none;" title="Passages à la borne d'employés en congé ou en permission">0</span>
                             </button>
                         </li>
                         <li class="nav-item">
@@ -509,6 +510,28 @@
                                                 </table>
                                             </div>
                                             <div id="absentsDuJour" class="p-2 small text-muted"></div>
+                                            <div id="enAbsenceDuJour" class="px-2 pb-2 small text-success"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- ⭐ Patron (2026-10-10) : un employé en congé / permission qui passe devant
+                                 la borne ne pointe pas ; la borne le lui dit et son passage est signalé ici. -->
+                            <div class="row g-3 mb-3" id="carteTentativesPointage" style="display:none;">
+                                <div class="col-12">
+                                    <div class="card border-warning shadow-sm">
+                                        <div class="card-header bg-warning-subtle">
+                                            <i class="fas fa-triangle-exclamation me-2 text-warning"></i>Passages signalés à la borne
+                                            <small class="text-muted ms-1">— employés en congé ou en permission qui ont essayé de pointer (rien n'a été enregistré)</small>
+                                        </div>
+                                        <div class="card-body p-0">
+                                            <div class="table-responsive">
+                                                <table class="table table-sm mb-0">
+                                                    <thead><tr><th>Date</th><th>Employé</th><th>Passage(s)</th><th>Situation</th><th></th></tr></thead>
+                                                    <tbody id="tentativesPointageBody"></tbody>
+                                                </table>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -582,11 +605,11 @@
                                             <thead>
                                                 <tr>
                                                     <th>Employé</th><th>Jours ouvrés</th><th>Présent</th>
-                                                    <th>Retards</th><th>Absences</th><th>Heures travaillées</th>
+                                                    <th>Retards</th><th>Absences</th><th title="Congés et permissions approuvés : ce ne sont pas des absences">Congés / permissions</th><th>Heures travaillées</th>
                                                 </tr>
                                             </thead>
                                             <tbody id="resumePointageBody">
-                                                <tr><td colspan="6" class="text-center text-muted py-3">Choisissez une période</td></tr>
+                                                <tr><td colspan="7" class="text-center text-muted py-3">Choisissez une période</td></tr>
                                             </tbody>
                                         </table>
                                     </div>
@@ -3524,6 +3547,7 @@ async function pointer() {
             chargerPointageDuJour();
         } else {
             resultat.innerHTML = '<span class="text-danger">' + dVer.message + '</span>';
+            if (dVer.absence) chargerPointageDuJour();
         }
     } catch (err) {
         console.error(err);
@@ -3558,9 +3582,49 @@ function chargerPointageDuJour() {
             absDiv.innerHTML = d.absents.length > 0
                 ? '<i class="fas fa-user-clock me-1"></i>Pas encore pointé : ' + d.absents.map(a => a.employe_nom).join(', ')
                 : '';
+            // ⭐ Absences justifiées (congé / permission approuvés) : pas des retards.
+            document.getElementById('enAbsenceDuJour').innerHTML = (d.en_absence || []).length > 0
+                ? '<i class="fas fa-umbrella-beach me-1"></i>En congé / permission : ' + d.en_absence.map(a => `${a.employe_nom} (${a.absence})`).join(', ')
+                : '';
+            afficherTentativesPointage(d.tentatives || []);
         })
         .catch(err => console.error('Erreur chargement pointages du jour:', err));
 }
+
+function afficherTentativesPointage(liste) {
+    document.getElementById('carteTentativesPointage').style.display = liste.length ? '' : 'none';
+    document.getElementById('tentativesPointageBody').innerHTML = liste.map(t => `
+        <tr class="${t.vue ? 'text-muted' : 'fw-semibold'}">
+            <td>${t.date}</td>
+            <td>${t.employe_nom}</td>
+            <td>${t.premiere_heure}${t.nombre > 1 ? ` → ${t.derniere_heure} <span class="badge bg-secondary">${t.nombre} fois</span>` : ''}
+                <small class="text-muted">(${t.methode === 'visage' ? 'visage' : 'empreinte'})</small></td>
+            <td>${t.motif}</td>
+            <td class="text-end">${t.vue
+                ? `<small class="text-muted">vu par ${t.vue_par}</small>`
+                : `<button class="btn btn-sm btn-outline-success" onclick="marquerTentativeVue(${t.id})"><i class="fas fa-check me-1"></i>Vu</button>`}</td>
+        </tr>`).join('');
+    const nonVues = liste.filter(t => !t.vue).length;
+    majBadgeTentatives(nonVues);
+}
+
+function majBadgeTentatives(n) {
+    const b = document.getElementById('badgeTentativesPointage');
+    b.textContent = n;
+    b.style.display = n > 0 ? '' : 'none';
+}
+
+async function marquerTentativeVue(id) {
+    const r = await fetch(`/rh/api/pointage/tentatives/${id}/vue`, {method: 'PUT'});
+    const d = await r.json();
+    if (!d.success) { await afficherMessage(d.message || 'Erreur', {type: 'danger'}); return; }
+    chargerPointageDuJour();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    fetch('/rh/api/pointage/tentatives/compte').then(r => r.json())
+        .then(d => { if (d.success) majBadgeTentatives(d.non_vues); }).catch(() => {});
+});
 
 function chargerResumePointage() {
     const debut = document.getElementById('resumeDateDebut').value;
@@ -3572,7 +3636,7 @@ function chargerResumePointage() {
         .then(d => {
             const tbody = document.getElementById('resumePointageBody');
             if (!d.success || d.data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Aucune donnée</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">Aucune donnée</td></tr>';
                 return;
             }
             tbody.innerHTML = d.data.map(r => `
@@ -3582,6 +3646,7 @@ function chargerResumePointage() {
                     <td>${r.jours_presents}</td>
                     <td>${r.jours_retard > 0 ? `<span class="text-warning fw-bold">${r.jours_retard}</span>` : 0}</td>
                     <td>${r.jours_absents > 0 ? `<span class="text-danger fw-bold">${r.jours_absents}</span>` : 0}</td>
+                    <td>${r.jours_justifies || 0}</td>
                     <td>${r.heures_travaillees} h</td>
                 </tr>`).join('');
         })

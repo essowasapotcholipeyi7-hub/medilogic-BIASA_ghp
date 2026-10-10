@@ -31,7 +31,7 @@ distance euclidienne aux descripteurs déjà enregistrés de la structure.
 
 import base64
 import math
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 import webauthn
 from webauthn.helpers.structs import (
@@ -42,7 +42,9 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 
-from models import db, Employe, EmpreinteEmploye, ParametragePointage, Pointage, VisageEmploye
+from models import (db, Employe, EmpreinteEmploye, ParametragePointage, Pointage, VisageEmploye,
+                    Conge, Permission, JourFerie, TentativePointage)
+from utils.regles_absences import absent_ce_jour
 
 RP_NAME = "Medilogic — Pointage"
 
@@ -149,7 +151,7 @@ def options_pointage(request, structure_id):
         .join(Employe, Employe.id == EmpreinteEmploye.employe_id)
         .filter(EmpreinteEmploye.structure_id == structure_id,
                 EmpreinteEmploye.actif == True,  # noqa: E712
-                Employe.statut == 'Actif')
+                Employe.statut.in_(Employe.STATUTS_EN_SERVICE))
         .all()
     )
     if not empreintes:
@@ -210,13 +212,84 @@ def verifier_pointage(request, structure_id, credential_json, challenge_b64):
 # aussi bien par le flux empreinte que par une saisie manuelle (admin).
 # ----------------------------------------------------------------------
 
+class AbsenceEnCours(ValueError):
+    """Pointage refusé : l'employé est en congé ou en permission ce jour-là."""
+
+
+LIBELLES_CONGE = {'annuel': 'congé annuel', 'maladie': 'congé maladie', 'maternite': 'congé de maternité',
+                  'paternite': 'congé de paternité', 'sans_solde': 'congé sans solde',
+                  'exceptionnel': 'congé exceptionnel'}
+
+
+def _jj(d):
+    return d.strftime('%d/%m/%Y')
+
+
+def absence_du_jour(employe, jour):
+    """Congé APPROUVÉ (du début à la veille de la reprise) ou permission
+    approuvée d'une ou plusieurs journées qui couvre `jour` — None sinon.
+    Les permissions de quelques heures ne bloquent pas le pointage (l'employé
+    vient travailler avant ou après)."""
+    for c in Conge.query.filter(Conge.employe_id == employe.id, Conge.statut == 'approuve',
+                                Conge.date_debut <= jour).order_by(Conge.date_debut.desc()).all():
+        if absent_ce_jour(jour, c.date_debut, c.date_fin, c.date_reprise):
+            periode = f"du {_jj(c.date_debut)} au {_jj(c.date_fin)}"
+            if c.date_reprise:
+                periode += f" (reprise le {_jj(c.date_reprise)})"
+            return {'type': 'conge', 'id': c.id, 'libelle': LIBELLES_CONGE.get(c.type_conge, 'congé'),
+                    'periode': periode, 'reference': c.demande_reference}
+    p = Permission.query.filter(Permission.employe_id == employe.id, Permission.statut == 'approuve',
+                                Permission.type_permission != 'heures',
+                                Permission.date_debut <= jour, Permission.date_fin >= jour).first()
+    if p:
+        periode = f"du {_jj(p.date_debut)} au {_jj(p.date_fin)}" if p.date_fin != p.date_debut else f"le {_jj(p.date_debut)}"
+        return {'type': 'permission', 'id': p.id, 'libelle': 'permission', 'periode': periode,
+                'reference': p.demande_reference}
+    return None
+
+
+def _signaler_tentative(employe, absence, methode, maintenant):
+    """Garde la trace du passage pour la RH (une ligne par jour, compteur) et
+    COMMIT tout de suite : l'appelant annule la transaction sur l'erreur."""
+    t = TentativePointage.query.filter_by(employe_id=employe.id, date_jour=maintenant.date()).first()
+    if t:
+        t.nombre = (t.nombre or 1) + 1
+        t.vue_par, t.vue_le = None, None      # nouveau passage : à revoir
+    else:
+        t = TentativePointage(structure_id=employe.structure_id, employe_id=employe.id,
+                              date_jour=maintenant.date(), premiere_heure=maintenant.time(), nombre=1)
+        db.session.add(t)
+    t.derniere_heure = maintenant.time()
+    t.methode = methode
+    t.absence_type, t.absence_id = absence['type'], absence['id']
+    t.motif = f"En {absence['libelle']} {absence['periode']}"[:255]
+    db.session.commit()
+
+
 def enregistrer_pointage(employe, methode='empreinte', maintenant=None):
     """Enregistre l'arrivée si l'employé n'a pas encore pointé aujourd'hui,
     sinon le départ. Calcule retard et durée travaillée selon le
-    paramétrage de la structure. Ne fait PAS le commit (laissé à l'appelant)."""
+    paramétrage de la structure. Ne fait PAS le commit (laissé à l'appelant),
+    sauf pour signaler à la RH le passage d'un employé en congé/permission."""
     maintenant = maintenant or datetime.now()
     aujourdhui = maintenant.date()
     heure_actuelle = maintenant.time()
+    nom = f"{employe.prenom or ''} {employe.nom}".strip()
+
+    if employe.date_depart and aujourdhui > employe.date_depart:
+        raise ValueError(f"{nom} a quitté la structure le {_jj(employe.date_depart)} : pointage impossible.")
+
+    # ⭐ Patron (2026-10-10) : en congé ou en permission, on ne pointe pas.
+    absence = absence_du_jour(employe, aujourdhui)
+    if absence:
+        if methode == 'manuel':
+            raise ValueError(f"{nom} est en {absence['libelle']} {absence['periode']} : pointage refusé. "
+                             "S'il a repris plus tôt, corrigez d'abord la fin de l'absence (ou la date de reprise).")
+        _signaler_tentative(employe, absence, methode, maintenant)
+        raise AbsenceEnCours(
+            f"{employe.prenom or nom}, vous êtes en {absence['libelle']} {absence['periode']}. "
+            "Vous n'êtes pas censé(e) pointer aujourd'hui : rien n'a été enregistré. "
+            "Votre passage a été signalé au service RH.")
 
     param = ParametragePointage.get_ou_creer(employe.structure_id)
 
@@ -274,42 +347,68 @@ def resume_periode(structure_id, date_debut, date_fin, employe_id=None):
     """Récapitulatif pointages sur une période : jours travaillés, retards,
     absences (jours ouvrés du paramétrage sans aucune ligne de pointage),
     heures totales — par employé. Utile pour le tableau du mois et, plus
-    tard, comme base d'éventuelles primes/retenues de paie."""
+    tard, comme base d'éventuelles primes/retenues de paie.
+
+    ⭐ Ne sont PAS des absences (avant : comptées, et retenues sur le salaire
+    si la retenue « absences (pointage) » est activée) : les jours de congé
+    ou de permission approuvés (« justifiés »), les jours fériés déclarés,
+    les jours avant l'embauche ou après le départ."""
+    from sqlalchemy import or_
     param = ParametragePointage.get_ou_creer(structure_id)
 
-    q = Employe.query.filter_by(structure_id=structure_id, statut='Actif')
+    q = Employe.query.filter(Employe.structure_id == structure_id,
+                             or_(Employe.statut.in_(Employe.STATUTS_EN_SERVICE), Employe.date_depart >= date_debut))
     if employe_id:
-        q = q.filter_by(id=employe_id)
+        q = q.filter(Employe.id == employe_id)
     employes = q.all()
 
+    feries = {j.date for j in JourFerie.query.filter(JourFerie.structure_id == structure_id,
+                                                     JourFerie.date >= date_debut, JourFerie.date <= date_fin).all()}
     jours_ouvres = []
     d = date_debut
     while d <= date_fin:
-        if d.weekday() in (param.jours_travailles or []):
+        if d.weekday() in (param.jours_travailles or []) and d not in feries:
             jours_ouvres.append(d)
-        d = date.fromordinal(d.toordinal() + 1)
+        d += timedelta(days=1)
 
+    aujourdhui = date.today()
     resultats = []
     for emp in employes:
+        jours_emp = [j for j in jours_ouvres
+                     if (not emp.date_embauche or j >= emp.date_embauche) and (not emp.date_depart or j <= emp.date_depart)]
         pointages = Pointage.query.filter(
             Pointage.employe_id == emp.id,
             Pointage.date_jour >= date_debut,
             Pointage.date_jour <= date_fin,
         ).all()
         par_date = {p.date_jour: p for p in pointages}
+        conges = Conge.query.filter(Conge.employe_id == emp.id, Conge.statut.in_(('approuve', 'termine')),
+                                    Conge.date_debut <= date_fin).all()
+        permissions = Permission.query.filter(Permission.employe_id == emp.id,
+                                              Permission.statut.in_(('approuve', 'termine')),
+                                              Permission.type_permission != 'heures',
+                                              Permission.date_debut <= date_fin, Permission.date_fin >= date_debut).all()
 
-        jours_presents = sum(1 for j in jours_ouvres if j in par_date and par_date[j].heure_arrivee)
+        def justifie(j):
+            return (any(absent_ce_jour(j, c.date_debut, c.date_fin, c.date_reprise) for c in conges)
+                    or any(p.date_debut <= j <= p.date_fin for p in permissions))
+
+        passes = [j for j in jours_emp if j <= aujourdhui]
+        jours_presents = sum(1 for j in jours_emp if j in par_date and par_date[j].heure_arrivee)
         jours_retard = sum(1 for p in pointages if p.statut_arrivee == 'retard')
-        jours_absents = sum(1 for j in jours_ouvres if j not in par_date and j <= date.today())
+        non_pointes = [j for j in passes if j not in par_date]
+        jours_justifies = sum(1 for j in non_pointes if justifie(j))
+        jours_absents = len(non_pointes) - jours_justifies
         minutes_totales = sum(p.duree_travaillee_minutes or 0 for p in pointages)
 
         resultats.append({
             'employe_id': emp.id,
             'employe_nom': f"{emp.prenom or ''} {emp.nom}".strip(),
-            'jours_ouvres': len([j for j in jours_ouvres if j <= date.today()]),
+            'jours_ouvres': len(passes),
             'jours_presents': jours_presents,
             'jours_retard': jours_retard,
             'jours_absents': jours_absents,
+            'jours_justifies': jours_justifies,
             'heures_travaillees': round(minutes_totales / 60, 1),
         })
     return resultats
@@ -362,7 +461,7 @@ def identifier_par_visage(structure_id, descripteur):
         .join(Employe, Employe.id == VisageEmploye.employe_id)
         .filter(VisageEmploye.structure_id == structure_id,
                 VisageEmploye.actif == True,  # noqa: E712
-                Employe.statut == 'Actif')
+                Employe.statut.in_(Employe.STATUTS_EN_SERVICE))
         .all()
     )
     if not visages:

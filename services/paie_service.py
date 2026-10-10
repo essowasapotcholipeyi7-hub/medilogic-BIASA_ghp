@@ -431,7 +431,8 @@ def apercu_salaires(structure_id, annee, mois):
     """Pour chaque employé actif : net à payer du mois (bulletin existant,
     sinon estimation sur le salaire de base), déjà payé ou non. Ne persiste
     rien."""
-    employes = Employe.query.filter_by(structure_id=structure_id, statut='Actif') \
+    # ⭐ Un employé en congé est payé : il reste dans la paie (seul 'Inactif' en sort).
+    employes = Employe.query.filter(Employe.structure_id == structure_id, Employe.statut.in_(Employe.STATUTS_EN_SERVICE)) \
         .order_by(Employe.nom, Employe.prenom).all()
     parametrage = ParametragePaie.get_ou_creer(structure_id) if employes else None
     lignes = []

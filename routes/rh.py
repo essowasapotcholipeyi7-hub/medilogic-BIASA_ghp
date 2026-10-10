@@ -8,6 +8,7 @@ import traceback
 
 from models import (db, Employe, Service, Conge, Permission, DocumentRH, SignatureRH,
                      Paie, ParametragePaie, EmpreinteEmploye, ParametragePointage, Pointage, VisageEmploye,
+                     TentativePointage,
                      TYPES_CONGE_DEDUCTIBLES, MOTIFS_DEPART, EvaluationRH, SanctionDisciplinaire, TYPES_SANCTION)
 from utils.permissions import a_acces
 from utils.regles_absences import (fusionner_regles, droit_conge_annuel, jours_ouvrables, controler_permission,
@@ -866,7 +867,7 @@ def api_organigramme(structure_id):
     inclure_inactifs = request.args.get('inclure_inactifs') == '1'
     query = Employe.query.filter_by(structure_id=structure_id)
     if not inclure_inactifs:
-        query = query.filter(Employe.statut == 'Actif')
+        query = query.filter(Employe.statut.in_(Employe.STATUTS_EN_SERVICE))
     employes = query.all()
 
     par_id = {e.id: e for e in employes}
@@ -2704,41 +2705,15 @@ def update_all_status(structure_id):
 @rh_bp.route('/api/update_conge_status', methods=['POST'])
 @require_structure
 def update_conge_status(structure_id):
-    """Met à jour le statut des employés en fonction des congés en cours"""
+    """Met à jour le statut des employés en fonction des congés en cours
+    (même règle que Employe.mettre_a_jour_statut : un employé parti reste Inactif)."""
     try:
-        today = date.today()
         employes = Employe.query.filter_by(structure_id=structure_id).all()
         count = 0
-        
         for employe in employes:
-            # Vérifier si l'employé a un congé approuvé en cours
-            conge_en_cours = Conge.query.filter(
-                Conge.employe_id == employe.id,
-                Conge.statut == 'approuve',
-                Conge.date_debut <= today,
-                Conge.date_fin >= today
-            ).first()
-            
-            if conge_en_cours:
-                if employe.statut != 'En conge':
-                    employe.statut = 'En conge'
-                    count += 1
-            else:
-                # Vérifier si reprise après congé
-                conge_termine = Conge.query.filter(
-                    Conge.employe_id == employe.id,
-                    Conge.statut == 'approuve',
-                    Conge.date_fin < today
-                ).order_by(Conge.date_fin.desc()).first()
-                
-                if conge_termine and conge_termine.date_reprise and conge_termine.date_reprise <= today:
-                    if employe.statut != 'Actif':
-                        employe.statut = 'Actif'
-                        count += 1
-                elif employe.statut == 'En conge':
-                    employe.statut = 'Actif'
-                    count += 1
-        
+            avant = employe.statut
+            if employe.mettre_a_jour_statut() != avant:
+                count += 1
         db.session.commit()
         
         return jsonify({
@@ -3051,7 +3026,9 @@ def api_liste_paies(structure_id):
     annee = request.args.get('annee', datetime.now().year, type=int)
     mois = request.args.get('mois', datetime.now().month, type=int)
 
-    employes = Employe.query.filter_by(structure_id=structure_id, statut='Actif').order_by(Employe.nom).all()
+    # ⭐ Un employé en congé est payé : il garde son bulletin (seul 'Inactif' en sort).
+    employes = Employe.query.filter(Employe.structure_id == structure_id,
+                                    Employe.statut.in_(Employe.STATUTS_EN_SERVICE)).order_by(Employe.nom).all()
     paies_existantes = {p.employe_id: p for p in Paie.query.filter_by(
         structure_id=structure_id, annee=annee, mois=mois).all()}
 
@@ -3152,7 +3129,8 @@ def api_generer_paie_masse(structure_id):
         annee = data.get('annee', datetime.now().year)
         mois = data.get('mois', datetime.now().month)
 
-        employes = Employe.query.filter_by(structure_id=structure_id, statut='Actif').all()
+        employes = Employe.query.filter(Employe.structure_id == structure_id,
+                                        Employe.statut.in_(Employe.STATUTS_EN_SERVICE)).all()
         deja_ids = {p.employe_id for p in Paie.query.filter_by(
             structure_id=structure_id, annee=annee, mois=mois).all()}
         a_generer = [e for e in employes if e.id not in deja_ids]
@@ -3410,9 +3388,35 @@ def api_liste_pointages(structure_id):
         .join(Employe).order_by(Employe.nom).all()
 
     # Employés sans pointage ce jour-là (utile pour repérer les absences au fil de l'eau)
+    # ⭐ séparés : en congé / permission approuvés (absence justifiée) ou pas encore pointé.
+    from services.pointage_service import absence_du_jour
     ids_pointes = {p.employe_id for p in pointages}
-    tous = Employe.query.filter_by(structure_id=structure_id, statut='Actif').all()
-    sans_pointage = [e for e in tous if e.id not in ids_pointes]
+    tous = Employe.query.filter(Employe.structure_id == structure_id,
+                                Employe.statut.in_(Employe.STATUTS_EN_SERVICE)).order_by(Employe.nom).all()
+    # deux requêtes pour repérer qui PEUT être absent ce jour-là (la borne recharge
+    # cette liste toutes les 30 s) ; le détail n'est calculé que pour eux.
+    ids_tous = [e.id for e in tous]
+    peut_etre_absents = {e_id for (e_id,) in db.session.query(Conge.employe_id).filter(
+        Conge.employe_id.in_(ids_tous), Conge.statut == 'approuve', Conge.date_debut <= jour,
+        or_(Conge.date_fin >= jour, Conge.date_reprise > jour)).all()} | {e_id for (e_id,) in db.session.query(
+        Permission.employe_id).filter(Permission.employe_id.in_(ids_tous), Permission.statut == 'approuve',
+                                      Permission.type_permission != 'heures', Permission.date_debut <= jour,
+                                      Permission.date_fin >= jour).all()} if ids_tous else set()
+    sans_pointage, en_absence = [], []
+    for e in tous:
+        if e.id in ids_pointes or (e.date_embauche and e.date_embauche > jour):
+            continue
+        absence = absence_du_jour(e, jour) if e.id in peut_etre_absents else None
+        nom = f"{e.prenom or ''} {e.nom}".strip()
+        if absence:
+            en_absence.append({'employe_id': e.id, 'employe_nom': nom,
+                               'absence': f"{absence['libelle']} {absence['periode']}"})
+        else:
+            sans_pointage.append(e)
+    tentatives = TentativePointage.query.filter(
+        TentativePointage.structure_id == structure_id,
+        or_(TentativePointage.date_jour == jour, TentativePointage.vue_le.is_(None))
+    ).order_by(TentativePointage.date_jour.desc(), TentativePointage.derniere_heure.desc()).all()
 
     return jsonify({
         'success': True,
@@ -3430,7 +3434,44 @@ def api_liste_pointages(structure_id):
             'duree_travaillee_minutes': p.duree_travaillee_minutes,
         } for p in pointages],
         'absents': [{'employe_id': e.id, 'employe_nom': f"{e.prenom or ''} {e.nom}".strip()} for e in sans_pointage],
+        'en_absence': en_absence,
+        'tentatives': [_tentative_json(t) for t in tentatives],
     })
+
+
+def _tentative_json(t):
+    return {
+        'id': t.id,
+        'employe_nom': f"{t.employe.prenom or ''} {t.employe.nom}".strip() if t.employe else '?',
+        'date': t.date_jour.strftime('%d/%m/%Y'),
+        'premiere_heure': t.premiere_heure.strftime('%H:%M') if t.premiere_heure else '',
+        'derniere_heure': t.derniere_heure.strftime('%H:%M') if t.derniere_heure else '',
+        'nombre': t.nombre or 1,
+        'methode': t.methode or '',
+        'motif': t.motif or '',
+        'vue': bool(t.vue_le),
+        'vue_par': t.vue_par or '',
+    }
+
+
+# ⭐ Passages à la borne d'employés en congé / permission (patron, 2026-10-10).
+@rh_bp.route('/api/pointage/tentatives/compte', methods=['GET'])
+@require_structure
+def api_compte_tentatives_pointage(structure_id):
+    n = TentativePointage.query.filter_by(structure_id=structure_id).filter(TentativePointage.vue_le.is_(None)).count()
+    return jsonify({'success': True, 'non_vues': n})
+
+
+@rh_bp.route('/api/pointage/tentatives/<int:id>/vue', methods=['PUT'])
+@require_structure
+def api_tentative_pointage_vue(structure_id, id):
+    t = TentativePointage.query.filter_by(id=id, structure_id=structure_id).first()
+    if not t:
+        return jsonify({'success': False, 'message': 'Signalement introuvable'}), 404
+    t.vue_par = session.get('user_name', 'RH')
+    t.vue_le = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'success': True})
 
 
 @rh_bp.route('/api/pointage/resume', methods=['GET'])
@@ -3473,7 +3514,8 @@ def api_pointage_manuel(structure_id):
 @rh_bp.route('/api/empreintes', methods=['GET'])
 @require_structure
 def api_liste_empreintes(structure_id):
-    employes = Employe.query.filter_by(structure_id=structure_id, statut='Actif').order_by(Employe.nom).all()
+    employes = Employe.query.filter(Employe.structure_id == structure_id,
+                                    Employe.statut.in_(Employe.STATUTS_EN_SERVICE)).order_by(Employe.nom).all()
     return jsonify({
         'success': True,
         'data': [{
@@ -3558,7 +3600,7 @@ def api_options_pointage(structure_id):
 @rh_bp.route('/api/pointage/webauthn/verifier', methods=['POST'])
 @require_structure
 def api_verifier_pointage(structure_id):
-    from services.pointage_service import verifier_pointage
+    from services.pointage_service import verifier_pointage, AbsenceEnCours
 
     data = request.get_json(force=True) or {}
     challenge = session.pop('pointage_challenge', None)
@@ -3570,7 +3612,7 @@ def api_verifier_pointage(structure_id):
         return jsonify({'success': True, 'data': resultat})
     except ValueError as e:
         db.session.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 400
+        return jsonify({'success': False, 'message': str(e), 'absence': isinstance(e, AbsenceEnCours)}), 400
     except Exception as e:
         db.session.rollback()
         traceback.print_exc()
@@ -3582,7 +3624,8 @@ def api_verifier_pointage(structure_id):
 @rh_bp.route('/api/visages', methods=['GET'])
 @require_structure
 def api_liste_visages(structure_id):
-    employes = Employe.query.filter_by(structure_id=structure_id, statut='Actif').order_by(Employe.nom).all()
+    employes = Employe.query.filter(Employe.structure_id == structure_id,
+                                    Employe.statut.in_(Employe.STATUTS_EN_SERVICE)).order_by(Employe.nom).all()
     return jsonify({
         'success': True,
         'data': [{
@@ -3632,7 +3675,7 @@ def api_enregistrer_visage(structure_id):
 @rh_bp.route('/api/pointage/facial/verifier', methods=['POST'])
 @require_structure
 def api_verifier_pointage_facial(structure_id):
-    from services.pointage_service import identifier_par_visage
+    from services.pointage_service import identifier_par_visage, AbsenceEnCours
 
     data = request.get_json(force=True) or {}
     try:
@@ -3640,7 +3683,7 @@ def api_verifier_pointage_facial(structure_id):
         return jsonify({'success': True, 'data': resultat})
     except ValueError as e:
         db.session.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 400
+        return jsonify({'success': False, 'message': str(e), 'absence': isinstance(e, AbsenceEnCours)}), 400
     except Exception as e:
         db.session.rollback()
         traceback.print_exc()

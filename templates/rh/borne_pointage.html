@@ -69,6 +69,10 @@
         .resultat { margin-top: 20px; font-size: 17px; min-height: 26px; }
         .resultat.succes { color: #b6ffcf; }
         .resultat.erreur { color: #ffd0d0; }
+        /* ⭐ Employé en congé / permission : message bien visible, rien n'est pointé. */
+        .resultat.absence { color: #3b2a00; background: #ffd666; border-radius: 12px; padding: 14px 16px;
+                            font-size: 19px; font-weight: 600; line-height: 1.45; text-align: left; }
+        .resultat.absence i { margin-right: 6px; }
 
         .liste-jour {
             margin-top: 26px; text-align: left; max-height: 130px; overflow-y: auto;
@@ -299,6 +303,11 @@
                     resultat.innerHTML = `<i class="fas fa-circle-check"></i> Au revoir ${d.employe_nom} — départ ${d.heure}`;
                 }
                 chargerListeJour();
+            } else if (reponse.absence) {
+                // ⭐ En congé / permission : pas de pointage, passage signalé à la RH.
+                resultat.className = 'resultat absence';
+                resultat.innerHTML = '<i class="fas fa-umbrella-beach"></i>';
+                resultat.appendChild(document.createTextNode(reponse.message));
             } else {
                 resultat.className = 'resultat erreur';
                 resultat.textContent = reponse.message;
