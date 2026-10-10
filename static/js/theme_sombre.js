@@ -9,10 +9,12 @@
 // Rejoué sur le contenu ajouté dynamiquement (tableaux chargés en AJAX, modals).
 (function () {
     const root = document.documentElement;
-    if (root.getAttribute('data-bs-theme') !== 'dark') return;
-    const cs = getComputedStyle(root);
-    const CARTE = (cs.getPropertyValue('--th-carte') || '').trim() || '#1E1E1E';
-    const TEXTE = (cs.getPropertyValue('--th-texte') || '').trim() || '#E8E8E8';
+    let CARTE = '#1E1E1E', TEXTE = '#E8E8E8', observateur = null, actif = false;
+    function lireCouleurs() {
+        const cs = getComputedStyle(root);
+        CARTE = (cs.getPropertyValue('--th-carte') || '').trim() || '#1E1E1E';
+        TEXTE = (cs.getPropertyValue('--th-texte') || '').trim() || '#E8E8E8';
+    }
     const SKIP = new Set(['IMG', 'SVG', 'PATH', 'G', 'CANVAS', 'VIDEO', 'INPUT', 'SELECT', 'TEXTAREA', 'OPTION', 'SCRIPT', 'STYLE', 'I', 'BR', 'HR']);
     const SKIP_SEL = '.badge, .modal-backdrop, .form-check-input, .structure-brand, .alert, .progress, .spinner-border, .toast, .swal2-container, [data-th-garder]';
 
@@ -88,15 +90,31 @@
     }
 
     function demarrer() {
+        if (actif || root.getAttribute('data-bs-theme') !== 'dark') return;
+        actif = true;
+        lireCouleurs();
         corriger(document.body);
-        new MutationObserver(muts => {
+        observateur = new MutationObserver(muts => {
             muts.forEach(m => {
                 m.addedNodes.forEach(n => { if (n.nodeType === 1) planifier(n); });
                 // nos propres écritures de style ne doivent pas nous relancer (boucle) ; un changement de classe, si
                 if (m.type === 'attributes' && m.target.nodeType === 1 && !(m.attributeName === 'style' && m.target.dataset.thSombre)) planifier(m.target);
             });
-        }).observe(document.body, {childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class']});
+        });
+        observateur.observe(document.body, {childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class']});
     }
+    // ⭐ Retour au clair en direct (interrupteur Soleil / Lune) : on retire ce qu'on avait posé
+    function annuler() {
+        if (observateur) { observateur.disconnect(); observateur = null; }
+        clearTimeout(minuteur); enAttente.clear();
+        document.querySelectorAll('[data-th-sombre]').forEach(el => {
+            ['background-color', 'color', 'transition', 'border-color'].forEach(p => el.style.removeProperty(p));
+            delete el.dataset.thSombre;
+        });
+        actif = false;
+    }
+    window.themeSombreDemarrer = demarrer;
+    window.themeSombreAnnuler = annuler;
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', demarrer); else demarrer();
-    window.addEventListener('load', () => corriger(document.body));
+    window.addEventListener('load', () => { if (actif) corriger(document.body); });
 })();

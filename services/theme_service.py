@@ -220,12 +220,43 @@ def choisir_theme(structure_id, cle, user_nom='', demarrer_essai=True, portee='s
     r.modifie_le = datetime.utcnow()
     if portee == 'structure':
         r.proposition_vue = True   # un thème a été choisi : plus de proposition à la connexion
+    # ⭐ mémorise le dernier clair / le dernier sombre (interrupteur Soleil / Lune)
+    if est_sombre(theme):
+        r.derniere_cle_sombre = cle
+    else:
+        r.derniere_cle_claire = cle
     db.session.commit()
     invalider_cache(structure_id)
     return theme_actif(structure_id, utilisateur_id if portee == 'utilisateur' else None)
 
 
 THEME_PROPOSE_CLE = 'noir'
+THEME_SOMBRE_DEFAUT = 'noir'
+
+
+def est_sombre(theme):
+    return bool((theme.get('variables') or {}).get('mode_sombre'))
+
+
+def basculer(structure_id, mode, user_nom='', portee='structure', utilisateur_id=None):
+    """⭐ Soleil / Lune : mode 'sombre' -> dernier thème sombre utilisé (sinon
+    Noir) ; mode 'clair' -> dernier thème clair utilisé (sinon Classique).
+    Un thème payant devenu inaccessible est remplacé par le défaut du mode."""
+    r = reglage_utilisateur(structure_id, utilisateur_id) if portee == 'utilisateur' else reglage_structure(structure_id)
+    if mode == 'sombre':
+        candidats = [r.derniere_cle_sombre if r else None, THEME_SOMBRE_DEFAUT]
+    else:
+        candidats = [r.derniere_cle_claire if r else None, THEME_DEFAUT_CLE]
+    for cle in candidats:
+        if not cle:
+            continue
+        theme = theme_par_cle(cle)
+        if not theme or est_sombre(theme) != (mode == 'sombre'):
+            continue
+        if theme['payant'] and not etat_pour(structure_id, theme)['utilisable']:
+            continue
+        return choisir_theme(structure_id, cle, user_nom, demarrer_essai=False, portee=portee, utilisateur_id=utilisateur_id)
+    raise ValueError('Aucun thème disponible pour ce mode.')
 
 
 def proposition_a_faire(structure_id):

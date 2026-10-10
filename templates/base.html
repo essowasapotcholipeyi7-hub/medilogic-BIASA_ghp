@@ -1982,6 +1982,18 @@
     {# ⭐ Thème / apparence choisi par la structure (patron, 2026-10-09) — voir
        injecter_theme_structure() (app.py) et services/theme_service.py ;
        vide tant que la structure garde l'apparence d'origine. #}
+    <style>
+        /* ⭐ Interrupteur Soleil / Lune + transition douce entre clair et sombre */
+        #themeSoleilLune .btn { color: #8a94a6; background: transparent; transition: background .25s, color .25s; }
+        #themeSoleilLune .btn.actif { background: #0A3D5C; color: #fff; }
+        #themeSoleilLune .btn:hover:not(.actif) { color: #0A3D5C; }
+        [data-bs-theme="dark"] #themeSoleilLune { background: rgba(255,255,255,0.08) !important; box-shadow: none !important; }
+        [data-bs-theme="dark"] #themeSoleilLune .btn.actif { background: var(--th-primaire, #00E599); color: #0A0A0A; }
+        [data-bs-theme="dark"] #themeSoleilLune .btn:not(.actif) { color: rgba(255,255,255,0.6); }
+        html.theme-transition, html.theme-transition *, html.theme-transition *::before, html.theme-transition *::after {
+            transition: background-color .35s ease, color .35s ease, border-color .35s ease, background .35s ease !important;
+        }
+    </style>
     {% block extra_css %}{% endblock %}
     {# ⭐ Feuille du thème APRÈS les styles propres à la page, pour primer sur eux ;
        en thème sombre, theme_sombre.js corrige en plus les fonds blancs / textes
@@ -2157,6 +2169,15 @@
                  document.getElementById(...) au cas où ces éléments
                  n'existent plus). -->
 
+            <!-- ⭐ Interrupteur Soleil / Lune (patron, 2026-10-10 : « comme dans Claude ») :
+                 bascule clair / sombre en direct, sans recharger — admin : toute la
+                 structure, autres : pour soi. Voir basculerTheme() plus bas. -->
+            <div id="themeSoleilLune" class="d-flex align-items-center" role="group" aria-label="Clair ou sombre"
+                 style="background: rgba(255,255,255,0.8); border-radius: 40px; padding: 3px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); gap: 2px;">
+                <button type="button" class="btn btn-sm rounded-pill border-0 th-soleil {{ '' if theme_sombre else 'actif' }}" onclick="basculerTheme('clair')" title="Thème clair" style="padding: 5px 10px; line-height: 1;"><i class="fas fa-sun"></i></button>
+                <button type="button" class="btn btn-sm rounded-pill border-0 th-lune {{ 'actif' if theme_sombre else '' }}" onclick="basculerTheme('sombre')" title="Thème sombre" style="padding: 5px 10px; line-height: 1;"><i class="fas fa-moon"></i></button>
+            </div>
+
             {% if session.is_admin or session.role == 'gestionnaire' %}
             <!-- ⭐ Cloche de notification : demandes en attente de validation
                  (annulation vente, dépense, encaissement assurance). Compteur
@@ -2208,6 +2229,39 @@
     </div>
 </nav>
 
+<script>
+// ⭐ Soleil / Lune : bascule clair / sombre en direct, sans recharger la page
+async function basculerTheme(mode) {
+    const groupe = document.getElementById('themeSoleilLune');
+    if (groupe) groupe.querySelectorAll('.btn').forEach(b => b.disabled = true);
+    try {
+        const d = await fetch('/api/theme/basculer', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({mode})}).then(r => r.json());
+        if (!d.success) { if (window.afficherMessage) await afficherMessage(d.error || 'Erreur', {type: 'danger'}); else alert(d.error || 'Erreur'); return; }
+        appliquerThemeEnDirect(d.css, d.sombre);
+        if (typeof charger === 'function' && document.getElementById('grilleThemes')) charger();
+    } finally {
+        if (groupe) groupe.querySelectorAll('.btn').forEach(b => b.disabled = false);
+    }
+}
+function appliquerThemeEnDirect(css, sombre) {
+    const html = document.documentElement;
+    html.classList.add('theme-transition');
+    let st = document.getElementById('themeStructure');
+    if (!st) { st = document.createElement('style'); st.id = 'themeStructure'; document.head.appendChild(st); }
+    st.textContent = css || '';
+    if (sombre) {
+        html.setAttribute('data-bs-theme', 'dark');
+        if (window.themeSombreDemarrer) themeSombreDemarrer();
+        else { const s = document.createElement('script'); s.src = '{{ url_for('static', filename='js/theme_sombre.js') }}'; document.head.appendChild(s); }
+    } else {
+        if (window.themeSombreAnnuler) themeSombreAnnuler();
+        html.removeAttribute('data-bs-theme');
+    }
+    const groupe = document.getElementById('themeSoleilLune');
+    if (groupe) { groupe.querySelector('.th-soleil').classList.toggle('actif', !sombre); groupe.querySelector('.th-lune').classList.toggle('actif', !!sombre); }
+    setTimeout(() => html.classList.remove('theme-transition'), 600);
+}
+</script>
 {% if theme_proposition %}
 <!-- ⭐ Proposition du thème Noir à la connexion (patron, 2026-10-10) -->
 <div class="modal fade" id="modalPropositionTheme" tabindex="-1" data-bs-backdrop="static">

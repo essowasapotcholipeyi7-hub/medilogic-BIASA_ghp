@@ -6377,6 +6377,30 @@ def api_theme_payer():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/theme/basculer', methods=['POST'])
+@login_required
+def api_theme_basculer():
+    """⭐ Interrupteur Soleil / Lune de la barre du haut (patron, 2026-10-10 :
+    « comme dans Claude, ça change en même temps ») — admin : toute la
+    structure ; autres : pour soi. Renvoie le CSS à appliquer sans recharger."""
+    mode = (request.json or {}).get('mode') or ''
+    if mode not in ('clair', 'sombre'):
+        return jsonify({'success': False, 'error': 'Mode inconnu'}), 400
+    try:
+        actif = theme_service.basculer(session.get('structure_id'), mode, session.get('user_name', ''),
+                                       portee=_portee_theme(), utilisateur_id=_utilisateur_theme())
+        from utils.themes import generer_css
+        css = generer_css(actif['variables'])
+        return jsonify({'success': True, 'css': css, 'sombre': '/* mode sombre */' in css, 'theme': actif['theme']['cle'],
+                        'nom': actif['theme']['nom'], 'portee': _portee_theme()})
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/theme/proposition', methods=['POST'])
 @login_required
 def api_theme_proposition():

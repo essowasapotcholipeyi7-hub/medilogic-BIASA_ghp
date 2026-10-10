@@ -31,6 +31,14 @@
 </div>
 {% endif %}
 
+<div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+    <span class="fw-semibold"><i class="fas fa-circle-half-stroke me-1"></i>Mode :</span>
+    <div class="btn-group" role="group" aria-label="Clair ou sombre">
+        <button type="button" class="btn btn-outline-secondary" onclick="basculerTheme('clair')"><i class="fas fa-sun me-1"></i> Clair</button>
+        <button type="button" class="btn btn-outline-secondary" onclick="basculerTheme('sombre')"><i class="fas fa-moon me-1"></i> Sombre</button>
+    </div>
+    <span class="small text-muted">Bascule en direct entre votre dernier thème clair et votre dernier thème sombre (Noir par défaut). Le même interrupteur est dans la barre du haut.</span>
+</div>
 <div id="alerteBloque" class="alert alert-warning" style="display:none;"></div>
 <div id="infoSource" class="small text-muted mb-2"></div>
 

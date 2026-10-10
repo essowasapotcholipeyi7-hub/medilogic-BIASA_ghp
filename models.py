@@ -4819,6 +4819,10 @@ class ThemeStructure(db.Model):
     # jour dès la connexion ») — True une fois qu'un thème a été choisi ou que
     # l'admin a cliqué « Ne plus proposer ».
     proposition_vue = db.Column(db.Boolean, default=False)
+    # ⭐ Interrupteur Soleil / Lune (patron, 2026-10-10 : « comme dans Claude ») —
+    # dernier thème clair et dernier thème sombre utilisés, pour y revenir d'un clic.
+    derniere_cle_claire = db.Column(db.String(40))
+    derniere_cle_sombre = db.Column(db.String(40))
 
 
 class LogoStructure(db.Model):
@@ -4854,6 +4858,8 @@ class ThemeUtilisateur(db.Model):
     personnalisation = db.Column(db.JSON, default=dict)
     modifie_le = db.Column(db.DateTime, default=datetime.utcnow)
     modifie_par = db.Column(db.String(150))
+    derniere_cle_claire = db.Column(db.String(40))
+    derniere_cle_sombre = db.Column(db.String(40))
     __table_args__ = (db.UniqueConstraint('structure_id', 'utilisateur_id', name='uq_theme_utilisateur'),)
 
 
