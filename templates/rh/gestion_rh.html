@@ -1154,6 +1154,24 @@
                         Solde de congés restant: <strong id="soldeRestant">0</strong> jours
                     </div>
                     
+                    <!-- ⭐ Demande ÉCRITE de l'employé (patron, 2026-10-10) : la lettre scannée,
+                         sa date et sa réception par la RH ; une référence (DC-/DP-) la relie à la
+                         réponse imprimée — voir le bouton « Dossier » de la liste. -->
+                    <div class="border rounded p-2 mb-2">
+                        <label class="form-label small mb-1"><i class="fas fa-envelope-open-text me-1"></i>Demande écrite de l'employé <span class="text-muted">(lettre scannée, facultatif)</span></label>
+                        <input type="file" class="form-control form-control-sm mb-1" id="congeDemandeFichier" accept="application/pdf,image/jpeg,image/png,image/webp">
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="form-label small mb-0">Date de la lettre</label>
+                                <input type="date" class="form-control form-control-sm" id="congeDemandeDate">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small mb-0">Reçue par la RH le</label>
+                                <input type="date" class="form-control form-control-sm" id="congeDemandeRecue">
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="mb-2">
                         <label class="form-label small text-danger">Signataire (Directeur/Responsable) *</label>
                         <input type="text" class="form-control form-control-sm" id="congeSignataire" 
@@ -1315,6 +1333,24 @@
                         <textarea class="form-control form-control-sm" id="permMotif" rows="2" required></textarea>
                     </div>
                     
+                    <!-- ⭐ Demande ÉCRITE de l'employé (patron, 2026-10-10) : la lettre scannée,
+                         sa date et sa réception par la RH ; une référence (DC-/DP-) la relie à la
+                         réponse imprimée — voir le bouton « Dossier » de la liste. -->
+                    <div class="border rounded p-2 mb-2">
+                        <label class="form-label small mb-1"><i class="fas fa-envelope-open-text me-1"></i>Demande écrite de l'employé <span class="text-muted">(lettre scannée, facultatif)</span></label>
+                        <input type="file" class="form-control form-control-sm mb-1" id="permDemandeFichier" accept="application/pdf,image/jpeg,image/png,image/webp">
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="form-label small mb-0">Date de la lettre</label>
+                                <input type="date" class="form-control form-control-sm" id="permDemandeDate">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small mb-0">Reçue par la RH le</label>
+                                <input type="date" class="form-control form-control-sm" id="permDemandeRecue">
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="mb-2">
                         <label class="form-label small text-danger">Signataire (Directeur/Responsable) *</label>
                         <input type="text" class="form-control form-control-sm" id="permSignataire" 
@@ -2155,10 +2191,11 @@ function afficherConges() {
             </button>
         `);
 
+        actions.push(boutonsDossier('conge', c));
         tbody.innerHTML += `
             <tr>
-                <td><strong>${c.employe_nom}</strong></td>
-                <td>${c.type_conge}</td>
+                <td><strong>${c.employe_nom}</strong>${ligneReference(c)}</td>
+                <td>${c.type_conge}${c.derogation_anciennete ? '<br><small class="text-warning">par dérogation</small>' : ''}</td>
                 <td>${c.date_debut}</td>
                 <td>${c.date_fin}</td>
                 <td>${c.nombre_jours || 0}</td>
@@ -2187,7 +2224,7 @@ function filtrerConges() {
     
     congesFiltres = tousConges.filter(c => {
         let match = true;
-        if (search && !c.employe_nom.toLowerCase().includes(search)) match = false;
+        if (search && !c.employe_nom.toLowerCase().includes(search) && !(c.demande_reference || '').toLowerCase().includes(search)) match = false;
         if (statut && c.statut !== statut) match = false;
         if (type && c.type_conge !== type) match = false;
         return match;
@@ -2222,6 +2259,7 @@ function ouvrirDemandeConge() {
                 });
                 
                 document.getElementById('congeForm').reset();
+                document.getElementById('congeDemandeRecue').value = new Date().toISOString().slice(0, 10);
                 document.getElementById('congeJours').value = '';
                 document.getElementById('congeReprise').value = '';
                 document.getElementById('congeAlerte').style.display = 'none';
@@ -2506,7 +2544,9 @@ async function sauvegarderConge() {
         await afficherMessage('La date de fin doit être après la date de début');
         return;
     }
-    
+    try { await ajouterDemandeEcrite('conge', data); }
+    catch (e) { await afficherMessage('Lettre de demande illisible : choisissez un autre fichier.', {type: 'danger'}); return; }
+
     showLoader('Envoi de la demande...');
     
     fetch('/rh/conge/demander', {
@@ -2752,9 +2792,10 @@ function afficherPermissions() {
         if (p.avis_superieur) {
             avisHtml = `<br><small class="${p.avis_superieur === 'favorable' ? 'text-success' : 'text-danger'}">Avis N+1 ${p.avis_superieur === 'favorable' ? 'favorable' : 'défavorable'}</small>`;
         }
+        actions.push(boutonsDossier('permission', p));
         tbody.innerHTML += `
             <tr>
-                <td><strong>${p.employe_nom}</strong></td>
+                <td><strong>${p.employe_nom}</strong>${ligneReference(p)}</td>
                 <td>${natureHtml}</td>
                 <td>${periode}</td>
                 <td>${heures}</td>
@@ -2777,7 +2818,7 @@ function filtrerPermissions() {
     
     permissionsFiltres = toutesPermissions.filter(p => {
         let match = true;
-        if (search && !p.employe_nom.toLowerCase().includes(search)) match = false;
+        if (search && !p.employe_nom.toLowerCase().includes(search) && !(p.demande_reference || '').toLowerCase().includes(search)) match = false;
         if (statut && p.statut !== statut) match = false;
         const natureFiltre = (document.getElementById('filtreNaturePermission') || {}).value;
         if (natureFiltre && p.nature !== natureFiltre) match = false;
@@ -2812,6 +2853,7 @@ function ouvrirDemandePermission() {
                 });
                 
                 document.getElementById('permissionForm').reset();
+                document.getElementById('permDemandeRecue').value = new Date().toISOString().slice(0, 10);
                 document.getElementById('permHeuresSection').style.display = 'block';
                 document.getElementById('permJoursSection').style.display = 'none';
                 chargerReglesAbsences().then(() => { majNaturePermission(); majDroitsPermission(); });
@@ -2957,6 +2999,27 @@ function lireFichierBase64(input) {
     });
 }
 
+// ⭐ Demande écrite (lettre scannée + dates) ajoutée à l'envoi d'un congé / d'une permission.
+async function ajouterDemandeEcrite(prefixe, data) {
+    const f = await lireFichierBase64(document.getElementById(prefixe + 'DemandeFichier'));
+    if (f) { data.demande_ecrite_nom = f.nom; data.demande_ecrite_mime = f.mime; data.demande_ecrite_b64 = f.b64; }
+    data.demande_ecrite_date = document.getElementById(prefixe + 'DemandeDate').value || '';
+    data.demande_recue_le = document.getElementById(prefixe + 'DemandeRecue').value || '';
+}
+
+function boutonsDossier(type, d) {
+    let html = `<button class="btn btn-sm btn-outline-primary" onclick="window.open('/rh/dossier/${type}/${d.id}', '_blank')" title="Dossier : la lettre de l'employé et la réponse de la RH${d.demande_reference ? ' (' + d.demande_reference + ')' : ''}"><i class="fas fa-folder-open"></i></button>`;
+    if (d.statut === 'refuse') {
+        html += `<button class="btn btn-sm btn-outline-danger" onclick="window.open('/rh/${type}/${d.id}/refus', '_blank')" title="Imprimer la lettre de refus"><i class="fas fa-envelope"></i></button>`;
+    }
+    return html;
+}
+
+function ligneReference(d) {
+    if (!d.demande_reference) return '';
+    return `<br><small class="text-muted"><i class="fas ${d.demande_ecrite ? 'fa-paperclip' : 'fa-hashtag'} me-1"></i>${d.demande_reference}${d.demande_ecrite_date ? ' — lettre du ' + d.demande_ecrite_date : ''}</small>`;
+}
+
 async function donnerAvisSuperieur(id, avis) {
     const commentaire = await demanderSaisie(avis === 'favorable'
         ? 'Avis FAVORABLE du supérieur hiérarchique. Commentaire (facultatif) :'
@@ -3017,6 +3080,8 @@ async function sauvegarderPermission() {
         evenement: nature === 'exceptionnelle' ? document.getElementById('permEvenement').value : null,
         deduction: (document.querySelector('input[name="permDeduction"]:checked') || {}).value || 'salaire',
     };
+    try { await ajouterDemandeEcrite('perm', data); }
+    catch (e) { await afficherMessage('Lettre de demande illisible : choisissez un autre fichier.', {type: 'danger'}); return; }
     if (nature === 'exceptionnelle') {
         if (!data.evenement) { await afficherMessage("Choisissez l'événement familial."); return; }
         try {

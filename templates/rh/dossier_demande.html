@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}Dossier {{ objet.demande_reference }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .dossier-lettre { min-height: 70vh; border: 1px solid var(--bs-border-color, #dee2e6); border-radius: 8px; overflow: hidden; background: #fff; }
+    .dossier-lettre iframe { width: 100%; height: 70vh; border: 0; display: block; }
+    .dossier-lettre img { width: 100%; height: auto; display: block; }
+    .dossier-vide { min-height: 40vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; padding: 20px; }
+    .chrono { list-style: none; padding: 0; margin: 0; }
+    .chrono li { position: relative; padding: 0 0 12px 22px; font-size: 14px; }
+    .chrono li::before { content: ''; position: absolute; left: 5px; top: 6px; width: 9px; height: 9px; border-radius: 50%; background: var(--bs-secondary-color, #6c757d); }
+    .chrono li.fait::before { background: var(--bs-success, #198754); }
+    .chrono li::after { content: ''; position: absolute; left: 9px; top: 16px; bottom: 0; width: 1px; background: var(--bs-border-color, #dee2e6); }
+    .chrono li:last-child::after { display: none; }
+    .dossier-ref { font-variant-numeric: tabular-nums; letter-spacing: .3px; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set statut_libelle = {'en_attente': 'En attente de décision', 'approuve': 'Accordée', 'refuse': 'Refusée', 'termine': 'Terminée'}.get(objet.statut, objet.statut) %}
+{% set statut_couleur = {'en_attente': 'warning', 'approuve': 'success', 'refuse': 'danger', 'termine': 'secondary'}.get(objet.statut, 'secondary') %}
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+      <h4 class="mb-0"><i class="fas fa-folder-open me-2"></i>Dossier <span class="dossier-ref">{{ objet.demande_reference }}</span></h4>
+      <div class="text-muted">Demande de {{ objet_demande }} — <strong>{{ employe.nom }} {{ employe.prenom }}</strong> ({{ employe.matricule }})</div>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+      <span class="badge bg-{{ statut_couleur }} fs-6">{{ statut_libelle }}</span>
+      <a href="{{ url_for('rh.gestion_rh') }}#{{ 'conges' if type_demande == 'conge' else 'permissions' }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i>Retour à la GRH</a>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <!-- ===== La demande de l'employé ===== -->
+    <div class="col-lg-7">
+      <div class="card h-100">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <h6 class="mb-0"><i class="fas fa-envelope-open-text me-2"></i>Demande écrite de l'employé</h6>
+          <div class="d-flex gap-2">
+            {% if objet.demande_ecrite_nom %}
+            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('rh.demande_ecrite_voir', type_demande=type_demande, id=objet.id) }}" target="_blank"><i class="fas fa-up-right-from-square me-1"></i>Ouvrir</a>
+            {% endif %}
+            <button class="btn btn-sm btn-outline-primary" type="button" onclick="joindreLettre()"><i class="fas fa-file-arrow-up me-1"></i>{{ 'Remplacer la lettre' if objet.demande_ecrite_nom else 'Joindre la lettre' }}</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="small text-muted mb-2">
+            {% if objet.demande_ecrite_date %}Lettre datée du <strong>{{ objet.demande_ecrite_date.strftime('%d/%m/%Y') }}</strong>{% endif %}
+            {% if objet.demande_recue_le %}{% if objet.demande_ecrite_date %} — {% endif %}reçue par la RH le <strong>{{ objet.demande_recue_le.strftime('%d/%m/%Y') }}</strong>{% endif %}
+            {% if objet.demande_ecrite_nom %} — fichier : {{ objet.demande_ecrite_nom }}{% endif %}
+          </div>
+          <div class="dossier-lettre">
+            {% if objet.demande_ecrite_nom %}
+              {% if objet.demande_ecrite_mime == 'application/pdf' %}
+              <iframe src="{{ url_for('rh.demande_ecrite_voir', type_demande=type_demande, id=objet.id) }}" title="Lettre de l'employé"></iframe>
+              {% else %}
+              <img src="{{ url_for('rh.demande_ecrite_voir', type_demande=type_demande, id=objet.id) }}" alt="Lettre de l'employé">
+              {% endif %}
+            {% else %}
+            <div class="dossier-vide text-muted">
+              <i class="fas fa-file-circle-question fa-2x"></i>
+              <div>Aucune lettre jointe pour cette demande.</div>
+              <button class="btn btn-sm btn-primary" type="button" onclick="joindreLettre()"><i class="fas fa-file-arrow-up me-1"></i>Joindre la lettre scannée</button>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== La réponse de la RH ===== -->
+    <div class="col-lg-5">
+      <div class="card mb-3">
+        <div class="card-header"><h6 class="mb-0"><i class="fas fa-reply me-2"></i>Réponse de la RH</h6></div>
+        <div class="card-body">
+          <p class="mb-2"><span class="badge bg-{{ statut_couleur }}">{{ statut_libelle }}</span>
+            {% if objet.statut in ['approuve', 'refuse'] %}
+            par <strong>{{ objet.approuve_par or '—' }}</strong>{% if objet.date_approbation %} le {{ objet.date_approbation.strftime('%d/%m/%Y') }}{% endif %}
+            {% endif %}</p>
+          {% if objet.commentaire %}<p class="mb-2"><strong>{{ 'Motif du refus' if objet.statut == 'refuse' else 'Commentaire' }} :</strong> {{ objet.commentaire }}</p>{% endif %}
+          {% if objet.statut == 'approuve' %}
+          <a class="btn btn-success btn-sm" href="{{ url_for('rh.conge_autorisation' if type_demande == 'conge' else 'rh.permission_autorisation', id=objet.id) }}" target="_blank"><i class="fas fa-print me-1"></i>Imprimer l'autorisation</a>
+          {% elif objet.statut == 'refuse' %}
+          <a class="btn btn-danger btn-sm" href="{{ url_for('rh.demande_lettre_refus', type_demande=type_demande, id=objet.id) }}" target="_blank"><i class="fas fa-print me-1"></i>Imprimer la lettre de refus</a>
+          {% else %}
+          <div class="small text-muted">La décision se prend depuis la liste des {{ 'congés' if type_demande == 'conge' else 'permissions' }} (Approuver / Refuser).</div>
+          {% endif %}
+          <div class="small text-muted mt-2">La réponse imprimée porte la référence <strong>{{ objet.demande_reference }}</strong> et la date de la lettre : les deux documents se retrouvent l'un l'autre.</div>
+        </div>
+      </div>
+
+      <div class="card mb-3">
+        <div class="card-header"><h6 class="mb-0"><i class="fas fa-circle-info me-2"></i>Détail de la demande</h6></div>
+        <div class="card-body small">
+          <table class="table table-sm mb-0">
+            <tr><th style="width:42%">Objet</th><td>{{ objet_demande|capitalize }}</td></tr>
+            <tr><th>Période</th><td>
+              {% if objet.date_debut %}{{ objet.date_debut.strftime('%d/%m/%Y') }}{% if objet.date_fin and objet.date_fin != objet.date_debut %} → {{ objet.date_fin.strftime('%d/%m/%Y') }}{% endif %}{% else %}—{% endif %}
+            </td></tr>
+            <tr><th>Jours ouvrables</th><td>{{ '%g' % (objet.nombre_jours|float) if objet.nombre_jours is not none else '—' }}</td></tr>
+            <tr><th>Motif indiqué</th><td>{{ objet.motif or '—' }}</td></tr>
+            {% if type_demande == 'permission' %}
+            <tr><th>Effet</th><td>{{ {'aucune': 'Payée, sans effet sur le congé ni le salaire', 'salaire': 'Retenue sur le salaire', 'conge': 'Décomptée du congé'}.get(objet.deduction, '—') }}</td></tr>
+            <tr><th>Justificatif</th><td>{% if justificatif %}<a href="{{ url_for('rh.permission_voir_justificatif', id=objet.id) }}" target="_blank">{{ objet.justificatif_nom }}</a>{% elif objet.nature == 'exceptionnelle' %}<span class="text-danger">manquant</span>{% else %}—{% endif %}</td></tr>
+            {% if objet.avis_superieur %}<tr><th>Avis du supérieur</th><td>{{ 'Favorable' if objet.avis_superieur == 'favorable' else 'Défavorable' }} — {{ objet.avis_superieur_par }}</td></tr>{% endif %}
+            {% else %}
+            {% if objet.date_reprise %}<tr><th>Reprise</th><td>{{ objet.date_reprise.strftime('%d/%m/%Y') }}</td></tr>{% endif %}
+            {% if objet.derogation_anciennete %}<tr><th>Dérogation</th><td>Accord de l'employeur avant 12 mois — {{ objet.derogation_motif }} ({{ objet.derogation_par }})</td></tr>{% endif %}
+            {% endif %}
+            <tr><th>Signataire</th><td>{{ objet.signataire or '—' }}</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h6 class="mb-0"><i class="fas fa-timeline me-2"></i>Chronologie</h6></div>
+        <div class="card-body">
+          <ul class="chrono">
+            <li class="{{ 'fait' if objet.demande_ecrite_date }}">Lettre de l'employé{% if objet.demande_ecrite_date %} — {{ objet.demande_ecrite_date.strftime('%d/%m/%Y') }}{% else %} — date non renseignée{% endif %}</li>
+            <li class="{{ 'fait' if objet.demande_recue_le }}">Reçue par la RH{% if objet.demande_recue_le %} — {{ objet.demande_recue_le.strftime('%d/%m/%Y') }}{% endif %}</li>
+            <li class="fait">Saisie dans le logiciel — {{ objet.created_at.strftime('%d/%m/%Y %H:%M') if objet.created_at else '—' }}</li>
+            {% if type_demande == 'permission' and objet.avis_superieur %}
+            <li class="fait">Avis du supérieur ({{ 'favorable' if objet.avis_superieur == 'favorable' else 'défavorable' }}) — {{ objet.avis_superieur_le.strftime('%d/%m/%Y') if objet.avis_superieur_le else '' }}</li>
+            {% endif %}
+            <li class="{{ 'fait' if objet.statut in ['approuve', 'refuse', 'termine'] }}">Décision de la RH{% if objet.statut in ['approuve', 'refuse'] %} — {{ statut_libelle|lower }}{% if objet.date_approbation %} le {{ objet.date_approbation.strftime('%d/%m/%Y') }}{% endif %}{% else %} — en attente{% endif %}</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function joindreLettre() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/pdf,image/jpeg,image/png,image/webp';
+    input.onchange = async () => {
+        const f = input.files && input.files[0];
+        if (!f) return;
+        const dateLettre = await demanderSaisie('Date de la lettre (JJ/MM/AAAA) — laissez vide si inconnue :', '{{ objet.demande_ecrite_date.strftime("%d/%m/%Y") if objet.demande_ecrite_date else "" }}');
+        if (dateLettre === null || dateLettre === undefined) return;
+        const versIso = t => { const m = (t || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : ''; };
+        if (dateLettre.trim() && !versIso(dateLettre)) { await afficherMessage('Date invalide : écrivez-la sous la forme JJ/MM/AAAA.', {type: 'danger'}); return; }
+        const lecteur = new FileReader();
+        lecteur.onload = async () => {
+            const r = await fetch('{{ url_for("rh.demande_ecrite_ajouter", type_demande=type_demande, id=objet.id) }}', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({demande_ecrite_nom: f.name, demande_ecrite_mime: f.type, demande_ecrite_b64: lecteur.result,
+                                      demande_ecrite_date: versIso(dateLettre)})});
+            const res = await r.json();
+            if (!res.success) { await afficherMessage('Erreur : ' + (res.error || 'inconnue'), {type: 'danger'}); return; }
+            location.reload();
+        };
+        lecteur.readAsDataURL(f);
+    };
+    input.click();
+}
+</script>
+{% endblock %}

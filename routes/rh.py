@@ -1189,6 +1189,8 @@ def api_conges(structure_id):
             # codée mais jamais branchée" — None si validation à un seul
             # niveau (cas par défaut, voir Conge.statut_validation).
             'validation': c.statut_validation(),
+            'derogation_anciennete': bool(c.derogation_anciennete),
+            **_champs_demande(c),
         })
     
     return jsonify(result)
@@ -1383,6 +1385,11 @@ def conge_demander(structure_id):
             conge.derogation_anciennete = True
             conge.derogation_motif = derogation_motif
             conge.derogation_par = session.get('user_name', 'Admin')
+        try:
+            _appliquer_demande_ecrite(conge, data)
+        except ValueError as e:
+            return jsonify({'success': False, 'error': str(e)}), 400
+        _attribuer_reference(conge, 'conge', structure_id)
         # ⭐ La date de reprise SUGGÉRÉE (jour suivant si la fin tombe un
         # dimanche/férié) reste modifiable dès la création — patron :
         # "pouvoir ajuster la date de reprise s'il le faut [...] un
@@ -1409,7 +1416,8 @@ def conge_demander(structure_id):
         return jsonify({
             'success': True,
             'id': conge.id,
-            'message': 'Demande de congé soumise avec succès',
+            'reference': conge.demande_reference,
+            'message': f'Demande de congé {conge.demande_reference} soumise avec succès',
             'nombre_jours': jours_ouvres,
             'deductible': deductible,
             'solde_restant': nouveau_solde,
@@ -1735,7 +1743,8 @@ def api_permissions(structure_id):
             'justificatif_nom': p.justificatif_nom or '',
             'avis_superieur': p.avis_superieur,
             'avis_superieur_par': p.avis_superieur_par or '',
-            'superieur': _superieur_nom(p.employe)
+            'superieur': _superieur_nom(p.employe),
+            **_champs_demande(p)
         })
     
     return jsonify(result)
@@ -1779,7 +1788,13 @@ def _compteur_convenance(employe_id, annee, exclure_id=None):
 
 def _lire_justificatif(data):
     """(nom, mime, octets) depuis un envoi JSON base64, ou None. Lève ValueError."""
-    contenu = data.get('justificatif_b64')
+    return _lire_fichier_joint(data, 'justificatif')
+
+
+def _lire_fichier_joint(data, prefixe):
+    """Fichier joint envoyé en JSON (<prefixe>_b64 / _nom / _mime) : PDF ou
+    photo, 5 Mo maximum. (nom, mime, octets) ou None ; lève ValueError."""
+    contenu = data.get(f'{prefixe}_b64')
     if not contenu:
         return None
     if ',' in contenu[:100]:
@@ -1787,13 +1802,159 @@ def _lire_justificatif(data):
     try:
         octets = base64.b64decode(contenu)
     except Exception:
-        raise ValueError("Justificatif illisible : choisissez un fichier PDF ou une photo.")
-    mime = (data.get('justificatif_mime') or '').lower()
+        raise ValueError("Fichier illisible : choisissez un PDF ou une photo.")
+    mime = (data.get(f'{prefixe}_mime') or '').lower()
     if mime not in MIMES_JUSTIFICATIF:
-        raise ValueError("Justificatif : seuls les PDF et les photos (JPG, PNG) sont acceptés.")
+        raise ValueError("Seuls les PDF et les photos (JPG, PNG) sont acceptés.")
     if len(octets) > TAILLE_MAX_JUSTIFICATIF:
-        raise ValueError("Justificatif trop lourd (5 Mo maximum) : réduisez la photo ou le scan.")
-    return ((data.get('justificatif_nom') or 'justificatif')[:255], mime, octets)
+        raise ValueError("Fichier trop lourd (5 Mo maximum) : réduisez la photo ou le scan.")
+    return ((data.get(f'{prefixe}_nom') or prefixe)[:255], mime, octets)
+
+
+# ============================================================
+# ⭐ DEMANDES ÉCRITES (patron, 2026-10-10 : « les demandes sont faites par
+# écrit [...] la GRH saisit puis approuve ou désapprouve [...] correspondance
+# entre le fichier uploadé et la réponse de la RH »). Chaque demande reçoit
+# une référence (DC- congé / DP- permission), reprise sur la réponse
+# imprimée ; le dossier montre la lettre et la réponse côte à côte.
+# ============================================================
+PREFIXES_DEMANDE = {'conge': 'DC', 'permission': 'DP'}
+LIBELLES_TYPE_CONGE = {'annuel': 'congé annuel', 'maladie': 'congé de maladie', 'maternite': 'congé de maternité',
+                       'paternite': 'congé de paternité', 'sans_solde': 'congé sans solde', 'exceptionnel': 'congé exceptionnel'}
+
+
+def _attribuer_reference(objet, type_demande, structure_id):
+    """Référence DC-/DP-AAAA-NNNN (numérotation par structure et par année)."""
+    if objet.demande_reference:
+        return objet.demande_reference
+    modele = Conge if type_demande == 'conge' else Permission
+    annee = date.today().year
+    prefixe = f"{PREFIXES_DEMANDE[type_demande]}-{annee}-"
+    db.session.execute(db.text('SELECT pg_advisory_xact_lock(:cle)'),
+                       {'cle': (930000 if type_demande == 'conge' else 940000) + int(structure_id)})
+    derniere = db.session.query(func.max(modele.demande_reference)).filter(
+        modele.structure_id == structure_id, modele.demande_reference.like(prefixe + '%')
+    ).scalar()
+    numero = int(derniere.rsplit('-', 1)[1]) + 1 if derniere else 1
+    objet.demande_reference = f"{prefixe}{numero:04d}"
+    return objet.demande_reference
+
+
+def _appliquer_demande_ecrite(objet, data):
+    """Lettre scannée + dates (lettre, réception) depuis le formulaire. Lève ValueError."""
+    fichier = _lire_fichier_joint(data, 'demande_ecrite')
+    if fichier:
+        objet.demande_ecrite_nom, objet.demande_ecrite_mime, objet.demande_ecrite_data = fichier
+        objet.demande_ecrite_le = datetime.utcnow()
+    for champ in ('demande_ecrite_date', 'demande_recue_le'):
+        valeur = (data.get(champ) or '').strip() if isinstance(data.get(champ), str) else ''
+        if valeur:
+            try:
+                setattr(objet, champ, datetime.strptime(valeur, '%Y-%m-%d').date())
+            except ValueError:
+                raise ValueError("Date de la lettre ou de réception invalide.")
+    if objet.demande_ecrite_date and objet.demande_recue_le and objet.demande_recue_le < objet.demande_ecrite_date:
+        raise ValueError("La date de réception ne peut pas précéder la date de la lettre.")
+    if fichier and not objet.demande_recue_le:
+        objet.demande_recue_le = date.today()
+
+
+def _charger_demande(type_demande, id, structure_id):
+    modele = Conge if type_demande == 'conge' else Permission if type_demande == 'permission' else None
+    if modele is None:
+        return None
+    return modele.query.join(Employe).filter(modele.id == id, Employe.structure_id == structure_id).first()
+
+
+def _champs_demande(objet):
+    return {
+        'demande_reference': objet.demande_reference or '',
+        'demande_ecrite': bool(objet.demande_ecrite_nom),
+        'demande_ecrite_date': objet.demande_ecrite_date.strftime('%d/%m/%Y') if objet.demande_ecrite_date else '',
+        'demande_recue_le': objet.demande_recue_le.strftime('%d/%m/%Y') if objet.demande_recue_le else '',
+    }
+
+
+@rh_bp.route('/<type_demande>/<int:id>/demande-ecrite', methods=['POST'])
+@require_structure
+def demande_ecrite_ajouter(structure_id, type_demande, id):
+    objet = _charger_demande(type_demande, id, structure_id)
+    if not objet:
+        return jsonify({'success': False, 'error': 'Demande introuvable'}), 404
+    data = request.json or {}
+    try:
+        if not data.get('demande_ecrite_b64') and not objet.demande_ecrite_nom:
+            raise ValueError("Choisissez le fichier de la lettre de l'employé.")
+        _appliquer_demande_ecrite(objet, data)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    _attribuer_reference(objet, type_demande, structure_id)
+    db.session.commit()
+    return jsonify({'success': True, **_champs_demande(objet)})
+
+
+@rh_bp.route('/<type_demande>/<int:id>/demande-ecrite', methods=['GET'])
+@require_structure
+def demande_ecrite_voir(structure_id, type_demande, id):
+    objet = _charger_demande(type_demande, id, structure_id)
+    if not objet or not objet.demande_ecrite_data:
+        return jsonify({'error': 'Aucune lettre jointe'}), 404
+    nom = (objet.demande_ecrite_nom or 'demande').replace('"', '')
+    return Response(bytes(objet.demande_ecrite_data), mimetype=objet.demande_ecrite_mime or 'application/octet-stream',
+                    headers={'Content-Disposition': f'inline; filename="{nom}"'})
+
+
+def _contexte_lettre(objet, type_demande, structure_id):
+    from utils.structure_info import get_structure_info
+    employe = objet.employe
+    feminin = (employe.sexe or '').lower().startswith('f')
+    if type_demande == 'conge':
+        objet_demande = LIBELLES_TYPE_CONGE.get(objet.type_conge, f"congé ({objet.type_conge})")
+    else:
+        objet_demande = 'permission ' + {'exceptionnelle': "exceptionnelle", 'convenance': 'pour convenance personnelle'}.get(objet.nature, "d'absence")
+        if objet.nature == 'exceptionnelle' and objet.evenement:
+            ev = evenement_regles(_regles(structure_id), objet.evenement)
+            if ev:
+                objet_demande += f" ({ev['libelle'].lower()})"
+    return {
+        'objet': objet, 'type_demande': type_demande, 'employe': employe,
+        'titre': 'Madame' if feminin else 'Monsieur', 'objet_demande': objet_demande,
+        'structure': get_structure_info(structure_id), 'date_actuelle': datetime.now().strftime('%d/%m/%Y'),
+    }
+
+
+@rh_bp.route('/<type_demande>/<int:id>/refus')
+@require_structure
+def demande_lettre_refus(structure_id, type_demande, id):
+    """Lettre de réponse en cas de refus, reliée à la demande (référence,
+    date de la lettre, réception) et portant le motif du refus."""
+    objet = _charger_demande(type_demande, id, structure_id)
+    if not objet:
+        flash('Demande introuvable', 'danger')
+        return redirect(url_for('rh.gestion_rh'))
+    if objet.statut != 'refuse':
+        flash('La lettre de refus ne concerne que les demandes refusées.', 'warning')
+        return redirect(url_for('rh.gestion_rh'))
+    if not objet.demande_reference:
+        _attribuer_reference(objet, type_demande, structure_id)
+        db.session.commit()
+    return render_template('rh/lettre_refus.html', **_contexte_lettre(objet, type_demande, structure_id))
+
+
+@rh_bp.route('/dossier/<type_demande>/<int:id>')
+@require_structure
+def dossier_demande(structure_id, type_demande, id):
+    """Dossier d'une demande : la lettre de l'employé et la réponse de la RH, côte à côte."""
+    objet = _charger_demande(type_demande, id, structure_id)
+    if not objet:
+        flash('Demande introuvable', 'danger')
+        return redirect(url_for('rh.gestion_rh'))
+    if not objet.demande_reference:
+        _attribuer_reference(objet, type_demande, structure_id)
+        db.session.commit()
+    contexte = _contexte_lettre(objet, type_demande, structure_id)
+    contexte['justificatif'] = bool(getattr(objet, 'justificatif_nom', None))
+    return render_template('rh/dossier_demande.html', **contexte)
 
 
 def _superieur_nom(employe):
@@ -1895,6 +2056,11 @@ def permission_demander(structure_id):
         if justificatif:
             permission.justificatif_nom, permission.justificatif_mime, permission.justificatif_data = justificatif
             permission.justificatif_le = datetime.utcnow()
+        try:
+            _appliquer_demande_ecrite(permission, data)
+        except ValueError as e:
+            return jsonify({'success': False, 'error': str(e)}), 400
+        _attribuer_reference(permission, 'permission', structure_id)
 
         db.session.add(permission)
         db.session.commit()
@@ -1905,7 +2071,8 @@ def permission_demander(structure_id):
         return jsonify({
             'success': True,
             'id': permission.id,
-            'message': f"Permission enregistrée ({nombre_jours:g} jour(s) ouvrable(s), {libelle_deduction}).",
+            'reference': permission.demande_reference,
+            'message': f"Permission {permission.demande_reference} enregistrée ({nombre_jours:g} jour(s) ouvrable(s), {libelle_deduction}).",
             'avertissements': controle['avertissements'],
             'deduction': deduction,
             'nombre_jours': nombre_jours,

@@ -728,6 +728,19 @@ class Conge(db.Model):
     derogation_motif = db.Column(db.Text)
     derogation_par = db.Column(db.String(100))
 
+    # ⭐ Demande ÉCRITE de l'employé (patron, 2026-10-10 : « les demandes sont faites
+    # par écrit, la GRH saisit puis approuve ou désapprouve ») : lettre scannée,
+    # sa date, sa réception par la RH, et une référence (DC-/DP-AAAA-NNNN) reprise
+    # sur la réponse imprimée (autorisation ou lettre de refus) — voir le dossier
+    # /rh/dossier/<type>/<id>.
+    demande_reference = db.Column(db.String(30))
+    demande_ecrite_nom = db.Column(db.String(255))
+    demande_ecrite_mime = db.Column(db.String(100))
+    demande_ecrite_data = db.Column(db.LargeBinary)
+    demande_ecrite_date = db.Column(db.Date)
+    demande_recue_le = db.Column(db.Date)
+    demande_ecrite_le = db.Column(db.DateTime)
+
     # ⭐ Patron : "validation à plusieurs niveaux (SignatureRH) codée mais
     # jamais branchée" — lien vers le DocumentRH qui porte la chaîne de
     # signatures (SignatureRH) quand ParametragePaie.niveaux_validation_conges
@@ -870,6 +883,19 @@ class Permission(db.Model):
     avis_superieur_par = db.Column(db.String(100))
     avis_superieur_le = db.Column(db.DateTime)
     avis_superieur_commentaire = db.Column(db.Text)
+
+    # ⭐ Demande ÉCRITE de l'employé (patron, 2026-10-10 : « les demandes sont faites
+    # par écrit, la GRH saisit puis approuve ou désapprouve ») : lettre scannée,
+    # sa date, sa réception par la RH, et une référence (DC-/DP-AAAA-NNNN) reprise
+    # sur la réponse imprimée (autorisation ou lettre de refus) — voir le dossier
+    # /rh/dossier/<type>/<id>.
+    demande_reference = db.Column(db.String(30))
+    demande_ecrite_nom = db.Column(db.String(255))
+    demande_ecrite_mime = db.Column(db.String(100))
+    demande_ecrite_data = db.Column(db.LargeBinary)
+    demande_ecrite_date = db.Column(db.Date)
+    demande_recue_le = db.Column(db.Date)
+    demande_ecrite_le = db.Column(db.DateTime)
 
 
 class DocumentRH(db.Model):

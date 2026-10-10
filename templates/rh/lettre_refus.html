@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Autorisation de congé</title>
+    <title>Réponse à une demande {{ objet.demande_reference }}</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -281,11 +281,14 @@
             margin: -4px 0 10px;
         }
         .ref-demande strong { letter-spacing: .3px; }
+        .objet-lettre { font-weight: 700; margin: 14px 0 10px; text-decoration: underline; }
+        .motif-refus { border-left: 3px solid #000; padding: 6px 12px; margin: 12px 0; background: #f6f6f6; }
     </style>
 </head>
 <body>
     <div class="document-container">
-        <!-- ===== EN-TÊTE ===== -->
+        <!-- ⭐ Lettre de réponse en cas de refus (patron, 2026-10-10), reliée à la demande
+             écrite de l'employé par sa référence — voir /rh/dossier/<type>/<id>. -->
         <div class="recu-header">
             <div class="top-row">
                 <div class="logo-area">
@@ -302,77 +305,52 @@
             </div>
         </div>
 
-        <div class="numero">N° ORDRE : <strong>{{ numero_ordre }}</strong></div>
-        {% set _dem = conge %}
-        {% if _dem.demande_reference %}
-        <!-- ⭐ Réponse reliée à la demande écrite de l'employé (patron, 2026-10-10). -->
-        <div class="ref-demande">Réf. de la demande : <strong>{{ _dem.demande_reference }}</strong>
-            {% if _dem.demande_ecrite_date %} — lettre du {{ _dem.demande_ecrite_date.strftime('%d/%m/%Y') }}{% endif %}
-            {% if _dem.demande_recue_le %}, reçue le {{ _dem.demande_recue_le.strftime('%d/%m/%Y') }}{% endif %}
+        <div class="numero">Réponse à la demande N° <strong>{{ objet.demande_reference }}</strong></div>
+        <div class="ref-demande">
+            {% if objet.demande_ecrite_date %}Lettre du <strong>{{ objet.demande_ecrite_date.strftime('%d/%m/%Y') }}</strong>{% endif %}
+            {% if objet.demande_recue_le %}{% if objet.demande_ecrite_date %} — {% endif %}reçue le <strong>{{ objet.demande_recue_le.strftime('%d/%m/%Y') }}</strong>{% endif %}
         </div>
-        {% endif %}
 
-        <div class="title">Autorisation de congé</div>
+        <div class="title">Réponse à votre demande</div>
 
         <div class="content">
+            <p><strong>{{ titre }} {{ employe.nom }} {{ employe.prenom }}</strong><br>
+               <span class="matricule">Matricule : {{ employe.matricule }} | Service : {{ employe.service.nom if employe.service else '-' }} | Poste : {{ employe.poste or '-' }}</span></p>
+
+            <div class="objet-lettre">Objet : votre demande de {{ objet_demande }}</div>
+
+            <p>{{ titre }},</p>
             <p>
-                Je soussigné(e), <strong>{{ signataire }}</strong>,
-                <strong>{{ structure.nom if structure and structure.nom else 'la structure' }}</strong>,
+                Suite à votre demande{% if objet.demande_ecrite_date %} écrite du {{ objet.demande_ecrite_date.strftime('%d/%m/%Y') }}{% endif %}
+                (réf. {{ objet.demande_reference }}) de {{ objet_demande }}
+                {% if objet.date_debut and objet.date_fin and objet.date_debut != objet.date_fin %}
+                    du <strong>{{ objet.date_debut.strftime('%d/%m/%Y') }}</strong> au <strong>{{ objet.date_fin.strftime('%d/%m/%Y') }}</strong>
+                {% elif objet.date_debut %}
+                    pour le <strong>{{ objet.date_debut.strftime('%d/%m/%Y') }}</strong>
+                {% endif %}
+                {% if objet.nombre_jours %}({{ '%g' % objet.nombre_jours|float }} jour(s) ouvrable(s)){% endif %},
+                nous avons le regret de vous informer qu'elle ne peut pas être accordée.
             </p>
-
-            <p>
-                Atteste que <strong>{{ titre }} {{ employe.nom }} {{ employe.prenom }}</strong>,
-            </p>
-
-            <div class="nom">
-                {{ employe.nom }} {{ employe.prenom }}
-                <span class="matricule">
-                    Matricule : {{ employe.matricule }} | Service : {{ employe.service.nom if employe.service else '-' }} | Poste : {{ employe.poste }}
-                </span>
-            </div>
-
-            <p>
-                est <strong>{{ autorisee }}</strong> à jouir de ses droits de congés,
-            </p>
-
-            <div class="dates">
-                <div class="periode">
-                    Du <strong>{{ conge.date_debut.strftime('%d/%m/%Y') }}</strong>
-                    au <strong>{{ conge.date_fin.strftime('%d/%m/%Y') }}</strong> inclus
-                </div>
-                <div style="font-size: 13px; font-weight: 400; color: #555; margin-top: 4px;">
-                    ({{ conge.nombre_jours }} jours ouvrés)
-                </div>
-            </div>
-
-            <div class="reprise">
-                Reprend son service le <strong>{{ conge.date_reprise.strftime('%d/%m/%Y') }}</strong>
-            </div>
-
-            <p style="font-style: italic; color: #555; font-size: 13px; margin-top: 10px;">
-                Le présent document est délivré à l'{{ interessee }} pour servir et valoir ce que de droit.
-            </p>
+            {% if objet.commentaire %}
+            <div class="motif-refus"><strong>Motif :</strong> {{ objet.commentaire }}</div>
+            {% endif %}
+            <p>Nous restons à votre disposition pour en discuter et, le cas échéant, examiner une nouvelle demande.</p>
+            <p>Veuillez agréer, {{ titre }}, l'expression de nos salutations distinguées.</p>
         </div>
 
         <div class="signatures">
             <table>
                 <tr>
                     <td>
-                        <strong>Visa du Chef de service</strong>
+                        <strong>Le Responsable GRH</strong>
                         <div class="line">Signature : ......................</div>
-                        <div class="line">Nom : ......................</div>
-                        <div class="line">Date : {{ date_actuelle }}</div>
+                        <div class="line">Nom : {{ objet.approuve_par or '......................' }}</div>
+                        <div class="line">Date : {{ objet.date_approbation.strftime('%d/%m/%Y') if objet.date_approbation else date_actuelle }}</div>
                     </td>
                     <td>
-                        <strong>Visa du Responsable GRH</strong>
+                        <strong>Le Directeur Général</strong>
                         <div class="line">Signature : ......................</div>
-                        <div class="line">Nom : ......................</div>
-                        <div class="line">Date : {{ date_actuelle }}</div>
-                    </td>
-                    <td>
-                        <strong>Visa du Directeur Général</strong>
-                        <div class="line">Signature : ......................</div>
-                        <div class="line">Nom : {{ signataire }}</div>
+                        <div class="line">Nom : {{ objet.signataire or '......................' }}</div>
                         <div class="line">Date : {{ date_actuelle }}</div>
                     </td>
                 </tr>
@@ -384,7 +362,7 @@
         </div>
 
         <div class="footer">
-            <div id="footerText">Document généré par {{ structure.nom if structure and structure.nom else '' }} le {{ date_actuelle }}</div>
+            <div>Document généré par {{ structure.nom if structure and structure.nom else '' }} le {{ date_actuelle }} — réf. {{ objet.demande_reference }}</div>
             <div class="generated">SSoftOneV10</div>
         </div>
     </div>
