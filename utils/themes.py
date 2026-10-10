@@ -234,6 +234,7 @@ a:not(.btn):not(.nav-link):not(.nav-link-top):not(.dropdown-item):not(.list-grou
 .page-item.active .page-link {{ background-color: {p} !important; border-color: {p} !important; }}
 .navbar-brand span {{ color: {nb_texte} !important; }}
 .table thead th {{ background: {_rgba(p, 0.07)} !important; color: {texte} !important; }}
+.text-warning {{ color: #B8860B !important; }}
 /* ⭐ menu déroulant, barre des onglets et page d'accueil : couleurs du thème (tous les thèmes) */
 .top-nav .mega-menu {{ background: {carte} !important; }}
 .top-nav .mega-menu .menu-item, .top-nav .mega-menu .menu-item i {{ color: {texte} !important; }}
@@ -288,6 +289,29 @@ a:not(.btn):not(.nav-link):not(.nav-link-top):not(.dropdown-item):not(.list-grou
 .bg-dark:not(.card-header):not(.modal-header) {{ background-color: {_eclaircir_sombre(carte)} !important; color: {texte} !important; }}
 .btn-close {{ filter: invert(1) grayscale(1) brightness(1.6); }}
 .text-dark {{ color: {texte} !important; }}
+/* ⭐ couleurs vives adoucies (patron : « jaune trop vif, rends les couleurs moins vives ») */
+.text-warning {{ color: #E6C36A !important; }} .text-danger {{ color: #F08A8A !important; }} .text-success {{ color: #7FD3A1 !important; }} .text-info {{ color: #7CC4E8 !important; }}
+.badge.bg-warning {{ background-color: rgba(230, 195, 106, 0.22) !important; color: #F2D48C !important; }}
+.badge.bg-danger {{ background-color: rgba(240, 138, 138, 0.22) !important; color: #F5A3A3 !important; }}
+.badge.bg-success {{ background-color: rgba(127, 211, 161, 0.22) !important; color: #9FE0B9 !important; }}
+.badge.bg-info {{ background-color: rgba(124, 196, 232, 0.22) !important; color: #A6D8F2 !important; }}
+.badge.bg-primary {{ background-color: {_rgba(p, 0.22)} !important; color: {p} !important; }}
+.btn-warning {{ background: rgba(230, 195, 106, 0.16) !important; color: #F2D48C !important; border: 1px solid rgba(230, 195, 106, 0.45) !important; }}
+.btn-warning:hover {{ background: #E6C36A !important; color: #1A1A1A !important; }}
+.btn-danger {{ background: rgba(240, 138, 138, 0.16) !important; color: #F5A3A3 !important; border: 1px solid rgba(240, 138, 138, 0.45) !important; }}
+.btn-danger:hover {{ background: #E57373 !important; color: #1A1A1A !important; }}
+.btn-success {{ background: rgba(127, 211, 161, 0.16) !important; color: #9FE0B9 !important; border: 1px solid rgba(127, 211, 161, 0.45) !important; }}
+.btn-success:hover {{ background: #7FD3A1 !important; color: #1A1A1A !important; }}
+.btn-info {{ background: rgba(124, 196, 232, 0.16) !important; color: #A6D8F2 !important; border: 1px solid rgba(124, 196, 232, 0.45) !important; }}
+.btn-info:hover {{ background: #7CC4E8 !important; color: #1A1A1A !important; }}
+.btn-outline-warning {{ color: #E6C36A !important; border-color: rgba(230, 195, 106, 0.6) !important; }} .btn-outline-danger {{ color: #F08A8A !important; border-color: rgba(240, 138, 138, 0.6) !important; }}
+.btn-outline-success {{ color: #7FD3A1 !important; border-color: rgba(127, 211, 161, 0.6) !important; }} .btn-outline-info {{ color: #7CC4E8 !important; border-color: rgba(124, 196, 232, 0.6) !important; }}
+.alert-warning {{ background: rgba(230, 195, 106, 0.14) !important; color: #F2D48C !important; border-color: rgba(230, 195, 106, 0.35) !important; }}
+.alert-danger {{ background: rgba(240, 138, 138, 0.14) !important; color: #F5A3A3 !important; border-color: rgba(240, 138, 138, 0.35) !important; }}
+.alert-success {{ background: rgba(127, 211, 161, 0.14) !important; color: #9FE0B9 !important; border-color: rgba(127, 211, 161, 0.35) !important; }}
+.alert-info {{ background: rgba(124, 196, 232, 0.14) !important; color: #A6D8F2 !important; border-color: rgba(124, 196, 232, 0.35) !important; }}
+.alert-warning *, .alert-danger *, .alert-success *, .alert-info * {{ color: inherit; }}
+.bg-warning:not(.badge):not(.btn), .bg-danger:not(.badge):not(.btn), .bg-success:not(.badge):not(.btn), .bg-info:not(.badge):not(.btn) {{ filter: saturate(0.6) brightness(0.9); }}
 .nav-tabs .nav-link.active {{ background: {carte} !important; border-color: {_rgba(texte, 0.15)} {_rgba(texte, 0.15)} {carte} !important; }}
 hr {{ border-color: {_rgba(texte, 0.2)} !important; opacity: 1; }}
 ::-webkit-scrollbar {{ width: 10px; height: 10px; }} ::-webkit-scrollbar-track {{ background: {fond}; }} ::-webkit-scrollbar-thumb {{ background: {_rgba(texte, 0.25)}; border-radius: 6px; }}

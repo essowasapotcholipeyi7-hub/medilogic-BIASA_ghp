@@ -21,6 +21,15 @@
         return m ? {r: +m[1], g: +m[2], b: +m[3], a: m[4] === undefined ? 1 : +m[4]} : null;
     }
     const lum = c => (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) / 255;
+    function hsl(c) {
+        const r = c.r / 255, g = c.g / 255, b = c.b / 255, max = Math.max(r, g, b), min = Math.min(r, g, b);
+        const l = (max + min) / 2; let h = 0, s = 0;
+        if (max !== min) {
+            const d = max - min; s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            h = max === r ? ((g - b) / d + (g < b ? 6 : 0)) : max === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60;
+        }
+        return {h, s, l};
+    }
 
     function fondEffectif(el) {
         let p = el;
@@ -47,6 +56,13 @@
         if (col && lum(col) < 0.28 && fondEffectif(el) < 0.4) {
             el.style.setProperty('color', TEXTE, 'important');
             el.dataset.thSombre = '1';
+        } else if (col) {
+            // ⭐ couleur de texte trop vive (jaune, rouge, vert saturés posés par la page) : adoucie
+            const h = hsl(col);
+            if (h.s > 0.72 && h.l > 0.38 && h.l < 0.75) {
+                el.style.setProperty('color', `hsl(${Math.round(h.h)}, ${Math.round(Math.min(h.s, 0.55) * 100)}%, ${Math.round(Math.max(h.l, 0.66) * 100)}%)`, 'important');
+                el.dataset.thSombre = '1';
+            }
         }
     }
 
