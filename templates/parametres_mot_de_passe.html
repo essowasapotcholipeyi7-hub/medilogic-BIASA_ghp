@@ -25,12 +25,12 @@
         <div class="mb-3">
           <label class="form-label mb-1" for="{{ champ }}">{{ libelle }}</label>
           <div class="input-group">
-            <input type="password" class="form-control" id="{{ champ }}" autocomplete="{{ auto }}" required{% if champ != 'ancien' %} maxlength="6"{% endif %}>
+            <input type="password" class="form-control" id="{{ champ }}" autocomplete="{{ auto }}" required{% if champ != 'ancien' %} maxlength="8"{% endif %}>
             <button class="btn btn-outline-secondary" type="button" onclick="basculerVisibilite('{{ champ }}', this)" aria-label="Afficher ou masquer"><i class="fas fa-eye"></i></button>
           </div>
           {% if champ == 'nouveau' %}
           <ul class="mdp-regles" id="regles">
-            <li data-regle="longueur"><i class="fas fa-circle"></i>De 4 à 6 caractères</li>
+            <li data-regle="longueur"><i class="fas fa-circle"></i>De 4 à 8 caractères</li>
             <li data-regle="arobase"><i class="fas fa-circle"></i>Contient un @</li>
             <li data-regle="espace"><i class="fas fa-circle"></i>Sans espace</li>
           </ul>
@@ -48,9 +48,9 @@
 </div>
 
 <script>
-// Mêmes règles que valider_mot_de_passe_utilisateur (app.py) : 4 à 6 caractères avec un @.
+// Mêmes règles que valider_mot_de_passe_utilisateur (app.py) : 4 à 8 caractères avec un @.
 const REGLES = {
-    longueur: v => v.length >= 4 && v.length <= 6,
+    longueur: v => v.length >= 4 && v.length <= 8,
     arobase: v => v.includes('@'),
     espace: v => v.length > 0 && !/\s/.test(v),
 };

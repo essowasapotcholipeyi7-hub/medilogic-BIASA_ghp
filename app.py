@@ -2913,11 +2913,11 @@ MDP_BLOCAGE_MINUTES = 15
 
 def valider_mot_de_passe_utilisateur(password):
     """⭐ Règle choisie par le patron (2026-10-10) pour le changement de mot de
-    passe : « de 4 à 6 lettres avec un @ ». (La création de compte garde
+    passe : « de 4 à 6 lettres avec un @ », puis « on fait de 4 à 8 ». (La création de compte garde
     valider_mot_de_passe.) La connexion est protégée par le blocage après
     plusieurs mots de passe faux (_verrouillage_actif)."""
-    if not 4 <= len(password) <= 6:
-        return False, "Le mot de passe doit faire de 4 à 6 caractères"
+    if not 4 <= len(password) <= 8:
+        return False, "Le mot de passe doit faire de 4 à 8 caractères"
     if '@' not in password:
         return False, "Le mot de passe doit contenir un @"
     if password.strip() != password or ' ' in password:
