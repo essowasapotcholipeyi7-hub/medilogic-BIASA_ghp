@@ -48,6 +48,8 @@ REGLES_DEFAUT = {
     'justificatif_exceptionnelle': 'avant_approbation',  # 'a_la_demande' | 'avant_approbation' | 'facultatif'
     'validation_superieur': False,        # avis du supérieur hiérarchique (N+1) avant l'approbation finale
     'diviseur_journalier': 26,            # salaire journalier = salaire de base / N ; 0 = jours ouvrables du mois
+    'ecart_min_conges_jours': 30,         # jours minimum entre deux congés annuels (0 = aucune règle)
+    'tolerance_retroactive_jours': 0,     # saisie normale possible jusqu'à N jours dans le passé (0 = aucune)
     'evenements': EVENEMENTS_DEFAUT,
 }
 
@@ -94,6 +96,8 @@ def fusionner_regles(stockees):
     r['derogation_conge_mois'] = min(_entier(s.get('derogation_conge_mois'), 6, 0, 60), r['anciennete_conge_mois'])
     r['convenance_max_jours'] = _entier(s.get('convenance_max_jours'), 10, 0, 365)
     r['diviseur_journalier'] = _entier(s.get('diviseur_journalier'), 26, 0, 31)
+    r['ecart_min_conges_jours'] = _entier(s.get('ecart_min_conges_jours'), 30, 0, 365)
+    r['tolerance_retroactive_jours'] = _entier(s.get('tolerance_retroactive_jours'), 0, 0, 60)
     for cle in ('derogation_reservee_admin', 'validation_superieur'):
         if cle in s:
             r[cle] = bool(s[cle])
@@ -202,3 +206,49 @@ def salaire_journalier(salaire_base, regles, jours_ouvrables_mois):
     if diviseur <= 0:
         diviseur = jours_ouvrables_mois or 26
     return float(salaire_base or 0) / diviseur
+
+
+# ============================================================
+# ⭐ Logique des dates (patron, 2026-10-10 : « pas deux congés sur la même
+# période », « une distance entre deux congés », « pas de congé ni de
+# permission à une date antérieure, sauf régularisation »).
+# ============================================================
+def periodes_se_chevauchent(debut1, fin1, debut2, fin2):
+    return debut1 <= fin2 and debut2 <= fin1
+
+
+def heures_se_chevauchent(debut1, fin1, debut2, fin2):
+    """Plages horaires d'une même journée (heures manquantes = toute la journée)."""
+    if not (debut1 and fin1 and debut2 and fin2):
+        return True
+    return debut1 < fin2 and debut2 < fin1
+
+
+def est_retroactive(date_debut, aujourd_hui, regles):
+    """True si la demande commence avant aujourd'hui (au-delà de la tolérance) :
+    elle n'est alors acceptée qu'en régularisation motivée."""
+    return date_debut < aujourd_hui - timedelta(days=regles.get('tolerance_retroactive_jours') or 0)
+
+
+def conge_trop_proche(debut, fin, autres, ecart_min):
+    """Premier congé annuel de `autres` [(debut, fin, libelle)] situé à moins de
+    `ecart_min` jours de la période demandée : (debut, fin, libelle, jours
+    d'écart) ou None. Les chevauchements sont traités à part."""
+    if not ecart_min:
+        return None
+    for d, f, libelle in sorted(autres, key=lambda a: a[0]):
+        if periodes_se_chevauchent(debut, fin, d, f):
+            continue
+        ecart = (debut - f).days - 1 if debut > f else (d - fin).days - 1
+        if ecart < ecart_min:
+            return (d, f, libelle, ecart)
+    return None
+
+
+def controler_periode_employe(debut, fin, date_embauche, date_depart=None):
+    """Erreurs de cohérence avec la vie de l'employé (avant l'embauche, après le départ)."""
+    if date_embauche and debut < date_embauche:
+        return f"La période commence avant l'embauche de l'employé ({date_embauche.strftime('%d/%m/%Y')})."
+    if date_depart and fin > date_depart:
+        return f"L'employé a quitté la structure le {date_depart.strftime('%d/%m/%Y')} : période impossible."
+    return None

@@ -202,6 +202,13 @@
                 </div>
                 <small class="text-muted d-block mt-1">Avant le second seuil : aucun congé annuel. Entre les deux : congé possible seulement
                     en cochant « accord de l'employeur » avec un motif, gardé dans l'historique.</small>
+                <h6 class="text-success mt-3"><i class="fas fa-calendar-check"></i> Contrôle des dates</h6>
+                <label class="form-label small mb-0">Écart minimum entre deux congés annuels (jours, 0 = aucun)</label>
+                <input type="number" class="form-control form-control-sm mb-2" id="rEcart" min="0" max="365" style="max-width:120px;">
+                <label class="form-label small mb-0">Saisie normale tolérée dans le passé (jours, 0 = aucune)</label>
+                <input type="number" class="form-control form-control-sm" id="rTolerance" min="0" max="60" style="max-width:120px;">
+                <small class="text-muted d-block mt-1">Au-delà, un congé ou une permission à une date passée n'est accepté qu'en
+                    « régularisation » (absence déjà prise, saisie après coup) avec un motif. Deux absences ne peuvent jamais se superposer.</small>
             </div>
             <div class="col-lg-4">
                 <h6 class="text-success"><i class="fas fa-user-clock"></i> Permission de convenance personnelle</h6>
@@ -281,6 +288,8 @@ function chargerRegles() {
         document.getElementById('rAnciennete').value = r.anciennete_conge_mois;
         document.getElementById('rDerogation').value = r.derogation_conge_mois;
         document.getElementById('rDerogationAdmin').checked = !!r.derogation_reservee_admin;
+        document.getElementById('rEcart').value = r.ecart_min_conges_jours;
+        document.getElementById('rTolerance').value = r.tolerance_retroactive_jours;
         document.getElementById('rConvenanceMax').value = r.convenance_max_jours;
         document.getElementById('rDepassement').value = r.convenance_depassement;
         document.getElementById('rDeduction').value = r.convenance_deduction;
@@ -297,6 +306,8 @@ async function sauvegarderRegles() {
         anciennete_conge_mois: document.getElementById('rAnciennete').value,
         derogation_conge_mois: document.getElementById('rDerogation').value,
         derogation_reservee_admin: document.getElementById('rDerogationAdmin').checked,
+        ecart_min_conges_jours: document.getElementById('rEcart').value,
+        tolerance_retroactive_jours: document.getElementById('rTolerance').value,
         convenance_max_jours: document.getElementById('rConvenanceMax').value,
         convenance_depassement: document.getElementById('rDepassement').value,
         convenance_deduction: document.getElementById('rDeduction').value,

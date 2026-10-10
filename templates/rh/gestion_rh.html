@@ -2226,7 +2226,7 @@ function afficherConges() {
         tbody.innerHTML += `
             <tr>
                 <td><strong>${c.employe_nom}</strong>${ligneReference(c)}</td>
-                <td>${c.type_conge}${c.derogation_anciennete ? '<br><small class="text-warning">par dérogation</small>' : ''}</td>
+                <td>${c.type_conge}${c.derogation_anciennete ? '<br><small class="text-warning">par dérogation</small>' : ''}${badgesExceptions(c)}</td>
                 <td>${c.date_debut}</td>
                 <td>${c.date_fin}</td>
                 <td>${c.nombre_jours || 0}</td>
@@ -2578,104 +2578,43 @@ async function sauvegarderConge() {
     try { await ajouterDemandeEcrite('conge', data); }
     catch (e) { await afficherMessage('Lettre de demande illisible : choisissez un autre fichier.', {type: 'danger'}); return; }
 
-    showLoader('Envoi de la demande...');
-    
-    fetch('/rh/conge/demander', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(data)
-    })
-    .then(r => r.json())
-    .then(async result => {
-        hideLoader();
-        
-        if (result.success) {
-            await afficherMessage(`Demande de congé soumise avec succès !\nSolde restant: ${result.solde_restant} jours`);
-            bootstrap.Modal.getInstance(document.getElementById('congeModal')).hide();
-            chargerConges();
-        } else if (result.derogation_possible && !data.derogation) {
-            // ⭐ Code du travail : entre 6 et 12 mois de service, congé seulement
-            // avec l'accord exprès de l'employeur (dérogation motivée).
-            if (!await demanderConfirmation(result.error + '\n\nAccorder ce congé par dérogation (accord de l\'employeur) ?')) return;
-            const motifDerog = await demanderSaisie("Motif de l'accord de l'employeur (gardé dans l'historique) :", '');
-            if (!motifDerog || !motifDerog.trim()) return;
-            data.derogation = true;
-            data.derogation_motif = motifDerog.trim();
-            showLoader('Envoi de la demande...');
-            const r2 = await fetch('/rh/conge/demander', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)});
-            const res2 = await r2.json();
-            hideLoader();
-            if (res2.success) {
-                await afficherMessage('Congé enregistré par dérogation (accord de l\'employeur).');
-                bootstrap.Modal.getInstance(document.getElementById('congeModal')).hide();
-                chargerConges();
-            } else {
-                await afficherMessage('Erreur: ' + (res2.error || 'Erreur inconnue'), {type: 'danger'});
-            }
-        } else if (result.solde_insuffisant && result.annees_futures) {
-            // Proposer les années futures
-            let options = result.annees_futures.map(a => 
-                `${a.annee} (${a.solde} jours disponibles)`
-            ).join('\n');
-            
+    try {
+        let result = await envoyerDemandeAbsence('/rh/conge/demander', data);
+        if (!result) return;
+        if (!result.success && result.solde_insuffisant && result.annees_futures) {
+            // ⭐ FIX (force majeure) : garder les VRAIES dates du congé (l'employé
+            // part bien maintenant) — seule l'imputation change (annee_choisie ->
+            // Conge.annee_utilisation), pas les dates elles-mêmes.
+            const options = result.annees_futures.map(a => `${a.annee} (${a.solde} jours disponibles)`).join('\n');
             const choix = await demanderSaisie(
-                `${result.message}\n\n` +
-                `Années futures disponibles:\n${options}\n\n` +
+                `${result.message}\n\nAnnées futures disponibles:\n${options}\n\n` +
                 `Entrez l'année souhaitée (ex: ${result.annees_futures[0]?.annee || ''}) :`
             );
-            
-            if (choix) {
-                const anneeChoisie = parseInt(choix);
-                const anneeTrouvee = result.annees_futures.find(a => a.annee === anneeChoisie);
-
-                if (anneeTrouvee) {
-                    // ⭐ FIX (force majeure) : garder les VRAIES dates du congé
-                    // (l'employé part bien maintenant) — seule l'imputation
-                    // change (annee_choisie -> Conge.annee_utilisation), pas
-                    // les dates elles-mêmes. Avant ce fix, les dates étaient
-                    // réécrites sur l'année choisie : le congé ne pouvait
-                    // alors être pris que l'année suivante, ce qui annulait
-                    // tout l'intérêt d'un déblocage "force majeure" immédiat.
-                    const newData = {
-                        ...data,
-                        annee_choisie: anneeChoisie,
-                    };
-
-                    showLoader('Envoi de la demande...');
-                    
-                    fetch('/rh/conge/demander', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify(newData)
-                    })
-                    .then(r => r.json())
-                    .then(async result2 => {
-                        hideLoader();
-                        if (result2.success) {
-                            await afficherMessage(`Demande de congé soumise avec succès (sur ${anneeChoisie}) !`);
-                            bootstrap.Modal.getInstance(document.getElementById('congeModal')).hide();
-                            chargerConges();
-                        } else {
-                            await afficherMessage('Erreur: ' + (result2.error || 'Erreur inconnue'), {type: 'danger'});
-                        }
-                    })
-                    .catch(async error => {
-                        hideLoader();
-                        await afficherMessage('Erreur: ' + error, {type: 'danger'});
-                    });
-                } else {
-                    await afficherMessage('Année invalide. Veuillez recommencer.', {type: 'danger'});
-                }
+            if (!choix) return;
+            const anneeChoisie = parseInt(choix);
+            if (!result.annees_futures.find(a => a.annee === anneeChoisie)) {
+                await afficherMessage('Année invalide. Veuillez recommencer.', {type: 'danger'});
+                return;
             }
-        } else {
-            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
+            data.annee_choisie = anneeChoisie;
+            result = await envoyerDemandeAbsence('/rh/conge/demander', data);
+            if (!result) return;
         }
-    })
-    .catch(async error => {
+        if (result.success) {
+            let msg = (result.message || 'Demande de congé soumise avec succès !') + `\nSolde restant: ${result.solde_restant} jours`;
+            if (data.annee_choisie) msg += ` (imputé sur ${data.annee_choisie})`;
+            if (data.derogation) msg += "\nAccordé par dérogation (accord de l'employeur).";
+            await afficherMessage(msg);
+            bootstrap.Modal.getInstance(document.getElementById('congeModal')).hide();
+            chargerConges();
+        } else {
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: result.chevauchement ? 'warning' : 'danger'});
+        }
+    } catch (error) {
         hideLoader();
         console.error('❌ Erreur:', error);
         await afficherMessage('Erreur lors de l\'envoi: ' + error, {type: 'danger'});
-    });
+    }
 }
 
 // ⭐ Patron : "pouvoir ajuster la date de reprise s'il le faut [...] un
@@ -2827,7 +2766,7 @@ function afficherPermissions() {
         tbody.innerHTML += `
             <tr>
                 <td><strong>${p.employe_nom}</strong>${ligneReference(p)}</td>
-                <td>${natureHtml}</td>
+                <td>${natureHtml}${badgesExceptions(p)}</td>
                 <td>${periode}</td>
                 <td>${heures}</td>
                 <td>${jours}</td>
@@ -3051,6 +2990,48 @@ function ligneReference(d) {
     return `<br><small class="text-muted"><i class="fas ${d.demande_ecrite ? 'fa-paperclip' : 'fa-hashtag'} me-1"></i>${d.demande_reference}${d.demande_ecrite_date ? ' — lettre du ' + d.demande_ecrite_date : ''}</small>`;
 }
 
+// ⭐ Logique des dates (patron, 2026-10-10) : le serveur peut demander une
+// confirmation motivée (régularisation d'une date passée, écart réduit entre
+// deux congés, dérogation d'ancienneté) ; on la pose puis on renvoie.
+// Renvoie null si l'utilisateur abandonne.
+async function envoyerDemandeAbsence(url, data) {
+    for (let tour = 0; tour < 6; tour++) {
+        showLoader('Envoi de la demande...');
+        let result;
+        try {
+            result = await (await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)})).json();
+        } finally { hideLoader(); }
+        if (result.success) return result;
+        if (result.confirmer && !data[result.confirmer.cle]) {
+            if (!await demanderConfirmation(result.error + '\n\n' + result.confirmer.question)) return null;
+            const motif = await demanderSaisie('Motif (gardé dans le dossier) :', '');
+            if (!motif || !motif.trim()) return null;
+            data[result.confirmer.cle] = true;
+            data[result.confirmer.cle + '_motif'] = motif.trim();
+            continue;
+        }
+        if (result.derogation_possible && !data.derogation) {
+            // Code du travail : entre 6 et 12 mois de service, congé seulement
+            // avec l'accord exprès de l'employeur (dérogation motivée).
+            if (!await demanderConfirmation(result.error + '\n\nAccorder ce congé par dérogation (accord de l\'employeur) ?')) return null;
+            const motifDerog = await demanderSaisie("Motif de l'accord de l'employeur (gardé dans l'historique) :", '');
+            if (!motifDerog || !motifDerog.trim()) return null;
+            data.derogation = true;
+            data.derogation_motif = motifDerog.trim();
+            continue;
+        }
+        return result;
+    }
+    return {success: false, error: 'Trop de confirmations demandées.'};
+}
+
+function badgesExceptions(d) {
+    let html = '';
+    if (d.saisie_retroactive) html += `<br><span class="badge bg-secondary" title="${(d.regularisation_motif || '').replace(/"/g, '&quot;')}">a posteriori</span>`;
+    if (d.ecart_force_motif) html += `<br><span class="badge bg-warning text-dark" title="${d.ecart_force_motif.replace(/"/g, '&quot;')}">écart réduit</span>`;
+    return html;
+}
+
 async function donnerAvisSuperieur(id, avis) {
     const commentaire = await demanderSaisie(avis === 'favorable'
         ? 'Avis FAVORABLE du supérieur hiérarchique. Commentaire (facultatif) :'
@@ -3151,29 +3132,21 @@ async function sauvegarderPermission() {
         }
     }
     
-    showLoader('Envoi de la demande...');
-    
-    fetch('/rh/permission/demander', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(data)
-    })
-    .then(r => r.json())
-    .then(async result => {
-        hideLoader();
+    try {
+        const result = await envoyerDemandeAbsence('/rh/permission/demander', data);
+        if (!result) return;
         if (result.success) {
             const avert = (result.avertissements || []).length ? '\n\nAttention : ' + result.avertissements.join(' ') : '';
             await afficherMessage((result.message || 'Demande de permission soumise.') + avert, avert ? {type: 'warning'} : undefined);
             bootstrap.Modal.getInstance(document.getElementById('permissionModal')).hide();
             chargerPermissions();
         } else {
-            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: 'danger'});
+            await afficherMessage('Erreur: ' + (result.error || 'Erreur inconnue'), {type: result.chevauchement ? 'warning' : 'danger'});
         }
-    })
-    .catch(async error => {
+    } catch (error) {
         hideLoader();
         await afficherMessage('Erreur: ' + error, {type: 'danger'});
-    });
+    }
 }
 
 async function changerStatutPermission(id, statut) {

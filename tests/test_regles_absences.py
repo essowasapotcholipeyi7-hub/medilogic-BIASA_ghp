@@ -87,3 +87,42 @@ def test_fusion_bornes_et_evenements():
     assert [e['jours'] for e in r['evenements']] == [3, 1]
     assert len({e['code'] for e in r['evenements']}) == 2
     assert REGLES_DEFAUT['convenance_max_jours'] == 10
+
+
+# ---------------------------------------------------------------- logique des dates
+from utils.regles_absences import (periodes_se_chevauchent, heures_se_chevauchent, est_retroactive,
+                                   conge_trop_proche, controler_periode_employe)
+from datetime import time
+
+
+def test_chevauchement_periodes():
+    assert periodes_se_chevauchent(date(2026, 10, 5), date(2026, 10, 9), date(2026, 10, 9), date(2026, 10, 12))
+    assert not periodes_se_chevauchent(date(2026, 10, 5), date(2026, 10, 9), date(2026, 10, 10), date(2026, 10, 12))
+
+
+def test_chevauchement_heures():
+    assert heures_se_chevauchent(time(8), time(12), time(11), time(14))
+    assert not heures_se_chevauchent(time(8), time(10), time(10), time(12))
+    assert heures_se_chevauchent(time(8), time(10), None, None)
+
+
+def test_retroactive_avec_tolerance():
+    aujourd_hui = date(2026, 10, 10)
+    assert est_retroactive(date(2026, 10, 9), aujourd_hui, R)
+    assert not est_retroactive(date(2026, 10, 10), aujourd_hui, R)
+    assert not est_retroactive(date(2026, 10, 8), aujourd_hui, fusionner_regles({'tolerance_retroactive_jours': 2}))
+
+
+def test_ecart_entre_conges_annuels():
+    autres = [(date(2026, 8, 1), date(2026, 8, 20), 'C1')]
+    trop = conge_trop_proche(date(2026, 9, 1), date(2026, 9, 10), autres, 30)
+    assert trop and trop[3] == 11
+    assert conge_trop_proche(date(2026, 9, 25), date(2026, 9, 30), autres, 30) is None
+    assert conge_trop_proche(date(2026, 7, 1), date(2026, 7, 25), autres, 30)[3] == 6   # congé suivant trop proche
+    assert conge_trop_proche(date(2026, 9, 1), date(2026, 9, 10), autres, 0) is None   # règle désactivée
+
+
+def test_periode_et_vie_de_l_employe():
+    assert 'avant l\'embauche' in controler_periode_employe(date(2020, 1, 1), date(2020, 1, 5), date(2021, 1, 1))
+    assert 'quitté' in controler_periode_employe(date(2026, 10, 1), date(2026, 10, 9), date(2021, 1, 1), date(2026, 10, 5))
+    assert controler_periode_employe(date(2026, 10, 1), date(2026, 10, 3), date(2021, 1, 1)) is None

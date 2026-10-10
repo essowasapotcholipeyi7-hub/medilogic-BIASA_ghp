@@ -109,7 +109,9 @@
             {% else %}
             {% if objet.date_reprise %}<tr><th>Reprise</th><td>{{ objet.date_reprise.strftime('%d/%m/%Y') }}</td></tr>{% endif %}
             {% if objet.derogation_anciennete %}<tr><th>Dérogation</th><td>Accord de l'employeur avant 12 mois — {{ objet.derogation_motif }} ({{ objet.derogation_par }})</td></tr>{% endif %}
+            {% if objet.ecart_force_motif %}<tr><th>Écart réduit</th><td>Moins de l'écart minimum entre deux congés — {{ objet.ecart_force_motif }} ({{ objet.exceptions_par }})</td></tr>{% endif %}
             {% endif %}
+            {% if objet.saisie_retroactive %}<tr><th>Saisie a posteriori</th><td>Régularisation d'une absence déjà prise — {{ objet.regularisation_motif }} ({{ objet.exceptions_par }})</td></tr>{% endif %}
             <tr><th>Signataire</th><td>{{ objet.signataire or '—' }}</td></tr>
           </table>
         </div>

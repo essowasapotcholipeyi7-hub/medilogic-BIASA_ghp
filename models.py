@@ -745,6 +745,15 @@ class Conge(db.Model):
     derogation_motif = db.Column(db.Text)
     derogation_par = db.Column(db.String(100))
 
+    # ⭐ Logique des dates (patron, 2026-10-10) : une date passée n'est acceptée
+    # qu'en régularisation motivée (absence déjà prise, saisie après coup), et
+    # l'écart minimum entre deux congés annuels ne peut être réduit qu'avec un
+    # motif — les deux restent visibles dans la liste et le dossier.
+    saisie_retroactive = db.Column(db.Boolean, default=False)
+    regularisation_motif = db.Column(db.Text)
+    ecart_force_motif = db.Column(db.Text)
+    exceptions_par = db.Column(db.String(100))
+
     # ⭐ Demande ÉCRITE de l'employé (patron, 2026-10-10 : « les demandes sont faites
     # par écrit, la GRH saisit puis approuve ou désapprouve ») : lettre scannée,
     # sa date, sa réception par la RH, et une référence (DC-/DP-AAAA-NNNN) reprise
@@ -900,6 +909,11 @@ class Permission(db.Model):
     avis_superieur_par = db.Column(db.String(100))
     avis_superieur_le = db.Column(db.DateTime)
     avis_superieur_commentaire = db.Column(db.Text)
+
+    # ⭐ Logique des dates (patron, 2026-10-10) : date passée = régularisation motivée.
+    saisie_retroactive = db.Column(db.Boolean, default=False)
+    regularisation_motif = db.Column(db.Text)
+    exceptions_par = db.Column(db.String(100))
 
     # ⭐ Demande ÉCRITE de l'employé (patron, 2026-10-10 : « les demandes sont faites
     # par écrit, la GRH saisit puis approuve ou désapprouve ») : lettre scannée,

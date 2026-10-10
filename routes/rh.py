@@ -11,7 +11,9 @@ from models import (db, Employe, Service, Conge, Permission, DocumentRH, Signatu
                      TYPES_CONGE_DEDUCTIBLES, MOTIFS_DEPART, EvaluationRH, SanctionDisciplinaire, TYPES_SANCTION)
 from utils.permissions import a_acces
 from utils.regles_absences import (fusionner_regles, droit_conge_annuel, jours_ouvrables, controler_permission,
-                                   mode_deduction_convenance, evenement as evenement_regles, NATURES_PERMISSION)
+                                   mode_deduction_convenance, evenement as evenement_regles, NATURES_PERMISSION,
+                                   periodes_se_chevauchent, heures_se_chevauchent, est_retroactive,
+                                   conge_trop_proche, controler_periode_employe)
 
 rh_bp = Blueprint('rh', __name__, url_prefix='/rh')
 
@@ -1268,6 +1270,19 @@ def conge_demander(structure_id):
             return jsonify({'success': False, 'error': f"Type de congé inconnu: {type_conge}"}), 400
         motif = data.get('motif', '').strip()
 
+        # ⭐ Logique des dates (patron, 2026-10-10) : vie de l'employé, aucun
+        # chevauchement avec une autre absence, pas de date passée sans
+        # régularisation motivée.
+        erreur = controler_periode_employe(date_debut, date_fin, employe.date_embauche, employe.date_depart)
+        if erreur:
+            return jsonify({'success': False, 'error': erreur}), 400
+        conflits = _absences_qui_chevauchent(employe, date_debut, date_fin)
+        if conflits:
+            return jsonify({'success': False, 'error': ' '.join(conflits), 'chevauchement': True}), 400
+        regularisation_motif, refus = _controle_retroactif(data, date_debut, _regles(structure_id), 'congé')
+        if refus:
+            return refus
+
         # ⭐ Code du travail : congé annuel acquis après 12 mois de service ;
         # entre 6 et 12 mois, seulement avec l'accord exprès de l'employeur
         # (dérogation motivée) ; avant 6 mois, jamais.
@@ -1289,51 +1304,25 @@ def conge_demander(structure_id):
                     return jsonify({'success': False, 'error': "Indiquez le motif de l'accord de l'employeur.",
                                     'derogation_possible': True}), 400
 
-        # ⭐ Vérification des doublons (chevauchement avec un AUTRE congé)
-        conges_existants = Conge.query.filter(
-            Conge.employe_id == employe_id,
-            Conge.statut.in_(['en_attente', 'approuve']),
-            or_(
-                and_(
-                    Conge.date_debut <= date_fin,
-                    Conge.date_fin >= date_debut
-                )
-            )
-        ).all()
-
-        if conges_existants:
-            chevauchement = []
-            for c in conges_existants:
-                chevauchement.append(f"{c.date_debut.strftime('%d/%m/%Y')} -> {c.date_fin.strftime('%d/%m/%Y')} ({c.statut})")
-            return jsonify({
-                'success': False,
-                'error': f"L'employé a déjà un congé sur cette période: {', '.join(chevauchement)}"
-            }), 400
-
-        # ⭐ Patron : "un employé en congés on ne peut plus le programmer
-        # pour la même période" — bloque aussi le chevauchement avec une
-        # PERMISSION active (une permission "journée(s)" pendant un congé
-        # n'a pas de sens ; les permissions "heures" sur le jour même sont
-        # tolérées — se recouper avec une seule journée de congé n'est pas
-        # le même genre de conflit qu'un vrai chevauchement de périodes).
-        permissions_existantes = Permission.query.filter(
-            Permission.employe_id == employe_id,
-            Permission.statut.in_(['en_attente', 'approuve']),
-            Permission.type_permission != 'heures',
-            Permission.date_debut.isnot(None),
-            Permission.date_fin.isnot(None),
-            Permission.date_debut <= date_fin,
-            Permission.date_fin >= date_debut,
-        ).all()
-        if permissions_existantes:
-            chevauchement = [
-                f"{p.date_debut.strftime('%d/%m/%Y')} -> {p.date_fin.strftime('%d/%m/%Y')} ({p.statut})"
-                for p in permissions_existantes
-            ]
-            return jsonify({
-                'success': False,
-                'error': f"L'employé a déjà une permission sur cette période: {', '.join(chevauchement)}"
-            }), 400
+        # ⭐ Écart minimum entre deux congés annuels (réglage de la structure) :
+        # le réduire demande un motif — réservé à la direction si les
+        # dérogations le sont.
+        ecart_force_motif = None
+        if type_conge == 'annuel':
+            regles = _regles(structure_id)
+            autres = [(c.date_debut, c.date_fin, _libelle_conge(c)) for c in Conge.query.filter(
+                Conge.employe_id == employe.id, Conge.type_conge == 'annuel',
+                Conge.statut.in_(STATUTS_ACTIFS)).all()]
+            proche = conge_trop_proche(date_debut, date_fin, autres, regles['ecart_min_conges_jours'])
+            if proche:
+                message = (f"Il faut au moins {regles['ecart_min_conges_jours']} jours entre deux congés annuels : "
+                           f"{proche[2]} n'est qu'à {max(proche[3], 0)} jour(s) de cette période.")
+                if data.get('forcer_ecart') and regles['derogation_reservee_admin'] and not session.get('is_admin'):
+                    return jsonify({'success': False, 'error': message + " Seule la direction (administrateur) peut réduire cet écart."}), 403
+                ecart_force_motif, refus = _exception_motivee(
+                    data, 'forcer_ecart', message, "Accorder quand même ce congé (écart réduit, accord de la direction) ?")
+                if refus:
+                    return refus
 
         # ⭐ Récupérer l'année choisie — permet d'imputer un congé "force
         # majeure" sur l'année SUIVANTE si le solde de l'année en cours est
@@ -1396,6 +1385,7 @@ def conge_demander(structure_id):
             conge.derogation_anciennete = True
             conge.derogation_motif = derogation_motif
             conge.derogation_par = session.get('user_name', 'Admin')
+        _noter_exceptions(conge, regularisation_motif, ecart_force_motif)
         try:
             _appliquer_demande_ecrite(conge, data)
         except ValueError as e:
@@ -1413,6 +1403,8 @@ def conge_demander(structure_id):
                 conge.date_reprise = datetime.strptime(date_reprise_str, '%Y-%m-%d').date()
             except ValueError:
                 return jsonify({'success': False, 'error': 'Date de reprise invalide'}), 400
+            if conge.date_reprise <= date_fin:
+                return jsonify({'success': False, 'error': f"La reprise doit être après la fin du congé ({date_fin.strftime('%d/%m/%Y')})."}), 400
         else:
             conge.date_reprise = conge.calculer_date_reprise()
 
@@ -1428,7 +1420,8 @@ def conge_demander(structure_id):
             'success': True,
             'id': conge.id,
             'reference': conge.demande_reference,
-            'message': f'Demande de congé {conge.demande_reference} soumise avec succès',
+            'message': f'Demande de congé {conge.demande_reference} soumise avec succès'
+                       + (' (régularisation a posteriori)' if conge.saisie_retroactive else ''),
             'nombre_jours': jours_ouvres,
             'deductible': deductible,
             'solde_restant': nouveau_solde,
@@ -1530,6 +1523,13 @@ def conge_changer_statut(structure_id, id):
         if not conge:
             return jsonify({'error': 'Congé non trouvé'}), 404
 
+        # ⭐ Un congé refusé qu'on remet en attente / approuve ne doit pas
+        # recouvrir une absence enregistrée entre-temps.
+        if conge.statut == 'refuse' and nouveau_statut in STATUTS_ACTIFS:
+            conflits = _absences_qui_chevauchent(conge.employe, conge.date_debut, conge.date_fin, exclure_conge=conge.id)
+            if conflits:
+                return jsonify({'success': False, 'error': ' '.join(conflits)}), 400
+
         # ⭐ Patron : "validation à plusieurs niveaux (SignatureRH) codée
         # mais jamais branchée" — voir _avancer_validation_conge ci-dessus.
         # Sans effet (termine=True immédiatement) si niveaux_validation_
@@ -1609,9 +1609,12 @@ def conge_modifier_reprise(structure_id, id):
         if not date_reprise_str:
             return jsonify({'success': False, 'error': 'Date de reprise requise'}), 400
         try:
-            conge.date_reprise = datetime.strptime(date_reprise_str, '%Y-%m-%d').date()
+            nouvelle = datetime.strptime(date_reprise_str, '%Y-%m-%d').date()
         except ValueError:
             return jsonify({'success': False, 'error': 'Date invalide'}), 400
+        if nouvelle <= conge.date_fin:
+            return jsonify({'success': False, 'error': f"La reprise doit être après la fin du congé ({conge.date_fin.strftime('%d/%m/%Y')})."}), 400
+        conge.date_reprise = nouvelle
 
         db.session.commit()
         return jsonify({'success': True, 'date_reprise': conge.date_reprise.isoformat()})
@@ -1784,6 +1787,100 @@ def _feries(structure_id):
         return frozenset()
 
 
+# ⭐ Logique des dates (patron, 2026-10-10). Une absence « active » occupe la
+# période : en attente, approuvée ou terminée (seules les refusées la libèrent).
+STATUTS_ACTIFS = ('en_attente', 'approuve', 'termine')
+LIBELLES_STATUT = {'en_attente': 'en attente', 'approuve': 'approuvé', 'termine': 'terminé', 'refuse': 'refusé'}
+
+
+def _jj(d):
+    return d.strftime('%d/%m/%Y')
+
+
+def _libelle_conge(c):
+    ref = f", réf. {c.demande_reference}" if c.demande_reference else ''
+    return f"le congé {c.type_conge} du {_jj(c.date_debut)} au {_jj(c.date_fin)} ({LIBELLES_STATUT.get(c.statut, c.statut)}{ref})"
+
+
+def _absences_qui_chevauchent(employe, debut, fin, heures=None, exclure_conge=None, exclure_permission=None):
+    """Messages clairs pour chaque congé / permission actif qui recoupe la
+    période. `heures` = (début, fin) pour une permission de quelques heures :
+    deux permissions « heures » le même jour ne se gênent que si les horaires
+    se recoupent."""
+    aujourd_hui = date.today()
+    nom = f"{employe.nom} {employe.prenom}"
+    messages = []
+    q = Conge.query.filter(Conge.employe_id == employe.id, Conge.statut.in_(STATUTS_ACTIFS),
+                           Conge.date_debut <= fin, Conge.date_fin >= debut)
+    if exclure_conge:
+        q = q.filter(Conge.id != exclure_conge)
+    for c in q.order_by(Conge.date_debut).all():
+        if c.statut == 'approuve' and c.date_debut <= aujourd_hui <= c.date_fin:
+            reprise = f" (reprise le {_jj(c.date_reprise)})" if c.date_reprise else ''
+            messages.append(f"{nom} est actuellement en congé jusqu'au {_jj(c.date_fin)}{reprise} : ce congé n'est pas terminé.")
+        else:
+            messages.append(f"{nom} a déjà {_libelle_conge(c)} sur cette période.")
+    q = Permission.query.filter(Permission.employe_id == employe.id, Permission.statut.in_(STATUTS_ACTIFS))
+    if exclure_permission:
+        q = q.filter(Permission.id != exclure_permission)
+    for p in q.all():
+        p_debut = p.date_debut or p.date_permission
+        p_fin = p.date_fin or p_debut
+        if not p_debut or not periodes_se_chevauchent(debut, fin, p_debut, p_fin):
+            continue
+        if heures is not None and p.type_permission == 'heures' and not heures_se_chevauchent(
+                heures[0], heures[1], p.heure_debut, p.heure_fin):
+            continue
+        if p.type_permission == 'heures':
+            quand = f"le {_jj(p_debut)}" + (f" de {p.heure_debut.strftime('%H:%M')} à {p.heure_fin.strftime('%H:%M')}"
+                                             if p.heure_debut and p.heure_fin else '')
+        elif p_fin != p_debut:
+            quand = f"du {_jj(p_debut)} au {_jj(p_fin)}"
+        else:
+            quand = f"le {_jj(p_debut)}"
+        ref = f", réf. {p.demande_reference}" if p.demande_reference else ''
+        messages.append(f"{nom} a déjà une permission {quand} ({LIBELLES_STATUT.get(p.statut, p.statut)}{ref}).")
+    if messages:
+        messages.append("Refusez ou corrigez d'abord l'absence existante.")
+    return messages
+
+
+def _exception_motivee(data, cle, message, question):
+    """Exception accordée seulement si confirmée avec un motif : (motif, None)
+    ou (None, réponse JSON qui demande la confirmation à l'écran)."""
+    demande = {'success': False, 'error': message, 'confirmer': {'cle': cle, 'question': question}}
+    if not data.get(cle):
+        return None, (jsonify(demande), 400)
+    motif = (data.get(cle + '_motif') or '').strip()
+    if not motif:
+        demande['error'] = message + " Indiquez le motif (gardé dans le dossier)."
+        return None, (jsonify(demande), 400)
+    return motif, None
+
+
+def _controle_retroactif(data, date_debut, regles, quoi):
+    """Date passée (au-delà de la tolérance) : seulement en régularisation —
+    absence déjà prise, saisie après coup (ex. employé présent avant le logiciel)."""
+    if not est_retroactive(date_debut, date.today(), regles):
+        return None, None
+    un, pris = ('une permission', 'déjà prise, enregistrée') if quoi == 'permission' else ('un congé', 'déjà pris, enregistré')
+    return _exception_motivee(
+        data, 'regularisation',
+        f"La date de début ({_jj(date_debut)}) est déjà passée : on ne peut pas enregistrer normalement "
+        f"{un} à une date antérieure à aujourd'hui.",
+        f"S'agit-il d'{un} {pris} après coup (régularisation) ?")
+
+
+def _noter_exceptions(objet, regularisation_motif=None, ecart_force_motif=None):
+    if regularisation_motif:
+        objet.saisie_retroactive = True
+        objet.regularisation_motif = regularisation_motif
+    if ecart_force_motif:
+        objet.ecart_force_motif = ecart_force_motif
+    if regularisation_motif or ecart_force_motif:
+        objet.exceptions_par = session.get('user_name', 'Admin')
+
+
 def _compteur_convenance(employe_id, annee, exclure_id=None):
     """Jours de permission de convenance (en attente + approuvées) de l'année
     civile, plus ceux déjà pris avant le logiciel (reprise de l'historique)."""
@@ -1886,6 +1983,9 @@ def _champs_demande(objet):
         'demande_ecrite': bool(objet.demande_ecrite_nom),
         'demande_ecrite_date': objet.demande_ecrite_date.strftime('%d/%m/%Y') if objet.demande_ecrite_date else '',
         'demande_recue_le': objet.demande_recue_le.strftime('%d/%m/%Y') if objet.demande_recue_le else '',
+        'saisie_retroactive': bool(objet.saisie_retroactive),
+        'regularisation_motif': objet.regularisation_motif or '',
+        'ecart_force_motif': getattr(objet, 'ecart_force_motif', None) or '',
     }
 
 
@@ -2051,20 +2151,28 @@ def permission_demander(structure_id):
         except (TypeError, ValueError):
             return jsonify({'success': False, 'error': 'Dates de la permission invalides'}), 400
 
-        # ⭐ Patron : "un employé en congés on ne peut plus le programmer
-        # pour la même période" (permissions « heures » tolérées).
-        if type_permission != 'heures':
-            conges_existants = Conge.query.filter(
-                Conge.employe_id == employe_id,
-                Conge.statut.in_(['en_attente', 'approuve']),
-                Conge.date_debut <= date_fin,
-                Conge.date_fin >= date_debut,
-            ).all()
-            if conges_existants:
-                chevauchement = [f"{c.date_debut.strftime('%d/%m/%Y')} -> {c.date_fin.strftime('%d/%m/%Y')} ({c.statut})"
-                                 for c in conges_existants]
-                return jsonify({'success': False,
-                                'error': f"L'employé est déjà en congé sur cette période: {', '.join(chevauchement)}"}), 400
+        # ⭐ Logique des dates (patron, 2026-10-10) : vie de l'employé, aucune
+        # absence superposée (congé, autre permission — même horaire pour les
+        # permissions « heures »), pas de date passée sans régularisation.
+        heure_debut = heure_fin = None
+        if type_permission == 'heures':
+            try:
+                heure_debut = datetime.strptime(data.get('heure_debut'), '%H:%M').time() if data.get('heure_debut') else None
+                heure_fin = datetime.strptime(data.get('heure_fin'), '%H:%M').time() if data.get('heure_fin') else None
+            except ValueError:
+                return jsonify({'success': False, 'error': 'Heures de la permission invalides'}), 400
+            if heure_debut and heure_fin and heure_fin <= heure_debut:
+                return jsonify({'success': False, 'error': "L'heure de fin doit être après l'heure de début."}), 400
+        erreur = controler_periode_employe(date_debut, date_fin, employe.date_embauche, employe.date_depart)
+        if erreur:
+            return jsonify({'success': False, 'error': erreur}), 400
+        conflits = _absences_qui_chevauchent(employe, date_debut, date_fin,
+                                             heures=(heure_debut, heure_fin) if type_permission == 'heures' else None)
+        if conflits:
+            return jsonify({'success': False, 'error': ' '.join(conflits), 'chevauchement': True}), 400
+        regularisation_motif, refus = _controle_retroactif(data, date_debut, regles, 'permission')
+        if refus:
+            return refus
 
         try:
             justificatif = _lire_justificatif(data)
@@ -2093,8 +2201,9 @@ def permission_demander(structure_id):
         )
         if type_permission == 'heures':
             permission.date_permission = date_permission
-            permission.heure_debut = datetime.strptime(data.get('heure_debut'), '%H:%M').time() if data.get('heure_debut') else None
-            permission.heure_fin = datetime.strptime(data.get('heure_fin'), '%H:%M').time() if data.get('heure_fin') else None
+            permission.heure_debut = heure_debut
+            permission.heure_fin = heure_fin
+        _noter_exceptions(permission, regularisation_motif)
         if justificatif:
             permission.justificatif_nom, permission.justificatif_mime, permission.justificatif_data = justificatif
             permission.justificatif_le = datetime.utcnow()
@@ -2114,7 +2223,8 @@ def permission_demander(structure_id):
             'success': True,
             'id': permission.id,
             'reference': permission.demande_reference,
-            'message': f"Permission {permission.demande_reference} enregistrée ({nombre_jours:g} jour(s) ouvrable(s), {libelle_deduction}).",
+            'message': f"Permission {permission.demande_reference} enregistrée ({nombre_jours:g} jour(s) ouvrable(s), {libelle_deduction})"
+                       + (" — régularisation a posteriori." if permission.saisie_retroactive else "."),
             'avertissements': controle['avertissements'],
             'deduction': deduction,
             'nombre_jours': nombre_jours,
