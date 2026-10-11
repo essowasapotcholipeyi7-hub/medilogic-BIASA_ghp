@@ -2332,6 +2332,34 @@ class HabilitationTemporaire(db.Model):
     revoque_par_nom = db.Column(db.String(255))
 
 
+class RoleSupplementaire(db.Model):
+    """⭐ Patron (2026-10-10) : « un caissier peut jouer aussi le rôle de
+    secrétaire, un comptable peut servir les patients » — rôles en plus du
+    rôle principal (colonne `role` de struct_N_users). L'utilisateur passe de
+    l'un à l'autre depuis le menu de son nom (« Changer de rôle ») : chaque
+    rôle garde exactement ses accès. Comme HabilitationTemporaire : ID Sheets
+    de l'utilisateur, pas de clé étrangère."""
+    __tablename__ = 'roles_supplementaires'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    utilisateur_id = db.Column(db.Integer, nullable=False)  # ID Sheets (struct_N_users)
+    role = db.Column(db.String(30), nullable=False)
+    accorde_par_nom = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('structure_id', 'utilisateur_id', 'role', name='uq_role_supplementaire'),
+    )
+
+    @classmethod
+    def du_compte(cls, structure_id, utilisateur_id):
+        try:
+            return [r.role for r in cls.query.filter_by(structure_id=structure_id,
+                                                        utilisateur_id=int(utilisateur_id)).all()]
+        except (TypeError, ValueError):
+            return []
+
+
 class CodeQrConnexion(db.Model):
     """Connexion par code QR (badge personnel), en plus d'email/mot de
     passe — jamais obligatoire. Seul l'admin génère/révoque, depuis

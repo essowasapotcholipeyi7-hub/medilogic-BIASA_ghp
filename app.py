@@ -16,8 +16,8 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
-from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, CorrespondanceSalleAmu, CodeBarreArticle, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient, FaqQuestion, FaqQuestionUtilisateur, JourFerie, TauxPartMedecin, PrestationMedecin, PeriodePartMedecin, MedecinDuJour, ParametrageService, ClassificationServiceActe, RecetteService, LogoStructure
-from utils.permissions import a_acces, PERMISSIONS
+from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, RoleSupplementaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, CorrespondanceSalleAmu, CodeBarreArticle, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient, FaqQuestion, FaqQuestionUtilisateur, JourFerie, TauxPartMedecin, PrestationMedecin, PeriodePartMedecin, MedecinDuJour, ParametrageService, ClassificationServiceActe, RecetteService, LogoStructure
+from utils.permissions import a_acces, PERMISSIONS, LIBELLES_ROLES, roles_supplementaires_valides
 from utils.themes import VARIABLES_THEME, POLICES
 from services import theme_service
 from utils.modules_structure import MODULES_STRUCTURE
@@ -189,7 +189,7 @@ CHEMINS_AUTORISES_ROLES_RH = (
     '/rh/', '/static/', '/logout', '/faq', '/api/faq/', '/guide',
     '/parametres/mot-de-passe', '/api/parametres/mot-de-passe',
     '/parametres/theme', '/api/theme', '/api/structure/', '/api/webauthn/',
-    '/api/recherche-globale', '/chat/',
+    '/api/recherche-globale', '/chat/', '/api/mon-role',
 )
 
 
@@ -2217,6 +2217,7 @@ def index():
                                 session['role'] = role  # 🔥 AJOUT DU RÔLE
                                 session['is_admin'] = (role == 'admin')  # 🔥 ADMIN SI ROLE = 'admin'
                                 session['type_compte'] = 'user'  # ligne struct_N_users (vs compte structure)
+                                _ouvrir_roles_session(structure_id, row.get('ID'), role)
                                 _reinitialiser_medecin_du_jour_connexion(structure_id)
 
                                 print(f"✅ Connexion réussie pour {row.get('nom')} (rôle: {role})")
@@ -2363,8 +2364,51 @@ def _poser_session_compte(structure_id, utilisateur_id, type_compte, se_souvenir
     session['role'] = role
     session['is_admin'] = (role == 'admin')
     session['type_compte'] = 'user'
+    _ouvrir_roles_session(structure_id, row.get('ID'), role)
     _reinitialiser_medecin_du_jour_connexion(structure_id)
     return row.get('nom'), None
+
+
+# ⭐ Plusieurs rôles pour un même compte (patron, 2026-10-10) : la session
+# démarre sur le rôle principal ; le menu du nom propose les autres.
+def _ouvrir_roles_session(structure_id, utilisateur_id, role_principal):
+    session['role_principal'] = role_principal
+    try:
+        session['roles_supplementaires'] = roles_supplementaires_valides(
+            role_principal, RoleSupplementaire.du_compte(structure_id, utilisateur_id))
+    except Exception as e:
+        print(f"⚠️ Rôles supplémentaires non chargés : {e}")
+        session['roles_supplementaires'] = []
+
+
+@app.context_processor
+def injecter_roles_compte():
+    principal = session.get('role_principal')
+    supplementaires = session.get('roles_supplementaires') or []
+    if not principal or not supplementaires:
+        return {'roles_du_compte': []}
+    return {'roles_du_compte': [{'role': r, 'libelle': LIBELLES_ROLES.get(r, r), 'actif': r == session.get('role')}
+                                for r in [principal] + supplementaires]}
+
+
+@app.route('/api/mon-role', methods=['POST'])
+@login_required
+def api_changer_mon_role():
+    """Passe la session sur un autre des rôles attribués à ce compte (vérifié
+    à nouveau en base : un rôle retiré entre-temps n'est plus accepté)."""
+    role = (request.json or {}).get('role')
+    principal = session.get('role_principal')
+    if not principal or session.get('type_compte') != 'user':
+        return jsonify({'success': False, 'error': "Ce compte n'a qu'un seul rôle."}), 400
+    autorises = [principal] + roles_supplementaires_valides(
+        principal, RoleSupplementaire.du_compte(session.get('structure_id'), session.get('user_id')))
+    session['roles_supplementaires'] = autorises[1:]
+    if role not in autorises:
+        return jsonify({'success': False, 'error': "Ce rôle ne vous est pas (ou plus) attribué."}), 403
+    session['role'] = role
+    session['is_admin'] = (role == 'admin')
+    print(f"🔁 {session.get('user_name')} passe en rôle {role}")
+    return jsonify({'success': True, 'role': role, 'libelle': LIBELLES_ROLES.get(role, role)})
 
 
 @app.route('/login/qr', methods=['POST'])
@@ -6184,7 +6228,17 @@ def api_add_user():
             worksheet.append_row(headers)
         
         user_id = data.get('id')
-        
+
+        # ⭐ Patron (2026-10-10) : le rôle restait « Caissier » par défaut — il
+        # doit être choisi exprès, parmi les rôles connus.
+        role = data.get('role')
+        if role not in LIBELLES_ROLES:
+            return jsonify({'success': False, 'error': "Choisissez le rôle de l'utilisateur."}), 400
+        supplementaires = roles_supplementaires_valides(role, data.get('roles_supplementaires'))
+        nouveau = not (user_id and user_id != '' and user_id != 'null' and user_id != 0)
+        if nouveau and not (data.get('password') or '').strip():
+            return jsonify({'success': False, 'error': "Indiquez un mot de passe pour le nouvel utilisateur."}), 400
+
         if user_id and user_id != '' and user_id != 'null' and user_id != 0:
             # Modification
             print(f"✏️ Modification ID: {user_id}")
@@ -6203,6 +6257,7 @@ def api_add_user():
                 # current_row[8] = dernière connexion (ne pas toucher)
 
                 worksheet.update(range_name=f'A{row_num}:H{row_num}', values=[current_row])
+                _enregistrer_roles_supplementaires(structure_id, user_id, supplementaires)
                 return jsonify({'success': True, 'id': user_id})
             else:
                 return jsonify({'success': False, 'error': 'Utilisateur non trouvé'}), 404
@@ -6225,6 +6280,7 @@ def api_add_user():
                 ''  # dernière connexion (vide)
             ]
             worksheet.append_row(new_user)
+            _enregistrer_roles_supplementaires(structure_id, new_id, supplementaires)
             return jsonify({'success': True, 'id': new_id})
             
     except Exception as e:
@@ -6232,6 +6288,20 @@ def api_add_user():
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
+
+def _enregistrer_roles_supplementaires(structure_id, utilisateur_id, roles):
+    """Remplace les rôles supplémentaires du compte par `roles` (déjà validés)."""
+    utilisateur_id = int(utilisateur_id)
+    actuels = {r.role: r for r in RoleSupplementaire.query.filter_by(structure_id=structure_id, utilisateur_id=utilisateur_id).all()}
+    for role, ligne in actuels.items():
+        if role not in roles:
+            db.session.delete(ligne)
+    for role in roles:
+        if role not in actuels:
+            db.session.add(RoleSupplementaire(structure_id=structure_id, utilisateur_id=utilisateur_id, role=role,
+                                              accorde_par_nom=session.get('user_name')))
+    db.session.commit()
+
 
 @app.route('/api/admin/users/<int:user_id>/toggle', methods=['POST'])
 @login_required
@@ -6284,6 +6354,8 @@ def api_delete_user(user_id):
     """Supprimer un utilisateur"""
     try:
         structure_id = session.get('structure_id')
+        RoleSupplementaire.query.filter_by(structure_id=structure_id, utilisateur_id=user_id).delete()
+        db.session.commit()
         sheet_name = f"struct_{structure_id}_users"
         
         print(f"Recherche dans la feuille: {sheet_name}")
@@ -6442,9 +6514,15 @@ def admin_structure():
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
 
+    roles_supp = {}
+    for r in RoleSupplementaire.query.filter_by(structure_id=structure_id).all():
+        roles_supp.setdefault(str(r.utilisateur_id), []).append(r.role)
+
     return render_template('admin_structure.html',
                          users=users,
-                         structure_info=structure_info)
+                         structure_info=structure_info,
+                         roles_supp=roles_supp,
+                         libelles_roles=LIBELLES_ROLES)
 
 
 # ============================================================

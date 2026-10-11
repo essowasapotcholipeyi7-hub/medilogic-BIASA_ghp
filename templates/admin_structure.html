@@ -96,6 +96,9 @@
                                             {% else %}
                                                 <span class="badge bg-secondary">{{ user.role }}</span>
                                             {% endif %}
+                                            {% for r in roles_supp.get(user.ID|string, []) %}
+                                                <span class="badge bg-light text-dark border" title="Rôle supplémentaire">+ {{ libelles_roles.get(r, r) }}</span>
+                                            {% endfor %}
                                         </td>
                                         <td>
                                             {% if user.actif == 'oui' or user.actif == 'true' or user.actif == '1' %}
@@ -337,8 +340,9 @@
                         <input type="password" class="form-control" id="userPassword" placeholder="Laisser vide pour ne pas changer">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Rôle</label>
-                        <select class="form-control" id="userRole">
+                        <label class="form-label">Rôle principal <span class="text-danger">*</span></label>
+                        <select class="form-control" id="userRole" required onchange="majRolesSupplementaires()">
+                            <option value="" disabled selected>— Choisir le rôle —</option>
                             <option value="caissier">Caissier</option>
                             <option value="secretaire">Secretaire</option>
                             <option value="medecin">Médecin</option>
@@ -353,6 +357,22 @@
                             <option value="responsable_rh">Responsable RH (GRH seulement : décisions et paie)</option>
                             <option value="admin">Administrateur</option>
                         </select>
+                    </div>
+                    <!-- ⭐ Patron (2026-10-10) : « un caissier peut jouer aussi le rôle de secrétaire,
+                         un comptable peut servir les patients » — l'utilisateur passe de l'un à
+                         l'autre depuis le menu de son nom, chaque rôle gardant ses propres accès. -->
+                    <div class="mb-3">
+                        <label class="form-label">Rôles supplémentaires <span class="text-muted small">(facultatif)</span></label>
+                        <div class="border rounded p-2 d-flex flex-wrap gap-2" id="userRolesSupp">
+                            {% for cle, libelle in libelles_roles.items() if cle != 'admin' %}
+                            <div class="form-check form-check-inline me-0" style="min-width:140px;">
+                                <input class="form-check-input role-supp" type="checkbox" value="{{ cle }}" id="roleSupp_{{ cle }}">
+                                <label class="form-check-label small" for="roleSupp_{{ cle }}">{{ libelle }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        <small class="text-muted">L'utilisateur se connecte avec son rôle principal et peut passer à un rôle
+                            supplémentaire depuis le menu de son nom (en haut à droite). Le rôle Administrateur ne peut pas être ajouté ainsi.</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Statut</label>
@@ -511,10 +531,30 @@ function imprimerQr() {
 }
 
 // ========== GESTION UTILISATEURS ==========
+const ROLES_SUPP = {{ roles_supp | tojson }};
+
+// Rôles supplémentaires : le rôle principal n'y est pas proposé.
+function majRolesSupplementaires() {
+    const principal = document.getElementById('userRole').value;
+    document.querySelectorAll('.role-supp').forEach(cb => {
+        const cache = cb.value === principal;
+        cb.closest('.form-check').style.display = cache ? 'none' : '';
+        if (cache) cb.checked = false;
+    });
+}
+
+function cocherRolesSupplementaires(roles) {
+    document.querySelectorAll('.role-supp').forEach(cb => { cb.checked = (roles || []).includes(cb.value); });
+    majRolesSupplementaires();
+}
+
 function showAddUserModal() {
     document.getElementById('userModalTitle').innerText = 'Ajouter un utilisateur';
     document.getElementById('userId').value = '';
     document.getElementById('userForm').reset();
+    document.getElementById('userRole').value = '';
+    document.getElementById('userPassword').placeholder = 'Mot de passe du nouvel utilisateur';
+    cocherRolesSupplementaires([]);
     document.getElementById('userActif').value = 'oui';
     new bootstrap.Modal(document.getElementById('userModal')).show();
 }
@@ -526,6 +566,8 @@ function editUser(id, nom, email, role, actif) {
     document.getElementById('userEmail').value = email;
     document.getElementById('userPassword').value = '';
     document.getElementById('userRole').value = role;
+    document.getElementById('userPassword').placeholder = 'Laisser vide pour ne pas changer';
+    cocherRolesSupplementaires(ROLES_SUPP[String(id)] || []);
     document.getElementById('userActif').value = actif === 'oui' ? 'oui' : 'non';
     new bootstrap.Modal(document.getElementById('userModal')).show();
 }
@@ -537,11 +579,22 @@ async function saveUser() {
         email: document.getElementById('userEmail').value,
         password: document.getElementById('userPassword').value,
         role: document.getElementById('userRole').value,
+        roles_supplementaires: [...document.querySelectorAll('.role-supp:checked')].map(cb => cb.value),
         actif: document.getElementById('userActif').value
     };
-    
+
     if (!data.nom || !data.email) {
         await afficherMessage('Veuillez remplir tous les champs obligatoires');
+        return;
+    }
+    if (!data.role) {
+        await afficherMessage("Choisissez le rôle principal de l'utilisateur.");
+        document.getElementById('userRole').focus();
+        return;
+    }
+    if (!data.id && !data.password.trim()) {
+        await afficherMessage('Indiquez un mot de passe pour le nouvel utilisateur.');
+        document.getElementById('userPassword').focus();
         return;
     }
     

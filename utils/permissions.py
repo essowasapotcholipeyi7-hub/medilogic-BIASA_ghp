@@ -84,6 +84,27 @@ ROLES_RH = ('agent_rh', 'responsable_rh')
 LIBELLES_ROLES_RH = {'agent_rh': 'Agent RH', 'responsable_rh': 'Responsable RH'}
 
 
+# ⭐ Tous les rôles d'un compte utilisateur (struct_N_users), dans l'ordre du
+# formulaire d'administration — seule liste acceptée à l'enregistrement.
+LIBELLES_ROLES = {
+    'caissier': 'Caissier', 'secretaire': 'Secrétaire', 'medecin': 'Médecin',
+    'paramedical': 'Paramédical', 'pharmacien': 'Pharmacien', 'laborantin': 'Laborantin',
+    'radiologue': 'Radiologue', 'gestionnaire': 'Gestionnaire', 'sous_comptable': 'Sous-comptable',
+    'comptable': 'Comptable', 'agent_rh': 'Agent RH', 'responsable_rh': 'Responsable RH',
+    'admin': 'Administrateur',
+}
+# Un rôle SUPPLÉMENTAIRE ne peut jamais être administrateur (les droits
+# d'administration ne s'obtiennent que par le rôle principal).
+ROLES_SUPPLEMENTAIRES_POSSIBLES = tuple(r for r in LIBELLES_ROLES if r != 'admin')
+
+
+def roles_supplementaires_valides(role_principal, roles):
+    """Rôles supplémentaires retenus : connus, sans 'admin', sans doublon ni
+    le rôle principal, dans l'ordre du formulaire."""
+    demandes = set(roles or [])
+    return [r for r in ROLES_SUPPLEMENTAIRES_POSSIBLES if r in demandes and r != role_principal]
+
+
 def est_role_rh(role=None):
     return (role if role is not None else session.get('role')) in ROLES_RH
 

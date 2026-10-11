@@ -2211,8 +2211,17 @@
                 <button class="btn btn-light rounded-pill dropdown-toggle d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown" title="{{ session.user_name|default('Utilisateur') }}">
                     <i class="fas fa-user-circle"></i>
                     <span class="user-name-text">{{ session.user_name|default('Utilisateur') }}</span>
+                    {% if roles_du_compte %}{% for r in roles_du_compte if r.actif %}<span class="badge bg-primary-subtle text-primary-emphasis">{{ r.libelle }}</span>{% endfor %}{% endif %}
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end">
+                    {% if roles_du_compte %}{# ⭐ plusieurs rôles : on passe de l'un à l'autre #}
+                    <li><h6 class="dropdown-header"><i class="fas fa-user-tag me-1"></i>Changer de rôle</h6></li>
+                    {% for r in roles_du_compte %}
+                    <li><a class="dropdown-item {{ 'active' if r.actif }}" href="#" onclick="changerMonRole('{{ r.role }}'); return false;">
+                        <i class="fas {{ 'fa-circle-check' if r.actif else 'fa-circle' }}"></i> {{ r.libelle }}</a></li>
+                    {% endfor %}
+                    <li><hr class="dropdown-divider"></li>
+                    {% endif %}
                     <li><a class="dropdown-item" href="{{ url_for('dashboard') }}"><i class="fas fa-tachometer-alt"></i> Tableau de bord</a></li>
                     <li><a class="dropdown-item" href="{{ url_for('historique_ventes') }}"><i class="fas fa-history"></i> Historique</a></li>
                     <li><hr class="dropdown-divider"></li>
@@ -2231,6 +2240,15 @@
 </nav>
 
 <script>
+// ⭐ Plusieurs rôles pour un même compte : bascule puis retour à l'accueil du nouveau rôle.
+async function changerMonRole(role) {
+    try {
+        const d = await fetch('/api/mon-role', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({role})}).then(r => r.json());
+        if (!d.success) { if (window.afficherMessage) await afficherMessage(d.error || 'Erreur', {type: 'danger'}); else alert(d.error || 'Erreur'); return; }
+        window.location.href = '{{ url_for('page_accueil') }}';
+    } catch (e) { alert('Erreur réseau : ' + e); }
+}
+
 // ⭐ Soleil / Lune : bascule clair / sombre en direct, sans recharger la page
 async function basculerTheme(mode) {
     const groupe = document.getElementById('themeSoleilLune');
