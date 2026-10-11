@@ -12,12 +12,12 @@ from models import (
     LigneReleve, Cloture, SequencePiece, AnomalieComptable,
     Immobilisation, DotationAmortissement, ProvisionCreance, Facture,
     Fournisseur, AchatFournisseur, ReglementFournisseur, Depense,
-    ParametrageTva,
+    ParametrageTva, DeclarationTva,
 )
 from services.comptabilite_service import get_soldes_caisses, creer_ecriture, COMPTE_CLIENTS_PATIENTS
 from utils.plan_comptable_syscohada import (
     COMPTE_BANQUE, COMPTE_CAISSE, COMPTE_IMMO_MATERIEL_MEDICAL, COMPTE_AMORT_MATERIEL_MEDICAL,
-    COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE,
+    COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, COMPTE_TVA_DUE, COMPTE_CREDIT_TVA,
 )
 from utils.permissions import a_acces
 
@@ -68,6 +68,8 @@ ENDPOINTS_RESPONSABLE_COMPTA = {
     # provisions, pertes, amortissements, règlements fournisseurs
     'api_provisionner_creance', 'api_reprendre_provision', 'api_provision_passer_en_perte', 'api_perte_directe',
     'api_generer_dotations', 'api_regler_achat_fournisseur',
+    # clôture et paiement de la TVA
+    'api_tva_declaration_cloturer', 'api_tva_declaration_payer', 'api_tva_declaration_annuler',
 }
 
 
@@ -529,6 +531,9 @@ def api_creer_ecriture():
         if total_debit != total_credit:
             return jsonify({'success': False, 'error': 'Les totaux debit et credit doivent etre egaux'}), 400
         
+        erreur_tva = _controle_periode_tva(structure_id, date_ecriture, data.get('lignes'))
+        if erreur_tva:
+            return jsonify({'success': False, 'error': erreur_tva}), 400
         # Generer le numero de piece automatiquement
         numero_piece = SequencePiece.get_next_number(structure_id, 'ecriture')
         
@@ -652,6 +657,9 @@ def api_modifier_ecriture(id):
         
         if total_debit != total_credit:
             return jsonify({'success': False, 'error': 'Les totaux debit et credit doivent etre egaux'}), 400
+        erreur_tva = _controle_periode_tva(structure_id, date_ecriture, data.get('lignes'))
+        if erreur_tva:
+            return jsonify({'success': False, 'error': erreur_tva}), 400
         
         ecriture.date_ecriture = date_ecriture
         ecriture.libelle = data.get('libelle')
@@ -724,6 +732,11 @@ def api_valider_ecriture(id):
     if niveau == 1 and action == 'approuve':
         ecriture.statut = 'en_attente'
     elif niveau == 2 and action == 'approuve':
+        erreur_tva = _controle_periode_tva(structure_id, ecriture.date_ecriture,
+                                           [{'compte_id': l.compte_id} for l in ecriture.lignes])
+        if erreur_tva:
+            db.session.rollback()
+            return jsonify({'success': False, 'error': erreur_tva}), 400
         ecriture.statut = 'valide'
         ecriture.validated_by = session.get('user_id')
         ecriture.validated_by_nom = user_name
@@ -1603,6 +1616,316 @@ def api_tva_parametrage_post():
         except Exception as e:
             print(f"⚠️ Journal (paramétrage TVA) : {e}")
     return jsonify({'success': True, 'assujetti': param.assujetti, 'taux': taux})
+
+
+# ⭐ Clôture et paiement de la TVA (patron, 2026-10-11 : « c'est à quel moment
+# la somme de TVA du mois est déduite de la caisse ? il doit y avoir un moment
+# où on clôture la TVA pour le mois ou une période choisie, avec respect des
+# dates, et c'est à ce moment que la caisse est déduite »).
+#   1. Clôture : la TVA accumulée (443 collectée, 445 récupérable, 4449 crédit
+#      antérieur) jusqu'à la date de fin est soldée vers 4441 « TVA due »
+#      (utils/plan_comptable_syscohada.liquidation_tva). La caisse ne bouge pas.
+#   2. Paiement : Débit 4441 / Crédit caisse (ou banque) — c'est ICI que
+#      l'argent sort, avec une ligne miroir dans `depenses` pour le solde de
+#      caisse de l'appli (même principe que api_regler_achat_fournisseur).
+# Les périodes se suivent sans trou ni chevauchement ; une écriture saisie à la
+# main qui touche la TVA ne peut plus être datée dans une période clôturée.
+# Une vente enregistrée après coup avec une date ancienne n'est pas perdue :
+# la clôture solde le compte à sa date de fin, donc elle part dans la
+# déclaration suivante (montant « régularisations antérieures »).
+
+MODES_PAIEMENT_TVA = {'especes': 'Espèces (caisse)', 'mixx': 'Mixx by Yas (argent de la caisse)',
+                      'moov': 'Moov Money (argent de la caisse)', 'banque': 'Banque (virement ou chèque)'}
+
+
+def _derniere_declaration_tva(structure_id):
+    return (DeclarationTva.query.filter(DeclarationTva.structure_id == structure_id, DeclarationTva.statut != 'annulee')
+            .order_by(DeclarationTva.date_fin.desc(), DeclarationTva.id.desc()).first())
+
+
+def _soldes_tva_a_date(structure_id, date_limite):
+    """Soldes des comptes de TVA (écritures validées datées jusqu'à date_limite incluse)."""
+    from sqlalchemy import text
+    rows = db.session.execute(text("""
+        SELECT c.numero, COALESCE(SUM(l.debit), 0) AS d, COALESCE(SUM(l.credit), 0) AS c
+        FROM lignes_ecritures l
+        JOIN ecritures_comptables e ON e.id = l.ecriture_id
+        JOIN comptes_comptables c ON c.id = l.compte_id
+        WHERE e.structure_id = :s AND e.statut = 'valide' AND e.date_ecriture <= :fin
+          AND c.numero IN (:collectee, :deductible, :credit)
+        GROUP BY c.numero
+    """), {'s': structure_id, 'fin': date_limite, 'collectee': COMPTE_TVA_COLLECTEE,
+           'deductible': COMPTE_TVA_DEDUCTIBLE, 'credit': COMPTE_CREDIT_TVA}).fetchall()
+    soldes = {r.numero: (float(r.d), float(r.c)) for r in rows}
+    d, c = soldes.get(COMPTE_TVA_COLLECTEE, (0, 0))
+    collectee = c - d
+    d, c = soldes.get(COMPTE_TVA_DEDUCTIBLE, (0, 0))
+    deductible = d - c
+    d, c = soldes.get(COMPTE_CREDIT_TVA, (0, 0))
+    credit = d - c
+    return round(collectee, 2), round(deductible, 2), round(credit, 2)
+
+
+def calculer_declaration_tva(structure_id, date_debut, date_fin):
+    from utils.plan_comptable_syscohada import liquidation_tva
+    collectee, deductible, credit = _soldes_tva_a_date(structure_id, date_fin)
+    avant_c, avant_d, _ = _soldes_tva_a_date(structure_id, date_debut - timedelta(days=1))
+    lignes, a_payer, reporte = liquidation_tva(collectee, deductible, credit)
+    return {'date_debut': date_debut.isoformat(), 'date_fin': date_fin.isoformat(),
+            'tva_collectee': collectee, 'tva_deductible': deductible, 'credit_anterieur': credit,
+            'regularisations_anterieures': round(avant_c - avant_d, 2),
+            'tva_a_payer': a_payer, 'credit_reporte': reporte, 'lignes': lignes}
+
+
+def _bornes_declaration_tva(structure_id, date_debut_txt, date_fin_txt):
+    """(date_debut, date_fin, erreur). Après une première déclaration, la
+    période commence obligatoirement le lendemain de la précédente."""
+    derniere = _derniere_declaration_tva(structure_id)
+    if derniere:
+        date_debut = derniere.date_fin + timedelta(days=1)
+    else:
+        date_debut = parse_date(date_debut_txt) if date_debut_txt else None
+        if not date_debut:
+            return None, None, "Date de début requise."
+    date_fin = parse_date(date_fin_txt) if date_fin_txt else None
+    if not date_fin:
+        return date_debut, None, "Date de fin requise."
+    if date_fin < date_debut:
+        if derniere:
+            return date_debut, date_fin, (f"La période commence le {date_debut.strftime('%d/%m/%Y')} "
+                                          f"(lendemain de la dernière clôture) : choisissez une date de fin après.")
+        return date_debut, date_fin, "La date de fin doit être après la date de début."
+    if date_fin > date.today():
+        return date_debut, date_fin, "On ne peut pas clôturer une période qui n'est pas encore passée."
+    return date_debut, date_fin, None
+
+
+def _declaration_tva_dict(d):
+    return {'id': d.id, 'date_debut': d.date_debut.isoformat(), 'date_fin': d.date_fin.isoformat(),
+            'tva_collectee': float(d.tva_collectee or 0), 'tva_deductible': float(d.tva_deductible or 0),
+            'credit_anterieur': float(d.credit_anterieur or 0), 'tva_a_payer': float(d.tva_a_payer or 0),
+            'credit_reporte': float(d.credit_reporte or 0), 'statut': d.statut,
+            'cree_par': d.cree_par or '', 'created_at': d.created_at.strftime('%d/%m/%Y %H:%M') if d.created_at else '',
+            'date_paiement': d.date_paiement.isoformat() if d.date_paiement else '',
+            'mode_paiement': MODES_PAIEMENT_TVA.get(d.mode_paiement, d.mode_paiement or ''),
+            'reference_paiement': d.reference_paiement or '', 'paye_par': d.paye_par or '',
+            'annule_par': d.annule_par or ''}
+
+
+def _controle_periode_tva(structure_id, date_ecriture, lignes):
+    """Message d'erreur si une écriture saisie à la main touche la TVA dans une période clôturée."""
+    derniere = _derniere_declaration_tva(structure_id)
+    if not derniere or not date_ecriture or date_ecriture > derniere.date_fin:
+        return None
+    from utils.plan_comptable_syscohada import COMPTES_TVA
+    ids = [l.get('compte_id') for l in (lignes or []) if l.get('compte_id')]
+    if ids and CompteComptable.query.filter(CompteComptable.structure_id == structure_id, CompteComptable.id.in_(ids),
+                                            CompteComptable.numero.in_(COMPTES_TVA)).first():
+        return (f"La TVA est clôturée jusqu'au {derniere.date_fin.strftime('%d/%m/%Y')} : une écriture qui touche "
+                f"la TVA doit être datée après cette date (ou annulez d'abord la dernière clôture).")
+    return None
+
+
+@compta_bp.route('/api/tva/declarations', methods=['GET'])
+def api_tva_declarations():
+    structure_id = session.get('structure_id')
+    if not structure_id:
+        return jsonify({'success': False, 'error': 'Structure non trouvée'}), 404
+    declarations = (DeclarationTva.query.filter_by(structure_id=structure_id)
+                    .order_by(DeclarationTva.date_fin.desc(), DeclarationTva.id.desc()).limit(60).all())
+    derniere = _derniere_declaration_tva(structure_id)
+    aujourd_hui = date.today()
+    if derniere:
+        debut = derniere.date_fin + timedelta(days=1)
+    else:
+        debut = (aujourd_hui.replace(day=1) - timedelta(days=1)).replace(day=1)
+    # fin proposée : fin du mois du début, sans dépasser aujourd'hui
+    fin = min((debut.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1), aujourd_hui)
+    return jsonify({'success': True, 'declarations': [_declaration_tva_dict(d) for d in declarations],
+                    'debut_impose': derniere is not None, 'debut_propose': debut.isoformat(),
+                    'fin_proposee': fin.isoformat(), 'modes_paiement': MODES_PAIEMENT_TVA,
+                    'derniere_id': derniere.id if derniere else None})
+
+
+@compta_bp.route('/api/tva/declarations/apercu', methods=['GET'])
+def api_tva_declaration_apercu():
+    structure_id = session.get('structure_id')
+    date_debut, date_fin, erreur = _bornes_declaration_tva(structure_id, request.args.get('date_debut'),
+                                                           request.args.get('date_fin'))
+    if erreur:
+        return jsonify({'success': False, 'error': erreur}), 400
+    return jsonify({'success': True, **calculer_declaration_tva(structure_id, date_debut, date_fin)})
+
+
+@compta_bp.route('/api/tva/declarations', methods=['POST'])
+def api_tva_declaration_cloturer():
+    structure_id = session.get('structure_id')
+    user_name = session.get('user_name', 'Utilisateur')
+    data = request.json or {}
+    # verrou par structure : deux clôtures simultanées ne peuvent pas se chevaucher
+    ParametrageTva.get_ou_creer(structure_id)
+    ParametrageTva.query.filter_by(structure_id=structure_id).with_for_update().first()
+    date_debut, date_fin, erreur = _bornes_declaration_tva(structure_id, data.get('date_debut'), data.get('date_fin'))
+    if erreur:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': erreur}), 400
+    calcul = calculer_declaration_tva(structure_id, date_debut, date_fin)
+    declaration = DeclarationTva(
+        structure_id=structure_id, date_debut=date_debut, date_fin=date_fin,
+        tva_collectee=calcul['tva_collectee'], tva_deductible=calcul['tva_deductible'],
+        credit_anterieur=calcul['credit_anterieur'], tva_a_payer=calcul['tva_a_payer'],
+        credit_reporte=calcul['credit_reporte'], statut='cloturee', cree_par=user_name,
+    )
+    db.session.add(declaration)
+    db.session.flush()
+    periode = f"du {date_debut.strftime('%d/%m/%Y')} au {date_fin.strftime('%d/%m/%Y')}"
+    if calcul['lignes']:
+        ecriture = creer_ecriture(
+            structure_id=structure_id, date_ecriture=date_fin,
+            libelle=f"Clôture de la TVA {periode}", lignes=calcul['lignes'], journal_code='OD',
+            piece_justificative=f"TVA-{declaration.id}", auto=True,
+            source_type='declaration_tva', source_id=declaration.id, user_nom=user_name,
+        )
+        if not ecriture:
+            db.session.rollback()
+            return jsonify({'success': False, 'error': "L'écriture de clôture n'a pas pu être créée."}), 500
+        declaration.ecriture_id = ecriture.id
+    db.session.commit()
+    invalidate_cache(structure_id)
+    if calcul['tva_a_payer']:
+        resume = f"{int(round(calcul['tva_a_payer'])):,} FCFA à payer".replace(',', ' ')
+    elif calcul['credit_reporte']:
+        resume = f"crédit de {int(round(calcul['credit_reporte'])):,} FCFA reporté".replace(',', ' ')
+    else:
+        resume = "néant"
+    try:
+        from services.journal_service import JournalService
+        JournalService.creer_mouvement(
+            structure_id=structure_id, categorie='declaration_tva', montant=calcul['tva_a_payer'],
+            description=f"TVA clôturée {periode} : {resume}", utilisateur_nom=user_name,
+        )
+    except Exception as e:
+        print(f"⚠️ Journal (déclaration TVA) : {e}")
+    return jsonify({'success': True, 'declaration': _declaration_tva_dict(declaration)})
+
+
+@compta_bp.route('/api/tva/declarations/<int:declaration_id>/payer', methods=['POST'])
+def api_tva_declaration_payer(declaration_id):
+    structure_id = session.get('structure_id')
+    user_name = session.get('user_name', 'Utilisateur')
+    data = request.json or {}
+    declaration = DeclarationTva.query.filter_by(id=declaration_id, structure_id=structure_id).with_for_update().first()
+    if not declaration:
+        return jsonify({'success': False, 'error': 'Déclaration non trouvée'}), 404
+
+    def refus(message, **extra):
+        db.session.rollback()
+        return jsonify({'success': False, 'error': message, **extra}), 400
+
+    if declaration.statut != 'cloturee':
+        return refus('Cette déclaration est déjà payée ou annulée.')
+    montant = float(declaration.tva_a_payer or 0)
+    if montant <= 0:
+        return refus("Rien à payer pour cette période.")
+    mode = data.get('mode_paiement') or 'especes'
+    if mode not in MODES_PAIEMENT_TVA:
+        return refus('Mode de paiement invalide')
+    date_paiement = parse_date(data.get('date_paiement')) if data.get('date_paiement') else date.today()
+    if not date_paiement or date_paiement < declaration.date_fin or date_paiement > date.today():
+        return refus(f"La date de paiement doit être entre le {declaration.date_fin.strftime('%d/%m/%Y')} "
+                     f"(fin de la période) et aujourd'hui.")
+    par_caisse = mode != 'banque'
+    if par_caisse and not data.get('force'):
+        from services.comptabilite_service import solde_caisse_disponible
+        solde = solde_caisse_disponible(structure_id)
+        if montant > solde:
+            return refus(f"Solde de caisse insuffisant (solde actuel : {int(solde)} FCFA). "
+                         f"Payez depuis la banque ou confirmez quand même.", solde_insuffisant=True, solde_actuel=solde)
+    reference = (data.get('reference') or '').strip()[:100]
+    periode = f"du {declaration.date_debut.strftime('%d/%m/%Y')} au {declaration.date_fin.strftime('%d/%m/%Y')}"
+    if par_caisse:
+        # ligne miroir : le solde de caisse de l'appli (recettes − dépenses) voit la sortie d'argent ;
+        # pas d'écriture de charge (la TVA n'est pas une charge : elle éteint la dette 4441)
+        depense = Depense(
+            structure_id=structure_id, montant=montant, motif="TVA reversée à l'État",
+            description=f"Paiement de la TVA {periode}",
+            moyen_paiement=mode if mode in ('mixx', 'moov') else None, reference_paiement=reference or None,
+            date_paiement=date_paiement, date_depense=datetime.combine(date_paiement, datetime.now().time()),
+            created_by=session.get('user_id'), created_by_nom=user_name,
+        )
+        db.session.add(depense)
+        db.session.flush()
+        declaration.depense_id = depense.id
+    tresorerie = COMPTE_CAISSE if par_caisse else COMPTE_BANQUE
+    ecriture = creer_ecriture(
+        structure_id=structure_id, date_ecriture=date_paiement,
+        libelle=f"Paiement de la TVA {periode}" + (f" — réf. {reference}" if reference else ''),
+        lignes=[{'numero_compte': COMPTE_TVA_DUE, 'libelle': f"TVA payée {periode}", 'debit': montant},
+                {'numero_compte': tresorerie, 'libelle': f"TVA payée {periode}", 'credit': montant}],
+        journal_code='CAI' if par_caisse else 'BQU', piece_justificative=f"TVA-{declaration.id}-PAIE", auto=True,
+        source_type='paiement_tva', source_id=declaration.id, user_nom=user_name,
+    )
+    if not ecriture:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': "L'écriture de paiement n'a pas pu être créée."}), 500
+    declaration.statut = 'payee'
+    declaration.date_paiement = date_paiement
+    declaration.mode_paiement = mode
+    declaration.reference_paiement = reference or None
+    declaration.ecriture_paiement_id = ecriture.id
+    declaration.paye_par = user_name
+    db.session.commit()
+    invalidate_cache(structure_id)
+    try:
+        from services.journal_service import JournalService
+        JournalService.creer_mouvement(
+            structure_id=structure_id, categorie='paiement_tva', montant=montant, type_montant='sortie',
+            description=f"TVA {periode} payée ({MODES_PAIEMENT_TVA[mode]})", utilisateur_nom=user_name,
+        )
+    except Exception as e:
+        print(f"⚠️ Journal (paiement TVA) : {e}")
+    return jsonify({'success': True, 'declaration': _declaration_tva_dict(declaration)})
+
+
+@compta_bp.route('/api/tva/declarations/<int:declaration_id>/annuler', methods=['POST'])
+def api_tva_declaration_annuler(declaration_id):
+    """Annule la DERNIÈRE clôture, si elle n'est pas payée : écriture contre-passée
+    (jamais supprimée), la période peut ensuite être clôturée à nouveau."""
+    structure_id = session.get('structure_id')
+    user_name = session.get('user_name', 'Utilisateur')
+    declaration = DeclarationTva.query.filter_by(id=declaration_id, structure_id=structure_id).with_for_update().first()
+    if not declaration:
+        return jsonify({'success': False, 'error': 'Déclaration non trouvée'}), 404
+    derniere = _derniere_declaration_tva(structure_id)
+    if declaration.statut != 'cloturee' or not derniere or derniere.id != declaration.id:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': "Seule la dernière clôture, non payée, peut être annulée."}), 400
+    periode = f"du {declaration.date_debut.strftime('%d/%m/%Y')} au {declaration.date_fin.strftime('%d/%m/%Y')}"
+    origine = EcritureComptable.query.get(declaration.ecriture_id) if declaration.ecriture_id else None
+    if origine:
+        lignes = [{'numero_compte': l.compte.numero, 'libelle': f"Annulation clôture TVA {periode}",
+                   'debit': float(l.credit or 0), 'credit': float(l.debit or 0)} for l in origine.lignes]
+        contre = creer_ecriture(
+            structure_id=structure_id, date_ecriture=declaration.date_fin,
+            libelle=f"Annulation de la clôture de la TVA {periode}", lignes=lignes, journal_code='OD',
+            piece_justificative=f"TVA-{declaration.id}-ANNUL", auto=True,
+            source_type='annulation_declaration_tva', source_id=declaration.id, user_nom=user_name,
+        )
+        if not contre:
+            db.session.rollback()
+            return jsonify({'success': False, 'error': "L'écriture d'annulation n'a pas pu être créée."}), 500
+    declaration.statut = 'annulee'
+    declaration.annule_par = user_name
+    declaration.annule_le = datetime.utcnow()
+    db.session.commit()
+    invalidate_cache(structure_id)
+    try:
+        from services.journal_service import JournalService
+        JournalService.creer_mouvement(structure_id=structure_id, categorie='declaration_tva',
+                                       description=f"Clôture de la TVA {periode} annulée", utilisateur_nom=user_name)
+    except Exception as e:
+        print(f"⚠️ Journal (annulation TVA) : {e}")
+    return jsonify({'success': True})
 
 
 # ⭐ État des charges (patron, 2026-10-11 : « n'était-il pas bon d'avoir le

@@ -226,11 +226,78 @@
                                 </div>
                                 <span class="badge" id="tvaStatut"></span>
                                 <span class="small text-muted" id="tvaParamMessage"></span>
+                                <button type="button" class="btn btn-sm btn-outline-primary ms-auto" onclick="ouvrirDeclarationsTva()">
+                                    <i class="fas fa-file-invoice-dollar me-1"></i>Clôturer / payer la TVA
+                                </button>
                                 <small class="text-muted w-100">La caisse reçoit toujours le montant payé par le patient. Avec la TVA, la part TVA
                                     est une somme due à l'État (compte 443), retirée du chiffre d'affaires. Le changement vaut pour les
                                     prochaines ventes et achats : les écritures passées ne sont pas modifiées.</small>
                             </div>
                         </div>
+
+<!-- ⭐ Clôture et paiement de la TVA par période (voir routes/comptabilite.api_tva_declaration_cloturer) -->
+<div class="modal fade" id="modalDeclarationsTva" tabindex="-1" aria-labelledby="titreDeclarationsTva" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="titreDeclarationsTva"><i class="fas fa-file-invoice-dollar me-2"></i>TVA : clôture et paiement</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-3">
+          La TVA ne sort pas de la caisse à chaque vente : elle s'accumule (compte 443) jusqu'à la clôture de la période.
+          <strong>1. Clôturer</strong> fixe le montant dû à l'État (compte 4441) ; la caisse ne bouge pas encore.
+          <strong>2. Payer</strong> enregistre la sortie d'argent (caisse ou banque) le jour du paiement.
+        </p>
+        <div class="border rounded p-3 mb-3">
+          <div class="fw-semibold mb-2">Nouvelle clôture</div>
+          <div class="row g-2 align-items-end">
+            <div class="col-sm-4">
+              <label class="form-label small mb-1" for="declTvaDebut">Du</label>
+              <input type="date" class="form-control form-control-sm" id="declTvaDebut">
+            </div>
+            <div class="col-sm-4">
+              <label class="form-label small mb-1" for="declTvaFin">Au</label>
+              <input type="date" class="form-control form-control-sm" id="declTvaFin">
+            </div>
+            <div class="col-sm-4">
+              <button type="button" class="btn btn-sm btn-outline-secondary w-100" onclick="apercuDeclarationTva()">Calculer</button>
+            </div>
+          </div>
+          <div class="small text-muted mt-1" id="declTvaDebutAide"></div>
+          <div id="declTvaApercu" class="mt-3"></div>
+        </div>
+        <div class="fw-semibold mb-2">Périodes clôturées</div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead><tr><th>Période</th><th class="text-end">Collectée</th><th class="text-end">Récupérable</th><th class="text-end">Résultat</th><th>Statut</th><th></th></tr></thead>
+            <tbody id="declTvaHistorique"><tr><td colspan="6" class="text-muted">Chargement...</td></tr></tbody>
+          </table>
+        </div>
+        <div id="declTvaPaiement" class="border rounded p-3 mt-3 d-none">
+          <div class="fw-semibold mb-2" id="declTvaPaiementTitre">Payer la TVA</div>
+          <div class="row g-2 align-items-end">
+            <div class="col-sm-3">
+              <label class="form-label small mb-1" for="declTvaDatePaie">Date du paiement</label>
+              <input type="date" class="form-control form-control-sm" id="declTvaDatePaie">
+            </div>
+            <div class="col-sm-4">
+              <label class="form-label small mb-1" for="declTvaMode">Payée par</label>
+              <select class="form-select form-select-sm" id="declTvaMode"></select>
+            </div>
+            <div class="col-sm-3">
+              <label class="form-label small mb-1" for="declTvaReference">Référence (quittance)</label>
+              <input type="text" class="form-control form-control-sm" id="declTvaReference" maxlength="100">
+            </div>
+            <div class="col-sm-2">
+              <button type="button" class="btn btn-sm btn-success w-100" onclick="payerDeclarationTva()">Payer</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
                         <!-- ⭐ Refonte "Finance moderne, couleurs maison" — voir le
                              bloc de tokens .compta-shell en tête de fichier. La
@@ -3696,6 +3763,139 @@ function afficherStatutTva(d) {
     b.className = 'badge ' + (active ? 'bg-warning text-dark' : 'bg-secondary');
     b.textContent = active ? `TVA appliquée (${d.taux} %)` : (d.assujetti ? 'Taux 0 % : aucune TVA calculée' : 'Sans TVA');
     if (d.modifie_par) document.getElementById('tvaParamMessage').textContent = `Modifié par ${d.modifie_par} le ${d.modifie_le}`;
+}
+
+// ============================================================
+// ⭐ TVA : CLÔTURE ET PAIEMENT PAR PÉRIODE
+// ============================================================
+const PEUT_DECIDER_TVA = {{ 'false' if est_agent_comptable else 'true' }};
+let declTvaPayeeId = null;
+let declTvaDateFinPaie = null;
+
+function fcfa(x) { return Math.round(x || 0).toLocaleString('fr-FR') + ' FCFA'; }
+function dateFr(iso) { return iso ? iso.split('-').reverse().join('/') : ''; }
+
+function ouvrirDeclarationsTva() {
+    const el = document.getElementById('modalDeclarationsTva');
+    if (el.parentElement !== document.body) document.body.appendChild(el);
+    document.getElementById('declTvaApercu').innerHTML = '';
+    document.getElementById('declTvaPaiement').classList.add('d-none');
+    bootstrap.Modal.getOrCreateInstance(el).show();
+    chargerDeclarationsTva();
+}
+
+function chargerDeclarationsTva() {
+    fetch('/comptabilite/api/tva/declarations').then(r => r.json()).then(d => {
+        if (!d.success) return;
+        const debut = document.getElementById('declTvaDebut');
+        debut.value = d.debut_propose;
+        debut.readOnly = d.debut_impose;
+        document.getElementById('declTvaFin').value = d.fin_proposee;
+        document.getElementById('declTvaDebutAide').textContent = d.debut_impose
+            ? 'La période commence le lendemain de la dernière clôture : pas de trou ni de chevauchement.' : '';
+        const mode = document.getElementById('declTvaMode');
+        mode.innerHTML = Object.entries(d.modes_paiement).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+        const tbody = document.getElementById('declTvaHistorique');
+        if (!d.declarations.length) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-muted">Aucune période clôturée pour l\'instant.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = d.declarations.map(x => {
+            const resultat = x.tva_a_payer > 0 ? `<strong>${fcfa(x.tva_a_payer)}</strong> à payer`
+                : (x.credit_reporte > 0 ? `Crédit ${fcfa(x.credit_reporte)}` : 'Néant');
+            let statut = '', actions = '';
+            if (x.statut === 'payee') {
+                statut = `<span class="badge bg-success">Payée</span><div class="small text-muted">${dateFr(x.date_paiement)} — ${x.mode_paiement}${x.reference_paiement ? ' — ' + x.reference_paiement : ''}</div>`;
+            } else if (x.statut === 'annulee') {
+                statut = `<span class="badge bg-secondary">Annulée</span><div class="small text-muted">${x.annule_par}</div>`;
+            } else {
+                statut = x.tva_a_payer > 0 ? '<span class="badge bg-warning text-dark">À payer</span>' : '<span class="badge bg-info text-dark">Clôturée</span>';
+                if (PEUT_DECIDER_TVA) {
+                    if (x.tva_a_payer > 0) actions += `<button class="btn btn-sm btn-success me-1" onclick="preparerPaiementTva(${x.id}, '${x.date_fin}', ${x.tva_a_payer}, '${dateFr(x.date_debut)} au ${dateFr(x.date_fin)}')">Payer</button>`;
+                    if (x.id === d.derniere_id) actions += `<button class="btn btn-sm btn-outline-danger" onclick="annulerDeclarationTva(${x.id})">Annuler</button>`;
+                }
+            }
+            return `<tr class="${x.statut === 'annulee' ? 'text-muted' : ''}">
+                <td>${dateFr(x.date_debut)} au ${dateFr(x.date_fin)}<div class="small text-muted">par ${x.cree_par}</div></td>
+                <td class="text-end">${fcfa(x.tva_collectee)}</td>
+                <td class="text-end">${fcfa(x.tva_deductible + x.credit_anterieur)}</td>
+                <td class="text-end">${resultat}</td>
+                <td>${statut}</td><td class="text-end text-nowrap">${actions}</td></tr>`;
+        }).join('');
+    });
+}
+
+function apercuDeclarationTva() {
+    const zone = document.getElementById('declTvaApercu');
+    const params = new URLSearchParams({date_debut: document.getElementById('declTvaDebut').value,
+                                        date_fin: document.getElementById('declTvaFin').value});
+    zone.innerHTML = '<div class="small text-muted">Calcul...</div>';
+    fetch('/comptabilite/api/tva/declarations/apercu?' + params).then(r => r.json()).then(d => {
+        if (!d.success) { zone.innerHTML = `<div class="alert alert-warning py-2 mb-0">${d.error}</div>`; return; }
+        const resultat = d.tva_a_payer > 0 ? `<span class="text-danger">TVA à payer à l'État : ${fcfa(d.tva_a_payer)}</span>`
+            : (d.credit_reporte > 0 ? `<span class="text-success">Crédit de TVA reporté : ${fcfa(d.credit_reporte)}</span>` : 'Néant : rien à payer');
+        zone.innerHTML = `
+            <table class="table table-sm mb-2" style="max-width:480px;">
+              <tr><td>TVA collectée sur les ventes</td><td class="text-end">${fcfa(d.tva_collectee)}</td></tr>
+              <tr><td>− TVA récupérable sur les achats</td><td class="text-end">${fcfa(d.tva_deductible)}</td></tr>
+              ${d.credit_anterieur ? `<tr><td>− Crédit de TVA de la période précédente</td><td class="text-end">${fcfa(d.credit_anterieur)}</td></tr>` : ''}
+              <tr class="fw-semibold"><td colspan="2">${resultat}</td></tr>
+            </table>
+            ${Math.abs(d.regularisations_anterieures) > 0.5 ? `<div class="small text-muted mb-2">Dont ${fcfa(d.regularisations_anterieures)} d'écritures datées avant le ${dateFr(d.date_debut)} pas encore déclarées (régularisations).</div>` : ''}
+            ${PEUT_DECIDER_TVA ? `<button type="button" class="btn btn-sm btn-primary" onclick="cloturerDeclarationTva()">Clôturer du ${dateFr(d.date_debut)} au ${dateFr(d.date_fin)}</button>`
+                               : '<div class="small text-muted">La clôture est réservée au comptable.</div>'}`;
+    });
+}
+
+async function cloturerDeclarationTva() {
+    const debut = document.getElementById('declTvaDebut').value, fin = document.getElementById('declTvaFin').value;
+    if (!await demanderConfirmation(`Clôturer la TVA du ${dateFr(debut)} au ${dateFr(fin)} ?\n\nLe montant dû à l'État est enregistré (compte 4441). La caisse ne bouge qu'au paiement. Une écriture TVA saisie à la main ne pourra plus être datée dans cette période.`)) return;
+    const r = await fetch('/comptabilite/api/tva/declarations', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                                                 body: JSON.stringify({date_debut: debut, date_fin: fin})});
+    const d = await r.json();
+    if (!d.success) { await afficherMessage(d.error || 'Erreur', {type: 'danger'}); return; }
+    document.getElementById('declTvaApercu').innerHTML = '<div class="alert alert-success py-2 mb-0">Période clôturée.</div>';
+    chargerDeclarationsTva();
+}
+
+function preparerPaiementTva(id, dateFin, montant, periode) {
+    declTvaPayeeId = id;
+    declTvaDateFinPaie = dateFin;
+    const zone = document.getElementById('declTvaPaiement');
+    document.getElementById('declTvaPaiementTitre').textContent = `Payer ${fcfa(montant)} — TVA du ${periode}`;
+    const paie = document.getElementById('declTvaDatePaie');
+    paie.min = dateFin;
+    paie.max = new Date().toISOString().split('T')[0];
+    paie.value = paie.max;
+    zone.classList.remove('d-none');
+    zone.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+}
+
+async function payerDeclarationTva(force = false) {
+    if (!declTvaPayeeId) return;
+    const corps = {date_paiement: document.getElementById('declTvaDatePaie').value,
+                   mode_paiement: document.getElementById('declTvaMode').value,
+                   reference: document.getElementById('declTvaReference').value, force: force};
+    const r = await fetch(`/comptabilite/api/tva/declarations/${declTvaPayeeId}/payer`, {method: 'POST',
+        headers: {'Content-Type': 'application/json'}, body: JSON.stringify(corps)});
+    const d = await r.json();
+    if (!d.success) {
+        if (d.solde_insuffisant && await demanderConfirmation(d.error + '\n\nEnregistrer le paiement quand même ?')) return payerDeclarationTva(true);
+        if (!d.solde_insuffisant) await afficherMessage(d.error || 'Erreur', {type: 'danger'});
+        return;
+    }
+    document.getElementById('declTvaPaiement').classList.add('d-none');
+    document.getElementById('declTvaReference').value = '';
+    declTvaPayeeId = null;
+    await afficherMessage('Paiement enregistré : la somme est sortie de la ' + (corps.mode_paiement === 'banque' ? 'banque.' : 'caisse.'), {type: 'success'});
+    chargerDeclarationsTva();
+}
+
+async function annulerDeclarationTva(id) {
+    if (!await demanderConfirmation("Annuler cette clôture ?\n\nL'écriture de clôture est contre-passée (rien n'est effacé) et la période pourra être clôturée à nouveau.")) return;
+    const d = await (await fetch(`/comptabilite/api/tva/declarations/${id}/annuler`, {method: 'POST'})).json();
+    if (!d.success) { await afficherMessage(d.error || 'Erreur', {type: 'danger'}); return; }
+    chargerDeclarationsTva();
 }
 
 function chargerParametrageTva() {

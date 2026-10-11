@@ -1180,6 +1180,36 @@ class ParametrageTva(db.Model):
         return param
 
 
+class DeclarationTva(db.Model):
+    """⭐ Clôture de la TVA d'une période (patron, 2026-10-11). Les périodes se
+    suivent sans chevauchement : chaque déclaration commence le lendemain de la
+    précédente. statut : 'cloturee' (TVA due enregistrée en 4441, pas encore
+    payée) -> 'payee' (Débit 4441 / Crédit caisse ou banque) ; 'annulee' si la
+    clôture a été contre-passée (seulement la dernière, et seulement non payée)."""
+    __tablename__ = 'declarations_tva'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False, index=True)
+    date_debut = db.Column(db.Date, nullable=False)
+    date_fin = db.Column(db.Date, nullable=False)
+    tva_collectee = db.Column(db.Numeric, default=0)
+    tva_deductible = db.Column(db.Numeric, default=0)
+    credit_anterieur = db.Column(db.Numeric, default=0)
+    tva_a_payer = db.Column(db.Numeric, default=0)
+    credit_reporte = db.Column(db.Numeric, default=0)
+    statut = db.Column(db.String(20), default='cloturee')
+    ecriture_id = db.Column(db.Integer)
+    cree_par = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    date_paiement = db.Column(db.Date)
+    mode_paiement = db.Column(db.String(20))
+    reference_paiement = db.Column(db.String(100))
+    ecriture_paiement_id = db.Column(db.Integer)
+    depense_id = db.Column(db.Integer)
+    paye_par = db.Column(db.String(255))
+    annule_par = db.Column(db.String(255))
+    annule_le = db.Column(db.DateTime)
+
+
 class ParametrageAbonnement(db.Model):
     """Abonnement mensuel SSoftOneV10 par structure — paramétré depuis
     l'administration globale (super-admin), pas par la structure elle-même.

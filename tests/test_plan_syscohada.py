@@ -76,3 +76,43 @@ def test_journal_propose_d_apres_les_comptes():
     assert journal_pour_comptes(['66100000', '42210000', '43110000']) == 'SAL'   # paie
     assert journal_pour_comptes(['65800000', '63400000']) == 'OD'           # reclassement
     assert journal_pour_comptes([]) == 'OD'
+
+
+def _soldes(lignes):
+    soldes = {}
+    for l in lignes:
+        soldes[l['numero_compte']] = soldes.get(l['numero_compte'], 0) + l['debit'] - l['credit']
+    return soldes
+
+
+def test_cloture_tva_due():
+    """Clôture : 443 et 445 soldés, la différence devient une dette 4441 (la caisse ne bouge pas)."""
+    from utils.plan_comptable_syscohada import liquidation_tva
+    lignes, a_payer, reporte = liquidation_tva(collectee=18000, deductible=5000)
+    assert (a_payer, reporte) == (13000, 0)
+    assert sum(l['debit'] for l in lignes) == sum(l['credit'] for l in lignes)
+    assert _soldes(lignes) == {'44310000': 18000, '44520000': -5000, '44410000': -13000}
+    assert not any(l['numero_compte'].startswith('5') for l in lignes)
+
+
+def test_cloture_tva_credit_reporte_puis_impute():
+    from utils.plan_comptable_syscohada import liquidation_tva
+    lignes, a_payer, reporte = liquidation_tva(collectee=2000, deductible=7000)
+    assert (a_payer, reporte) == (0, 5000)
+    assert _soldes(lignes) == {'44310000': 2000, '44520000': -7000, '44490000': 5000}
+    # période suivante : le crédit reporté vient en déduction
+    lignes, a_payer, reporte = liquidation_tva(collectee=9000, deductible=1000, credit_anterieur=5000)
+    assert (a_payer, reporte) == (3000, 0)
+    assert sum(l['debit'] for l in lignes) == sum(l['credit'] for l in lignes)
+    assert _soldes(lignes)['44490000'] == -5000
+
+
+def test_cloture_tva_neant():
+    from utils.plan_comptable_syscohada import liquidation_tva
+    assert liquidation_tva(0, 0, 0) == ([], 0, 0)
+
+
+def test_comptes_tva_dans_le_plan():
+    from utils.plan_comptable_syscohada import COMPTES_TVA
+    for numero in COMPTES_TVA:
+        assert numero in PLAN_COMPTABLE_PAR_NUMERO and numero not in RENUMEROTATION_SYSCOHADA

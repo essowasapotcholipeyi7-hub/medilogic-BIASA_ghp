@@ -81,6 +81,8 @@ PLAN_COMPTABLE = [
     {'numero': '43320000', 'nom': "AMU-INAM — part patronale à reverser", 'type': 'passif', 'classe': '4'},
     # État (443 TVA facturée, 445 TVA récupérable, 447 impôts retenus à la source)
     {'numero': '44310000', 'nom': "État — TVA facturée sur ventes", 'type': 'passif', 'classe': '4'},
+    {'numero': '44410000', 'nom': "État — TVA due (déclarée, à payer)", 'type': 'passif', 'classe': '4'},
+    {'numero': '44490000', 'nom': "État — crédit de TVA à reporter", 'type': 'actif', 'classe': '4'},
     {'numero': '44520000', 'nom': "État — TVA récupérable sur achats", 'type': 'actif', 'classe': '4'},
     {'numero': '44710000', 'nom': "État — RSPS retenue sur parts médecins, à reverser (OTR)", 'type': 'passif', 'classe': '4'},
     {'numero': '44720000', 'nom': "État — impôts sur salaires (IRPP) à reverser", 'type': 'passif', 'classe': '4'},
@@ -254,6 +256,9 @@ COMPTE_PRODUITS_DIVERS = '75800000'
 # qui reste dans tous les cas le vrai montant dû au fournisseur.
 COMPTE_TVA_COLLECTEE = '44310000'
 COMPTE_TVA_DEDUCTIBLE = '44520000'
+COMPTE_TVA_DUE = '44410000'       # TVA déclarée (clôture de la période), en attente de paiement
+COMPTE_CREDIT_TVA = '44490000'    # crédit de TVA reporté sur la déclaration suivante
+COMPTES_TVA = (COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, COMPTE_TVA_DUE, COMPTE_CREDIT_TVA)
 COMPTE_SALAIRES = '66100000'
 COMPTE_DOTATION_PROVISION_CREANCE = '65910000'
 COMPTE_DEPRECIATION_CREANCE = '49100000'
@@ -418,3 +423,33 @@ def journal_pour_comptes(numeros):
     if a('70', '71', '75') and a('41'):
         return 'VTE'
     return 'OD'
+
+def liquidation_tva(collectee, deductible, credit_anterieur=0):
+    """⭐ Clôture (liquidation) de la TVA d'une période (patron, 2026-10-11 :
+    « il doit y avoir un moment où on clôture la TVA du mois, et c'est à ce
+    moment que la caisse est déduite »). La TVA n'est pas sortie de la caisse
+    à chaque vente : elle s'accumule en 443 (collectée) et 445 (récupérable).
+    À la clôture, ces soldes sont soldés :
+        Débit 443 collectée / Crédit 445 récupérable / Crédit 4449 crédit antérieur
+        et la différence en Crédit 4441 (TVA due) — ou en Débit 4449 si l'État
+        nous doit (crédit reporté sur la période suivante).
+    Le paiement (Débit 4441 / Crédit caisse ou banque) est une étape à part.
+    Retourne (lignes, tva_a_payer, credit_reporte) ; lignes vides = déclaration néant."""
+    collectee, deductible, credit_anterieur = (round(float(x or 0), 2) for x in (collectee, deductible, credit_anterieur))
+    lignes = []
+
+    def ligne(numero, libelle, montant, sens):
+        if abs(montant) > 0.005:
+            debit = montant if (sens == 'debit') == (montant > 0) else 0
+            lignes.append({'numero_compte': numero, 'libelle': libelle,
+                           'debit': abs(montant) if debit else 0, 'credit': 0 if debit else abs(montant)})
+
+    ligne(COMPTE_TVA_COLLECTEE, "TVA collectée sur la période", collectee, 'debit')
+    ligne(COMPTE_TVA_DEDUCTIBLE, "TVA récupérable sur la période", deductible, 'credit')
+    ligne(COMPTE_CREDIT_TVA, "Crédit de TVA antérieur imputé", credit_anterieur, 'credit')
+    net = round(collectee - deductible - credit_anterieur, 2)
+    if net > 0:
+        ligne(COMPTE_TVA_DUE, "TVA due à l'État", net, 'credit')
+    elif net < 0:
+        ligne(COMPTE_CREDIT_TVA, "Crédit de TVA à reporter", -net, 'debit')
+    return lignes, max(net, 0), max(-net, 0)
