@@ -3727,6 +3727,13 @@ async function marquerTentativeVue(id) {
     chargerPointageDuJour();
 }
 
+// ⭐ Caméra d'enregistrement coupée dès qu'on quitte l'onglet Pointage ou la page.
+document.addEventListener('DOMContentLoaded', () => {
+    const ongletPointage = document.getElementById('pointage-tab');
+    if (ongletPointage) ongletPointage.addEventListener('hidden.bs.tab', () => { if (fluxCameraEnrolement) fermerCaptureVisage(); });
+});
+document.addEventListener('visibilitychange', () => { if (document.hidden && fluxCameraEnrolement) fermerCaptureVisage(); });
+
 document.addEventListener('DOMContentLoaded', () => {
     fetch('/rh/api/pointage/tentatives/compte').then(r => r.json())
         .then(d => { if (d.success) majBadgeTentatives(d.non_vues); }).catch(() => {});
@@ -3765,6 +3772,8 @@ function chargerResumePointage() {
 
 let fluxCameraEnrolement = null;
 let boucleEnrolementActive = false;
+let minuterieEnrolement = null;
+const DELAI_VEILLE_ENROLEMENT_MS = 2 * 60 * 1000;   // ⭐ caméra fermée après 2 min sans visage
 
 async function chargerModelesVisage() {
     return PointageBiometrie.chargerModeles();
@@ -3829,6 +3838,11 @@ async function ouvrirCaptureVisage() {
         return;
     }
     statut.textContent = "Visage bien en face, dans la lumière, sans lunettes de soleil — cliquez sur Capturer quand le contour est vert.";
+    if (minuterieEnrolement) minuterieEnrolement.arreter();
+    minuterieEnrolement = PointageBiometrie.minuterieVeille(DELAI_VEILLE_ENROLEMENT_MS, () => {
+        fermerCaptureVisage();
+        afficherMessage("Caméra fermée : aucun visage depuis 2 minutes (économie de batterie). Cliquez de nouveau sur « Enregistrer un visage » si besoin.");
+    });
     boucleEnrolementActive = true;
     suivreVisageEnrolement();
 }
@@ -3841,18 +3855,20 @@ async function suivreVisageEnrolement() {
     while (boucleEnrolementActive) {
         if (!suivreVisageEnrolement.enCapture) {
             let r;
-            try { r = await PointageBiometrie.analyser(video); } catch (e) { r = {etat: 'aucun'}; }
+            try { r = await PointageBiometrie.detecter(video); } catch (e) { r = {etat: 'aucun'}; }
             if (!boucleEnrolementActive) break;
+            if (r.etat !== 'aucun' && minuterieEnrolement) minuterieEnrolement.toucher();
             PointageBiometrie.dessiner(canvas, r);
             consigne.textContent = PointageBiometrie.CONSIGNES[r.etat] === PointageBiometrie.CONSIGNES.ok
                 ? 'Visage bien placé : cliquez sur Capturer' : PointageBiometrie.CONSIGNES[r.etat];
         }
-        await new Promise(res => setTimeout(res, 300));
+        await new Promise(res => setTimeout(res, 120));
     }
 }
 
 function fermerCaptureVisage() {
     boucleEnrolementActive = false;
+    if (minuterieEnrolement) { minuterieEnrolement.arreter(); minuterieEnrolement = null; }
     PointageBiometrie.fermerCamera(fluxCameraEnrolement);
     fluxCameraEnrolement = null;
     PointageBiometrie.dessiner(document.getElementById('canvasEnrolementVisage'), null);
@@ -3868,12 +3884,19 @@ async function capturerVisage() {
 
     // ⭐ 5 images moyennées (avant : une seule) — reconnaissance bien plus fiable ensuite
     suivreVisageEnrolement.enCapture = true;
+    if (minuterieEnrolement) minuterieEnrolement.toucher();
     statut.textContent = 'Prise du visage : ne bougez plus…';
-    const ech = await PointageBiometrie.echantillonner(video, 5, (r, n) => {
-        PointageBiometrie.dessiner(canvas, r);
-        statut.textContent = `Prise du visage : ne bougez plus… (${n}/5)`;
-    });
-    suivreVisageEnrolement.enCapture = false;
+    let ech;
+    try {
+        ech = await PointageBiometrie.echantillonner(video, 5, (r, n) => {
+            PointageBiometrie.dessiner(canvas, r);
+            statut.textContent = `Prise du visage : ne bougez plus… (${n}/5)`;
+        }, 120);
+    } catch (e) {
+        ech = {erreur: 'Analyse du visage impossible : réessayez.'};
+    } finally {
+        suivreVisageEnrolement.enCapture = false;
+    }
     if (ech.erreur) { statut.textContent = ech.erreur; return; }
 
     const libelle = await demanderSaisie("Nom de cet enregistrement (ex : lumière du matin)", "Visage principal") || 'Visage principal';

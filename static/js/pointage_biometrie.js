@@ -3,16 +3,19 @@
  * (WebAuthn / Windows Hello) — commun à la borne (rh/borne_pointage.html)
  * et à l'enregistrement des visages/empreintes (rh/gestion_rh.html).
  *
- * Patron (2026-10-10) : « le cadre dans lequel on regarde n'est pas large
- * et ça ne marche pas bien ». Avant : vidéo 320×240, une seule image par
- * enregistrement, aucune consigne. Maintenant : caméra HD, grand cadre avec
- * guide ovale et contour du visage en direct, consignes (« rapprochez-vous »,
- * « au centre »...), et plusieurs images moyennées pour enregistrer comme
- * pour reconnaître — beaucoup plus fiable.
+ * Patron (2026-10-10) : « le cadre n'est pas large et ça ne marche pas
+ * bien » puis « il faut que ce soit ultra sensible, que ça capte le visage
+ * de façon rapide » et « si plus aucun visage ne passe, que la caméra se
+ * ferme (batterie de la tablette) ».
+ *  - suivi en direct par la SEULE détection (très rapide) ; le calcul
+ *    lourd du descripteur n'est fait qu'au moment de vérifier ;
+ *  - réseaux « préchauffés » dès le chargement (la 1re détection ne rame plus) ;
+ *  - détecteur plus sensible (visages plus petits / moins nets acceptés) ;
+ *  - minuterie de veille : caméra coupée après X minutes sans visage.
  * ============================================================ */
 const PointageBiometrie = (() => {
     const MODELES = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
-    let modelesCharges = false;
+    let chargement = null;
 
     const CONSIGNES = {
         aucun: 'Placez votre visage dans le cadre',
@@ -23,31 +26,44 @@ const PointageBiometrie = (() => {
         ok: 'Ne bougez plus…',
     };
 
-    function options() {
-        return new faceapi.TinyFaceDetectorOptions({inputSize: 416, scoreThreshold: 0.45});
+    // suivi en direct : petite entrée, seuil bas = détection rapide et sensible
+    const optionsSuivi = () => new faceapi.TinyFaceDetectorOptions({inputSize: 320, scoreThreshold: 0.3});
+    // vérification : entrée plus grande pour un cadrage précis du visage
+    const optionsVerification = () => new faceapi.TinyFaceDetectorOptions({inputSize: 416, scoreThreshold: 0.35});
+
+    async function prechauffer() {
+        // la 1re inférence compile les programmes de la carte graphique (1 à 3 s) :
+        // on la fait tout de suite sur une image vide plutôt que devant l'employé
+        const c = document.createElement('canvas');
+        c.width = c.height = 160;
+        try {
+            await faceapi.detectSingleFace(c, optionsSuivi());
+            await faceapi.detectFaceLandmarks(c);
+            await faceapi.computeFaceDescriptor(c);
+        } catch (e) { /* sans gravité */ }
     }
 
-    async function chargerModeles() {
-        if (modelesCharges) return true;
-        if (typeof faceapi === 'undefined') return false;
-        try {
-            await Promise.all([
+    /** Charge (une seule fois) et préchauffe les réseaux. */
+    function chargerModeles() {
+        if (typeof faceapi === 'undefined') return Promise.resolve(false);
+        if (!chargement) {
+            chargement = Promise.all([
                 faceapi.nets.tinyFaceDetector.loadFromUri(MODELES),
                 faceapi.nets.faceLandmark68Net.loadFromUri(MODELES),
                 faceapi.nets.faceRecognitionNet.loadFromUri(MODELES),
-            ]);
-            modelesCharges = true;
-            return true;
-        } catch (err) {
-            console.error('Modèles de reconnaissance faciale :', err);
-            return false;
+            ]).then(prechauffer).then(() => true).catch(err => {
+                console.error('Modèles de reconnaissance faciale :', err);
+                chargement = null;
+                return false;
+            });
         }
+        return chargement;
     }
 
     async function ouvrirCamera(video) {
         const flux = await navigator.mediaDevices.getUserMedia({
             audio: false,
-            video: {facingMode: 'user', width: {ideal: 1280}, height: {ideal: 720}},
+            video: {facingMode: 'user', width: {ideal: 1280}, height: {ideal: 720}, frameRate: {ideal: 30}},
         });
         video.srcObject = flux;
         await new Promise(r => (video.readyState >= 2 ? r() : video.addEventListener('loadeddata', r, {once: true})));
@@ -59,20 +75,32 @@ const PointageBiometrie = (() => {
         if (flux) flux.getTracks().forEach(t => t.stop());
     }
 
-    /** Une image analysée : état (aucun / loin / pres / decentre / flou / ok) et descripteur. */
-    async function analyser(video) {
-        if (!video.videoWidth) return {etat: 'aucun'};
-        const d = await faceapi.detectSingleFace(video, options()).withFaceLandmarks().withFaceDescriptor();
-        if (!d) return {etat: 'aucun'};
-        const box = d.detection.box, W = video.videoWidth, H = video.videoHeight;
+    function evaluer(box, score, W, H) {
         const taille = box.width / W;
         const cx = (box.x + box.width / 2) / W, cy = (box.y + box.height / 2) / H;
-        let etat = 'ok';
-        if (taille < 0.14) etat = 'loin';
-        else if (taille > 0.7) etat = 'pres';
-        else if (Math.abs(cx - 0.5) > 0.24 || Math.abs(cy - 0.5) > 0.28) etat = 'decentre';
-        else if (d.detection.score < 0.6) etat = 'flou';
-        return {etat, box, W, H, descripteur: d.descriptor};
+        if (taille < 0.10) return 'loin';
+        if (taille > 0.75) return 'pres';
+        if (Math.abs(cx - 0.5) > 0.28 || Math.abs(cy - 0.5) > 0.32) return 'decentre';
+        if (score < 0.5) return 'flou';
+        return 'ok';
+    }
+
+    /** Suivi en direct (rapide) : état et cadre du visage, sans descripteur. */
+    async function detecter(video) {
+        if (!video.videoWidth) return {etat: 'aucun'};
+        const d = await faceapi.detectSingleFace(video, optionsSuivi());
+        if (!d) return {etat: 'aucun'};
+        const W = video.videoWidth, H = video.videoHeight;
+        return {etat: evaluer(d.box, d.score, W, H), box: d.box, W, H};
+    }
+
+    /** Analyse complète d'une image : état, cadre et descripteur (128 nombres). */
+    async function analyser(video) {
+        if (!video.videoWidth) return {etat: 'aucun'};
+        const d = await faceapi.detectSingleFace(video, optionsVerification()).withFaceLandmarks().withFaceDescriptor();
+        if (!d) return {etat: 'aucun'};
+        const box = d.detection.box, W = video.videoWidth, H = video.videoHeight;
+        return {etat: evaluer(box, d.detection.score, W, H), box, W, H, descripteur: d.descriptor};
     }
 
     /** Contour du visage sur le canevas posé par-dessus la vidéo (même miroir CSS). */
@@ -102,18 +130,26 @@ const PointageBiometrie = (() => {
 
     /** n images correctes, cohérentes entre elles, moyennées en un seul descripteur.
      *  Renvoie {descripteur} ou {erreur}. `suivi(resultat, nbOk)` est appelé à chaque image. */
-    async function echantillonner(video, n, suivi) {
+    async function echantillonner(video, n, suivi, delaiMs = 60) {
         const bons = [];
-        for (let essai = 0; essai < n * 5 && bons.length < n; essai++) {
+        for (let essai = 0; essai < n * 4 && bons.length < n; essai++) {
             const r = await analyser(video);
             if (suivi) suivi(r, bons.length);
-            if (r.etat === 'ok') bons.push(Array.from(r.descripteur));
-            await new Promise(res => setTimeout(res, 180));
+            if (r.etat === 'ok' || (r.descripteur && r.etat === 'flou')) bons.push(Array.from(r.descripteur));
+            if (bons.length < n && delaiMs) await new Promise(res => setTimeout(res, delaiMs));
         }
         if (bons.length < n) return {erreur: 'Visage pas assez net : placez-vous bien face à la caméra, dans la lumière, et réessayez.'};
         if (bons.some(d => distance(d, bons[0]) > 0.45)) return {erreur: "Plusieurs visages ou mouvement pendant la prise : une seule personne, immobile, et réessayez."};
         const moyenne = bons[0].map((_, i) => bons.reduce((s, d) => s + d[i], 0) / bons.length);
         return {descripteur: moyenne};
+    }
+
+    /** Minuterie de veille : `quandVeille()` est appelé après `delaiMs` sans `toucher()`. */
+    function minuterieVeille(delaiMs, quandVeille) {
+        let id = null;
+        const armer = () => { clearTimeout(id); id = setTimeout(quandVeille, delaiMs); };
+        armer();
+        return {toucher: armer, arreter: () => clearTimeout(id)};
     }
 
     /** Message clair pour une erreur WebAuthn (empreinte). */
@@ -130,5 +166,6 @@ const PointageBiometrie = (() => {
         return 'Échec de la lecture : ' + ((err && err.message) || err);
     }
 
-    return {CONSIGNES, chargerModeles, ouvrirCamera, fermerCamera, analyser, dessiner, echantillonner, messageErreurEmpreinte};
+    return {CONSIGNES, chargerModeles, ouvrirCamera, fermerCamera, detecter, analyser, dessiner,
+            echantillonner, minuterieVeille, messageErreurEmpreinte, distance};
 })();

@@ -65,6 +65,12 @@
             border: 3px dashed rgba(255,255,255,0.6); border-radius: 50%; pointer-events: none;
         }
         .consigne-visage { font-size: 20px; font-weight: 700; margin-top: 12px; min-height: 28px; }
+        /* ⭐ Veille : caméra coupée après quelques minutes sans visage (batterie). */
+        .veille-visage {
+            position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 10px; background: rgba(20, 16, 50, 0.82); color: white; font-size: 18px; cursor: pointer; text-align: center; padding: 20px;
+        }
+        .veille-visage i { font-size: 46px; opacity: .85; }
         .carte.mode-visage { padding: 18px; }
         @media (max-height: 760px) { .horloge { font-size: 34px; } .date-jour { margin-bottom: 10px; } }
         .pastille-scan {
@@ -122,6 +128,11 @@
                     <video id="videoVisage" autoplay muted playsinline></video>
                     <canvas id="canvasVisage"></canvas>
                     <div class="guide"></div>
+                    <div class="veille-visage" id="veilleVisage" hidden>
+                        <i class="fas fa-moon"></i>
+                        <div>Caméra en veille pour économiser la batterie.</div>
+                        <strong>Touchez l'écran pour pointer</strong>
+                    </div>
                 </div>
                 <div class="consigne-visage" id="consigneVisage"></div>
                 <div class="pastille-scan" id="pastilleScan"><span class="point"></span> Recherche d'un visage...</div>
@@ -164,6 +175,7 @@
             document.getElementById('resultat').className = 'resultat';
             document.getElementById('resultat').textContent = '';
 
+            try { localStorage.setItem('borne_mode_pointage', mode); } catch (e) { /* stockage indisponible */ }
             if (mode === 'visage') { demarrerModeVisage(); } else { arreterModeVisage(); }
         }
 
@@ -219,11 +231,23 @@
         // ============================================================
         // MODE VISAGE (webcam + face-api.js, détection automatique)
         // ============================================================
+        // ⭐ Patron (2026-10-11) : « ultra sensible, que ça capte le visage rapidement »
+        // et « si plus aucun visage ne passe, que la caméra se ferme ».
+        const DELAI_VEILLE_MS = 3 * 60 * 1000;      // caméra coupée après 3 min sans visage
         let fluxCameraVisage = null;
         let boucleVisageActive = false;
+        let generationVisage = 0;                    // une seule boucle à la fois
+        let minuterieVeille = null;
+        let enVeille = false;
+        let dernierVisage = null;                    // {descripteur, quand} du dernier envoi
+
+        const pause = ms => new Promise(r => setTimeout(r, ms));
 
         async function demarrerModeVisage() {
+            const generation = ++generationVisage;
             const pastille = document.getElementById('pastilleScan');
+            document.getElementById('veilleVisage').hidden = true;
+            enVeille = false;
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 pastille.textContent = "Caméra non disponible sur ce poste/navigateur (nécessite https ou http://localhost).";
                 return;
@@ -233,65 +257,105 @@
                 pastille.textContent = "Échec du chargement de la reconnaissance faciale (connexion internet ?).";
                 return;
             }
+            let flux;
             try {
-                fluxCameraVisage = await PointageBiometrie.ouvrirCamera(document.getElementById('videoVisage'));
+                flux = await PointageBiometrie.ouvrirCamera(document.getElementById('videoVisage'));
             } catch (err) {
                 pastille.textContent = "Accès à la caméra refusé ou indisponible : autorisez la caméra pour ce site.";
                 return;
             }
-            if (modeActuel !== 'visage') { arreterModeVisage(); return; }
+            if (generation !== generationVisage || modeActuel !== 'visage') { PointageBiometrie.fermerCamera(flux); return; }
+            fluxCameraVisage = flux;
             pastille.innerHTML = '<span class="point"></span> Caméra prête';
+            if (minuterieVeille) minuterieVeille.arreter();
+            minuterieVeille = PointageBiometrie.minuterieVeille(DELAI_VEILLE_MS, mettreEnVeille);
             boucleVisageActive = true;
-            boucleDetectionVisage();
+            boucleDetectionVisage(generation);
         }
 
         function arreterModeVisage() {
+            generationVisage++;
             boucleVisageActive = false;
+            if (minuterieVeille) { minuterieVeille.arreter(); minuterieVeille = null; }
             PointageBiometrie.fermerCamera(fluxCameraVisage);
             fluxCameraVisage = null;
+            document.getElementById('videoVisage').srcObject = null;
             PointageBiometrie.dessiner(document.getElementById('canvasVisage'), null);
         }
 
-        const pause = ms => new Promise(r => setTimeout(r, ms));
+        function mettreEnVeille() {
+            if (modeActuel !== 'visage') return;
+            arreterModeVisage();
+            enVeille = true;
+            document.getElementById('veilleVisage').hidden = false;
+            document.getElementById('consigneVisage').textContent = '';
+            document.getElementById('pastilleScan').innerHTML = '<span class="point"></span> En veille';
+        }
 
-        async function boucleDetectionVisage() {
+        function reveillerCamera() {
+            if (modeActuel === 'visage' && enVeille) demarrerModeVisage();
+        }
+        // toucher n'importe où sur la borne la réveille
+        document.addEventListener('pointerdown', () => { if (enVeille) reveillerCamera(); });
+        // borne masquée (autre fenêtre, écran éteint) : caméra coupée, rallumée au retour
+        document.addEventListener('visibilitychange', () => {
+            if (modeActuel !== 'visage') return;
+            if (document.hidden) { if (boucleVisageActive) { arreterModeVisage(); enVeille = true; } }
+            else if (enVeille && document.getElementById('veilleVisage').hidden) demarrerModeVisage();
+        });
+
+        async function boucleDetectionVisage(generation) {
             const video = document.getElementById('videoVisage');
             const canvas = document.getElementById('canvasVisage');
             const consigne = document.getElementById('consigneVisage');
-            let okConsecutifs = 0;
-            while (boucleVisageActive) {
+            const active = () => boucleVisageActive && generation === generationVisage;
+            while (active()) {
+                // suivi en direct : détection seule, très rapide
                 let r;
-                try { r = await PointageBiometrie.analyser(video); } catch (e) { r = {etat: 'aucun'}; }
-                if (!boucleVisageActive) break;
+                try { r = await PointageBiometrie.detecter(video); } catch (e) { r = {etat: 'aucun'}; }
+                if (!active()) break;
+                if (r.etat !== 'aucun' && minuterieVeille) minuterieVeille.toucher();
                 PointageBiometrie.dessiner(canvas, r);
                 consigne.textContent = PointageBiometrie.CONSIGNES[r.etat];
-                okConsecutifs = r.etat === 'ok' ? okConsecutifs + 1 : 0;
-                if (okConsecutifs < 2) { await pause(220); continue; }
+                if (r.etat !== 'ok') { await pause(r.etat === 'aucun' ? 120 : 40); continue; }
 
-                // visage bien placé deux fois de suite : 3 images moyennées, puis vérification
-                okConsecutifs = 0;
+                // visage bien placé : 2 images moyennées, puis vérification
                 consigne.textContent = 'Vérification…';
-                const ech = await PointageBiometrie.echantillonner(video, 3, rr => PointageBiometrie.dessiner(canvas, rr));
-                if (!boucleVisageActive) break;
+                const ech = await PointageBiometrie.echantillonner(video, 2, rr => PointageBiometrie.dessiner(canvas, rr), 40);
+                if (!active()) break;
                 if (ech.erreur) {
                     afficherResultatPointage({success: false, message: ech.erreur});
-                    await pause(1800);
+                    await pause(1200);
                     continue;
                 }
+                // même personne toujours devant la borne : son résultat reste affiché, sans nouvel envoi
+                if (dernierVisage && Date.now() - dernierVisage.quand < 20000
+                        && PointageBiometrie.distance(dernierVisage.descripteur, ech.descripteur) < 0.35) {
+                    consigne.textContent = 'Pointage déjà traité — personne suivante';
+                    await pause(1000);
+                    continue;
+                }
+                dernierVisage = null;
                 try {
                     const rep = await fetch('/rh/api/pointage/facial/verifier', {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({descripteur: ech.descripteur})
                     });
                     if (rep.status === 401) afficherResultatPointage({success: false, message: "La borne n'est plus connectée : reconnectez-vous au logiciel sur ce poste."});
-                    else afficherResultatPointage(await rep.json());
+                    else {
+                        const donnees = await rep.json();
+                        afficherResultatPointage(donnees);
+                        // personne reconnue (pointée, déjà pointée, ou en congé) : pas de nouvel envoi pendant 20 s
+                        if (donnees.success || donnees.deja || donnees.absence) dernierVisage = {descripteur: ech.descripteur, quand: Date.now()};
+                    }
                 } catch (err) {
                     afficherResultatPointage({success: false, message: 'Erreur réseau : vérifiez la connexion.'});
                 }
+                if (minuterieVeille) minuterieVeille.toucher();
                 // le temps de lire le résultat et de laisser la place à la personne suivante
                 PointageBiometrie.dessiner(canvas, null);
                 consigne.textContent = 'Personne suivante dans un instant…';
-                await pause(4500);
+                await pause(3000);
             }
         }
 
@@ -342,6 +406,11 @@
         }
         chargerListeJour();
         setInterval(chargerListeJour, 30000);
+
+        // ⭐ Réseaux du visage chargés et préchauffés dès l'ouverture : le mode Visage
+        // démarre instantanément ; la borne reprend le dernier mode utilisé.
+        if (window.faceapi) PointageBiometrie.chargerModeles();
+        try { if (localStorage.getItem('borne_mode_pointage') === 'visage') basculerMode('visage'); } catch (e) { /* stockage indisponible */ }
     </script>
 </body>
 </html>
