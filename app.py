@@ -8086,12 +8086,18 @@ def get_motifs():
     """Recupere la liste des motifs de rendez-vous"""
     structure_id = session.get('structure_id')
     
-    motifs = db.execute_query("""
-        SELECT id, nom, description, ordre
-        FROM motifs_rendez_vous
-        WHERE structure_id = %s AND actif = TRUE
-        ORDER BY ordre, nom
-    """, (structure_id,))
+    # ⭐ La table motifs_rendez_vous n'a jamais été créée (aucune migration) :
+    # sans elle, seule l'option « Autre » est proposée au lieu d'une erreur 500.
+    try:
+        motifs = db.execute_query("""
+            SELECT id, nom, description, ordre
+            FROM motifs_rendez_vous
+            WHERE structure_id = %s AND actif = TRUE
+            ORDER BY ordre, nom
+        """, (structure_id,)) or []
+    except Exception:
+        db.session.rollback()
+        motifs = []
     
     motifs_list = []
     for m in motifs:
@@ -24314,38 +24320,10 @@ def gestion_stock():
 @login_required
 def lunetterie_vente():
     """Page de vente de lunettes"""
-    structure_id = session.get('structure_id')
-    
-    # Récupérer les lunettes depuis Google Sheets
-    lunettes = sheets_helper.get_all_records('lunettes')
-    
-    # Filtrer par structure
-    lunettes_filtrees = []
-    for l in lunettes:
-        if str(l.get('structure_id')) == str(structure_id):
-            lunettes_filtrees.append({
-                'ID': l.get('ID'),
-                'code': l.get('code', ''),
-                'nom': l.get('nom', ''),
-                'categorie': l.get('categorie', ''),
-                'marque': l.get('marque', ''),
-                'modele': l.get('modele', ''),
-                'type_verres': l.get('type_verres', ''),
-                'couleur': l.get('couleur', ''),
-                'prix_vente': float(l.get('prix_vente') or 0),
-                'prix_achat': float(l.get('prix_achat') or 0),
-                'quantite_stock': int(l.get('quantite_stock') or 0),
-                'seuil_alerte': int(l.get('seuil_alerte', 10)),
-                'fournisseur': l.get('fournisseur', ''),
-                'description': l.get('description', '')
-            })
-    
-    # Taux AMU par défaut pour les lunettes (60% max)
-    patient_taux = 60  # Valeur par défaut, sera modifiée par le JS
-    
-    return render_template('lunetterie_vente.html', 
-                         lunettes=lunettes_filtrees,
-                         patient_taux=patient_taux)
+    # ⭐ L'écran lunetterie_vente.html n'a jamais existé (erreur 500 à chaque
+    # visite) : les lunettes se vendent comme les autres articles.
+    flash("La vente de lunettes se fait depuis la Vente pharmacie (articles de lunetterie).", 'info')
+    return redirect(url_for('pharma_vente'))
 
 
 # ==================== API DE SYNCHRONISATION ====================
