@@ -2608,6 +2608,12 @@ async function appliquerPropositionTheme() {
                     Configurer les taux
                 </a>
                 {% endif %}
+                <!-- ⭐ Patron (2026-10-11) : lien Protocoles et modèles aussi dans l'onglet Médecins -->
+                {% if a_acces('protocoles') and not onglet_cache('protocoles') %}
+                <a class="menu-item" href="{{ url_for('protocoles.page_protocoles') }}">
+                    <i class="fas fa-clipboard-list"></i> Protocoles et modèles
+                </a>
+                {% endif %}
             </div>
         </li>
         {% endif %}
