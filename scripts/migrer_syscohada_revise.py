@@ -17,9 +17,13 @@
 #    (RECLASSEMENT_CHARGES_PAR_MOTIF) : une écriture d'OD par structure
 #    (Débit bon compte / Crédit 658), jamais de réécriture des écritures d'origine.
 #
-# Idempotent : un 2e passage ne retrouve plus aucun ancien numéro (et ne
-# recrée pas l'OD déjà passée) — à relancer après la mise en ligne pour
-# rattraper un compte créé entre-temps par l'ancien code.
+# ⭐⭐ UNE SEULE FOIS PAR STRUCTURE : plusieurs nouveaux numéros sont AUSSI
+# d'anciens numéros (622, 624, 626, 628, 631, 131…) — repasser sur une
+# structure déjà migrée les redéplacerait (incident du 2026-10-11, réparé par
+# scripts/reparer_syscohada_cascade.py). Chaque structure migrée est donc
+# notée dans la table syscohada_structures_migrees et n'est plus jamais
+# retraitée ; une structure interrompue (connexion coupée) est annulée en
+# bloc et reprise au passage suivant.
 #
 # Usage (depuis la racine du projet) :
 #     python scripts/migrer_syscohada_revise.py --simuler   # montre tout, n'enregistre rien
@@ -48,6 +52,16 @@ SOURCE_OD = 'reclassement_syscohada'
 
 def q(sql, **p):
     return db.session.execute(db.text(sql), p)
+
+
+def creer_table_suivi():
+    q("""CREATE TABLE IF NOT EXISTS syscohada_structures_migrees (
+            structure_id INTEGER PRIMARY KEY, migree_le TIMESTAMP DEFAULT NOW())""")
+    db.session.commit()
+
+
+def deja_migree(sid):
+    return q("SELECT 1 FROM syscohada_structures_migrees WHERE structure_id = :s", s=sid).first() is not None
 
 
 def migrer_structure(sid):
@@ -133,7 +147,9 @@ def reclasser_charges(sid):
 
 
 with app.app_context():
-    structures = [r[0] for r in q("SELECT DISTINCT structure_id FROM comptes_comptables ORDER BY structure_id")]
+    creer_table_suivi()
+    structures = [r[0] for r in q("SELECT DISTINCT structure_id FROM comptes_comptables ORDER BY structure_id")
+                  if not deja_migree(r[0])]
     print(('SIMULATION — rien ne sera enregistré' if SIMULER else 'MIGRATION') + f" sur {len(structures)} structure(s)")
     total = 0
     for sid in structures:
@@ -143,6 +159,8 @@ with app.app_context():
                 "SELECT 1 FROM comptes_comptables WHERE structure_id = :s AND numero = :n", s=sid, n=COMPTE_CHARGE_DIVERSE).first() else []
             db.session.rollback()
         else:
+            # renumérotation + marque « migrée » dans la MÊME transaction : jamais l'un sans l'autre
+            q("INSERT INTO syscohada_structures_migrees (structure_id) VALUES (:s) ON CONFLICT DO NOTHING", s=sid)
             db.session.commit()
             rapport += reclasser_charges(sid)
             db.session.commit()
