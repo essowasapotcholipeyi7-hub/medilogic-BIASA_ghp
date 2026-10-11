@@ -1025,6 +1025,12 @@ def api_caisses():
     return jsonify(get_soldes_caisses(structure_id, date_debut_obj, date_fin_obj))
 
 
+@compta_bp.route('/api/rapports/charges')
+def api_etat_charges():
+    return jsonify(generer_etat_charges(session.get('structure_id'), request.args.get('date_debut'),
+                                        request.args.get('date_fin')))
+
+
 @compta_bp.route('/api/rapports/balance')
 def api_balance():
     structure_id = session.get('structure_id')
@@ -1583,6 +1589,65 @@ def api_tva_parametrage_post():
     return jsonify({'success': True})
 
 
+# ⭐ État des charges (patron, 2026-10-11 : « n'était-il pas bon d'avoir le
+# journal des dépenses ou charges ? ») — plutôt qu'un journal « DEP » (qui
+# couperait le journal de caisse en deux), toutes les charges de la période
+# par rubrique SYSCOHADA et par mois, quel que soit le journal d'origine
+# (caisse, banque, achats, paie, OD).
+RUBRIQUES_CHARGES_SYSCOHADA = {
+    '60': 'Achats et variations de stocks', '61': 'Transports', '62': 'Services extérieurs',
+    '63': 'Autres services extérieurs', '64': 'Impôts et taxes', '65': 'Autres charges',
+    '66': 'Charges de personnel', '67': 'Frais financiers et charges assimilées',
+    '68': 'Dotations aux amortissements', '69': 'Dotations aux provisions',
+}
+
+
+def generer_etat_charges(structure_id, date_debut, date_fin):
+    from sqlalchemy import text
+    date_debut_obj = parse_date(date_debut) if date_debut else None
+    date_fin_obj = parse_date(date_fin) if date_fin else None
+    rows = db.session.execute(text("""
+        SELECT c.numero, c.nom, to_char(e.date_ecriture, 'YYYY-MM') AS mois,
+               COALESCE(SUM(l.debit), 0) - COALESCE(SUM(l.credit), 0) AS montant
+        FROM ecritures_comptables e
+        JOIN lignes_ecritures l ON l.ecriture_id = e.id
+        JOIN comptes_comptables c ON c.id = l.compte_id
+        WHERE e.structure_id = :structure_id AND e.statut = 'valide'
+          AND c.type = 'charge' AND LEFT(c.numero, 1) = '6'
+          -- même exclusion que le compte de résultat (anciens comptes ad-hoc sans classe)
+          AND NOT EXISTS (
+              SELECT 1 FROM lignes_ecritures l2 JOIN comptes_comptables c2 ON c2.id = l2.compte_id
+              WHERE l2.ecriture_id = e.id AND (c2.classe IS NULL OR c2.classe = ''))
+          AND (:date_debut IS NULL OR e.date_ecriture >= :date_debut)
+          AND (:date_fin IS NULL OR e.date_ecriture <= :date_fin)
+        GROUP BY c.numero, c.nom, mois
+        ORDER BY c.numero, mois
+    """), {'structure_id': structure_id,
+           'date_debut': date_debut_obj.strftime('%Y-%m-%d') if date_debut_obj else None,
+           'date_fin': date_fin_obj.strftime('%Y-%m-%d') if date_fin_obj else None}).fetchall()
+
+    mois = sorted({r.mois for r in rows})
+    rubriques = {}
+    for r in rows:
+        code = r.numero[:2]
+        rub = rubriques.setdefault(code, {'code': code, 'libelle': RUBRIQUES_CHARGES_SYSCOHADA.get(code, 'Autres'),
+                                          'comptes': {}, 'total': 0.0, 'par_mois': {}})
+        cpt = rub['comptes'].setdefault(r.numero, {'numero': r.numero, 'nom': r.nom, 'par_mois': {}, 'total': 0.0})
+        montant = float(r.montant or 0)
+        cpt['par_mois'][r.mois] = cpt['par_mois'].get(r.mois, 0.0) + montant
+        cpt['total'] += montant
+        rub['par_mois'][r.mois] = rub['par_mois'].get(r.mois, 0.0) + montant
+        rub['total'] += montant
+    liste = []
+    for code in sorted(rubriques):
+        rub = rubriques[code]
+        rub['comptes'] = [rub['comptes'][n] for n in sorted(rub['comptes'])]
+        liste.append(rub)
+    total_par_mois = {m: sum(rub['par_mois'].get(m, 0.0) for rub in liste) for m in mois}
+    return {'mois': mois, 'rubriques': liste, 'total': sum(rub['total'] for rub in liste),
+            'total_par_mois': total_par_mois}
+
+
 def get_compte_resultat(structure_id, date_debut, date_fin):
     from sqlalchemy import text
     
@@ -1765,7 +1830,7 @@ def get_bilan(structure_id, date_fin):
         resultat_net = resultat_periode.get('resultat', 0)
         if abs(resultat_net) > 0.5:
             capitaux_propres.append({
-                'numero': '120' if resultat_net >= 0 else '129',
+                'numero': '131' if resultat_net >= 0 else '139',   # SYSCOHADA : 131 bénéfice, 139 perte
                 'nom': f"Résultat net de l'exercice ({resultat_periode.get('resultat_text', '')})",
                 'montant': resultat_net,
             })
@@ -2672,6 +2737,9 @@ def _donnees_rapport(type_rapport, structure_id, date_debut, date_fin, journal_c
     elif type_rapport == 'bilan':
         data = get_bilan(structure_id, date_fin)
         titre = "Bilan comptable"
+    elif type_rapport == 'charges':
+        data = generer_etat_charges(structure_id, date_debut, date_fin)
+        titre = "État des charges (SYSCOHADA)"
     else:
         return None, None
     return data, titre
@@ -2884,6 +2952,17 @@ def export_rapport_txt(type_rapport):
         lignes_csv.append(';'.join([_csv_champ('TOTAL CAPITAUX PROPRES'), '', '', _csv_montant(data['total_capitaux'])]))
         lignes_csv.append(';'.join([_csv_champ('TOTAL PASSIF + CAPITAUX'), '', '', _csv_montant(data['total_passif_capitaux'])]))
         lignes_csv.append(';'.join([_csv_champ('Équilibré' if data['est_equilibre'] else 'NON ÉQUILIBRÉ'), '', '', '']))
+
+    elif type_rapport == 'charges':
+        lignes_csv.append(';'.join(_csv_champ(c) for c in ['N° compte', 'Compte'] + data['mois'] + ['Total']))
+        for rub in data['rubriques']:
+            lignes_csv.append(';'.join([_csv_champ(rub['code']), _csv_champ(rub['libelle'].upper())]
+                                       + [_csv_montant(rub['par_mois'].get(m, 0)) for m in data['mois']] + [_csv_montant(rub['total'])]))
+            for cpt in rub['comptes']:
+                lignes_csv.append(';'.join([_csv_champ(cpt['numero']), _csv_champ(cpt['nom'])]
+                                           + [_csv_montant(cpt['par_mois'].get(m, 0)) for m in data['mois']] + [_csv_montant(cpt['total'])]))
+        lignes_csv.append(';'.join([_csv_champ('TOTAL DES CHARGES'), '']
+                                   + [_csv_montant(data['total_par_mois'].get(m, 0)) for m in data['mois']] + [_csv_montant(data['total'])]))
 
     # BOM UTF-8 en tête : sans lui, Excel devine souvent un encodage ANSI
     # et affiche les accents mal formés (voire, sur certaines versions,

@@ -615,6 +615,7 @@
                                     <option value="tva">Déclaration TVA</option>
                                     <option value="resultat">Compte de résultat</option>
                                     <option value="bilan">Bilan</option>
+                                    <option value="charges">État des charges</option>
                                 </select>
                             </div>
                             <div class="col-md-3 text-end">
@@ -1332,14 +1333,16 @@
                 <div class="row">
                     <div class="col-md-6 mb-2">
                         <label class="form-label small">Compte d'immobilisation</label>
-                        <select class="form-control form-control-sm" id="immoCompteImmo">
-                            <option value="21830000">21830000 - Matériel médical et informatique</option>
-                            <option value="21840000">21840000 - Mobilier et matériel de bureau</option>
+                        <select class="form-control form-control-sm" id="immoCompteImmo"
+                                onchange="document.getElementById('immoCompteAmort').value = {'24100000': '28410000', '24420000': '28440000', '24440000': '28440000'}[this.value] || '28410000'">
+                            <option value="24100000">24100000 - Matériel et outillage médical</option>
+                            <option value="24420000">24420000 - Matériel informatique</option>
+                            <option value="24440000">24440000 - Mobilier de bureau</option>
                         </select>
                     </div>
                     <div class="col-md-6 mb-2">
                         <label class="form-label small">Compte d'amortissement</label>
-                        <input type="text" class="form-control form-control-sm" id="immoCompteAmort" value="28180000">
+                        <input type="text" class="form-control form-control-sm" id="immoCompteAmort" value="28410000">
                     </div>
                 </div>
                 <div class="row">
@@ -3970,10 +3973,42 @@ function chargerJournal(preserverMessageLettrage) {
 
 let lettrageCompteActuel = null;
 
+// ⭐ État des charges : rubriques SYSCOHADA (60 à 68) puis comptes, par mois.
+function afficherEtatCharges(data) {
+    const tbody = document.getElementById('rapportBody');
+    const thead = document.getElementById('rapportHeader');
+    const tfoot = document.getElementById('rapportFooter');
+    const fmt = v => v ? Math.round(v).toLocaleString('fr-FR') : '';
+    const libMois = m => { const [a, mm] = m.split('-'); return ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'][parseInt(mm) - 1] + ' ' + a; };
+    if (!data || !data.rubriques || !data.rubriques.length) {
+        thead.innerHTML = '<th>État des charges</th>';
+        tbody.innerHTML = '<tr><td class="text-center">Aucune charge sur la période</td></tr>';
+        tfoot.innerHTML = '';
+        return;
+    }
+    thead.innerHTML = '<th>Compte</th>' + data.mois.map(m => `<th class="text-end">${libMois(m)}</th>`).join('') + '<th class="text-end">Total</th>';
+    let html = '';
+    data.rubriques.forEach(rub => {
+        html += `<tr class="table-secondary"><td><strong>${rub.code} — ${rub.libelle}</strong></td>`
+              + data.mois.map(m => `<td class="text-end"><strong>${fmt(rub.par_mois[m])}</strong></td>`).join('')
+              + `<td class="text-end"><strong>${fmt(rub.total)}</strong></td></tr>`;
+        rub.comptes.forEach(c => {
+            html += `<tr><td class="ps-4">${c.numero} — ${c.nom}</td>`
+                  + data.mois.map(m => `<td class="text-end">${fmt(c.par_mois[m])}</td>`).join('')
+                  + `<td class="text-end">${fmt(c.total)}</td></tr>`;
+        });
+    });
+    tbody.innerHTML = html;
+    tfoot.innerHTML = '<tr><td><strong>TOTAL DES CHARGES</strong></td>'
+        + data.mois.map(m => `<td class="text-end"><strong>${fmt(data.total_par_mois[m])}</strong></td>`).join('')
+        + `<td class="text-end"><strong>${fmt(data.total)}</strong></td></tr>`;
+}
+
 function afficherRapport(data, type) {
     const tbody = document.getElementById('rapportBody');
     const thead = document.getElementById('rapportHeader');
     const tfoot = document.getElementById('rapportFooter');
+    if (type === 'charges') { afficherEtatCharges(data); return; }
     
     let totalDebit = 0, totalCredit = 0;
     let html = '';

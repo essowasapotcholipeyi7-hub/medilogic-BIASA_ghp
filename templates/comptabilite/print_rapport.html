@@ -761,6 +761,51 @@
                 </table>
             </div>
 
+        {% elif type_rapport == 'charges' %}
+            <!-- ÉTAT DES CHARGES (rubriques SYSCOHADA, par mois) -->
+            <div class="stat-boxes">
+                <div class="stat-box">
+                    <div class="number text-danger">{{ '{:,.0f}'.format(data.total or 0).replace(',', ' ') }} F</div>
+                    <div class="label">Total des charges</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number">{{ data.rubriques|length }}</div>
+                    <div class="label">Rubriques</div>
+                </div>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Compte</th>
+                            {% for m in data.mois %}<th style="text-align:right">{{ m[5:7] }}/{{ m[0:4] }}</th>{% endfor %}
+                            <th style="text-align:right">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for rub in data.rubriques %}
+                        <tr class="bg-success-light">
+                            <td><strong>{{ rub.code }} — {{ rub.libelle }}</strong></td>
+                            {% for m in data.mois %}<td style="text-align:right"><strong>{{ '{:,.0f}'.format(rub.par_mois.get(m, 0)).replace(',', ' ') if rub.par_mois.get(m) else '' }}</strong></td>{% endfor %}
+                            <td style="text-align:right"><strong>{{ '{:,.0f}'.format(rub.total).replace(',', ' ') }}</strong></td>
+                        </tr>
+                        {% for cpt in rub.comptes %}
+                        <tr>
+                            <td style="padding-left:18px">{{ cpt.numero }} — {{ cpt.nom }}</td>
+                            {% for m in data.mois %}<td style="text-align:right">{{ '{:,.0f}'.format(cpt.par_mois.get(m, 0)).replace(',', ' ') if cpt.par_mois.get(m) else '' }}</td>{% endfor %}
+                            <td style="text-align:right">{{ '{:,.0f}'.format(cpt.total).replace(',', ' ') }}</td>
+                        </tr>
+                        {% endfor %}
+                        {% endfor %}
+                        <tr>
+                            <td><strong>TOTAL DES CHARGES</strong></td>
+                            {% for m in data.mois %}<td style="text-align:right"><strong>{{ '{:,.0f}'.format(data.total_par_mois.get(m, 0)).replace(',', ' ') }}</strong></td>{% endfor %}
+                            <td style="text-align:right"><strong>{{ '{:,.0f}'.format(data.total or 0).replace(',', ' ') }}</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
         {% elif type_rapport == 'bilan' %}
             <!-- BILAN -->
             <div class="stat-boxes">

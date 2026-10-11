@@ -20,33 +20,43 @@
 # classe : classe SYSCOHADA (1 à 7) du numéro de compte
 
 PLAN_COMPTABLE = [
+    # ⭐⭐ Revu compte par compte sur le plan SYSCOHADA RÉVISÉ (patron, 2026-10-11 :
+    # « je t'avais demandé de bien regarder et mettre à jour selon SYSCOHADA ») —
+    # plusieurs numéros venaient jusqu'ici du plan comptable FRANÇAIS (PCG) :
+    # résultat en 12, loyers en 613, assurances en 616, télécom en 626, frais
+    # bancaires en 627, impôts en 631, charges sociales en 666, RRR en 691,
+    # stocks en 37... Correspondance ancien -> nouveau : RENUMEROTATION_SYSCOHADA
+    # ci-dessous (appliquée aux bases par scripts/migrer_syscohada_revise.py).
+
     # ---------------- CLASSE 1 — Ressources durables ----------------
     {'numero': '10100000', 'nom': "Capital social", 'type': 'passif', 'classe': '1'},
-    {'numero': '12000000', 'nom': "Résultat net de l'exercice (bénéfice)", 'type': 'passif', 'classe': '1'},
-    {'numero': '12900000', 'nom': "Résultat net de l'exercice (perte)", 'type': 'actif', 'classe': '1'},
-    {'numero': '13100000', 'nom': "Report à nouveau", 'type': 'passif', 'classe': '1'},
+    {'numero': '12100000', 'nom': "Report à nouveau créditeur", 'type': 'passif', 'classe': '1'},
+    {'numero': '12900000', 'nom': "Report à nouveau débiteur", 'type': 'actif', 'classe': '1'},
+    {'numero': '13100000', 'nom': "Résultat net de l'exercice : bénéfice", 'type': 'passif', 'classe': '1'},
+    {'numero': '13900000', 'nom': "Résultat net de l'exercice : perte", 'type': 'actif', 'classe': '1'},
 
     # ---------------- CLASSE 2 — Actif immobilisé ----------------
-    {'numero': '21830000', 'nom': "Matériel médical et informatique", 'type': 'actif', 'classe': '2'},
-    {'numero': '21840000', 'nom': "Mobilier et matériel de bureau", 'type': 'actif', 'classe': '2'},
-    {'numero': '28180000', 'nom': "Amortissements du matériel médical et informatique", 'type': 'actif', 'classe': '2'},
+    {'numero': '24100000', 'nom': "Matériel et outillage médical", 'type': 'actif', 'classe': '2'},
+    {'numero': '24420000', 'nom': "Matériel informatique", 'type': 'actif', 'classe': '2'},
+    {'numero': '24440000', 'nom': "Mobilier de bureau", 'type': 'actif', 'classe': '2'},
+    {'numero': '28410000', 'nom': "Amortissements du matériel et outillage", 'type': 'actif', 'classe': '2'},
+    {'numero': '28440000', 'nom': "Amortissements du matériel informatique et du mobilier de bureau", 'type': 'actif', 'classe': '2'},
 
     # ---------------- CLASSE 3 — Stocks ----------------
-    {'numero': '37510000', 'nom': "Stock de médicaments et produits pharmaceutiques", 'type': 'actif', 'classe': '3'},
-    {'numero': '37520000', 'nom': "Stock de fournitures et consommables médicaux", 'type': 'actif', 'classe': '3'},
-    {'numero': '37570000', 'nom': "Stock de montures et verres (optique)", 'type': 'actif', 'classe': '3'},
+    {'numero': '31100000', 'nom': "Marchandises — médicaments et produits pharmaceutiques", 'type': 'actif', 'classe': '3'},
+    {'numero': '31200000', 'nom': "Marchandises — montures et verres (optique)", 'type': 'actif', 'classe': '3'},
+    {'numero': '33100000', 'nom': "Matières consommables — fournitures médicales", 'type': 'actif', 'classe': '3'},
 
     # ---------------- CLASSE 4 — Tiers ----------------
     {'numero': '40100000', 'nom': "Fournisseurs", 'type': 'passif', 'classe': '4'},
     {'numero': '40110000', 'nom': "Fournisseurs — médicaments et consommables", 'type': 'passif', 'classe': '4'},
     {'numero': '41110000', 'nom': "Clients — patients (ventes courantes)", 'type': 'actif', 'classe': '4'},
-    {'numero': '41171000', 'nom': "Clients douteux ou litigieux", 'type': 'actif', 'classe': '4'},
+    {'numero': '41600000', 'nom': "Créances clients litigieuses ou douteuses", 'type': 'actif', 'classe': '4'},
     {'numero': '49100000', 'nom': "Dépréciation des comptes clients", 'type': 'actif', 'classe': '4'},
     {'numero': '41121100', 'nom': "AMU-CNSS — tiers-payant à recevoir", 'type': 'actif', 'classe': '4'},
     {'numero': '41121200', 'nom': "AMU-INAM — tiers-payant à recevoir", 'type': 'actif', 'classe': '4'},
     # ⭐ AMU-TNS (Travailleurs Non-Salariés) — administrée par la CNSS mais
-    # panier de soins distinct de l'AMU-CNSS classique (colonne dédiée
-    # "AMU-TNS" dans le Sheet actes/produits) : compte tiers-payant séparé.
+    # panier de soins distinct de l'AMU-CNSS classique : compte tiers-payant séparé.
     {'numero': '41121300', 'nom': "AMU-TNS — tiers-payant à recevoir", 'type': 'actif', 'classe': '4'},
     {'numero': '41122100', 'nom': "Assurance GTA — tiers-payant à recevoir", 'type': 'actif', 'classe': '4'},
     {'numero': '41122200', 'nom': "Assurance SUNU — tiers-payant à recevoir", 'type': 'actif', 'classe': '4'},
@@ -56,89 +66,122 @@ PLAN_COMPTABLE = [
     {'numero': '41122600', 'nom': "Assurance C2A — tiers-payant à recevoir", 'type': 'actif', 'classe': '4'},
     {'numero': '41122700', 'nom': "Assurance OLEA — tiers-payant à recevoir", 'type': 'actif', 'classe': '4'},
     {'numero': '41122800', 'nom': "Autres assurances / tiers-payants à recevoir", 'type': 'actif', 'classe': '4'},
-    # ⭐ Sous-compte dédié (4211), pas 421/422 : ces deux numéros sont déjà
-    # utilisés par des structures existantes pour "Fournisseurs" / "Fournisseurs
-    # - Effets à payer" — les réutiliser aurait fait atterrir les avances sur
-    # salaire dans un compte déjà nommé (et affiché) comme un compte fournisseur.
+    # Personnel (421 avances et acomptes, 422 rémunérations dues)
     {'numero': '42110000', 'nom': "Personnel — avances et acomptes", 'type': 'actif', 'classe': '4'},
-    # ⭐ Même logique que 4211 (421/422 déjà occupés) : dette envers le
-    # personnel pour le NET À PAYER de la paie — reconnue au journal SAL,
-    # éteinte au journal CAI/BQ quand le salaire est réellement décaissé
-    # (non-mélange SYSCOHADA : la paie et son paiement restent deux
-    # écritures distinctes, liées par la même pièce).
-    {'numero': '42310000', 'nom': "Personnel — rémunérations dues (net à payer)", 'type': 'passif', 'classe': '4'},
-    # ⭐ Organismes sociaux, subdivisés par organisme réel (comme pour les
-    # assurances 411211/411221...) — un salarié du privé et un salarié du
-    # public ne doivent jamais créditer le même compte "CNSS" générique.
+    {'numero': '42210000', 'nom': "Personnel — rémunérations dues (net à payer)", 'type': 'passif', 'classe': '4'},
+    # Organismes sociaux (431 sécurité sociale, 432 caisses de retraite, 433 autres organismes)
     {'numero': '43110000', 'nom': "CNSS — part salariale à reverser", 'type': 'passif', 'classe': '4'},
     {'numero': '43120000', 'nom': "CNSS — part patronale à reverser", 'type': 'passif', 'classe': '4'},
-    {'numero': '43130000', 'nom': "CRT — part salariale à reverser", 'type': 'passif', 'classe': '4'},
-    {'numero': '43140000', 'nom': "CRT — part patronale à reverser", 'type': 'passif', 'classe': '4'},
     {'numero': '43150000', 'nom': "AMU-CNSS — part salariale à reverser", 'type': 'passif', 'classe': '4'},
     {'numero': '43160000', 'nom': "AMU-CNSS — part patronale à reverser", 'type': 'passif', 'classe': '4'},
-    {'numero': '43170000', 'nom': "AMU-INAM — part salariale à reverser", 'type': 'passif', 'classe': '4'},
-    {'numero': '43180000', 'nom': "AMU-INAM — part patronale à reverser", 'type': 'passif', 'classe': '4'},
     {'numero': '43190000', 'nom': "Formation professionnelle — à reverser", 'type': 'passif', 'classe': '4'},
-    {'numero': '44310000', 'nom': "État — TVA collectée sur ventes", 'type': 'passif', 'classe': '4'},
+    {'numero': '43210000', 'nom': "CRT (caisse de retraite) — part salariale à reverser", 'type': 'passif', 'classe': '4'},
+    {'numero': '43220000', 'nom': "CRT (caisse de retraite) — part patronale à reverser", 'type': 'passif', 'classe': '4'},
+    {'numero': '43310000', 'nom': "AMU-INAM — part salariale à reverser", 'type': 'passif', 'classe': '4'},
+    {'numero': '43320000', 'nom': "AMU-INAM — part patronale à reverser", 'type': 'passif', 'classe': '4'},
+    # État (443 TVA facturée, 445 TVA récupérable, 447 impôts retenus à la source)
+    {'numero': '44310000', 'nom': "État — TVA facturée sur ventes", 'type': 'passif', 'classe': '4'},
     {'numero': '44520000', 'nom': "État — TVA récupérable sur achats", 'type': 'actif', 'classe': '4'},
-    {'numero': '44700000', 'nom': "État — IRPP à reverser", 'type': 'passif', 'classe': '4'},
     {'numero': '44710000', 'nom': "État — RSPS retenue sur parts médecins, à reverser (OTR)", 'type': 'passif', 'classe': '4'},
+    {'numero': '44720000', 'nom': "État — impôts sur salaires (IRPP) à reverser", 'type': 'passif', 'classe': '4'},
     {'numero': '47130000', 'nom': "Écarts et opérations d'attente (caisse)", 'type': 'actif', 'classe': '4'},
 
     # ---------------- CLASSE 5 — Trésorerie ----------------
     {'numero': '52100000', 'nom': "Banque", 'type': 'actif', 'classe': '5'},
     {'numero': '57100000', 'nom': "Caisse espèces", 'type': 'actif', 'classe': '5'},
 
-    # ---------------- CLASSE 6 — Charges ----------------
-    {'numero': '60100000', 'nom': "Achats de médicaments et produits pharmaceutiques", 'type': 'charge', 'classe': '6'},
-    {'numero': '60200000', 'nom': "Achats de fournitures et consommables médicaux", 'type': 'charge', 'classe': '6'},
-    {'numero': '60400000', 'nom': "Achats de matériel et petit équipement médical", 'type': 'charge', 'classe': '6'},
-    {'numero': '60500000', 'nom': "Achats de montures et verres (optique)", 'type': 'charge', 'classe': '6'},
-    {'numero': '61100000', 'nom': "Transports sur achats/ventes", 'type': 'charge', 'classe': '6'},
-    {'numero': '61300000', 'nom': "Locations (loyers)", 'type': 'charge', 'classe': '6'},
-    {'numero': '61400000', 'nom': "Charges locatives (eau, électricité, gaz)", 'type': 'charge', 'classe': '6'},
-    {'numero': '61500000', 'nom': "Entretien, réparations et maintenance", 'type': 'charge', 'classe': '6'},
-    {'numero': '61600000', 'nom': "Primes d'assurances", 'type': 'charge', 'classe': '6'},
-    {'numero': '61800000', 'nom': "Documentation, formation, colloques", 'type': 'charge', 'classe': '6'},
-    {'numero': '62200000', 'nom': "Rémunérations d'intermédiaires et honoraires", 'type': 'charge', 'classe': '6'},
-    {'numero': '62400000', 'nom': "Transport de personnel", 'type': 'charge', 'classe': '6'},
-    {'numero': '62500000', 'nom': "Déplacements, missions et réceptions", 'type': 'charge', 'classe': '6'},
-    {'numero': '62600000', 'nom': "Frais postaux et de télécommunications", 'type': 'charge', 'classe': '6'},
-    {'numero': '62700000', 'nom': "Services bancaires et assimilés", 'type': 'charge', 'classe': '6'},
-    {'numero': '62800000', 'nom': "Fournitures de bureau et charges diverses", 'type': 'charge', 'classe': '6'},
+    # ---------------- CLASSE 6 — Charges des activités ordinaires ----------------
+    # 60 Achats
+    {'numero': '60100000', 'nom': "Achats de marchandises — médicaments et produits pharmaceutiques", 'type': 'charge', 'classe': '6'},
+    {'numero': '60105000', 'nom': "Achats de marchandises — montures et verres (optique)", 'type': 'charge', 'classe': '6'},
+    {'numero': '60410000', 'nom': "Achats stockés de matières et fournitures consommables médicales", 'type': 'charge', 'classe': '6'},
+    {'numero': '60500000', 'nom': "Autres achats — eau, électricité, énergie", 'type': 'charge', 'classe': '6'},
+    {'numero': '60530000', 'nom': "Autres achats — carburant et autres énergies", 'type': 'charge', 'classe': '6'},
+    {'numero': '60550000', 'nom': "Fournitures de bureau non stockables", 'type': 'charge', 'classe': '6'},
+    {'numero': '60560000', 'nom': "Achats de petit matériel et outillage", 'type': 'charge', 'classe': '6'},
+    # 61 Transports
+    {'numero': '61200000', 'nom': "Transports sur ventes", 'type': 'charge', 'classe': '6'},
+    {'numero': '61800000', 'nom': "Autres frais de transport — voyages, déplacements et missions", 'type': 'charge', 'classe': '6'},
+    # 62 Services extérieurs
+    {'numero': '62200000', 'nom': "Locations et charges locatives (loyers)", 'type': 'charge', 'classe': '6'},
+    {'numero': '62400000', 'nom': "Entretien, réparations et maintenance", 'type': 'charge', 'classe': '6'},
+    {'numero': '62500000', 'nom': "Primes d'assurance", 'type': 'charge', 'classe': '6'},
+    {'numero': '62600000', 'nom': "Études, recherches et documentation", 'type': 'charge', 'classe': '6'},
+    {'numero': '62800000', 'nom': "Frais de télécommunications (téléphone, internet)", 'type': 'charge', 'classe': '6'},
+    # 63 Autres services extérieurs
+    {'numero': '63100000', 'nom': "Frais bancaires", 'type': 'charge', 'classe': '6'},
+    {'numero': '63200000', 'nom': "Rémunérations d'intermédiaires et de conseils", 'type': 'charge', 'classe': '6'},
+    {'numero': '63220000', 'nom': "Commissions et courtages (ristournes aux prescripteurs)", 'type': 'charge', 'classe': '6'},
     {'numero': '63240000', 'nom': "Honoraires — part des médecins réalisateurs", 'type': 'charge', 'classe': '6'},
-    {'numero': '63100000', 'nom': "Impôts et taxes directs", 'type': 'charge', 'classe': '6'},
-    {'numero': '63500000', 'nom': "Autres impôts et taxes", 'type': 'charge', 'classe': '6'},
-    {'numero': '66100000', 'nom': "Salaires et appointements du personnel", 'type': 'charge', 'classe': '6'},
-    {'numero': '66300000', 'nom': "Indemnités et avantages divers au personnel", 'type': 'charge', 'classe': '6'},
-    # ⭐ Charges sociales patronales (classe 666 SYSCOHADA), subdivisées par
-    # organisme réel (privé/CNSS ou public/CRT, AMU-CNSS ou AMU-INAM) — la
-    # classe 664 (rémunérations du personnel extérieur à l'entreprise) ne
-    # convient pas ici, elle concerne le personnel intérimaire/prestataire.
-    {'numero': '66610000', 'nom': "Charges sociales — CNSS part patronale", 'type': 'charge', 'classe': '6'},
-    {'numero': '66620000', 'nom': "Charges sociales — CRT part patronale", 'type': 'charge', 'classe': '6'},
-    {'numero': '66630000', 'nom': "Charges sociales — AMU-CNSS part patronale", 'type': 'charge', 'classe': '6'},
-    {'numero': '66640000', 'nom': "Charges sociales — AMU-INAM part patronale", 'type': 'charge', 'classe': '6'},
-    {'numero': '66650000', 'nom': "Charges sociales — Formation professionnelle", 'type': 'charge', 'classe': '6'},
-    {'numero': '65100000', 'nom': "Pertes sur créances irrécouvrables", 'type': 'charge', 'classe': '6'},
-    {'numero': '67100000', 'nom': "Intérêts et frais financiers", 'type': 'charge', 'classe': '6'},
-    {'numero': '68100000', 'nom': "Dotations aux amortissements", 'type': 'charge', 'classe': '6'},
+    {'numero': '63300000', 'nom': "Frais de formation du personnel", 'type': 'charge', 'classe': '6'},
+    {'numero': '63400000', 'nom': "Redevances pour logiciels (abonnement SSoftOneV10)", 'type': 'charge', 'classe': '6'},
+    # 64 Impôts et taxes
+    {'numero': '64100000', 'nom': "Impôts et taxes directs", 'type': 'charge', 'classe': '6'},
+    {'numero': '64150000', 'nom': "Formation professionnelle continue (taxe)", 'type': 'charge', 'classe': '6'},
+    {'numero': '64800000', 'nom': "Autres impôts et taxes", 'type': 'charge', 'classe': '6'},
+    # 65 Autres charges
+    {'numero': '65100000', 'nom': "Pertes sur créances clients irrécouvrables", 'type': 'charge', 'classe': '6'},
+    {'numero': '65800000', 'nom': "Charges diverses", 'type': 'charge', 'classe': '6'},
     {'numero': '65910000', 'nom': "Dotations aux provisions pour dépréciation des comptes clients", 'type': 'charge', 'classe': '6'},
-    {'numero': '69100000', 'nom': "Rabais, remises et ristournes accordés", 'type': 'charge', 'classe': '6'},
+    # 66 Charges de personnel (661 rémunérations, 663 indemnités, 664 charges sociales)
+    {'numero': '66100000', 'nom': "Rémunérations directes versées au personnel (salaires)", 'type': 'charge', 'classe': '6'},
+    {'numero': '66300000', 'nom': "Indemnités forfaitaires versées au personnel", 'type': 'charge', 'classe': '6'},
+    {'numero': '66411000', 'nom': "Charges sociales — CNSS part patronale", 'type': 'charge', 'classe': '6'},
+    {'numero': '66412000', 'nom': "Charges sociales — CRT part patronale", 'type': 'charge', 'classe': '6'},
+    {'numero': '66413000', 'nom': "Charges sociales — AMU-CNSS part patronale", 'type': 'charge', 'classe': '6'},
+    {'numero': '66414000', 'nom': "Charges sociales — AMU-INAM part patronale", 'type': 'charge', 'classe': '6'},
+    # 67 Frais financiers, 68 Dotations
+    {'numero': '67100000', 'nom': "Intérêts des emprunts et frais financiers", 'type': 'charge', 'classe': '6'},
+    {'numero': '68100000', 'nom': "Dotations aux amortissements d'exploitation", 'type': 'charge', 'classe': '6'},
 
-    # ---------------- CLASSE 7 — Produits ----------------
-    {'numero': '70110000', 'nom': "Ventes de pharmacie", 'type': 'produit', 'classe': '7'},
-    {'numero': '70120000', 'nom': "Ventes de lunetterie / optique", 'type': 'produit', 'classe': '7'},
-    {'numero': '70610000', 'nom': "Consultations", 'type': 'produit', 'classe': '7'},
-    {'numero': '70620000', 'nom': "Actes de laboratoire", 'type': 'produit', 'classe': '7'},
-    {'numero': '70630000', 'nom': "Imagerie médicale", 'type': 'produit', 'classe': '7'},
-    {'numero': '70640000', 'nom': "Hospitalisation", 'type': 'produit', 'classe': '7'},
-    {'numero': '70680000', 'nom': "Autres prestations médicales", 'type': 'produit', 'classe': '7'},
-    {'numero': '75400000', 'nom': "Subventions et dons reçus", 'type': 'produit', 'classe': '7'},
+    # ---------------- CLASSE 7 — Produits des activités ordinaires ----------------
+    {'numero': '70110000', 'nom': "Ventes de marchandises — pharmacie", 'type': 'produit', 'classe': '7'},
+    {'numero': '70120000', 'nom': "Ventes de marchandises — lunetterie / optique", 'type': 'produit', 'classe': '7'},
+    {'numero': '70610000', 'nom': "Services vendus — consultations", 'type': 'produit', 'classe': '7'},
+    {'numero': '70620000', 'nom': "Services vendus — actes de laboratoire", 'type': 'produit', 'classe': '7'},
+    {'numero': '70630000', 'nom': "Services vendus — imagerie médicale", 'type': 'produit', 'classe': '7'},
+    {'numero': '70640000', 'nom': "Services vendus — hospitalisation", 'type': 'produit', 'classe': '7'},
+    {'numero': '70680000', 'nom': "Services vendus — autres prestations médicales", 'type': 'produit', 'classe': '7'},
+    # 709 : en diminution des ventes (solde débiteur), comme dans le plan SYSCOHADA
+    {'numero': '70900000', 'nom': "Rabais, remises et ristournes accordés", 'type': 'produit', 'classe': '7'},
+    {'numero': '71800000', 'nom': "Autres subventions d'exploitation (dons reçus)", 'type': 'produit', 'classe': '7'},
     {'numero': '75800000', 'nom': "Produits divers", 'type': 'produit', 'classe': '7'},
-    {'numero': '77100000', 'nom': "Intérêts et produits financiers", 'type': 'produit', 'classe': '7'},
     {'numero': '75910000', 'nom': "Reprises de provisions pour dépréciation des comptes clients", 'type': 'produit', 'classe': '7'},
+    {'numero': '77100000', 'nom': "Intérêts et produits financiers", 'type': 'produit', 'classe': '7'},
 ]
+
+# ⭐ Correspondance ancien numéro (plan d'avant le 2026-10-11, en partie
+# PCG français) -> numéro SYSCOHADA révisé. Les comptes sont RENUMÉROTÉS
+# sur place (leurs écritures les suivent, aucune perte d'historique) ; deux
+# anciens comptes vers le même numéro sont fusionnés. Voir
+# scripts/migrer_syscohada_revise.py.
+RENUMEROTATION_SYSCOHADA = {
+    '12000000': '13100000', '12900000': '13900000', '13100000': '12100000',
+    '21830000': '24100000', '21840000': '24440000', '28180000': '28410000',
+    '37510000': '31100000', '37520000': '33100000', '37570000': '31200000',
+    '41171000': '41600000', '42310000': '42210000',
+    '43130000': '43210000', '43140000': '43220000', '43170000': '43310000', '43180000': '43320000',
+    '44700000': '44720000',
+    '60200000': '60410000', '60400000': '60560000', '60500000': '60105000',
+    '61100000': '61200000', '61300000': '62200000', '61400000': '60500000', '61500000': '62400000',
+    '61600000': '62500000', '61800000': '62600000',
+    '62200000': '63200000', '62400000': '61800000', '62500000': '61800000', '62600000': '62800000',
+    '62700000': '63100000', '62800000': '65800000',
+    '63100000': '64100000', '63500000': '64800000',
+    '66610000': '66411000', '66620000': '66412000', '66630000': '66413000', '66640000': '66414000',
+    '66650000': '64150000',
+    '69100000': '70900000', '75400000': '71800000',
+}
+
+# ⭐ Charges mal classées par l'ancien rapprochement motif -> compte (la plupart
+# atterrissaient dans l'ancien 628 « charges diverses ») : reclassées par une
+# écriture d'OD (jamais en réécrivant l'écriture d'origine). motif de la
+# dépense -> compte SYSCOHADA. Voir scripts/migrer_syscohada_revise.py.
+RECLASSEMENT_CHARGES_PAR_MOTIF = {
+    'abonnement_ssoftonev10': '63400000',
+    'fourniture': '60410000',
+    'part médecin': '63240000',
+}
 
 # Index rapide numero -> définition, pour la création à la volée dans le service.
 PLAN_COMPTABLE_PAR_NUMERO = {c['numero']: c for c in PLAN_COMPTABLE}
@@ -174,8 +217,10 @@ COMPTE_ATTENTE = '47130000'
 # Résultat net de l'exercice — voir generer_cloture_exercice()
 # (comptabilite_service.py) : bénéfice (crédité) si les produits (classe 7)
 # dépassent les charges (classe 6) sur la période, perte (débitée) sinon.
-COMPTE_RESULTAT_BENEFICE = '12000000'
-COMPTE_RESULTAT_PERTE = '12900000'
+COMPTE_RESULTAT_BENEFICE = '13100000'
+COMPTE_RESULTAT_PERTE = '13900000'
+COMPTE_REPORT_A_NOUVEAU_CREDITEUR = '12100000'
+COMPTE_REPORT_A_NOUVEAU_DEBITEUR = '12900000'
 
 # Compte fournisseurs par défaut (dettes courantes — achats à crédit).
 # Un seul compte partagé pour tous les fournisseurs, comme COMPTE_CLIENTS_PATIENTS
@@ -214,10 +259,12 @@ COMPTE_DOTATION_PROVISION_CREANCE = '65910000'
 COMPTE_DEPRECIATION_CREANCE = '49100000'
 COMPTE_REPRISE_PROVISION_CREANCE = '75910000'
 COMPTE_PERTE_CREANCE_IRRECOUVRABLE = '65100000'
-COMPTE_CREANCE_ABANDONNEE = '69100000'
+COMPTE_CREANCE_ABANDONNEE = '70900000'   # geste commercial : RRR accordé (709, en diminution des ventes)
 COMPTE_DOTATION_AMORTISSEMENT = '68100000'
-COMPTE_IMMO_MATERIEL_MEDICAL = '21830000'   # repli par défaut pour une nouvelle immobilisation
-COMPTE_AMORT_MATERIEL_MEDICAL = '28180000'  # repli par défaut pour son amortissement
+COMPTE_IMMO_MATERIEL_MEDICAL = '24100000'   # repli par défaut pour une nouvelle immobilisation
+COMPTE_AMORT_MATERIEL_MEDICAL = '28410000'  # repli par défaut pour son amortissement
+# compte d'amortissement associé à chaque compte d'immobilisation (formulaire)
+AMORTISSEMENT_PAR_IMMOBILISATION = {'24100000': '28410000', '24420000': '28440000', '24440000': '28440000'}
 
 # Correspondance assurance (telle qu'utilisée dans les ventes) -> numéro de
 # compte de tiers-payant à recevoir.
@@ -236,7 +283,7 @@ COMPTE_PAR_ASSURANCE = {
 
 # Compte générique de charge diverse, utilisé par défaut quand un motif de
 # dépense n'est reconnu par aucun mot-clé de _COMPTE_PAR_MOTIF_DEPENSE.
-COMPTE_CHARGE_DIVERSE = '62800000'
+COMPTE_CHARGE_DIVERSE = '65800000'
 
 # Correspondance motif de dépense (mots-clés saisis librement dans l'UI) ->
 # compte de charge. Reprend le même schéma de sous-comptes que le reste du
@@ -244,20 +291,23 @@ COMPTE_CHARGE_DIVERSE = '62800000'
 COMPTE_PAR_MOTIF_DEPENSE = {
     # ⭐ en tête : « part médecin » doit l'emporter sur toute autre sous-chaîne
     'part médecin': '63240000', 'part medecin': '63240000', 'honoraire': '63240000',
+    'abonnement': '63400000', 'ssoftone': '63400000', 'logiciel': '63400000',
     'salaire': '66100000', 'salaires': '66100000',
-    'loyer': '61300000', 'location': '61300000',
-    'eau': '61400000', 'electricite': '61400000', 'électricité': '61400000',
-    'entretien': '61500000', 'reparation': '61500000', 'réparation': '61500000',
-    'assurance': '61600000',
-    'transport': '62400000',
-    'carburant': '62400000',
-    'communication': '62600000', 'telephone': '62600000', 'téléphone': '62600000', 'internet': '62600000',
-    'banque': '62700000', 'frais bancaire': '62700000',
-    'fourniture': '62800000', 'bureau': '62800000',
-    'impot': '63100000', 'impôt': '63100000', 'taxe': '63100000',
+    'loyer': '62200000', 'location': '62200000',
+    'eau': '60500000', 'electricite': '60500000', 'électricité': '60500000',
+    'entretien': '62400000', 'reparation': '62400000', 'réparation': '62400000', 'maintenance': '62400000',
+    'assurance': '62500000',
+    'carburant': '60530000',
+    'transport': '61800000', 'deplacement': '61800000', 'déplacement': '61800000', 'mission': '61800000',
+    'communication': '62800000', 'telephone': '62800000', 'téléphone': '62800000', 'internet': '62800000',
+    'banque': '63100000', 'frais bancaire': '63100000',
+    'formation': '63300000', 'documentation': '62600000',
+    'bureau': '60550000', 'papeterie': '60550000',
+    'fourniture': '60410000',            # « Fourniture médicale » (formulaire des charges)
+    'impot': '64100000', 'impôt': '64100000', 'taxe': '64100000',
     'medicament': '60100000', 'médicament': '60100000', 'pharmacie': '60100000',
-    'materiel': '60400000', 'matériel': '60400000', 'equipement': '60400000', 'équipement': '60400000',
-    'ristourne': '69100000',
+    'materiel': '60560000', 'matériel': '60560000', 'equipement': '60560000', 'équipement': '60560000',
+    'ristourne': '63220000', 'commission': '63220000',
 }
 
 
@@ -266,9 +316,12 @@ def compte_charge_pour_motif(motif):
     dépense saisi librement — repli sur la charge diverse si non reconnu."""
     if not motif:
         return COMPTE_CHARGE_DIVERSE
+    import re
     cle = str(motif).strip().lower()
     for mot, compte in COMPTE_PAR_MOTIF_DEPENSE.items():
-        if mot in cle:
+        # ⭐ mot ENTIER (pluriel accepté) : avant, « eau » était trouvé dans
+        # « bureau » / « réseau » et envoyait des fournitures en eau-électricité.
+        if re.search(r'(?<![0-9a-zà-ÿ])' + re.escape(mot) + r'(?:s|x)?(?![0-9a-zà-ÿ])', cle):
             return compte
     return COMPTE_CHARGE_DIVERSE
 
@@ -281,20 +334,20 @@ def compte_charge_pour_motif(motif):
 # propre charge patronale, pour ne jamais mélanger, par exemple, la CNSS
 # d'un salarié du privé avec la CRT d'un salarié du public.
 COMPTES_RETRAITE_PAR_ORGANISME = {
-    'CNSS': {'salarial': '43110000', 'patronal': '43120000', 'charge': '66610000'},
-    'CRT': {'salarial': '43130000', 'patronal': '43140000', 'charge': '66620000'},
+    'CNSS': {'salarial': '43110000', 'patronal': '43120000', 'charge': '66411000'},
+    'CRT': {'salarial': '43210000', 'patronal': '43220000', 'charge': '66412000'},
 }
 COMPTES_AMU_PAR_ORGANISME = {
-    'AMU-CNSS': {'salarial': '43150000', 'patronal': '43160000', 'charge': '66630000'},
-    'AMU-INAM': {'salarial': '43170000', 'patronal': '43180000', 'charge': '66640000'},
+    'AMU-CNSS': {'salarial': '43150000', 'patronal': '43160000', 'charge': '66413000'},
+    'AMU-INAM': {'salarial': '43310000', 'patronal': '43320000', 'charge': '66414000'},
 }
-COMPTE_FORMATION_PRO_CHARGE = '66650000'
+COMPTE_FORMATION_PRO_CHARGE = '64150000'
 COMPTE_FORMATION_PRO_A_REVERSER = '43190000'
-COMPTE_IRPP_A_REVERSER = '44700000'
+COMPTE_IRPP_A_REVERSER = '44720000'
 COMPTE_RSPS_A_REVERSER = '44710000'   # ⭐ RSPS 5 % retenue sur la part des médecins (OTR)
 COMPTE_HONORAIRES_MEDECINS = '63240000'
 COMPTE_PERSONNEL_AVANCES = '42110000'   # prêts / acomptes / autres retenues sur salaire
-COMPTE_PERSONNEL_A_PAYER = '42310000'   # net à payer — dette avant décaissement (journal SAL -> CAI/BQ)
+COMPTE_PERSONNEL_A_PAYER = '42210000'   # net à payer — dette avant décaissement (journal SAL -> CAI/BQ)
 
 
 def compte_assurance(nom_assurance):

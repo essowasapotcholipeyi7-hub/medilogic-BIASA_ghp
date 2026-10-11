@@ -30,9 +30,9 @@ def test_comptes_part_medecin_et_rsps():
     assert COMPTE_RSPS_A_REVERSER in PLAN_COMPTABLE_PAR_NUMERO
     assert PLAN_COMPTABLE_PAR_NUMERO[COMPTE_RSPS_A_REVERSER]['classe'] == '4'
     assert compte_charge_pour_motif('Part médecin — Dr ABALO Marie') == COMPTE_HONORAIRES_MEDECINS
-    # « eau » dans un nom de médecin ne doit plus détourner vers 614
+    # « eau » dans un nom de médecin ne doit plus détourner vers l'eau (SYSCOHADA 605)
     assert compte_charge_pour_motif('Part médecin — Dr BEAUDOIN') == COMPTE_HONORAIRES_MEDECINS
-    assert compte_charge_pour_motif('Facture eau du mois') == '61400000'
+    assert compte_charge_pour_motif('Facture eau du mois') == '60500000'
 
 
 def test_rsps_seulement_avec_nif():
