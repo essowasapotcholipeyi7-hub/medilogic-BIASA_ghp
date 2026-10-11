@@ -394,3 +394,27 @@ def nom_compte_assurance(nom_assurance):
     renvoyé un numéro absent de PLAN_COMPTABLE_PAR_NUMERO (donc pas encore
     créé pour cette structure)."""
     return f"Assurance {str(nom_assurance).strip().upper()} — tiers-payant à recevoir"
+
+
+def journal_pour_comptes(numeros):
+    """⭐ Journal où ranger une écriture d'après ses comptes (patron, 2026-10-11 :
+    « que le journal s'adapte automatiquement »). Une écriture appartient à UN
+    seul journal ; une opération qui en concerne deux (ex. vente à crédit puis
+    encaissement) se passe en deux écritures liées par la même pièce.
+    Priorité : banque > caisse > paie > achats > ventes > opérations diverses."""
+    nums = [str(n) for n in numeros if n]
+
+    def a(*prefixes):
+        return any(n.startswith(prefixes) for n in nums)
+
+    if a('52', '53', '55'):
+        return 'BQU'
+    if a('57'):
+        return 'CAI'
+    if a('66', '42', '43'):
+        return 'SAL'
+    if a('40') and a('6', '2', '445'):
+        return 'ACH'
+    if a('70', '71', '75') and a('41'):
+        return 'VTE'
+    return 'OD'

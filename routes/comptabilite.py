@@ -541,7 +541,7 @@ def api_creer_ecriture():
             created_by=session.get('user_id'),
             created_by_nom=user_name,
             commentaire=data.get('commentaire'),
-            journal_code=data.get('journal_code') or None,
+            journal_code=data.get('journal_code') or _journal_deduit(structure_id, data.get('lignes')),
         )
         
         db.session.add(ecriture)
@@ -655,7 +655,7 @@ def api_modifier_ecriture(id):
         
         ecriture.date_ecriture = date_ecriture
         ecriture.libelle = data.get('libelle')
-        ecriture.journal_code = data.get('journal_code') or None
+        ecriture.journal_code = data.get('journal_code') or _journal_deduit(structure_id, data.get('lignes'))
         ecriture.commentaire = data.get('commentaire')
         # Ne pas modifier le numero de piece
         
@@ -1564,7 +1564,9 @@ def api_tva_parametrage_get():
     if not structure_id:
         return jsonify({'success': False, 'error': 'Structure non trouvée'}), 404
     param = ParametrageTva.get_ou_creer(structure_id)
-    return jsonify({'success': True, 'assujetti': param.assujetti, 'taux': float(param.taux or 0)})
+    return jsonify({'success': True, 'assujetti': param.assujetti, 'taux': float(param.taux or 0),
+                    'modifie_par': param.modifie_par or '',
+                    'modifie_le': param.updated_at.strftime('%d/%m/%Y %H:%M') if param.updated_at else ''})
 
 
 @compta_bp.route('/api/tva/parametrage', methods=['POST'])
@@ -1583,10 +1585,24 @@ def api_tva_parametrage_post():
         return jsonify({'success': False, 'error': 'Le taux doit être entre 0 et 100.'}), 400
 
     param = ParametrageTva.get_ou_creer(structure_id)
-    param.assujetti = bool(data.get('assujetti', True))
+    avant = (bool(param.assujetti), float(param.taux or 0))
+    param.assujetti = bool(data.get('assujetti', False))
     param.taux = taux
+    param.modifie_par = session.get('user_name', 'Utilisateur')
     db.session.commit()
-    return jsonify({'success': True})
+    # ⭐ trace : qui a activé / désactivé la TVA, et quand (journal des mouvements)
+    if avant != (param.assujetti, taux):
+        try:
+            from services.journal_service import JournalService
+            JournalService.creer_mouvement(
+                structure_id=structure_id, categorie='parametrage_tva',
+                description=(f"TVA activée à {taux:g} % sur les prochaines ventes et achats" if param.assujetti
+                             else "TVA désactivée : les prochaines ventes et achats sont enregistrés sans TVA"),
+                utilisateur_nom=param.modifie_par,
+            )
+        except Exception as e:
+            print(f"⚠️ Journal (paramétrage TVA) : {e}")
+    return jsonify({'success': True, 'assujetti': param.assujetti, 'taux': taux})
 
 
 # ⭐ État des charges (patron, 2026-10-11 : « n'était-il pas bon d'avoir le
@@ -1646,6 +1662,18 @@ def generer_etat_charges(structure_id, date_debut, date_fin):
     total_par_mois = {m: sum(rub['par_mois'].get(m, 0.0) for rub in liste) for m in mois}
     return {'mois': mois, 'rubriques': liste, 'total': sum(rub['total'] for rub in liste),
             'total_par_mois': total_par_mois}
+
+
+def _journal_deduit(structure_id, lignes):
+    """⭐ Journal d'une écriture saisie à la main quand il n'a pas été choisi :
+    déduit de ses comptes (utils/plan_comptable_syscohada.journal_pour_comptes)."""
+    from utils.plan_comptable_syscohada import journal_pour_comptes
+    ids = [l.get('compte_id') for l in (lignes or []) if l.get('compte_id')]
+    if not ids:
+        return 'OD'
+    numeros = [c.numero for c in CompteComptable.query.filter(CompteComptable.structure_id == structure_id,
+                                                               CompteComptable.id.in_(ids)).all()]
+    return journal_pour_comptes(numeros)
 
 
 def get_compte_resultat(structure_id, date_debut, date_fin):

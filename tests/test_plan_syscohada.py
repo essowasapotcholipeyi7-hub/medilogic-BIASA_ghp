@@ -65,3 +65,14 @@ def test_renumerotation_vers_le_plan():
     reutilises = {'12900000'}   # ancien « perte » -> 139 ; 129 = report à nouveau débiteur en SYSCOHADA
     for ancien in RENUMEROTATION_SYSCOHADA:
         assert ancien not in PLAN_COMPTABLE_PAR_NUMERO or ancien in cibles or ancien in reutilises, ancien
+
+
+def test_journal_propose_d_apres_les_comptes():
+    from utils.plan_comptable_syscohada import journal_pour_comptes
+    assert journal_pour_comptes(['62200000', '57100000']) == 'CAI'          # loyer payé en espèces
+    assert journal_pour_comptes(['62200000', '52100000']) == 'BQU'          # loyer payé par banque
+    assert journal_pour_comptes(['60100000', '44520000', '40100000']) == 'ACH'   # facture fournisseur
+    assert journal_pour_comptes(['41110000', '70610000']) == 'VTE'          # vente à crédit
+    assert journal_pour_comptes(['66100000', '42210000', '43110000']) == 'SAL'   # paie
+    assert journal_pour_comptes(['65800000', '63400000']) == 'OD'           # reclassement
+    assert journal_pour_comptes([]) == 'OD'

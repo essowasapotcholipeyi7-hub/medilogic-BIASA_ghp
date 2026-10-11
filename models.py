@@ -1162,8 +1162,12 @@ class ParametrageTva(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     structure_id = db.Column(db.Integer, nullable=False, unique=True)
-    assujetti = db.Column(db.Boolean, default=True)
+    # ⭐ Désactivée par défaut (patron, 2026-10-11 : « laisser au choix du
+    # comptable ou de l'administrateur d'appliquer la TVA ou pas ») — les soins
+    # sont généralement exonérés ; la structure l'active elle-même si besoin.
+    assujetti = db.Column(db.Boolean, default=False)
     taux = db.Column(db.Numeric, default=18.0)  # en %
+    modifie_par = db.Column(db.String(255))
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     @classmethod

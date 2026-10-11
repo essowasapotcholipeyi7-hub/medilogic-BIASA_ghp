@@ -211,6 +211,27 @@
                     <!-- ========================================== -->
                     <div class="tab-pane fade show active" id="dashboard" role="tabpanel">
 
+                        <!-- ⭐ TVA au choix de la structure (patron, 2026-10-11) : activer = les
+                             PROCHAINES ventes sont découpées en HT + TVA à reverser ; désactiver =
+                             elles repartent sans TVA. Jamais rétroactif, rien n'est retiré. -->
+                        <div class="card border-0 shadow-sm mb-3" id="carteTva">
+                            <div class="card-body py-2 d-flex align-items-center gap-3 flex-wrap">
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input" type="checkbox" id="tvaAssujetti" onchange="basculerTva()" {% if est_agent_comptable %}disabled title="Réservé au comptable"{% endif %}>
+                                    <label class="form-check-label fw-semibold" for="tvaAssujetti">Appliquer la TVA sur les ventes et les achats</label>
+                                </div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <label class="small mb-0" for="tvaTaux">Taux (%)</label>
+                                    <input type="number" step="0.1" min="0" max="100" class="form-control form-control-sm" style="width:80px;" id="tvaTaux" value="18" {% if est_agent_comptable %}disabled{% endif %} onchange="if (document.getElementById('tvaAssujetti').checked) enregistrerParametrageTva()">
+                                </div>
+                                <span class="badge" id="tvaStatut"></span>
+                                <span class="small text-muted" id="tvaParamMessage"></span>
+                                <small class="text-muted w-100">La caisse reçoit toujours le montant payé par le patient. Avec la TVA, la part TVA
+                                    est une somme due à l'État (compte 443), retirée du chiffre d'affaires. Le changement vaut pour les
+                                    prochaines ventes et achats : les écritures passées ne sont pas modifiées.</small>
+                            </div>
+                        </div>
+
                         <!-- ⭐ Refonte "Finance moderne, couleurs maison" — voir le
                              bloc de tokens .compta-shell en tête de fichier. La
                              carte hero + 3 tuiles KPI remplacent les deux
@@ -671,26 +692,6 @@
                             </div>
                         </div>
 
-                        <!-- ⭐ Paramétrage TVA — taux et assujettissement modifiables ici (pas
-                             figés dans le code : le taux togolais actuel est 18%, mais peut
-                             changer, et toutes les structures n'y sont pas forcément
-                             assujetties de la même façon). Visible seulement sur ce rapport. -->
-                        <div class="row mb-3" id="tvaParamWrap" style="display:none;">
-                            <div class="col-12 d-flex align-items-center gap-3 flex-wrap">
-                                <div class="form-check form-switch mb-0">
-                                    <input class="form-check-input" type="checkbox" id="tvaAssujetti">
-                                    <label class="form-check-label small" for="tvaAssujetti">Structure assujettie à la TVA</label>
-                                </div>
-                                <div class="d-flex align-items-center gap-2">
-                                    <label class="small mb-0" for="tvaTaux">Taux (%)</label>
-                                    <input type="number" step="0.1" min="0" max="100" class="form-control form-control-sm" style="width:90px;" id="tvaTaux" value="18">
-                                </div>
-                                <button class="btn btn-outline-primary btn-sm" onclick="enregistrerParametrageTva()">
-                                    <i class="fas fa-save"></i> Enregistrer
-                                </button>
-                                <span class="small text-muted" id="tvaParamMessage"></span>
-                            </div>
-                        </div>
 
                         <div class="table-responsive">
                             <table class="table table-hover table-sm table-bordered" id="rapportTable">
@@ -1589,9 +1590,10 @@
                         </div>
                         <div class="col-md-2 mb-3">
                             <label class="form-label">Journal</label>
-                            <select class="form-control" id="ecritureJournalCode">
-                                <option value="">—</option>
+                            <select class="form-control" id="ecritureJournalCode" onchange="journalChoisiALaMain = !!this.value; document.getElementById('ecritureJournalAide').textContent = this.value ? 'Choisi à la main' : '';">
+                                <option value="">Automatique</option>
                             </select>
+                            <small class="text-muted" id="ecritureJournalAide"></small>
                         </div>
                         <div class="col-md-5 mb-3">
                             <label class="form-label">Libellé *</label>
@@ -1871,6 +1873,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // 3. ⭐ CHARGER LES COMPTES EN PRIORITÉ (car tout le monde en a besoin)
     chargerComptes();
     initFiltresJournaux();
+    chargerParametrageTva();
     
     // 4. ⭐ Budget après chargement des comptes
     setTimeout(() => {
@@ -2252,16 +2255,59 @@ function filtrerComptes() {
     }
 }
 
+// ⭐ Choix du compte avec recherche (patron, 2026-10-11 : « la liste est longue ») :
+// on tape un numéro ou un mot (571, caisse, loyer...) et la liste se filtre.
+function libelleCompte(c) { return `${c.numero} - ${c.nom}`; }
+
 function chargerComptesSelect() {
-    const selects = document.querySelectorAll('#lignesBody .compte-select');
-    selects.forEach(select => {
-        const currentValue = select.value;
-        select.innerHTML = '<option value="">Sélectionner</option>';
-        tousComptes.forEach(c => {
-            const selected = c.id == currentValue ? 'selected' : '';
-            select.innerHTML += `<option value="${c.id}" ${selected}>${c.numero} - ${c.nom}</option>`;
-        });
+    let liste = document.getElementById('listeComptesEcriture');
+    if (!liste) {
+        liste = document.createElement('datalist');
+        liste.id = 'listeComptesEcriture';
+        document.body.appendChild(liste);
+    }
+    liste.innerHTML = tousComptes.filter(c => c.actif !== false).map(c => `<option value="${libelleCompte(c).replace(/"/g, '&quot;')}"></option>`).join('');
+    document.querySelectorAll('#lignesBody tr').forEach(row => {
+        const champ = row.querySelector('.compte-select');
+        const recherche = row.querySelector('.compte-recherche');
+        if (!champ || !recherche) return;
+        const c = tousComptes.find(x => x.id == champ.value);
+        if (c) recherche.value = libelleCompte(c);
     });
+}
+
+function choisirCompteLigne(input) {
+    const texte = input.value.trim();
+    const numero = texte.split(' ')[0];
+    const c = tousComptes.find(x => libelleCompte(x) === texte) || tousComptes.find(x => x.numero === numero && /^\d+$/.test(numero));
+    input.closest('tr').querySelector('.compte-select').value = c ? c.id : '';
+    if (c) input.value = libelleCompte(c);
+    input.classList.toggle('is-invalid', !!texte && !c);
+    proposerJournal();
+}
+
+// ⭐ Journal proposé d'après les comptes (banque > caisse > paie > achats > ventes > OD),
+// tant que l'utilisateur ne l'a pas choisi lui-même.
+let journalChoisiALaMain = false;
+function journalPourComptes(numeros) {
+    const a = (...p) => numeros.some(n => p.some(x => n.startsWith(x)));
+    if (a('52', '53', '55')) return 'BQU';
+    if (a('57')) return 'CAI';
+    if (a('66', '42', '43')) return 'SAL';
+    if (a('40') && a('6', '2', '445')) return 'ACH';
+    if (a('70', '71', '75') && a('41')) return 'VTE';
+    return 'OD';
+}
+
+function proposerJournal() {
+    if (journalChoisiALaMain) return;
+    const numeros = [...document.querySelectorAll('#lignesBody .compte-select')]
+        .map(s => (tousComptes.find(c => c.id == s.value) || {}).numero).filter(Boolean);
+    const sel = document.getElementById('ecritureJournalCode');
+    const aide = document.getElementById('ecritureJournalAide');
+    if (!numeros.length) { if (aide) aide.textContent = ''; return; }
+    sel.value = journalPourComptes(numeros);
+    if (aide) aide.textContent = 'Proposé d\'après les comptes — modifiable';
 }
 
 
@@ -2479,6 +2525,8 @@ function ouvrirNouvelleEcriture() {
     document.getElementById('ecritureDate').value = new Date().toISOString().split('T')[0];
     document.getElementById('ecritureLibelle').value = '';
     document.getElementById('ecritureJournalCode').value = '';
+    journalChoisiALaMain = false;
+    document.getElementById('ecritureJournalAide').textContent = '';
     document.getElementById('ecritureCommentaire').value = '';
 
     // Générer le numéro de pièce automatiquement
@@ -2512,6 +2560,7 @@ function modifierEcriture(id) {
             document.getElementById('ecritureLibelle').value = data.libelle || '';
             document.getElementById('ecriturePiece').value = data.piece_justificative || '';
             document.getElementById('ecritureJournalCode').value = data.journal_code || '';
+            journalChoisiALaMain = !!data.journal_code;
             document.getElementById('ecritureCommentaire').value = data.commentaire || '';
             
             const tbody = document.getElementById('lignesBody');
@@ -2612,15 +2661,18 @@ function voirEcriture(id) {
 // ============================================================
 
 function ajouterLigne(compteId = null, debit = 0, credit = 0, libelle = '') {
+    const listeComptes = document.getElementById('listeComptesEcriture');
+    if (!listeComptes || !listeComptes.options.length) chargerComptesSelect();
     const tbody = document.getElementById('lignesBody');
     const row = tbody.insertRow();
-    let options = '<option value="">Sélectionner</option>';
-    tousComptes.forEach(c => {
-        const selected = (c.id == compteId) ? 'selected' : '';
-        options += `<option value="${c.id}" ${selected}>${c.numero} - ${c.nom}</option>`;
-    });
+    const c = tousComptes.find(x => x.id == compteId);
+    const texte = c ? libelleCompte(c).replace(/"/g, '&quot;') : '';
     row.innerHTML = `
-        <td><select class="form-control form-control-sm compte-select">${options}</select></td>
+        <td style="min-width:260px;">
+            <input type="text" class="form-control form-control-sm compte-recherche" list="listeComptesEcriture" value="${texte}"
+                   placeholder="Rechercher : n° ou nom (571, caisse, loyer…)" onchange="choisirCompteLigne(this)" autocomplete="off">
+            <input type="hidden" class="compte-select" value="${c ? c.id : ''}">
+        </td>
         <td><input type="number" class="form-control form-control-sm debit-input" value="${debit || ''}" step="100" oninput="calculerTotaux()"></td>
         <td><input type="number" class="form-control form-control-sm credit-input" value="${credit || ''}" step="100" oninput="calculerTotaux()"></td>
         <td><input type="text" class="form-control form-control-sm libelle-input" placeholder="Libellé" value="${libelle || ''}"></td>
@@ -3635,9 +3687,15 @@ function onChangeRapportType() {
     document.getElementById('filtreJournalCodeWrap').style.display = (type === 'journal') ? '' : 'none';
     document.getElementById('filtreCompteUniqueWrap').style.display = (type === 'grand_livre') ? '' : 'none';
     document.getElementById('filtreTiersWrap').style.display = (type === 'grand_livre') ? '' : 'none';
-    document.getElementById('tvaParamWrap').style.display = (type === 'tva') ? '' : 'none';
-    if (type === 'tva') chargerParametrageTva();
     chargerJournal();
+}
+
+function afficherStatutTva(d) {
+    const b = document.getElementById('tvaStatut');
+    const active = d.assujetti && parseFloat(d.taux) > 0;
+    b.className = 'badge ' + (active ? 'bg-warning text-dark' : 'bg-secondary');
+    b.textContent = active ? `TVA appliquée (${d.taux} %)` : (d.assujetti ? 'Taux 0 % : aucune TVA calculée' : 'Sans TVA');
+    if (d.modifie_par) document.getElementById('tvaParamMessage').textContent = `Modifié par ${d.modifie_par} le ${d.modifie_le}`;
 }
 
 function chargerParametrageTva() {
@@ -3645,7 +3703,20 @@ function chargerParametrageTva() {
         if (!d.success) return;
         document.getElementById('tvaAssujetti').checked = d.assujetti;
         document.getElementById('tvaTaux').value = d.taux;
+        afficherStatutTva(d);
     });
+}
+
+async function basculerTva() {
+    const case_ = document.getElementById('tvaAssujetti');
+    // taux légal au Togo : 18 % (proposé si aucun taux n'est saisi)
+    if (case_.checked && !(parseFloat(document.getElementById('tvaTaux').value) > 0)) document.getElementById('tvaTaux').value = 18;
+    const taux = document.getElementById('tvaTaux').value;
+    const question = case_.checked
+        ? `Appliquer la TVA à ${taux} % ?\n\nÀ partir de maintenant, chaque vente sera enregistrée en montant hors taxes + TVA due à l'État. Les ventes déjà enregistrées ne changent pas.`
+        : `Ne plus appliquer la TVA ?\n\nÀ partir de maintenant, les ventes seront enregistrées sans TVA. Rien n'est retiré des écritures déjà passées.`;
+    if (!await demanderConfirmation(question)) { case_.checked = !case_.checked; return; }
+    enregistrerParametrageTva();
 }
 
 function enregistrerParametrageTva() {
@@ -3664,7 +3735,8 @@ function enregistrerParametrageTva() {
         .then(d => {
             if (d.success) {
                 msg.className = 'small text-success';
-                msg.textContent = 'Enregistré. S\'applique aux prochaines ventes (pas rétroactif).';
+                msg.textContent = 'Enregistré : s\'applique aux prochaines ventes et achats.';
+                afficherStatutTva({assujetti: d.assujetti, taux: d.taux});
             } else {
                 msg.className = 'small text-danger';
                 msg.textContent = d.error || 'Erreur';
