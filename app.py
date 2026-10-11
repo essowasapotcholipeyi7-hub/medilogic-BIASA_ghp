@@ -6665,6 +6665,9 @@ def api_theme_payer():
             return jsonify({'success': False, 'error': 'Choisissez le moyen de paiement.'}), 400
         if moyen in ('mixx', 'moov', 'virement') and not reference:
             return jsonify({'success': False, 'error': f"La référence du paiement {libelle_moyen} est obligatoire."}), 400
+        doublon = _paiement_deja_enregistre(structure_id, reference)
+        if doublon:
+            return jsonify({'success': False, 'error': doublon}), 400
         if date_paiement > date.today():
             return jsonify({'success': False, 'error': 'La date du paiement ne peut pas être dans le futur.'}), 400
         resume = (f"Dépense — Thème du logiciel « {theme['nom']} » — {int(montant):,} FCFA (une seule fois)".replace(',', ' ')
@@ -10360,6 +10363,31 @@ def _peut_valider_demandes():
     disponible. Chaque action reste tracée nommément (traite_par_nom) donc
     l'administrateur peut toujours voir qui a validé quoi, même a posteriori."""
     return bool(session.get('is_admin')) or session.get('role') == 'gestionnaire'
+
+
+def _paiement_deja_enregistre(structure_id, reference, sauf_demande_id=None, demandes_en_attente=True):
+    """⭐ Doublon de paiement (patron, 2026-10-11 : deux demandes « abonnement »
+    pour le MÊME paiement Mixx, l'une validée, l'autre restée en attente — la
+    valider aurait décaissé une 2e fois). Message clair si cette référence de
+    paiement est déjà en caisse (dépense) ou déjà demandée (en attente), sinon None."""
+    reference = (reference or '').strip()
+    if not reference:
+        return None
+    dep = db.execute_query("""
+        SELECT id, montant, created_by_nom, date_depense FROM depenses
+        WHERE structure_id = %s AND reference_paiement = %s ORDER BY id LIMIT 1
+    """, (structure_id, reference))
+    if dep:
+        d = dep[0]
+        quand = d['date_depense'].strftime('%d/%m/%Y') if d.get('date_depense') else ''
+        return (f"Ce paiement (réf. {reference}) est déjà enregistré en caisse : dépense n°{d['id']} de "
+                f"{int(d['montant'] or 0):,} FCFA du {quand} ({d.get('created_by_nom') or ''}).".replace(',', ' '))
+    if demandes_en_attente:
+        for v in ValidationDemande.query.filter_by(structure_id=structure_id, type_demande='depense', statut='en_attente').all():
+            if v.id != sauf_demande_id and str((v.payload or {}).get('reference_paiement') or '').strip() == reference:
+                return (f"Ce paiement (réf. {reference}) a déjà été demandé (demande n°{v.id} de {v.demandeur_nom or ''}, "
+                        f"en attente de validation).")
+    return None
 
 
 def _demander_validation(structure_id, type_demande, payload, resume, user_id, user_name, reference_id=None):
@@ -17586,6 +17614,10 @@ def api_add_depense():
         if moyen_paiement not in ('mixx', 'moov') or not reference_paiement or not date_paiement:
             return jsonify({'success': False, 'error': "Le moyen de paiement, la référence et la date du paiement sont obligatoires pour l'abonnement."}), 400
 
+        doublon = _paiement_deja_enregistre(structure_id, reference_paiement)
+        if doublon:
+            return jsonify({'success': False, 'error': doublon}), 400
+
         payload['montant'] = montant
         payload['moyen_paiement'] = moyen_paiement
         payload['reference_paiement'] = reference_paiement
@@ -19111,6 +19143,9 @@ def api_liste_validations():
         'date_demande': d.date_demande.strftime('%d/%m/%Y %H:%M') if d.date_demande else '',
         'date_traitement': d.date_traitement.strftime('%d/%m/%Y %H:%M') if d.date_traitement else '',
         'traite_par_nom': d.traite_par_nom,
+        # ⭐ paiement déjà en caisse : doublon signalé avant toute validation
+        'doublon': (_paiement_deja_enregistre(structure_id, (d.payload or {}).get('reference_paiement'), demandes_en_attente=False)
+                    if d.statut == 'en_attente' and d.type_demande == 'depense' else None),
     } for d in demandes]
     return jsonify(result)
 
@@ -19150,6 +19185,13 @@ def api_valider_demande(demande_id):
         return jsonify({'success': False, 'error': 'Cette demande a déjà été traitée'}), 400
 
     payload = demande.payload or {}
+    # ⭐ Jamais deux décaissements pour le même paiement : une demande dont la
+    # référence est déjà en caisse est un doublon, à refuser.
+    if demande.type_demande == 'depense':
+        doublon = _paiement_deja_enregistre(structure_id, payload.get('reference_paiement'), demandes_en_attente=False)
+        if doublon:
+            return jsonify({'success': False, 'doublon': True,
+                            'error': doublon + " Cette demande est un doublon : refusez-la (motif « doublon »)."}), 409
     try:
         if demande.type_demande == 'annulation_vente':
             resultat = _executer_annulation_vente(
