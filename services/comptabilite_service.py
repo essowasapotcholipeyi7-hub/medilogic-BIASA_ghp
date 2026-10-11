@@ -86,15 +86,24 @@ def _get_compte_id(structure_id, numero, nom_repli=None, type_repli='charge'):
         compte.actif = True
     if not compte:
         definition = PLAN_COMPTABLE_PAR_NUMERO.get(numero)
-        compte = CompteComptable(
-            structure_id=structure_id,
-            numero=numero,
-            nom=definition['nom'] if definition else (nom_repli or numero),
-            type=definition['type'] if definition else type_repli,
-            classe=definition['classe'] if definition else numero[0]
-        )
-        db.session.add(compte)
-        db.session.flush()  # pour obtenir compte.id sans committer
+        # ⭐ Deux écritures simultanées créaient parfois le MÊME compte deux fois
+        # (doublon 70620000 trouvé en structure 9, 2026-10-11). Un index unique
+        # (structure_id, numero) l'interdit désormais : en cas de course, on
+        # reprend simplement le compte créé par l'autre requête.
+        from sqlalchemy.exc import IntegrityError
+        try:
+            with db.session.begin_nested():
+                compte = CompteComptable(
+                    structure_id=structure_id,
+                    numero=numero,
+                    nom=definition['nom'] if definition else (nom_repli or numero),
+                    type=definition['type'] if definition else type_repli,
+                    classe=definition['classe'] if definition else numero[0]
+                )
+                db.session.add(compte)
+                db.session.flush()  # pour obtenir compte.id sans committer
+        except IntegrityError:
+            compte = CompteComptable.query.filter_by(structure_id=structure_id, numero=numero).first()
 
     _compte_id_cache[cle] = compte.id
     return compte.id
