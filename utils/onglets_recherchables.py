@@ -29,9 +29,15 @@ def onglets_recherchables(role, is_admin, a_acces, onglet_cache_fn, bloq):
                 {'label': 'Pointage du personnel', 'endpoint': 'rh.gestion_rh', 'kwargs': {}},
                 {'label': 'Mon mot de passe', 'endpoint': 'page_changer_mot_de_passe', 'kwargs': {}}]
     resultat = []
+    role_compta = role in ('comptable', 'sous_comptable')   # ⭐ comptabilité cloisonnée
+    endpoints_compta = {'comptabilite.index', 'admin_finances', 'page_depenses_saisie', 'statistiques_ventes',
+                        'historique_annulations', 'journal.page_journal', 'factures', 'historique_ventes',
+                        'page_facture_amu_cnss', 'page_facture_amu_inam', 'historique_factures_amu',
+                        'page_amu_supports', 'page_pbr_complementaires', 'gestion_stock', 'page_part_medecin',
+                        'rh.gestion_rh', 'page_changer_mot_de_passe', 'page_parametres_theme'}
 
     def ajouter(label, endpoint, condition, **kwargs):
-        if condition:
+        if condition and (not role_compta or endpoint in endpoints_compta):
             resultat.append({'label': label, 'endpoint': endpoint, 'kwargs': kwargs})
 
     ajouter('Tableau de bord', 'dashboard', True)

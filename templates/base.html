@@ -2368,7 +2368,7 @@ async function appliquerPropositionTheme() {
                 Accueil
             </a>
         </li>
-        {% if session.role not in ['laborantin', 'radiologue', 'agent_rh', 'responsable_rh'] %}
+        {% if session.role not in ['laborantin', 'radiologue', 'agent_rh', 'responsable_rh', 'comptable', 'sous_comptable'] %}
         <li class="nav-item">
             <a class="nav-link-top" href="{{ url_for('dashboard') }}">
                 Tableau de bord
@@ -2381,7 +2381,7 @@ async function appliquerPropositionTheme() {
              Patients/Actes&Vente/Pharmacie/Finances depuis ici. Bloc
              entier masqué pour ces 2 rôles, même principe que
              sidebar_menu.html. -->
-        {% if session.role not in ['laborantin', 'radiologue', 'agent_rh', 'responsable_rh'] %}
+        {% if session.role not in ['laborantin', 'radiologue', 'agent_rh', 'responsable_rh', 'comptable', 'sous_comptable'] %}
         {% if not onglet_cache('patients') and not _bloq %}
         <li class="nav-item nav-item-patients">
             <a class="nav-link-top" href="#" onclick="return false;">
@@ -2872,6 +2872,26 @@ async function appliquerPropositionTheme() {
             </a>
         </li>
         {% endif %}
+        {% if role_compta_seul %}{# ⭐ comptable / agent comptable : leurs onglets seulement #}
+        <li class="nav-item">
+            <a class="nav-link-top" href="{{ url_for('comptabilite.index') }}">
+                <i class="fas fa-book"></i> Comptabilité
+            </a>
+        </li>
+        {% set _navc = navigation() %}
+        {% for _d in _navc.domaines %}
+        <li class="nav-item">
+            <a class="nav-link-top" href="#" onclick="return false;">
+                {{ _d.libelle }} <i class="fas fa-chevron-down arrow"></i>
+            </a>
+            <div class="mega-menu">
+                {% for _o in _d.onglets %}
+                <a class="menu-item" href="{{ _o.url }}">{{ _o.libelle }}</a>
+                {% endfor %}
+            </div>
+        </li>
+        {% endfor %}
+        {% endif %}
         {% if role_rh_seul %}{# ⭐ agent / responsable RH : accès direct à leur module #}
         <li class="nav-item">
             <a class="nav-link-top" href="{{ url_for('rh.gestion_rh') }}">
@@ -2979,7 +2999,7 @@ async function appliquerPropositionTheme() {
             {% for o in _dom.onglets %}
             <a href="{{ o.url }}" class="{{ 'actif' if o.id == _nav.onglet_actif }}" {% if o.id == _nav.onglet_actif %}aria-current="page"{% endif %}>{{ o.libelle }}</a>
             {% endfor %}
-            {% if session.role not in ['laborantin', 'radiologue', 'agent_rh', 'responsable_rh'] %}{# leur accueil les renvoie à leur module #}
+            {% if session.role not in ['laborantin', 'radiologue', 'agent_rh', 'responsable_rh', 'comptable', 'sous_comptable'] %}{# leur accueil les renvoie à leur module #}
             <a href="{{ url_for('page_accueil') }}" class="nav-domaine-accueil"><i class="fas fa-table-cells-large me-1" aria-hidden="true"></i>Tous les onglets</a>
             {% endif %}
         </nav>
@@ -3660,7 +3680,7 @@ document.addEventListener('click', function(e) {
 // ============================================================
 
 document.addEventListener('DOMContentLoaded', function() {
-    {% if not role_rh_seul %}{# comptes RH : ni proformas ni ventes #}
+    {% if not role_rh_seul and not role_compta_seul %}{# comptes RH / comptabilité : ni proformas ni ventes en attente #}
     chargerProformaBadge();
     chargerVenteAttenteBadge();
 

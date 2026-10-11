@@ -89,7 +89,7 @@ LIBELLES_ROLES_RH = {'agent_rh': 'Agent RH', 'responsable_rh': 'Responsable RH'}
 LIBELLES_ROLES = {
     'caissier': 'Caissier', 'secretaire': 'Secrétaire', 'medecin': 'Médecin',
     'paramedical': 'Paramédical', 'pharmacien': 'Pharmacien', 'laborantin': 'Laborantin',
-    'radiologue': 'Radiologue', 'gestionnaire': 'Gestionnaire', 'sous_comptable': 'Sous-comptable',
+    'radiologue': 'Radiologue', 'gestionnaire': 'Gestionnaire', 'sous_comptable': 'Agent comptable',
     'comptable': 'Comptable', 'agent_rh': 'Agent RH', 'responsable_rh': 'Responsable RH',
     'admin': 'Administrateur',
 }
@@ -107,6 +107,20 @@ def roles_supplementaires_valides(role_principal, roles):
 
 def est_role_rh(role=None):
     return (role if role is not None else session.get('role')) in ROLES_RH
+
+
+# ⭐ Rôles de la comptabilité (patron, 2026-10-11 : « tel que nous l'avions fait
+# du côté de la GRH ») : comptes cloisonnés sur la comptabilité et les
+# finances — ni patients, ni soins, ni vente. L'agent comptable (rôle
+# technique 'sous_comptable') saisit ; le comptable décide en plus
+# (validation des écritures, clôture, provisions et pertes, plan comptable,
+# TVA) — voir routes/comptabilite.py ENDPOINTS_RESPONSABLE_COMPTA. Pour
+# servir les patients, on leur coche le rôle supplémentaire Caissier.
+ROLES_COMPTA = ('comptable', 'sous_comptable')
+
+
+def est_role_compta(role=None):
+    return (role if role is not None else session.get('role')) in ROLES_COMPTA
 
 
 def a_acces(permission_cle):

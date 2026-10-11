@@ -193,25 +193,60 @@ CHEMINS_AUTORISES_ROLES_RH = (
 )
 
 
+# ⭐ Comptabilité cloisonnée (patron, 2026-10-11 : « tel que nous l'avions
+# fait du côté de la GRH ») : comptabilité, finances, factures et créances,
+# factures AMU, historique des ventes, statistiques, journal, annulations,
+# stock et PBR (comptable), part médecin, paie (GRH du comptable) — plus les
+# appels de données dont ces écrans ont besoin.
+CHEMINS_AUTORISES_ROLES_COMPTA = tuple(p for p in CHEMINS_AUTORISES_ROLES_RH if p != '/rh/') + (
+    '/comptabilite/', '/admin/finances', '/finances/', '/statistiques_ventes', '/historique_annulations',
+    '/journal', '/factures', '/facture', '/recu', '/historique_ventes', '/assurance/', '/amu/supports',
+    '/pbr-complementaires', '/gestion_stock', '/part-medecin', '/rh/',
+    '/api/factures', '/api/finances', '/api/depenses', '/api/statistiques', '/api/ventes', '/api/assurance',
+    '/api/assurances', '/api/societes-assurance', '/api/compagnies-complementaires', '/api/pbr-complementaires',
+    '/api/part-medecin', '/api/produits', '/api/actes', '/api/admin', '/api/abonnement', '/api/validations',
+)
+
+
 @app.before_request
 def _cloisonner_roles_rh():
-    from utils.permissions import est_role_rh
-    if not est_role_rh() or request.endpoint in (None, 'static', 'health'):
+    from utils.permissions import est_role_rh, est_role_compta
+    if request.endpoint in (None, 'static', 'health'):
+        return None
+    if est_role_rh():
+        autorises, accueil, module = CHEMINS_AUTORISES_ROLES_RH, 'rh.gestion_rh', 'la gestion des ressources humaines'
+    elif est_role_compta():
+        autorises, accueil, module = CHEMINS_AUTORISES_ROLES_COMPTA, 'comptabilite.index', 'la comptabilité et aux finances'
+    else:
         return None
     chemin = request.path
-    if chemin in ('/', '/rh') or chemin.startswith(CHEMINS_AUTORISES_ROLES_RH):
+    if chemin in ('/', '/rh', '/comptabilite') or chemin.startswith(autorises):
         return None
     if chemin.startswith('/api/') or 'application/json' in request.headers.get('Accept', ''):
-        return jsonify({'success': False, 'error': 'Réservé aux autres services : votre compte donne accès à la GRH seulement.'}), 403
+        return jsonify({'success': False, 'error': f"Réservé aux autres services : votre compte donne accès à {module} seulement."}), 403
     if request.endpoint not in ('page_accueil', 'dashboard'):
-        flash("Votre compte donne accès à la gestion des ressources humaines seulement.", 'warning')
-    return redirect(url_for('rh.gestion_rh'))
+        flash(f"Votre compte donne accès à {module} seulement. Pour servir les patients, demandez le rôle supplémentaire Caissier.", 'warning')
+    elif not _accueil_disponible(accueil):
+        # ⭐ module verrouillé (abonnement non réglé, module désactivé) : son verrou
+        # renvoie vers le tableau de bord — sans ce détour, on tournerait en boucle.
+        # « Enregistrer une charge » est la page prévue pour régulariser l'abonnement.
+        return redirect(url_for('page_depenses_saisie' if est_role_compta() else 'page_changer_mot_de_passe'))
+    return redirect(url_for(accueil))
+
+
+def _accueil_disponible(endpoint):
+    structure_id = session.get('structure_id')
+    module = next((cle for cle, d in MODULES_STRUCTURE.items() if endpoint in d['endpoints']), None)
+    if not structure_id or not module:
+        return True
+    return not onglet_cache(structure_id, module) and not statut_abonnement(structure_id)['bloque_effectif']
 
 
 @app.context_processor
 def injecter_role_rh():
-    from utils.permissions import est_role_rh
-    return {'role_rh_seul': est_role_rh(), 'est_agent_rh': session.get('role') == 'agent_rh'}
+    from utils.permissions import est_role_rh, est_role_compta
+    return {'role_rh_seul': est_role_rh(), 'est_agent_rh': session.get('role') == 'agent_rh',
+            'role_compta_seul': est_role_compta(), 'est_agent_comptable': session.get('role') == 'sous_comptable'}
 
 # ⭐ abonnement()/onglet_cache() : mêmes globals Jinja, pour le verrou
 # d'abonnement mensuel et le masquage d'onglets par le super-admin — voir
@@ -826,7 +861,7 @@ FAQ_ROLES_LABELS = {
     'caissier': 'Caissier', 'secretaire': 'Secrétaire', 'medecin': 'Médecin',
     'paramedical': 'Paramédical', 'pharmacien': 'Pharmacien', 'laborantin': 'Laborantin',
     'radiologue': 'Radiologue', 'gestionnaire': 'Gestionnaire',
-    'sous_comptable': 'Sous-comptable', 'comptable': 'Comptable',
+    'sous_comptable': 'Agent comptable', 'comptable': 'Comptable',
     'agent_rh': 'Agent RH', 'responsable_rh': 'Responsable RH',
 }
 
@@ -3512,9 +3547,9 @@ def api_recherche_globale():
                 })
     except Exception as e:
         print(f"❌ Recherche globale (onglets): {e}")
-    from utils.permissions import est_role_rh
-    if est_role_rh():
-        return jsonify(resultats)   # ⭐ comptes RH : onglets seulement, jamais de patients
+    from utils.permissions import est_role_rh, est_role_compta
+    if est_role_rh() or est_role_compta():
+        return jsonify(resultats)   # ⭐ comptes RH / comptabilité : onglets seulement, jamais de patients
 
     try:
         # ⭐ nom/prenom/telephone sont chiffrés en base (voir crypto_helper.py)
@@ -9464,7 +9499,7 @@ GUIDE_ROLES_LABELS = {
     'caissier': 'Caissier', 'secretaire': 'Secrétaire', 'medecin': 'Médecin',
     'paramedical': 'Paramédical', 'pharmacien': 'Pharmacien', 'laborantin': 'Laborantin',
     'radiologue': 'Radiologue', 'gestionnaire': 'Gestionnaire',
-    'sous_comptable': 'Sous-comptable', 'comptable': 'Comptable',
+    'sous_comptable': 'Agent comptable', 'comptable': 'Comptable',
     'agent_rh': 'Agent RH', 'responsable_rh': 'Responsable RH', 'admin': 'Administrateur',
 }
 
@@ -17228,7 +17263,7 @@ def page_depenses_saisie():
     une charge (en attente de validation) sans avoir accès au reste des
     finances de la structure."""
     role = session.get('role', 'caissier')
-    if role not in ['admin', 'comptable', 'gestionnaire', 'caissier', 'secretaire']:
+    if role not in ['admin', 'comptable', 'sous_comptable', 'gestionnaire', 'caissier', 'secretaire']:
         flash('Accès non autorisé', 'danger')
         return redirect(url_for('dashboard'))
     return render_template('depenses_saisie.html')
@@ -17514,7 +17549,7 @@ def api_add_depense():
     pour un admin (ni écriture comptable ni impact sur la caisse tant que
     non validée, voir _demander_validation / /api/validations)."""
     role = session.get('role', 'caissier')
-    if role not in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable']:
+    if role not in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable', 'sous_comptable']:
         return jsonify({'success': False, 'error': 'Non autorise'}), 403
 
     data = request.json or {}
@@ -17623,7 +17658,7 @@ def api_depenses_salaire_apercu():
     (bulletin existant, sinon estimé sur le salaire de base), déjà payés ou
     non, + lien vers la RH pour enregistrer le personnel s'il n'y en a pas."""
     role = session.get('role', 'caissier')
-    if role not in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable']:
+    if role not in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable', 'sous_comptable']:
         return jsonify({'success': False, 'error': 'Non autorise'}), 403
     from services.paie_service import apercu_salaires
     mois_str = (request.args.get('mois') or '').strip() or datetime.now().strftime('%Y-%m')
@@ -18559,7 +18594,7 @@ def payer_facture_assurance(facture_id):
     attente, même pour un admin (ni caisse ni écriture comptable tant que
     non validée, voir _demander_validation / /api/validations)."""
     role = session.get('role', 'caissier')
-    if role not in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable']:
+    if role not in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable', 'sous_comptable']:
         return jsonify({'success': False, 'error': 'Non autorise'}), 403
 
     data = request.json or {}
@@ -18958,7 +18993,7 @@ def payer_facture_assurance_globale(assurance):
     facture-par-facture — jamais de caisse/comptabilité touchée avant
     validation admin."""
     role = session.get('role', 'caissier')
-    if role not in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable']:
+    if role not in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable', 'sous_comptable']:
         return jsonify({'success': False, 'error': 'Non autorise'}), 403
 
     data = request.json or {}
@@ -22571,7 +22606,7 @@ def factures():
     """Page de gestion des factures"""
     # 🔥 Vérifier les droits
     role = session.get('role', 'caissier')
-    if role not in ['admin', 'comptable', 'gestionnaire', 'caissier', 'pharmacien', 'secretaire']:
+    if role not in ['admin', 'comptable', 'sous_comptable', 'gestionnaire', 'caissier', 'pharmacien', 'secretaire']:
         flash('Accès non autorisé', 'danger')
         return redirect(url_for('dashboard'))
 
@@ -23314,7 +23349,7 @@ def historique_factures_amu():
 def facture_detail(facture_id):
     """Page de détail d'une facture"""
     role = session.get('role', 'caissier')
-    if role not in ['admin', 'comptable', 'gestionnaire', 'caissier', 'pharmacien', 'secretaire']:
+    if role not in ['admin', 'comptable', 'sous_comptable', 'gestionnaire', 'caissier', 'pharmacien', 'secretaire']:
         flash('Accès non autorisé', 'danger')
         return redirect(url_for('dashboard'))
     

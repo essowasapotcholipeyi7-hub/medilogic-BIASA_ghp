@@ -252,6 +252,15 @@ PARCOURS = [
 ]
 
 
+# Onglets d'un compte comptable / agent comptable (le reste via un rôle supplémentaire).
+ONGLETS_COMPTA = {
+    'factures', 'depenses_saisie', 'admin_finances', 'statistiques',
+    'facture_amu_cnss', 'facture_amu_tns', 'facture_amu_inam', 'historique_factures_amu', 'supports_cnss', 'supports_inam',
+    'historique_ventes', 'part_medecin', 'gestion_stock',
+    'comptabilite', 'annulations', 'journal', 'pbr', 'rh', 'theme', 'mot_de_passe',
+}
+
+
 def _onglet_visible(onglet, ctx):
     if ctx.bloque and onglet.bloquable:
         return False
@@ -263,6 +272,7 @@ def domaines_visibles(ctx):
     sans les domaines devenus vides."""
     labo_radio = ctx.role in ('laborantin', 'radiologue')
     role_rh = ctx.role in ('agent_rh', 'responsable_rh')   # ⭐ comptes RH cloisonnés
+    role_compta = ctx.role in ('comptable', 'sous_comptable')   # ⭐ comptabilité cloisonnée
     resultat = []
     for domaine in DOMAINES:
         if labo_radio and not domaine.pour_labo_radio:
@@ -270,7 +280,8 @@ def domaines_visibles(ctx):
         if role_rh and domaine.id != 'administration':
             continue
         onglets = [o for o in domaine.onglets if _onglet_visible(o, ctx)
-                   and (not role_rh or o.id in ('rh', 'theme', 'mot_de_passe'))]
+                   and (not role_rh or o.id in ('rh', 'theme', 'mot_de_passe'))
+                   and (not role_compta or o.id in ONGLETS_COMPTA)]
         if onglets:
             resultat.append((domaine, onglets))
     return resultat

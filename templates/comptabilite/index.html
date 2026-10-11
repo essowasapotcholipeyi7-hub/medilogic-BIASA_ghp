@@ -92,6 +92,23 @@
 {% endblock %}
 
 {% block content %}
+{% if est_agent_comptable %}
+<style>
+/* ⭐ Compte agent comptable : saisie seulement — les boutons de décision
+   (réservés au comptable, refusés aussi par le serveur) ne sont pas affichés. */
+[onclick^="ouvrirAjoutCompte"], [onclick^="modifierCompte"], [onclick^="supprimerCompte"], [onclick^="sauvegarderCompte"],
+[onclick^="initComptes"], [onclick^="ouvrirValidation"], [onclick^="confirmerValidation"], [onclick^="cloturerAnnee"],
+[onclick^="ouvrirClotureExercice"], [onclick^="genererClotureExercice"], [onclick^="ouvrirReportANouveau"],
+[onclick^="genererReportANouveau"], [onclick^="sauvegarderBudget"], [onclick^="enregistrerParametrageTva"],
+[onclick^="validerReleve"], [onclick^="provisionnerCreance"], [onclick^="reprendreProvision"],
+[onclick^="provisionPasserEnPerte"], [onclick^="perteDirecteCreance"], [onclick^="genererDotationsAnnee"],
+[onclick^="enregistrerReglementAchat"] { display: none !important; }
+</style>
+<div class="alert alert-light border small py-2 mx-3 mt-2">
+    <i class="fas fa-user-pen me-1"></i>Compte <strong>agent comptable</strong> : vous saisissez les écritures, pièces,
+    relevés et lettrages ; la validation, la clôture, les provisions et le plan comptable reviennent au comptable.
+</div>
+{% endif %}
         <div class="card compta-shell">
             <div class="card-header d-flex justify-content-between align-items-center" style="background:var(--navy-900);color:white;">
                 <h5 style="font-family:var(--font-display);margin:0;"><i class="fas fa-calculator"></i> Comptabilité</h5>

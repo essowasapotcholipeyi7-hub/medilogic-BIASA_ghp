@@ -47,6 +47,28 @@ def _verifier_role_comptabilite():
             return jsonify({'error': 'Accès non autorisé pour votre rôle'}), 403
         flash("Accès non autorisé pour votre rôle.", 'danger')
         return redirect(url_for('dashboard'))
+    # ⭐ Agent comptable (rôle 'sous_comptable') : saisie — les décisions restent
+    # au comptable (et à l'administrateur).
+    if session.get('role') == 'sous_comptable' and (request.endpoint or '').split('.')[-1] in ENDPOINTS_RESPONSABLE_COMPTA:
+        message = "Réservé au comptable : votre compte d'agent comptable permet la saisie, pas cette décision."
+        if chemin_api or request.method != 'GET':
+            return jsonify({'success': False, 'error': message, 'message': message}), 403
+        flash(message, 'warning')
+        return redirect(url_for('comptabilite.index'))
+
+
+# Décisions : interdites à l'agent comptable (voir utils/permissions.ROLES_COMPTA).
+ENDPOINTS_RESPONSABLE_COMPTA = {
+    # plan comptable, numérotation, TVA, budget
+    'api_ajouter_compte', 'api_modifier_compte', 'api_supprimer_compte', 'api_init_comptes',
+    'api_reset_sequence', 'api_tva_parametrage_post', 'api_sauvegarder_budget',
+    # validation et clôture
+    'api_valider_ecriture', 'api_cloture', 'api_cloture_exercice_generer', 'api_report_a_nouveau_generer',
+    'api_valider_releve',
+    # provisions, pertes, amortissements, règlements fournisseurs
+    'api_provisionner_creance', 'api_reprendre_provision', 'api_provision_passer_en_perte', 'api_perte_directe',
+    'api_generer_dotations', 'api_regler_achat_fournisseur',
+}
 
 
 # ============================================================

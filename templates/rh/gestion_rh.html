@@ -3839,10 +3839,7 @@ async function ouvrirCaptureVisage() {
     }
     statut.textContent = "Visage bien en face, dans la lumière, sans lunettes de soleil — cliquez sur Capturer quand le contour est vert.";
     if (minuterieEnrolement) minuterieEnrolement.arreter();
-    minuterieEnrolement = PointageBiometrie.minuterieVeille(DELAI_VEILLE_ENROLEMENT_MS, () => {
-        fermerCaptureVisage();
-        afficherMessage("Caméra fermée : aucun visage depuis 2 minutes (économie de batterie). Cliquez de nouveau sur « Enregistrer un visage » si besoin.");
-    });
+    minuterieEnrolement = PointageBiometrie.minuterieVeille(DELAI_VEILLE_ENROLEMENT_MS, fermerCaptureVisage);
     boucleEnrolementActive = true;
     suivreVisageEnrolement();
 }
