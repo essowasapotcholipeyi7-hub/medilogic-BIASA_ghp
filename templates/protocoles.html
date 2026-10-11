@@ -303,6 +303,28 @@
 <!-- ============================================================
      MODAL CRÉATION / ÉDITION
      ============================================================ -->
+<!-- ⭐ Lecture d'un document (patron, 2026-10-11 : « comment voir le contenu, avec
+     possibilité d'imprimer ? ») — sans passer par « Modifier ». -->
+<div class="modal fade" id="voirProtocoleModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <div class="small text-muted" id="voirProtocoleCategorie"></div>
+                    <h5 class="modal-title mb-0" id="voirProtocoleTitre"></h5>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="voirProtocoleCorps"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                <button type="button" class="btn btn-outline-primary" id="voirProtocoleModifier"><i class="fas fa-edit me-1"></i>Modifier</button>
+                <button type="button" class="btn btn-success" id="voirProtocoleImprimer"><i class="fas fa-print me-1"></i>Imprimer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="protocoleModal" tabindex="-1">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
@@ -548,13 +570,15 @@ function afficherProtocoles(protocoles) {
         var statutClass = 'statut-' + p.statut;
         
         html += '<tr>';
-        html += '<td><strong>' + escapeHtml(p.titre) + '</strong></td>';
+        html += '<td><a href="#" class="text-decoration-none" onclick="voirProtocole(' + p.id + '); return false;"><strong>' + escapeHtml(p.titre) + '</strong></a>'
+              + (p.est_synchronise ? ' <span class="badge bg-info text-dark" title="Synchronisé avec gestion_patients">synchro</span>' : '') + '</td>';
         html += '<td><span class="categorie-badge ' + categorieClass + '">' + p.categorie_label + '</span></td>';
         html += '<td>' + (p.specialite || '-') + '</td>';
         html += '<td>v' + p.version + '</td>';
         html += '<td><span class="statut-badge ' + statutClass + '">' + p.statut_label + '</span></td>';
         html += '<td>';
         html += '<div class="btn-group btn-group-sm">';
+        html += '<button class="btn btn-outline-info" onclick="voirProtocole(' + p.id + ')" title="Voir"><i class="fas fa-eye"></i></button>';
         html += '<button class="btn btn-primary" onclick="modifierProtocole(' + p.id + ')" title="Modifier"><i class="fas fa-edit"></i></button>';
         html += '<button class="btn btn-info" onclick="dupliquerProtocole(' + p.id + ')" title="Dupliquer"><i class="fas fa-copy"></i></button>';
         html += '<button class="btn btn-secondary" onclick="voirHistorique(' + p.id + ')" title="Historique"><i class="fas fa-history"></i></button>';
@@ -1131,6 +1155,42 @@ function showCreateModal() {
 // ============================================================
 // MODIFIER UN PROTOCOLE
 // ============================================================
+
+// ⭐ Lecture seule : contenu complet, médicaments, examens — puis Imprimer ou Modifier.
+function voirProtocole(id) {
+    fetch('/protocoles/api/' + id)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.success) { afficherMessage(data.error || 'Document introuvable', {type: 'danger'}); return; }
+            var p = data.data;
+            document.getElementById('voirProtocoleCategorie').textContent = (p.categorie_label || '') + (p.specialite ? ' · ' + p.specialite : '') + ' · v' + p.version + ' · ' + (p.statut_label || '');
+            document.getElementById('voirProtocoleTitre').textContent = p.titre;
+            var html = '';
+            if (p.description) html += '<p class="text-muted" style="white-space:pre-wrap;">' + escapeHtml(p.description) + '</p>';
+            if (p.contenu) html += '<div class="border rounded p-3 mb-3" style="white-space:pre-wrap; line-height:1.6;">' + escapeHtml(p.contenu) + '</div>';
+            if (p.medicaments && p.medicaments.length) {
+                html += '<h6>Médicaments</h6><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Médicament</th><th>Dosage</th><th>Posologie</th><th>Durée</th></tr></thead><tbody>';
+                p.medicaments.forEach(function(m) {
+                    html += '<tr><td><strong>' + escapeHtml(m.medicament || m.nom || '') + '</strong></td><td>' + escapeHtml(m.dosage || '—') + '</td><td>'
+                          + escapeHtml(m.posologie || m.frequence || '—') + '</td><td>' + escapeHtml(m.duree || '—') + '</td></tr>';
+                });
+                html += '</tbody></table></div>';
+            }
+            if (p.examens && p.examens.length) {
+                html += '<h6>Examens</h6><ol>';
+                p.examens.forEach(function(e) { html += '<li>' + escapeHtml(typeof e === 'string' ? e : (e.nom || e.examen || '')) + '</li>'; });
+                html += '</ol>';
+            }
+            if (p.est_synchronise) html += '<p class="small text-muted mb-0"><i class="fas fa-rotate me-1"></i>Synchronisé avec gestion_patients.</p>';
+            document.getElementById('voirProtocoleCorps').innerHTML = html || '<p class="text-muted">Document vide.</p>';
+            var el = document.getElementById('voirProtocoleModal');
+            var modal = bootstrap.Modal.getOrCreateInstance(el, {backdrop: false});
+            document.getElementById('voirProtocoleImprimer').onclick = function() { imprimerProtocole(id); };
+            document.getElementById('voirProtocoleModifier').onclick = function() { modal.hide(); modifierProtocole(id); };
+            modal.show();
+        })
+        .catch(function(err) { console.error(err); });
+}
 
 function modifierProtocole(id) {
     fetch('/protocoles/api/' + id)
