@@ -24953,6 +24953,18 @@ def api_sync_protocole_externe():
             structure_id=structure_id, source_app=source_app,
             source_model=source_model, source_id=source_id,
         ).first()
+        # ⭐ Document né dans GHP, recopié là-bas puis modifié là-bas (voir
+        # services/sync_protocoles_gp.py) : on met à jour l'original GHP.
+        if existant is None and data.get('ghp_id'):
+            existant = ProtocoleMedical.query.filter(
+                ProtocoleMedical.id == int(data['ghp_id']),
+                ProtocoleMedical.structure_id == structure_id,
+                ProtocoleMedical.source_app.is_(None),
+            ).first()
+            titre_recu = data.get('titre') or ''
+            contenu_recu = data.get('contenu') or ''
+            if existant is not None and titre_recu and contenu_recu.startswith(titre_recu):
+                data['contenu'] = contenu_recu[len(titre_recu):].lstrip('\r\n') or contenu_recu
 
         if action == 'archive':
             if existant and existant.statut != 'archive':
@@ -24986,6 +24998,7 @@ def api_sync_protocole_externe():
             protocole_id = resultat.get('id') if succes else None
             if succes and protocole_id:
                 p = ProtocoleMedical.query.get(protocole_id)
+                # (rien n'est renvoyé vers gestion_patients d'ici : pas de boucle)
                 p.source_app = source_app
                 p.source_model = source_model
                 p.source_id = source_id
