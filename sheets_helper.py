@@ -90,6 +90,13 @@ class SheetsHelper:
         # attributs distincts pour de bon.
         self._cache = {}
         self._cache_duration = 10  # secondes
+        # ⭐ Reçu trop lent (patron, 2026-10-12) : chaque lecture coûtait ~1 s
+        # (0,5 s pour retrouver l'onglet + 0,5 s pour le lire). Les onglets sont
+        # mémorisés (le nom ne change pas), et la feuille « structures » (nom,
+        # adresse, logo, en-tête des reçus) — presque jamais modifiée — est
+        # gardée 5 minutes ; vidée dès que l'appli la modifie (clear_cache).
+        self._durees_cache = {'structures': 300}
+        self._onglets = {}
         self._batch_operations = []
         self._batch_timer = None
         self.enabled = True
@@ -393,13 +400,16 @@ class SheetsHelper:
         # Vérifier le cache
         if not force_refresh and sheet_name in self._cache:
             cached_data, timestamp = self._cache[sheet_name]
-            if time.time() - timestamp < self._cache_duration:
+            if time.time() - timestamp < self._durees_cache.get(sheet_name, self._cache_duration):
                 return cached_data
         
         # Sinon, aller chercher dans Google Sheets
         try:
-            worksheet = self.spreadsheet.worksheet(sheet_name)
-            data = worksheet.get_all_records()
+            try:
+                data = self._onglet(sheet_name).get_all_records()
+            except Exception:
+                self._onglets.pop(sheet_name, None)   # onglet renommé/recréé : on le retrouve
+                data = self._onglet(sheet_name).get_all_records()
             # Mettre en cache
             self._cache[sheet_name] = (data, time.time())
             return data
@@ -613,6 +623,12 @@ class SheetsHelper:
     # ============================================
     # MÉTHODES DE MANIPULATION DES DONNÉES
     # ============================================
+    def _onglet(self, sheet_name):
+        """L'onglet Google Sheets, retrouvé une seule fois (évite un appel par lecture)."""
+        if sheet_name not in self._onglets:
+            self._onglets[sheet_name] = self.spreadsheet.worksheet(sheet_name)
+        return self._onglets[sheet_name]
+
     def clear_cache(self, sheet_name=None):
         """Vide le cache (toutes ou une feuille spécifique)"""
         if sheet_name:

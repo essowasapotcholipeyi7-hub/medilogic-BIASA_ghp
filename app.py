@@ -5280,6 +5280,7 @@ def activate_structure(structure_id):
             
             # Mettre à jour la ligne entière
             sheet_structures.update(f'A{row_num}:K{row_num}', [current_row])
+            sheets_helper.clear_cache('structures')   # reçus : nouvelles infos tout de suite
             flash(f'Structure {structure_id} activée avec succès', 'success')
         else:
             flash(f'Structure {structure_id} non trouvée', 'danger')
@@ -5342,6 +5343,7 @@ def suspend_structure(structure_id):
             
             # Mettre à jour la ligne entière
             sheet_structures.update(f'A{row_num}:K{row_num}', [current_row])
+            sheets_helper.clear_cache('structures')   # reçus : nouvelles infos tout de suite
             flash(f'Structure {structure_id} suspendue', 'warning')
         else:
             flash(f'Structure {structure_id} non trouvée', 'danger')
@@ -7182,6 +7184,7 @@ def _ecrire_logo_url_fiche(structure_id, url):
             current_row.append('')
         current_row[11] = url
         sheet_structures.update(f'A{row_num}:L{row_num}', [current_row[:12]])
+        sheets_helper.clear_cache('structures')   # reçus : nouvelles infos tout de suite
         return True
     except Exception as e:
         print(f"⚠️ logo_url non écrit dans la fiche structure {structure_id}: {e}")
@@ -7295,6 +7298,7 @@ def api_update_structure():
 
             # Mettre à jour jusqu'à la colonne Q (index 16)
             sheet_structures.update(f'A{row_num}:Q{row_num}', [current_row])
+            sheets_helper.clear_cache('structures')   # reçus : nouvelles infos tout de suite
             # ⭐ La barre du haut lit session.structure_logo / structure_nom :
             # rafraîchis tout de suite (avant : logo changé invisible jusqu'à la reconnexion)
             session['structure_logo'] = data.get('logo_url', '') or ''
