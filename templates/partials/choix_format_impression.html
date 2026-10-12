@@ -6,7 +6,7 @@
 <div class="mb-3">
     <div class="form-label fw-bold mb-2">Format d'impression</div>
     <input type="hidden" id="printFormat" value="80mm">
-    <div class="btn-group w-100" role="group" aria-label="Format d'impression">
+    <div class="btn-group w-100 choix-format-impression" role="group" aria-label="Format d'impression">
         <input type="radio" class="btn-check" name="choixFormatImpression" id="choixFormat80mm" autocomplete="off" checked
                onchange="choisirFormatImpression('80mm')">
         <label class="btn btn-outline-primary btn-lg fw-bold py-3" for="choixFormat80mm">
@@ -19,6 +19,32 @@
         </label>
     </div>
 </div>
+<style>
+/* ⭐ Format choisi bien visible dans TOUS les thèmes (patron, 2026-10-12) : chaque thème
+   ne teinte un bouton sélectionné qu'à 16 % — le choix se voyait à peine. Bouton choisi
+   plein (avec coche), l'autre en couleur de texte normale du thème. Thèmes clairs : couleur
+   foncée du thème + texte blanc ; thèmes sombres : accent clair du thème + texte noir. */
+.choix-format-impression .btn {
+    color: var(--th-texte, #212529) !important;
+    border-color: var(--th-primaire-fonce, #0A3D5C) !important;
+}
+.choix-format-impression .btn-check:checked + .btn {
+    background: var(--th-primaire-fonce, #0A3D5C) !important;
+    border-color: var(--th-primaire-fonce, #0A3D5C) !important;
+    color: #fff !important;
+    box-shadow: 0 0 0 3px rgba(0, 0, 0, .18) !important;
+}
+[data-bs-theme="dark"] .choix-format-impression .btn {
+    border-color: var(--th-primaire, #00E599) !important;
+}
+[data-bs-theme="dark"] .choix-format-impression .btn-check:checked + .btn {
+    background: var(--th-primaire, #00E599) !important;
+    border-color: var(--th-primaire, #00E599) !important;
+    color: #0A0A0A !important;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, .18) !important;
+}
+.choix-format-impression .btn-check:checked + .btn::after { content: " ✓"; font-weight: 800; }
+</style>
 <script>
 function choisirFormatImpression(format) {
     document.getElementById('printFormat').value = format;

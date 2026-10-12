@@ -5,6 +5,12 @@
 {% block content %}
 
         <!-- Info patient sélectionné -->
+<style>
+/* ⭐ « Désélectionner » lisible dans tous les thèmes : les boutons de l'appli sont « doux »
+   (fond teinté à 10 %) — rouge sur le bandeau bleu clair : contraste 3,6 seulement. */
+#patientInfo .btn-deselection { background: #dc2626 !important; border-color: #dc2626 !important; color: #fff !important; }
+#patientInfo .btn-deselection:hover { background: #b91c1c !important; border-color: #b91c1c !important; }
+</style>
         <div class="alert alert-info" id="patientInfo" style="display:none;">
             <div class="row align-items-center">
                 <div class="col-md-3">
@@ -19,7 +25,7 @@
                     <span class="badge bg-success ms-1" id="cacActiveBadge" style="display:none;">Active</span>
                 </div>
                 <div class="col-md-3 text-end">
-                    <button class="btn btn-sm btn-outline-danger me-1" onclick="clearSelectedPatient()" title="Retirer le patient sélectionné">
+                    <button class="btn btn-sm btn-danger me-1 btn-deselection" onclick="clearSelectedPatient()" title="Retirer le patient sélectionné">
                         <i class="fas fa-times-circle"></i> Désélectionner
                     </button>
                     <button class="btn btn-sm btn-warning" onclick="changePatient()">
