@@ -96,6 +96,26 @@ app.secret_key = Config.SECRET_KEY
 # ⭐ réponses compressées en gzip (bande passante Render) — voir utils/compression.py
 from utils.compression import activer_compression
 activer_compression(app)
+# ⭐ heures de calcul Neon : les tâches automatiques ne réveillent plus la base
+# quand personne ne travaille — voir utils/activite.py
+from utils.activite import noter_activite, activite_recente
+
+
+@app.before_request
+def _test_connexion_appli_hors_ligne():
+    # l'application hors ligne des postes teste la joignabilité du site toutes
+    # les 30 à 60 s (offline/connectivity.py) : réponse immédiate, sans toucher
+    # la base (sinon elle ne s'endormirait jamais tant qu'un poste est allumé)
+    if request.headers.get('User-Agent') == 'offline-pilot-healthcheck':
+        return 'ok', 200
+
+
+@app.before_request
+def _noter_activite_utilisateur():
+    if session.get('user_id') and request.endpoint not in (None, 'static'):
+        noter_activite()
+
+
 # "Se souvenir de moi" (index.html) : durée de la session quand
 # session.permanent = True est posé à la connexion — voir index().
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
@@ -2097,7 +2117,14 @@ def health():
     jour). Fait une vraie requête DB (pas juste "le process répond") pour
     attraper exactement ce genre de panne. Volontairement PAS d'appel
     Google Sheets ici : coûterait du quota API à chaque ping du
-    monitoring, pour un signal moins pertinent que la DB."""
+    monitoring, pour un signal moins pertinent que la DB.
+
+    ⭐ 2026-10-12 : appelée toutes les 10 minutes, elle réveillait la base Neon
+    jour et nuit (heures de calcul facturées). La base n'est testée que si
+    quelqu'un utilise l'application en ce moment — c'est là qu'une panne
+    toucherait quelqu'un ; sinon le serveur répond sans la réveiller."""
+    if not activite_recente():
+        return jsonify({'status': 'ok', 'base': 'non testée : aucune activité récente, la base peut dormir'}), 200
     try:
         db.session.execute(db.text('SELECT 1'))
         db.session.rollback()
@@ -9860,8 +9887,14 @@ def verifier_rappels_automatiques():
 def planifier_verification():
     """Planifie la vérification toutes les heures"""
     print("🚀 Service de rappels automatiques démarré")
+    dernier_jour = [None]
     while True:
         time.sleep(3600)  # 1 heure
+        # ⭐ heures de calcul Neon : toutes les heures pendant l'activité, et au
+        # moins une fois par jour (J-7 / J-1) même sans personne connecté
+        if not activite_recente(60) and dernier_jour[0] == date.today():
+            continue
+        dernier_jour[0] = date.today()
         with app.app_context():
             verifier_rappels_automatiques()
 
@@ -24516,6 +24549,19 @@ def api_sync_patients():
 
         print(f"✅ Token valide pour la structure {structure_id} - {structure_nom}")
 
+        # ⭐ 2026-10-12 : gestion_patients relit la liste toutes les 3 minutes.
+        # Avec ?depuis=<date UTC ISO>, seuls les patients créés ou modifiés depuis
+        # sont renvoyés (colonne sync_modifie_le, posée par un déclencheur SQL à
+        # chaque changement d'un champ synchronisé — voir
+        # migrate_sync_patients_incrementale.py) ; « curseur » = date à renvoyer
+        # au passage suivant. Sans ?depuis : la liste complète, comme avant.
+        curseur = db.session.execute(text("SELECT now() AT TIME ZONE 'UTC'")).scalar()
+        depuis = None
+        if request.args.get('depuis'):
+            try:
+                depuis = datetime.fromisoformat(request.args['depuis'])
+            except ValueError:
+                return jsonify({'error': 'Paramètre depuis invalide (date ISO attendue)'}), 400
         # ⭐ Remplacer db.execute_query par db.session.execute avec text()
         result = db.session.execute(
             text("""
@@ -24527,8 +24573,8 @@ def api_sync_patients():
                     personne_a_prevenir_relation
                 FROM patients 
                 WHERE structure_id = :structure_id
-            """),
-            {'structure_id': structure_id}
+            """ + (" AND sync_modifie_le > :depuis" if depuis else "")),
+            {'structure_id': structure_id, **({'depuis': depuis} if depuis else {})}
         )
         
         patients = result.fetchall()
@@ -24562,7 +24608,9 @@ def api_sync_patients():
             'structure_id': structure_id,
             'structure_nom': structure_nom,
             'total': len(result_list),
-            'patients': result_list
+            'patients': result_list,
+            'incremental': depuis is not None,
+            'curseur': curseur.isoformat() if curseur else None,
         })
         
     except Exception as e:

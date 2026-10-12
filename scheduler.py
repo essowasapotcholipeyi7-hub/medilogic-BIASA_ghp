@@ -21,6 +21,11 @@ scheduler = None
 
 
 def scheduled_sync_resultats_examens():
+    # ⭐ heures de calcul Neon : rien quand personne ne travaille (utils/activite.py) ;
+    # le résultat est de toute façon poussé à la saisie, ceci n'est qu'un rattrapage
+    from utils.activite import activite_recente
+    if not activite_recente():
+        return
     try:
         from tasks import sync_resultats_examens_to_gestion_patients
         result = sync_resultats_examens_to_gestion_patients()
