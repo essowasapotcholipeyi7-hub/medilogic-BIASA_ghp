@@ -236,7 +236,7 @@
                         </td>
                         <td style="vertical-align: middle; text-align: center;">
                             <div class="d-flex flex-wrap gap-1 justify-content-center align-items-center">
-                                <button class="btn btn-sm btn-outline-primary px-2"
+                                <button class="btn btn-sm btn-outline-primary px-2 btn-selectionner-patient"
                                         onclick='selectPatient({{ patient.ID }}, "{{ patient.nom }} {{ patient.prenom }}", "{{ patient.type_assurance }}", {{ patient.taux_prise_charge or 0 }}, "{{ patient.assurance2_nom or '' }}", {{ patient.taux_assurance2 or 0 }}, "{{ patient.societe_assurance2 or '' }}")'
                                         title="Sélectionner ce patient">
                                     <i class="fas fa-check me-1"></i> Sélectionner
@@ -2572,6 +2572,20 @@ document.addEventListener('DOMContentLoaded', function() {
     font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .raccourcis-ventes .raccourci-dest i { font-size: 12px; flex-shrink: 0; }
+/* ⭐ Lisibles dans TOUS les thèmes (mesuré sur les 16) : texte plus foncé en thème clair
+   (le vert et le turquoise d'origine tombaient à 3,2 de contraste), couleurs imposées pour
+   que le thème ne les remplace pas */
+.raccourcis-ventes .raccourci-actes { color: #0a4fb8 !important; background: #eef4ff !important; border-color: #b9cff7 !important; }
+.raccourcis-ventes .raccourci-pharma { color: #0a6b46 !important; background: #ecf8f2 !important; border-color: #b6dfca !important; }
+.raccourcis-ventes .raccourci-hospitalisation { color: #2b3648 !important; background: #eef1f5 !important; border-color: #cfd6e0 !important; }
+.raccourcis-ventes .raccourci-soins_ambulatoires { color: #0b5f73 !important; background: #e6f6f9 !important; border-color: #b3e0ea !important; }
+[data-bs-theme="dark"] .raccourcis-ventes .raccourci-actes { color: #9fc2ff !important; background: rgba(13,110,253,.18) !important; border-color: rgba(13,110,253,.5) !important; }
+[data-bs-theme="dark"] .raccourcis-ventes .raccourci-pharma { color: #6fdcae !important; background: rgba(14,157,103,.18) !important; border-color: rgba(14,157,103,.5) !important; }
+[data-bs-theme="dark"] .raccourcis-ventes .raccourci-hospitalisation { color: #d5dde8 !important; background: rgba(148,163,184,.16) !important; border-color: rgba(148,163,184,.45) !important; }
+[data-bs-theme="dark"] .raccourcis-ventes .raccourci-soins_ambulatoires { color: #7adcef !important; background: rgba(8,145,178,.18) !important; border-color: rgba(8,145,178,.5) !important; }
+/* « Sélectionner » : couleur foncée du thème (le jaune du thème Soleil était illisible) */
+.btn-selectionner-patient { color: var(--th-primaire-fonce, #0A3D5C) !important; border-color: var(--th-primaire-fonce, #0A3D5C) !important; }
+[data-bs-theme="dark"] .btn-selectionner-patient { color: var(--th-primaire, #00E599) !important; border-color: var(--th-primaire, #00E599) !important; }
 
 /* ⭐ Nouvelles cartes de destination (aperçu validé avant implémentation —
    patron : "améliore-moi les boutons quand on sélectionne un patient...
