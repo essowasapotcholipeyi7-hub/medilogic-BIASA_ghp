@@ -4319,6 +4319,73 @@ def check_sheets():
         return jsonify({'error': str(e)})
 
 
+def _contexte_vente_actes(structure_id):
+    """⭐ Réglages de la page Vente d'actes en UNE seule requête (patron, 2026-10-12 :
+    « Vente acte met du temps à s'ouvrir… regroupe si ça ne casse rien »). Ces 12 petites
+    lectures (part médecin, affectations, classifications, services, jour férié, médecin du
+    jour, médecins, prix non assurés) coûtaient chacune un aller-retour vers Neon. Mêmes
+    résultats que charger_taux_part_medecin(), charger_toujours_demander_medecin(),
+    charger_medecins_affectes_csv(), charger_classification_actes(),
+    ParametrageService.get_ou_creer(), charger_services(), ClassificationServiceActe,
+    est_tarif_nuit_actif(), medecin_du_jour_actuel(), Medecin actifs et
+    charger_prix_non_assure() (vérifié structure par structure) — ces fonctions restent
+    utilisées ailleurs, à garder synchronisées avec cette requête."""
+    from sqlalchemy import text as _text
+    moment = datetime.utcnow()
+    ligne = db.session.execute(_text("""
+        SELECT
+          (SELECT coalesce(json_agg(json_build_object('n', nom_acte, 't', taux_medecin, 'd', toujours_demander_medecin) ORDER BY id), '[]'::json)
+             FROM taux_part_medecin WHERE structure_id = :s AND actif = true) AS taux,
+          (SELECT coalesce(json_agg(json_build_object('n', nom_acte, 'm', medecin_id) ORDER BY id), '[]'::json)
+             FROM affectations_part_medecin WHERE structure_id = :s) AS affectations,
+          (SELECT coalesce(json_agg(json_build_object('n', nom_acte, 't', type_prestation) ORDER BY id), '[]'::json)
+             FROM classification_actes WHERE structure_id = :s) AS classification,
+          (SELECT count(*) FROM parametrage_service WHERE structure_id = :s) AS nb_parametrage_service,
+          (SELECT choix_service_actif FROM parametrage_service WHERE structure_id = :s ORDER BY id LIMIT 1) AS choix_service_actif,
+          (SELECT coalesce(json_agg(json_build_object('id', id, 'nom', nom) ORDER BY nom, id), '[]'::json)
+             FROM services_hospitalisation WHERE structure_id = :s AND actif = true) AS services,
+          (SELECT coalesce(json_agg(json_build_object('n', nom_acte, 's', service_id) ORDER BY id), '[]'::json)
+             FROM classification_service_actes WHERE structure_id = :s) AS classification_service,
+          EXISTS (SELECT 1 FROM jours_feries WHERE structure_id = :s AND date = :jour) AS ferie,
+          (SELECT json_build_object('id', m.id, 'titre', m.titre, 'prenom', m.prenom, 'nom', m.nom)
+             FROM medecin_du_jour j JOIN medecins m ON m.id = j.medecin_id
+             WHERE j.structure_id = :s AND j.date = :jour ORDER BY j.id LIMIT 1) AS medecin_jour,
+          (SELECT coalesce(json_agg(json_build_object('id', id, 'titre', titre, 'prenom', prenom, 'nom', nom) ORDER BY nom, id), '[]'::json)
+             FROM medecins WHERE structure_id = :s AND actif = true) AS medecins,
+          (SELECT coalesce(json_agg(json_build_object('n', nom_acte, 'p', prix) ORDER BY id), '[]'::json)
+             FROM prix_non_assure_actes WHERE structure_id = :s AND type = 'acte' AND prix IS NOT NULL) AS prix_non_assure
+    """), {'s': structure_id, 'jour': moment.date()}).mappings().one()
+
+    def nom_complet(m):   # même calcul que Medecin.get_nom_complet()
+        return Medecin(titre=m['titre'], prenom=m['prenom'], nom=m['nom']).get_nom_complet()
+
+    affectations = {}
+    for a in ligne['affectations']:
+        affectations.setdefault(a['n'], []).append(a['m'])
+    if ligne['nb_parametrage_service']:
+        choix_service_actif = bool(ligne['choix_service_actif'])
+    else:
+        # aucune ligne encore : même comportement qu'avant (création du réglage par défaut)
+        choix_service_actif = bool(ParametrageService.get_ou_creer(structure_id).choix_service_actif)
+    from datetime import time as _time
+    heure = moment.time()
+    tarif_nuit_actif = bool(heure >= _time(18, 0) or heure < _time(6, 0) or moment.weekday() == 6 or ligne['ferie'])
+    mj = ligne['medecin_jour']
+    return {
+        'taux_part_medecin': {r['n']: float(r['t'] or 0) for r in ligne['taux']},
+        'toujours_demander_medecin': {r['n']: bool(r['d']) for r in ligne['taux']},
+        'medecins_affectes': {nom: ','.join(str(x) for x in ids) for nom, ids in affectations.items()},
+        'classification_examens': {r['n']: r['t'] for r in ligne['classification']},
+        'choix_service_actif': choix_service_actif,
+        'services': [{'id': r['id'], 'nom': r['nom']} for r in ligne['services']] if choix_service_actif else [],
+        'classification_service': {r['n']: r['s'] for r in ligne['classification_service']} if choix_service_actif else {},
+        'tarif_nuit_actif': tarif_nuit_actif,
+        'medecin_du_jour': {'id': mj['id'], 'nom_complet': nom_complet(mj)} if mj else None,
+        'medecins_liste': [{'id': m['id'], 'nom_complet': nom_complet(m)} for m in ligne['medecins']],
+        'prix_non_assure': {r['n']: float(r['p']) for r in ligne['prix_non_assure']},
+    }
+
+
 @app.route('/actes_vente')
 @login_required
 def actes_vente():
@@ -4339,26 +4406,23 @@ def actes_vente():
     # ⭐ Part Médecin : {nom_acte: taux} pour poser un data-taux-medecin sur
     # chaque <option> (même esprit que prix_nuit) — voir
     # services/part_medecin_service.py.
-    taux_part_medecin_par_acte = charger_taux_part_medecin(structure_id)
+    ctx = _contexte_vente_actes(structure_id)   # ⭐ réglages en une seule requête
+    taux_part_medecin_par_acte = ctx['taux_part_medecin']
     # ⭐ Médecin du jour : actes qui doivent TOUJOURS demander le médecin
     # ligne par ligne (ex: infiltration), même si un médecin du jour est
     # défini — voir data-medecin-obligatoire.
-    toujours_demander_medecin_par_acte = charger_toujours_demander_medecin(structure_id)
-    medecins_affectes_par_acte = charger_medecins_affectes_csv(structure_id)
-    classification_examens_par_acte = charger_classification_actes(structure_id)
+    toujours_demander_medecin_par_acte = ctx['toujours_demander_medecin']
+    medecins_affectes_par_acte = ctx['medecins_affectes']
+    classification_examens_par_acte = ctx['classification_examens']
 
     # ⭐ Recettes par service (patron, 2026-09-30) : {nom_acte: service_id}
     # deviné pour poser un data-service-devine sur chaque <option>, et
     # choix_service_actif pour n'afficher le sélecteur "Service" que si
     # cette structure l'a activé (ParametrageService) — voir
     # services/service_acte_service.py.
-    parametrage_service = ParametrageService.get_ou_creer(structure_id)
-    choix_service_actif = bool(parametrage_service.choix_service_actif)
-    services_liste_vente = charger_services(structure_id) if choix_service_actif else []
-    classification_service_par_acte = {}
-    if choix_service_actif:
-        for l in ClassificationServiceActe.query.filter_by(structure_id=structure_id).all():
-            classification_service_par_acte[l.nom_acte] = l.service_id
+    choix_service_actif = ctx['choix_service_actif']
+    services_liste_vente = ctx['services']
+    classification_service_par_acte = ctx['classification_service']
 
     # Filtrer par structure
     actes_filtres = []
@@ -4550,25 +4614,24 @@ def actes_vente():
     # prix_nuit — sinon une structure qui n'a jamais configuré ce tarif
     # verrait une bannière chaque nuit/dimanche sans que rien ne change
     # jamais à son prix.
-    tarif_nuit_actif = est_tarif_nuit_actif(structure_id)
+    tarif_nuit_actif = ctx['tarif_nuit_actif']
     catalogue_a_tarif_nuit = any(a.get('prix_nuit') for a in actes_filtres)
 
     # ⭐ Part Médecin : liste des médecins actifs pour le sélecteur "Réalisé
     # par", affiché uniquement pour les actes ayant un taux configuré (voir
     # data-taux-medecin ci-dessus).
-    medecins_actifs = Medecin.query.filter_by(structure_id=structure_id, actif=True).order_by(Medecin.nom).all()
-    medecins_liste = [{'id': m.id, 'nom_complet': m.get_nom_complet()} for m in medecins_actifs]
+    medecins_liste = ctx['medecins_liste']
 
     # ⭐ Médecin du jour : défini une fois le matin, appliqué automatiquement
     # aux actes concernés (voir medecin_du_jour_actuel()).
-    medecin_du_jour = medecin_du_jour_actuel(structure_id)
+    medecin_du_jour = ctx['medecin_du_jour']
 
     return render_template('actes_vente.html',
                           actes=actes_filtres,
                           seuil_proforma_examens=SEUIL_PROFORMA_EXAMENS_ASSURANCE_PRIVEE,
                           # ⭐ Prix non assuré par acte (patron, 2026-10-04) — miroir JS
                           # de services/tarification_service.py dans le panier.
-                          prix_non_assure_par_acte=charger_prix_non_assure(structure_id),
+                          prix_non_assure_par_acte=ctx['prix_non_assure'],
                           articles_auto=articles_auto,
                           patientTaux=patient_taux,
                           vente_attente=vente_attente,
