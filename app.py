@@ -93,6 +93,9 @@ print(f"🔗 BASE_URL: {BASE_URL}")
 app = Flask(__name__)
 app.config.from_object(Config)
 app.secret_key = Config.SECRET_KEY
+# ⭐ réponses compressées en gzip (bande passante Render) — voir utils/compression.py
+from utils.compression import activer_compression
+activer_compression(app)
 # "Se souvenir de moi" (index.html) : durée de la session quand
 # session.permanent = True est posé à la connexion — voir index().
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
@@ -750,6 +753,34 @@ def login_required(f):
         sheets_helper.set_structure(session.get('structure_id'))
         return f(*args, **kwargs)
     return decorated_function
+
+
+# ⭐ Bande passante (2026-10-12) : un onglet resté ouvert après expiration de
+# la session continue ses vérifications automatiques (messages toutes les 10 s,
+# validations, ventes en attente...) — chacune recevait la PAGE DE CONNEXION
+# complète (~150 Ko) au lieu de rien. Pour un appel d'arrière-plan (fetch, pas
+# une navigation) vers une API, on répond un petit 401 JSON à la place de la
+# redirection ; une vraie navigation garde la redirection vers la connexion.
+@app.after_request
+def _api_session_expiree_sans_page_de_connexion(response):
+    if (response.status_code in (301, 302, 303)
+            and 'user_id' not in session
+            and '/api/' in request.path
+            and request.headers.get('Sec-Fetch-Mode', 'cors') != 'navigate'
+            and (response.location or '').rstrip('/').split('?')[0] in ('', url_for('index').rstrip('/'),
+                                                                       request.host_url.rstrip('/'))):
+        # le décorateur a déposé « Veuillez vous connecter » : jamais affiché ici,
+        # il s'accumulerait dans le cookie de session à chaque vérification
+        flashes = [f for f in session.get('_flashes', []) if f[1] != 'Veuillez vous connecter']
+        if flashes:
+            session['_flashes'] = flashes
+        else:
+            session.pop('_flashes', None)
+        reponse = jsonify({'success': False, 'session_expiree': True,
+                           'error': 'Session expirée : reconnectez-vous.'})
+        reponse.status_code = 401
+        return reponse
+    return response
 
 
 # ========== ADMIN REQUIRED DECORATOR ==========
