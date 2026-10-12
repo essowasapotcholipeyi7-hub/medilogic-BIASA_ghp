@@ -64,7 +64,17 @@
         ajouterActe() plus bas. Partagé entre tous les postes de la
         structure (pas un réglage par navigateur), modifiable à tout
         moment de la journée. -->
-        <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-2" id="bandeauMedecinJour">
+        <!-- ⭐ Replié par défaut (patron, 2026-10-12 : « on va cacher ceci par défaut, on
+             pourra cliquer pour définir le médecin du jour ») : une ligne cliquable rappelle
+             le médecin du jour ; le bandeau complet s'ouvre dessous (même style que le
+             résumé des assurances, partials/reglages_assurance_pliables.html). -->
+        <div class="mb-3" id="medecinJourPliable">
+        <button type="button" class="resume-reglages-assurance" data-bs-toggle="collapse" data-bs-target="#corpsMedecinJour" aria-expanded="false" aria-controls="corpsMedecinJour">
+            <span><i class="fas fa-user-md me-1"></i> <strong>Médecin du jour :</strong> <span id="medecinJourResume">{{ medecin_du_jour.nom_complet if medecin_du_jour else 'non défini' }}</span></span>
+            <span class="action">{{ 'Changer' if medecin_du_jour else 'Définir' }} <i class="fas fa-chevron-down"></i></span>
+        </button>
+        <div class="collapse pt-2" id="corpsMedecinJour">
+        <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-2 mb-0" id="bandeauMedecinJour">
             <div>
                 <i class="fas fa-user-md"></i>
                 Médecin du jour :
@@ -93,6 +103,8 @@
                 </a>
                 {% endif %}
             </div>
+        </div>
+        </div>
         </div>
 
         <div class="card mt-3">
@@ -1185,6 +1197,13 @@ function definirMedecinDuJour() {
             document.getElementById('medecinJourLabel').textContent = data.medecin_nom || 'non défini';
             const btn = document.querySelector('#bandeauMedecinJour button');
             if (btn) btn.textContent = data.medecin_nom ? 'Changer' : 'Définir';
+            // ⭐ ligne repliée mise à jour, puis le bandeau se replie
+            const resume = document.getElementById('medecinJourResume');
+            if (resume) resume.textContent = data.medecin_nom || 'non défini';
+            const action = document.querySelector('#medecinJourPliable .resume-reglages-assurance .action');
+            if (action) action.firstChild.textContent = (data.medecin_nom ? 'Changer' : 'Définir') + ' ';
+            const corps = document.getElementById('corpsMedecinJour');
+            if (corps && window.bootstrap) bootstrap.Collapse.getOrCreateInstance(corps, {toggle: false}).hide();
             if (typeof showToastActes === 'function') {
                 showToastActes(data.medecin_nom ? `Médecin du jour : ${data.medecin_nom}` : 'Médecin du jour effacé', 'success');
             }
