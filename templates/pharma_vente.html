@@ -32,17 +32,15 @@
             Veuillez d'abord sélectionner un patient dans la <a href="{{ url_for('patients') }}">liste des patients</a>
         </div>
 
-        <!-- Carte de suivi des stocks -->
-        <div class="card mb-3">
-            <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
-                <h5>Suivi des stocks</h5>
-                <button class="btn btn-light btn-sm" onclick="chargerStocks()">
-                    <i class="fas fa-sync-alt"></i> Actualiser
-                </button>
-            </div>
-            <div class="card-body" id="stockAlertList">
-                <div class="text-center">Chargement des stocks...</div>
-            </div>
+        <!-- ⭐ Suivi des stocks réduit à une ligne (patron, 2026-10-12 : « il y a tellement de
+             stocks insuffisants que ça prend beaucoup d'espace avant les articles — juste un
+             petit signe qui dit de vérifier le stock ») : la liste détaillée (avec
+             Réapprovisionner) reste disponible, repliée, en cliquant sur le signe. -->
+        <div class="d-flex align-items-center gap-2 mb-2 flex-wrap" id="resumeStock">
+            <span class="small text-muted"><i class="fas fa-spinner fa-spin"></i> Vérification des stocks...</span>
+        </div>
+        <div class="collapse mb-3" id="detailStockFaible">
+            <div class="card card-body" id="stockAlertList"></div>
         </div>
 
         <!-- Vente de produits -->
@@ -1213,17 +1211,24 @@ function chargerStocks(produitsDejaCharges) {
             const container = document.getElementById('stockAlertList');
             container.innerHTML = '';
             
+            const resume = document.getElementById('resumeStock');
+            const actualiser = '<button type="button" class="btn btn-sm btn-link text-muted p-0" onclick="chargerStocks()" title="Actualiser le stock"><i class="fas fa-sync-alt"></i></button>';
             if (!produits || produits.length === 0) {
-                container.innerHTML = '<div class="alert alert-warning text-center mb-0">⚠️ Aucun produit enregistré</div>';
+                resume.innerHTML = '<span class="small text-muted">⚠️ Aucun produit enregistré</span>' + actualiser;
                 return;
             }
             
             const stockFaible = produits.filter(p => (p.quantite_stock || 0) <= (p.seuil_alerte || 10));
             
             if (stockFaible.length === 0) {
-                container.innerHTML = '<div class="alert alert-success text-center mb-0">✅ Tous les stocks sont suffisants</div>';
+                resume.innerHTML = '<span class="small text-success"><i class="fas fa-check-circle"></i> Stocks suffisants</span>' + actualiser;
+                bootstrap.Collapse.getOrCreateInstance(document.getElementById('detailStockFaible'), {toggle: false}).hide();
                 return;
             }
+            const urgents = stockFaible.filter(p => (p.quantite_stock || 0) <= 5).length;
+            resume.innerHTML = `<button type="button" class="btn btn-sm btn-outline-warning fw-semibold" data-bs-toggle="collapse" data-bs-target="#detailStockFaible" aria-expanded="false" aria-controls="detailStockFaible">`
+                + `<i class="fas fa-exclamation-triangle"></i> Vérifier le stock — ${stockFaible.length} produit${stockFaible.length > 1 ? 's' : ''} en stock faible`
+                + (urgents ? ` (dont ${urgents} urgent${urgents > 1 ? 's' : ''})` : '') + ` <i class="fas fa-chevron-down small"></i></button>` + actualiser;
             
             let html = '<div class="row">';
             stockFaible.forEach(p => {
@@ -1249,7 +1254,7 @@ function chargerStocks(produitsDejaCharges) {
         })
         .catch(error => {
             console.error('❌ Erreur stocks:', error);
-            document.getElementById('stockAlertList').innerHTML = '<div class="alert alert-danger text-center mb-0">❌ Erreur de chargement des stocks</div>';
+            document.getElementById('resumeStock').innerHTML = '<span class="small text-danger">❌ Stock non vérifié (erreur de chargement)</span> <button type="button" class="btn btn-sm btn-link text-muted p-0" onclick="chargerStocks()" title="Réessayer"><i class="fas fa-sync-alt"></i></button>';
         });
 }
 
