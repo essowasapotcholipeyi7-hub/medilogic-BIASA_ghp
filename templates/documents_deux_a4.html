@@ -3,13 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Reçus #{{ vente_id }} — patient et structure</title>
-    {# ⭐ Reçu patient + copie structure sur UNE feuille A4 (patron, 2026-10-12 : « que le
-       reçu patient et le reçu structure restent sur la même feuille avec une délimitation
-       au milieu montrant que c'est là qu'il faut couper »). Feuille à l'horizontale,
-       coupée verticalement : deux demi-feuilles A5 debout (format d'un carnet de reçus),
-       le texte reste lisible. Chaque moitié affiche le vrai reçu (mêmes pages que d'habitude,
-       paramètre demi_page — voir partials/demi_page_a4.html). #}
+    <title>{{ titre }} #{{ vente_id }} — patient et structure</title>
+    {# ⭐ Document patient + document structure sur UNE feuille A4 (patron, 2026-10-12 : « que
+       le reçu patient et le reçu structure restent sur la même feuille avec une délimitation
+       au milieu montrant que c'est là qu'il faut couper » — puis « fais pareil pour facture
+       patient et facture structure »). Feuille à l'horizontale, coupée verticalement : deux
+       demi-feuilles A5 debout, le texte reste lisible. Chaque moitié affiche le vrai document
+       (mêmes pages que d'habitude, paramètre demi_page — voir partials/demi_page_a4.html).
+       Utilisé par /recus_deux et /factures_deux (app.py). #}
     <style>
         @page { size: A4 landscape; margin: 6mm; }
         html, body { margin: 0; background: #fff; font-family: Arial, Helvetica, sans-serif; color: #000; }
@@ -57,21 +58,21 @@
 </head>
 <body>
     <div class="barre">
-        <span id="etat">Préparation des deux reçus…</span>
+        <span id="etat">Préparation des deux documents…</span>
         <button type="button" onclick="window.print()">Imprimer la feuille</button>
         <button type="button" class="secondaire" onclick="window.close()">Fermer</button>
     </div>
     <div class="feuille">
         <div class="moitie">
             <span class="etiquette">Patient</span>
-            <iframe id="partiePatient" title="Reçu du patient"
-                    src="/recu/{{ vente_id }}/{{ type_vente }}?format=A4&detail={{ detail }}&demi_page=1"></iframe>
+            <iframe id="partiePatient" title="{{ titre }} du patient"
+                    src="/{{ page_patient }}/{{ vente_id }}/{{ type_vente }}?format=A4&detail={{ detail }}&demi_page=1"></iframe>
         </div>
         <div class="coupe"><span>✂ Couper ici</span></div>
         <div class="moitie">
             <span class="etiquette">Structure</span>
-            <iframe id="partieStructure" title="Copie de la structure"
-                    src="/recu_structure/{{ vente_id }}/{{ type_vente }}?format=A4&detail={{ detail }}&demi_page=1"></iframe>
+            <iframe id="partieStructure" title="{{ titre }} de la structure"
+                    src="/{{ page_structure }}/{{ vente_id }}/{{ type_vente }}?format=A4&detail={{ detail }}&demi_page=1"></iframe>
         </div>
     </div>
     <script>
@@ -86,7 +87,7 @@
         }
         (function attendre() {
             if (prets() || Date.now() - debut > 15000) {
-                document.getElementById('etat').textContent = 'Reçu patient à gauche, copie structure à droite — à couper au pointillé.';
+                document.getElementById('etat').textContent = '{{ titre }} patient à gauche, {{ titre|lower }} structure à droite — à couper au pointillé.';
                 if (imprimer) setTimeout(function () { window.print(); }, 300);
                 return;
             }

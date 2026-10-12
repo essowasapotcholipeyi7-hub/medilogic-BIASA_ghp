@@ -379,6 +379,12 @@
                     <button class="btn btn-outline-success" onclick="printDocument('facture_client')">
                         <i class="fas fa-file-invoice"></i> Facture Patient
                     </button>
+                    <button class="btn btn-outline-danger" onclick="printDocument('facture_structure')">
+                        <i class="fas fa-archive"></i> Facture Structure (archive)
+                    </button>
+                    <button class="btn btn-outline-success" onclick="printDocument('les_deux_factures')">
+                        <i class="fas fa-layer-group"></i> Les deux factures (patient + structure)
+                    </button>
                     <button class="btn btn-outline-secondary" onclick="printDocument('recu_structure')">
                         <i class="fas fa-copy"></i> Reçu Structure
                     </button>
@@ -1327,6 +1333,11 @@ function printDocument(docType) {
         url = '/recu_structure/' + currentVenteId + '/' + currentVenteType + '?format=' + format + '&detail=' + modeDetailVente;
     } else if (docType === 'facture_client') {
         url = '/facture/' + currentVenteId + '/' + currentVenteType + '?format=' + format + '&detail=' + modeDetailVente;
+    } else if (docType === 'les_deux_factures') {
+        // A4 : les deux factures sur une même feuille, à couper ; 80 mm : l'une après l'autre
+        url = format === 'A4'
+            ? '/factures_deux/' + currentVenteId + '/' + currentVenteType + '?detail=' + modeDetailVente + '&imprimer=1'
+            : '/facture/' + currentVenteId + '/' + currentVenteType + '?format=' + format + '&detail=' + modeDetailVente + '&ensuite=structure';
     } else if (docType === 'facture_structure') {
         url = '/facture_structure/' + currentVenteId + '/' + currentVenteType + '?format=' + format + '&detail=' + modeDetailVente;
     } else if (docType === 'les_deux') {

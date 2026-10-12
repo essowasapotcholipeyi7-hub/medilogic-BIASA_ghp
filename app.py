@@ -5454,10 +5454,23 @@ def recus_deux_a4(vente_id, type):
     (patron, 2026-10-12) — choix « Les deux » en A4. Chaque moitié charge le vrai
     reçu (/recu, /recu_structure avec demi_page=1), qui vérifie lui-même les droits
     sur la vente ; cette page ne fait que les assembler."""
+    return _documents_deux_a4(vente_id, type, 'Reçu', 'recu', 'recu_structure')
+
+
+@app.route('/factures_deux/<int:vente_id>/<string:type>')
+@login_required
+def factures_deux_a4(vente_id, type):
+    """⭐ Même principe pour facture patient + facture structure (patron, 2026-10-12 :
+    « fais pareil pour facture patient et facture structure A4 »)."""
+    return _documents_deux_a4(vente_id, type, 'Facture', 'facture', 'facture_structure')
+
+
+def _documents_deux_a4(vente_id, type_vente, titre, page_patient, page_structure):
     detail = request.args.get('detail', 'complet')
     if detail not in ('complet', 'cumule'):
         detail = 'complet'
-    return render_template('recus_deux_a4.html', vente_id=vente_id, type_vente=type, detail=detail,
+    return render_template('documents_deux_a4.html', vente_id=vente_id, type_vente=type_vente, detail=detail,
+                           titre=titre, page_patient=page_patient, page_structure=page_structure,
                            imprimer=bool(request.args.get('imprimer')))
 
 

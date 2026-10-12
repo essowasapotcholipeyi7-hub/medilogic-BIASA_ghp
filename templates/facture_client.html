@@ -545,6 +545,9 @@
             {% endif %}
             <button onclick="telechargerPDF()" class="btn btn-success"><i class="fas fa-download"></i> PDF</button>
             <button onclick="fermerOuRediriger()" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</button>
+            {% if request.args.get('ensuite') == 'structure' %}
+            <button onclick="allerCopieStructure()" class="btn btn-warning btn-sm fw-bold"><i class="fas fa-copy"></i> Facture structure ➜</button>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -596,5 +599,26 @@ function fermerOuRediriger() {
 }
 </script>
 {% include 'partials/colonnes_articles.html' %}
+{% if request.args.get('demi_page') %}{% include 'partials/demi_page_a4.html' %}{% endif %}
 {% if format == '80mm' %}{% include 'partials/ticket_80mm_lisible.html' %}{% endif %}
+{# ⭐ « Les deux factures » en 80 mm : cette facture s'imprime, puis le MÊME onglet passe
+   à la facture structure (même principe que recu_client.html). #}
+{% if request.args.get('ensuite') == 'structure' %}
+<script>
+(function () {
+    var suivant = new URL(location.href);
+    suivant.pathname = suivant.pathname.replace(/^\/facture\//, '/facture_structure/');
+    suivant.searchParams.delete('ensuite');
+    suivant.searchParams.set('imprimer', '1');
+    var parti = false;
+    window.allerCopieStructure = function () {
+        if (parti) return;
+        parti = true;
+        location.href = suivant.toString();
+    };
+    window.addEventListener('afterprint', function () { setTimeout(window.allerCopieStructure, 300); });
+    document.addEventListener('DOMContentLoaded', function () { setTimeout(function () { window.print(); }, 600); });
+})();
+</script>
+{% endif %}
 {% endblock %}

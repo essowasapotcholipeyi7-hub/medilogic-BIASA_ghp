@@ -566,5 +566,12 @@ function fermerOuRediriger() {
 }
 </script>
 {% include 'partials/colonnes_articles.html' %}
+{% if request.args.get('demi_page') %}{% include 'partials/demi_page_a4.html' %}{% endif %}
 {% if format == '80mm' %}{% include 'partials/ticket_80mm_lisible.html' %}{% endif %}
+{# ⭐ Arrivée depuis « Les deux factures » (facture patient imprimée juste avant). #}
+{% if request.args.get('imprimer') %}
+<script>
+document.addEventListener('DOMContentLoaded', function () { setTimeout(function () { window.print(); }, 600); });
+</script>
+{% endif %}
 {% endblock %}

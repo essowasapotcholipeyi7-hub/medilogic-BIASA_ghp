@@ -283,6 +283,7 @@ function reimprimer(venteId, type) {
         { label: 'Reçu Structure (copie)', action: 'recu_structure', class: 'btn-outline-secondary' },
         { label: 'Facture Patient', action: 'facture_client', class: 'btn-outline-success' },
         { label: 'Facture Structure (archive)', action: 'facture_structure', class: 'btn-outline-danger' },
+        { label: 'Les deux factures (patient + structure)', action: 'les_deux_factures', class: 'btn-outline-success' },
         { label: 'Les deux reçus (patient, puis copie structure)', action: 'les_deux', class: 'btn-outline-info' }
     ];
     
@@ -314,6 +315,11 @@ function printDocument(action) {
             : `/recu/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}&ensuite=structure`;
     } else if (action === 'facture_client') {
         url = `/facture/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`;
+    } else if (action === 'les_deux_factures') {
+        // A4 : les deux factures sur une même feuille, à couper ; 80 mm : l'une après l'autre
+        url = format === 'A4'
+            ? `/factures_deux/${currentVenteId}/${currentVenteType}?detail=${modeDetailDashboard}&imprimer=1`
+            : `/facture/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}&ensuite=structure`;
     } else if (action === 'facture_structure') {
         url = `/facture_structure/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`;
     }
