@@ -26,6 +26,22 @@ def scheduled_sync_resultats_examens():
     from utils.activite import activite_recente
     if not activite_recente():
         return
+    # ⭐ un seul rattrapage à la fois : gunicorn lance plusieurs processus, chacun
+    # avec ce planificateur — sans verrou, les mêmes résultats partaient en double
+    from app import app
+    from models import db
+    # (verrou de transaction : tenu tant que cette connexion reste ouverte, libéré
+    # tout seul à sa fermeture — compatible avec le pooler de Neon)
+    with app.app_context():
+        connexion = db.engine.connect()
+        try:
+            if connexion.execute(db.text('SELECT pg_try_advisory_xact_lock(726401)')).scalar():
+                _rattraper_resultats()
+        finally:
+            connexion.close()
+
+
+def _rattraper_resultats():
     try:
         from tasks import sync_resultats_examens_to_gestion_patients
         result = sync_resultats_examens_to_gestion_patients()

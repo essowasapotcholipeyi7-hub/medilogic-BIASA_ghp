@@ -9712,208 +9712,12 @@ import threading
 import time
 from datetime import datetime, timedelta
 
-def envoyer_rappel_auto(rdv, type_rappel, structure_info):
-    """Envoie un rappel automatique WhatsApp"""
-    try:
-        patient_nom = rdv.get('patient_nom', 'Patient')
-        patient_tel = rdv.get('patient_telephone', '')
-        date_rdv = rdv.get('date_rendez_vous', '')
-        heure_rdv = rdv.get('heure_rendez_vous', '')
-        motif = rdv.get('motif', 'Consultation')
-        structure_nom = structure_info.get('nom', 'Notre établissement')
-        structure_tel = structure_info.get('telephone', '')
-        
-        if not patient_tel:
-            return False
-        
-        # Nettoyer le numéro
-        tel = str(patient_tel).replace(' ', '').replace('+', '').replace('-', '')
-        if not tel.startswith('228') and not tel.startswith('229') and not tel.startswith('221'):
-            tel = '228' + tel
-        
-        if type_rappel == 'j7':
-            message = f"🔔 *RAPPEL DE RENDEZ-VOUS (J-7)* 🔔%0A%0A"
-            message += f"🏥 *{structure_nom}*%0A"
-            if structure_tel:
-                message += f"📞 {structure_tel}%0A%0A"
-            message += f"Bonjour *{patient_nom}*,%0A%0A"
-            message += f"Nous vous rappelons votre rendez-vous dans une semaine :%0A"
-            message += f"📅 Date : *{date_rdv}*%0A"
-            message += f"⏰ Heure : *{heure_rdv}*%0A"
-            message += f"📋 Motif : *{motif}*%0A%0A"
-            message += f"Merci de votre ponctualité ! 🙏"
-        else:
-            message = f"🔔 *RAPPEL DE RENDEZ-VOUS (J-1)* 🔔%0A%0A"
-            message += f"🏥 *{structure_nom}*%0A"
-            if structure_tel:
-                message += f"📞 {structure_tel}%0A%0A"
-            message += f"Bonjour *{patient_nom}*,%0A%0A"
-            message += f"Nous vous rappelons votre rendez-vous de demain :%0A"
-            message += f"📅 Date : *{date_rdv}*%0A"
-            message += f"⏰ Heure : *{heure_rdv}*%0A"
-            message += f"📋 Motif : *{motif}*%0A%0A"
-            message += f"À très vite ! 🏥"
-        
-        whatsapp_url = f"https://wa.me/{tel}?text={message}"
-        print(f"📱 [RAPPEL AUTO] {patient_nom} - {type_rappel}")
-        print(f"   🔗 Lien WhatsApp: {whatsapp_url}")
-        return True
-        
-    except Exception as e:
-        print(f"❌ Erreur envoi rappel: {e}")
-        return False
+# ⭐ 2026-10-12 : l'ancienne tâche « rappels automatiques » (fil d'exécution
+# toutes les heures) a été retirée. Elle n'envoyait rien — elle fabriquait un
+# lien WhatsApp qui ne partait nulle part — et réveillait la base Neon toutes
+# les heures, une fois par processus. Les rappels se font depuis la page
+# Rappels (bouton WhatsApp, /rendez_vous/api/<id>/rappel), qui note l'envoi.
 
-def maj_statut_rappel(rdv_id, type_rappel, structure_id):
-    """Met à jour le statut du rappel dans Neon"""
-    try:
-        # 🔥 Mettre à jour dans Neon
-        db.execute_query("""
-            UPDATE rendez_vous 
-            SET rappel_envoye = %s
-            WHERE id = %s AND structure_id = %s
-        """, (type_rappel, rdv_id, structure_id))
-        return True
-    except Exception as e:
-        print(f"❌ Erreur maj statut: {e}")
-        return False
-
-def verifier_rappels_automatiques():
-    """Vérifie les rendez-vous et envoie les rappels si nécessaire"""
-    print(f"🔍 Vérification des rappels - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    
-    try:
-        # 🔥 Récupérer toutes les structures actives
-        structures = db.execute_query("SELECT id, nom, telephone FROM structures")
-        
-        for struct in structures:
-            if isinstance(struct, dict):
-                structure_id = struct.get('id')
-                structure_nom = struct.get('nom', 'Notre établissement')
-                structure_tel = struct.get('telephone', '')
-            else:
-                structure_id = struct[0]
-                structure_nom = struct[1] if len(struct) > 1 else 'Notre établissement'
-                structure_tel = struct[2] if len(struct) > 2 else ''
-            
-            # 🔥 Récupérer les rendez-vous depuis Neon
-            rendez_vous = db.execute_query("""
-                SELECT 
-                    r.id,
-                    r.patient_id,
-                    r.date_rdv,
-                    r.heure_rdv,
-                    r.motif,
-                    r.statut,
-                    r.rappel_envoye,
-                    p.nom,
-                    p.prenom,
-                    p.telephone
-                FROM rendez_vous r
-                LEFT JOIN patients p ON r.patient_id = p.id
-                WHERE r.structure_id = %s
-            """, (structure_id,))
-            dechiffrer_lignes(rendez_vous, champs=('nom', 'prenom', 'telephone'))
-
-            aujourdhui = datetime.now().date()
-            j7 = aujourdhui + timedelta(days=7)
-            j1 = aujourdhui + timedelta(days=1)
-            
-            structure_info = {'nom': structure_nom, 'telephone': structure_tel}
-            
-            for r in rendez_vous:
-                if isinstance(r, dict):
-                    rdv_id = r.get('id')
-                    date_rdv_val = r.get('date_rdv')
-                    statut = r.get('statut', 'programme')
-                    rappel_envoye = r.get('rappel_envoye', 'non')
-                    patient_nom = f"{r.get('nom', '')} {r.get('prenom', '')}".strip()
-                    patient_tel = r.get('telephone', '')
-                    heure_rdv = r.get('heure_rdv')
-                    motif = r.get('motif', 'Consultation')
-                else:
-                    rdv_id = r[0]
-                    date_rdv_val = r[2]
-                    statut = r[5] if len(r) > 5 else 'programme'
-                    rappel_envoye = r[6] if len(r) > 6 else 'non'
-                    patient_nom = f"{r[7]} {r[8]}".strip() if len(r) > 8 else 'Patient'
-                    patient_tel = r[9] if len(r) > 9 else ''
-                    heure_rdv = r[3]
-                    motif = r[4] if len(r) > 4 else 'Consultation'
-                
-                if not date_rdv_val:
-                    continue
-                
-                try:
-                    if isinstance(date_rdv_val, str):
-                        date_rdv = datetime.strptime(date_rdv_val, '%Y-%m-%d').date()
-                    else:
-                        date_rdv = date_rdv_val
-                    
-                    # Ignorer les rendez-vous déjà terminés ou annulés
-                    if statut in ['termine', 'annule']:
-                        continue
-                    
-                    rdv_data = {
-                        'ID': rdv_id,
-                        'patient_nom': patient_nom,
-                        'patient_telephone': patient_tel,
-                        'date_rendez_vous': str(date_rdv),
-                        'heure_rendez_vous': str(heure_rdv),
-                        'motif': motif,
-                        'statut': statut,
-                        'rappel_envoye': rappel_envoye
-                    }
-                    
-                    # Rappel J-7
-                    if date_rdv == j7 and rappel_envoye not in ['j7', 'j1']:
-                        if envoyer_rappel_auto(rdv_data, 'j7', structure_info):
-                            maj_statut_rappel(rdv_id, 'j7', structure_id)
-                            print(f"   ✅ Rappel J-7 envoyé à {patient_nom} (struct {structure_id})")
-                    
-                    # Rappel J-1
-                    elif date_rdv == j1 and rappel_envoye != 'j1':
-                        if envoyer_rappel_auto(rdv_data, 'j1', structure_info):
-                            maj_statut_rappel(rdv_id, 'j1', structure_id)
-                            print(f"   ✅ Rappel J-1 envoyé à {patient_nom} (struct {structure_id})")
-                    
-                    # Gestion des rendez-vous dépassés
-                    elif date_rdv < aujourdhui and statut not in ['termine', 'annule', 'depasse']:
-                        db.execute_query("""
-                            UPDATE rendez_vous 
-                            SET statut = 'depasse'
-                            WHERE id = %s AND structure_id = %s
-                        """, (rdv_id, structure_id))
-                        print(f"   📆 RDV {rdv_id} marqué comme dépassé")
-                        
-                except Exception as e:
-                    print(f"   ⚠️ Erreur traitement RDV {rdv_id}: {e}")
-                    
-    except Exception as e:
-        print(f"❌ Erreur vérification: {e}")
-
-def planifier_verification():
-    """Planifie la vérification toutes les heures"""
-    print("🚀 Service de rappels automatiques démarré")
-    dernier_jour = [None]
-    while True:
-        time.sleep(3600)  # 1 heure
-        # ⭐ heures de calcul Neon : toutes les heures pendant l'activité, et au
-        # moins une fois par jour (J-7 / J-1) même sans personne connecté
-        if not activite_recente(60) and dernier_jour[0] == date.today():
-            continue
-        dernier_jour[0] = date.today()
-        with app.app_context():
-            verifier_rappels_automatiques()
-
-# Démarrer le thread de rappels automatiques
-threading.Thread(target=planifier_verification, daemon=True).start()
-
-@app.route('/api/test/rappels')
-@login_required
-def test_rappels():
-    """Déclencher manuellement la vérification des rappels"""
-    verifier_rappels_automatiques()
-    return jsonify({'success': True, 'message': 'Vérification des rappels effectuée'})
 
 @app.route('/rappels')
 @login_required
@@ -9974,7 +9778,10 @@ def rappels():
             'date_rendez_vous': rdv.date_rendez_vous,
             'heure_rendez_vous': rdv.heure_rendez_vous,
             'motif': rdv.motif,
-            'jours_restants': (rdv.date_rendez_vous - today).days
+            'jours_restants': (rdv.date_rendez_vous - today).days,
+            # colonne texte en base ('true' quand le bouton Rappeler a servi)
+            'rappel_envoye': str(rdv.rappel_envoye).strip().lower() in ('true', '1', 'oui', 'j7', 'j1'),
+            'date_rappel': rdv.date_rappel,
         })
     
     # Rendez-vous dépassés
@@ -14865,9 +14672,10 @@ def _pousser_resultat_examen_gestion_patients(resultat_id):
     la structure n'a aucun mapping vers gestion_patients (`source_name`
     ='gestion_patients' — distinct des mappings `source_name='ghp'` utilisés
     pour authentifier les appels ENTRANTS depuis gestion_patients)."""
+    # ⭐ 2026-10-12 : CE résultat seulement, en tâche de fond (la saisie n'attend plus)
     try:
-        from tasks import sync_resultats_examens_to_gestion_patients
-        sync_resultats_examens_to_gestion_patients()
+        from tasks import pousser_resultat_en_fond
+        pousser_resultat_en_fond(resultat_id)
     except Exception as e:
         print(f"⚠️ Push résultat gestion_patients échoué (rattrapage automatique par le scheduler) : {e}")
 
@@ -14875,9 +14683,10 @@ def _pousser_resultat_examen_gestion_patients(resultat_id):
 def _pousser_modele_resultat_gestion_patients(modele_id):
     """Même principe que _pousser_resultat_examen_gestion_patients, pour un
     ModeleResultat natif GHP créé/modifié."""
+    # ⭐ 2026-10-12 : CE modèle seulement, en tâche de fond (la saisie n'attend plus)
     try:
-        from tasks import sync_resultats_examens_to_gestion_patients
-        sync_resultats_examens_to_gestion_patients()
+        from tasks import pousser_modele_en_fond
+        pousser_modele_en_fond(modele_id)
     except Exception as e:
         print(f"⚠️ Push modèle résultat gestion_patients échoué (rattrapage automatique par le scheduler) : {e}")
 

@@ -63,9 +63,10 @@
                                 <span class="badge bg-warning">{{ rdv.jours_restants }} jours</span>
                             </td>
                             <td>
-                                <button class="btn btn-sm btn-info" onclick="envoyerRappel({{ rdv.id }})">
-                                    <i class="fab fa-whatsapp"></i> Rappeler
+                                <button class="btn btn-sm {{ 'btn-outline-secondary' if rdv.rappel_envoye else 'btn-info' }}" onclick="envoyerRappel({{ rdv.id }}, this)">
+                                    <i class="fab fa-whatsapp"></i> {{ 'Renvoyer' if rdv.rappel_envoye else 'Rappeler' }}
                                 </button>
+                                <div class="small text-success rappel-etat">{% if rdv.rappel_envoye %}<i class="fas fa-check"></i> Envoyé{% if rdv.date_rappel %} le {{ rdv.date_rappel.strftime('%d/%m à %H:%M') }}{% endif %}{% endif %}</div>
                             </td>
                         </tr>
                         {% else %}
@@ -142,86 +143,33 @@ fetch('/rendez_vous/api/rappels/stats')
         }
     });
 
-async function envoyerRappel(id) {
+// ⭐ 2026-10-12 : le rappel passe par le serveur (/rendez_vous/api/<id>/rappel) —
+// numéro pris dans la fiche du patient (beaucoup de rendez-vous n'ont pas de
+// téléphone à eux), message avec la règle de paiement, et l'envoi est noté.
+async function envoyerRappel(id, bouton) {
     if (!await demanderConfirmation('Envoyer un rappel WhatsApp au patient ?')) return;
-    
-    // Récupérer les infos de la ligne
-    var rows = document.querySelectorAll('#moins7List tr');
-    var row = null;
-    var patientNom = 'Patient';
-    var patientTel = '';
-    var date = '';
-    var heure = '';
-    var motif = '';
-    
-    for (var i = 0; i < rows.length; i++) {
-        if (rows[i].innerHTML.includes('envoyerRappel(' + id + ')')) {
-            row = rows[i];
-            break;
+    // ouverte tout de suite : après l'attente du serveur, le navigateur bloquerait la fenêtre
+    const fenetre = window.open('', '_blank');
+    try {
+        const reponse = await fetch('/rendez_vous/api/' + id + '/rappel', {method: 'POST'});
+        const data = await reponse.json();
+        if (!data.success) {
+            if (fenetre) fenetre.close();
+            await afficherMessage(data.error || 'Rappel impossible', {type: 'danger'});
+            return;
         }
+        const url = data.data.url_whatsapp;
+        if (fenetre) fenetre.location.href = url; else window.open(url, '_blank');
+        if (bouton) {
+            bouton.classList.replace('btn-info', 'btn-outline-secondary');
+            bouton.innerHTML = '<i class="fab fa-whatsapp"></i> Renvoyer';
+            const etat = bouton.parentElement.querySelector('.rappel-etat');
+            if (etat) etat.innerHTML = '<i class="fas fa-check"></i> Envoyé à l\'instant';
+        }
+    } catch (e) {
+        if (fenetre) fenetre.close();
+        await afficherMessage('Erreur lors de la préparation du rappel', {type: 'danger'});
     }
-    
-    if (!row) {
-        await afficherMessage('Rendez-vous non trouvé');
-        return;
-    }
-    
-    var cells = row.cells;
-    patientNom = cells[0]?.innerText || 'Patient';
-    patientTel = cells[1]?.innerText || '';
-    date = cells[2]?.innerText || '';
-    heure = cells[3]?.innerText || '';
-    motif = cells[4]?.innerText || '';
-    
-    if (!patientTel) {
-        await afficherMessage('Numéro de téléphone non disponible');
-        return;
-    }
-    
-    // Récupérer les infos de la structure depuis l'API
-    fetch('/api/structure/infos')
-        .then(response => response.json())
-        .then(async data => {
-            var structureNom = data.nom || 'Notre établissement';
-            var structureAdresse = data.adresse || '';
-            var structureTelephone = data.telephone || '';
-            var structureEmail = data.email || '';
-            
-            // Nettoyer le téléphone
-            var telClean = patientTel.toString().replace(/\s/g, '').replace(/^\+/, '');
-            if (!telClean.startsWith('228') && !telClean.startsWith('229') && !telClean.startsWith('221')) {
-                telClean = '228' + telClean;
-            }
-            
-            // Générer le message
-            var message = 'RAPPEL DE RENDEZ-VOUS%0A%0A';
-            message += structureNom.toUpperCase() + '%0A';
-            if (structureAdresse) {
-                message += 'Adresse: ' + structureAdresse + '%0A';
-            }
-            if (structureTelephone) {
-                message += 'Tel: ' + structureTelephone + '%0A';
-            }
-            if (structureEmail) {
-                message += 'Email: ' + structureEmail + '%0A';
-            }
-            message += '%0A';
-            message += 'Cher(e) ' + patientNom + ',%0A%0A';
-            message += 'Nous vous rappelons votre rendez-vous :%0A';
-            message += 'Date : ' + date + '%0A';
-            message += 'Heure : ' + heure + '%0A';
-            message += 'Motif : ' + motif + '%0A%0A';
-            message += 'Merci de votre ponctualité !%0A%0A';
-            message += 'Pour toute annulation, veuillez nous contacter.';
-            
-            var whatsappUrl = 'https://wa.me/' + telClean + '?text=' + message;
-            window.open(whatsappUrl, '_blank');
-            await afficherMessage('Message WhatsApp préparé');
-        })
-        .catch(async function(error) {
-            await afficherMessage('Erreur lors de la récupération des infos', {type: 'danger'});
-            console.error('Erreur:', error);
-        });
 }
 
 async function annulerRdv(id) {
