@@ -364,14 +364,15 @@ document.getElementById('fChambreSearch')?.addEventListener('input', function() 
     const box = document.getElementById('fChambreResultats');
     if (q.length < 2) { box.style.display = 'none'; return; }
     debounceChambreChir = setTimeout(() => {
-        fetch('/api/actes?search=' + encodeURIComponent(q) + '&limit=20').then(r => r.json()).then(data => {
+        // ⭐ catalogue chargé une fois (partials/catalogue_actes.html) : plus d'appel serveur par frappe
+        rechercherActesCatalogue(q, 20).then(liste => ({data: liste})).then(data => {
             const liste = data.data || [];
             if (!liste.length) { box.style.display = 'none'; return; }
             box.innerHTML = liste.map(a => '<a href="#" class="list-group-item list-group-item-action py-1" onclick=\'choisirChambreCatalogue(' + JSON.stringify({nom: a.nom, prix: a.prix}).replace(/\'/g, '&apos;') + '); return false;\'>'
                 + '<div class="d-flex justify-content-between"><span>' + esc(a.nom) + '</span><strong>' + fmtF(a.prix) + '</strong></div></a>').join('');
             box.style.display = 'block';
         }).catch(() => { box.style.display = 'none'; });
-    }, 250);
+    }, 80);
 });
 function choisirChambreCatalogue(a) {
     document.getElementById('fChambreNom').value = a.nom;
@@ -687,4 +688,5 @@ document.addEventListener('DOMContentLoaded', () => {
     chargerPatients().then(chargerListe);
 });
 </script>
+{% include 'partials/catalogue_actes.html' %}
 {% endblock %}

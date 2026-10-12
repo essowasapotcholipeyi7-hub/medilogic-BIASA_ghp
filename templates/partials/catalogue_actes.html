@@ -1,0 +1,49 @@
+{# ⭐ Catalogue des actes chargé UNE fois par page (patron, 2026-10-12 : « la requête est
+   lente — fais pareil dans hospi, soins et chirurgie »). Chaque recherche interrogeait
+   /api/actes?search=…, qui relit toute la feuille Google Sheets (~2 s à chaque frappe).
+   Ici : un seul chargement à l'ouverture de la page (en arrière-plan), puis recherche
+   immédiate dans le navigateur — sans accents, par plusieurs mots (« consult cardio »).
+   Rechargé tout seul s'il a plus de 2 minutes (prix modifiés entre-temps).
+   rechercherActesCatalogue(q, limite) -> Promise<[actes]> (mêmes champs que /api/actes)
+   correspondRecherche(texte, q) -> bool (pour filtrer d'autres listes de la même façon) #}
+<script>
+function normaliserTexteRecherche(texte) {
+    return (texte || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function correspondRecherche(texte, q) {
+    const termes = normaliserTexteRecherche(q).split(/\s+/).filter(Boolean);
+    const cible = normaliserTexteRecherche(texte);
+    return termes.every(t => cible.includes(t));
+}
+
+const catalogueActes = {donnees: null, promesse: null, charge: 0};
+
+function chargerCatalogueActes() {
+    const c = catalogueActes;
+    if (c.promesse && !(c.donnees && Date.now() - c.charge > 120000)) return c.promesse;
+    c.promesse = fetch('/api/actes?limit=100000')
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(data => {
+            if (data.error) throw new Error(data.error);
+            c.donnees = data.data || [];
+            c.charge = Date.now();
+            return c.donnees;
+        })
+        .catch(e => {
+            console.error('Erreur chargement des actes :', e);
+            c.promesse = null;                 // nouvel essai à la prochaine recherche
+            if (c.donnees) return c.donnees;
+            throw e;
+        });
+    return c.promesse;
+}
+
+function rechercherActesCatalogue(q, limite) {
+    return chargerCatalogueActes().then(liste =>
+        liste.filter(a => correspondRecherche((a.nom || '') + ' ' + (a.code || ''), q)).slice(0, limite || 20));
+}
+
+// préchargement dès l'ouverture de la page, sans attendre la première frappe
+chargerCatalogueActes().catch(() => {});
+</script>

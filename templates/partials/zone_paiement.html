@@ -68,12 +68,19 @@
        attirer l'œil, et plus gros dès que le montant donné couvre le net à payer */
     #finaliserBtn.bouton-finaliser { transition: padding .25s ease, font-size .25s ease; }
     #finaliserBtn.bouton-finaliser:not(:disabled) { animation: pulsationFinaliser 1.8s ease-in-out infinite; }
+    /* prêt : vert PLEIN dans tous les thèmes (les thèmes rendent les boutons « doux », à
+       peine teintés — patron : « qu'il devienne vert plein quand il devient gros ») */
     #finaliserBtn.bouton-finaliser.pret:not(:disabled) {
+        background: #198754 !important;
+        border-color: #146c43 !important;
+        color: #fff !important;
         font-size: 1.35rem;
         padding-top: .9rem;
         padding-bottom: .9rem;
         animation-duration: 1s;
     }
+    #finaliserBtn.bouton-finaliser.pret:not(:disabled):hover { background: #157347 !important; }
+    #finaliserBtn.bouton-finaliser.pret:not(:disabled) i { color: #fff !important; }
     @keyframes pulsationFinaliser {
         0%, 100% { box-shadow: 0 0 0 0 rgba(25, 135, 84, .55); }
         50%      { box-shadow: 0 0 0 9px rgba(25, 135, 84, 0); }

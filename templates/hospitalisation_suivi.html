@@ -618,8 +618,8 @@ document.getElementById('acteSearch')?.addEventListener('input', function() {
     clearTimeout(debounceActe);
     if (q.length < 2) { document.getElementById('acteResultats').style.display = 'none'; return; }
     debounceActe = setTimeout(() => {
-        fetch('/api/actes?search=' + encodeURIComponent(q) + '&limit=20')
-            .then(r => r.json())
+        // ⭐ catalogue chargé une fois (partials/catalogue_actes.html) : plus d'appel serveur par frappe
+        rechercherActesCatalogue(q, 20).then(liste => ({data: liste}))
             .then(data => {
                 const box = document.getElementById('acteResultats');
                 const liste = data.data || [];
@@ -633,7 +633,7 @@ document.getElementById('acteSearch')?.addEventListener('input', function() {
                     </a>`).join('');
                 box.style.display = 'block';
             });
-    }, 250);
+    }, 80);
 });
 
 function choisirActe(a) {
@@ -696,7 +696,8 @@ document.getElementById('produitSearch')?.addEventListener('input', function() {
     box.innerHTML = '<div class="list-group-item text-muted small"><i class="fas fa-spinner fa-spin me-1"></i> Chargement des médicaments...</div>';
     box.style.display = 'block';
     chargerProduits().then(liste => {
-        const filtres = liste.filter(p => p.nom.toLowerCase().includes(q)).slice(0, 20);
+        // ⭐ sans accents, par plusieurs mots (« para 500 »), comme en pharmacie
+        const filtres = liste.filter(p => correspondRecherche(p.nom, q)).slice(0, 20);
         if (!filtres.length) {
             box.innerHTML = '<div class="list-group-item text-muted small">Aucun médicament trouvé</div>';
             return;
@@ -1008,8 +1009,8 @@ document.getElementById('chambreTarifSearch')?.addEventListener('input', functio
     clearTimeout(debounceChambreTarif);
     if (q.length < 2) { document.getElementById('chambreTarifResultats').style.display = 'none'; return; }
     debounceChambreTarif = setTimeout(() => {
-        fetch('/api/actes?search=' + encodeURIComponent(q) + '&limit=20')
-            .then(r => r.json())
+        // ⭐ catalogue chargé une fois (partials/catalogue_actes.html) : plus d'appel serveur par frappe
+        rechercherActesCatalogue(q, 20).then(liste => ({data: liste}))
             .then(data => {
                 const box = document.getElementById('chambreTarifResultats');
                 const liste = data.data || [];
@@ -1023,7 +1024,7 @@ document.getElementById('chambreTarifSearch')?.addEventListener('input', functio
                     </a>`).join('');
                 box.style.display = 'block';
             });
-    }, 250);
+    }, 80);
 });
 
 function choisirChambreTarif(a) {
@@ -1093,8 +1094,8 @@ document.getElementById('chambreSearch')?.addEventListener('input', function() {
     clearTimeout(debounceChambre);
     if (q.length < 2) { document.getElementById('chambreResultats').style.display = 'none'; return; }
     debounceChambre = setTimeout(() => {
-        fetch('/api/actes?search=' + encodeURIComponent(q) + '&limit=20')
-            .then(r => r.json())
+        // ⭐ catalogue chargé une fois (partials/catalogue_actes.html) : plus d'appel serveur par frappe
+        rechercherActesCatalogue(q, 20).then(liste => ({data: liste}))
             .then(data => {
                 const box = document.getElementById('chambreResultats');
                 const liste = data.data || [];
@@ -1108,7 +1109,7 @@ document.getElementById('chambreSearch')?.addEventListener('input', function() {
                     </a>`).join('');
                 box.style.display = 'block';
             });
-    }, 250);
+    }, 80);
 });
 
 function choisirChambre(a) {
@@ -1200,4 +1201,5 @@ document.addEventListener('click', function(e) {
 });
 </script>
 
+{% include 'partials/catalogue_actes.html' %}
 {% endblock %}
