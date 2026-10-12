@@ -249,17 +249,6 @@
                             <i class="fas fa-boxes"></i> Articles
                         </div>
                         <div class="card-body">
-                            <div class="row mb-2">
-                                <div class="col-md-12">
-                                    <div class="input-group">
-                                        <span class="input-group-text bg-white"><i class="fas fa-search"></i></span>
-                                        <input type="text" class="form-control" id="articleSearch" 
-                                               placeholder="Rechercher un article..." 
-                                               onkeyup="filtrerArticles()">
-                                    </div>
-                                </div>
-                            </div>
-                            
                             <div class="row">
                                 <div class="col-md-6">
                                     <div class="card">
@@ -267,9 +256,19 @@
                                             <small><i class="fas fa-stethoscope"></i> Actes médicaux</small>
                                             <span class="badge bg-light text-dark" id="acteCount">0</span>
                                         </div>
-                                        <div class="card-body p-1">
-                                            <input type="text" class="form-control form-control-sm mb-1" id="acteSearchInput" 
-                                                   placeholder="Rechercher un acte..." onkeyup="filtrerActesListe()">
+                                        <div class="card-body p-2">
+                                            <!-- ⭐ recherche mise en exergue, comme en vente d'actes / pharmacie (patron, 2026-10-12) -->
+                                            <div class="zone-recherche-articles mb-2">
+                                                <label for="acteSearchInput" class="form-label fw-bold mb-1"><i class="fas fa-search"></i> Rechercher un acte</label>
+                                                <div class="input-group">
+                                                    <input type="text" class="form-control" id="acteSearchInput" autocomplete="off"
+                                                           placeholder="Tapez une partie du nom (ex. consult)…" onkeyup="filtrerActesListe()">
+                                                    <button class="btn btn-outline-secondary" type="button" title="Effacer la recherche"
+                                                            onclick="effacerRechercheProforma('acteSearchInput', filtrerActesListe)">
+                                                        <i class="fas fa-times"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
                                             <div style="max-height: 200px; overflow-y: auto;">
                                                 <select class="form-control" id="acteSelect" size="6" multiple>
                                                     <option value="">-- Actes disponibles --</option>
@@ -284,9 +283,19 @@
                                             <small><i class="fas fa-pills"></i> Produits pharmacie</small>
                                             <span class="badge bg-light text-dark" id="produitCount">0</span>
                                         </div>
-                                        <div class="card-body p-1">
-                                            <input type="text" class="form-control form-control-sm mb-1" id="produitSearchInput" 
-                                                   placeholder="Rechercher un produit..." onkeyup="filtrerProduitsListe()">
+                                        <div class="card-body p-2">
+                                            <!-- ⭐ recherche mise en exergue, comme en vente d'actes / pharmacie (patron, 2026-10-12) -->
+                                            <div class="zone-recherche-articles mb-2">
+                                                <label for="produitSearchInput" class="form-label fw-bold mb-1"><i class="fas fa-search"></i> Rechercher un médicament</label>
+                                                <div class="input-group">
+                                                    <input type="text" class="form-control" id="produitSearchInput" autocomplete="off"
+                                                           placeholder="Tapez une partie du nom (ex. para 500)…" onkeyup="filtrerProduitsListe()">
+                                                    <button class="btn btn-outline-secondary" type="button" title="Effacer la recherche"
+                                                            onclick="effacerRechercheProforma('produitSearchInput', filtrerProduitsListe)">
+                                                        <i class="fas fa-times"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
                                             <div style="max-height: 200px; overflow-y: auto;">
                                                 <select class="form-control" id="produitSelect" size="6" multiple>
                                                     <option value="">-- Produits disponibles --</option>
@@ -973,30 +982,12 @@ function filtrerProduitsListe() {
     }, 500);
 }
 
-function filtrerArticles() {
-    const search = document.getElementById('articleSearch').value.toLowerCase().trim();
-    
-    const acteSelect = document.getElementById('acteSelect');
-    for (let i = 1; i < acteSelect.options.length; i++) {
-        const text = acteSelect.options[i].text.toLowerCase();
-        const isSearchable = acteSelect.options[i].disabled === false;
-        if (isSearchable && (search === '' || text.includes(search))) {
-            acteSelect.options[i].style.display = '';
-        } else {
-            acteSelect.options[i].style.display = 'none';
-        }
-    }
-    
-    const produitSelect = document.getElementById('produitSelect');
-    for (let i = 1; i < produitSelect.options.length; i++) {
-        const text = produitSelect.options[i].text.toLowerCase();
-        const isSearchable = produitSelect.options[i].disabled === false;
-        if (isSearchable && (search === '' || text.includes(search))) {
-            produitSelect.options[i].style.display = '';
-        } else {
-            produitSelect.options[i].style.display = 'none';
-        }
-    }
+// ⭐ bouton ✕ des deux recherches (actes / médicaments)
+function effacerRechercheProforma(idChamp, filtrer) {
+    const champ = document.getElementById(idChamp);
+    champ.value = '';
+    filtrer();
+    champ.focus();
 }
 
 // ============================================
@@ -1993,7 +1984,6 @@ function nouvelleProforma() {
     tauxAssuranceProformaSauvegarde = 0;
     document.getElementById('proformaNotes').value = '';
     document.getElementById('patientSearch').value = '';
-    document.getElementById('articleSearch').value = '';
     document.getElementById('acteSearchInput').value = '';
     document.getElementById('produitSearchInput').value = '';
     document.getElementById('assurance2NomInput').value = '';
@@ -3996,4 +3986,7 @@ document.addEventListener('input', function (e) {
     }
 }, true);
 </script>
+{# styles de la recherche mise en exergue (zone-recherche-articles) ; la liste déroulante
+   de la vente n'est pas branchée ici (listes à choix multiple, chargées par le serveur) #}
+{% include 'partials/recherche_articles.html' %}
 {% endblock %}
