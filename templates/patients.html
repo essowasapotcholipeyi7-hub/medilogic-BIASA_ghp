@@ -182,19 +182,23 @@
             <table class="table table-hover table-bordered table-striped" id="patientsTable">
                 <thead class="table-light">
                     <tr>
+                        <!-- ⭐ Taux affichés à côté du nom de l'assurance (patron, 2026-10-12) au lieu
+                             de deux colonnes à part : plus de place pour les boutons de vente.
+                             Les valeurs restent lisibles par le code via data-* sur la ligne. -->
                         <th style="width: 4%; min-width: 40px; text-align: center;">N°</th>
-                        <th style="width: 16%; min-width: 130px;">Nom complet</th>
+                        <th style="width: 18%; min-width: 130px;">Nom complet</th>
                         <th style="width: 10%; min-width: 90px;">Téléphone</th>
-                        <th style="width: 10%; min-width: 90px;">Assurance</th>
-                        <th style="width: 5%; min-width: 45px; text-align: center;">Taux</th>
-                        <th style="width: 10%; min-width: 90px;">Assurance 2</th>
-                        <th style="width: 5%; min-width: 45px; text-align: center;">Taux 2</th>
-                        <th style="width: 30%; min-width: 250px; text-align: center;">Actions</th>
+                        <th style="width: 12%; min-width: 110px;">Assurance</th>
+                        <th style="width: 14%; min-width: 120px;">Assurance 2</th>
+                        <th style="width: 42%; min-width: 250px; text-align: center;">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="patientsList">
                     {% for patient in patients %}
-                    <tr class="patient-row" data-id="{{ patient.ID }}" data-societe="{{ patient.societe_assurance2 or '' }}">
+                    {% set libelle_assurance = {'non_assure': 'Non assuré', 'amu_cnss': 'AMU-CNSS', 'amu_inam': 'AMU-INAM', 'amu_tns': 'AMU-TNS'}.get(patient.type_assurance, patient.type_assurance or '-') %}
+                    <tr class="patient-row" data-id="{{ patient.ID }}" data-societe="{{ patient.societe_assurance2 or '' }}"
+                        data-assurance-libelle="{{ libelle_assurance }}" data-taux="{{ patient.taux_prise_charge or 0 }}"
+                        data-assurance2="{{ patient.assurance2_nom or '' }}" data-taux2="{{ patient.taux_assurance2 or 0 }}">
                         <td style="vertical-align: middle; text-align: center;">{{ patient.numero_local or patient.ID }}</td>
                         <td style="vertical-align: middle;">
                             <strong>{{ patient.nom }} {{ patient.prenom }}</strong>
@@ -213,11 +217,12 @@
                             {% else %}
                                 <span class="badge bg-info">{{ patient.type_assurance }}</span>
                             {% endif %}
+                            {% if patient.type_assurance != 'non_assure' %}<span class="taux-assurance">{{ '%g'|format((patient.taux_prise_charge or 0)|float) }}%</span>{% endif %}
                         </td>
-                        <td style="vertical-align: middle; text-align: center;">{{ patient.taux_prise_charge or 0 }}%</td>
                         <td style="vertical-align: middle; white-space: nowrap;">
                             {% if patient.assurance2_nom %}
                                 <span class="badge bg-success">{{ patient.assurance2_nom }}</span>
+                                <span class="taux-assurance">{{ '%g'|format((patient.taux_assurance2 or 0)|float) }}%</span>
                                 {% if patient.societe_assurance2 %}
                                 <br><small class="text-muted">{{ patient.societe_assurance2 }}</small>
                                 {% endif %}
@@ -225,7 +230,6 @@
                                 <span class="text-muted">-</span>
                             {% endif %}
                         </td>
-                        <td style="vertical-align: middle; text-align: center;">{{ patient.taux_assurance2 or 0 }}%</td>
                         <td style="vertical-align: middle; text-align: center;">
                             <div class="d-flex flex-wrap gap-1 justify-content-center align-items-center">
                                 <button class="btn btn-sm btn-outline-primary px-2"
@@ -266,7 +270,7 @@
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="8" class="text-center">Aucun patient</td>
+                        <td colspan="6" class="text-center">Aucun patient</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -964,10 +968,11 @@ async function exporterPDF() {
         const cells = p.element.cells;
         const nomComplet = cells[1]?.innerText?.replace(/<br>.*/, '').trim() || '-';
         const telephone = cells[2]?.innerText || '-';
-        const assurance = cells[3]?.innerText || '-';
-        const taux = cells[4]?.innerText || '0%';
-        const assurance2 = (cells[5]?.innerText || '-').split('\n')[0].trim();
-        const taux2 = cells[6]?.innerText || '0%';
+        const d = p.element.dataset;   // ⭐ assurances lues sur la ligne (data-*)
+        const assurance = d.assuranceLibelle || '-';
+        const taux = (d.taux || 0) + '%';
+        const assurance2 = d.assurance2 || '-';
+        const taux2 = (d.taux2 || 0) + '%';
         
         tableRows += `
             <tr>
@@ -1131,9 +1136,10 @@ function exportToCSV() {
     patients.forEach(p => {
         const cells = p.element.cells;
         const nomComplet = cells[1]?.innerText?.replace(/<br>.*/, '').trim() || '-';
-        const assurance2 = (cells[5]?.innerText || '-').split('\n')[0].trim();
-        const societe = p.element.dataset.societe || '';
-        csvContent += `"${cells[0]?.innerText || '-'}","${nomComplet}","${cells[2]?.innerText || '-'}","${cells[3]?.innerText || '-'}","${cells[4]?.innerText || '0%'}","${assurance2}","${cells[6]?.innerText || '0%'}","${societe}"\n`;
+        const d = p.element.dataset;   // ⭐ assurances lues sur la ligne (data-*)
+        const assurance2 = d.assurance2 || '-';
+        const societe = d.societe || '';
+        csvContent += `"${cells[0]?.innerText || '-'}","${nomComplet}","${cells[2]?.innerText || '-'}","${d.assuranceLibelle || '-'}","${(d.taux || 0)}%","${assurance2}","${(d.taux2 || 0)}%","${societe}"\n`;
     });
     
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1328,10 +1334,10 @@ async function voirDetails(id) {
                 adresse: '-',
                 date_naissance: '-',
                 age: '-',
-                type_assurance: cells[3]?.innerText || '-',
-                taux_prise_charge: parseInt(cells[4]?.innerText) || 0,
-                assurance2_nom: (cells[5]?.innerText || '-').split('\n')[0].trim(),
-                taux_assurance2: parseInt(cells[6]?.innerText) || 0,
+                type_assurance: row.dataset.assuranceLibelle || '-',
+                taux_prise_charge: parseInt(row.dataset.taux) || 0,
+                assurance2_nom: row.dataset.assurance2 || '-',
+                taux_assurance2: parseInt(row.dataset.taux2) || 0,
                 societe_assurance2: row.dataset.societe || '-',
                 personne_a_prevenir_nom: '-',
                 personne_a_prevenir_telephone: '-',
@@ -1608,10 +1614,10 @@ async function selectionnerDepuisDetails() {
         if (row) {
             const cells = row.cells;
             const nomComplet = cells[1].innerText.trim();
-            const assurance = cells[3].innerText.trim();
-            const taux = cells[4].innerText.trim();
-            const assurance2 = cells[5].innerText.trim().split('\n')[0].trim();
-            const taux2 = cells[6].innerText.trim();
+            const assurance = row.dataset.assuranceLibelle || '';
+            const taux = (row.dataset.taux || 0) + '%';
+            const assurance2 = row.dataset.assurance2 || '-';
+            const taux2 = (row.dataset.taux2 || 0) + '%';
             const societeAssurance2 = row.dataset.societe || '';
 
             let assuranceCode = 'non_assure';
@@ -2056,7 +2062,7 @@ async function editPatient(id) {
     const nom = firstSpace > 0 ? nomComplet.substring(0, firstSpace) : nomComplet;
     const prenom = firstSpace > 0 ? nomComplet.substring(firstSpace + 1) : '';
     
-    const assuranceText = cells[3].innerText.toLowerCase();
+    const assuranceText = (row.dataset.assuranceLibelle || '').toLowerCase();
     let assuranceValue = 'non_assure';
     let autreAssuranceValue = '';
     
@@ -2068,11 +2074,11 @@ async function editPatient(id) {
         assuranceValue = 'amu_tns';
     } else if (!assuranceText.includes('non assuré')) {
         assuranceValue = 'autre';
-        autreAssuranceValue = cells[3].innerText.trim();
+        autreAssuranceValue = row.dataset.assuranceLibelle || '';
     }
     
-    const assurance2Text = (cells[5]?.innerText || '').split('\n')[0].trim();
-    const taux2Text = cells[6]?.innerText || '';
+    const assurance2Text = row.dataset.assurance2 || '-';
+    const taux2Text = (row.dataset.taux2 || 0) + '%';
     const societeAssurance2Text = row.dataset.societe || '';
     
     fetch(`/api/patients/${id}`)
@@ -2082,7 +2088,7 @@ async function editPatient(id) {
             document.getElementById('editNom').value = patient.nom || nom;
             document.getElementById('editPrenom').value = patient.prenom || prenom;
             document.getElementById('editTelephone').value = patient.telephone || cells[2].innerText;
-            document.getElementById('editAdresse').value = patient.adresse || (cells[3]?.innerText !== '-' ? cells[3]?.innerText : '');
+            document.getElementById('editAdresse').value = patient.adresse || '';   // (l'adresse n'est pas dans le tableau)
             
             const dateNaissance = patient.date_naissance || '';
             document.getElementById('editDateNaissance').value = dateNaissance;
@@ -2115,13 +2121,15 @@ async function editPatient(id) {
             document.getElementById('editNom').value = nom;
             document.getElementById('editPrenom').value = prenom;
             document.getElementById('editTelephone').value = cells[2].innerText;
-            document.getElementById('editAdresse').value = cells[3]?.innerText !== '-' ? cells[3]?.innerText : '';
+            // ⭐ adresse et date de naissance ne sont pas dans le tableau (ces lignes lisaient
+            // par erreur les colonnes Assurance et Taux)
+            document.getElementById('editAdresse').value = '';
             
-            const dateNaissance = cells[4]?.innerText !== '-' ? cells[4]?.innerText.split(' ')[0] : '';
+            const dateNaissance = '';
             document.getElementById('editDateNaissance').value = dateNaissance;
             document.getElementById('editAge').value = calculerAge(dateNaissance);
             
-            document.getElementById('editTaux').value = cells[4]?.innerText.replace('%', '') || 0;
+            document.getElementById('editTaux').value = row.dataset.taux || 0;
             document.getElementById('editAssurance').value = assuranceValue;
             document.getElementById('editAutreAssurance').value = autreAssuranceValue;
             document.getElementById('editNumeroAssure').value = '';
@@ -2131,9 +2139,9 @@ async function editPatient(id) {
             document.getElementById('editNumeroAssure2').value = '';
             document.getElementById('editSocieteAssurance2').value = societeAssurance2Text;
             
-            document.getElementById('editPersonnePrevenirNom').value = cells[9]?.innerText || '';
-            document.getElementById('editPersonnePrevenirTelephone').value = cells[10]?.innerText || '';
-            document.getElementById('editPersonnePrevenirRelation').value = cells[11]?.innerText || '';
+            document.getElementById('editPersonnePrevenirNom').value = '';
+            document.getElementById('editPersonnePrevenirTelephone').value = '';
+            document.getElementById('editPersonnePrevenirRelation').value = '';
             
             toggleEditTaux();
             toggleEditAssurance2();
@@ -2532,6 +2540,8 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 <style>
+/* ⭐ Taux à côté du nom de l'assurance */
+.taux-assurance { font-weight: 700; margin-left: 4px; white-space: nowrap; }
 /* ⭐ Raccourcis de la ligne patient (Actes, Pharmacie, Hospitalisation,
    Soins ambulatoires) — mêmes couleurs que la fenêtre de destination. */
 .raccourcis-patient { display: inline-flex; gap: 3px; }
