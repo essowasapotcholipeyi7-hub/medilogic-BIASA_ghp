@@ -3889,6 +3889,9 @@ def api_add_patient():
         ))
 
         if result and len(result) > 0:
+            # ⭐ envoi direct à gestion_patients (services/sync_patients_gp.py)
+            from services.sync_patients_gp import pousser_patients_gp
+            pousser_patients_gp(structure_id, [result[0]['id']])
             upsert_societe_assurance(structure_id, data.get('assurance2_nom'), data.get('societe_assurance2'))
             upsert_compagnie_complementaire(structure_id, data.get('assurance2_nom'))
 
@@ -10215,6 +10218,9 @@ def api_update_patient(patient_id):
 
         upsert_societe_assurance(structure_id, data.get('assurance2_nom'), data.get('societe_assurance2'))
         upsert_compagnie_complementaire(structure_id, data.get('assurance2_nom'))
+        # ⭐ envoi direct à gestion_patients (services/sync_patients_gp.py)
+        from services.sync_patients_gp import pousser_patients_gp
+        pousser_patients_gp(structure_id, [patient_id])
 
         return jsonify({'success': True})
     except Exception as e:
