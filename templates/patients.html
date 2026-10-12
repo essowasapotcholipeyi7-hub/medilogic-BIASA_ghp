@@ -190,11 +190,11 @@
                         <th style="width: 10%; min-width: 90px;">Téléphone</th>
                         <th style="width: 12%; min-width: 110px;">Assurance</th>
                         <th style="width: 14%; min-width: 120px;">Assurance 2</th>
-                        <th style="width: 11%; min-width: 125px; text-align: center;">Actions</th>
                         <!-- ⭐ Colonne Ventes (patron, 2026-10-12 : « ajouter à côté d'Actions, Ventes ;
                              une indication des boutons de vente — une simplification dans le travail ») :
                              les 4 raccourcis avec leur nom, au lieu de petites icônes à deviner. -->
                         <th class="colonne-ventes" style="width: 33%; min-width: 300px; text-align: center;">Ventes</th>
+                        <th style="width: 11%; min-width: 125px; text-align: center;">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="patientsList">
@@ -234,6 +234,20 @@
                                 <span class="text-muted">-</span>
                             {% endif %}
                         </td>
+                        <td class="colonne-ventes" style="vertical-align: middle; text-align: center;">
+                            <!-- ⭐ Raccourcis vers les 4 destinations (patron, 2026-10-10), avec leur nom
+                                 (2026-10-12) : un clic sélectionne ce patient et ouvre la page. -->
+                            <div class="raccourcis-patient raccourcis-ventes" role="group" aria-label="Aller directement avec ce patient"
+                                 data-id="{{ patient.ID }}" data-nom="{{ patient.nom }} {{ patient.prenom }}"
+                                 data-assurance="{{ patient.type_assurance }}" data-taux="{{ patient.taux_prise_charge or 0 }}"
+                                 data-assurance2="{{ patient.assurance2_nom or '' }}" data-taux2="{{ patient.taux_assurance2 or 0 }}"
+                                 data-societe="{{ patient.societe_assurance2 or '' }}">
+                                <button type="button" class="raccourci-dest raccourci-actes" onclick="raccourciPatient(this, 'actes')" title="Vente d'actes">Vente acte</button>
+                                <button type="button" class="raccourci-dest raccourci-pharma" onclick="raccourciPatient(this, 'pharma')" title="Pharmacie"><i class="fas fa-pills"></i> Pharmacie</button>
+                                <button type="button" class="raccourci-dest raccourci-hospitalisation" onclick="raccourciPatient(this, 'hospitalisation')" title="Hospitalisation"><i class="fas fa-bed"></i> Hospitalisation</button>
+                                <button type="button" class="raccourci-dest raccourci-soins_ambulatoires" onclick="raccourciPatient(this, 'soins_ambulatoires')" title="Soins ambulatoires">Soins ambulatoires</button>
+                            </div>
+                        </td>
                         <td style="vertical-align: middle; text-align: center;">
                             <div class="d-flex flex-nowrap gap-1 justify-content-center align-items-center">
                                 <!-- ⭐ « Sélectionner » retiré (patron, 2026-10-12 : « il ne sert plus à rien ») :
@@ -253,20 +267,6 @@
                                         title="Envoyer par WhatsApp le lien et le code d'accès à son portail (résultats, rendez-vous)">
                                     <i class="fab fa-whatsapp"></i>
                                 </button>
-                            </div>
-                        </td>
-                        <td class="colonne-ventes" style="vertical-align: middle; text-align: center;">
-                            <!-- ⭐ Raccourcis vers les 4 destinations (patron, 2026-10-10), avec leur nom
-                                 (2026-10-12) : un clic sélectionne ce patient et ouvre la page. -->
-                            <div class="raccourcis-patient raccourcis-ventes" role="group" aria-label="Aller directement avec ce patient"
-                                 data-id="{{ patient.ID }}" data-nom="{{ patient.nom }} {{ patient.prenom }}"
-                                 data-assurance="{{ patient.type_assurance }}" data-taux="{{ patient.taux_prise_charge or 0 }}"
-                                 data-assurance2="{{ patient.assurance2_nom or '' }}" data-taux2="{{ patient.taux_assurance2 or 0 }}"
-                                 data-societe="{{ patient.societe_assurance2 or '' }}">
-                                <button type="button" class="raccourci-dest raccourci-actes" onclick="raccourciPatient(this, 'actes')" title="Vente d'actes">Vente acte</button>
-                                <button type="button" class="raccourci-dest raccourci-pharma" onclick="raccourciPatient(this, 'pharma')" title="Pharmacie"><i class="fas fa-pills"></i> Pharmacie</button>
-                                <button type="button" class="raccourci-dest raccourci-hospitalisation" onclick="raccourciPatient(this, 'hospitalisation')" title="Hospitalisation"><i class="fas fa-bed"></i> Hospitalisation</button>
-                                <button type="button" class="raccourci-dest raccourci-soins_ambulatoires" onclick="raccourciPatient(this, 'soins_ambulatoires')" title="Soins ambulatoires">Soins ambulatoires</button>
                             </div>
                         </td>
                     </tr>
