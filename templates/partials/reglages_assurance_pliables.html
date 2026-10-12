@@ -1,0 +1,78 @@
+{# ⭐ Réglages d'assurance repliés par défaut (patron, 2026-10-12 : « plier cette partie par
+   défaut, et si besoin d'une désactivation d'assurance ou autre, qu'on puisse dérouler,
+   faire, puis plier encore — pour une bonne clarté »). Une ligne de résumé (assurances
+   appliquées, taux, PBR, TVA), cliquable ; le détail reste exactement le même dessous.
+   Utilisation : envelopper les réglages dans
+     <div class="reglages-assurance" data-pliable> <bouton .resume-reglages-assurance>
+     <div class="collapse corps-reglages-assurance"> … </div></div>
+   puis brancherResumeAssurances(conteneur) — le résumé se met à jour tout seul. #}
+<style>
+    .resume-reglages-assurance {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        text-align: left;
+        border: 1px solid var(--th-primaire, #0d6efd);
+        border-radius: 8px;
+        padding: 7px 12px;
+        background: transparent;
+        color: inherit;
+        font-size: .92rem;
+    }
+    .resume-reglages-assurance:hover { background: rgba(13, 110, 253, .06); }
+    .resume-reglages-assurance .action { white-space: nowrap; font-weight: 600; color: var(--th-primaire-fonce, #0A3D5C); }
+    [data-bs-theme="dark"] .resume-reglages-assurance .action { color: var(--th-primaire, #00E599); }
+    .resume-reglages-assurance[aria-expanded="true"] .fa-chevron-down { transform: rotate(180deg); }
+    .resume-reglages-assurance .fa-chevron-down { transition: transform .2s; }
+    .corps-reglages-assurance { padding-top: 4px; }
+</style>
+<script>
+function brancherResumeAssurances(conteneur, fabrique) {
+    // fabrique (facultatif) : fonction qui renvoie les morceaux du résumé, pour une page
+    // dont les réglages ont d'autres identifiants (proformas : création, conversion)
+    if (!conteneur) return;
+    const resume = conteneur.querySelector('.texte-resume-assurances');
+    const texte = id => { const e = document.getElementById(id); return e ? e.textContent.trim() : ''; };
+    const coche = id => { const e = document.getElementById(id); return !!(e && e.checked); };
+    const visible = id => { const e = document.getElementById(id); return !!(e && e.style.display !== 'none' && getComputedStyle(e).display !== 'none'); };
+    function maj() {
+        const parts = fabrique ? fabrique() : [];
+        if (!fabrique) {
+            const p = conteneur.querySelector('#toggleAssurancePrincipale');
+            if (p) {
+                const brut = texte('assurancePrincipaleNom') || 'Assurance';
+                const nom = ({amu_cnss: 'AMU-CNSS', amu_inam: 'AMU-INAM', amu_tns: 'AMU-TNS'})[brut.toLowerCase()] || brut;
+                if (nom === 'Aucune' || (p.disabled && !p.checked)) parts.push('Non assuré');
+                else parts.push(p.checked ? `${nom} ${texte('assurancePrincipaleTaux')}` + (visible('tauxPrincipalTempBadge') ? ' (taux modifié)' : '')
+                                     : `${nom} désactivée`);
+            }
+            const c = conteneur.querySelector('#toggleAssurance2');
+            const nom2 = texte('assurance2NomDisplay');
+            if (c && nom2 && nom2 !== 'Aucune') {
+                if (c.checked) {
+                    let t = `${nom2} ${texte('assurance2TauxDisplay')}` + (visible('tauxTempBadge') ? ' (taux modifié)' : '');
+                    const pbr = document.getElementById('toggleAppliquePbrCac');
+                    if (pbr && visible('blocAppliquePbrCac')) t += pbr.checked ? ' · PBR appliqué' : ' · sans PBR';
+                    parts.push(t);
+                } else {
+                    parts.push(`${nom2} désactivée`);
+                }
+            }
+            if (conteneur.querySelector('#toggleAppliquerTva')) parts.push(coche('toggleAppliquerTva') ? 'TVA affichée' : 'sans TVA');
+        }
+        const nouveau = parts.join(' · ') || 'Aucune assurance';
+        if (resume.textContent !== nouveau) resume.textContent = nouveau;
+    }
+    conteneur.addEventListener('change', maj);
+    conteneur.addEventListener('input', maj);
+    // le détail est mis à jour par les scripts de la page (patient chargé, taux modifié…)
+    const corps = conteneur.querySelector('.corps-reglages-assurance') || conteneur;
+    new MutationObserver(maj).observe(corps, {subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['style']});
+    // champs remplis par programme (patient choisi…) : aucun événement — relecture légère,
+    // seulement quand le bloc est affiché (maj() n'écrit que si le résumé change)
+    setInterval(function () { if (conteneur.offsetParent) maj(); }, 1000);
+    maj();
+}
+</script>

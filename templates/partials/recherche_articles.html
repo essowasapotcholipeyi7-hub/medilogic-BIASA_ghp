@@ -67,15 +67,25 @@ function brancherRechercheArticles(idChamp, idListe, ajouter, effacer) {
     const liste = document.getElementById(idListe);
     if (!champ || !liste) return;
     liste.classList.add('liste-articles-recherche');
+    // contenu du panier (une nouvelle ligne OU une quantité augmentée = ajout réussi)
+    const taillePanier = () => (typeof panier !== 'undefined' && Array.isArray(panier)) ? JSON.stringify(panier) : null;
     async function ajouterPuisRevenir() {
         if (!liste.value) return;
+        const avant = taillePanier();
         await ajouter();
-        // retour à la recherche pour l'article suivant — sauf si l'ajout a demandé
-        // de compléter autre chose (médecin réalisateur, quantité…)
+        // ⭐ ajout réussi : la recherche se vide toute seule, prête pour l'article suivant ;
+        // ajout refusé (stock, contrôle…) : le texte reste, pour corriger
+        const ajoute = avant !== null && taillePanier() !== avant;
+        if (ajoute) {
+            champ.value = '';
+            champ.dispatchEvent(new Event('input'));
+        }
+        // retour à la recherche — sauf si l'ajout a demandé de compléter autre chose
+        // (médecin réalisateur, quantité…)
         const actif = document.activeElement;
         if (!actif || actif === document.body || actif === liste || actif === champ) {
             champ.focus();
-            champ.select();
+            if (!ajoute) champ.select();
         }
     }
     champ.addEventListener('keydown', function (e) {

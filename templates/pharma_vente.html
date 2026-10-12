@@ -210,6 +210,13 @@
                     </table>
                 </div>
 
+<!-- ⭐ Réglages d'assurance repliés par défaut (partials/reglages_assurance_pliables.html) -->
+<div class="reglages-assurance mt-2" id="reglagesAssurance">
+    <button type="button" class="resume-reglages-assurance" data-bs-toggle="collapse" data-bs-target="#corpsReglagesAssurance" aria-expanded="false" aria-controls="corpsReglagesAssurance">
+        <span><i class="fas fa-shield-alt me-1"></i> <strong>Assurances :</strong> <span class="texte-resume-assurances">…</span></span>
+        <span class="action">Modifier <i class="fas fa-chevron-down"></i></span>
+    </button>
+    <div class="collapse corps-reglages-assurance" id="corpsReglagesAssurance">
                 <!-- ===== ASSURANCE PRINCIPALE (TOGGLE AVEC MODIFICATION DE TAUX) ===== -->
                 <div class="row mt-2">
                     <div class="col-md-12">
@@ -323,6 +330,8 @@
                         </div>
                     </div>
                 </div>
+    </div>
+</div>
 
                 <div class="row mt-3">
                     <div class="col-md-2">
@@ -2850,5 +2859,9 @@ document.addEventListener('DOMContentLoaded', function() {
 {% include 'partials/recherche_articles.html' %}
 <script>
 document.addEventListener('DOMContentLoaded', function () { brancherRechercheArticles('searchProduitInput', 'produitSelect', ajouterProduit, clearProduitSearch); });
+</script>
+{% include 'partials/reglages_assurance_pliables.html' %}
+<script>
+document.addEventListener('DOMContentLoaded', function () { brancherResumeAssurances(document.getElementById('reglagesAssurance')); });
 </script>
 {% endblock %}

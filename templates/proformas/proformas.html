@@ -395,6 +395,13 @@
                         </div>
                     </div>
                     
+                    <!-- ⭐ Réglages d'assurance repliés par défaut (partials/reglages_assurance_pliables.html) -->
+                    <div class="reglages-assurance mb-2" id="reglagesAssuranceProforma">
+                    <button type="button" class="resume-reglages-assurance" data-bs-toggle="collapse" data-bs-target="#corpsReglagesAssuranceProforma" aria-expanded="false" aria-controls="corpsReglagesAssuranceProforma">
+                        <span><i class="fas fa-shield-alt me-1"></i> <strong>Assurances :</strong> <span class="texte-resume-assurances">…</span></span>
+                        <span class="action">Modifier <i class="fas fa-chevron-down"></i></span>
+                    </button>
+                    <div class="collapse corps-reglages-assurance" id="corpsReglagesAssuranceProforma">
                     <!-- ⭐ Désactiver l'assurance principale pour cette proforma (le
                          patient assuré ne souhaite pas l'utiliser) — même mécanisme
                          que le toggle équivalent sur pharma_vente.html/actes_vente.html,
@@ -487,6 +494,9 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
+
+                    </div>
                     </div>
 
                     <!-- ⭐ Aide hospitalière (remise) — % ou montant direct FCFA, même
@@ -2320,10 +2330,14 @@ function afficherModalConversion(data) {
              appelée par son onchange (voir le fix appliqué au même toggle
              sur le formulaire de création : une collision de nom cassait
              l'appel). -->
-        <div class="card mb-3">
-            <div class="card-header bg-light">
-                <i class="fas fa-shield-alt"></i> Assurance &amp; aide hospitalière (modifiables avant de finaliser)
-            </div>
+        <!-- ⭐ repliée par défaut (partials/reglages_assurance_pliables.html) -->
+        <div class="card mb-3 reglages-assurance" id="reglagesAssuranceConversion"
+             data-nom1="${(data.assurance_nom || '').replace(/"/g, '&quot;')}" data-nom2="${(data.assurance2_nom || '').replace(/"/g, '&quot;')}">
+            <button type="button" class="resume-reglages-assurance" data-bs-toggle="collapse" data-bs-target="#corpsReglagesConversion" aria-expanded="false" aria-controls="corpsReglagesConversion">
+                <span><i class="fas fa-shield-alt me-1"></i> <strong>Assurance &amp; aide :</strong> <span class="texte-resume-assurances">…</span></span>
+                <span class="action">Modifier <i class="fas fa-chevron-down"></i></span>
+            </button>
+            <div class="collapse corps-reglages-assurance" id="corpsReglagesConversion">
             <div class="card-body">
                 <div class="row mb-2">
                     <div class="col-md-12">
@@ -2445,6 +2459,7 @@ function afficherModalConversion(data) {
                     </div>
                 </div>
             </div>
+            </div>
         </div>
 
         ${(data.avance_recue > 0) ? `
@@ -2500,6 +2515,7 @@ function afficherModalConversion(data) {
     `;
     
     document.getElementById('convertProformaBody').innerHTML = html;
+    brancherResumeAssurances(document.getElementById('reglagesAssuranceConversion'), resumeAssurancesConversion);
 
     // ⭐ Les fonctions de calcul lisent désormais les champs DOM qui
     // viennent d'être insérés (taux assurance / aide hospitalière
@@ -3920,6 +3936,49 @@ document.addEventListener('DOMContentLoaded', async function() {
             if (!trouve()) await afficherMessage('Patient introuvable dans la liste : sélectionnez-le à la main.', {type: 'warning'});
         } catch (e) { console.error('Pré-remplissage proforma', e); }
     }
+});
+</script>
+{% include 'partials/reglages_assurance_pliables.html' %}
+<script>
+// ⭐ Résumés des réglages d'assurance repliés (création / conversion de proforma)
+const NOMS_AMU_RESUME = {amu_cnss: 'AMU-CNSS', amu_inam: 'AMU-INAM', amu_tns: 'AMU-TNS'};
+const nomAssuranceResume = n => NOMS_AMU_RESUME[(n || '').toLowerCase()] || n;
+const estNonAssure = n => !n || /non[ _-]?assur/i.test(n);
+function resumeAssurancesProforma() {
+    const g = id => document.getElementById(id);
+    const parts = [];
+    const nom = (g('assuranceNom').value || '').trim(), taux = g('tauxAssurance').value || 0;
+    if (estNonAssure(nom)) parts.push('Non assuré');
+    else parts.push(g('toggleAssurancePrincipaleActiveProforma').checked ? `${nomAssuranceResume(nom)} ${taux}%` : `${nomAssuranceResume(nom)} désactivée`);
+    const nom2 = (g('assurance2NomProforma').textContent || '').trim();
+    if (nom2 && nom2 !== 'Aucune') {
+        const modifie = g('tauxModifieBadge') && g('tauxModifieBadge').style.display !== 'none' ? ' (taux modifié)' : '';
+        parts.push(g('toggleAssurance2Proforma').checked ? `${nom2} ${g('assurance2TauxApplique').value || 0}%${modifie}` : `${nom2} désactivée`);
+    }
+    return parts;
+}
+function resumeAssurancesConversion() {
+    const g = id => document.getElementById(id);
+    const carte = g('reglagesAssuranceConversion');
+    const parts = [];
+    const nom1 = carte.dataset.nom1, nom2 = carte.dataset.nom2;
+    if (estNonAssure(nom1)) parts.push('Non assuré');
+    else parts.push(g('convertAssurancePrincipaleActive').checked ? `${nomAssuranceResume(nom1)} ${parseFloat((g('convertTauxAssurance') || {}).value || 0)}%` : `${nomAssuranceResume(nom1)} désactivée`);
+    if (nom2) {
+        const actif2 = g('convertAssurance2Active');
+        let t = actif2 && actif2.checked ? `${nom2} ${parseFloat((g('convertTauxAssurance2') || {}).value || 0)}%` : `${nom2} désactivée`;
+        const pbr = g('convertAppliquePbrCac');
+        if (actif2 && actif2.checked && pbr) t += pbr.checked ? ' · PBR appliqué' : ' · sans PBR';
+        parts.push(t);
+    }
+    const tva = g('convertAppliquerTva');
+    parts.push(tva && tva.checked ? 'TVA affichée' : 'sans TVA');
+    const aide = parseFloat((g('convertTauxAide') || {}).value || 0);
+    if (aide > 0) parts.push(`aide ${aide}${(g('convertTypeAide') || {}).value === 'montant' ? ' F' : ' %'}`);
+    return parts;
+}
+document.addEventListener('DOMContentLoaded', function () {
+    brancherResumeAssurances(document.getElementById('reglagesAssuranceProforma'), resumeAssurancesProforma);
 });
 </script>
 {% endblock %}
