@@ -566,6 +566,7 @@ function fermerOuRediriger() {
     }, 500);
 }
 </script>
+{% include 'partials/colonnes_articles.html' %}
 {% if format == '80mm' %}{% include 'partials/ticket_80mm_lisible.html' %}{% endif %}
 {# ⭐ Arrivée depuis « Les deux » (reçu patient imprimé juste avant) : impression automatique. #}
 {% if request.args.get('imprimer') %}

@@ -1,0 +1,18 @@
+{# ⭐ Nom de l'article sur toute la largeur disponible (patron, 2026-10-12 : « le nom
+   des articles ne gagne pas vraiment de l'espace, il vient vite à la ligne — pousser
+   la colonne Qté vers la droite »). Les colonnes avaient des largeurs fixes
+   (Article 22 à 32 % seulement sur le reçu patient) : les colonnes de chiffres
+   (Qté, Prix, PBR, Total, Date) prennent maintenant juste la place de leur
+   contenu, et l'article prend tout le reste. A4 et 80 mm, écran et impression. #}
+<style>
+    #pdfWrapper table th:first-child,
+    #pdfWrapper table td:first-child {
+        width: auto !important;
+    }
+    #pdfWrapper table th:not(:first-child),
+    #pdfWrapper table td:not(:first-child) {
+        width: 1% !important;
+        white-space: nowrap !important;
+        padding-left: 7px !important;   /* les montants ne se touchent plus (« 1055 F1055 F ») */
+    }
+</style>
