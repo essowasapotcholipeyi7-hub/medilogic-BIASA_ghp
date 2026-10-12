@@ -151,8 +151,9 @@
             <button class="btn btn-light btn-sm me-2" onclick="exportToCSV()">
                 <i class="fas fa-file-excel me-1"></i> Exporter Excel
             </button>
-            <button class="btn btn-light btn-sm" onclick="showAddModal()">
-                <i class="fas fa-plus"></i> Enrégistrer patient
+            <!-- ⭐ Mis en exergue et animé (patron, 2026-10-12), lisible dans tous les thèmes -->
+            <button class="btn btn-enregistrer-patient" data-th-garder onclick="showAddModal()">
+                <i class="fas fa-user-plus me-1"></i> Enregistrer un patient
             </button>
         </div>
     </div>
@@ -2542,6 +2543,43 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 <style>
+/* ⭐ « Enregistrer un patient » bien en exergue (patron, 2026-10-12 : « mettre le bouton
+   bien en exergue, tu peux l'animer aussi, tout en respectant les différents thèmes ») :
+   bouton plein, plus grand, avec un halo qui pulse. Thèmes clairs : blanc + texte à la
+   couleur foncée du thème (sur l'en-tête coloré) ; thèmes sombres : accent du thème + texte
+   noir (data-th-garder : theme_sombre.js ne le repeint pas). Animation coupée si l'appareil
+   demande moins de mouvement. */
+.btn-enregistrer-patient {
+    --halo: rgba(255, 255, 255, .85);
+    background: #fff !important;
+    color: var(--th-primaire-fonce, #0A3D5C) !important;
+    border: 2px solid var(--th-primaire-fonce, #0A3D5C) !important;   /* détache le bouton blanc d'un en-tête clair */
+    font-weight: 800;
+    font-size: .95rem;
+    padding: .45rem 1.1rem;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .18);
+    animation: haloEnregistrerPatient 1.8s ease-out infinite;
+    transition: transform .15s ease;
+}
+.btn-enregistrer-patient:hover, .btn-enregistrer-patient:focus-visible {
+    transform: translateY(-1px) scale(1.03);
+    color: var(--th-primaire-fonce, #0A3D5C) !important;
+}
+.btn-enregistrer-patient i { color: inherit !important; opacity: 1 !important; }
+[data-bs-theme="dark"] .btn-enregistrer-patient {
+    --halo: var(--th-primaire, #00E599);
+    background: var(--th-primaire, #00E599) !important;
+    border-color: var(--th-primaire, #00E599) !important;
+    color: #0A0A0A !important;
+}
+[data-bs-theme="dark"] .btn-enregistrer-patient:hover { color: #0A0A0A !important; }
+@keyframes haloEnregistrerPatient {
+    0%   { box-shadow: 0 4px 12px rgba(0, 0, 0, .18), 0 0 0 0 var(--halo); }
+    70%  { box-shadow: 0 4px 12px rgba(0, 0, 0, .18), 0 0 0 10px transparent; }
+    100% { box-shadow: 0 4px 12px rgba(0, 0, 0, .18), 0 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) { .btn-enregistrer-patient { animation: none; } }
 /* ⭐ Taux à côté du nom de l'assurance */
 .taux-assurance { font-weight: 700; margin-left: 4px; white-space: nowrap; }
 /* ⭐ Raccourcis de la ligne patient (Actes, Pharmacie, Hospitalisation,
