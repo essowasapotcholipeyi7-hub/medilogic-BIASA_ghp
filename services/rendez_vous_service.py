@@ -12,6 +12,19 @@ class RendezVousService:
     
     STATUTS_VALIDES = ['programme', 'confirme', 'termine', 'annule', 'reporte', 'absent', 'demande']
     STATUTS_ACTIFS = ['programme', 'confirme']
+
+    # ⭐ Rangement automatique (patron, 2026-10-12 : « les rdv dépassés de plus de 15 jours,
+    # je veux qu'ils disparaissent d'eux-mêmes, sinon la liste va devenir très longue ») :
+    # un rendez-vous resté programmé/confirmé/reporté dont la date est passée depuis plus de
+    # JOURS_DEPASSES_VISIBLES jours n'apparaît plus dans la liste par défaut (ni dans les
+    # rappels). Rien n'est écrit en base : il reste retrouvable en choisissant une période.
+    JOURS_DEPASSES_VISIBLES = 15
+    STATUTS_DEPASSABLES = ['programme', 'confirme', 'reporte']
+
+    @classmethod
+    def limite_depasses(cls):
+        """Date avant laquelle un rendez-vous dépassé est rangé automatiquement."""
+        return date.today() - timedelta(days=cls.JOURS_DEPASSES_VISIBLES)
     DUREE_MIN = 15
     DUREE_MAX = 120
     DUREE_DEFAUT = 30
@@ -98,6 +111,11 @@ class RendezVousService:
             query = query.filter(RendezVous.date_rendez_vous >= date_debut)
         if date_fin:
             query = query.filter(RendezVous.date_rendez_vous <= date_fin)
+        if not date_debut and not date_fin:
+            # ⭐ sans période choisie : les dépassés de plus de 15 jours sont rangés
+            query = query.filter(db.or_(
+                RendezVous.statut.notin_(cls.STATUTS_DEPASSABLES),
+                RendezVous.date_rendez_vous >= cls.limite_depasses()))
         if statut and statut != 'tous':
             query = query.filter(RendezVous.statut == statut)
         if medecin_id:

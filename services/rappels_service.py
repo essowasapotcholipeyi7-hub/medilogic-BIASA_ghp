@@ -237,10 +237,13 @@ class RappelsService:
             RendezVous.statut.in_(['programme', 'confirme'])
         ).count()
         
-        # Rendez-vous dépassés
+        # Rendez-vous dépassés — ⭐ 15 derniers jours seulement (au-delà : rangés automatiquement,
+        # voir RendezVousService.JOURS_DEPASSES_VISIBLES)
+        from services.rendez_vous_service import RendezVousService
         depasses = RendezVous.query.filter(
             RendezVous.structure_id == structure_id,
             RendezVous.date_rendez_vous < today,
+            RendezVous.date_rendez_vous >= RendezVousService.limite_depasses(),
             RendezVous.statut.in_(['programme', 'confirme'])
         ).count()
         

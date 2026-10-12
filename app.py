@@ -9811,10 +9811,12 @@ def rappels():
             'date_rappel': rdv.date_rappel,
         })
     
-    # Rendez-vous dépassés
+    # Rendez-vous dépassés — ⭐ seulement les 15 derniers jours (patron, 2026-10-12) : au-delà
+    # ils sont rangés automatiquement, plus de rappel
     depasses = RendezVous.query.filter(
         RendezVous.structure_id == structure_id,
         RendezVous.date_rendez_vous < today,
+        RendezVous.date_rendez_vous >= RendezVousService.limite_depasses(),
         RendezVous.statut.in_(['programme', 'confirme'])
     ).order_by(RendezVous.date_rendez_vous).all()
     
@@ -9880,7 +9882,9 @@ def api_rappels_stats():
                 date_rdv = date_rdv_val
             
             if date_rdv < aujourdhui:
-                depasses += 1
+                # ⭐ dépassés des 15 derniers jours seulement (au-delà : rangés automatiquement)
+                if date_rdv >= RendezVousService.limite_depasses():
+                    depasses += 1
             elif date_rdv <= date_limite:
                 moins_7 += 1
             
