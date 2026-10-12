@@ -2000,6 +2000,26 @@
        sombres que la feuille ne connaît pas (pages à styles propres, AJAX). #}
     {% if theme_css %}<style id="themeStructure">{{ theme_css|safe }}</style>{% endif %}
     {% if session.user_id %}<script src="{{ url_for('static', filename='js/theme_sombre.js') }}?v=3" defer></script>{% endif %}
+<script>
+// ⭐ Bande passante (2026-10-12) : chaque vérification automatique (badges,
+// messages, tableau de bord...) interroge le serveur et la base, même quand
+// l'onglet est caché derrière d'autres fenêtres — une dizaine d'onglets
+// ouverts toute la journée suffisaient à faire des Go par mois. Ici : rien
+// tant que l'onglet est caché, et une mise à jour immédiate quand on y revient
+// (si la dernière date d'au moins une période).
+window.sondagePeriodique = function (fn, ms) {
+    let dernier = Date.now();
+    function tour() {
+        if (document.visibilityState === 'hidden') return;
+        dernier = Date.now();
+        fn();
+    }
+    document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible' && Date.now() - dernier >= ms) tour();
+    });
+    return setInterval(tour, ms);
+};
+</script>
 </head>
 <body>
 
@@ -3438,7 +3458,7 @@ function actualiserBadgeValidations() {
         .catch(() => {});
 }
 document.addEventListener('DOMContentLoaded', actualiserBadgeValidations);
-setInterval(actualiserBadgeValidations, 30000);
+sondagePeriodique(actualiserBadgeValidations, 30000);
 {% endif %}
 
 // ============================================
@@ -3691,8 +3711,8 @@ document.addEventListener('DOMContentLoaded', function() {
     chargerVenteAttenteBadge();
 
     // Rafraîchir les badges toutes les 60 secondes
-    setInterval(chargerProformaBadge, 60000);
-    setInterval(chargerVenteAttenteBadge, 60000);
+    sondagePeriodique(chargerProformaBadge, 60000);
+    sondagePeriodique(chargerVenteAttenteBadge, 60000);
     {% endif %}
 });
 
@@ -4009,7 +4029,7 @@ document.addEventListener('DOMContentLoaded', function() {
         chargerMessages(true);
         marquerVu(fil);
         if (pollingFilInterval) clearInterval(pollingFilInterval);
-        pollingFilInterval = setInterval(function() { chargerMessages(false); }, 5000);
+        pollingFilInterval = setInterval(function() { if (!document.hidden) chargerMessages(false); }, 5000);
         renderThreads();
     }
 
@@ -4026,7 +4046,7 @@ document.addEventListener('DOMContentLoaded', function() {
         dernierMessageAffiche = null;
         chargerMessages(true);
         if (pollingFilInterval) clearInterval(pollingFilInterval);
-        pollingFilInterval = setInterval(function() { chargerMessages(false); }, 5000);
+        pollingFilInterval = setInterval(function() { if (!document.hidden) chargerMessages(false); }, 5000);
         renderThreads();
     }
 
@@ -4125,7 +4145,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     document.addEventListener('DOMContentLoaded', actualiserBadgeChat);
-    setInterval(actualiserBadgeChat, 10000);
+    sondagePeriodique(actualiserBadgeChat, 15000);
 })();
 {% endif %}
 </script>

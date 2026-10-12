@@ -625,7 +625,7 @@ document.addEventListener('DOMContentLoaded', function() {
     restoreSidebarState();
 });
 
-{% if not role_rh_seul and not role_compta_seul %}setInterval(chargerProformaBadge, 60000);{% endif %}
+{# rafraîchissement périodique du badge proformas : fait une seule fois, dans base.html #}
 
 window.addEventListener('load', function() {
     hideLoader();

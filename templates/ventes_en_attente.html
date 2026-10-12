@@ -168,7 +168,7 @@ let DERNIERE_LISTE = {};
 document.addEventListener('DOMContentLoaded', function() {
     chargerListe();
     chargerCompteur();
-    setInterval(chargerCompteur, 30000);
+    sondagePeriodique(chargerCompteur, 30000);
 });
 
 function basculerVue() {

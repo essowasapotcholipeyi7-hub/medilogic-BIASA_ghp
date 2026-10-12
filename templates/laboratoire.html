@@ -133,7 +133,7 @@ function changerStatutDemande(id, statut) {
 }
 
 chargerDemandes();
-setInterval(chargerDemandes, 30000);
+sondagePeriodique(chargerDemandes, 30000);
 </script>
 
 {% endblock %}
