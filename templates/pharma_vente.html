@@ -366,9 +366,8 @@
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-bold" for="montantRendu">Rendu au patient</label>
-                                <input type="text" class="form-control form-control-lg fw-bold" id="montantRendu"
-                                       value="0 fr" readonly
-                                       style="color: #28a745; background: #f0f8f0;">
+                                <input type="text" class="form-control form-control-lg fw-bold rendu-patient" id="montantRendu"
+                                       value="0 FCFA" readonly>
                             </div>
                         </div>
 
@@ -377,11 +376,13 @@
                             <div class="col-md-4">
                                 <label class="form-label fw-bold" for="typeDocument">Type de document</label>
                                 <select class="form-select" id="typeDocument">
+                                    <!-- ⭐ mêmes choix (et même logique) que la réimpression du tableau de bord / de l'historique -->
                                     <option value="recu_client">Reçu Patient</option>
                                     <option value="recu_structure">Reçu Structure (copie)</option>
                                     <option value="facture_client">Facture Patient</option>
                                     <option value="facture_structure">Facture Structure (archive)</option>
-                                    <option value="les_deux">Les deux (Patient + Structure)</option>
+                                    <option value="les_deux_factures">Les deux factures (patient + structure)</option>
+                                    <option value="les_deux">Les deux reçus (patient, puis copie structure)</option>
                                 </select>
                             </div>
                             <div class="col-md-4">
@@ -397,19 +398,23 @@
                                 <label class="form-label fw-bold" for="tauxAideHospitaliere">
                                     <i class="fas fa-hand-holding-heart text-warning"></i> Aide hospitalière
                                 </label>
-                                <div class="input-group">
+                                <div class="input-group unite-aide">
                                     <input type="number" class="form-control" id="tauxAideHospitaliere"
-                                           value="0"
-                                           step="5" min="0" max="100"
-                                           onchange="calculerTotal(); calculerRendu();">
-                                    <select class="form-select" id="typeAideHospitaliere" style="max-width: 95px;"
-                                            onchange="onChangeTypeAideHospitaliere(); calculerTotal(); calculerRendu();">
-                                        <option value="pourcentage" selected>%</option>
-                                        <option value="montant">FCFA</option>
-                                    </select>
+                                           value="0" min="0" step="any" placeholder="% ou FCFA"
+                                           oninput="detecterUniteAide(); calculerTotal(); calculerRendu();"
+                                           onchange="detecterUniteAide(); calculerTotal(); calculerRendu();">
+                                    <!-- ⭐ unité : % jusqu'à 100, FCFA au-delà (détectée toute seule), boutons pour corriger
+                                         à la main — voir partials/zone_paiement.html -->
+                                    <input type="hidden" id="typeAideHospitaliere" value="pourcentage">
+                                    <input type="radio" class="btn-check" name="uniteAide" id="uniteAidePct" autocomplete="off" checked
+                                           onchange="choisirUniteAide('pourcentage')">
+                                    <label class="btn btn-outline-secondary fw-bold" for="uniteAidePct" title="Aide en pourcentage du reste à payer">%</label>
+                                    <input type="radio" class="btn-check" name="uniteAide" id="uniteAideFcfa" autocomplete="off"
+                                           onchange="choisirUniteAide('montant')">
+                                    <label class="btn btn-outline-secondary fw-bold" for="uniteAideFcfa" title="Aide en montant direct">FCFA</label>
                                 </div>
-                                <small class="form-text" id="aideHospitaliereHint">
-                                    Taux d'aide (max 100%)
+                                <small class="form-text d-block" id="aideHospitaliereHint">
+                                    Jusqu'à 100 = %, au-delà = FCFA (choisi tout seul)
                                 </small>
                             </div>
                         </div>
@@ -425,38 +430,6 @@
                     </div>
                     </div>
 
-                    <style>
-                        .zone-paiement {
-                            border: 1px solid var(--th-primaire, #0d6efd);
-                            border-radius: 10px;
-                            padding: 14px 16px 16px;
-                        }
-                        .titre-zone-paiement {
-                            font-size: .8rem;
-                            font-weight: 700;
-                            text-transform: uppercase;
-                            letter-spacing: .06em;
-                            color: var(--th-primaire-fonce, #0A3D5C);
-                            padding-bottom: 6px;
-                            margin-bottom: 10px;
-                            border-bottom: 1px solid rgba(128, 128, 128, .25);
-                        }
-                        [data-bs-theme="dark"] .titre-zone-paiement { color: var(--th-primaire, #00E599); }
-                        .zone-paiement .form-label { margin-bottom: 4px; }
-                        .texte-montant-donne { color: #dc3545; }
-                        [data-bs-theme="dark"] .texte-montant-donne { color: #ff6b7a; }
-                        .badge-obligatoire {
-                            background: #dc3545; color: #fff; font-size: 10px; padding: 2px 8px;
-                            border-radius: 20px; margin-left: 5px; vertical-align: middle;
-                        }
-                        .zone-paiement .champ-montant-donne {
-                            border: 2px solid #dc3545 !important;
-                            background-color: rgba(220, 53, 69, .06) !important;
-                            font-weight: 700;
-                        }
-                        .zone-paiement .champ-montant-donne:focus { box-shadow: 0 0 0 .2rem rgba(220, 53, 69, .25); }
-                        .zone-paiement .champ-montant-donne + .input-group-text { border: 2px solid #dc3545 !important; border-left: 0 !important; font-weight: 700; }
-                    </style>
                     <!-- ⭐ Barre d'action collante (patron, 2026-09-30) : "le
                          bouton finaliser remonte pour un accès facile... il
                          faut scroller soit même". Voir actes_vente.html pour le
@@ -2069,25 +2042,7 @@ function calculerRendu() {
         resteAPayer = 0;
     }
     
-    const renduElement = document.getElementById('montantRendu');
-    
-    if (montantDonne < netAPayer) {
-        renduElement.value = '⚠️ ' + Math.round(resteAPayer).toLocaleString('fr-FR') + ' fr manquant';
-        renduElement.style.color = '#dc3545';
-        renduElement.style.background = '#fde8e8';
-    } else if (rendu === 0 && montantDonne === netAPayer) {
-        renduElement.value = '✅ 0 fr (juste)';
-        renduElement.style.color = '#28a745';
-        renduElement.style.background = '#f0f8f0';
-    } else if (rendu > 0) {
-        renduElement.value = Math.round(rendu).toLocaleString('fr-FR') + ' fr';
-        renduElement.style.color = '#28a745';
-        renduElement.style.background = '#f0f8f0';
-    } else {
-        renduElement.value = '0 fr';
-        renduElement.style.color = '#28a745';
-        renduElement.style.background = '#f0f8f0';
-    }
+    afficherRenduPatient(netAPayer, montantDonne);   // même affichage que la vente d'actes (partials/zone_paiement.html)
     
     window._paiement = {
         montantDonne,
@@ -2530,6 +2485,16 @@ async function redirigerApresVente(venteId) {
     panier = [];
     afficherPanier();
     
+    if (typeDoc === 'les_deux_factures') {
+        // comme le tableau de bord : A4 = les deux factures sur une même feuille, à couper ;
+        // 80 mm = facture patient puis facture structure dans le même onglet
+        window.open(format === 'A4'
+            ? `/factures_deux/${venteId}/pharma?imprimer=1`
+            : `/facture/${venteId}/pharma?format=${format}&ensuite=structure`, '_blank');
+        window.location.href = '/dashboard';
+        return;
+    }
+
     if (typeDoc === 'les_deux') {
         // un seul onglet : reçu patient, puis copie structure (voir recu_client.html)
         // A4 : les deux reçus sur une même feuille, à couper (recus_deux_a4.html)
@@ -2575,6 +2540,11 @@ async function redirigerApresVente(venteId) {
 async function soumettreVenteEnAttente() {
     if (panier.length === 0) {
         await afficherMessage('Le panier est vide');
+        return;
+    }
+    // ⭐ Confirmation (patron, 2026-10-12) : éviter les soumissions accidentelles
+    if (!await demanderConfirmation('Voulez-vous soumettre cette vente en attente pour la validation au niveau de la caisse ?',
+                                    {titre: 'Vente en attente', texteOk: 'Oui, soumettre', texteAnnuler: 'Annuler'})) {
         return;
     }
 
@@ -2889,5 +2859,9 @@ document.addEventListener('DOMContentLoaded', function () { brancherRechercheArt
 {% include 'partials/reglages_assurance_pliables.html' %}
 <script>
 document.addEventListener('DOMContentLoaded', function () { brancherResumeAssurances(document.getElementById('reglagesAssurance')); });
+</script>
+{% include 'partials/zone_paiement.html' %}
+<script>
+document.addEventListener('DOMContentLoaded', function () { brancherZonePaiement(function () { return repartirPanierPharma(); }); });
 </script>
 {% endblock %}

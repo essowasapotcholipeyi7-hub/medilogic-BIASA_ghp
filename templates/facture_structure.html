@@ -510,7 +510,8 @@
             </div>
         </div>
 
-        <div class="text-center mt-3 no-print">
+        <!-- ⭐ affichés à droite du document (partials/barre_document_a_droite.html) -->
+        <div class="text-center mt-3 no-print barre-document-a-droite">
             {% if format == '80mm' %}
             <button onclick="window.print()" class="btn btn-primary">Imprimer</button>
             {% else %}
@@ -574,4 +575,5 @@ function fermerOuRediriger() {
 document.addEventListener('DOMContentLoaded', function () { setTimeout(function () { window.print(); }, 600); });
 </script>
 {% endif %}
+{% include 'partials/barre_document_a_droite.html' %}
 {% endblock %}

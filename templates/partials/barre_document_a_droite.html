@@ -1,0 +1,73 @@
+{# ⭐ Boutons d'un reçu / d'une facture juste à droite du document (patron, 2026-10-12 :
+   « après impression le bouton Fermer reste en bas, il faut défiler pour y arriver —
+   remonte-le juste à côté, à droite du reçu ou de la facture, pour vite fermer et passer
+   à autre chose »). La barre .barre-document-a-droite reste visible en haut de l'écran,
+   collée au bord droit du document ; écran trop étroit : en bas de l'écran, sur toute la
+   largeur. Jamais imprimée (.no-print). Rien dans une demi-page (« les deux » en A4). #}
+{% if not request.args.get('demi_page') %}
+<style>
+    @media screen {
+        .barre-document-a-droite.placee {
+            position: fixed;
+            z-index: 1050;
+            margin: 0 !important;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: 230px;
+            padding: 10px;
+            background: #fff;
+            border: 1px solid #dee2e6;
+            border-radius: 10px;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, .15);
+            text-align: left;
+        }
+        .barre-document-a-droite.placee .btn { width: 100%; text-align: left; margin: 0 !important; }
+        .barre-document-a-droite.placee.en-bas {
+            flex-direction: row;
+            flex-wrap: wrap;
+            width: auto !important;
+            left: 0 !important;
+            right: 0;
+            top: auto !important;
+            bottom: 0;
+            border-radius: 10px 10px 0 0;
+        }
+        .barre-document-a-droite.placee.en-bas .btn { width: auto; flex: 1 1 auto; text-align: center; }
+    }
+</style>
+<script>
+(function () {
+    function placer(barre, docu) {
+        const r = docu.getBoundingClientRect();
+        const marge = 12;
+        // place disponible à droite du document : la barre s'y rétrécit (230 px au plus) ;
+        // vraiment trop étroit (téléphone) : en bas de l'écran
+        const dispo = window.innerWidth - r.right - marge - 8;
+        if (dispo >= 150) {
+            barre.classList.remove('en-bas');
+            barre.style.width = Math.min(230, dispo) + 'px';
+            barre.style.left = (r.right + marge) + 'px';
+            barre.style.top = Math.max(r.top, 12) + 'px';
+        } else {
+            barre.classList.add('en-bas');
+            barre.style.width = '';
+        }
+    }
+    document.addEventListener('DOMContentLoaded', function () {
+        const barre = document.querySelector('.barre-document-a-droite');
+        const docu = document.getElementById('recuContenu') || document.getElementById('factureContenu');
+        if (!barre || !docu) return;
+        // sortie vers <body> : un parent avec filtre/transform piégerait position:fixed
+        document.body.appendChild(barre);
+        barre.classList.add('placee');
+        const maj = function () { placer(barre, docu); };
+        maj();
+        window.addEventListener('resize', maj);
+        window.addEventListener('scroll', maj, {passive: true});
+        window.addEventListener('load', maj);   // logo, code-barres… peuvent décaler le document
+        setTimeout(maj, 600);
+    });
+})();
+</script>
+{% endif %}

@@ -537,7 +537,8 @@
             </div>
         </div>
 
-        <div class="text-center mt-3 no-print">
+        <!-- ⭐ affichés à droite du document (partials/barre_document_a_droite.html) -->
+        <div class="text-center mt-3 no-print barre-document-a-droite">
             {% if format == '80mm' %}
             <button onclick="window.print()" class="btn btn-primary"><i class="fas fa-print"></i> Imprimer</button>
             {% else %}
@@ -621,4 +622,5 @@ function fermerOuRediriger() {
 })();
 </script>
 {% endif %}
+{% include 'partials/barre_document_a_droite.html' %}
 {% endblock %}

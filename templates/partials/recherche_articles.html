@@ -7,7 +7,8 @@
    - le premier résultat est sélectionné tout seul ; Entrée l'ajoute, flèche bas descend
      dans la liste, Échap efface la recherche ;
    - dans la liste : double-clic ou Entrée = Ajouter (même fonction que le bouton) ;
-   - après un ajout, le curseur revient dans la recherche pour l'article suivant. #}
+   - après un ajout (Entrée, double-clic OU bouton Ajouter), la recherche se vide et le
+     curseur y revient pour l'article suivant. #}
 <style>
     .zone-recherche-articles {
         border: 2px solid var(--th-primaire, #0d6efd);
@@ -69,8 +70,12 @@ function brancherRechercheArticles(idChamp, idListe, ajouter, effacer) {
     liste.classList.add('liste-articles-recherche');
     // contenu du panier (une nouvelle ligne OU une quantité augmentée = ajout réussi)
     const taillePanier = () => (typeof panier !== 'undefined' && Array.isArray(panier)) ? JSON.stringify(panier) : null;
-    async function ajouterPuisRevenir() {
-        if (!liste.value) return;
+    async function ajouterPuisRevenir(bouton) {
+        if (!liste.value) {
+            // rien de choisi : le bouton garde son message habituel (« sélectionnez… »)
+            if (bouton) await ajouter();
+            return;
+        }
         const avant = taillePanier();
         await ajouter();
         // ⭐ ajout réussi : la recherche se vide toute seule, prête pour l'article suivant ;
@@ -83,7 +88,7 @@ function brancherRechercheArticles(idChamp, idListe, ajouter, effacer) {
         // retour à la recherche — sauf si l'ajout a demandé de compléter autre chose
         // (médecin réalisateur, quantité…)
         const actif = document.activeElement;
-        if (!actif || actif === document.body || actif === liste || actif === champ) {
+        if (!actif || actif === document.body || actif === liste || actif === champ || actif === bouton) {
             champ.focus();
             if (!ajoute) champ.select();
         }
@@ -101,6 +106,11 @@ function brancherRechercheArticles(idChamp, idListe, ajouter, effacer) {
     });
     liste.addEventListener('keydown', function (e) {
         if (e.key === 'Enter') { e.preventDefault(); ajouterPuisRevenir(); }
+    });
+    // ⭐ bouton « Ajouter » (patron, 2026-10-12 : « le texte de recherche ne disparaît pas
+    // après l'ajout par le bouton Ajouter ») : même chemin que Entrée / double-clic
+    document.querySelectorAll(`button[onclick^="${ajouter.name}("]`).forEach(function (bouton) {
+        bouton.onclick = function (e) { e.preventDefault(); ajouterPuisRevenir(bouton); };
     });
 }
 </script>

@@ -1,0 +1,157 @@
+{# ⭐ Zone de paiement des ventes (actes, pharmacie) — patron, 2026-10-12. Commun aux deux
+   pages pour qu'elles se comportent exactement pareil :
+   - Rendu au patient : même affichage partout (« Reste à payer : … », « 0 FCFA · montant
+     exact », « 2 500 FCFA »), couleurs lisibles dans tous les thèmes ;
+   - Aide hospitalière : un seul champ, unité % ou FCFA affichée en boutons, détectée
+     toute seule (jusqu'à 100 = %, au-delà = FCFA) et modifiable à la main ; l'équivalent
+     dans l'autre unité est affiché dessous.
+   Utilisation : brancherZonePaiement(() => repartirPanierXxx()) une fois la page chargée. #}
+<style>
+    .zone-paiement {
+        border: 1px solid var(--th-primaire, #0d6efd);
+        border-radius: 10px;
+        padding: 14px 16px 16px;
+    }
+    .titre-zone-paiement {
+        font-size: .8rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .06em;
+        color: var(--th-primaire-fonce, #0A3D5C);
+        padding-bottom: 6px;
+        margin-bottom: 10px;
+        border-bottom: 1px solid rgba(128, 128, 128, .25);
+    }
+    [data-bs-theme="dark"] .titre-zone-paiement { color: var(--th-primaire, #00E599); }
+    .zone-paiement .form-label { margin-bottom: 4px; }
+    .texte-montant-donne { color: #dc3545; }
+    [data-bs-theme="dark"] .texte-montant-donne { color: #ff6b7a; }
+    .badge-obligatoire {
+        background: #dc3545; color: #fff; font-size: 10px; padding: 2px 8px;
+        border-radius: 20px; margin-left: 5px; vertical-align: middle;
+    }
+    .zone-paiement .champ-montant-donne {
+        border: 2px solid #dc3545 !important;
+        background-color: rgba(220, 53, 69, .06) !important;
+        font-weight: 700;
+    }
+    .zone-paiement .champ-montant-donne:focus { box-shadow: 0 0 0 .2rem rgba(220, 53, 69, .25); }
+    .zone-paiement .champ-montant-donne + .input-group-text { border: 2px solid #dc3545 !important; border-left: 0 !important; font-weight: 700; }
+
+    /* Rendu au patient : état lisible dans tous les thèmes */
+    .zone-paiement .rendu-patient.etat-manque {
+        color: #b02a37 !important; background: rgba(220, 53, 69, .10) !important; border-color: #dc3545 !important;
+    }
+    .zone-paiement .rendu-patient.etat-ok {
+        color: #146c43 !important; background: rgba(25, 135, 84, .10) !important; border-color: #198754 !important;
+    }
+    [data-bs-theme="dark"] .zone-paiement .rendu-patient.etat-manque { color: #ff8a95 !important; }
+    [data-bs-theme="dark"] .zone-paiement .rendu-patient.etat-ok { color: #5fd38d !important; }
+
+    /* Aide hospitalière : unité choisie bien visible (même principe que le format d'impression) */
+    .unite-aide .btn { min-width: 64px; color: var(--th-texte, #212529) !important; border: 1px solid var(--bs-border-color, #ced4da) !important; background: transparent; }
+    .unite-aide .btn-check:checked + .btn {
+        background: var(--th-primaire-fonce, #0A3D5C) !important;
+        border-color: var(--th-primaire-fonce, #0A3D5C) !important;
+        color: #fff !important;
+    }
+    [data-bs-theme="dark"] .unite-aide .btn-check:checked + .btn {
+        background: var(--th-primaire, #00E599) !important;
+        border-color: var(--th-primaire, #00E599) !important;
+        color: #0A0A0A !important;
+    }
+    .unite-aide .btn::after { display: none; }
+    #aideHospitaliereHint .auto { opacity: .75; }
+</style>
+<script>
+function afficherRenduPatient(netAPayer, montantDonne) {
+    const el = document.getElementById('montantRendu');
+    if (!el) return;
+    const net = Math.round(netAPayer || 0), donne = Math.round(montantDonne || 0);
+    const fcfa = n => n.toLocaleString('fr-FR') + ' FCFA';
+    el.style.color = '';
+    el.style.background = '';
+    el.classList.add('rendu-patient');
+    el.classList.remove('etat-manque', 'etat-ok');
+    if (net <= 0 && donne <= 0) {
+        el.value = '0 FCFA';
+    } else if (donne < net) {
+        el.value = 'Reste à payer : ' + fcfa(net - donne);
+        el.classList.add('etat-manque');
+    } else if (donne === net) {
+        el.value = '0 FCFA · montant exact';
+        el.classList.add('etat-ok');
+    } else {
+        el.value = fcfa(donne - net);
+        el.classList.add('etat-ok');
+    }
+}
+
+// ---------- Aide hospitalière : % ou FCFA ----------
+let uniteAideManuelle = false;   // l'utilisateur a choisi l'unité lui-même : plus de détection
+
+function appliquerUniteAide(type) {
+    document.getElementById('typeAideHospitaliere').value = type;
+    document.getElementById(type === 'montant' ? 'uniteAideFcfa' : 'uniteAidePct').checked = true;
+    // bornes du champ (max 100 en %) — fonction de la page
+    if (typeof onChangeTypeAideHospitaliere === 'function') onChangeTypeAideHospitaliere();
+}
+
+function detecterUniteAide() {
+    const v = parseFloat(document.getElementById('tauxAideHospitaliere').value);
+    if (!(v > 0)) { uniteAideManuelle = false; return; }   // champ vidé : détection automatique de nouveau
+    if (uniteAideManuelle) return;
+    const type = v > 100 ? 'montant' : 'pourcentage';
+    if (document.getElementById('typeAideHospitaliere').value !== type) appliquerUniteAide(type);
+}
+
+function choisirUniteAide(type) {
+    uniteAideManuelle = true;
+    appliquerUniteAide(type);
+    calculerTotal();
+    calculerRendu();
+}
+
+function majIndicationAide(calc) {
+    const hint = document.getElementById('aideHospitaliereHint');
+    if (!hint || !calc) return;
+    const fcfa = n => Math.round(n).toLocaleString('fr-FR') + ' FCFA';
+    const reste = calc.resteApresAssurances || 0, aide = calc.aideHospitaliere || 0, taux = calc.tauxAide || 0;
+    let texte;
+    if (!(taux > 0)) {
+        hint.textContent = "Jusqu'à 100 = %, au-delà = FCFA (choisi tout seul)";
+        return;
+    }
+    if (reste <= 0) {
+        texte = "Rien à payer après assurances : pas d'aide à déduire";
+    } else if (calc.typeAide === 'montant') {
+        const pct = aide / reste * 100;
+        texte = `${fcfa(aide)} = ${pct.toLocaleString('fr-FR', {maximumFractionDigits: pct < 10 ? 1 : 0})} % du reste à payer`
+              + (taux > reste ? ` (plafonné au reste : ${fcfa(reste)})` : '');
+    } else {
+        texte = `${taux.toLocaleString('fr-FR')} % = ${fcfa(aide)} déduits du reste à payer (${fcfa(reste)})`;
+    }
+    hint.innerHTML = '';
+    hint.append(texte);
+    if (!uniteAideManuelle) {
+        const auto = document.createElement('span');
+        auto.className = 'auto';
+        auto.textContent = ' · unité détectée automatiquement';
+        hint.append(auto);
+    }
+}
+
+function brancherZonePaiement(calcul) {
+    // l'indication de l'aide suit chaque recalcul de la page (panier, assurances, aide…)
+    const origine = window.calculerTotal;
+    if (typeof origine === 'function') {
+        window.calculerTotal = function () {
+            const r = origine.apply(this, arguments);
+            try { majIndicationAide(calcul()); } catch (e) { /* indication seulement */ }
+            return r;
+        };
+    }
+    try { majIndicationAide(calcul()); } catch (e) { /* indication seulement */ }
+    if (typeof calculerRendu === 'function') calculerRendu();
+}
+</script>
