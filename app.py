@@ -10646,8 +10646,12 @@ def api_produits_search():
         prix_non_assure_par_produit = charger_prix_non_assure(structure_id, 'produit')
         
         try:
-            worksheet = sheets_helper.spreadsheet.worksheet(sheet_name)
-            all_values = worksheet.get_all_values()
+            # ⭐ onglet mémorisé (sheets_helper._onglet) : ~0,5 s de moins par chargement
+            try:
+                all_values = sheets_helper._onglet(sheet_name).get_all_values()
+            except Exception:
+                sheets_helper._onglets.pop(sheet_name, None)   # onglet renommé/recréé : on le retrouve
+                all_values = sheets_helper._onglet(sheet_name).get_all_values()
             
             if len(all_values) <= 1:
                 return jsonify({'data': [], 'total': 0, 'has_more': False})
@@ -16689,8 +16693,12 @@ def api_get_actes():
         services_par_id = {s['id']: s['nom'] for s in services_liste}
 
         try:
-            worksheet = sheets_helper.spreadsheet.worksheet(sheet_name)
-            actes = worksheet.get_all_records()
+            # ⭐ onglet mémorisé (sheets_helper._onglet) : ~0,5 s de moins par chargement
+            try:
+                actes = sheets_helper._onglet(sheet_name).get_all_records()
+            except Exception:
+                sheets_helper._onglets.pop(sheet_name, None)   # onglet renommé/recréé : on le retrouve
+                actes = sheets_helper._onglet(sheet_name).get_all_records()
             print(f"📊 Total actes dans {sheet_name}: {len(actes)}")
         except Exception as e:
             print(f"⚠️ Feuille {sheet_name} non trouvée: {e}")

@@ -669,58 +669,65 @@ function chargerPatients() {
         .catch(err => console.error('Erreur chargement patients:', err));
 }
 
-function chargerActes(search = '', append = false) {
-    const searchParam = search ? `&search=${encodeURIComponent(search)}` : '';
-    const url = `/api/actes?limit=${ACTES_LIMIT}&offset=${actesOffset}${searchParam}`;
-    
-    fetch(url)
-        .then(response => response.json())
+// ⭐ Recherche instantanée (patron, 2026-10-12 : « la requête au niveau de proforma est
+// lente ») : chaque recherche interrogeait le serveur, qui relisait toute la feuille Google
+// Sheets (2 à 2,5 s mesurées, + 0,5 s d'attente avant l'envoi). Désormais les actes et les
+// produits sont chargés UNE fois (à l'ouverture, en arrière-plan) et la recherche se fait
+// dans le navigateur : sans accents, par plusieurs mots (« para 500 »), immédiate.
+// Listes rechargées à chaque nouvelle proforma si elles ont plus de 2 minutes (prix, stock).
+const catalogueProforma = {
+    actes:    {url: '/api/actes?limit=100000',           donnees: null, promesse: null, charge: 0},
+    produits: {url: '/api/produits/search?limit=100000', donnees: null, promesse: null, charge: 0},
+};
+
+function chargerCatalogueProforma(cle, forcer) {
+    const c = catalogueProforma[cle];
+    const perime = Date.now() - c.charge > 120000;
+    if (c.promesse && !(forcer && perime && c.donnees)) return c.promesse;
+    c.promesse = fetch(c.url)
+        .then(r => r.json())
         .then(data => {
-            if (data.error) {
-                console.error('Erreur:', data.error);
-                return;
-            }
-            
-            const newActes = data.data || [];
-            console.log('📊 Actes chargés:', newActes);  // 🔥 Vérifier que pbr est présent
-            
-            actesTotal = data.total || 0;
-            
-            if (append) {
-                actesList = [...actesList, ...newActes];
-            } else {
-                actesList = newActes;
-            }
-            
-            remplirListeActes(search, append, data.has_more);
+            if (data.error) throw new Error(data.error);
+            c.donnees = data.data || [];
+            c.charge = Date.now();
+            return c.donnees;
         })
-        .catch(err => console.error('❌ Erreur chargement actes:', err));
+        .catch(err => {
+            console.error(`❌ Erreur chargement ${cle}:`, err);
+            c.promesse = null;          // nouvel essai à la prochaine recherche
+            return c.donnees || [];
+        });
+    return c.promesse;
 }
 
-function chargerProduits(search = '', append = false) {
-    const searchParam = search ? `&search=${encodeURIComponent(search)}` : '';
-    const url = `/api/produits/search?limit=${PRODUITS_LIMIT}&offset=${produitsOffset}${searchParam}`;
-    
-    fetch(url)
-        .then(response => response.json())
-        .then(data => {
-            if (data.error) {
-                console.error('Erreur:', data.error);
-                return;
-            }
-            
-            const newProduits = data.data || [];
-            produitsTotal = data.total || 0;
-            
-            if (append) {
-                produitsList = [...produitsList, ...newProduits];
-            } else {
-                produitsList = newProduits;
-            }
-            
-            remplirListeProduits(search, append, data.has_more);
-        })
-        .catch(err => console.error('Erreur chargement produits:', err));
+function filtrerCatalogue(liste, search, champs) {
+    const termes = normaliserRecherche(search).split(/\s+/).filter(Boolean);
+    if (!termes.length) return liste;
+    return liste.filter(x => {
+        const texte = normaliserRecherche(champs.map(ch => x[ch] || '').join(' '));
+        return termes.every(t => texte.includes(t));
+    });
+}
+
+function chargerActes(search = '', append = false, forcer = false) {
+    return chargerCatalogueProforma('actes', forcer).then(tous => {
+        // une recherche plus récente a pu être tapée entre-temps : on affiche la dernière
+        const champ = document.getElementById('acteSearchInput');
+        if (champ) search = champ.value.trim();
+        actesList = filtrerCatalogue(tous, search, ['nom', 'code']);
+        actesTotal = actesList.length;
+        remplirListeActes(search, false, false);
+    });
+}
+
+function chargerProduits(search = '', append = false, forcer = false) {
+    return chargerCatalogueProforma('produits', forcer).then(tous => {
+        const champ = document.getElementById('produitSearchInput');
+        if (champ) search = champ.value.trim();
+        produitsList = filtrerCatalogue(tous, search, ['nom']);
+        produitsTotal = produitsList.length;
+        remplirListeProduits(search, false, false);
+    });
 }
 
 // ============================================
@@ -754,9 +761,9 @@ function remplirListePatients() {
 function remplirListeActes(search = '', append = false, hasMore = false) {
     const select = document.getElementById('acteSelect');
 
-    if (!append) {
-        select.innerHTML = '<option value="">-- Actes disponibles --</option>';
-    }
+    // ⭐ options construites en un seul bloc (plus de « innerHTML += » à chaque acte, qui
+    // reconstruisait toute la liste à chaque fois)
+    let html = append ? select.innerHTML : '<option value="">-- Actes disponibles --</option>';
 
     // ⭐ Patient AMU-TNS : le badge d'avertissement ci-dessous doit refléter
     // le panier de soins TNS, pas le flag AMU générique.
@@ -778,7 +785,7 @@ function remplirListeActes(search = '', append = false, hasMore = false) {
         const commentaireAMUActe = a.commentaire_amu || '';
         const commentaireCACActe = a.commentaire_cac || '';
 
-        select.innerHTML += `
+        html += `
             <option value="${id}"
                     data-prix="${prix}"
                     data-pbr="${pbr}"
@@ -796,6 +803,7 @@ function remplirListeActes(search = '', append = false, hasMore = false) {
         `;
     });
     
+    select.innerHTML = html;
     const total = actesTotal || actesList.length;
     document.getElementById('acteCount').textContent = total;
     
@@ -821,6 +829,7 @@ function remplirListeProduits(search = '', append = false, hasMore = false) {
     if (!append) {
         select.innerHTML = '<option value="">-- Produits disponibles --</option>';
     }
+    const nouvellesOptions = document.createDocumentFragment();   // ⭐ ajoutées en une fois (un seul rendu)
 
     // ⭐ Patient AMU-TNS : le badge d'avertissement ci-dessous doit refléter
     // le panier de soins TNS, pas le flag AMU générique.
@@ -919,8 +928,9 @@ function remplirListeProduits(search = '', append = false, hasMore = false) {
         }
         
         option.textContent = label;
-        select.appendChild(option);
+        nouvellesOptions.appendChild(option);
     });
+    select.appendChild(nouvellesOptions);
     
     const total = produitsTotal || produitsList.length;
     document.getElementById('produitCount').textContent = total;
@@ -969,7 +979,7 @@ function filtrerActesListe() {
     acteSearchTimeout = setTimeout(() => {
         actesOffset = 0;
         chargerActes(search, false);
-    }, 500);
+    }, 120);
 }
 
 function filtrerProduitsListe() {
@@ -979,7 +989,7 @@ function filtrerProduitsListe() {
     produitSearchTimeout = setTimeout(() => {
         produitsOffset = 0;
         chargerProduits(search, false);
-    }, 500);
+    }, 120);
 }
 
 // ⭐ bouton ✕ des deux recherches (actes / médicaments)
@@ -1999,8 +2009,8 @@ function nouvelleProforma() {
     document.getElementById('assurance2TauxApplique').disabled = true;
     
     chargerPatients();
-    chargerActes('', false);
-    chargerProduits('', false);
+    chargerActes('', false, true);     // rechargées si elles ont plus de 2 minutes (prix, stock)
+    chargerProduits('', false, true);
     
     new bootstrap.Modal(document.getElementById('proformaModal')).show();
 }
