@@ -58,30 +58,21 @@
                 <h5>Vente de produits</h5>
             </div>
             <div class="card-body">
-                <!-- Barre de recherche -->
-                <div class="row mb-3">
-                    <div class="col-md-6 mx-auto">
-                        <div class="input-group">
-                            <span class="input-group-text bg-white border-end-0">
-                                <i class="fas fa-search text-success"></i>
-                            </span>
-                            <input type="text" id="searchProduitInput" class="form-control border-start-0" 
-                                   placeholder="Rechercher un produit..." 
-                                   onkeyup="filterProduits()">
-                            <button class="btn btn-outline-secondary" onclick="clearProduitSearch()" type="button">
-                                <i class="fas fa-times"></i>
-                            </button>
-                        </div>
-                        <div class="text-muted small mt-1">
-                            <i class="fas fa-info-circle"></i> <span id="produitResultCount">0</span> produit(s) trouvé(s)
-                        </div>
-                    </div>
-                </div>
-                
                 <div class="row">
                     <div class="col-md-6">
-                        <label class="form-label">Sélectionner un produit</label>
-                        <select class="form-control" id="produitSelect" size="8">
+<!-- ⭐ Recherche collée à la liste et mise en exergue (voir partials/recherche_articles.html) -->
+<div class="zone-recherche-articles mb-2">
+    <label for="searchProduitInput" class="form-label fw-bold mb-1"><i class="fas fa-search"></i> Rechercher un produit</label>
+    <div class="input-group input-group-lg">
+        <input type="text" id="searchProduitInput" class="form-control" placeholder="Tapez une partie du nom (ex. para 500)…" autocomplete="off"
+               oninput="filterProduits()">
+        <button class="btn btn-outline-secondary" onclick="clearProduitSearch()" type="button" title="Effacer la recherche">
+            <i class="fas fa-times"></i>
+        </button>
+    </div>
+    <div class="small mt-1 text-muted"><span id="produitResultCount">0</span> produit(s) trouvé(s) — <strong>Entrée</strong> ou <strong>double-clic</strong> pour ajouter au panier</div>
+</div>
+                        <select class="form-control" id="produitSelect" size="10" aria-label="Produits trouvés">
                             <option value="">-- Choisir un produit --</option>
                         </select>
                     </div>
@@ -1298,6 +1289,8 @@ async function reapprovisionner(id, nom) {
 // RECHERCHE
 // ============================================
 function filterProduits() {
+    // ⭐ sans accents, plusieurs mots, 1er résultat sélectionné (partials/recherche_articles.html)
+    if (window.filtrerListeArticles) return filtrerListeArticles('searchProduitInput', 'produitSelect', 'produitResultCount');
     const searchTerm = document.getElementById('searchProduitInput').value.toLowerCase().trim();
     const select = document.getElementById('produitSelect');
     const options = select.options;
@@ -1321,6 +1314,7 @@ function filterProduits() {
 function clearProduitSearch() {
     document.getElementById('searchProduitInput').value = '';
     filterProduits();
+    document.getElementById('searchProduitInput').focus();
 }
 
 // ============================================
@@ -1632,7 +1626,9 @@ function afficherAlerteScan(message, estErreur) {
     champ.addEventListener('focus', function() {
         champ.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
-    champ.focus();
+    // ⭐ 2026-10-12 : plus de curseur placé ici à l'ouverture de la page (patron : « qu'on décide
+    // d'y aller nous-mêmes ») — on clique dans le champ pour scanner ; après un scan, il garde
+    // le curseur pour enchaîner (soumettreScanProduit).
 })();
 
 async function modifierPrix(index, nouveauPrix) {
@@ -2850,5 +2846,9 @@ document.addEventListener('DOMContentLoaded', function() {
         calculerRendu();
     }, 500);
 });
+</script>
+{% include 'partials/recherche_articles.html' %}
+<script>
+document.addEventListener('DOMContentLoaded', function () { brancherRechercheArticles('searchProduitInput', 'produitSelect', ajouterProduit, clearProduitSearch); });
 </script>
 {% endblock %}

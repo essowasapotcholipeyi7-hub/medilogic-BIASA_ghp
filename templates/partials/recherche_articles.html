@@ -1,0 +1,96 @@
+{# ⭐ Recherche et sélection des articles (vente d'actes, pharmacie) — patron, 2026-10-12 :
+   « la barre de recherche est un peu éloignée de la liste des articles et parfois les
+   secrétaires se perdent — la mettre en exergue ; double-clic sur un article = ajouté au
+   panier avec les mêmes contrôles que le bouton Ajouter ; que la recherche et la
+   sélection soient meilleures ».
+   - recherche sans accents et par plusieurs mots (« para 500 » trouve « Paracétamol 500mg ») ;
+   - le premier résultat est sélectionné tout seul ; Entrée l'ajoute, flèche bas descend
+     dans la liste, Échap efface la recherche ;
+   - dans la liste : double-clic ou Entrée = Ajouter (même fonction que le bouton) ;
+   - après un ajout, le curseur revient dans la recherche pour l'article suivant. #}
+<style>
+    .zone-recherche-articles {
+        border: 2px solid var(--th-primaire, #0d6efd);
+        border-radius: 10px;
+        padding: 10px 12px 8px;
+        background: rgba(13, 110, 253, 0.04);
+    }
+    .zone-recherche-articles .form-label { color: var(--th-primaire-fonce, #0A3D5C); }
+    [data-bs-theme="dark"] .zone-recherche-articles .form-label { color: var(--th-primaire, #00E599); }
+    .zone-recherche-articles input.form-control { font-weight: 600; }
+    .liste-articles-recherche option { padding: 4px 6px; }
+    /* article sélectionné bien visible, quel que soit le thème (le surlignage gris pâle du
+       navigateur se voyait à peine) */
+    .liste-articles-recherche option:checked {
+        font-weight: 700;
+        background: linear-gradient(var(--th-primaire-fonce, #0A3D5C), var(--th-primaire-fonce, #0A3D5C)) !important;
+        color: #fff !important;
+    }
+    [data-bs-theme="dark"] .liste-articles-recherche option:checked {
+        background: linear-gradient(var(--th-primaire, #00E599), var(--th-primaire, #00E599)) !important;
+        color: #0A0A0A !important;
+    }
+</style>
+<script>
+function normaliserRecherche(texte) {
+    return (texte || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function filtrerListeArticles(idChamp, idListe, idCompteur) {
+    const termes = normaliserRecherche(document.getElementById(idChamp).value).split(/\s+/).filter(Boolean);
+    const liste = document.getElementById(idListe);
+    let visibles = 0, premier = null;
+    // la ligne « -- Choisir… » n'a rien à faire au milieu des résultats d'une recherche
+    if (liste.options.length && !liste.options[0].value) liste.options[0].style.display = termes.length ? 'none' : '';
+    for (let i = 1; i < liste.options.length; i++) {
+        const option = liste.options[i];
+        const texte = normaliserRecherche(option.text);
+        const garde = termes.every(t => texte.includes(t));
+        option.style.display = garde ? '' : 'none';
+        if (garde) {
+            visibles++;
+            if (!premier) premier = option;
+        }
+    }
+    document.getElementById(idCompteur).innerText = visibles;
+    // le premier résultat est sélectionné tout seul (si la sélection actuelle est masquée)
+    const actuelle = liste.options[liste.selectedIndex];
+    if (termes.length && premier && (!actuelle || !actuelle.value || actuelle.style.display === 'none')) {
+        liste.value = premier.value;
+        liste.dispatchEvent(new Event('change'));
+        premier.scrollIntoView({block: 'nearest'});
+    }
+}
+
+function brancherRechercheArticles(idChamp, idListe, ajouter, effacer) {
+    const champ = document.getElementById(idChamp);
+    const liste = document.getElementById(idListe);
+    if (!champ || !liste) return;
+    liste.classList.add('liste-articles-recherche');
+    async function ajouterPuisRevenir() {
+        if (!liste.value) return;
+        await ajouter();
+        // retour à la recherche pour l'article suivant — sauf si l'ajout a demandé
+        // de compléter autre chose (médecin réalisateur, quantité…)
+        const actif = document.activeElement;
+        if (!actif || actif === document.body || actif === liste || actif === champ) {
+            champ.focus();
+            champ.select();
+        }
+    }
+    champ.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); ajouterPuisRevenir(); }
+        else if (e.key === 'ArrowDown') { e.preventDefault(); liste.focus(); }
+        else if (e.key === 'Escape') { e.preventDefault(); effacer(); }
+    });
+    liste.addEventListener('dblclick', function (e) {
+        if (e.target && e.target.tagName === 'OPTION' && e.target.value) {
+            liste.value = e.target.value;
+            ajouterPuisRevenir();
+        }
+    });
+    liste.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); ajouterPuisRevenir(); }
+    });
+}
+</script>
