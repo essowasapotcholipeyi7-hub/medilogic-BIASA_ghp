@@ -190,11 +190,11 @@
                         <th style="width: 10%; min-width: 90px;">Téléphone</th>
                         <th style="width: 12%; min-width: 110px;">Assurance</th>
                         <th style="width: 14%; min-width: 120px;">Assurance 2</th>
-                        <th style="width: 20%; min-width: 215px; text-align: center;">Actions</th>
+                        <th style="width: 11%; min-width: 125px; text-align: center;">Actions</th>
                         <!-- ⭐ Colonne Ventes (patron, 2026-10-12 : « ajouter à côté d'Actions, Ventes ;
                              une indication des boutons de vente — une simplification dans le travail ») :
                              les 4 raccourcis avec leur nom, au lieu de petites icônes à deviner. -->
-                        <th class="colonne-ventes" style="width: 24%; min-width: 210px; text-align: center;">Ventes</th>
+                        <th class="colonne-ventes" style="width: 33%; min-width: 300px; text-align: center;">Ventes</th>
                     </tr>
                 </thead>
                 <tbody id="patientsList">
@@ -235,12 +235,9 @@
                             {% endif %}
                         </td>
                         <td style="vertical-align: middle; text-align: center;">
-                            <div class="d-flex flex-wrap gap-1 justify-content-center align-items-center">
-                                <button class="btn btn-sm btn-outline-primary px-2 btn-selectionner-patient"
-                                        onclick='selectPatient({{ patient.ID }}, "{{ patient.nom }} {{ patient.prenom }}", "{{ patient.type_assurance }}", {{ patient.taux_prise_charge or 0 }}, "{{ patient.assurance2_nom or '' }}", {{ patient.taux_assurance2 or 0 }}, "{{ patient.societe_assurance2 or '' }}")'
-                                        title="Sélectionner ce patient">
-                                    <i class="fas fa-check me-1"></i> Sélectionner
-                                </button>
+                            <div class="d-flex flex-nowrap gap-1 justify-content-center align-items-center">
+                                <!-- ⭐ « Sélectionner » retiré (patron, 2026-10-12 : « il ne sert plus à rien ») :
+                                     il ouvrait les 4 mêmes destinations que la colonne Ventes. -->
                                 <button class="btn btn-sm btn-outline-secondary"
                                         onclick="voirDetails({{ patient.ID }})"
                                         title="Voir les détails">
@@ -266,10 +263,10 @@
                                  data-assurance="{{ patient.type_assurance }}" data-taux="{{ patient.taux_prise_charge or 0 }}"
                                  data-assurance2="{{ patient.assurance2_nom or '' }}" data-taux2="{{ patient.taux_assurance2 or 0 }}"
                                  data-societe="{{ patient.societe_assurance2 or '' }}">
-                                <button type="button" class="raccourci-dest raccourci-actes" onclick="raccourciPatient(this, 'actes')" title="Vente d'actes"><i class="fas fa-stethoscope"></i> Actes</button>
+                                <button type="button" class="raccourci-dest raccourci-actes" onclick="raccourciPatient(this, 'actes')" title="Vente d'actes">Vente acte</button>
                                 <button type="button" class="raccourci-dest raccourci-pharma" onclick="raccourciPatient(this, 'pharma')" title="Pharmacie"><i class="fas fa-pills"></i> Pharmacie</button>
                                 <button type="button" class="raccourci-dest raccourci-hospitalisation" onclick="raccourciPatient(this, 'hospitalisation')" title="Hospitalisation"><i class="fas fa-bed"></i> Hospitalisation</button>
-                                <button type="button" class="raccourci-dest raccourci-soins_ambulatoires" onclick="raccourciPatient(this, 'soins_ambulatoires')" title="Soins ambulatoires"><i class="fas fa-heart-pulse"></i> Soins</button>
+                                <button type="button" class="raccourci-dest raccourci-soins_ambulatoires" onclick="raccourciPatient(this, 'soins_ambulatoires')" title="Soins ambulatoires">Soins ambulatoires</button>
                             </div>
                         </td>
                     </tr>
@@ -2569,7 +2566,7 @@ document.addEventListener('DOMContentLoaded', function() {
 .raccourcis-ventes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; width: 100%; }
 .raccourcis-ventes .raccourci-dest {
     width: 100%; height: auto; min-height: 28px; padding: 3px 6px; gap: 5px;
-    font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .raccourcis-ventes .raccourci-dest i { font-size: 12px; flex-shrink: 0; }
 /* ⭐ Lisibles dans TOUS les thèmes (mesuré sur les 16) : texte plus foncé en thème clair
@@ -2583,9 +2580,6 @@ document.addEventListener('DOMContentLoaded', function() {
 [data-bs-theme="dark"] .raccourcis-ventes .raccourci-pharma { color: #6fdcae !important; background: rgba(14,157,103,.18) !important; border-color: rgba(14,157,103,.5) !important; }
 [data-bs-theme="dark"] .raccourcis-ventes .raccourci-hospitalisation { color: #d5dde8 !important; background: rgba(148,163,184,.16) !important; border-color: rgba(148,163,184,.45) !important; }
 [data-bs-theme="dark"] .raccourcis-ventes .raccourci-soins_ambulatoires { color: #7adcef !important; background: rgba(8,145,178,.18) !important; border-color: rgba(8,145,178,.5) !important; }
-/* « Sélectionner » : couleur foncée du thème (le jaune du thème Soleil était illisible) */
-.btn-selectionner-patient { color: var(--th-primaire-fonce, #0A3D5C) !important; border-color: var(--th-primaire-fonce, #0A3D5C) !important; }
-[data-bs-theme="dark"] .btn-selectionner-patient { color: var(--th-primaire, #00E599) !important; border-color: var(--th-primaire, #00E599) !important; }
 
 /* ⭐ Nouvelles cartes de destination (aperçu validé avant implémentation —
    patron : "améliore-moi les boutons quand on sélectionne un patient...
