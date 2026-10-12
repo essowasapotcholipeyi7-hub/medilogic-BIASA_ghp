@@ -334,103 +334,129 @@
 </div>
 
                 <div class="row mt-3">
-                    <div class="col-md-2">
-                        <label class="form-label">Mode de paiement</label>
-                        <select class="form-control" id="modePaiement">
-                            <option value="especes">Espèces</option>
-                            <option value="carte">Carte bancaire</option>
-                            <option value="Moov_money">FLOOZ</option>
-                            <option value="Mixx_By_Yas">MIXX By YAS</option>
-                            <option value="cheque">Chèque</option>
-                        </select>
+                    <!-- ⭐ Zone de paiement réorganisée (patron, 2026-10-12 : « aucune esthétique, améliore
+                         bien ») : ligne 1 = encaissement, ligne 2 = document à imprimer. Le taux AMU n'est
+                         plus affiché ici (il se modifie déjà en haut, dans les réglages d'assurance) mais
+                         #tauxVente reste dans la page, masqué : tous les calculs le lisent. Format : deux boutons (partials/choix_format_impression.html). -->
+                    <div class="col-12">
+                    <div class="zone-paiement">
+                        <div class="titre-zone-paiement"><i class="fas fa-cash-register"></i> Encaissement</div>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold" for="modePaiement">Mode de paiement</label>
+                                <select class="form-select form-select-lg" id="modePaiement">
+                                    <option value="especes">Espèces</option>
+                                    <option value="carte">Carte bancaire</option>
+                                    <option value="Moov_money">FLOOZ</option>
+                                    <option value="Mixx_By_Yas">MIXX By YAS</option>
+                                    <option value="cheque">Chèque</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold texte-montant-donne" for="montantDonne">
+                                    Montant donné <span class="badge-obligatoire">OBLIGATOIRE</span>
+                                </label>
+                                <div class="input-group input-group-lg">
+                                    <input type="number" class="form-control champ-montant-donne" id="montantDonne"
+                                           value="0" min="0" step="100"
+                                           oninput="calculerRendu()"
+                                           placeholder="Ex : 5000">
+                                    <span class="input-group-text">FCFA</span>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold" for="montantRendu">Rendu au patient</label>
+                                <input type="text" class="form-control form-control-lg fw-bold" id="montantRendu"
+                                       value="0 fr" readonly
+                                       style="color: #28a745; background: #f0f8f0;">
+                            </div>
+                        </div>
+
+                        <div class="titre-zone-paiement mt-3"><i class="fas fa-print"></i> Document à imprimer</div>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold" for="typeDocument">Type de document</label>
+                                <select class="form-select" id="typeDocument">
+                                    <option value="recu_client">Reçu Patient</option>
+                                    <option value="recu_structure">Reçu Structure (copie)</option>
+                                    <option value="facture_client">Facture Patient</option>
+                                    <option value="facture_structure">Facture Structure (archive)</option>
+                                    <option value="les_deux">Les deux (Patient + Structure)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-label fw-bold">Format</div>
+                                {# même valeur qu'avant dans #formatImpression (champ caché), 80 mm par défaut #}
+                                {% with id_format='formatImpression', compact=True %}{% include 'partials/choix_format_impression.html' %}{% endwith %}
+                            </div>
+                            <!-- 🔥 AIDE HOSPITALIÈRE (toujours modifiable) — % ou montant direct FCFA.
+                                 ⭐ Le mode % plafonnait à 100 seulement via l'attribut HTML max (jamais
+                                 vérifié en JS) : un taux mal saisi (ex: 500) donnait un net à payer
+                                 négatif. On ajoute le mode montant direct + un vrai plafond JS. -->
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold" for="tauxAideHospitaliere">
+                                    <i class="fas fa-hand-holding-heart text-warning"></i> Aide hospitalière
+                                </label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" id="tauxAideHospitaliere"
+                                           value="0"
+                                           step="5" min="0" max="100"
+                                           onchange="calculerTotal(); calculerRendu();">
+                                    <select class="form-select" id="typeAideHospitaliere" style="max-width: 95px;"
+                                            onchange="onChangeTypeAideHospitaliere(); calculerTotal(); calculerRendu();">
+                                        <option value="pourcentage" selected>%</option>
+                                        <option value="montant">FCFA</option>
+                                    </select>
+                                </div>
+                                <small class="form-text" id="aideHospitaliereHint">
+                                    Taux d'aide (max 100%)
+                                </small>
+                            </div>
+                        </div>
+
+                        <!-- Taux AMU : masqué ici (modifiable en haut), mais toujours lu par les calculs -->
+                        <div class="d-none">
+                            <label class="form-label" id="tauxLabel" for="tauxVente">Taux AMU (%)</label>
+                            <input type="number" class="form-control" id="tauxVente"
+                                   value="{% if patientAssurance in ['amu_cnss', 'amu_inam', 'amu_tns'] %}80{% else %}0{% endif %}"
+                                   step="5" min="0" max="100"
+                                   onchange="calculerTotal(); calculerRendu();">
+                        </div>
+                    </div>
                     </div>
 
-                    <div class="col-md-2">
-                        <label class="form-label" style="color: #dc3545; font-weight: bold;">
-                            Montant donné
-                            <span style="background: #dc3545; color: white; font-size: 10px; padding: 2px 8px; border-radius: 20px; margin-left: 5px;">
-                                OBLIGATOIRE
-                            </span>
-                        </label>
-                        <input type="number" class="form-control" id="montantDonne" 
-                               value="0" min="0" step="100"
-                               oninput="calculerRendu()"
-                               placeholder="Ex: 5000"
-                               style="border-color: #dc3545; border-width: 2px; background-color: #fff5f5;">
-                        <small style="color: #dc3545; font-size: 10px; font-weight: 600; display: block; margin-top: 3px;">
-                            <i class="fas fa-exclamation-circle"></i> 
-                            Saisir montant payé
-                        </small>
-                    </div>                    
-                    
-                    <div class="col-md-2">
-                        <label class="form-label">Rendu au patient</label>
-                        <input type="text" class="form-control" id="montantRendu" 
-                               value="0 fr" readonly
-                               style="font-weight: bold; color: #28a745; background: #f0f8f0;">
-                    </div>
-
-                    <div class="col-md-2">
-                        <label class="form-label">Type de document</label>
-                        <select class="form-control" id="typeDocument">
-                            <option value="recu_client">Reçu Patient</option>
-                            <option value="recu_structure">Reçu Structure (copie)</option>
-                            <option value="facture_client">Facture Patient</option>
-                            <option value="facture_structure">Facture Structure (archive)</option>
-                            <option value="les_deux">Les deux</option>
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">Format80mm/A4</label>
-                        <select class="form-control" id="formatImpression">
-                            <option value="80mm" selected>Format Ticket (80mm)</option>
-                            <option value="A4">Format A4</option>
-                        </select>
-                    </div>
-
-<!-- 🔥 TAUX AMU (pour l'assurance) -->
-<div class="col-md-3">
-    <label class="form-label" id="tauxLabel">
-        {% if patientAssurance in ['amu_cnss', 'amu_inam', 'amu_tns'] %}
-            Taux AMU (%)
-        {% else %}
-            Taux AMU (%)
-        {% endif %}
-    </label>
-    <input type="number" class="form-control" id="tauxVente"
-           value="{% if patientAssurance in ['amu_cnss', 'amu_inam', 'amu_tns'] %}80{% else %}0{% endif %}"
-           step="5" min="0" max="100" 
-           onchange="calculerTotal(); calculerRendu();">
-    <small style="color: #6c757d; display: block; margin-top: 3px;">
-        Taux de l'assurance principale (AMU)
-    </small>
-</div>
-
-<!-- 🔥 AIDE HOSPITALIÈRE (toujours modifiable) — % ou montant direct FCFA.
-     ⭐ Le mode % plafonnait à 100 seulement via l'attribut HTML max (jamais
-     vérifié en JS) : un taux mal saisi (ex: 500) donnait un net à payer
-     négatif. On ajoute le mode montant direct + un vrai plafond JS. -->
-<div class="col-md-3">
-    <label class="form-label text-warning">
-        <i class="fas fa-hand-holding-heart"></i> Aide hospitalière
-    </label>
-    <div class="input-group">
-        <input type="number" class="form-control" id="tauxAideHospitaliere"
-               value="0"
-               step="5" min="0" max="100"
-               onchange="calculerTotal(); calculerRendu();"
-               style="border-color: #ffc107;">
-        <select class="form-control" id="typeAideHospitaliere" style="max-width: 85px; border-color: #ffc107;"
-                onchange="onChangeTypeAideHospitaliere(); calculerTotal(); calculerRendu();">
-            <option value="pourcentage" selected>%</option>
-            <option value="montant">FCFA</option>
-        </select>
-    </div>
-    <small style="color: #6c757d; display: block; margin-top: 3px;" id="aideHospitaliereHint">
-        Taux d'aide (max 100%)
-    </small>
-</div>
-
+                    <style>
+                        .zone-paiement {
+                            border: 1px solid var(--th-primaire, #0d6efd);
+                            border-radius: 10px;
+                            padding: 14px 16px 16px;
+                        }
+                        .titre-zone-paiement {
+                            font-size: .8rem;
+                            font-weight: 700;
+                            text-transform: uppercase;
+                            letter-spacing: .06em;
+                            color: var(--th-primaire-fonce, #0A3D5C);
+                            padding-bottom: 6px;
+                            margin-bottom: 10px;
+                            border-bottom: 1px solid rgba(128, 128, 128, .25);
+                        }
+                        [data-bs-theme="dark"] .titre-zone-paiement { color: var(--th-primaire, #00E599); }
+                        .zone-paiement .form-label { margin-bottom: 4px; }
+                        .texte-montant-donne { color: #dc3545; }
+                        [data-bs-theme="dark"] .texte-montant-donne { color: #ff6b7a; }
+                        .badge-obligatoire {
+                            background: #dc3545; color: #fff; font-size: 10px; padding: 2px 8px;
+                            border-radius: 20px; margin-left: 5px; vertical-align: middle;
+                        }
+                        .zone-paiement .champ-montant-donne {
+                            border: 2px solid #dc3545 !important;
+                            background-color: rgba(220, 53, 69, .06) !important;
+                            font-weight: 700;
+                        }
+                        .zone-paiement .champ-montant-donne:focus { box-shadow: 0 0 0 .2rem rgba(220, 53, 69, .25); }
+                        .zone-paiement .champ-montant-donne + .input-group-text { border: 2px solid #dc3545 !important; border-left: 0 !important; font-weight: 700; }
+                    </style>
                     <!-- ⭐ Barre d'action collante (patron, 2026-09-30) : "le
                          bouton finaliser remonte pour un accès facile... il
                          faut scroller soit même". Voir actes_vente.html pour le

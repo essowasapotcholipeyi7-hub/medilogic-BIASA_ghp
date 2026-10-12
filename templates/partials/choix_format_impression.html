@@ -1,20 +1,23 @@
-{# ⭐ Choix du format de réimpression bien visible (patron, 2026-10-12 : « le choix
-   de A4 ou 80mm est un peu caché, rends-le bien visible mais par défaut 80mm ») :
-   deux gros boutons au lieu d'une liste déroulante. La valeur reste lue dans
-   #printFormat comme avant ; choisirFormatImpression('80mm') est rappelé à
-   chaque ouverture de la fenêtre (80 mm par défaut). #}
-<div class="mb-3">
-    <div class="form-label fw-bold mb-2">Format d'impression</div>
-    <input type="hidden" id="printFormat" value="80mm">
+{# ⭐ Choix du format d'impression bien visible (patron, 2026-10-12 : « le choix de A4 ou
+   80mm est un peu caché, rends-le bien visible mais par défaut 80mm ») : deux boutons au
+   lieu d'une liste déroulante. La valeur reste lue dans le champ caché (par défaut
+   #printFormat) comme avant ; choisirFormatImpression('80mm'[, id]) remet le défaut.
+   Variables facultatives (via {% with %}) :
+     id_format — id du champ caché (ex. 'formatImpression' sur les pages de vente) ;
+     compact   — boutons de taille normale, sans titre (dans un formulaire). #}
+{% set _id = id_format|default('printFormat') %}
+<div class="{{ '' if compact else 'mb-3' }}">
+    {% if not compact %}<div class="form-label fw-bold mb-2">Format d'impression</div>{% endif %}
+    <input type="hidden" id="{{ _id }}" value="80mm">
     <div class="btn-group w-100 choix-format-impression" role="group" aria-label="Format d'impression">
-        <input type="radio" class="btn-check" name="choixFormatImpression" id="choixFormat80mm" autocomplete="off" checked
-               onchange="choisirFormatImpression('80mm')">
-        <label class="btn btn-outline-primary btn-lg fw-bold py-3" for="choixFormat80mm">
+        <input type="radio" class="btn-check" name="choix_{{ _id }}" id="{{ _id }}_80mm" autocomplete="off" checked
+               onchange="choisirFormatImpression('80mm', '{{ _id }}')">
+        <label class="btn btn-outline-primary fw-bold {{ '' if compact else 'btn-lg py-3' }}" for="{{ _id }}_80mm">
             <i class="fas fa-receipt me-1"></i> Ticket 80 mm
         </label>
-        <input type="radio" class="btn-check" name="choixFormatImpression" id="choixFormatA4" autocomplete="off"
-               onchange="choisirFormatImpression('A4')">
-        <label class="btn btn-outline-primary btn-lg fw-bold py-3" for="choixFormatA4">
+        <input type="radio" class="btn-check" name="choix_{{ _id }}" id="{{ _id }}_A4" autocomplete="off"
+               onchange="choisirFormatImpression('A4', '{{ _id }}')">
+        <label class="btn btn-outline-primary fw-bold {{ '' if compact else 'btn-lg py-3' }}" for="{{ _id }}_A4">
             <i class="fas fa-file-alt me-1"></i> Feuille A4
         </label>
     </div>
@@ -25,6 +28,7 @@
    plein (avec coche), l'autre en couleur de texte normale du thème. Thèmes clairs : couleur
    foncée du thème + texte blanc ; thèmes sombres : accent clair du thème + texte noir. */
 .choix-format-impression .btn {
+    white-space: nowrap;
     color: var(--th-texte, #212529) !important;
     border-color: var(--th-primaire-fonce, #0A3D5C) !important;
 }
@@ -43,11 +47,19 @@
     color: #0A0A0A !important;
     box-shadow: 0 0 0 3px rgba(255, 255, 255, .18) !important;
 }
-.choix-format-impression .btn-check:checked + .btn::after { content: " ✓"; font-weight: 800; }
+.choix-format-impression .btn:not(.btn-lg) { font-size: .95rem; }
+/* coche à côté du texte : neutralise l'effet « ripple » global (.btn::after en position
+   absolue, centré) qui la faisait tomber sous le texte */
+.choix-format-impression .btn-check:checked + .btn::after {
+    content: " ✓"; font-weight: 800;
+    position: static; width: auto; height: auto; background: none;
+    border-radius: 0; transform: none; transition: none;
+}
 </style>
 <script>
-function choisirFormatImpression(format) {
-    document.getElementById('printFormat').value = format;
-    document.getElementById(format === 'A4' ? 'choixFormatA4' : 'choixFormat80mm').checked = true;
+function choisirFormatImpression(format, idChamp) {
+    idChamp = idChamp || 'printFormat';
+    document.getElementById(idChamp).value = format;
+    document.getElementById(idChamp + (format === 'A4' ? '_A4' : '_80mm')).checked = true;
 }
 </script>
