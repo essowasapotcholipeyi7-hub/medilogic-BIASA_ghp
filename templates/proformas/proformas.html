@@ -3981,4 +3981,19 @@ document.addEventListener('DOMContentLoaded', function () {
     brancherResumeAssurances(document.getElementById('reglagesAssuranceProforma'), resumeAssurancesProforma);
 });
 </script>
+<script>
+// ⭐ Aide hospitalière : un nombre au-delà de 100 ne peut être qu'un montant — l'unité passe
+// toute seule en FCFA (patron, 2026-10-12, même règle que la vente d'actes et la pharmacie).
+// Création, conversion en vente et modification de proforma.
+const AIDE_CHAMPS_UNITE = {tauxAideProforma: 'typeAideProforma', convertTauxAide: 'convertTypeAide', modifTauxAide: 'modifTypeAide'};
+document.addEventListener('input', function (e) {
+    const idUnite = e.target && AIDE_CHAMPS_UNITE[e.target.id];
+    if (!idUnite) return;
+    const unite = document.getElementById(idUnite);
+    if (unite && unite.value === 'pourcentage' && parseFloat(e.target.value) > 100) {
+        unite.value = 'montant';
+        unite.dispatchEvent(new Event('change'));   // bornes du champ + recalcul (fonctions de la page)
+    }
+}, true);
+</script>
 {% endblock %}

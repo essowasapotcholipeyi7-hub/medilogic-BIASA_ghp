@@ -5,12 +5,19 @@
    sélection soient meilleures ».
    - recherche sans accents et par plusieurs mots (« para 500 » trouve « Paracétamol 500mg ») ;
    - le premier résultat est sélectionné tout seul ; Entrée l'ajoute, flèche bas descend
-     dans la liste, Échap efface la recherche ;
+     dans la liste, Échap referme la liste et efface la recherche ;
    - dans la liste : double-clic ou Entrée = Ajouter (même fonction que le bouton) ;
    - après un ajout (Entrée, double-clic OU bouton Ajouter), la recherche se vide et le
-     curseur y revient pour l'article suivant. #}
+     curseur y revient pour l'article suivant.
+   ⭐ Liste déroulante (patron, 2026-10-12 : « comme l'affichage des comptes dans l'écriture
+   comptable, pour gagner tout cet espace ») : la liste ne prend plus de place sur la page ;
+   elle s'ouvre sous la recherche quand on tape (ou flèche bas / clic dans le champ) et se
+   referme quand on passe à autre chose. L'article choisi reste rappelé sous la recherche.
+   La liste reste le même <select> (même id, même valeur) : rien ne change pour le reste
+   de la page. #}
 <style>
     .zone-recherche-articles {
+        position: relative;
         border: 2px solid var(--th-primaire, #0d6efd);
         border-radius: 10px;
         padding: 10px 12px 8px;
@@ -31,6 +38,37 @@
         background: linear-gradient(var(--th-primaire, #00E599), var(--th-primaire, #00E599)) !important;
         color: #0A0A0A !important;
     }
+    /* liste déroulante sous la recherche */
+    .deroulant-articles {
+        position: absolute;
+        left: -2px;
+        right: -2px;
+        top: calc(100% - 4px);
+        z-index: 1040;
+        display: none;
+        padding: 6px;
+        background: var(--bs-body-bg, #fff);
+        border: 2px solid var(--th-primaire, #0d6efd);
+        border-top: 0;
+        border-radius: 0 0 10px 10px;
+        box-shadow: 0 12px 24px rgba(0, 0, 0, .18);
+    }
+    .zone-recherche-articles.liste-ouverte .deroulant-articles { display: block; }
+    .zone-recherche-articles.liste-ouverte { border-radius: 10px 10px 0 0; }
+    .deroulant-articles select { max-height: 290px; }
+    .deroulant-articles .aucun-article { display: none; padding: 8px; }
+    .deroulant-articles.vide .aucun-article { display: block; }
+    .deroulant-articles.vide select { display: none; }
+    .article-choisi {
+        display: none;
+        margin-top: 6px;
+        padding: 5px 8px;
+        border-radius: 6px;
+        font-size: .9rem;
+        background: rgba(25, 135, 84, .10);
+        border: 1px solid rgba(25, 135, 84, .45);
+    }
+    .article-choisi.visible { display: block; }
 </style>
 <script>
 function normaliserRecherche(texte) {
@@ -41,10 +79,11 @@ function filtrerListeArticles(idChamp, idListe, idCompteur) {
     const termes = normaliserRecherche(document.getElementById(idChamp).value).split(/\s+/).filter(Boolean);
     const liste = document.getElementById(idListe);
     let visibles = 0, premier = null;
-    // la ligne « -- Choisir… » n'a rien à faire au milieu des résultats d'une recherche
-    if (liste.options.length && !liste.options[0].value) liste.options[0].style.display = termes.length ? 'none' : '';
-    for (let i = 1; i < liste.options.length; i++) {
+    // la ligne « -- Choisir… » n'a rien à faire dans la liste déroulante
+    if (liste.options.length && !liste.options[0].value) liste.options[0].style.display = 'none';
+    for (let i = 0; i < liste.options.length; i++) {
         const option = liste.options[i];
+        if (!option.value) continue;
         const texte = normaliserRecherche(option.text);
         const garde = termes.every(t => texte.includes(t));
         option.style.display = garde ? '' : 'none';
@@ -54,6 +93,8 @@ function filtrerListeArticles(idChamp, idListe, idCompteur) {
         }
     }
     document.getElementById(idCompteur).innerText = visibles;
+    const deroulant = liste.closest('.deroulant-articles');
+    if (deroulant) deroulant.classList.toggle('vide', visibles === 0);
     // le premier résultat est sélectionné tout seul (si la sélection actuelle est masquée)
     const actuelle = liste.options[liste.selectedIndex];
     if (termes.length && premier && (!actuelle || !actuelle.value || actuelle.style.display === 'none')) {
@@ -68,6 +109,60 @@ function brancherRechercheArticles(idChamp, idListe, ajouter, effacer) {
     const liste = document.getElementById(idListe);
     if (!champ || !liste) return;
     liste.classList.add('liste-articles-recherche');
+
+    // ---------- liste déroulante sous la recherche ----------
+    const zone = champ.closest('.zone-recherche-articles');
+    let choisi = null;
+    if (zone) {
+        const deroulant = document.createElement('div');
+        deroulant.className = 'deroulant-articles';
+        const aucun = document.createElement('div');
+        aucun.className = 'aucun-article text-muted small';
+        aucun.textContent = 'Aucun article ne correspond à cette recherche.';
+        liste.setAttribute('size', '8');
+        deroulant.append(liste, aucun);
+        zone.appendChild(deroulant);
+        choisi = document.createElement('div');
+        choisi.className = 'article-choisi';
+        zone.appendChild(choisi);
+        if (liste.options.length && !liste.options[0].value) liste.options[0].style.display = 'none';
+    }
+    const ouvrir = () => {
+        if (!zone) return;
+        // la liste peut avoir été rechargée entre-temps (articles chargés après la page)
+        if (liste.options.length && !liste.options[0].value) liste.options[0].style.display = 'none';
+        zone.classList.add('liste-ouverte');
+        majChoisi();
+    };
+    const fermer = () => { if (zone) { zone.classList.remove('liste-ouverte'); majChoisi(); } };
+    function majChoisi() {
+        if (!choisi) return;
+        const option = liste.options[liste.selectedIndex];
+        const montrer = !!(option && option.value) && !zone.classList.contains('liste-ouverte');
+        choisi.classList.toggle('visible', montrer);
+        if (montrer) {
+            choisi.innerHTML = '';
+            const icone = document.createElement('i');
+            icone.className = 'fas fa-check-circle text-success me-1';
+            const nom = document.createElement('strong');
+            nom.textContent = option.text;
+            choisi.append(icone, 'Choisi : ', nom, ' — Entrée ou « Ajouter » pour le mettre au panier');
+        }
+    }
+    if (zone) {
+        champ.addEventListener('input', function () { if (champ.value.trim()) ouvrir(); else fermer(); });
+        champ.addEventListener('click', ouvrir);
+        champ.addEventListener('focus', function () { if (champ.value.trim()) ouvrir(); });
+        liste.addEventListener('change', majChoisi);
+        // on quitte la recherche et la liste (quantité, Ajouter, ailleurs) : la liste se referme
+        zone.addEventListener('focusout', function (e) {
+            if (!zone.contains(e.relatedTarget)) fermer();
+        });
+        document.addEventListener('mousedown', function (e) {
+            if (!zone.contains(e.target)) fermer();
+        });
+    }
+
     // contenu du panier (une nouvelle ligne OU une quantité augmentée = ajout réussi)
     const taillePanier = () => (typeof panier !== 'undefined' && Array.isArray(panier)) ? JSON.stringify(panier) : null;
     async function ajouterPuisRevenir(bouton) {
@@ -77,6 +172,7 @@ function brancherRechercheArticles(idChamp, idListe, ajouter, effacer) {
             return;
         }
         const avant = taillePanier();
+        fermer();
         await ajouter();
         // ⭐ ajout réussi : la recherche se vide toute seule, prête pour l'article suivant ;
         // ajout refusé (stock, contrôle…) : le texte reste, pour corriger
@@ -92,11 +188,12 @@ function brancherRechercheArticles(idChamp, idListe, ajouter, effacer) {
             champ.focus();
             if (!ajoute) champ.select();
         }
+        majChoisi();
     }
     champ.addEventListener('keydown', function (e) {
         if (e.key === 'Enter') { e.preventDefault(); ajouterPuisRevenir(); }
-        else if (e.key === 'ArrowDown') { e.preventDefault(); liste.focus(); }
-        else if (e.key === 'Escape') { e.preventDefault(); effacer(); }
+        else if (e.key === 'ArrowDown') { e.preventDefault(); ouvrir(); liste.focus(); }
+        else if (e.key === 'Escape') { e.preventDefault(); fermer(); effacer(); }
     });
     liste.addEventListener('dblclick', function (e) {
         if (e.target && e.target.tagName === 'OPTION' && e.target.value) {
@@ -106,6 +203,7 @@ function brancherRechercheArticles(idChamp, idListe, ajouter, effacer) {
     });
     liste.addEventListener('keydown', function (e) {
         if (e.key === 'Enter') { e.preventDefault(); ajouterPuisRevenir(); }
+        else if (e.key === 'Escape') { e.preventDefault(); fermer(); champ.focus(); }
     });
     // ⭐ bouton « Ajouter » (patron, 2026-10-12 : « le texte de recherche ne disparaît pas
     // après l'ajout par le bouton Ajouter ») : même chemin que Entrée / double-clic

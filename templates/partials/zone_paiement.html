@@ -4,7 +4,9 @@
      exact », « 2 500 FCFA »), couleurs lisibles dans tous les thèmes ;
    - Aide hospitalière : un seul champ, unité % ou FCFA affichée en boutons, détectée
      toute seule (jusqu'à 100 = %, au-delà = FCFA) et modifiable à la main ; l'équivalent
-     dans l'autre unité est affiché dessous.
+     dans l'autre unité est affiché dessous ;
+   - bouton « Cliquez ici pour finaliser la vente » animé, plus gros quand le montant donné
+     couvre le net à payer.
    Utilisation : brancherZonePaiement(() => repartirPanierXxx()) une fois la page chargée. #}
 <style>
     .zone-paiement {
@@ -61,10 +63,38 @@
         color: #0A0A0A !important;
     }
     .unite-aide .btn::after { display: none; }
+
+    /* ⭐ Bouton « Cliquez ici pour finaliser la vente » (patron, 2026-10-12) : animé pour
+       attirer l'œil, et plus gros dès que le montant donné couvre le net à payer */
+    #finaliserBtn.bouton-finaliser { transition: padding .25s ease, font-size .25s ease; }
+    #finaliserBtn.bouton-finaliser:not(:disabled) { animation: pulsationFinaliser 1.8s ease-in-out infinite; }
+    #finaliserBtn.bouton-finaliser.pret:not(:disabled) {
+        font-size: 1.35rem;
+        padding-top: .9rem;
+        padding-bottom: .9rem;
+        animation-duration: 1s;
+    }
+    @keyframes pulsationFinaliser {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(25, 135, 84, .55); }
+        50%      { box-shadow: 0 0 0 9px rgba(25, 135, 84, 0); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        #finaliserBtn.bouton-finaliser:not(:disabled) { animation: none; }
+    }
     #aideHospitaliereHint .auto { opacity: .75; }
 </style>
 <script>
+// bouton Finaliser plus gros quand le montant donné couvre le net à payer
+function majBoutonFinaliser(netAPayer, montantDonne) {
+    const btn = document.getElementById('finaliserBtn');
+    if (!btn) return;
+    const net = Math.round(netAPayer || 0), donne = Math.round(montantDonne || 0);
+    const panierPlein = typeof panier !== 'undefined' && Array.isArray(panier) && panier.length > 0;
+    btn.classList.toggle('pret', panierPlein && donne > 0 && donne >= net);
+}
+
 function afficherRenduPatient(netAPayer, montantDonne) {
+    majBoutonFinaliser(netAPayer, montantDonne);
     const el = document.getElementById('montantRendu');
     if (!el) return;
     const net = Math.round(netAPayer || 0), donne = Math.round(montantDonne || 0);
@@ -100,8 +130,15 @@ function appliquerUniteAide(type) {
 function detecterUniteAide() {
     const v = parseFloat(document.getElementById('tauxAideHospitaliere').value);
     if (!(v > 0)) { uniteAideManuelle = false; return; }   // champ vidé : détection automatique de nouveau
+    // ⭐ au-delà de 100, ce ne peut être qu'un montant : FCFA TOUJOURS, même si « % » avait été
+    // choisi à la main (sinon le champ était ramené à 100 %) ; le choix manuel ne sert qu'à
+    // dire qu'un petit nombre (≤ 100) est un montant en FCFA
+    if (v > 100) {
+        if (document.getElementById('typeAideHospitaliere').value !== 'montant') appliquerUniteAide('montant');
+        return;
+    }
     if (uniteAideManuelle) return;
-    const type = v > 100 ? 'montant' : 'pourcentage';
+    const type = 'pourcentage';
     if (document.getElementById('typeAideHospitaliere').value !== type) appliquerUniteAide(type);
 }
 
@@ -142,12 +179,18 @@ function majIndicationAide(calc) {
 }
 
 function brancherZonePaiement(calcul) {
+    const finaliser = document.getElementById('finaliserBtn');
+    if (finaliser) finaliser.classList.add('bouton-finaliser');
     // l'indication de l'aide suit chaque recalcul de la page (panier, assurances, aide…)
     const origine = window.calculerTotal;
     if (typeof origine === 'function') {
         window.calculerTotal = function () {
             const r = origine.apply(this, arguments);
-            try { majIndicationAide(calcul()); } catch (e) { /* indication seulement */ }
+            try {
+                const c = calcul();
+                majIndicationAide(c);
+                majBoutonFinaliser(c.netAPayer, parseFloat(document.getElementById('montantDonne').value) || 0);
+            } catch (e) { /* affichage seulement */ }
             return r;
         };
     }
