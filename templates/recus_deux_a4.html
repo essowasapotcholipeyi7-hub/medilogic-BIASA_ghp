@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Reçus #{{ vente_id }} — patient et structure</title>
+    {# ⭐ Reçu patient + copie structure sur UNE feuille A4 (patron, 2026-10-12 : « que le
+       reçu patient et le reçu structure restent sur la même feuille avec une délimitation
+       au milieu montrant que c'est là qu'il faut couper »). Feuille à l'horizontale,
+       coupée verticalement : deux demi-feuilles A5 debout (format d'un carnet de reçus),
+       le texte reste lisible. Chaque moitié affiche le vrai reçu (mêmes pages que d'habitude,
+       paramètre demi_page — voir partials/demi_page_a4.html). #}
+    <style>
+        @page { size: A4 landscape; margin: 6mm; }
+        html, body { margin: 0; background: #fff; font-family: Arial, Helvetica, sans-serif; color: #000; }
+        .feuille {
+            width: 285mm;
+            height: 198mm;
+            margin: 0 auto;
+            display: flex;
+            align-items: stretch;
+        }
+        .moitie { flex: 1 1 0; position: relative; overflow: hidden; }
+        .moitie iframe { width: 100%; height: 100%; border: 0; display: block; }
+        .etiquette {
+            position: absolute; top: 0; right: 2mm; font-size: 7pt; font-weight: 700;
+            text-transform: uppercase; letter-spacing: .5px; color: #000; background: #fff; padding: 0 1mm;
+        }
+        .coupe {
+            width: 8mm;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 2mm;
+            font-size: 8pt;
+        }
+        .coupe::before, .coupe::after { content: ''; flex: 1; border-left: 1.5px dashed #000; }
+        .coupe span { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; font-weight: 700; }
+        .barre {
+            display: flex; gap: 8px; justify-content: center; align-items: center;
+            padding: 10px; font-size: 14px;
+        }
+        .barre button {
+            font-size: 14px; padding: 8px 16px; border-radius: 6px; border: 1px solid #0A3D5C; cursor: pointer;
+            background: #0A3D5C; color: #fff; font-weight: 700;
+        }
+        .barre button.secondaire { background: #fff; color: #0A3D5C; }
+        @media screen {
+            body { background: #e9ecef; }
+            .feuille { background: #fff; box-shadow: 0 4px 18px rgba(0, 0, 0, .15); padding: 6mm; margin-bottom: 20px; }
+        }
+        @media print {
+            .barre { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="barre">
+        <span id="etat">Préparation des deux reçus…</span>
+        <button type="button" onclick="window.print()">Imprimer la feuille</button>
+        <button type="button" class="secondaire" onclick="window.close()">Fermer</button>
+    </div>
+    <div class="feuille">
+        <div class="moitie">
+            <span class="etiquette">Patient</span>
+            <iframe id="partiePatient" title="Reçu du patient"
+                    src="/recu/{{ vente_id }}/{{ type_vente }}?format=A4&detail={{ detail }}&demi_page=1"></iframe>
+        </div>
+        <div class="coupe"><span>✂ Couper ici</span></div>
+        <div class="moitie">
+            <span class="etiquette">Structure</span>
+            <iframe id="partieStructure" title="Copie de la structure"
+                    src="/recu_structure/{{ vente_id }}/{{ type_vente }}?format=A4&detail={{ detail }}&demi_page=1"></iframe>
+        </div>
+    </div>
+    <script>
+    (function () {
+        var cadres = [document.getElementById('partiePatient'), document.getElementById('partieStructure')];
+        var imprimer = {{ 'true' if imprimer else 'false' }};
+        var debut = Date.now();
+        function prets() {
+            return cadres.every(function (c) {
+                try { return c.contentDocument && c.contentDocument.documentElement.dataset.ajuste; } catch (e) { return false; }
+            });
+        }
+        (function attendre() {
+            if (prets() || Date.now() - debut > 15000) {
+                document.getElementById('etat').textContent = 'Reçu patient à gauche, copie structure à droite — à couper au pointillé.';
+                if (imprimer) setTimeout(function () { window.print(); }, 300);
+                return;
+            }
+            setTimeout(attendre, 200);
+        })();
+    })();
+    </script>
+</body>
+</html>

@@ -5447,6 +5447,20 @@ def get_structures_disponibles():
     ]
     return jsonify(disponibles)
 
+@app.route('/recus_deux/<int:vente_id>/<string:type>')
+@login_required
+def recus_deux_a4(vente_id, type):
+    """⭐ Reçu patient + copie structure sur UNE feuille A4, à couper au milieu
+    (patron, 2026-10-12) — choix « Les deux » en A4. Chaque moitié charge le vrai
+    reçu (/recu, /recu_structure avec demi_page=1), qui vérifie lui-même les droits
+    sur la vente ; cette page ne fait que les assembler."""
+    detail = request.args.get('detail', 'complet')
+    if detail not in ('complet', 'cumule'):
+        detail = 'complet'
+    return render_template('recus_deux_a4.html', vente_id=vente_id, type_vente=type, detail=detail,
+                           imprimer=bool(request.args.get('imprimer')))
+
+
 @app.route('/recu/<int:vente_id>/<string:type>')
 @login_required
 def recu(vente_id, type):

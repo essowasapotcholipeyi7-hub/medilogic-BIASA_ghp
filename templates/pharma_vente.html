@@ -2492,7 +2492,10 @@ async function redirigerApresVente(venteId) {
     
     if (typeDoc === 'les_deux') {
         // un seul onglet : reçu patient, puis copie structure (voir recu_client.html)
-        window.open(`/recu/${venteId}/pharma?format=${format}&ensuite=structure`, '_blank');
+        // A4 : les deux reçus sur une même feuille, à couper (recus_deux_a4.html)
+        window.open(format === 'A4'
+            ? `/recus_deux/${venteId}/pharma?imprimer=1`
+            : `/recu/${venteId}/pharma?format=${format}&ensuite=structure`, '_blank');
         window.location.href = '/dashboard';
         return;
     }

@@ -308,7 +308,10 @@ function printDocument(action) {
         url = `/recu_structure/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`;
     } else if (action === 'les_deux_recus' || action === 'les_deux') {
         // un seul onglet : reçu patient, puis copie structure (voir recu_client.html)
-        url = `/recu/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}&ensuite=structure`;
+        // A4 : les deux reçus sur une même feuille, à couper (recus_deux_a4.html)
+        url = format === 'A4'
+            ? `/recus_deux/${currentVenteId}/${currentVenteType}?detail=${modeDetailDashboard}&imprimer=1`
+            : `/recu/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}&ensuite=structure`;
     } else if (action === 'facture_client') {
         url = `/facture/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`;
     } else if (action === 'facture_structure') {

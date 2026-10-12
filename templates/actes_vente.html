@@ -2738,7 +2738,10 @@ async function redirigerVersReçuActes(venteId, typeDocument, formatImpression, 
         baseUrl = `/facture_structure/${venteId}/actes`;
     } else if (typeDocument === 'les_deux') {
         // un seul onglet : reçu patient, puis copie structure (voir recu_client.html)
-        window.open(`/recu/${venteId}/actes${urlParams}${urlParams ? '&' : '?'}ensuite=structure`, '_blank');
+        // A4 : les deux reçus sur une même feuille, à couper (recus_deux_a4.html)
+        window.open(formatImpression === 'A4'
+            ? `/recus_deux/${venteId}/actes?imprimer=1`
+            : `/recu/${venteId}/actes${urlParams}${urlParams ? '&' : '?'}ensuite=structure`, '_blank');
         window.location.href = "/dashboard";
         return;
     } else {

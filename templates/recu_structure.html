@@ -61,10 +61,42 @@
             margin: 0 !important;
         }
         
-        .col-7, .col-5, .col-6 {
-            width: 100%;
-            text-align: center;
+        /* ⭐ 2026-10-12 (patron : « le reçu structure est mal structuré en 80mm ») :
+           toutes les colonnes étaient forcées à 100 % et centrées — en-tête décousu,
+           blocs « Facturé à » / « Assurance » centrés. Comme le reçu patient : l'en-tête
+           garde ses 2 colonnes, les 2 blocs d'infos passent l'un sous l'autre, à gauche. */
+        .col-6 {
+            width: 100% !important;
+            max-width: 100% !important;
+            flex: 0 0 100% !important;
+            text-align: left !important;
+            padding: 0 !important;
         }
+        .col-6 > div[style*="border-left"] {
+            border-left: none !important;
+            padding-left: 0 !important;
+            margin-bottom: 4px;
+        }
+        .row.mb-4 { margin-bottom: 4px !important; }
+        h5 { font-size: 10px !important; margin: 2px 0 !important; }
+        /* en-tête : la colonne de droite était trop étroite (« STRUCT/URE ») — une seule
+           colonne centrée : clinique, adresse, puis REÇU STRUCTURE, numéro, date */
+        .card-body > .row:first-child {
+            padding: 2px 0 4px 0 !important;
+            margin: 0 !important;
+        }
+        .card-body > .row:first-child > .col-7,
+        .card-body > .row:first-child > .col-5 {
+            width: 100% !important;
+            max-width: 100% !important;
+            flex: 0 0 100% !important;
+            text-align: center !important;
+            padding: 0 !important;
+        }
+        .col-5 h1 { font-size: 12px !important; line-height: 1.15 !important; margin-top: 4px !important; }
+        .col-5 p { font-size: 9px !important; margin: 1px 0 !important; }
+        .col-7 h2 { font-size: 12px !important; }
+        .col-7 p { font-size: 8.5px !important; }
         
         h1, h2, h3, h4, h5 {
             margin: 3px 0;
@@ -567,6 +599,7 @@ function fermerOuRediriger() {
 }
 </script>
 {% include 'partials/colonnes_articles.html' %}
+{% if request.args.get('demi_page') %}{% include 'partials/demi_page_a4.html' %}{% endif %}
 {% if format == '80mm' %}{% include 'partials/ticket_80mm_lisible.html' %}{% endif %}
 {# ⭐ Arrivée depuis « Les deux » (reçu patient imprimé juste avant) : impression automatique. #}
 {% if request.args.get('imprimer') %}

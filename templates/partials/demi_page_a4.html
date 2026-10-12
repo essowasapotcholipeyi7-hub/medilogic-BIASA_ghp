@@ -1,0 +1,53 @@
+{# ⭐ Reçu affiché dans une moitié de feuille (page recus_deux_a4.html — patron,
+   2026-10-12 : « reçu patient et reçu structure sur la même feuille A4, avec une
+   délimitation au milieu pour couper »). Seul le reçu (#pdfWrapper) est montré,
+   sans boutons ni éléments flottants, puis réduit si besoin pour tenir dans sa
+   demi-feuille. Règles valables à l'écran ET à l'impression (la page parente
+   imprime ce cadre tel qu'il est affiché). #}
+<style>
+    html, body {
+        background: #fff !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+    }
+    body::after { display: none !important; }
+    body * { visibility: hidden !important; }
+    #pdfWrapper, #pdfWrapper * { visibility: visible !important; }
+    #pdfWrapper .no-print { display: none !important; }
+    #pdfWrapper {
+        position: absolute !important;
+        left: 0;
+        top: 0;
+        width: 100% !important;
+        margin: 0 !important;
+    }
+    #pdfWrapper > [class*="col-"] {
+        width: 100% !important;
+        max-width: 100% !important;
+        flex: 0 0 100% !important;
+        padding: 0 !important;
+    }
+    #pdfWrapper .card {
+        box-shadow: none !important;
+        border: none !important;
+        border-radius: 0 !important;
+        margin: 0 !important;
+        max-width: none !important;
+    }
+    #pdfWrapper .card-body {
+        zoom: 1 !important;
+        padding: 2mm 3mm !important;
+    }
+</style>
+<script>
+window.addEventListener('load', function () {
+    var cadre = document.getElementById('pdfWrapper');
+    if (!cadre) return;
+    cadre.style.zoom = 1;
+    var hauteur = cadre.scrollHeight, dispo = window.innerHeight;
+    var echelle = Math.min(1, (dispo / hauteur) * 0.97);
+    cadre.style.zoom = echelle;
+    document.documentElement.dataset.ajuste = String(Math.round(echelle * 100));
+});
+</script>

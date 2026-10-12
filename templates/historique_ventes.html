@@ -1331,7 +1331,10 @@ function printDocument(docType) {
         url = '/facture_structure/' + currentVenteId + '/' + currentVenteType + '?format=' + format + '&detail=' + modeDetailVente;
     } else if (docType === 'les_deux') {
         // un seul onglet : reçu patient, puis copie structure (voir recu_client.html)
-        url = '/recu/' + currentVenteId + '/' + currentVenteType + '?format=' + format + '&detail=' + modeDetailVente + '&ensuite=structure';
+        // A4 : les deux reçus sur une même feuille, à couper (recus_deux_a4.html)
+        url = format === 'A4'
+            ? '/recus_deux/' + currentVenteId + '/' + currentVenteType + '?detail=' + modeDetailVente + '&imprimer=1'
+            : '/recu/' + currentVenteId + '/' + currentVenteType + '?format=' + format + '&detail=' + modeDetailVente + '&ensuite=structure';
     }
     
     window.open(url, '_blank');
