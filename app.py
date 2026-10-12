@@ -10167,74 +10167,94 @@ def _lire_quantite_stock(valeur):
         return 0
 
 
-def _decrementer_stock_produit(worksheet, produit_id, quantite_vendue, produit_nom,
-                                structure_id, vente_id, user_nom):
-    """Décrémente le stock d'UN SEUL produit dans Google Sheets — patron :
-    "la valeur du stock devrait diminuer au fur et à mesure... la valeur
-    ne devrait pas être la même" après une vente. Isolé par produit :
-    avant ce correctif, les deux points d'appel enveloppaient TOUTE la
-    boucle du panier dans un seul try/except — l'échec d'UN SEUL produit
-    (ID introuvable, cellule stock vide/texte au lieu d'un nombre, quota
-    Google Sheets dépassé...) faisait sauter la mise à jour de TOUS les
-    autres produits du même panier ET le clear_cache() qui suit,
-    silencieusement (juste un print() jamais vu en production) alors que
-    la vente elle-même était déjà encaissée. Retourne (succès, message
-    d'erreur ou None)."""
-    try:
-        # ⭐⭐ SÉCURITÉ : verrou consultatif Postgres (pg_advisory_xact_lock)
-        # AVANT de lire le stock — Google Sheets n'a aucun mécanisme de
-        # verrouillage de ligne natif (contrairement aux tables Postgres,
-        # voir FOR UPDATE ailleurs dans ce fichier), donc deux ventes
-        # quasi simultanées du MÊME produit (double-clic, ou deux
-        # caissiers) lisaient toutes les deux le même stock_actuel avant
-        # que l'une des deux n'écrive — la seconde écrasait le
-        # décrément de la première (vente perdue), pouvant survendre du
-        # stock sans que rien ne le détecte. Un verrou Python
-        # (threading.Lock) n'aurait protégé qu'un seul processus ; celui-ci,
-        # posé côté Postgres (auto-relâché à la fin de la transaction,
-        # voir auto_commit_after_request), fonctionne même avec plusieurs
-        # workers/processus. Clé = (structure_id, produit_id) hashés sur
-        # 2 entiers 32 bits, seule signature acceptée par
-        # pg_advisory_xact_lock(int, int).
+def _decrementer_stocks_produits(sheet_name, lignes, structure_id, vente_id, user_nom):
+    """Décrémente le stock (Google Sheets, colonne F) de tous les produits d'une
+    vente. `lignes` = [(produit_id, quantite_vendue, produit_nom), ...].
+    Retourne la liste des messages d'échec (vide si tout est passé).
+
+    ⭐ Vente de médicaments trop lente (patron, 2026-10-12 : « ça ne passe pas
+    vite comme pour la vente des actes ») : chaque produit coûtait 3 à 4 appels
+    Google (retrouver l'onglet, chercher l'ID, lire la ligne, écrire), ~0,5 s
+    chacun — 7 à 8 s pour un panier de 5 produits. Désormais 2 appels pour tout
+    le panier : une lecture de la feuille, une écriture groupée.
+
+    Toujours isolé par produit pour les échecs de LECTURE (ID introuvable, stock
+    illisible) — "la valeur du stock ne devrait pas être la même" après une
+    vente — et un même produit présent deux fois dans le panier est décompté
+    deux fois. Le verrou consultatif Postgres (pg_advisory_xact_lock, voir
+    l'ancien commentaire : deux ventes simultanées du même produit ne doivent
+    jamais lire le même stock) est posé sur TOUS les produits, dans un ordre
+    fixe (pas d'interblocage), AVANT la lecture ; relâché à la fin de la
+    transaction (auto_commit_after_request)."""
+    from gspread.utils import ValueInputOption
+    quantites, noms, ordre = {}, {}, []
+    for produit_id, quantite, nom in lignes:
+        pid = str(produit_id).strip()
+        if not pid:
+            continue
+        if pid not in quantites:
+            ordre.append(pid)
+            quantites[pid] = 0
+            noms[pid] = nom or 'Inconnu'
+        quantites[pid] += int(quantite or 0)
+    if not ordre:
+        return []
+
+    for pid in sorted(ordre):
         try:
             db.session.execute(
                 text("SELECT pg_advisory_xact_lock(:s, :p)"),
-                {"s": int(structure_id) % 2147483647, "p": int(produit_id) % 2147483647},
+                {"s": int(structure_id) % 2147483647, "p": int(pid) % 2147483647},
             )
         except Exception as e_lock:
-            print(f"   ⚠️ Verrou stock indisponible pour {produit_nom} (on continue quand même) : {e_lock}")
+            print(f"   ⚠️ Verrou stock indisponible pour {noms[pid]} (on continue quand même) : {e_lock}")
 
-        cell = worksheet.find(produit_id, in_column=1)
-        if not cell:
-            msg = f"produit ID {produit_id} ({produit_nom}) introuvable dans le stock"
-            print(f"   ❌ {msg}")
-            return False, msg
-
-        row_num = cell.row
-        current_row = worksheet.row_values(row_num)
-        valeur_brute = current_row[5] if len(current_row) > 5 else ''
+    echecs = []
+    try:
+        valeurs = sheets_helper._onglet(sheet_name).get_all_values()
+    except Exception:
+        sheets_helper._onglets.pop(sheet_name, None)
         try:
-            stock_actuel = _lire_quantite_stock(valeur_brute)
-        except (ValueError, TypeError):
-            print(f"   ⚠️ Valeur de stock illisible pour {produit_nom} (ligne {row_num}): {valeur_brute!r} — traitée comme 0")
-            stock_actuel = 0
+            valeurs = sheets_helper._onglet(sheet_name).get_all_values()
+        except Exception as e:
+            return [f"lecture du stock impossible ({e})"]
+    ligne_par_id = {}
+    for numero, ligne in enumerate(valeurs, start=1):
+        if ligne and str(ligne[0]).strip() and str(ligne[0]).strip() not in ligne_par_id:
+            ligne_par_id[str(ligne[0]).strip()] = numero
 
-        nouveau_stock = stock_actuel - quantite_vendue
+    ecritures, nouveaux = [], {}
+    for pid in ordre:
+        numero = ligne_par_id.get(pid)
+        if not numero:
+            msg = f"produit ID {pid} ({noms[pid]}) introuvable dans le stock"
+            print(f"   ❌ {msg}")
+            echecs.append(msg)
+            continue
+        ligne = valeurs[numero - 1]
+        valeur_brute = ligne[5] if len(ligne) > 5 else ''
+        stock_actuel = _lire_quantite_stock(valeur_brute)
+        nouveau_stock = stock_actuel - quantites[pid]
         if nouveau_stock < 0:
-            print(f"   ⚠️ Stock négatif! {produit_nom}: {stock_actuel} - {quantite_vendue} = {nouveau_stock}")
+            print(f"   ⚠️ Stock négatif! {noms[pid]}: {stock_actuel} - {quantites[pid]} = {nouveau_stock}")
             nouveau_stock = 0
+        ecritures.append({'range': f'F{numero}', 'values': [[nouveau_stock]]})
+        nouveaux[pid] = (stock_actuel, nouveau_stock)
 
-        worksheet.update_cell(row_num, 6, nouveau_stock)  # Colonne F = index 6 (1-based)
-        print(f"   ✅ Stock Sheets mis à jour pour {produit_nom}: {stock_actuel} → {nouveau_stock}")
-        _log_mouvement_stock(structure_id, produit_id, produit_nom, 'vente',
-                              -quantite_vendue, nouveau_stock,
-                              reference_type='vente', reference_id=vente_id,
-                              user_nom=user_nom)
-        return True, None
-    except Exception as e:
-        msg = f"échec mise à jour stock pour {produit_nom} (ID {produit_id}): {e}"
-        print(f"   ❌ {msg}")
-        return False, msg
+    if ecritures:
+        try:
+            sheets_helper._onglet(sheet_name).batch_update(ecritures, value_input_option=ValueInputOption.user_entered)
+        except Exception as e:
+            msgs = [f"échec mise à jour stock pour {noms[pid]} (ID {pid}): {e}" for pid in nouveaux]
+            for msg in msgs:
+                print(f"   ❌ {msg}")
+            return echecs + msgs
+        for pid, (avant, apres) in nouveaux.items():
+            print(f"   ✅ Stock Sheets mis à jour pour {noms[pid]}: {avant} → {apres}")
+            _log_mouvement_stock(structure_id, pid, noms[pid], 'vente', -quantites[pid], apres,
+                                  reference_type='vente', reference_id=vente_id, user_nom=user_nom)
+    sheets_helper.clear_cache(sheet_name)
+    return echecs
 
 
 def _peut_valider_demandes():
@@ -11685,33 +11705,14 @@ def api_vente_pharma():
         
         
         # ========== 4. METTRE À JOUR LE STOCK DANS GOOGLE SHEETS ==========
-        # ⭐ Chaque produit isolé via _decrementer_stock_produit() — patron :
-        # "la valeur du stock ne devrait pas être la même" après une vente.
-        # clear_cache() doit s'exécuter même si un produit du panier a
-        # échoué, sinon les AUTRES produits mis à jour restent invisibles
-        # jusqu'à expiration naturelle du cache (10s).
+        # ⭐ Tout le panier en 2 appels Google (voir _decrementer_stocks_produits).
         try:
-            sheet_name = f"struct_{structure_id}_produits"
-            print(f"   📂 Accès à la feuille: {sheet_name}")
-
-            worksheet = sheets_helper.spreadsheet.worksheet(sheet_name)
-            echecs_stock = []
-
-            for produit in produits_data:
-                produit_id = str(produit.get('id'))
-                quantite_vendue = int(produit.get('quantite') or 0)
-                produit_nom = produit.get('nom', 'Inconnu')
-
-                print(f"   🔍 Recherche du produit ID: {produit_id} - {produit_nom}")
-                ok, err = _decrementer_stock_produit(worksheet, produit_id, quantite_vendue,
-                                                      produit_nom, structure_id, vente_id, vendeur)
-                if not ok:
-                    echecs_stock.append(err)
-
-            sheets_helper.clear_cache(sheet_name)
+            echecs_stock = _decrementer_stocks_produits(
+                f"struct_{structure_id}_produits",
+                [(p.get('id'), p.get('quantite'), p.get('nom', 'Inconnu')) for p in produits_data],
+                structure_id, vente_id, vendeur)
             if echecs_stock:
                 print(f"   ⚠️ Échecs mise à jour stock: {'; '.join(echecs_stock)}")
-
         except Exception as e:
             print(f"   ❌ ERREUR mise à jour stock Sheets: {e}")
             import traceback
@@ -20350,44 +20351,24 @@ def api_convertir_proforma():
             print(f"📋 Facture créée pour le reste à payer: {reste_a_payer} FCFA")
         
         # ========== 🔥🔥🔥 METTRE À JOUR LE STOCK (UNIQUEMENT POUR LES PRODUITS) 🔥🔥🔥 ==========
-        # ⭐ Chaque produit isolé via _decrementer_stock_produit() — voir son
-        # commentaire (même correctif que api_vente_pharma pour la même
-        # raison : "la valeur du stock ne devrait pas être la même").
+        # ⭐ Tout le panier en 2 appels Google (voir _decrementer_stocks_produits).
         try:
-            sheet_name = f"struct_{structure_id}_produits"
-            print(f"   📂 Accès à la feuille: {sheet_name}")
-
-            worksheet = sheets_helper.spreadsheet.worksheet(sheet_name)
-
-            # 🔥 Filtrer uniquement les produits
             produits_vendus = [a for a in articles_transformes if a.get('type') == 'produit' and a.get('id')]
-
             if produits_vendus:
                 print(f"📦 {len(produits_vendus)} produit(s) à mettre à jour dans le stock")
-                echecs_stock = []
-
-                for article in produits_vendus:
-                    produit_id = str(article.get('id'))
-                    quantite_vendue = int(article.get('quantite') or 0)
-                    produit_nom = article.get('nom', 'Inconnu')
-
-                    print(f"   🔍 Recherche du produit ID: {produit_id} - {produit_nom}")
-                    ok, err = _decrementer_stock_produit(worksheet, produit_id, quantite_vendue,
-                                                          produit_nom, structure_id, vente_id, user_name)
-                    if not ok:
-                        echecs_stock.append(err)
-
-                sheets_helper.clear_cache(sheet_name)
+                echecs_stock = _decrementer_stocks_produits(
+                    f"struct_{structure_id}_produits",
+                    [(a.get('id'), a.get('quantite'), a.get('nom', 'Inconnu')) for a in produits_vendus],
+                    structure_id, vente_id, user_name)
                 if echecs_stock:
                     print(f"   ⚠️ Échecs mise à jour stock: {'; '.join(echecs_stock)}")
             else:
                 print("ℹ️ Aucun produit à mettre à jour (seulement des actes)")
-
         except Exception as e:
             print(f"   ❌ ERREUR mise à jour stock Sheets: {e}")
             import traceback
             traceback.print_exc()
-        
+
         # 🔥 Mettre à jour le solde de caisse
         try:
             recettes_total = db.execute_query("""
