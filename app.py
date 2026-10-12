@@ -4443,7 +4443,10 @@ def actes_vente():
                 ) if choix_service_actif else None,
             })
     
-    patients = sheets_helper.get_all_records('patients', use_prefix=True)
+    # ⭐ (patron, 2026-10-12 : « Vente acte met du temps à s'ouvrir, la pharmacie passe vite »)
+    # la feuille Google Sheets des patients était relue ici à CHAQUE ouverture (~0,7 s, de plus
+    # en plus long avec le nombre de patients) pour rien : la page ne s'en sert pas (le patient
+    # choisi vient de la liste des patients). Lecture supprimée.
     
     # ⭐ Récupérer les prescriptions depuis NEON (table prescriptions_recues)
     prescription_ids = request.args.get('prescription_ids', '')
@@ -4566,7 +4569,6 @@ def actes_vente():
                           # ⭐ Prix non assuré par acte (patron, 2026-10-04) — miroir JS
                           # de services/tarification_service.py dans le panier.
                           prix_non_assure_par_acte=charger_prix_non_assure(structure_id),
-                          patients=patients,
                           articles_auto=articles_auto,
                           patientTaux=patient_taux,
                           vente_attente=vente_attente,
