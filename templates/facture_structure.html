@@ -438,7 +438,7 @@
                     <tbody>
                         {% for article in articles %}
                         <tr>
-                            <td style="border:1px solid #000; padding: 5px;">{{ article.nom if type_assurance in ['AMU-CNSS', 'AMU-INAM', 'AMU-TNS'] else article.nom|sans_code }}</td>
+                            <td style="border:1px solid #000; padding: 5px;">{{ article.nom|sans_code }}</td>
                             <td style="border:1px solid #000; text-align: center;">{{ article.quantite }}</td>
                             <td style="border:1px solid #000; text-align: right;">{{ article.prix_unitaire|default(0)|round(0)|int }}</td>
                             <td style="border:1px solid #000; text-align: right;">{{ article.total|default(0)|round(0)|int }}</td>
@@ -454,7 +454,7 @@
 {% set prise_en_charge2_val = prise_en_charge2|default(0) %}
 {% set net_a_payer_val = net_a_payer|default(0) %}
 
-<div style="background: #f8f9fa; padding: 15px; border-radius: 8px; width: 300px; margin-left: auto;">
+<div style="background: #f8f9fa; padding: 15px; border-radius: 8px; width: fit-content; min-width: 300px; max-width: 75%; margin-left: auto;">{# largeur selon le contenu : libellés d'assurance longs sur une seule ligne #}
     <div style="display: flex; justify-content: space-between;">
         <span>Sous-total HT :</span> <span>{{ sous_total_val|round(0)|int }} FCFA</span>
     </div>
@@ -565,4 +565,5 @@ function fermerOuRediriger() {
     }, 500);
 }
 </script>
+{% if format == '80mm' %}{% include 'partials/ticket_80mm_lisible.html' %}{% endif %}
 {% endblock %}

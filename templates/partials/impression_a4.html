@@ -93,6 +93,34 @@ function imprimerA4(mode) {
     html.impression-couleur #pdfWrapper .recu-header,
     html.impression-couleur #pdfWrapper .recu-header * { color: #fff !important; }
 
+    /* ===== Cadrage A4 (patron, 2026-10-12 : « ça ne cadre pas bien avec le format A4 ») =====
+       À l'écran l'en-tête déborde exprès sur le cadre de la carte (marges négatives,
+       bandeau) ; à l'impression la carte disparaît mais le débordement restait : le
+       trait de l'en-tête dépassait les marges. Tout est aligné sur la même largeur,
+       les cellules des tableaux retrouvent de l'air et les montants ne sont plus
+       coupés contre la bordure ni renvoyés à la ligne. Impression seulement. */
+    @media print {
+        #pdfWrapper .card-body { padding: 0 !important; }
+        #pdfWrapper .recu-header {
+            margin: 0 0 14px 0 !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+            border-radius: 0 !important;
+        }
+        html.impression-couleur #pdfWrapper .recu-header {
+            padding: 12px 14px !important;
+        }
+        #pdfWrapper .card-body .row { margin-left: 0 !important; margin-right: 0 !important; }
+        #pdfWrapper .card-body table { width: 100% !important; box-sizing: border-box; }
+        #pdfWrapper .card-body table td,
+        #pdfWrapper .card-body table th { padding: 5px 8px !important; }
+        #pdfWrapper .card-body table td:not(:first-child),
+        #pdfWrapper .card-body table th:not(:first-child) { white-space: nowrap; }
+        /* lignes « libellé ........ montant » des totaux : montant jamais coupé */
+        #pdfWrapper .card-body [style*="space-between"] { gap: 16px; }
+        #pdfWrapper .card-body [style*="space-between"] > span:last-child { white-space: nowrap; }
+    }
+
     {% if a4_taille_tableau %}
     /* Tableau des articles lisible (il était en 8px sur ce document). */
     #pdfWrapper .card-body table td,

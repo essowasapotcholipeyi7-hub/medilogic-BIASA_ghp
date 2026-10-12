@@ -123,7 +123,7 @@
                         <td class="{{ 'type-acte' if l.type == 'acte' else 'type-medicament' }}">
                             {{ 'Acte' if l.type == 'acte' else 'Médicament' }}
                         </td>
-                        <td>{{ l.nom }}</td>
+                        <td>{{ l.nom|sans_code }}</td>
                         <td class="num">{{ l.quantite }}</td>
                         <td class="num">{{ '{:,}'.format(l.prix|round(0)|int).replace(',', ' ') }}</td>
                         <td class="num">{{ '{:,}'.format(l.total|round(0)|int).replace(',', ' ') }}</td>

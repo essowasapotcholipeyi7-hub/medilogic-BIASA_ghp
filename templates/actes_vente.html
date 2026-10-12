@@ -2737,8 +2737,8 @@ async function redirigerVersReçuActes(venteId, typeDocument, formatImpression, 
     } else if (typeDocument === 'facture_structure') {
         baseUrl = `/facture_structure/${venteId}/actes`;
     } else if (typeDocument === 'les_deux') {
-        window.open(`/recu/${venteId}/actes${urlParams}`, '_blank');
-        window.open(`/recu_structure/${venteId}/actes${urlParams}`, '_blank');
+        // un seul onglet : reçu patient, puis copie structure (voir recu_client.html)
+        window.open(`/recu/${venteId}/actes${urlParams}${urlParams ? '&' : '?'}ensuite=structure`, '_blank');
         window.location.href = "/dashboard";
         return;
     } else {

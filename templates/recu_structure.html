@@ -441,7 +441,7 @@
                     <tbody>
                         {% for article in articles %}
                         <tr>
-                            <td style="padding:4px;">{{ article.nom if type_assurance in ['AMU-CNSS', 'AMU-INAM', 'AMU-TNS'] else article.nom|sans_code }}</td>
+                            <td style="padding:4px;">{{ article.nom|sans_code }}</td>
                             <td style="text-align:center;">{{ article.quantite }}</td>
                             <td style="text-align:right;">{{ article.prix_unitaire|default(0)|round(0)|int }} F</td>
                             <td style="text-align:right;">{{ article.total|default(0)|round(0)|int }} F</td>
@@ -566,4 +566,11 @@ function fermerOuRediriger() {
     }, 500);
 }
 </script>
+{% if format == '80mm' %}{% include 'partials/ticket_80mm_lisible.html' %}{% endif %}
+{# ⭐ Arrivée depuis « Les deux » (reçu patient imprimé juste avant) : impression automatique. #}
+{% if request.args.get('imprimer') %}
+<script>
+document.addEventListener('DOMContentLoaded', function () { setTimeout(function () { window.print(); }, 600); });
+</script>
+{% endif %}
 {% endblock %}

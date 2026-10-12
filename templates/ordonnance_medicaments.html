@@ -153,7 +153,7 @@
         <tbody>
             {% for p in prescriptions %}
             <tr>
-                <td><strong>{{ p.medicament }}</strong></td>
+                <td><strong>{{ p.medicament|sans_code }}</strong></td>
                 <td>{{ p.dosage or '-' }}</td>
                 <td class="text-center">{{ p.quantite or '1' }}</td>
                 <td>{{ p.frequence or '-' }}</td>
@@ -212,7 +212,7 @@
         <tbody>
             {% for p in prescriptions %}
             <tr>
-                <td>{{ p.medicament }}</td>
+                <td>{{ p.medicament|sans_code }}</td>
                 <td style="text-align:center;">{{ p.quantite or '1' }}</td>
                 <td style="text-align:right;">{{ (p.prix_total or 0)|int|format_currency }}</td>
             </tr>

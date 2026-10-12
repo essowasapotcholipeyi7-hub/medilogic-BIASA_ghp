@@ -1,0 +1,27 @@
+{# ⭐ Choix du format de réimpression bien visible (patron, 2026-10-12 : « le choix
+   de A4 ou 80mm est un peu caché, rends-le bien visible mais par défaut 80mm ») :
+   deux gros boutons au lieu d'une liste déroulante. La valeur reste lue dans
+   #printFormat comme avant ; choisirFormatImpression('80mm') est rappelé à
+   chaque ouverture de la fenêtre (80 mm par défaut). #}
+<div class="mb-3">
+    <div class="form-label fw-bold mb-2">Format d'impression</div>
+    <input type="hidden" id="printFormat" value="80mm">
+    <div class="btn-group w-100" role="group" aria-label="Format d'impression">
+        <input type="radio" class="btn-check" name="choixFormatImpression" id="choixFormat80mm" autocomplete="off" checked
+               onchange="choisirFormatImpression('80mm')">
+        <label class="btn btn-outline-primary btn-lg fw-bold py-3" for="choixFormat80mm">
+            <i class="fas fa-receipt me-1"></i> Ticket 80 mm
+        </label>
+        <input type="radio" class="btn-check" name="choixFormatImpression" id="choixFormatA4" autocomplete="off"
+               onchange="choisirFormatImpression('A4')">
+        <label class="btn btn-outline-primary btn-lg fw-bold py-3" for="choixFormatA4">
+            <i class="fas fa-file-alt me-1"></i> Feuille A4
+        </label>
+    </div>
+</div>
+<script>
+function choisirFormatImpression(format) {
+    document.getElementById('printFormat').value = format;
+    document.getElementById(format === 'A4' ? 'choixFormatA4' : 'choixFormat80mm').checked = true;
+}
+</script>

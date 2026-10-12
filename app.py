@@ -25999,7 +25999,13 @@ def format_currency(value):
 # template, conditionné à type_assurance (voir recu_client.html et les
 # autres reçus/factures patient) — jamais appliqué aux factures destinées
 # à l'assurance (templates/factures/*), où le code reste nécessaire.
-_CODE_ACTE_OU_PRODUIT_RE = re.compile(r'^(?:[A-Z]\d{3,4}|\d{4,})\s+')
+# ⭐ 2026-10-12 (patron : « que le patient soit assuré ou pas, qu'on filtre les codes
+# actes et médicaments, uniquement le nom de l'article — tous les reçus, créances,
+# proformas ») : appliqué désormais à TOUS les documents remis au patient, assuré ou
+# non ; toujours jamais aux documents destinés à l'assurance (factures/bordereaux AMU).
+# Élargi à « lettre + 3 à 7 chiffres » : le catalogue pharmacie a aussi des codes
+# C000010 (« C000010 Acide Acetylsalicylique… »), que l'ancien motif laissait passer.
+_CODE_ACTE_OU_PRODUIT_RE = re.compile(r'^(?:[A-Z]\d{3,7}|\d{4,})\s+')
 
 @app.template_filter('sans_code')
 def sans_code(nom):

@@ -3216,10 +3216,13 @@ async function finaliserConversionVente() {
             bootstrap.Modal.getInstance(document.getElementById('convertirProformaModal')).hide();
             
             if (response.vente_id) {
+                // ⭐ 2026-10-12 : le « Type document » choisi était ignoré (toujours le reçu patient)
                 const format = '80mm';
                 const type = response.type || 'mixte';
-                const url = `/recu/${response.vente_id}/${type}?format=${format}&montant_donne=${montantDonne}`;
-                window.open(url, '_blank');
+                const choix = (document.getElementById('convertTypeDocument') || {}).value || 'recu_client';
+                const page = {recu_client: 'recu', recu_structure: 'recu_structure', facture_client: 'facture', les_deux: 'recu'}[choix] || 'recu';
+                const suite = choix === 'les_deux' ? '&ensuite=structure' : '';
+                window.open(`/${page}/${response.vente_id}/${type}?format=${format}&montant_donne=${montantDonne}${suite}`, '_blank');
             }
             
             location.reload();

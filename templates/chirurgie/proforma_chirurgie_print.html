@@ -89,7 +89,7 @@
 
         <ul class="pfc-actes">
           {% for a in calcul.actes %}
-          <li>* {{ a.nom }} :
+          <li>* {{ a.nom|sans_code }} :
             {% if a.diviseur != 1 %}K{{ format_k(a.k) }}/{{ format_k(a.diviseur) }} = <strong>K{{ format_k(a.retenu) }}</strong>
             {% else %}<strong>K{{ format_k(a.k) }}</strong>{% endif %}</li>
           {% endfor %}
@@ -105,7 +105,7 @@
           <tbody>
             {% for l in calcul.lignes %}
             <tr>
-              <td class="d">{{ l.designation }}</td>
+              <td class="d">{{ l.designation|sans_code }}</td>
               <td class="n">{% if l.detail %}{{ fmt(l.detail) }}{% endif %}</td>
               <td class="n">{% if l.nombre %}{{ format_k(l.nombre) }}{% endif %}</td>
               <td class="n">{{ fmt(l.total) }}</td>

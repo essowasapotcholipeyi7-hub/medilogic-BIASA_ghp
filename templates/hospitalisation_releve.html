@@ -125,7 +125,7 @@
                             {{ 'Acte' if l.type == 'acte' else 'Médicament' }}
                         </td>
                         <td>
-                            {{ l.nom }}
+                            {{ l.nom|sans_code }}
                             {% if l.date_fin_prestation %}
                                 <br><small style="color:#888;">période du {{ l.date_prestation.strftime('%d/%m') }} au {{ l.date_fin_prestation.strftime('%d/%m/%Y') }}</small>
                             {% endif %}

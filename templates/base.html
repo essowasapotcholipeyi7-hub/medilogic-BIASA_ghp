@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr"{% if theme_sombre %} data-bs-theme="dark"{% endif %}>{# ⭐ thème sombre : Bootstrap en sombre aussi (textes d'aide, menus, modals lisibles) #}
+<html lang="fr"{% if theme_sombre and not (cacher_navigation is defined and cacher_navigation) %} data-bs-theme="dark"{% endif %}>{# ⭐ thème sombre : Bootstrap en sombre aussi (textes d'aide, menus, modals lisibles) #}
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
@@ -1998,8 +1998,12 @@
     {# ⭐ Feuille du thème APRÈS les styles propres à la page, pour primer sur eux ;
        en thème sombre, theme_sombre.js corrige en plus les fonds blancs / textes
        sombres que la feuille ne connaît pas (pages à styles propres, AJAX). #}
-    {% if theme_css %}<style id="themeStructure">{{ theme_css|safe }}</style>{% endif %}
-    {% if session.user_id %}<script src="{{ url_for('static', filename='js/theme_sombre.js') }}?v=3" defer></script>{% endif %}
+    {# ⭐ 2026-10-12 : jamais de thème (couleurs de la structure, mode sombre, script d'ajustement)
+       sur une page sans navigation — reçus, factures, ordonnances, portail patient : le thème
+       posait ses couleurs sur chaque élément et l'emportait sur les règles d'impression
+       (texte gris pâle, voire fond noir, sur les reçus imprimés en thème sombre). #}
+    {% if theme_css and not (cacher_navigation is defined and cacher_navigation) %}<style id="themeStructure">{{ theme_css|safe }}</style>{% endif %}
+    {% if session.user_id and not (cacher_navigation is defined and cacher_navigation) %}<script src="{{ url_for('static', filename='js/theme_sombre.js') }}?v=3" defer></script>{% endif %}
 <script>
 // ⭐ Bande passante (2026-10-12) : chaque vérification automatique (badges,
 // messages, tableau de bord...) interroge le serveur et la base, même quand

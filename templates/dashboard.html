@@ -246,13 +246,7 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-4">
-               <div class="mb-3">
-                    <label class="form-label fw-semibold">Format d'impression</label>
-                    <select id="printFormat" class="form-control">
-                        <option value="80mm" selected>Format Ticket (80mm)</option>
-                        <option value="A4">Format A4</option>
-                    </select>
-                </div>
+                {% include 'partials/choix_format_impression.html' %}
                 <!-- 🔥 Choix détaillée/cumulée (pris en compte par tous les
                      boutons Reçu/Facture) : la cumulée ne montre qu'un
                      total par catégorie (Consultation, Actes médicaux, Chirurgie,
@@ -287,10 +281,9 @@ function reimprimer(venteId, type) {
     const options = [
         { label: 'Reçu Patient', action: 'recu_client', class: 'btn-outline-primary' },
         { label: 'Reçu Structure (copie)', action: 'recu_structure', class: 'btn-outline-secondary' },
-        { label: 'Reçu Patient + Tiers Payant', action: 'les_deux_recus', class: 'btn-outline-info' },
         { label: 'Facture Patient', action: 'facture_client', class: 'btn-outline-success' },
         { label: 'Facture Structure (archive)', action: 'facture_structure', class: 'btn-outline-danger' },
-        { label: 'Les deux (Patient + Structure)', action: 'les_deux', class: 'btn-outline-info' }
+        { label: 'Les deux reçus (patient, puis copie structure)', action: 'les_deux', class: 'btn-outline-info' }
     ];
     
     const container = document.getElementById('printOptions');
@@ -302,6 +295,7 @@ function reimprimer(venteId, type) {
         </div>
     `).join('');
     
+    choisirFormatImpression('80mm');
     new bootstrap.Modal(document.getElementById('printModal')).show();
 }
 function printDocument(action) {
@@ -312,20 +306,13 @@ function printDocument(action) {
         url = `/recu/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`;
     } else if (action === 'recu_structure') {
         url = `/recu_structure/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`;
-    } else if (action === 'les_deux_recus') {
-        window.open(`/recu/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`, '_blank');
-        window.open(`/recu_structure/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`, '_blank');
-        bootstrap.Modal.getInstance(document.getElementById('printModal')).hide();
-        return;
+    } else if (action === 'les_deux_recus' || action === 'les_deux') {
+        // un seul onglet : reçu patient, puis copie structure (voir recu_client.html)
+        url = `/recu/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}&ensuite=structure`;
     } else if (action === 'facture_client') {
         url = `/facture/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`;
     } else if (action === 'facture_structure') {
         url = `/facture_structure/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`;
-    } else if (action === 'les_deux') {
-        window.open(`/recu/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`, '_blank');
-        window.open(`/recu_structure/${currentVenteId}/${currentVenteType}?format=${format}&detail=${modeDetailDashboard}`, '_blank');
-        bootstrap.Modal.getInstance(document.getElementById('printModal')).hide();
-        return;
     }
     
     window.open(url, '_blank');

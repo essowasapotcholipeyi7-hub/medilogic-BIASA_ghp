@@ -355,13 +355,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Format</label>
-                    <select id="printFormat" class="form-control">
-                        <option value="80mm">Ticket (80mm)</option>
-                        <option value="A4">A4</option>
-                    </select>
-                </div>
+                {% include 'partials/choix_format_impression.html' %}
                 <!-- 🔥 Choix détaillée/cumulée (pris en compte par les boutons Reçu
                      ET Facture) : la cumulée ne montre qu'un total par catégorie
                      (Consultation, Actes médicaux, Chirurgie, Séjours hospitaliers,
@@ -389,7 +383,7 @@
                         <i class="fas fa-copy"></i> Reçu Structure
                     </button>
                     <button class="btn btn-outline-info" onclick="printDocument('les_deux')">
-                        <i class="fas fa-layer-group"></i> Les deux
+                        <i class="fas fa-layer-group"></i> Les deux reçus (patient, puis copie structure)
                     </button>
                 </div>
             </div>
@@ -1319,6 +1313,7 @@ function reimprimer(venteId, type) {
     currentVenteType = type;
     modeDetailVente = 'complet';
     document.getElementById('modeDetailVenteComplet').checked = true;
+    choisirFormatImpression('80mm');
     new bootstrap.Modal(document.getElementById('documentModal')).show();
 }
 
@@ -1335,10 +1330,8 @@ function printDocument(docType) {
     } else if (docType === 'facture_structure') {
         url = '/facture_structure/' + currentVenteId + '/' + currentVenteType + '?format=' + format + '&detail=' + modeDetailVente;
     } else if (docType === 'les_deux') {
-        window.open('/recu/' + currentVenteId + '/' + currentVenteType + '?format=' + format + '&detail=' + modeDetailVente, '_blank');
-        window.open('/recu_structure/' + currentVenteId + '/' + currentVenteType + '?format=' + format + '&detail=' + modeDetailVente, '_blank');
-        bootstrap.Modal.getInstance(document.getElementById('documentModal')).hide();
-        return;
+        // un seul onglet : reçu patient, puis copie structure (voir recu_client.html)
+        url = '/recu/' + currentVenteId + '/' + currentVenteType + '?format=' + format + '&detail=' + modeDetailVente + '&ensuite=structure';
     }
     
     window.open(url, '_blank');

@@ -492,7 +492,7 @@
                 {% for article in paiement.articles %}
                 <tr>
                     <td>
-                        <strong>{{ article.nom }}</strong>
+                        <strong>{{ article.nom|sans_code }}</strong>
                         {% if article.type %}
                         <span style="font-size: 0.8em; opacity: 0.7;">({{ article.type }})</span>
                         {% endif %}
@@ -645,5 +645,6 @@
         }
     });
     </script>
+{% if format == '80mm' %}{% include 'partials/ticket_80mm_lisible.html' %}{% endif %}
 </body>
 </html>

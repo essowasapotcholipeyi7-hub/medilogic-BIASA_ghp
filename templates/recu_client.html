@@ -472,7 +472,7 @@
         {% for article in articles %}
         <tr style="border-bottom:1px solid #eee;">
             <td style="padding:4px; font-weight:500; font-size:9px;">
-                {{ article.nom if patient_amu else article.nom|sans_code }}
+                {{ article.nom|sans_code }}
             </td>
             {% if a_dates_prestation %}
             <td style="text-align:center; font-size:8.5px; white-space:nowrap;">{{ article.date_prestation_affichee or '-' }}</td>
@@ -640,6 +640,9 @@
             {% endif %}
             <button onclick="telechargerPDF()" class="btn btn-success btn-sm">PDF</button>
             <button onclick="fermerOuRediriger()" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i> Fermer</button>
+            {% if request.args.get('ensuite') == 'structure' %}
+            <button onclick="allerCopieStructure()" class="btn btn-warning btn-sm fw-bold"><i class="fas fa-copy"></i> Copie structure ➜</button>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -692,4 +695,29 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 </script>
+{% if format == '80mm' %}{% include 'partials/ticket_80mm_lisible.html' %}{% endif %}
+{# ⭐ « Les deux » (patron, 2026-10-12 : « le choix les deux, j'ai l'impression que ça ne
+   marche pas bien ») : les deux reçus s'ouvraient dans 2 fenêtres d'un coup — le navigateur
+   bloquait la 2e (copie structure jamais ouverte). Désormais un seul onglet : ce reçu
+   s'imprime, puis le MÊME onglet passe à la copie structure, qui s'imprime à son tour. #}
+{% if request.args.get('ensuite') == 'structure' %}
+<script>
+(function () {
+    var suivant = new URL(location.href);
+    suivant.pathname = suivant.pathname.replace(/^\/recu\//, '/recu_structure/');
+    suivant.searchParams.delete('ensuite');
+    suivant.searchParams.set('imprimer', '1');
+    var parti = false;
+    window.allerCopieStructure = function () {
+        if (parti) return;
+        parti = true;
+        location.href = suivant.toString();
+    };
+    window.addEventListener('afterprint', function () { setTimeout(window.allerCopieStructure, 300); });
+    {% if format != '80mm' %}
+    document.addEventListener('DOMContentLoaded', function () { setTimeout(function () { window.print(); }, 600); });
+    {% endif %}
+})();
+</script>
+{% endif %}
 {% endblock %}

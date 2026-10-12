@@ -2486,8 +2486,8 @@ async function redirigerApresVente(venteId) {
     afficherPanier();
     
     if (typeDoc === 'les_deux') {
-        window.open(`/recu/${venteId}/pharma?format=${format}`, '_blank');
-        window.open(`/recu_structure/${venteId}/pharma?format=${format}`, '_blank');
+        // un seul onglet : reçu patient, puis copie structure (voir recu_client.html)
+        window.open(`/recu/${venteId}/pharma?format=${format}&ensuite=structure`, '_blank');
         window.location.href = '/dashboard';
         return;
     }
