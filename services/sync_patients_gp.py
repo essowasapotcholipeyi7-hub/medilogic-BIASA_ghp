@@ -47,8 +47,13 @@ def fiche_pour_gp(p):
 
 
 def pousser_patients_gp(structure_id, patient_ids):
-    """Envoie ces patients (déjà enregistrés) à chaque gestion_patients relié à la structure."""
-    from flask import current_app
+    """Envoie ces patients à chaque gestion_patients relié à la structure.
+
+    La fiche est lue DANS la requête en cours (elle voit le patient qui vient
+    d'être créé ou modifié, pas encore validé), puis envoyée en tâche de fond
+    seulement APRÈS la validation de la transaction (after_commit) : rien ne
+    part si l'enregistrement échoue, et jamais une version périmée."""
+    from sqlalchemy import event
     from models import db, StructureMapping
     ids = [int(i) for i in patient_ids if i]
     cibles = [(m.api_url.rstrip('/'), m.api_key) for m in StructureMapping.query.filter_by(
@@ -56,22 +61,14 @@ def pousser_patients_gp(structure_id, patient_ids):
         if m.api_url and m.api_key]
     if not ids or not cibles:
         return
-    app = current_app._get_current_object()
+    lignes = db.session.execute(text(
+        f"SELECT {CHAMPS} FROM patients WHERE structure_id = :s AND id = ANY(:ids)"),
+        {'s': structure_id, 'ids': ids}).fetchall()
+    fiches = [fiche_pour_gp(p) for p in lignes]
+    if not fiches:
+        return
 
     def envoyer():
-        with app.app_context():
-            try:
-                lignes = db.session.execute(text(
-                    f"SELECT {CHAMPS} FROM patients WHERE structure_id = :s AND id = ANY(:ids)"),
-                    {'s': structure_id, 'ids': ids}).fetchall()
-                fiches = [fiche_pour_gp(p) for p in lignes]
-            except Exception as e:
-                print(f"⚠️ Envoi patients vers gestion_patients : lecture impossible ({e})")
-                return
-            finally:
-                db.session.remove()
-        if not fiches:
-            return
         for url, cle in cibles:
             try:
                 requests.post(f"{url}/api/patients/sync-externe", params={'token': cle},
@@ -80,4 +77,7 @@ def pousser_patients_gp(structure_id, patient_ids):
                 # la recherche périodique de gestion_patients rattrapera ce patient
                 print(f"⚠️ Envoi patients vers gestion_patients échoué ({url}) : {e}")
 
-    threading.Thread(target=envoyer, daemon=True).start()
+    def apres_validation(_session):
+        threading.Thread(target=envoyer, daemon=True).start()
+
+    event.listen(db.session(), 'after_commit', apres_validation, once=True)
