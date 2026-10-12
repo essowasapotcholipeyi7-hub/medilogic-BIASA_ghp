@@ -2946,7 +2946,10 @@ async function appliquerPropositionTheme() {
      ("c'est pas pro"). La sélection, elle, est conservée : en revenant
      sur une vente, le patient est toujours là.
      ============================================ -->
-{% if session.user_id and request.endpoint in ['actes_vente', 'pharma_vente', 'page_hospitalisation', 'page_soins_ambulatoires'] %}
+{# ⭐ 2026-10-12 (patron : « pourquoi deux bandes qui montrent la sélection d'un patient ? ») :
+   plus sur la vente d'actes ni la pharmacie, qui ont déjà leur propre bandeau patient (avec
+   l'assurance complémentaire, Changer et Désélectionner). #}
+{% if session.user_id and request.endpoint in ['page_hospitalisation', 'page_soins_ambulatoires'] %}
 <div class="container-fluid px-3 mt-2">
     <div id="selectedPatientBadge" class="alert py-3 mb-0 fade-in" style="display:none;">
         <div class="row align-items-center">
