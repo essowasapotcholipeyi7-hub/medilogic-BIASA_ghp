@@ -410,12 +410,29 @@ class SheetsHelper:
             except Exception:
                 self._onglets.pop(sheet_name, None)   # onglet renommé/recréé : on le retrouve
                 data = self._onglet(sheet_name).get_all_records()
+            data = self._reparer_entete_id(sheet_name, data)
             # Mettre en cache
             self._cache[sheet_name] = (data, time.time())
             return data
         except Exception as e:
             print(f"⚠️ Feuille {sheet_name} non trouvée: {e}")
             return []
+
+    @staticmethod
+    def _reparer_entete_id(sheet_name, data):
+        """⭐ Garde-fou (2026-10-13) : la cellule A1 de la feuille « structures » avait été
+        vidée par erreur (un espace à la place de « ID ») -> plus aucune structure retrouvée
+        par son numéro : « Structure non activée » à TOUTES les connexions, et le compte
+        responsable limité à l'accueil. Dans toutes les feuilles, la colonne A est l'ID : si
+        son en-tête est vide et qu'aucune colonne ne s'appelle « ID », on la renomme « ID »
+        (lecture seulement, la feuille n'est pas modifiée)."""
+        if not data or 'ID' in data[0]:
+            return data
+        premiere = next(iter(data[0]), None)
+        if premiere is None or str(premiere).strip():
+            return data
+        print(f"⚠️ Feuille {sheet_name} : en-tête de la colonne A vide ({premiere!r}) — lu comme « ID ». Remettez « ID » en A1.")
+        return [{('ID' if k == premiere else k): v for k, v in r.items()} for r in data]
 
     def get_all_records_with_headers(self, base_name, use_prefix=True, force_refresh=False):
         """Récupère tous les enregistrements avec les en-têtes"""
