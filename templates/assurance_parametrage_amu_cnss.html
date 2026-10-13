@@ -57,7 +57,7 @@
                 <input type="text" class="form-control" name="sigle" maxlength="20" placeholder="Ex: CVC"
                        value="{{ parametrage.sigle or '' }}">
                 <small class="text-muted">Utilisé dans le numéro des factures recap AMU (CNSS/TNS/INAM) :
-                    N° 000000001/AMU/<strong>{{ parametrage.sigle or 'SIGLE' }}</strong>/{{ now_year }}.</small>
+                    N° 000000001/AMU/<strong>{{ parametrage.sigle or 'SIGLE' }}</strong>/{{ now_year }} (factures AMU-TNS : N° 000000001/AMU-TNS/<strong>{{ parametrage.sigle or 'SIGLE' }}</strong>/{{ now_year }}).</small>
             </div>
             <!-- ⭐ Patron : "le numéro c'est 71383919, ce numéro est valable
                  pour l'envoi des EP aussi [...] le numéro vert c'est 8323

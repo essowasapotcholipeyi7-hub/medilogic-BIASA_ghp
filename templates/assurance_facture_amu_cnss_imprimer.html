@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Facture AMU — {{ periode_libelle }}</title>
+    <title>Facture {{ 'AMU-TNS' if brouillon.type_amu == 'tns' else 'AMU' }} — {{ periode_libelle }}</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
@@ -61,7 +61,8 @@
             </div>
         </div>
         <div class="entete-titre">
-            <h1>FACTURE AMU</h1>
+            {# ⭐ AMU-TNS : même formulaire CNSS, titre propre au régime (patron, 2026-10-13) #}
+            <h1>{{ 'FACTURE AMU-TNS' if brouillon.type_amu == 'tns' else 'FACTURE AMU' }}</h1>
             {% if numero_facture_affiche %}
             <div class="numero-facture">{{ numero_facture_affiche }}</div>
             {% endif %}
@@ -188,7 +189,7 @@
         const element = document.getElementById('factureContenu');
         const opt = {
             margin: [0.4, 0.4, 0.4, 0.4],
-            filename: 'facture_amu_cnss_{{ brouillon.annee }}_{{ '%02d'|format(brouillon.mois) }}.pdf',
+            filename: 'facture_amu_{{ 'tns' if brouillon.type_amu == 'tns' else 'cnss' }}_{{ brouillon.annee }}_{{ '%02d'|format(brouillon.mois) }}.pdf',
             image: { type: 'jpeg', quality: 0.98 },
             html2canvas: { scale: 2, useCORS: true, logging: false },
             jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' },

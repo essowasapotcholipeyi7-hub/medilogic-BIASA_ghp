@@ -22723,7 +22723,7 @@ def page_facture_amu_cnss():
 
     parametrage = ParametrageAmuCnss.get_ou_creer(structure_id)
     numero_facture_affiche = (
-        formater_numero_facture_amu(brouillon.numero_local, parametrage.sigle, annee)
+        formater_numero_facture_amu(brouillon.numero_local, parametrage.sigle, annee, brouillon.type_amu)
         if brouillon else None
     )
 
@@ -22921,7 +22921,7 @@ def api_modifier_numero_facture_amu(facture_id):
         db.session.commit()
         parametrage = ParametrageAmuCnss.get_ou_creer(structure_id)
         return jsonify({'success': True, 'numero_local': nouveau_numero,
-                         'numero_affiche': formater_numero_facture_amu(nouveau_numero, parametrage.sigle, brouillon.annee)})
+                         'numero_affiche': formater_numero_facture_amu(nouveau_numero, parametrage.sigle, brouillon.annee, brouillon.type_amu)})
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -22947,7 +22947,7 @@ def imprimer_facture_amu_cnss(facture_id):
     parametrage = ParametrageAmuCnss.get_ou_creer(structure_id)
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
-    numero_facture_affiche = formater_numero_facture_amu(brouillon.numero_local, parametrage.sigle, brouillon.annee)
+    numero_facture_affiche = formater_numero_facture_amu(brouillon.numero_local, parametrage.sigle, brouillon.annee, brouillon.type_amu)
 
     noms_mois = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août',
                  'Septembre', 'Octobre', 'Novembre', 'Décembre']
@@ -23085,7 +23085,7 @@ def page_facture_amu_inam():
 
     parametrage = ParametrageAmuCnss.get_ou_creer(structure_id)
     numero_facture_affiche = (
-        formater_numero_facture_amu(brouillon.numero_local, parametrage.sigle, annee)
+        formater_numero_facture_amu(brouillon.numero_local, parametrage.sigle, annee, brouillon.type_amu)
         if brouillon else None
     )
 
@@ -23343,7 +23343,7 @@ def historique_factures_amu():
             'type_libelle': noms_type.get(f.type_amu, f.type_amu),
             'periode': f"{noms_mois[f.mois]} {f.annee}",
             'mois_reference': mois_reference,
-            'numero_affiche': formater_numero_facture_amu(f.numero_local, parametrage.sigle, f.annee) or '—',
+            'numero_affiche': formater_numero_facture_amu(f.numero_local, parametrage.sigle, f.annee, f.type_amu) or '—',
             'total': total,
             'statut': f.statut,
             'date_depot': f.date_depot,

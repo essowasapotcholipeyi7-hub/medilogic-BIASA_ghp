@@ -25,3 +25,17 @@ def test_formater_numero_facture_amu(numero_local, sigle, annee, attendu):
 @pytest.mark.parametrize("numero_local", [None, "", "abc", 0, -1])
 def test_formater_numero_facture_amu_invalide(numero_local):
     assert formater_numero_facture_amu(numero_local, "ABC", 2026) is None
+
+@pytest.mark.parametrize(
+    "type_amu, attendu",
+    [
+        ('tns', "N° 000000001/AMU-TNS/ABC/2026"),
+        ('amu_tns', "N° 000000001/AMU-TNS/ABC/2026"),
+        ('cnss', "N° 000000001/AMU/ABC/2026"),
+        ('inam', "N° 000000001/AMU/ABC/2026"),
+        (None, "N° 000000001/AMU/ABC/2026"),
+    ],
+)
+def test_formater_numero_facture_amu_regime(type_amu, attendu):
+    # ⭐ AMU-TNS : le régime apparaît dans le numéro (patron, 2026-10-13)
+    assert formater_numero_facture_amu(1, "ABC", 2026, type_amu) == attendu

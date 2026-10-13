@@ -12,8 +12,10 @@ Format : "N° 000000001/AMU/<sigle clinique>/<année>" — le compteur
 LONGUEUR_COMPTEUR = 9  # "000000001" — 9 chiffres, comme l'exemple du patron
 
 
-def formater_numero_facture_amu(numero_local, sigle, annee):
+def formater_numero_facture_amu(numero_local, sigle, annee, type_amu=None):
     """Ex: formater_numero_facture_amu(1, "ABC", 2026) -> "N° 000000001/AMU/ABC/2026".
+    ⭐ AMU-TNS (type_amu='tns', patron 2026-10-13 : « dans le numéro de facture, qu'on
+    ajoute aussi TNS ») -> "N° 000000001/AMU-TNS/ABC/2026" ; CNSS/INAM inchangés.
     numero_local manquant/invalide -> None (aucune facture générée pour
     l'instant, rien à afficher). sigle manquant -> "CLINIQUE" par défaut
     plutôt qu'un numéro à trou (le sigle se règle une fois pour toutes dans
@@ -25,4 +27,5 @@ def formater_numero_facture_amu(numero_local, sigle, annee):
     if numero <= 0:
         return None
     sigle_affiche = (sigle or '').strip().upper() or 'CLINIQUE'
-    return f"N° {numero:0{LONGUEUR_COMPTEUR}d}/AMU/{sigle_affiche}/{annee}"
+    regime = 'AMU-TNS' if (type_amu or '').lower() in ('tns', 'amu_tns') else 'AMU'
+    return f"N° {numero:0{LONGUEUR_COMPTEUR}d}/{regime}/{sigle_affiche}/{annee}"
