@@ -404,7 +404,7 @@ function afficherFactures(factures) {
                         <i class="fas fa-eye"></i>
                     </button>
                     ${f.statut !== 'payee' ? `
-                    <button class="btn btn-success" onclick="ouvrirPaiement(${f.id})" title="Paiement">
+                    <button class="btn btn-success" onclick="ouvrirPaiement(${f.id})" title="Paiement" {{ 'hidden' if role_compta_seul }}>
                         <i class="fas fa-money-bill-wave"></i>
                     </button>
                     ` : ''}
@@ -532,7 +532,7 @@ async function voirFacture(id) {
             </div>
             <div class="col-md-6 text-end">
                 ${facture.reste_a_payer > 0 ? `
-                    <button class="btn btn-success" onclick="ouvrirPaiement(${facture.id})">
+                    <button class="btn btn-success" onclick="ouvrirPaiement(${facture.id})" {{ 'hidden' if role_compta_seul }}>
                         <i class="fas fa-money-bill-wave"></i> Payer
                     </button>
                 ` : ''}

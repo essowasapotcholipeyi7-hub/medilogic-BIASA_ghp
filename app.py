@@ -11122,6 +11122,11 @@ def api_admin_delete_produit(produit_id):
 @login_required
 def api_approvisionner_produit(id):
     """Approvisionner un produit (ajouter au stock)"""
+    # ⭐ Séparation des tâches (patron, 2026-10-13) : le comptable contrôle le stock mais ne
+    # le modifie pas (la caisse/pharmacie garde « Réapprovisionner » depuis la vente).
+    from utils.permissions import est_role_compta
+    if est_role_compta():
+        return jsonify({'success': False, 'error': "L'approvisionnement se fait par l'administrateur, le gestionnaire ou la pharmacie : votre compte comptable peut consulter le stock."}), 403
     try:
         data = request.json
         structure_id = session.get('structure_id')
@@ -11172,6 +11177,11 @@ def api_approvisionner_produit(id):
 @app.route('/api/produits/inventaire/valider', methods=['POST'])
 @login_required
 def api_inventaire_valider():
+    # ⭐ Séparation des tâches (patron, 2026-10-13) : un inventaire validé change les
+    # quantités en stock — réservé à l'administrateur, au gestionnaire et au pharmacien
+    # (le comptable peut toujours compter, prévisualiser et imprimer).
+    if not (session.get('is_admin') or session.get('role') in ('admin', 'gestionnaire', 'pharmacien')):
+        return jsonify({'success': False, 'error': "La validation de l'inventaire est réservée à l'administrateur, au gestionnaire et au pharmacien."}), 403
     try:
         data = request.json or {}
         structure_id = session.get('structure_id')
@@ -17994,100 +18004,98 @@ def _executer_ajout_depense(structure_id, montant, motif, motif_personnalise, de
         return {'success': True, 'id': depense_id}
 
 
+def _executer_ajout_recette(structure_id, montant, source, description, user_name):
+    """Enregistre RÉELLEMENT une recette manuelle (caisse, écriture comptable, journal) —
+    appelée uniquement à la validation de la demande (api_valider_demande)."""
+    result = db.execute_query("""
+        INSERT INTO recettes (structure_id, montant, source, description, created_by_nom)
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING id
+    """, (
+        structure_id,
+        montant,
+        source,
+        description,
+        user_name
+    ))
+    
+    recette_id = result[0]['id']
+    
+    # 🔥 Mettre à jour le solde de caisse (exclure annulations)
+    db.execute_query("""
+        INSERT INTO caisse (structure_id, solde_actuel, date_mise_a_jour)
+        VALUES (%s, 
+            (SELECT COALESCE(SUM(montant), 0) FROM recettes 
+             WHERE structure_id = %s AND (est_annulation IS NULL OR est_annulation = FALSE)) - 
+            (SELECT COALESCE(SUM(montant), 0) FROM depenses WHERE structure_id = %s), 
+            NOW())
+        ON CONFLICT (structure_id) DO UPDATE SET
+            solde_actuel = EXCLUDED.solde_actuel,
+            date_mise_a_jour = NOW()
+    """, (structure_id, structure_id, structure_id))
+
+    print(f"✅ Recette #{recette_id} ajoutée: {montant} FCFA ({source}) - {user_name}")
+
+    # ⭐⭐⭐ COMPTABILISATION AUTOMATIQUE ⭐⭐⭐
+    try:
+        from services.comptabilite_service import generer_ecriture_recette_diverse
+        recette_orm = Recette.query.get(recette_id)
+        if recette_orm:
+            ecriture_rec = generer_ecriture_recette_diverse(recette_orm, user_nom=user_name)
+            if ecriture_rec:
+                print(f"🧾 Écriture comptable #{ecriture_rec.id} générée pour la recette #{recette_id}")
+    except Exception as e:
+        print(f"⚠️ Erreur génération écriture comptable (recette #{recette_id} conservée): {e}")
+
+    # ⭐ JOURNAL D'ACTIVITÉ
+    try:
+        from services.journal_service import JournalService
+        JournalService.creer_mouvement(
+            structure_id=structure_id, categorie='recette_encaisee',
+            description=f"Recette — {source} — {description}",
+            montant=montant, type_montant='credit',
+            reference_type='recette', reference_id=recette_id,
+            utilisateur_nom=user_name,
+        )
+    except Exception as e:
+        print(f"⚠️ Erreur journal d'activité (recette #{recette_id}): {e}")
+
+    return {'id': recette_id, 'montant': montant, 'source': source}
+
+
 @app.route('/api/finances/recettes', methods=['POST'])
 @login_required
 def api_add_recette():
-    """Ajouter une recette (manuelle ou automatique)"""
+    """Demande l'enregistrement d'une recette manuelle — ⭐ TOUJOURS en attente (patron,
+    2026-10-13, séparation des tâches) : une recette ajoutée augmente le solde de caisse,
+    elle pourrait couvrir un manque ; comme les dépenses, elle n'est enregistrée qu'une
+    fois validée par l'administrateur ou le gestionnaire (/api/validations)."""
     if not a_acces('finances'):
         return jsonify({'success': False, 'error': 'Non autorisé'}), 403
-    
     try:
-        data = request.json
+        data = request.json or {}
         structure_id = session.get('structure_id')
         user_name = session.get('user_name', 'Admin')
-        
         montant = float(data.get('montant') or 0)
         source = data.get('source', 'autres')
         description = data.get('description', '')
-        
         if montant <= 0:
             return jsonify({'success': False, 'error': 'Montant invalide'}), 400
-        
-        # 🔥 Sources autorisées
-        sources_autorisees = ['patients', 'assurance', 'autres']
-        if source not in sources_autorisees:
+        if source not in ['patients', 'assurance', 'autres']:
             source = 'autres'
-        
-        # 🔥 Si source = assurance, ajouter des infos supplémentaires
-        if source == 'assurance':
-            assurance_nom = data.get('assurance_nom', '')
-            if assurance_nom:
-                description = f"{description} - {assurance_nom}".strip()
-        
-        result = db.execute_query("""
-            INSERT INTO recettes (structure_id, montant, source, description, created_by_nom)
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING id
-        """, (
-            structure_id,
-            montant,
-            source,
-            description,
-            user_name
-        ))
-        
-        recette_id = result[0]['id']
-        
-        # 🔥 Mettre à jour le solde de caisse (exclure annulations)
-        db.execute_query("""
-            INSERT INTO caisse (structure_id, solde_actuel, date_mise_a_jour)
-            VALUES (%s, 
-                (SELECT COALESCE(SUM(montant), 0) FROM recettes 
-                 WHERE structure_id = %s AND (est_annulation IS NULL OR est_annulation = FALSE)) - 
-                (SELECT COALESCE(SUM(montant), 0) FROM depenses WHERE structure_id = %s), 
-                NOW())
-            ON CONFLICT (structure_id) DO UPDATE SET
-                solde_actuel = EXCLUDED.solde_actuel,
-                date_mise_a_jour = NOW()
-        """, (structure_id, structure_id, structure_id))
-
-        print(f"✅ Recette #{recette_id} ajoutée: {montant} FCFA ({source}) - {user_name}")
-
-        # ⭐⭐⭐ COMPTABILISATION AUTOMATIQUE ⭐⭐⭐
-        try:
-            from services.comptabilite_service import generer_ecriture_recette_diverse
-            recette_orm = Recette.query.get(recette_id)
-            if recette_orm:
-                ecriture_rec = generer_ecriture_recette_diverse(recette_orm, user_nom=user_name)
-                if ecriture_rec:
-                    print(f"🧾 Écriture comptable #{ecriture_rec.id} générée pour la recette #{recette_id}")
-        except Exception as e:
-            print(f"⚠️ Erreur génération écriture comptable (recette #{recette_id} conservée): {e}")
-
-        # ⭐ JOURNAL D'ACTIVITÉ
-        try:
-            from services.journal_service import JournalService
-            JournalService.creer_mouvement(
-                structure_id=structure_id, categorie='recette_encaisee',
-                description=f"Recette — {source} — {description}",
-                montant=montant, type_montant='credit',
-                reference_type='recette', reference_id=recette_id,
-                utilisateur_nom=user_name,
-            )
-        except Exception as e:
-            print(f"⚠️ Erreur journal d'activité (recette #{recette_id}): {e}")
-
-        return jsonify({
-            'success': True,
-            'id': recette_id,
-            'montant': montant,
-            'source': source
-        })
-        
+        if source == 'assurance' and data.get('assurance_nom'):
+            description = f"{description} - {data.get('assurance_nom')}".strip()
+        resume = f"Recette — {source} — {int(montant):,} FCFA".replace(',', ' ') + (f" — {description}" if description else '')
+        demande = _demander_validation(
+            structure_id=structure_id, type_demande='recette',
+            payload={'montant': montant, 'source': source, 'description': description},
+            resume=resume, user_id=session.get('user_id'), user_name=user_name,
+        )
+        return jsonify({'success': True, 'en_attente': True, 'demande_id': demande.id,
+                        'message': "Recette envoyée pour validation (administrateur ou gestionnaire)."})
     except Exception as e:
+        db.session.rollback()
         print(f"❌ Erreur api_add_recette: {e}")
-        import traceback
-        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/finances/sources')
@@ -19208,6 +19216,12 @@ def api_valider_demande(demande_id):
         elif demande.type_demande == 'encaissement_assurance_global':
             resultat = _executer_paiement_assurance_global(
                 payload, structure_id, demande.demandeur_nom,
+            )
+        elif demande.type_demande == 'recette':
+            # ⭐ recette manuelle (2026-10-13) — voir api_add_recette
+            resultat = _executer_ajout_recette(
+                structure_id, payload['montant'], payload.get('source', 'autres'),
+                payload.get('description', ''), demande.demandeur_nom,
             )
         else:
             return jsonify({'success': False, 'error': f"Type de demande inconnu: {demande.type_demande}"}), 400
@@ -23907,6 +23921,11 @@ def api_get_factures():
 @login_required
 def api_enregistrer_paiement(facture_id):
     """Enregistrer un paiement (partiel ou total)"""
+    # ⭐ Séparation des tâches (patron, 2026-10-13) : l'encaissement se fait à la caisse —
+    # le comptable contrôle mais ne tient pas l'argent (rôle supplémentaire Caissier possible).
+    from utils.permissions import est_role_compta
+    if est_role_compta():
+        return jsonify({'success': False, 'error': "L'encaissement des factures se fait à la caisse : votre compte comptable peut consulter, pas encaisser."}), 403
     try:
         data = request.json
         structure_id = session.get('structure_id')

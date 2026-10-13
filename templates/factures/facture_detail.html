@@ -188,9 +188,11 @@
                 <div class="mt-4">
                     <div class="btn-group">
                         {% if facture.statut != 'payee' and facture.statut != 'annulee' and facture.reste_a_payer > 0 %}
+                        {% if not role_compta_seul %}{# ⭐ encaissement : à la caisse (2026-10-13) #}
                         <button class="btn btn-success" onclick="ouvrirPaiement({{ facture.id }})">
                             <i class="fas fa-money-bill-wave"></i> Enregistrer un paiement
                         </button>
+                        {% endif %}
                         <button class="btn btn-danger" onclick="annulerFacture({{ facture.id }})">
                             <i class="fas fa-times"></i> Annuler la facture
                         </button>

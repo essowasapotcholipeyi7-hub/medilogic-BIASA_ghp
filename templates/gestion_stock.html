@@ -349,7 +349,8 @@
                                 <button class="btn btn-outline-secondary" onclick="apercuInventaire()">
                                     <i class="fas fa-eye"></i> Aperçu des écarts / Imprimer
                                 </button>
-                                <button class="btn btn-secondary" id="btnValiderInventaire" onclick="validerInventaire()">
+                                {# ⭐ validation d'inventaire : admin, gestionnaire, pharmacien (2026-10-13) #}
+                                <button class="btn btn-secondary" id="btnValiderInventaire" onclick="validerInventaire()" {{ 'hidden' if role_compta_seul }}>
                                     <i class="fas fa-check"></i> Valider l'inventaire
                                 </button>
                             </div>
@@ -853,7 +854,7 @@
                 <button class="btn btn-outline-dark" onclick="imprimerApercuInventaire()">
                     <i class="fas fa-print"></i> Imprimer
                 </button>
-                <button class="btn btn-success" onclick="bootstrap.Modal.getInstance(document.getElementById('modalApercuInventaire')).hide(); validerInventaire();">
+                <button class="btn btn-success" onclick="bootstrap.Modal.getInstance(document.getElementById('modalApercuInventaire')).hide(); validerInventaire();" {{ 'hidden' if role_compta_seul }}>
                     <i class="fas fa-check"></i> Valider l'inventaire
                 </button>
             </div>
@@ -1050,7 +1051,7 @@ function renderProduitsPage() {
                 <td>${p.lot || '-'}</td>
                 <td class="${margeClass}">${Math.round(marge).toLocaleString('fr-FR')} F</td>
                 <td>
-                    <button class="btn btn-sm btn-info" onclick="approvisionner(${p.id}, '${p.nom.replace(/'/g, "\\'")}')" title="Approvisionner">
+                    <button class="btn btn-sm btn-info" onclick="approvisionner(${p.id}, '${p.nom.replace(/'/g, "\\'")}')" title="Approvisionner" {{ 'hidden' if role_compta_seul }}>
                         <i class="fas fa-truck"></i>
                     </button>
                     <button class="btn btn-sm btn-warning" onclick="modifierProduit(${p.id})" title="Modifier">
