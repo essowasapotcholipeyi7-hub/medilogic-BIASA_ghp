@@ -83,14 +83,41 @@
                 </div>
 
                 <div class="row g-3 mb-2">
-                    <div class="col-md-6">
-                        <label class="form-label small">Primes (FCFA)</label>
+                    <div class="col-md-4">
+                        <label class="form-label small">Jours travaillés <span class="text-muted" id="gpJoursMoisHint"></span></label>
+                        <input type="number" class="form-control" id="gpJours" value="30" min="0" max="31">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Prime ponctuelle du mois (FCFA)</label>
                         <input type="number" class="form-control" id="gpPrimes" value="0" min="0">
                     </div>
-                    <div class="col-md-6">
-                        <label class="form-label small">Indemnités (FCFA)</label>
+                    <div class="col-md-4">
+                        <label class="form-label small">Indemnité ponctuelle (FCFA)</label>
                         <input type="number" class="form-control" id="gpIndemnites" value="0" min="0">
                     </div>
+                </div>
+
+                <!-- ⭐ Rubriques permanentes de l'employé (bulletin modèle CNSS, 2026-10-14) :
+                     cochées, elles sont reprises automatiquement chaque mois. -->
+                <h6 class="text-success mt-3 d-flex justify-content-between align-items-center">
+                    <span>Rubriques de l'employé <small class="text-muted">(reprises chaque mois)</small></span>
+                    <a href="/rh/parametres-paie#rubriques" target="_blank" class="small">Gérer les rubriques</a>
+                </h6>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-2">
+                        <thead class="table-light"><tr><th style="width:30px"></th><th>Rubrique</th><th>Type</th><th style="width:150px">Montant / Taux</th><th style="width:140px">Base (info)</th></tr></thead>
+                        <tbody id="gpRubriques"><tr><td colspan="5" class="text-muted small">Chargement…</td></tr></tbody>
+                    </table>
+                </div>
+
+                <h6 class="text-secondary mt-3">Informations imprimées sur le bulletin</h6>
+                <div class="row g-2 mb-2">
+                    <div class="col-md-2"><label class="form-label small">Cat.</label><input class="form-control form-control-sm" id="gpCategorie" maxlength="20"></div>
+                    <div class="col-md-5"><label class="form-label small">Direction</label><input class="form-control form-control-sm" id="gpDirection" maxlength="150" placeholder="vide = service de l'employé"></div>
+                    <div class="col-md-5"><label class="form-label small">Division</label><input class="form-control form-control-sm" id="gpDivision" maxlength="150"></div>
+                    <div class="col-md-4"><label class="form-label small">Banque</label><input class="form-control form-control-sm" id="gpBanque" maxlength="100"></div>
+                    <div class="col-md-4"><label class="form-label small">N° de compte</label><input class="form-control form-control-sm" id="gpCompte" maxlength="50"></div>
+                    <div class="col-md-4"><label class="form-label small">N° CNSS</label><input class="form-control form-control-sm" id="gpNumCnss" maxlength="30"></div>
                 </div>
 
                 <h6 class="text-info mt-3">
@@ -316,8 +343,42 @@ function ajouterAutreRetenue() {
     document.getElementById('gpAutresRetenues').insertAdjacentHTML('beforeend', ligneAutreRetenueHTML());
 }
 
+// ⭐ Rubriques permanentes de l'employé
+function ligneRubriqueGp(r) {
+    const pct = r.mode === 'pourcentage';
+    const badge = r.sens === 'gain' ? '<span class="badge bg-success">gain</span>' : '<span class="badge bg-danger">retenue</span>';
+    const soumis = r.sens === 'gain' ? (r.soumis_cnss ? '' : ' <span class="badge bg-light text-dark border" title="Non soumis CNSS / IRPP">non soumis</span>') : '';
+    return `<tr data-rid="${r.rubrique_id}" data-mode="${r.mode}">
+        <td><input type="checkbox" class="form-check-input gp-r-actif" ${r.attribuee ? 'checked' : ''}></td>
+        <td><strong>${r.code}</strong> ${r.libelle}${soumis}</td>
+        <td>${badge}</td>
+        <td><div class="input-group input-group-sm"><input type="number" min="0" step="${pct ? '0.01' : '1'}" class="form-control gp-r-valeur" value="${pct ? (r.taux || 0) : (r.montant || 0)}"><span class="input-group-text">${pct ? '% base' : 'F'}</span></div></td>
+        <td>${r.sens === 'retenue' && !pct ? `<input type="number" min="0" class="form-control form-control-sm gp-r-base" placeholder="ex. capital restant" value="${r.base || ''}">` : ''}</td>
+    </tr>`;
+}
+function chargerRubriquesGp(employeId) {
+    const corps = document.getElementById('gpRubriques');
+    fetch(`/rh/api/employes/${employeId}/rubriques`).then(r => r.json()).then(d => {
+        if (!d.success) { corps.innerHTML = '<tr><td colspan="5" class="text-danger small">Erreur de chargement</td></tr>'; return; }
+        corps.innerHTML = d.rubriques.length ? d.rubriques.map(ligneRubriqueGp).join('')
+            : '<tr><td colspan="5" class="text-muted small">Aucune rubrique active — ajoutez-en dans les paramètres de paie.</td></tr>';
+    });
+}
+function lireRubriquesGp() {
+    return Array.from(document.querySelectorAll('#gpRubriques tr[data-rid]')).map(tr => {
+        const pct = tr.dataset.mode === 'pourcentage';
+        const v = parseFloat(tr.querySelector('.gp-r-valeur').value || 0);
+        const b = tr.querySelector('.gp-r-base');
+        return {rubrique_id: parseInt(tr.dataset.rid), actif: tr.querySelector('.gp-r-actif').checked,
+                montant: pct ? 0 : v, taux: pct ? v : 0, base: b ? parseFloat(b.value || 0) : 0};
+    });
+}
+
 function ouvrirGenererPaie(employeId, nom, paieId) {
     document.getElementById('gpEmployeId').value = employeId;
+    document.getElementById('gpJours').value = parametragePaie && parametragePaie.jours_mois ? parametragePaie.jours_mois : 30;
+    document.getElementById('gpJoursMoisHint').textContent = parametragePaie && parametragePaie.jours_mois ? `(mois complet = ${parametragePaie.jours_mois})` : '';
+    chargerRubriquesGp(employeId);
     document.getElementById('gpEmployeNom').textContent = nom;
     document.getElementById('gpPrimes').value = 0;
     document.getElementById('gpIndemnites').value = 0;
@@ -340,6 +401,12 @@ function ouvrirGenererPaie(employeId, nom, paieId) {
             if (e.taux_retraite_patronal_override != null) document.getElementById('gpTauxRetraitePat').value = e.taux_retraite_patronal_override;
             if (e.taux_amu_salarial_override != null) document.getElementById('gpTauxAmuSal').value = e.taux_amu_salarial_override;
             if (e.taux_amu_patronal_override != null) document.getElementById('gpTauxAmuPat').value = e.taux_amu_patronal_override;
+            document.getElementById('gpCategorie').value = e.categorie_paie || '';
+            document.getElementById('gpDirection').value = e.direction || '';
+            document.getElementById('gpDivision').value = e.division || '';
+            document.getElementById('gpBanque').value = e.banque || '';
+            document.getElementById('gpCompte').value = e.numero_compte || '';
+            document.getElementById('gpNumCnss').value = e.numero_cnss || '';
         })
         .catch(err => console.error(err));
 
@@ -356,7 +423,9 @@ function ouvrirGenererPaie(employeId, nom, paieId) {
                 document.getElementById('gpPersonnesCharge').value = p.personnes_a_charge || 0;
                 document.getElementById('gpPrets').value = p.prets_deduction || 0;
                 document.getElementById('gpAcomptes').value = p.acomptes_deduction || 0;
-                (p.autres_retenues || []).forEach(r => {
+                if (p.jours_travailles != null) document.getElementById('gpJours').value = p.jours_travailles;
+                // les retenues issues des rubriques sont recalculées : seules les retenues ponctuelles sont reprises
+                (p.autres_retenues || []).filter(r => !r.rubrique).forEach(r => {
                     document.getElementById('gpAutresRetenues').insertAdjacentHTML('beforeend', ligneAutreRetenueHTML(r));
                 });
             })
@@ -400,6 +469,14 @@ function confirmerGenererPaie() {
             prets: parseFloat(document.getElementById('gpPrets').value || 0),
             acomptes: parseFloat(document.getElementById('gpAcomptes').value || 0),
             autres_retenues: autresRetenues,
+            jours_travailles: parseInt(document.getElementById('gpJours').value || 0),
+            rubriques: lireRubriquesGp(),
+            categorie_paie: document.getElementById('gpCategorie').value,
+            direction: document.getElementById('gpDirection').value,
+            division: document.getElementById('gpDivision').value,
+            banque: document.getElementById('gpBanque').value,
+            numero_compte: document.getElementById('gpCompte').value,
+            numero_cnss: document.getElementById('gpNumCnss').value,
         })
     })
     .then(r => r.json())

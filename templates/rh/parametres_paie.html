@@ -112,9 +112,14 @@
 
                 <h6 class="mt-4 d-flex justify-content-between align-items-center">
                     <span>Barème IRPP (progressif, <strong>annuel</strong>)</span>
-                    <button class="btn btn-sm btn-outline-primary" onclick="ajouterTranche()">
-                        <i class="fas fa-plus"></i> Ajouter une tranche
-                    </button>
+                    <span>
+                        <button class="btn btn-sm btn-outline-success" onclick="appliquerBaremeOfficiel()" title="0 % jusqu'à 900 000, 3 % jusqu'à 3 M, 10 % jusqu'à 6 M, 15 % jusqu'à 9 M, 20 %, 25 %, 30 %, 35 % au-delà de 20 M">
+                            <i class="fas fa-scale-balanced"></i> Barème officiel
+                        </button>
+                        <button class="btn btn-sm btn-outline-primary" onclick="ajouterTranche()">
+                            <i class="fas fa-plus"></i> Ajouter une tranche
+                        </button>
+                    </span>
                 </h6>
                 <div class="table-responsive">
                     <table class="table table-sm table-bordered">
@@ -128,6 +133,31 @@
                         </thead>
                         <tbody id="tranchesBody"></tbody>
                     </table>
+                </div>
+
+                <!-- ⭐ Bulletin modèle CNSS (patron, 2026-10-14) -->
+                <h6 class="mt-4 text-dark"><i class="fas fa-file-invoice-dollar"></i> Présentation du bulletin</h6>
+                <div class="row g-3">
+                    <div class="col-md-5">
+                        <label class="form-label small">Cotisations salariales sur le bulletin</label>
+                        <select class="form-select" id="affichageCotisations">
+                            <option value="combinee">Une seule ligne « 408 CNSS » (retraite + AMU, ex. 4 % + 5 % = 9 %)</option>
+                            <option value="detaillee">Une ligne par organisme (CNSS, AMU)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Base IRPP arrondie au multiple inférieur de</label>
+                        <select class="form-select" id="irppArrondiBase">
+                            <option value="1000">1 000 F (ex. 414 575 → 414 000)</option>
+                            <option value="100">100 F</option>
+                            <option value="10">10 F</option>
+                            <option value="1">Pas d'arrondi</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">Jours d'un mois complet</label>
+                        <input type="number" class="form-control" id="joursMois" min="1" max="31" value="30">
+                    </div>
                 </div>
 
                 <h6 class="mt-4 text-warning"><i class="fas fa-umbrella-beach"></i> Congés</h6>
@@ -176,6 +206,62 @@
                         <i class="fas fa-save"></i> Enregistrer
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ⭐ Rubriques de paie (bulletin modèle CNSS, patron 2026-10-14 : « qu'on puisse
+     ajouter des rubriques s'il en faut ») — voir RubriquePaie / RubriqueEmploye. -->
+<div class="card mt-4" id="rubriques">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="mb-0"><i class="fas fa-list-ol"></i> Rubriques de paie</h5>
+        <button class="btn btn-light btn-sm" onclick="ouvrirRubrique(null)"><i class="fas fa-plus"></i> Ajouter une rubrique</button>
+    </div>
+    <div class="card-body">
+        <p class="small text-muted mb-2">
+            Calculées automatiquement : <strong>100</strong> salaire de base (proratisé sur les jours travaillés),
+            <strong>408</strong> CNSS / CRT (+ AMU), <strong>442</strong> IRPP, <strong>680</strong> prêt, <strong>690</strong> acompte.
+            Ajoutez ici les autres rubriques (primes, indemnités, retenues syndicales, coopérative, mutuelle...), puis
+            attribuez-les à chaque employé dans <em>Paie du mois → Générer</em> : elles sont reprises chaque mois.
+            Une prime <strong>non soumise</strong> n'entre ni dans la base CNSS ni dans la base IRPP.
+        </p>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle">
+                <thead class="table-light"><tr><th>Code</th><th>Libellé</th><th>Type</th><th>Calcul</th><th>Soumis CNSS</th><th>Soumis IRPP</th><th>Employés</th><th>Actif</th><th></th></tr></thead>
+                <tbody id="rubriquesBody"><tr><td colspan="9" class="text-muted">Chargement…</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalRubrique" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title" id="rubTitre">Rubrique</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <input type="hidden" id="rubId">
+                <div class="row g-2">
+                    <div class="col-4"><label class="form-label small">Code *</label><input class="form-control" id="rubCode" maxlength="10" placeholder="ex. 655"></div>
+                    <div class="col-8"><label class="form-label small">Libellé *</label><input class="form-control" id="rubLibelle" maxlength="120" placeholder="ex. SYNTRASTO"></div>
+                    <div class="col-6"><label class="form-label small">Type</label>
+                        <select class="form-select" id="rubSens" onchange="majFormRubrique()"><option value="gain">Gain (prime, indemnité)</option><option value="retenue">Retenue</option></select></div>
+                    <div class="col-6"><label class="form-label small">Calcul</label>
+                        <select class="form-select" id="rubMode" onchange="majFormRubrique()"><option value="fixe">Montant fixe</option><option value="pourcentage">% du salaire de base</option></select></div>
+                    <div class="col-6" id="rubMontantBloc"><label class="form-label small">Montant proposé (F)</label><input type="number" min="0" class="form-control" id="rubMontant" value="0"></div>
+                    <div class="col-6" id="rubTauxBloc"><label class="form-label small">Taux proposé (%)</label><input type="number" min="0" step="0.01" class="form-control" id="rubTaux" value="0"></div>
+                    <div class="col-12" id="rubSoumisBloc">
+                        <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="rubCnss" checked><label class="form-check-label small" for="rubCnss">Soumis à la CNSS (entre dans la base de cotisation)</label></div>
+                        <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="rubIrpp" checked><label class="form-check-label small" for="rubIrpp">Soumis à l'IRPP</label></div>
+                    </div>
+                    <div class="col-12"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="rubActif" checked><label class="form-check-label small" for="rubActif">Active</label></div></div>
+                </div>
+                <div class="form-text">Le montant / taux proposé n'est qu'une valeur de départ : il se règle employé par employé.</div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline-danger me-auto" id="rubSupprimer" onclick="supprimerRubrique()"><i class="fas fa-trash"></i> Supprimer</button>
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-primary" onclick="enregistrerRubrique()"><i class="fas fa-save"></i> Enregistrer</button>
             </div>
         </div>
     </div>
@@ -373,6 +459,73 @@ function ligneTrancheHTML(t) {
     </tr>`;
 }
 
+// ⭐ Rubriques de paie
+let RUBRIQUES = [];
+function chargerRubriques() {
+    fetch('/rh/api/rubriques-paie').then(r => r.json()).then(d => {
+        RUBRIQUES = d.rubriques || [];
+        const ok = '<i class="fas fa-check text-success"></i>', non = '<i class="fas fa-minus text-muted"></i>';
+        document.getElementById('rubriquesBody').innerHTML = RUBRIQUES.length ? RUBRIQUES.map(r => `<tr class="${r.actif ? '' : 'text-muted'}">
+            <td><strong>${r.code}</strong></td><td>${r.libelle}</td>
+            <td>${r.sens === 'gain' ? '<span class="badge bg-success">gain</span>' : '<span class="badge bg-danger">retenue</span>'}</td>
+            <td class="small">${r.mode === 'pourcentage' ? (r.taux_defaut || 0) + ' % du salaire de base' : 'montant fixe'}</td>
+            <td>${r.sens === 'gain' ? (r.soumis_cnss ? ok : non) : ''}</td><td>${r.sens === 'gain' ? (r.soumis_irpp ? ok : non) : ''}</td>
+            <td>${r.nb_employes}</td><td>${r.actif ? ok : non}</td>
+            <td class="text-end"><button class="btn btn-sm btn-outline-primary" onclick="ouvrirRubrique(${r.id})"><i class="fas fa-pen"></i></button></td>
+        </tr>`).join('') : '<tr><td colspan="9" class="text-muted">Aucune rubrique.</td></tr>';
+    });
+}
+function majFormRubrique() {
+    const gain = document.getElementById('rubSens').value === 'gain';
+    const pct = document.getElementById('rubMode').value === 'pourcentage';
+    document.getElementById('rubSoumisBloc').style.display = gain ? '' : 'none';
+    document.getElementById('rubMontantBloc').style.display = pct ? 'none' : '';
+    document.getElementById('rubTauxBloc').style.display = pct ? '' : 'none';
+}
+function ouvrirRubrique(id) {
+    const r = RUBRIQUES.find(x => x.id === id) || {code: '', libelle: '', sens: 'gain', mode: 'fixe', montant_defaut: 0, taux_defaut: 0, soumis_cnss: true, soumis_irpp: true, actif: true};
+    document.getElementById('rubTitre').textContent = id ? 'Modifier la rubrique ' + r.code : 'Nouvelle rubrique';
+    document.getElementById('rubId').value = id || '';
+    document.getElementById('rubCode').value = r.code; document.getElementById('rubLibelle').value = r.libelle;
+    document.getElementById('rubSens').value = r.sens; document.getElementById('rubMode').value = r.mode;
+    document.getElementById('rubMontant').value = r.montant_defaut; document.getElementById('rubTaux').value = r.taux_defaut;
+    document.getElementById('rubCnss').checked = r.soumis_cnss; document.getElementById('rubIrpp').checked = r.soumis_irpp;
+    document.getElementById('rubActif').checked = r.actif;
+    document.getElementById('rubSupprimer').style.display = id ? '' : 'none';
+    majFormRubrique();
+    new bootstrap.Modal(document.getElementById('modalRubrique')).show();
+}
+async function enregistrerRubrique() {
+    const id = document.getElementById('rubId').value;
+    const data = {code: document.getElementById('rubCode').value.trim(), libelle: document.getElementById('rubLibelle').value.trim(),
+        sens: document.getElementById('rubSens').value, mode: document.getElementById('rubMode').value,
+        montant_defaut: parseFloat(document.getElementById('rubMontant').value || 0), taux_defaut: parseFloat(document.getElementById('rubTaux').value || 0),
+        soumis_cnss: document.getElementById('rubCnss').checked, soumis_irpp: document.getElementById('rubIrpp').checked,
+        actif: document.getElementById('rubActif').checked};
+    const d = await fetch(id ? '/rh/api/rubriques-paie/' + id : '/rh/api/rubriques-paie', {method: id ? 'PUT' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)}).then(r => r.json());
+    if (!d.success) { await afficherMessage(d.error || 'Erreur', {type: 'danger'}); return; }
+    bootstrap.Modal.getInstance(document.getElementById('modalRubrique')).hide();
+    chargerRubriques();
+}
+async function supprimerRubrique() {
+    const id = document.getElementById('rubId').value;
+    if (!id || !await demanderConfirmation('Supprimer cette rubrique ? (si des employés l\'utilisent, elle sera seulement désactivée)')) return;
+    const d = await fetch('/rh/api/rubriques-paie/' + id, {method: 'DELETE'}).then(r => r.json());
+    if (!d.success) { await afficherMessage(d.error || 'Erreur', {type: 'danger'}); return; }
+    bootstrap.Modal.getInstance(document.getElementById('modalRubrique')).hide();
+    if (d.desactivee) await afficherMessage('Rubrique utilisée par des employés : elle a été désactivée (les bulletins déjà édités ne changent pas).');
+    chargerRubriques();
+}
+document.addEventListener('DOMContentLoaded', chargerRubriques);
+
+// ⭐ Barème officiel (confirmé par le bulletin CNSS modèle jusqu'à 6 000 000)
+let BAREME_OFFICIEL = [];
+async function appliquerBaremeOfficiel() {
+    if (!BAREME_OFFICIEL.length) return;
+    if (!await demanderConfirmation("Remplacer les tranches IRPP par le barème officiel ? (pensez à enregistrer ensuite)")) return;
+    document.getElementById('tranchesBody').innerHTML = BAREME_OFFICIEL.map(ligneTrancheHTML).join('');
+}
+
 function ajouterTranche() {
     document.getElementById('tranchesBody').insertAdjacentHTML('beforeend', ligneTrancheHTML());
 }
@@ -381,6 +534,10 @@ function chargerParametres() {
     fetch('/rh/api/parametres-paie')
         .then(r => r.json())
         .then(p => {
+            document.getElementById('affichageCotisations').value = p.affichage_cotisations || 'combinee';
+            document.getElementById('irppArrondiBase').value = String(p.irpp_arrondi_base != null ? p.irpp_arrondi_base : 1000);
+            document.getElementById('joursMois').value = p.jours_mois || 30;
+            BAREME_OFFICIEL = p.bareme_officiel || [];
             document.getElementById('tauxCnssSalarial').value = p.taux_cnss_salarial;
             document.getElementById('tauxCnssPatronal').value = p.taux_cnss_patronal;
             document.getElementById('plafondCnss').value = p.plafond_cnss;
@@ -443,6 +600,9 @@ function sauvegarderParametres() {
             abattement_plafond_annuel: parseFloat(document.getElementById('abattementPlafond').value || 0),
             deduction_personne_charge: parseFloat(document.getElementById('deductionPersonneCharge').value || 0),
             max_personnes_charge: parseInt(document.getElementById('maxPersonnesCharge').value || 6),
+            affichage_cotisations: document.getElementById('affichageCotisations').value,
+            irpp_arrondi_base: parseInt(document.getElementById('irppArrondiBase').value),
+            jours_mois: parseInt(document.getElementById('joursMois').value || 30),
             tranches_irpp: tranches,
             deduire_permissions_des_conges: document.getElementById('deduirePermissionsConges').checked,
             niveaux_validation_conges: parseInt(document.getElementById('niveauxValidationConges').value || 1),

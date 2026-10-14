@@ -8,8 +8,11 @@ import traceback
 
 from models import (db, Employe, Service, Conge, Permission, DocumentRH, SignatureRH,
                      Paie, ParametragePaie, EmpreinteEmploye, ParametragePointage, Pointage, VisageEmploye,
+                     RubriquePaie, RubriqueEmploye,
                      TentativePointage,
                      TYPES_CONGE_DEDUCTIBLES, MOTIFS_DEPART, EvaluationRH, SanctionDisciplinaire, TYPES_SANCTION)
+from services.paie_service import lignes_bulletin, cumuls_annuels, assurer_rubriques
+from utils.paie_rubriques import valider_rubrique, cle_tri_code, BAREME_IRPP_TOGO
 from utils.permissions import a_acces
 from utils.regles_absences import (fusionner_regles, droit_conge_annuel, jours_ouvrables, controler_permission,
                                    mode_deduction_convenance, evenement as evenement_regles, NATURES_PERMISSION,
@@ -447,6 +450,10 @@ def api_employe_detail(structure_id, id):
         'taux_retraite_patronal_override': float(employe.taux_retraite_patronal_override) if employe.taux_retraite_patronal_override is not None else None,
         'taux_amu_salarial_override': float(employe.taux_amu_salarial_override) if employe.taux_amu_salarial_override is not None else None,
         'taux_amu_patronal_override': float(employe.taux_amu_patronal_override) if employe.taux_amu_patronal_override is not None else None,
+        # ⭐ Informations imprimées sur le bulletin (modèle CNSS)
+        'categorie_paie': employe.categorie_paie or '', 'direction': employe.direction or '',
+        'division': employe.division or '', 'numero_cnss': employe.numero_cnss or '',
+        'banque': employe.banque or '', 'numero_compte': employe.numero_compte or '',
         # ⭐ Patron : "fiche employé et compte de connexion séparés (aucun
         # lien)" — voir Employe.compte_utilisateur_id (models.py) et
         # _comptes_utilisateurs_structure() ci-dessus.
@@ -673,6 +680,7 @@ def api_modifier_employe(structure_id, id):
             employe.statut = data['statut']
 
         # ⭐ Paramètres de paie individuels
+        _maj_infos_bulletin(employe, data)   # ⭐ Cat., Direction, Division, N° CNSS, banque, compte
         if 'secteur_paie' in data and data['secteur_paie'] in ('prive', 'public'):
             employe.secteur_paie = data['secteur_paie']
         if 'personnes_a_charge' in data:
@@ -2976,6 +2984,127 @@ def api_conges_stats(structure_id, employe_id):
 # PAIE (bulletin de paie — CNSS / INAM / IRPP)
 # ============================================================
 
+# ============================================================
+# ⭐ PAIE PAR RUBRIQUES — bulletin modèle CNSS (patron, 2026-10-14)
+# ============================================================
+def _maj_infos_bulletin(employe, data):
+    for champ, longueur in (('categorie_paie', 20), ('direction', 150), ('division', 150), ('numero_cnss', 30), ('banque', 100), ('numero_compte', 50)):
+        if champ in data:
+            setattr(employe, champ, (str(data.get(champ) or '').strip()[:longueur]) or None)
+
+
+def _rubrique_dict(r):
+    return {'id': r.id, 'code': r.code, 'libelle': r.libelle, 'sens': r.sens, 'mode': r.mode,
+            'taux_defaut': float(r.taux_defaut or 0), 'montant_defaut': float(r.montant_defaut or 0),
+            'soumis_cnss': bool(r.soumis_cnss), 'soumis_irpp': bool(r.soumis_irpp), 'actif': bool(r.actif),
+            'nb_employes': RubriqueEmploye.query.filter_by(rubrique_id=r.id, actif=True).count()}
+
+
+def _enregistrer_rubriques_employe(structure_id, employe, elements):
+    """elements : [{rubrique_id, actif, montant, taux, base}] — remplace les
+    éléments permanents de l'employé (désactive ceux décochés)."""
+    vus = set()
+    for el in elements:
+        try:
+            rid = int(el.get('rubrique_id'))
+        except (TypeError, ValueError):
+            continue
+        r = RubriquePaie.query.filter_by(id=rid, structure_id=structure_id).first()
+        if not r:
+            continue
+        vus.add(rid)
+        re_ = RubriqueEmploye.query.filter_by(employe_id=employe.id, rubrique_id=rid).first()
+        if not re_:
+            re_ = RubriqueEmploye(structure_id=structure_id, employe_id=employe.id, rubrique_id=rid)
+            db.session.add(re_)
+        def _num(v):
+            try:
+                return max(0.0, float(v or 0))
+            except (TypeError, ValueError):
+                return 0.0
+        re_.actif = bool(el.get('actif'))
+        re_.montant = _num(el.get('montant'))
+        re_.taux = _num(el.get('taux'))
+        re_.base_info = _num(el.get('base')) or None
+    for re_ in RubriqueEmploye.query.filter_by(employe_id=employe.id).all():
+        if re_.rubrique_id not in vus:
+            re_.actif = False
+
+
+@rh_bp.route('/api/rubriques-paie', methods=['GET'])
+@require_structure
+def api_rubriques_paie(structure_id):
+    assurer_rubriques(structure_id)
+    rubriques = RubriquePaie.query.filter_by(structure_id=structure_id).all()
+    rubriques.sort(key=lambda r: cle_tri_code(r.code))
+    return jsonify({'success': True, 'rubriques': [_rubrique_dict(r) for r in rubriques]})
+
+
+@rh_bp.route('/api/rubriques-paie', methods=['POST'])
+@require_structure
+def api_ajouter_rubrique_paie(structure_id):
+    if not session.get('is_admin'):
+        return jsonify({'success': False, 'error': 'Non autorisé'}), 403
+    try:
+        codes = {r.code for r in RubriquePaie.query.filter_by(structure_id=structure_id).all()}
+        d = valider_rubrique(request.json or {}, codes)
+        r = RubriquePaie(structure_id=structure_id, **d)
+        db.session.add(r)
+        db.session.commit()
+        return jsonify({'success': True, 'rubrique': _rubrique_dict(r)})
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@rh_bp.route('/api/rubriques-paie/<int:rid>', methods=['PUT', 'DELETE'])
+@require_structure
+def api_modifier_rubrique_paie(structure_id, rid):
+    if not session.get('is_admin'):
+        return jsonify({'success': False, 'error': 'Non autorisé'}), 403
+    r = RubriquePaie.query.filter_by(id=rid, structure_id=structure_id).first()
+    if not r:
+        return jsonify({'success': False, 'error': 'Rubrique introuvable'}), 404
+    if request.method == 'DELETE':
+        if RubriqueEmploye.query.filter_by(rubrique_id=rid).first():
+            r.actif = False   # déjà utilisée : on la désactive (les bulletins passés restent intacts)
+            db.session.commit()
+            return jsonify({'success': True, 'desactivee': True})
+        db.session.delete(r)
+        db.session.commit()
+        return jsonify({'success': True})
+    try:
+        codes = {x.code for x in RubriquePaie.query.filter_by(structure_id=structure_id).all() if x.id != r.id}
+        d = valider_rubrique(request.json or {}, codes)
+        for k, v in d.items():
+            setattr(r, k, v)
+        db.session.commit()
+        return jsonify({'success': True, 'rubrique': _rubrique_dict(r)})
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@rh_bp.route('/api/employes/<int:id>/rubriques', methods=['GET'])
+@require_structure
+def api_rubriques_employe(structure_id, id):
+    """Catalogue actif + éléments permanents de l'employé (pour la saisie)."""
+    employe = Employe.query.filter_by(id=id, structure_id=structure_id).first()
+    if not employe:
+        return jsonify({'success': False, 'error': 'Employé introuvable'}), 404
+    assurer_rubriques(structure_id)
+    attribues = {x.rubrique_id: x for x in RubriqueEmploye.query.filter_by(employe_id=id).all()}
+    out = []
+    for r in RubriquePaie.query.filter_by(structure_id=structure_id, actif=True).all():
+        x = attribues.get(r.id)
+        out.append({**_rubrique_dict(r), 'rubrique_id': r.id, 'attribuee': bool(x and x.actif),
+                    'montant': float(x.montant or 0) if x else float(r.montant_defaut or 0),
+                    'taux': float(x.taux or 0) if x else float(r.taux_defaut or 0),
+                    'base': float(x.base_info) if (x and x.base_info is not None) else None})
+    out.sort(key=lambda r: cle_tri_code(r['code']))
+    return jsonify({'success': True, 'rubriques': out})
+
+
 @rh_bp.route('/paie')
 @require_structure
 def page_paie(structure_id):
@@ -3022,6 +3151,11 @@ def api_get_parametres_paie(structure_id):
         # ⭐ Patron : "validation à plusieurs niveaux (SignatureRH) codée
         # mais jamais branchée" — voir Conge.statut_validation (models.py).
         'niveaux_validation_conges': int(p.niveaux_validation_conges or 1),
+        # ⭐ Bulletin par rubriques (modèle CNSS)
+        'affichage_cotisations': p.affichage_cotisations or 'combinee',
+        'irpp_arrondi_base': int(p.irpp_arrondi_base if p.irpp_arrondi_base is not None else 1000),
+        'jours_mois': int(p.jours_mois or 30),
+        'bareme_officiel': BAREME_IRPP_TOGO,
         'updated_at': p.updated_at.strftime('%Y-%m-%d %H:%M') if p.updated_at else None,
     })
 
@@ -3065,6 +3199,13 @@ def api_maj_parametres_paie(structure_id):
             # ⭐ Borné à [1, 5] — au-delà, la chaîne de validation devient
             # ingérable en pratique et n'apporte plus rien.
             p.niveaux_validation_conges = max(1, min(int(data['niveaux_validation_conges'] or 1), 5))
+        # ⭐ Bulletin par rubriques (modèle CNSS)
+        if data.get('affichage_cotisations') in ('combinee', 'detaillee'):
+            p.affichage_cotisations = data['affichage_cotisations']
+        if 'irpp_arrondi_base' in data:
+            p.irpp_arrondi_base = int(data['irpp_arrondi_base']) if int(data['irpp_arrondi_base'] or 0) in (1, 10, 100, 1000) else 1000
+        if 'jours_mois' in data:
+            p.jours_mois = max(1, min(int(data['jours_mois'] or 30), 31))
         p.updated_by = session.get('user_name', 'Admin')
         db.session.commit()
         return jsonify({'success': True})
@@ -3139,6 +3280,9 @@ def api_generer_paie(structure_id):
             employe.taux_amu_salarial_override = min(float(data['taux_amu_salarial_override']), demi_amu)
         if 'taux_amu_patronal_override' in data and data['taux_amu_patronal_override'] not in (None, ''):
             employe.taux_amu_patronal_override = max(float(data['taux_amu_patronal_override']), demi_amu)
+        _maj_infos_bulletin(employe, data)
+        if isinstance(data.get('rubriques'), list):   # ⭐ éléments permanents de l'employé
+            _enregistrer_rubriques_employe(structure_id, employe, data['rubriques'])
         db.session.commit()
 
         paie, erreur = generer_ou_maj_paie(
@@ -3154,6 +3298,7 @@ def api_generer_paie(structure_id):
             autres_retenues=data.get('autres_retenues', []),
             personnes_a_charge=employe.personnes_a_charge,
             user_nom=session.get('user_name', 'Admin'),
+            jours_travailles=data.get('jours_travailles'),
         )
         if erreur:
             return jsonify({'success': False, 'error': erreur}), 400
@@ -3253,6 +3398,7 @@ def api_detail_paie(structure_id, paie_id):
         'total_retenues': float(paie.total_retenues),
         'total_charges_patronales': float(paie.total_charges_patronales),
         'net_a_payer': float(paie.net_a_payer), 'statut': paie.statut,
+        'jours_travailles': paie.jours_travailles, 'lignes': lignes_bulletin(paie),
         'statut_label': paie.get_statut_label(),
         'date_paiement': paie.date_paiement.strftime('%Y-%m-%d') if paie.date_paiement else None,
     })
@@ -3299,9 +3445,14 @@ def bulletin_paie(structure_id, paie_id):
         flash('Bulletin de paie non trouvé', 'danger')
         return redirect(url_for('rh.page_paie'))
     from utils.structure_info import get_structure_info
+    from utils.paie_rubriques import MOIS_MAJ
     structure = get_structure_info(structure_id)
+    lignes = lignes_bulletin(paie)
     return render_template('rh/bulletin_paie.html', paie=paie, employe=paie.employe,
-                            structure=structure,
+                            structure=structure, lignes=lignes, cumuls=cumuls_annuels(paie),
+                            total_gains=sum(float(l.get('gain') or 0) for l in lignes),
+                            total_retenues=sum(float(l.get('retenue') or 0) for l in lignes),
+                            periode_maj=f"{MOIS_MAJ[paie.mois]} {paie.annee}",
                             date_actuelle=datetime.now().strftime('%d/%m/%Y'))
 
 

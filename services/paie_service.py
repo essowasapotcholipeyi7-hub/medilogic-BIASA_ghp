@@ -18,6 +18,9 @@
 
 from datetime import date
 from models import db, Paie, ParametragePaie, Employe, Depense
+from utils.paie_rubriques import (franc, tronquer, cle_tri_code, RUBRIQUES_DEFAUT, CODE_SALAIRE_BASE,
+                                  CODE_PRIMES_DIVERSES, CODE_INDEMNITES_DIVERSES, CODE_RETRAITE, CODE_AMU,
+                                  CODE_IRPP, CODE_PRET, CODE_ACOMPTE)
 
 
 def _d(v):
@@ -108,51 +111,106 @@ def resoudre_taux_paie(employe, parametrage):
 
 
 def calculer_paie(employe, salaire_base, primes, indemnites, parametrage,
-                   prets=0, acomptes=0, autres_retenues=None, personnes_a_charge=None):
-    """Calcule un bulletin de paie complet en suivant l'ordre du cahier des
-    charges :
-      1) Salaire de base (+ primes/indemnités) = Salaire brut
-      2) - Cotisations sociales salariales (retraite + AMU) = Brut imposable
-      3) - Abattement forfaitaire 28% (plafonné/an) - Déduction personnes à
-         charge (10 000 F/mois/personne, max 6) = Revenu net imposable
-      4) Barème IRPP (annuel, annualisé x12 puis impôt /12)
-      5) - Autres retenues (prêts, acomptes, autres) = Net à payer
-    Ne persiste rien — fonction pure, testable isolément."""
-    salaire_base = _d(salaire_base)
-    primes = _d(primes)
-    indemnites = _d(indemnites)
-    brut = salaire_base + primes + indemnites
+                   prets=0, acomptes=0, autres_retenues=None, personnes_a_charge=None,
+                   rubriques=None, jours_travailles=None):
+    """⭐ Bulletin par RUBRIQUES, modèle CNSS (patron, 2026-10-14) — voir
+    utils/paie_rubriques.py pour la lecture du bulletin modèle. Ordre :
+      1) Gains : 100 salaire de base (proratisé sur les jours travaillés),
+         rubriques de gain de l'employé (fixe ou % du salaire de base),
+         primes / indemnités ponctuelles = Salaire brut ;
+      2) Base CNSS = gains SOUMIS ; retraite (CNSS privé / CRT public sur le
+         salaire de base) + AMU salariés, arrondis au franc ;
+      3) Base IRPP = (gains soumis IRPP − cotisations salariales) − abattement
+         28 % (plafonné) − personnes à charge ; IRPP = barème annuel / 12 sur
+         cette base arrondie au millier inférieur (réglable) ;
+      4) Retenues : rubriques de retenue de l'employé, prêt, acompte, autres
+         = Net à payer.
+    Ne persiste rien — fonction pure, testable isolément. Montants au franc."""
+    jours_mois = int(getattr(parametrage, 'jours_mois', None) or 30)
+    try:
+        jours = int(jours_travailles) if jours_travailles not in (None, '') else jours_mois
+    except (TypeError, ValueError):
+        jours = jours_mois
+    jours = max(0, min(jours, jours_mois))
+
+    base_contrat = franc(salaire_base)
+    base_gagnee = franc(base_contrat * jours / jours_mois) if jours_mois else base_contrat
+    lignes = []
+
+    def ligne(code, libelle, base=None, taux=None, gain=0.0, retenue=0.0, cnss=False, irpp=False, rubrique=False):
+        lignes.append({'code': code, 'libelle': libelle, 'base': base, 'taux': taux,
+                       'gain': gain, 'retenue': retenue, 'soumis_cnss': cnss, 'soumis_irpp': irpp,
+                       'rubrique': rubrique})
+
+    ligne(CODE_SALAIRE_BASE, 'SALAIRE DE BASE', base=base_contrat, taux=jours, gain=base_gagnee, cnss=True, irpp=True)
+
+    rubriques = [r for r in (rubriques or []) if r.get('actif', True)]
+    retenues_rubriques = []
+    for r in rubriques:
+        if r.get('mode') == 'pourcentage':
+            taux_r = _d(r.get('taux'))
+            montant = franc(base_gagnee * taux_r / 100.0)
+            base_r, taux_aff = base_gagnee, taux_r
+        else:
+            montant = franc(r.get('montant'))
+            base_r = _d(r.get('base')) or None
+            taux_aff = None
+        if montant <= 0:
+            continue
+        if r.get('sens') == 'retenue':
+            retenues_rubriques.append({'code': r.get('code'), 'libelle': r.get('libelle'), 'montant': montant,
+                                       'base': base_r, 'taux': taux_aff, 'rubrique': True})
+        else:
+            ligne(r.get('code'), r.get('libelle'), base=base_r, taux=taux_aff, gain=montant,
+                  cnss=bool(r.get('soumis_cnss', True)), irpp=bool(r.get('soumis_irpp', True)), rubrique=True)
+
+    primes = franc(primes)
+    indemnites = franc(indemnites)
+    if primes > 0:
+        ligne(CODE_PRIMES_DIVERSES, 'PRIMES DIVERSES', gain=primes, cnss=True, irpp=True)
+    if indemnites > 0:
+        ligne(CODE_INDEMNITES_DIVERSES, 'INDEMNITES DIVERSES', gain=indemnites, cnss=True, irpp=True)
+
+    brut = sum(l['gain'] for l in lignes)
+    base_cnss = sum(l['gain'] for l in lignes if l['soumis_cnss'])
+    gains_imposables = sum(l['gain'] for l in lignes if l['soumis_irpp'])
 
     taux = resoudre_taux_paie(employe, parametrage)
 
-    # Assiette retraite : salaire brut (privé/CNSS) ou salaire de base /
-    # traitement indiciaire (public/CRT) — cf. cahier des charges §7.
-    assiette_retraite = brut if taux['secteur'] == 'prive' else salaire_base
+    # Assiette retraite : gains soumis (privé / CNSS) ou salaire de base
+    # (public / CRT, traitement indiciaire) ; AMU : gains soumis.
+    assiette_retraite = base_cnss if taux['secteur'] == 'prive' else base_gagnee
     plafond_retraite = taux['plafond_retraite']
     if plafond_retraite and plafond_retraite > 0:
         assiette_retraite = min(assiette_retraite, plafond_retraite)
 
-    retraite_salarial = round(assiette_retraite * taux['taux_retraite_salarial'] / 100.0, 2)
-    retraite_patronal = round(assiette_retraite * taux['taux_retraite_patronal'] / 100.0, 2)
-
-    # Assiette AMU : salaire brut, pour les deux secteurs.
-    amu_salarial = round(brut * taux['taux_amu_salarial'] / 100.0, 2)
-    amu_patronal = round(brut * taux['taux_amu_patronal'] / 100.0, 2)
-
+    retraite_salarial = franc(assiette_retraite * taux['taux_retraite_salarial'] / 100.0)
+    retraite_patronal = franc(assiette_retraite * taux['taux_retraite_patronal'] / 100.0)
+    amu_salarial = franc(base_cnss * taux['taux_amu_salarial'] / 100.0)
+    amu_patronal = franc(base_cnss * taux['taux_amu_patronal'] / 100.0)
     formation_pro = 0.0
     if taux['secteur'] == 'prive':
-        formation_pro = round(brut * _d(parametrage.taux_formation_pro) / 100.0, 2)
+        formation_pro = franc(base_cnss * _d(parametrage.taux_formation_pro) / 100.0)
 
-    brut_imposable = max(0.0, brut - retraite_salarial - amu_salarial)
+    # Lignes de cotisation : une seule « 408 CNSS » (retraite + AMU) quand
+    # l'assiette est commune (privé) et que la présentation combinée est
+    # choisie — comme le bulletin modèle (4 % + 5 % = 9 %).
+    combinee = (getattr(parametrage, 'affichage_cotisations', None) or 'combinee') == 'combinee'
+    if combinee and taux['secteur'] == 'prive' and assiette_retraite == base_cnss:
+        ligne(CODE_RETRAITE, taux['organisme_retraite'], base=base_cnss,
+              taux=round(taux['taux_retraite_salarial'] + taux['taux_amu_salarial'], 2),
+              retenue=franc(retraite_salarial + amu_salarial))
+    else:
+        if retraite_salarial > 0:
+            ligne(CODE_RETRAITE, taux['organisme_retraite'], base=assiette_retraite,
+                  taux=taux['taux_retraite_salarial'], retenue=retraite_salarial)
+        if amu_salarial > 0:
+            ligne(CODE_AMU, taux['organisme_amu'], base=base_cnss, taux=taux['taux_amu_salarial'], retenue=amu_salarial)
 
-    # --- IRPP : barème ANNUEL -> on annualise la base mensuelle (x12),
-    # applique l'abattement et les déductions (également annualisées),
-    # calcule l'impôt annuel puis le ramène au mois (/12).
-    brut_imposable_annuel = brut_imposable * 12.0
-    abattement_annuel = min(
-        brut_imposable_annuel * _d(parametrage.abattement_taux) / 100.0,
-        _d(parametrage.abattement_plafond_annuel)
-    )
+    # --- IRPP
+    brut_imposable = max(0.0, gains_imposables - retraite_salarial - amu_salarial)
+    abattement = min(brut_imposable * _d(parametrage.abattement_taux) / 100.0,
+                     _d(parametrage.abattement_plafond_annuel) / 12.0)
 
     nb_charges = personnes_a_charge if personnes_a_charge is not None else getattr(employe, 'personnes_a_charge', 0)
     try:
@@ -161,33 +219,48 @@ def calculer_paie(employe, salaire_base, primes, indemnites, parametrage,
         nb_charges = 0
     max_charges = int(parametrage.max_personnes_charge or 6)
     nb_charges = max(0, min(nb_charges, max_charges))
-    deduction_charges_annuelle = nb_charges * _d(parametrage.deduction_personne_charge) * 12.0
+    deduction_charges = nb_charges * _d(parametrage.deduction_personne_charge)
 
-    revenu_net_imposable_annuel = max(0.0, brut_imposable_annuel - abattement_annuel - deduction_charges_annuelle)
-    irpp_annuel = calculer_irpp(revenu_net_imposable_annuel, parametrage.tranches_irpp or [])
-    irpp = round(irpp_annuel / 12.0, 2)
+    revenu_net_imposable = franc(max(0.0, brut_imposable - abattement - deduction_charges))
+    base_irpp = tronquer(revenu_net_imposable, getattr(parametrage, 'irpp_arrondi_base', None) or 1)
+    irpp = franc(calculer_irpp(base_irpp * 12.0, parametrage.tranches_irpp or []) / 12.0)
+    if revenu_net_imposable > 0 or irpp > 0:
+        ligne(CODE_IRPP, 'I.R.P.P.', base=revenu_net_imposable, retenue=irpp)
 
-    abattement = round(abattement_annuel / 12.0, 2)
-    deduction_charges_familiales = round(deduction_charges_annuelle / 12.0, 2)
-    revenu_net_imposable = round(revenu_net_imposable_annuel / 12.0, 2)
+    # --- Retenues
+    for r in retenues_rubriques:
+        ligne(r['code'], r['libelle'], base=r['base'], taux=r['taux'], retenue=r['montant'], rubrique=True)
+    prets = franc(prets)
+    acomptes = franc(acomptes)
+    if prets > 0:
+        ligne(CODE_PRET, 'REMBOURSEMENT PRET', retenue=prets)
+    if acomptes > 0:
+        ligne(CODE_ACOMPTE, 'ACOMPTE SUR SALAIRE', retenue=acomptes)
+    manuelles = [r for r in (autres_retenues or [])
+                 if isinstance(r, dict) and r.get('libelle') and not r.get('rubrique') and franc(r.get('montant')) > 0]
+    for r in manuelles:
+        ligne(str(r.get('code') or ''), str(r.get('libelle')).upper(), retenue=franc(r.get('montant')))
 
-    autres_retenues = [r for r in (autres_retenues or []) if isinstance(r, dict) and r.get('libelle')]
-    autres_retenues_total = round(sum(_d(r.get('montant')) for r in autres_retenues), 2)
-    prets = round(_d(prets), 2)
-    acomptes = round(_d(acomptes), 2)
+    toutes_autres = ([{'code': r['code'], 'libelle': r['libelle'], 'montant': r['montant'], 'rubrique': True} for r in retenues_rubriques]
+                     + [{'code': r.get('code') or '', 'libelle': r.get('libelle'), 'montant': franc(r.get('montant'))} for r in manuelles])
+    autres_retenues_total = franc(sum(r['montant'] for r in toutes_autres))
 
-    total_retenues = round(retraite_salarial + amu_salarial + irpp + prets + acomptes + autres_retenues_total, 2)
-    total_charges_patronales = round(retraite_patronal + amu_patronal + formation_pro, 2)
-    net_a_payer = round(brut - total_retenues, 2)
+    total_retenues = franc(retraite_salarial + amu_salarial + irpp + prets + acomptes + autres_retenues_total)
+    total_charges_patronales = franc(retraite_patronal + amu_patronal + formation_pro)
+    net_a_payer = franc(brut - total_retenues)
+
+    lignes.sort(key=lambda l: cle_tri_code(l['code']))
+    for l in lignes:   # nettoyage pour l'instantané imprimé
+        l.pop('soumis_cnss', None); l.pop('soumis_irpp', None)
 
     return {
         'secteur': taux['secteur'],
         'organisme_retraite': taux['organisme_retraite'],
         'organisme_amu': taux['organisme_amu'],
-        'salaire_base': salaire_base,
-        'primes': primes,
+        'salaire_base': base_gagnee,
+        'primes': franc(brut - base_gagnee - indemnites),
         'indemnites': indemnites,
-        'salaire_brut': round(brut, 2),
+        'salaire_brut': franc(brut),
         'taux_retraite_salarial': taux['taux_retraite_salarial'],
         'taux_retraite_patronal': taux['taux_retraite_patronal'],
         'retraite_salarial': retraite_salarial,
@@ -197,20 +270,92 @@ def calculer_paie(employe, salaire_base, primes, indemnites, parametrage,
         'amu_salarial': amu_salarial,
         'amu_patronal': amu_patronal,
         'formation_pro': formation_pro,
-        'salaire_brut_imposable': round(brut_imposable, 2),
+        'salaire_brut_imposable': franc(brut_imposable),
         'personnes_a_charge': nb_charges,
-        'abattement': abattement,
-        'deduction_charges_familiales': deduction_charges_familiales,
+        'abattement': franc(abattement),
+        'deduction_charges_familiales': franc(deduction_charges),
         'revenu_net_imposable': revenu_net_imposable,
         'irpp': irpp,
         'prets_deduction': prets,
         'acomptes_deduction': acomptes,
-        'autres_retenues': autres_retenues,
+        'autres_retenues': toutes_autres,
         'autres_retenues_total': autres_retenues_total,
         'total_retenues': total_retenues,
         'total_charges_patronales': total_charges_patronales,
         'net_a_payer': net_a_payer,
+        'lignes': lignes,
+        'jours_travailles': jours,
+        'base_cnss': franc(base_cnss),
+        'base_irpp': base_irpp,
     }
+
+
+def rubriques_employe(employe_id):
+    """Éléments de paie permanents d'un employé, prêts pour calculer_paie()."""
+    from models import RubriqueEmploye, RubriquePaie
+    out = []
+    lignes = RubriqueEmploye.query.join(RubriquePaie, RubriqueEmploye.rubrique_id == RubriquePaie.id) \
+        .filter(RubriqueEmploye.employe_id == employe_id, RubriqueEmploye.actif.is_(True), RubriquePaie.actif.is_(True)).all()
+    for re_ in lignes:
+        r = re_.rubrique
+        out.append({'rubrique_id': r.id, 'code': r.code, 'libelle': r.libelle, 'sens': r.sens, 'mode': r.mode,
+                    'taux': _d(re_.taux), 'montant': _d(re_.montant), 'base': _d(re_.base_info) or None,
+                    'soumis_cnss': bool(r.soumis_cnss), 'soumis_irpp': bool(r.soumis_irpp), 'actif': True})
+    out.sort(key=lambda x: cle_tri_code(x['code']))
+    return out
+
+
+def assurer_rubriques(structure_id):
+    """Copie le catalogue par défaut pour la structure (une fois)."""
+    from models import RubriquePaie
+    if RubriquePaie.query.filter_by(structure_id=structure_id).first():
+        return
+    for r in RUBRIQUES_DEFAUT:
+        db.session.add(RubriquePaie(structure_id=structure_id, actif=True, **r))
+    db.session.commit()
+
+
+def cumuls_annuels(paie):
+    """Récapitulatif annuel du bulletin : cumuls IRPP / CNSS (retenues
+    salariales) et leurs bases, de janvier au mois du bulletin."""
+    paies = Paie.query.filter(Paie.employe_id == paie.employe_id, Paie.annee == paie.annee,
+                              Paie.mois <= paie.mois).all()
+    return {
+        'irpp': franc(sum(_d(p.irpp) for p in paies)),
+        'cnss': franc(sum(_d(p.retraite_salarial) + _d(p.amu_salarial) for p in paies)),
+        'base_irpp': franc(sum(_d(p.revenu_net_imposable) for p in paies)),
+        'base_cnss': franc(sum(_d(p.base_cnss) if p.base_cnss is not None else _d(p.salaire_brut) for p in paies)),
+    }
+
+
+def lignes_bulletin(paie):
+    """Lignes imprimées : instantané enregistré, sinon reconstitution pour
+    les anciens bulletins (avant la paie par rubriques)."""
+    if paie.lignes:
+        return paie.lignes
+    l = [{'code': CODE_SALAIRE_BASE, 'libelle': 'SALAIRE DE BASE', 'base': _d(paie.salaire_base), 'taux': None,
+          'gain': _d(paie.salaire_base), 'retenue': 0}]
+    if _d(paie.primes):
+        l.append({'code': CODE_PRIMES_DIVERSES, 'libelle': 'PRIMES', 'base': None, 'taux': None, 'gain': _d(paie.primes), 'retenue': 0})
+    if _d(paie.indemnites):
+        l.append({'code': CODE_INDEMNITES_DIVERSES, 'libelle': 'INDEMNITES', 'base': None, 'taux': None, 'gain': _d(paie.indemnites), 'retenue': 0})
+    if _d(paie.retraite_salarial):
+        l.append({'code': CODE_RETRAITE, 'libelle': paie.organisme_retraite or 'CNSS', 'base': None,
+                  'taux': _d(paie.taux_retraite_salarial), 'gain': 0, 'retenue': _d(paie.retraite_salarial)})
+    if _d(paie.amu_salarial):
+        l.append({'code': CODE_AMU, 'libelle': paie.organisme_amu or 'AMU', 'base': None,
+                  'taux': _d(paie.taux_amu_salarial), 'gain': 0, 'retenue': _d(paie.amu_salarial)})
+    if _d(paie.irpp):
+        l.append({'code': CODE_IRPP, 'libelle': 'I.R.P.P.', 'base': _d(paie.revenu_net_imposable), 'taux': None, 'gain': 0, 'retenue': _d(paie.irpp)})
+    if _d(paie.prets_deduction):
+        l.append({'code': CODE_PRET, 'libelle': 'REMBOURSEMENT PRET', 'base': None, 'taux': None, 'gain': 0, 'retenue': _d(paie.prets_deduction)})
+    if _d(paie.acomptes_deduction):
+        l.append({'code': CODE_ACOMPTE, 'libelle': 'ACOMPTE SUR SALAIRE', 'base': None, 'taux': None, 'gain': 0, 'retenue': _d(paie.acomptes_deduction)})
+    for r in (paie.autres_retenues or []):
+        if isinstance(r, dict) and _d(r.get('montant')):
+            l.append({'code': r.get('code') or '', 'libelle': str(r.get('libelle') or '').upper(), 'base': None, 'taux': None,
+                      'gain': 0, 'retenue': _d(r.get('montant'))})
+    return l
 
 
 LIBELLE_RETENUE_ABSENCES = 'Absences (pointage)'
@@ -299,7 +444,8 @@ def _retenue_permissions_convenance(structure_id, employe_id, annee, mois, salai
 
 def generer_ou_maj_paie(structure_id, employe_id, annee, mois, salaire_base=None,
                          primes=0, indemnites=0, prets=0, acomptes=0,
-                         autres_retenues=None, personnes_a_charge=None, user_nom='System'):
+                         autres_retenues=None, personnes_a_charge=None, user_nom='System',
+                         jours_travailles=None):
     """Crée (ou recalcule si encore en brouillon/validée, pas encore payée)
     le bulletin de paie d'un employé pour une période donnée."""
     employe = Employe.query.get(employe_id)
@@ -314,8 +460,8 @@ def generer_ou_maj_paie(structure_id, employe_id, annee, mois, salaire_base=None
     # de doublon si generer_ou_maj_paie est rappelé plusieurs fois) avant
     # d'en réinjecter une à jour si le réglage est actif.
     autres_retenues = [r for r in (autres_retenues or [])
-                        if not (isinstance(r, dict) and str(r.get('libelle', '')).startswith(
-                            (LIBELLE_RETENUE_ABSENCES, LIBELLE_RETENUE_PERMISSIONS)))]
+                        if not (isinstance(r, dict) and (r.get('rubrique') or str(r.get('libelle', '')).upper().startswith(
+                            (LIBELLE_RETENUE_ABSENCES.upper(), LIBELLE_RETENUE_PERMISSIONS.upper()))))]
     retenue_absences = _retenue_absences(structure_id, employe_id, annee, mois, base, parametrage)
     if retenue_absences:
         autres_retenues.append(retenue_absences)
@@ -325,7 +471,9 @@ def generer_ou_maj_paie(structure_id, employe_id, annee, mois, salaire_base=None
 
     calc = calculer_paie(employe, base, primes, indemnites, parametrage,
                           prets=prets, acomptes=acomptes, autres_retenues=autres_retenues,
-                          personnes_a_charge=personnes_a_charge)
+                          personnes_a_charge=personnes_a_charge,
+                          rubriques=rubriques_employe(employe_id),   # ⭐ éléments permanents (bulletin CNSS)
+                          jours_travailles=jours_travailles)
 
     paie = Paie.query.filter_by(employe_id=employe_id, annee=annee, mois=mois).first()
     if paie and paie.statut == 'payee':
@@ -442,7 +590,7 @@ def apercu_salaires(structure_id, annee, mois):
         if paie:
             net = float(_d(paie.net_a_payer))
         elif base > 0:
-            net = float(calculer_paie(e, base, 0, 0, parametrage)['net_a_payer'])
+            net = float(calculer_paie(e, base, 0, 0, parametrage, rubriques=rubriques_employe(e.id))['net_a_payer'])
         else:
             net = 0.0
         deja_payee = bool(paie and paie.statut == 'payee')
@@ -550,7 +698,7 @@ def generer_declaration(structure_id, annee, mois, type_declaration):
                 continue
             lignes.append({
                 'matricule': matricule, 'employe': nom_employe,
-                'base': _d(p.salaire_base) if organisme_attendu == 'CRT' else _d(p.salaire_brut),
+                'base': _d(p.salaire_base) if organisme_attendu == 'CRT' else (_d(p.base_cnss) if p.base_cnss is not None else _d(p.salaire_brut)),
                 'taux': f"{_d(p.taux_retraite_salarial):.2f}% / {_d(p.taux_retraite_patronal):.2f}%",
                 'salarial': sal, 'patronal': pat, 'total': round(sal + pat, 2),
             })
@@ -566,7 +714,7 @@ def generer_declaration(structure_id, annee, mois, type_declaration):
                 continue
             lignes.append({
                 'matricule': matricule, 'employe': nom_employe,
-                'base': _d(p.salaire_brut),
+                'base': _d(p.base_cnss) if p.base_cnss is not None else _d(p.salaire_brut),
                 'taux': f"{_d(p.taux_amu_salarial):.2f}% / {_d(p.taux_amu_patronal):.2f}%",
                 'salarial': sal, 'patronal': pat, 'total': round(sal + pat, 2),
             })

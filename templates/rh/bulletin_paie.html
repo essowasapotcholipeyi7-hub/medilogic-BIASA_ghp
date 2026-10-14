@@ -5,255 +5,146 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bulletin de paie — {{ employe.nom }} {{ employe.prenom }} — {{ paie.get_periode_label() }}</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    {#- ⭐ Présentation « bulletin CNSS » (patron, 2026-10-14) : en-tête de la
+        structure, cadre Matric. / Nom / Pers / N° bulletin / Période, puis
+        Cat. / Emploi / Direction / Division / Date emb., tableau des rubriques
+        (Rubrique · Base · Taux · Retenue · Gain), totaux, net à payer, banque
+        et récapitulatif annuel. Lignes : services/paie_service.lignes_bulletin. -#}
+    {%- macro f(v) -%}{% if v is not none and v != '' and v|float != 0 %}{{ '{:,.0f}'.format(v|float).replace(',', ' ') }}{% endif %}{%- endmacro -%}
+    {%- macro t(v) -%}{% if v is not none and v != '' and v|float != 0 %}{{ '{:.2f}'.format(v|float).replace('.', ',') }}{% endif %}{%- endmacro -%}
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Segoe UI', Arial, sans-serif;
-            background: #f0f2f5;
-            padding: 30px;
-        }
-        .document-container {
-            max-width: 800px;
-            width: 100%;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-            padding: 30px 40px;
-            margin: 0 auto;
-        }
-        /* ⭐ En-tête bande bleue foncée — même charte que les autres
-           documents imprimables (ordonnances/protocoles, reçus...) : logo
-           + nom + adresse de la clinique. */
-        .recu-header {
-            background: #1a2a6c;
-            padding: 20px 30px;
-            color: white;
-            margin: -30px -40px 20px -40px;
-        }
-        .recu-header .top-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-        .recu-header .logo-area {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-        .recu-header .logo-area img {
-            max-height: 50px;
-            max-width: 100px;
-            object-fit: contain;
-        }
-        .recu-header .logo-area h1 {
-            font-size: 20px;
-            font-weight: 600;
-            margin: 0;
-            color: white;
-        }
-        .recu-header .periode { text-align: right; font-size: 13px; color: white; }
-        .recu-header .periode .badge {
-            display: inline-block; margin-top: 6px; padding: 4px 10px; border-radius: 30px;
-            font-size: 12px; font-weight: 600;
-            background: {{ 'rgba(25,135,84,0.35)' if paie.statut == 'payee' else 'rgba(255,193,7,0.35)' }};
-            border: 1px solid rgba(255,255,255,0.3);
-            color: white;
-        }
-        .recu-header .sub-info {
-            margin-top: 10px;
-            font-size: 13px;
-            opacity: 0.9;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 5px 20px;
-        }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            border-bottom: 3px solid #1a2a6c;
-            padding-bottom: 12px;
-            margin-bottom: 20px;
-        }
-        .header .logo { font-size: 18px; font-weight: 700; color: #1a2a6c; }
-        .infos-employe {
-            display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px;
-            font-size: 13px; margin-bottom: 20px; padding: 12px; background: #f8f9fa; border-radius: 6px;
-        }
-        .infos-employe div span.label { color: #6c757d; }
-        table.bulletin { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 10px; }
-        table.bulletin th, table.bulletin td { padding: 8px 10px; border: 1px solid #dee2e6; }
-        table.bulletin th { background: #1a2a6c; color: white; text-align: left; }
-        table.bulletin td.montant { text-align: right; font-variant-numeric: tabular-nums; }
-        table.bulletin tr.section td { background: #eef1f8; font-weight: 700; }
-        table.bulletin tr.net td { background: #d1e7dd; font-weight: 700; font-size: 15px; }
-        .footer-note { font-size: 11px; color: #888; margin-top: 20px; text-align: center; }
-        /* ⭐ Pied de page : signatures employé + responsable, côte à côte */
-        .doc-signatures {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 40px;
-            padding-top: 10px;
-        }
-        .doc-signatures .signature-bloc {
-            text-align: center;
-            min-width: 200px;
-        }
-        .doc-signatures .signature-bloc .titre {
-            font-weight: 600;
-            font-size: 13px;
-            color: #1a2a3a;
-            margin-bottom: 45px;
-        }
-        .doc-signatures .signature-bloc .ligne {
-            width: 200px;
-            border-top: 1px solid #333;
-            margin: 0 auto 5px auto;
-        }
-        .doc-signatures .signature-bloc .legende {
-            font-size: 11px;
-            color: #6c757d;
-        }
+        body { font-family: Arial, Helvetica, sans-serif; background: #eef0f2; padding: 24px; color: #111; }
+        .feuille { max-width: 820px; margin: 0 auto; background: #fff; padding: 28px 30px 24px; box-shadow: 0 6px 24px rgba(0,0,0,.08); }
+        .entete { display: flex; align-items: center; gap: 18px; margin-bottom: 6px; }
+        .entete img { max-height: 70px; max-width: 120px; object-fit: contain; }
+        .entete .nom { font-size: 24px; font-weight: 700; color: #1f2d6b; line-height: 1.15; }
+        .coord { text-align: center; font-size: 13px; font-weight: 600; margin: 10px 0 14px; line-height: 1.4; }
+        table { width: 100%; border-collapse: collapse; }
+        .cadre { border: 1px solid #555; }
+        .titre { text-align: center; font-weight: 700; font-size: 15px; letter-spacing: .5px; border: 1px solid #555; border-bottom: none; padding: 4px; background: #f3f4f6; }
+        .infos th, .infos td { border: 1px solid #888; font-size: 11.5px; padding: 3px 6px; text-align: left; }
+        .infos th { font-weight: 600; background: #fafafa; }
+        .infos td { text-transform: uppercase; }
+        .rub th { border: 1px solid #555; font-size: 12px; padding: 4px 6px; background: #f3f4f6; }
+        .rub td { font-size: 11.5px; padding: 1px 6px; border-left: 1px solid #555; border-right: 1px solid #555; text-transform: uppercase; white-space: nowrap; }
+        .rub td.num { text-align: right; font-variant-numeric: tabular-nums; }
+        .rub td.code { width: 34px; }
+        .rub tr.vide td { height: 17px; }
+        .rub tr.fin td { border-bottom: 1px solid #555; height: 12px; }
+        .rub tr.totaux td { border: 1px solid #555; font-weight: 700; padding: 5px 6px; }
+        .rub tr.net td { border: 1px solid #555; font-weight: 700; font-size: 14px; padding: 6px; }
+        .banque td { border: 1px solid #888; font-size: 11.5px; padding: 4px 6px; }
+        .recap th, .recap td { border: 1px solid #888; font-size: 11.5px; padding: 4px 6px; }
+        .recap td.num { text-align: right; }
+        .recap .lib { font-weight: 600; font-size: 11px; }
+        .info-pat { font-size: 10.5px; color: #555; margin-top: 8px; }
+        .signatures { display: flex; justify-content: space-between; margin-top: 26px; font-size: 12px; }
+        .signatures div { width: 44%; text-align: center; }
+        .signatures .ligne { border-top: 1px solid #333; margin-top: 42px; padding-top: 4px; color: #555; }
         .btn-row { text-align: center; margin-top: 20px; }
-        .btn-print, .btn-fermer {
-            display: inline-block; margin: 0 6px; padding: 10px 24px; border: none; border-radius: 6px;
-            color: white; font-size: 14px; cursor: pointer;
-        }
-        .btn-print { background: #1a2a6c; }
-        .btn-fermer { background: #6c757d; }
+        .btn-row button { margin: 0 6px; padding: 9px 22px; border: none; border-radius: 6px; color: #fff; font-size: 14px; cursor: pointer; }
+        .btn-print { background: #1f2d6b; } .btn-fermer { background: #6c757d; }
         @media print {
-            body { background: white; padding: 0; }
-            .document-container { box-shadow: none; }
-            .recu-header { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; background: #1a2a6c !important; }
-            .doc-signatures .signature-bloc .ligne { border-top: 1px solid #333 !important; }
+            body { background: #fff; padding: 0; }
+            .feuille { box-shadow: none; padding: 10px 14px; }
             .btn-row { display: none; }
+            .titre, .infos th, .rub th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
-        @media (max-width: 600px) {
-            .recu-header { margin: -15px -15px 15px -15px; padding: 15px; }
-            .recu-header .top-row { flex-direction: column; gap: 10px; text-align: center; }
-            .recu-header .sub-info { justify-content: center; }
-            .doc-signatures { flex-direction: column; gap: 30px; align-items: center; }
+        @media (max-width: 640px) {
+            body { padding: 8px; } .feuille { padding: 14px 10px; overflow-x: auto; }
+            .entete .nom { font-size: 18px; }
         }
     </style>
 </head>
 <body>
-    <div class="document-container">
-        <div class="recu-header">
-            <div class="top-row">
-                <div class="logo-area">
-                    {% if structure and structure.logo_url %}
-                    <img src="{{ structure.logo_url }}" alt="Logo">
-                    {% endif %}
-                    <h1>{{ structure.nom if structure and structure.nom else 'Hôpital' }}</h1>
-                </div>
-                <div class="periode">
-                    {{ paie.get_periode_label() }}
-                    <br><span class="badge">{{ paie.get_statut_label() }}</span>
-                </div>
-            </div>
-            <div class="sub-info">
-                {% if structure and structure.adresse %}<span>{{ structure.adresse }}</span>{% endif %}
-                {% if structure and structure.telephone %}<span>Tel: {{ structure.telephone }}</span>{% endif %}
-                {% if structure and structure.email %}<span>Email: {{ structure.email }}</span>{% endif %}
-            </div>
-        </div>
-
-        <div class="header">
-            <div class="logo">Bulletin de paie</div>
-        </div>
-
-        <div class="infos-employe">
-            <div><span class="label">Nom : </span><strong>{{ employe.nom }} {{ employe.prenom }}</strong></div>
-            <div><span class="label">Matricule : </span>{{ employe.matricule }}</div>
-            <div><span class="label">Poste : </span>{{ employe.poste or '-' }}</div>
-            <div><span class="label">Date d'embauche : </span>{{ employe.date_embauche.strftime('%d/%m/%Y') if employe.date_embauche else '-' }}</div>
-            <div><span class="label">Statut : </span>{{ 'Public' if paie.secteur == 'public' else 'Privé' }}</div>
-            <div><span class="label">Personnes à charge : </span>{{ paie.personnes_a_charge or 0 }}</div>
-        </div>
-
-        <table class="bulletin">
-            <thead>
-                <tr><th>Élément</th><th style="text-align:right">Montant (FCFA)</th></tr>
-            </thead>
-            <tbody>
-                <tr><td>Salaire de base{{ ' (traitement indiciaire)' if paie.secteur == 'public' else '' }}</td><td class="montant">{{ '{:,.0f}'.format(paie.salaire_base) }}</td></tr>
-                <tr><td>Primes</td><td class="montant">{{ '{:,.0f}'.format(paie.primes) }}</td></tr>
-                <tr><td>Indemnités</td><td class="montant">{{ '{:,.0f}'.format(paie.indemnites) }}</td></tr>
-                <tr class="section"><td>Salaire brut</td><td class="montant">{{ '{:,.0f}'.format(paie.salaire_brut) }}</td></tr>
-
-                <tr><td>{{ paie.organisme_retraite }} (retenue salariale — {{ paie.taux_retraite_salarial|round(2) }}%)</td><td class="montant">- {{ '{:,.0f}'.format(paie.retraite_salarial) }}</td></tr>
-                <tr><td>{{ paie.organisme_amu }} (retenue salariale — {{ paie.taux_amu_salarial|round(2) }}%)</td><td class="montant">- {{ '{:,.0f}'.format(paie.amu_salarial) }}</td></tr>
-                <tr class="section"><td>Salaire brut imposable</td><td class="montant">{{ '{:,.0f}'.format(paie.salaire_brut_imposable) }}</td></tr>
-
-                <tr><td>Abattement forfaitaire (28%, plafonné/an)</td><td class="montant">- {{ '{:,.0f}'.format(paie.abattement) }}</td></tr>
-                <tr><td>Déduction personnes à charge ({{ paie.personnes_a_charge or 0 }})</td><td class="montant">- {{ '{:,.0f}'.format(paie.deduction_charges_familiales) }}</td></tr>
-                <tr class="section"><td>Revenu net imposable</td><td class="montant">{{ '{:,.0f}'.format(paie.revenu_net_imposable) }}</td></tr>
-
-                <tr><td>IRPP</td><td class="montant">- {{ '{:,.0f}'.format(paie.irpp) }}</td></tr>
-
-                {% if paie.prets_deduction and paie.prets_deduction > 0 %}
-                <tr><td>Retenue prêt</td><td class="montant">- {{ '{:,.0f}'.format(paie.prets_deduction) }}</td></tr>
-                {% endif %}
-                {% if paie.acomptes_deduction and paie.acomptes_deduction > 0 %}
-                <tr><td>Acompte sur salaire</td><td class="montant">- {{ '{:,.0f}'.format(paie.acomptes_deduction) }}</td></tr>
-                {% endif %}
-                {% for r in (paie.autres_retenues or []) %}
-                <tr><td>{{ r.libelle }}</td><td class="montant">- {{ '{:,.0f}'.format(r.montant or 0) }}</td></tr>
-                {% endfor %}
-
-                <tr class="section"><td>Total retenues</td><td class="montant">- {{ '{:,.0f}'.format(paie.total_retenues) }}</td></tr>
-
-                <tr class="net"><td>NET À PAYER</td><td class="montant">{{ '{:,.0f}'.format(paie.net_a_payer) }}</td></tr>
-
-                <tr><td>Charges patronales {{ paie.organisme_retraite }} ({{ paie.taux_retraite_patronal|round(2) }}%)</td><td class="montant">{{ '{:,.0f}'.format(paie.retraite_patronal) }}</td></tr>
-                <tr><td>Charges patronales {{ paie.organisme_amu }} ({{ paie.taux_amu_patronal|round(2) }}%)</td><td class="montant">{{ '{:,.0f}'.format(paie.amu_patronal) }}</td></tr>
-                {% if paie.formation_pro and paie.formation_pro > 0 %}
-                <tr><td>Taxe formation professionnelle</td><td class="montant">{{ '{:,.0f}'.format(paie.formation_pro) }}</td></tr>
-                {% endif %}
-                <tr class="section"><td>Total charges patronales</td><td class="montant">{{ '{:,.0f}'.format(paie.total_charges_patronales) }}</td></tr>
-            </tbody>
-        </table>
-
-        {% if paie.date_paiement %}
-        <p style="font-size:13px;">Payé le {{ paie.date_paiement.strftime('%d/%m/%Y') }}
-            {% if paie.mode_paiement %}— {{ paie.mode_paiement }}{% endif %}</p>
-        {% endif %}
-
-        <div class="doc-signatures">
-            <div class="signature-bloc">
-                <div class="titre">Signature du personnel</div>
-                <div class="ligne"></div>
-                <div class="legende">{{ employe.nom }} {{ employe.prenom }}</div>
-            </div>
-            <div class="signature-bloc">
-                <div class="titre">Signature du responsable</div>
-                <div class="ligne"></div>
-                <div class="legende">{{ structure.nom if structure and structure.nom else '' }}</div>
-            </div>
-        </div>
-
-        <div class="footer-note">
-            Document généré le {{ date_actuelle }} — Taux {{ paie.organisme_retraite }}/{{ paie.organisme_amu }}/IRPP
-            appliqués selon les paramètres de paie (et les éventuelles dérogations individuelles) en
-            vigueur à la date de génération.
-        </div>
-
-        <div class="btn-row">
-            <button class="btn-fermer" onclick="fermerBulletin()"><i class="fas fa-times"></i> Fermer</button>
-            <button class="btn-print" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
-        </div>
+<div class="feuille">
+    <div class="entete">
+        {% if structure and structure.logo_url %}<img src="{{ structure.logo_url }}" alt="Logo">{% endif %}
+        <div class="nom">{{ structure.nom if structure and structure.nom else 'Structure' }}</div>
+    </div>
+    <div class="coord">
+        {% if structure and structure.adresse %}{{ structure.adresse }}{% endif %}
+        {% if structure and structure.telephone %}<br>Tél. {{ structure.telephone }}{% endif %}
+        {% if structure and structure.email %} — {{ structure.email }}{% endif %}
     </div>
 
-    <script>
-        function fermerBulletin() {
-            window.close();
-            setTimeout(function() {
-                if (!window.closed) {
-                    window.location.href = "{{ url_for('rh.page_paie') }}";
-                }
-            }, 500);
-        }
-    </script>
+    <div class="titre">BULLETIN DE PAIE</div>
+    <table class="infos">
+        <tr><th style="width:12%">Matric.</th><th style="width:44%">Nom &amp; Prénoms</th><th style="width:8%">Pers</th><th style="width:16%">N° bulletin</th><th style="width:20%">Période</th></tr>
+        <tr><td>{{ employe.matricule }}</td><td>{{ employe.nom }} {{ employe.prenom }}</td><td>{{ paie.personnes_a_charge or '' }}</td><td>{{ paie.id }}</td><td>{{ periode_maj }}</td></tr>
+    </table>
+    <table class="infos">
+        <tr><th style="width:8%">Cat.</th><th style="width:30%">Emploi</th><th style="width:26%">Direction</th><th style="width:22%">Division</th><th style="width:14%">Date emb.</th></tr>
+        <tr>
+            <td>{{ employe.categorie_paie or '' }}</td>
+            <td>{{ employe.poste or '' }}</td>
+            <td>{{ employe.direction or (employe.service.nom if employe.service else '') }}</td>
+            <td>{{ employe.division or '' }}</td>
+            <td>{{ employe.date_embauche.strftime('%d/%m/%Y') if employe.date_embauche else '' }}</td>
+        </tr>
+    </table>
+
+    <table class="rub">
+        <thead>
+            <tr><th colspan="2" style="text-align:left">Rubrique</th><th style="width:15%">Base</th><th style="width:9%">Taux</th><th style="width:15%">Retenue</th><th style="width:15%">Gain</th></tr>
+        </thead>
+        <tbody>
+            {% for l in lignes %}
+            <tr>
+                <td class="code">{{ l.code or '' }}</td>
+                <td>{{ l.libelle }}</td>
+                <td class="num">{{ f(l.base) }}</td>
+                <td class="num">{{ t(l.taux) }}</td>
+                <td class="num">{{ f(l.retenue) }}</td>
+                <td class="num">{{ f(l.gain) }}</td>
+            </tr>
+            {% endfor %}
+            {% for _ in range([14 - lignes|length, 0]|max) %}
+            <tr class="vide"><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+            {% endfor %}
+            <tr class="fin"><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+            <tr class="totaux"><td colspan="4">Totaux</td><td class="num">{{ f(total_retenues) }}</td><td class="num">{{ f(total_gains) }}</td></tr>
+            <tr class="net"><td colspan="4">Net à payer</td><td colspan="2" class="num">*** {{ f(paie.net_a_payer) or '0' }}</td></tr>
+        </tbody>
+    </table>
+
+    <table class="banque" style="margin-top:6px;">
+        <tr>
+            <td style="width:34%"><strong>Banque</strong>&nbsp; {{ employe.banque or '' }}</td>
+            <td style="width:38%"><strong>N° de compte</strong>&nbsp; {{ employe.numero_compte or '' }}</td>
+            <td><strong>N° CNSS</strong>&nbsp; {{ employe.numero_cnss or '' }}</td>
+        </tr>
+    </table>
+
+    <table class="recap" style="margin-top:6px;">
+        <tr><th rowspan="3" style="width:22%; text-align:left;" class="lib">RECAPITULATIF<br>ANNUEL</th><th style="width:12%"></th><th>I.R.P.P.</th><th>{{ paie.organisme_retraite or 'C.N.S.S.' }}</th><th>T.C.S.</th></tr>
+        <tr><td class="lib">CUMUL</td><td class="num">{{ f(cumuls.irpp) }}</td><td class="num">{{ f(cumuls.cnss) }}</td><td class="num"></td></tr>
+        <tr><td class="lib">BASE</td><td class="num">{{ f(cumuls.base_irpp) }}</td><td class="num">{{ f(cumuls.base_cnss) }}</td><td class="num"></td></tr>
+    </table>
+
+    <div class="info-pat">
+        Charges patronales du mois (pour information) : {{ paie.organisme_retraite }} {{ f(paie.retraite_patronal) or '0' }} F
+        — {{ paie.organisme_amu }} {{ f(paie.amu_patronal) or '0' }} F{% if paie.formation_pro and paie.formation_pro|float > 0 %} — Formation professionnelle {{ f(paie.formation_pro) }} F{% endif %}
+        {% if paie.date_paiement %} · Payé le {{ paie.date_paiement.strftime('%d/%m/%Y') }}{% if paie.mode_paiement %} ({{ paie.mode_paiement }}){% endif %}{% endif %}
+        · Édité le {{ date_actuelle }}
+    </div>
+
+    <div class="signatures">
+        <div><div class="ligne">L'employé(e) — {{ employe.nom }} {{ employe.prenom }}</div></div>
+        <div><div class="ligne">L'employeur — {{ structure.nom if structure and structure.nom else '' }}</div></div>
+    </div>
+
+    <div class="btn-row">
+        <button class="btn-fermer" onclick="fermerBulletin()"><i class="fas fa-times"></i> Fermer</button>
+        <button class="btn-print" onclick="window.print()"><i class="fas fa-print"></i> Imprimer</button>
+    </div>
+</div>
+<script>
+    function fermerBulletin() {
+        window.close();
+        setTimeout(function () { if (!window.closed) { window.location.href = "{{ url_for('rh.page_paie') }}"; } }, 500);
+    }
+</script>
 </body>
 </html>

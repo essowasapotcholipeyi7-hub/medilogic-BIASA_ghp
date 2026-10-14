@@ -143,6 +143,15 @@
                                             </select>
                                         </div>
                                     </div>
+                                    <!-- ⭐ Informations imprimées sur le bulletin de paie (modèle CNSS) -->
+                                    <div class="row">
+                                        <div class="col-md-3 mb-2"><label class="form-label">Catégorie</label><input type="text" class="form-control" id="empCategoriePaie" maxlength="20" value="{{ employe.categorie_paie or '' }}"></div>
+                                        <div class="col-md-5 mb-2"><label class="form-label">Direction</label><input type="text" class="form-control" id="empDirection" maxlength="150" value="{{ employe.direction or '' }}" placeholder="vide = service"></div>
+                                        <div class="col-md-4 mb-2"><label class="form-label">Division</label><input type="text" class="form-control" id="empDivision" maxlength="150" value="{{ employe.division or '' }}"></div>
+                                        <div class="col-md-4 mb-2"><label class="form-label">Banque</label><input type="text" class="form-control" id="empBanque" maxlength="100" value="{{ employe.banque or '' }}"></div>
+                                        <div class="col-md-4 mb-2"><label class="form-label">N° de compte</label><input type="text" class="form-control" id="empNumeroCompte" maxlength="50" value="{{ employe.numero_compte or '' }}"></div>
+                                        <div class="col-md-4 mb-2"><label class="form-label">N° CNSS</label><input type="text" class="form-control" id="empNumeroCnss" maxlength="30" value="{{ employe.numero_cnss or '' }}"></div>
+                                    </div>
                                     <div class="row">
                                         <div class="col-md-12 mb-2">
                                             <label class="form-label">Personne à prévenir</label>
@@ -217,7 +226,13 @@ async function sauvegarderModification() {
         statut: document.getElementById('empStatut').value,
         personne_a_prevenir: document.getElementById('empPrevenir').value.trim(),
         telephone_prevenir: document.getElementById('empTelephonePrevenir').value.trim(),
-        lien_parente: document.getElementById('empLienParente').value.trim()
+        lien_parente: document.getElementById('empLienParente').value.trim(),
+        categorie_paie: document.getElementById('empCategoriePaie').value.trim(),
+        direction: document.getElementById('empDirection').value.trim(),
+        division: document.getElementById('empDivision').value.trim(),
+        banque: document.getElementById('empBanque').value.trim(),
+        numero_compte: document.getElementById('empNumeroCompte').value.trim(),
+        numero_cnss: document.getElementById('empNumeroCnss').value.trim()
     };
     
     // Validation

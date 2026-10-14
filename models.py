@@ -397,6 +397,15 @@ class Employe(db.Model):
     dispense_pointage = db.Column(db.Boolean, default=False)
     dispense_pointage_motif = db.Column(db.String(255))
 
+    # ⭐ Informations imprimées sur le bulletin de paie (modèle CNSS, patron
+    # 2026-10-14) : Cat., Direction, Division, banque, N° de compte, N° CNSS.
+    categorie_paie = db.Column(db.String(20))
+    direction = db.Column(db.String(150))
+    division = db.Column(db.String(150))
+    numero_cnss = db.Column(db.String(30))
+    banque = db.Column(db.String(100))
+    numero_compte = db.Column(db.String(50))
+
     reprise_annee = db.Column(db.Integer)
     reprise_conges_jours = db.Column(db.Numeric(6, 2), default=0)
     reprise_convenance_jours = db.Column(db.Numeric(6, 2), default=0)
@@ -4590,13 +4599,17 @@ class ParametragePaie(db.Model):
     # Barème IRPP progressif ANNUEL : liste de {min, max, taux} en JSON,
     # éditable. Le calcul mensuel annualise la base imposable (x12), applique
     # le barème, puis divise l'impôt obtenu par 12.
+    # ⭐ Barème officiel (Togo) — confirmé par le bulletin CNSS modèle
+    # jusqu'à 6 000 000 (patron, 2026-10-14), voir utils/paie_rubriques.
     tranches_irpp = db.Column(db.JSON, default=lambda: [
         {'min': 0, 'max': 900000, 'taux': 0},
         {'min': 900000, 'max': 3000000, 'taux': 3},
-        {'min': 3000000, 'max': 4000000, 'taux': 10},
-        {'min': 4000000, 'max': 6000000, 'taux': 15},
-        {'min': 6000000, 'max': 10000000, 'taux': 25},
-        {'min': 10000000, 'max': None, 'taux': 35},
+        {'min': 3000000, 'max': 6000000, 'taux': 10},
+        {'min': 6000000, 'max': 9000000, 'taux': 15},
+        {'min': 9000000, 'max': 12000000, 'taux': 20},
+        {'min': 12000000, 'max': 15000000, 'taux': 25},
+        {'min': 15000000, 'max': 20000000, 'taux': 30},
+        {'min': 20000000, 'max': None, 'taux': 35},
     ])
     abattement_taux = db.Column(db.Numeric, default=28.0)                 # % sur le brut imposable
     abattement_plafond_annuel = db.Column(db.Numeric, default=10000000)   # FCFA/an
@@ -4634,6 +4647,15 @@ class ParametragePaie(db.Model):
     # choix de la structure, complétés par utils/regles_absences.REGLES_DEFAUT.
     regles_absences = db.Column(db.JSON)
 
+    # ⭐ Bulletin par rubriques (modèle CNSS, patron 2026-10-14) :
+    # 'combinee' = une seule ligne « 408 CNSS » (retraite + AMU salarié,
+    # ex. 4 % + 5 % = 9 %) ; 'detaillee' = une ligne par organisme.
+    affichage_cotisations = db.Column(db.String(12), default='combinee')
+    # Base IRPP arrondie au multiple inférieur avant barème (1000 : 414 575 -> 414 000)
+    irpp_arrondi_base = db.Column(db.Integer, default=1000)
+    # Jours d'un mois complet (le salaire de base est proratisé sur les jours travaillés)
+    jours_mois = db.Column(db.Integer, default=30)
+
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     updated_by = db.Column(db.String(100))
 
@@ -4647,6 +4669,46 @@ class ParametragePaie(db.Model):
             db.session.add(param)
             db.session.commit()
         return param
+
+
+class RubriquePaie(db.Model):
+    """⭐ Rubrique de paie de la structure (patron, 2026-10-14 : bulletin
+    modèle CNSS, « qu'on puisse ajouter des rubriques s'il en faut ») — gain
+    ou retenue, montant fixe ou % du salaire de base, soumis ou non à la
+    CNSS et à l'IRPP. Catalogue de départ : utils/paie_rubriques.RUBRIQUES_DEFAUT."""
+    __tablename__ = 'rubriques_paie'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    code = db.Column(db.String(10), nullable=False)
+    libelle = db.Column(db.String(120), nullable=False)
+    sens = db.Column(db.String(10), nullable=False, default='gain')        # 'gain' | 'retenue'
+    mode = db.Column(db.String(12), nullable=False, default='fixe')        # 'fixe' | 'pourcentage'
+    taux_defaut = db.Column(db.Numeric, default=0)
+    montant_defaut = db.Column(db.Numeric, default=0)
+    soumis_cnss = db.Column(db.Boolean, default=True)
+    soumis_irpp = db.Column(db.Boolean, default=True)
+    actif = db.Column(db.Boolean, nullable=False, default=True)
+    ordre = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint('structure_id', 'code', name='uq_rubrique_paie_code'),)
+
+
+class RubriqueEmploye(db.Model):
+    """⭐ Élément de paie PERMANENT d'un employé (repris chaque mois) : la
+    rubrique, son montant (fixe) ou son taux (%), et une base informative
+    imprimée (ex. capital restant d'un prêt coopérative)."""
+    __tablename__ = 'rubriques_employe'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    employe_id = db.Column(db.Integer, db.ForeignKey('employes.id'), nullable=False)
+    rubrique_id = db.Column(db.Integer, db.ForeignKey('rubriques_paie.id'), nullable=False)
+    montant = db.Column(db.Numeric, default=0)
+    taux = db.Column(db.Numeric, default=0)
+    base_info = db.Column(db.Numeric)
+    actif = db.Column(db.Boolean, nullable=False, default=True)
+    modifie_le = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    rubrique = db.relationship('RubriquePaie')
+    __table_args__ = (db.UniqueConstraint('employe_id', 'rubrique_id', name='uq_rubrique_employe'),)
 
 
 class Paie(db.Model):
@@ -4693,6 +4755,14 @@ class Paie(db.Model):
     acomptes_deduction = db.Column(db.Numeric, default=0)
     autres_retenues = db.Column(db.JSON, default=list)           # [{libelle, montant}]
     autres_retenues_total = db.Column(db.Numeric, default=0)
+
+    # ⭐ Bulletin par rubriques (modèle CNSS) : instantané des lignes
+    # [{code, libelle, base, taux, gain, retenue}] tel qu'imprimé, jours
+    # travaillés, base CNSS (gains soumis) et base IRPP retenue (arrondie).
+    lignes = db.Column(db.JSON)
+    jours_travailles = db.Column(db.Integer)
+    base_cnss = db.Column(db.Numeric)
+    base_irpp = db.Column(db.Numeric)
 
     total_retenues = db.Column(db.Numeric, default=0)              # retraite+AMU sal. + IRPP + prêts/acomptes/autres
     total_charges_patronales = db.Column(db.Numeric, default=0)    # retraite+AMU patronal + formation pro
