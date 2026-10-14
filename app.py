@@ -23475,7 +23475,38 @@ def page_factures_complementaires():
     structure_id = session.get('structure_id')
     choisie = _nom_assurance_canonique(request.args.get('assurance'))
     toutes = _factures_complementaires(structure_id)
-    assurances = sorted({_nom_assurance_canonique(f.assurance) for f in toutes if f.assurance})
+
+    # ⭐ Période (patron, 2026-10-14 : « les factures de toute l'année vont s'afficher, une très
+    # longue liste — un filtre sur le mois ou personnalisé, par défaut le mois en cours ; quand
+    # on sélectionne le mois, toutes les assurances concernées s'affichent »).
+    import re as _re
+    format_mois = lambda v: v if v and _re.fullmatch(r'\d{4}-(0[1-9]|1[0-2])', v) else None
+    mois_courant = datetime.now().strftime('%Y-%m')
+    periode = request.args.get('periode') or 'mois'
+    mois = format_mois(request.args.get('mois')) or mois_courant
+    du, au = format_mois(request.args.get('du')), format_mois(request.args.get('au'))
+    if periode == 'personnalise' and du and au:
+        du, au = min(du, au), max(du, au)
+        dans_periode = lambda m: du <= m <= au
+        libelle_periode = f"de {_libelle_mois_reference(du)} à {_libelle_mois_reference(au)}" if du != au else _libelle_mois_reference(du)
+    elif periode == 'tout':
+        dans_periode = lambda m: True
+        libelle_periode = 'toutes les périodes'
+    else:
+        periode = 'mois'
+        dans_periode = lambda m: m == mois
+        libelle_periode = _libelle_mois_reference(mois)
+    a, mm = (int(x) for x in mois.split('-'))
+    mois_precedent = f"{a - 1}-12" if mm == 1 else f"{a}-{mm - 1:02d}"
+    mois_suivant = f"{a + 1}-01" if mm == 12 else f"{a}-{mm + 1:02d}"
+    params_periode = {'periode': periode}
+    if periode == 'mois':
+        params_periode['mois'] = mois
+    elif periode == 'personnalise':
+        params_periode.update({'du': du, 'au': au})
+    toutes = [f for f in toutes if dans_periode((f.mois_reference or '')[:7])]
+
+    assurances = sorted({_nom_assurance_canonique(f.assurance) for f in toutes if f.assurance} | ({choisie} if choisie else set()))
     factures = [f for f in toutes if not choisie or _nom_assurance_canonique(f.assurance) == choisie]
     factures.sort(key=lambda f: (f.mois_reference or '', _nom_assurance_canonique(f.assurance), f.societe or ''), reverse=True)
     evenements = _evenements_factures_assurance(structure_id, factures)
@@ -23509,7 +23540,10 @@ def page_factures_complementaires():
     totaux['en_attente'] = sum(l['encaissements_en_attente'] for l in lignes)
     peut_encaisser = session.get('role') in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable', 'sous_comptable']
     return render_template('assurance_factures_complementaires.html', lignes=lignes, totaux=totaux,
-                           assurances=assurances, choisie=choisie, peut_encaisser=peut_encaisser)
+                           assurances=assurances, choisie=choisie, peut_encaisser=peut_encaisser,
+                           periode=periode, mois=mois, du=du or mois, au=au or mois, mois_courant=mois_courant,
+                           mois_precedent=mois_precedent, mois_suivant=mois_suivant,
+                           libelle_periode=libelle_periode, params_periode=params_periode)
 
 
 @app.route('/assurance/factures-amu/historique')

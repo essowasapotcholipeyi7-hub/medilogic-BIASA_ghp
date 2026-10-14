@@ -4454,11 +4454,11 @@ function chargerAssurancesComplementairesMenu() {
         let html = liste.map(a => {
             const detail = a.reste > 0.5 ? Math.round(a.reste).toLocaleString('fr-FR') + ' F à encaisser'
                          : (a.nb_factures + ' facture' + (a.nb_factures > 1 ? 's' : ''));
-            return `<a class="menu-item sous-item-assurance" href="${base}?assurance=${encodeURIComponent(a.nom)}">`
+            return `<a class="menu-item sous-item-assurance" href="${base}?assurance=${encodeURIComponent(a.nom)}&periode=tout">`
                  + `${echapper(a.nom)}<span class="detail">${detail}</span></a>`;
         }).join('');
         if (!liste.length) html = "<span class='menu-item sous-item-assurance text-muted'>Aucune facture pour l'instant</span>";
-        html += `<a class="menu-item sous-item-assurance fw-semibold" href="${base}">Toutes — historique</a>`;
+        html += `<a class="menu-item sous-item-assurance fw-semibold" href="${base}">Toutes — mois en cours</a>`;
         boite.innerHTML = html;
     };
     try {

@@ -28,7 +28,8 @@
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-    <h4 class="mb-0"><i class="fas fa-file-invoice-dollar me-2"></i>Factures assurances complémentaires{% if choisie %} — {{ choisie }}{% endif %}</h4>
+    <h4 class="mb-0"><i class="fas fa-file-invoice-dollar me-2"></i>Factures assurances complémentaires
+        <small class="text-muted fw-normal">— {{ libelle_periode }}{% if choisie %} — {{ choisie }}{% endif %}</small></h4>
     {% if session.role in ['caissier', 'secretaire'] %}
     <a href="{{ url_for('page_factures_assurances') }}" class="btn btn-outline-secondary btn-sm">
         <i class="fas fa-layer-group me-1"></i> Générer les factures du mois / paiement global
@@ -42,10 +43,48 @@
 
 <div class="card mb-3">
     <div class="card-body">
+        {# ⭐ Période : mois en cours par défaut, ◀ ▶ pour changer de mois, personnalisé, ou tout #}
+        <form method="get" class="filtre-periode d-flex flex-wrap align-items-end gap-2 mb-3" id="formPeriode">
+            {% if choisie %}<input type="hidden" name="assurance" value="{{ choisie }}">{% endif %}
+            <div>
+                <label class="form-label small mb-1" for="choixPeriode">Période</label>
+                <select class="form-select form-select-sm" name="periode" id="choixPeriode" onchange="afficherChampsPeriode(); if (this.value !== 'personnalise') this.form.submit();">
+                    <option value="mois" {{ 'selected' if periode == 'mois' }}>Mois</option>
+                    <option value="personnalise" {{ 'selected' if periode == 'personnalise' }}>Personnalisé</option>
+                    <option value="tout" {{ 'selected' if periode == 'tout' }}>Toutes les périodes</option>
+                </select>
+            </div>
+            <div class="champ-periode champ-mois d-flex align-items-end gap-1">
+                <a class="btn btn-sm btn-outline-secondary" title="Mois précédent"
+                   href="{{ url_for('page_factures_complementaires', periode='mois', mois=mois_precedent, assurance=choisie or None) }}"><i class="fas fa-chevron-left"></i></a>
+                <div>
+                    <label class="form-label small mb-1" for="champMois">Mois</label>
+                    <input type="month" class="form-control form-control-sm" name="mois" id="champMois" value="{{ mois }}" onchange="this.form.submit()">
+                </div>
+                <a class="btn btn-sm btn-outline-secondary" title="Mois suivant"
+                   href="{{ url_for('page_factures_complementaires', periode='mois', mois=mois_suivant, assurance=choisie or None) }}"><i class="fas fa-chevron-right"></i></a>
+                {% if mois != mois_courant %}
+                <a class="btn btn-sm btn-link" href="{{ url_for('page_factures_complementaires', assurance=choisie or None) }}">Mois en cours</a>
+                {% endif %}
+            </div>
+            <div class="champ-periode champ-personnalise d-flex align-items-end gap-2">
+                <div>
+                    <label class="form-label small mb-1" for="champDu">Du mois</label>
+                    <input type="month" class="form-control form-control-sm" name="du" id="champDu" value="{{ du }}">
+                </div>
+                <div>
+                    <label class="form-label small mb-1" for="champAu">Au mois</label>
+                    <input type="month" class="form-control form-control-sm" name="au" id="champAu" value="{{ au }}">
+                </div>
+                <button type="submit" class="btn btn-sm btn-primary">Afficher</button>
+            </div>
+        </form>
         <div class="puces-assurances mb-3" data-th-garder>{# data-th-garder : theme_sombre.js ne repeint pas ces puces (texte de la puce active illisible sinon) #}
-            <a href="{{ url_for('page_factures_complementaires') }}" class="{{ 'active' if not choisie }}">Toutes</a>
+            <a href="{{ url_for('page_factures_complementaires', **params_periode) }}" class="{{ 'active' if not choisie }}">Toutes</a>
             {% for a in assurances %}
-            <a href="{{ url_for('page_factures_complementaires', assurance=a) }}" class="{{ 'active' if a == choisie }}">{{ a }}</a>
+            <a href="{{ url_for('page_factures_complementaires', assurance=a, **params_periode) }}" class="{{ 'active' if a == choisie }}">{{ a }}</a>
+            {% else %}
+            <span class="text-muted small align-self-center">Aucune assurance sur cette période.</span>
             {% endfor %}
         </div>
         <div class="row g-2">
@@ -145,7 +184,11 @@
                     {% else %}
                     <tr>
                         <td colspan="8" class="text-center text-muted py-4">
-                            Aucune facture d'assurance complémentaire{% if choisie %} pour {{ choisie }}{% endif %}.
+                            Aucune facture d'assurance complémentaire{% if choisie %} pour {{ choisie }}{% endif %} — {{ libelle_periode }}.
+                            {% if periode == 'mois' %}
+                            <a href="{{ url_for('page_factures_complementaires', periode='mois', mois=mois_precedent, assurance=choisie or None) }}">Voir le mois précédent</a> ·
+                            <a href="{{ url_for('page_factures_complementaires', periode='tout', assurance=choisie or None) }}">toutes les périodes</a>.
+                            {% endif %}
                             Les factures se génèrent chaque mois depuis « Générer les factures du mois ».
                         </td>
                     </tr>
@@ -243,6 +286,16 @@
 
 <script>
 const AUJOURDHUI_ISO = new Date().toISOString().slice(0, 10);
+
+function afficherChampsPeriode() {
+    const p = document.getElementById('choixPeriode').value;
+    document.querySelectorAll('.champ-mois').forEach(e => e.classList.toggle('d-none', p !== 'mois'));
+    document.querySelectorAll('.champ-personnalise').forEach(e => e.classList.toggle('d-none', p !== 'personnalise'));
+    // champs non concernés : pas envoyés (adresse propre)
+    document.getElementById('champMois').disabled = p !== 'mois';
+    document.getElementById('champDu').disabled = document.getElementById('champAu').disabled = p !== 'personnalise';
+}
+afficherChampsPeriode();
 
 document.getElementById('rechercheFacture').addEventListener('input', function () {
     const q = this.value.trim().toLowerCase();
