@@ -8,13 +8,16 @@
    assurances » (encaissement en attente de validation, clôture réservée à l'admin). #}
 <style>
     .puces-assurances { display: flex; flex-wrap: wrap; gap: 6px; }
+    /* couleurs imposées (!important) : la règle des thèmes sur les liens passait avant et rendait
+       la puce choisie illisible (mesuré sur les 16 thèmes) */
     .puces-assurances a {
-        border: 1px solid var(--th-primaire, #0d6efd); border-radius: 20px; padding: 4px 12px;
-        font-size: .88rem; font-weight: 600; text-decoration: none; color: var(--th-primaire-fonce, #0A3D5C);
+        border: 1px solid var(--th-primaire-fonce, #0A3D5C) !important; border-radius: 20px; padding: 4px 12px;
+        font-size: .88rem; font-weight: 600; text-decoration: none !important;
+        color: var(--th-primaire-fonce, #0A3D5C) !important; background: transparent !important;
     }
-    .puces-assurances a.active { background: var(--th-primaire-fonce, #0A3D5C); color: #fff; }
-    [data-bs-theme="dark"] .puces-assurances a { color: var(--th-primaire, #00E599); border-color: var(--th-primaire, #00E599); }
-    [data-bs-theme="dark"] .puces-assurances a.active { background: var(--th-primaire, #00E599); color: #0A0A0A; }
+    .puces-assurances a.active { background: var(--th-primaire-fonce, #0A3D5C) !important; color: #fff !important; }
+    [data-bs-theme="dark"] .puces-assurances a { color: var(--th-primaire, #00E599) !important; border-color: var(--th-primaire, #00E599) !important; }
+    [data-bs-theme="dark"] .puces-assurances a.active { background: var(--th-primaire, #00E599) !important; color: #0A0A0A !important; }
     .tuile-resume { border: 1px solid rgba(128, 128, 128, .25); border-radius: 10px; padding: 10px 14px; }
     .tuile-resume .valeur { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
     .tuile-resume .libelle { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; opacity: .75; }
@@ -39,7 +42,7 @@
 
 <div class="card mb-3">
     <div class="card-body">
-        <div class="puces-assurances mb-3">
+        <div class="puces-assurances mb-3" data-th-garder>{# data-th-garder : theme_sombre.js ne repeint pas ces puces (texte de la puce active illisible sinon) #}
             <a href="{{ url_for('page_factures_complementaires') }}" class="{{ 'active' if not choisie }}">Toutes</a>
             {% for a in assurances %}
             <a href="{{ url_for('page_factures_complementaires', assurance=a) }}" class="{{ 'active' if a == choisie }}">{{ a }}</a>
