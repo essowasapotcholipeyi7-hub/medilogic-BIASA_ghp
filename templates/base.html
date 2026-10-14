@@ -517,6 +517,14 @@
             margin: 6px 16px;
         }
 
+        /* ⭐ Factures assurances complémentaires : la liste des assurances se déroule sous
+           l'entrée au survol (pas de sous-menu sur le côté : le menu défile et le couperait) */
+        .top-nav .mega-menu .sous-liste-assurances-comp { display: none; padding-bottom: 4px; }
+        .top-nav .mega-menu .groupe-assurances-comp:hover .sous-liste-assurances-comp,
+        .top-nav .mega-menu .groupe-assurances-comp:focus-within .sous-liste-assurances-comp { display: block; }
+        .top-nav .mega-menu .sous-item-assurance { padding: 6px 20px 6px 40px; font-size: 12.5px; }
+        .top-nav .mega-menu .sous-item-assurance .detail { margin-left: auto; font-size: 11px; opacity: .75; white-space: nowrap; }
+
         .top-nav .mega-menu.large {
             min-width: 420px;
             display: grid;
@@ -2569,6 +2577,20 @@ async function appliquerPropositionTheme() {
                 <a class="menu-item" href="{{ url_for('page_facture_amu_inam') }}">
                     Facture AMU INAM (mensuelle)
                 </a>
+                {% endif %}
+                {# ⭐ Assurances complémentaires (patron, 2026-10-14) : au survol, la liste des
+                   assurances qui ont des factures ; un clic ouvre directement leurs factures. #}
+                {% if not _bloq and (session.is_admin or session.role in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable', 'sous_comptable']) %}
+                <div class="groupe-assurances-comp" onmouseenter="chargerAssurancesComplementairesMenu()">
+                    <a class="menu-item" href="{{ url_for('page_factures_complementaires') }}">
+                        Factures assurances complémentaires <i class="fas fa-chevron-down ms-auto" style="font-size:10px;"></i>
+                    </a>
+                    <div class="sous-liste-assurances-comp" id="menuAssurancesComplementaires">
+                        <span class="menu-item sous-item-assurance text-muted">Chargement…</span>
+                    </div>
+                </div>
+                {% endif %}
+                {% if not onglet_cache('factures_amu') and not _bloq %}
                 <a class="menu-item" href="{{ url_for('historique_factures_amu') }}">
                     Historique factures AMU
                 </a>
@@ -4419,5 +4441,36 @@ if ('serviceWorker' in navigator) {
 })();
 </script>
 {% block scripts %}{% endblock %}
+<script>
+// ⭐ Menu Finances : assurances complémentaires qui ont des factures, chargées au premier
+// survol (une seule fois, gardées 5 min) — un clic ouvre directement leurs factures.
+function chargerAssurancesComplementairesMenu() {
+    const boite = document.getElementById('menuAssurancesComplementaires');
+    if (!boite || boite.dataset.charge) return;
+    boite.dataset.charge = '1';
+    const echapper = t => String(t).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+    const afficher = liste => {
+        const base = '{{ url_for('page_factures_complementaires') }}';
+        let html = liste.map(a => {
+            const detail = a.reste > 0.5 ? Math.round(a.reste).toLocaleString('fr-FR') + ' F à encaisser'
+                         : (a.nb_factures + ' facture' + (a.nb_factures > 1 ? 's' : ''));
+            return `<a class="menu-item sous-item-assurance" href="${base}?assurance=${encodeURIComponent(a.nom)}">`
+                 + `${echapper(a.nom)}<span class="detail">${detail}</span></a>`;
+        }).join('');
+        if (!liste.length) html = "<span class='menu-item sous-item-assurance text-muted'>Aucune facture pour l'instant</span>";
+        html += `<a class="menu-item sous-item-assurance fw-semibold" href="${base}">Toutes — historique</a>`;
+        boite.innerHTML = html;
+    };
+    try {
+        const memo = JSON.parse(sessionStorage.getItem('menuAssurancesComp') || 'null');
+        if (memo && Date.now() - memo.t < 300000) { afficher(memo.liste); return; }
+    } catch (e) { /* stockage indisponible : on recharge */ }
+    fetch('/api/assurances/complementaires/liste').then(r => r.json()).then(d => {
+        const liste = (d && d.assurances) || [];
+        try { sessionStorage.setItem('menuAssurancesComp', JSON.stringify({t: Date.now(), liste})); } catch (e) {}
+        afficher(liste);
+    }).catch(() => { delete boite.dataset.charge; boite.innerHTML = ''; });
+}
+</script>
 </body>
 </html>

@@ -18784,6 +18784,8 @@ def api_marquer_depose_facture_assurance(facture_id):
             return jsonify({'success': False, 'error': erreur}), 400
         facture.date_depot = dd
         db.session.commit()
+        _journaliser_facture_assurance(facture, 'depot_facture_assurance',
+                                       f"Bordereau déposé chez l'assureur le {dd.strftime('%d/%m/%Y')}")
         return jsonify({'success': True, 'date_depot': facture.date_depot.isoformat()})
     except Exception as e:
         db.session.rollback()
@@ -18821,6 +18823,8 @@ def api_cloturer_facture_assurance(facture_id):
         facture.date_depot = dd
         facture.cloturee = True
         db.session.commit()
+        _journaliser_facture_assurance(facture, 'cloture_facture_assurance',
+                                       f"Facture clôturée (dépôt du {dd.strftime('%d/%m/%Y')}) — plus aucune modification possible")
         return jsonify({'success': True, 'date_depot': facture.date_depot.isoformat()})
     except Exception as e:
         db.session.rollback()
@@ -23300,6 +23304,214 @@ def page_parametrage_amu_inam():
 # facture que l'assurance a réglé et encaissé". Recherche faite côté
 # client (JS) : le nombre de factures recap par structure reste modeste
 # (une par mois par type d'assurance), pas besoin d'un endpoint dédié.
+# ============================================================
+# ⭐ FACTURES ASSURANCES COMPLÉMENTAIRES (patron, 2026-10-14 : « pour l'AMU le détail est
+# clair pour arriver sur les factures mensuelles, mais pour les assurances complémentaires
+# il faut aller dans Statistiques d'abord — je veux qu'on les affiche clairement dans
+# l'onglet Finances […] et il n'y a pas d'historique clair qui permet de suivre le dépôt
+# des factures, le paiement, etc. comme pour l'AMU »).
+# Page dédiée, filtrable par assurance (menu Finances : la liste des assurances s'affiche
+# au survol), avec pour chaque facture : statut, dépôt, encaissements (demandés, validés,
+# refusés), clôture — et toutes les actions déjà existantes (bordereau, dépôt, encaissement
+# avec validation, clôture). Aucune donnée nouvelle : tout vient de factures_assurance,
+# des demandes de validation et du journal d'activité.
+# ============================================================
+_NOMS_MOIS_FR = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août',
+                 'Septembre', 'Octobre', 'Novembre', 'Décembre']
+
+
+def _libelle_mois_reference(mois_reference):
+    try:
+        annee, mois = str(mois_reference).split('-')[:2]
+        return f"{_NOMS_MOIS_FR[int(mois)]} {annee}"
+    except Exception:
+        return str(mois_reference or '')
+
+
+def _nom_assurance_canonique(nom):
+    """« Gta », « GTA » et « gta  » désignent la même compagnie."""
+    return ' '.join((nom or '').split()).upper()
+
+
+def _factures_complementaires(structure_id):
+    return FactureAssurance.query.filter_by(structure_id=structure_id, type_assurance='complementaire').all()
+
+
+def _journaliser_facture_assurance(facture, categorie, texte):
+    """Inscrit une étape (dépôt, clôture) d'une facture d'assurance au journal d'activité —
+    c'est ce qui permet de retrouver qui l'a faite et quand (historique)."""
+    try:
+        from services.journal_service import JournalService
+        JournalService.creer_mouvement(
+            structure_id=facture.structure_id, categorie=categorie,
+            description=f"{texte} — {facture.assurance}{(' / ' + facture.societe) if facture.societe else ''} ({facture.mois_reference})",
+            reference_type='facture_assurance', reference_id=facture.id,
+            utilisateur_id=session.get('user_id'), utilisateur_nom=session.get('user_name'),
+        )
+    except Exception as e:
+        print(f"⚠️ Journal d'activité (facture assurance #{facture.id}, {categorie}) : {e}")
+
+
+@app.route('/api/assurances/complementaires/liste')
+@login_required
+def api_liste_assurances_complementaires():
+    """Assurances complémentaires qui ont des factures — pour le menu Finances (survol)."""
+    groupes = {}
+    for f in _factures_complementaires(session.get('structure_id')):
+        cle = _nom_assurance_canonique(f.assurance)
+        if not cle:
+            continue
+        g = groupes.setdefault(cle, {'nom': cle, 'nb_factures': 0, 'reste': 0.0, 'a_deposer': 0})
+        g['nb_factures'] += 1
+        reste = float(f.montant_total or 0) - float(f.montant_rembourse or 0)
+        if reste > 0.5:
+            g['reste'] += reste
+        if not f.date_depot and not f.cloturee and reste > 0.5:
+            g['a_deposer'] += 1
+    return jsonify({'success': True, 'assurances': sorted(groupes.values(), key=lambda g: g['nom'])})
+
+
+def _evenements_factures_assurance(structure_id, factures):
+    """Historique de chaque facture : génération, dépôt, encaissements (demandés, validés,
+    refusés — y compris la part d'un encaissement global), anciens encaissements du journal,
+    clôture. {facture_id: [événement trié par date]}."""
+    from models import JournalMouvement
+    ids = {f.id for f in factures}
+    evenements = {f.id: [] for f in factures}
+    if not ids:
+        return evenements
+
+    rang = {'secondary': 0, 'primary': 1, 'warning': 2, 'success': 2, 'danger': 2, 'dark': 3}
+
+    def ajouter(fid, quand, icone, couleur, texte):
+        evenements[fid].append({'date': quand, 'icone': icone, 'couleur': couleur, 'texte': texte, 'rang': rang[couleur]})
+
+    def fcfa(x):
+        return f"{int(round(float(x or 0))):,} FCFA".replace(',', ' ')
+
+    def jour(x):
+        try:
+            return datetime.strptime(str(x)[:10], '%Y-%m-%d').strftime('%d/%m/%Y')
+        except Exception:
+            return str(x or '')
+
+    # encaissements via demandes de validation
+    valides_par_facture = {}
+    for d in ValidationDemande.query.filter(
+            ValidationDemande.structure_id == structure_id,
+            ValidationDemande.type_demande.in_(['encaissement_assurance', 'encaissement_assurance_global'])).all():
+        p = d.payload or {}
+        if d.type_demande == 'encaissement_assurance':
+            lignes = [(p.get('facture_id') or d.reference_id, p.get('montant'))]
+        else:
+            lignes = [(l.get('facture_id'), l.get('montant')) for l in (p.get('repartition') or [])]
+        for fid, montant in lignes:
+            try:
+                fid = int(fid)
+            except (TypeError, ValueError):
+                continue
+            if fid not in ids:
+                continue
+            ref = p.get('numero_reference_versement') or ''
+            versement = f" — virement réf. {ref} du {jour(p.get('date_versement'))}" if ref else ''
+            globale = ' (part d\'un encaissement global)' if d.type_demande == 'encaissement_assurance_global' else ''
+            if d.statut == 'validee':
+                valides_par_facture[fid] = valides_par_facture.get(fid, 0) + 1
+                ajouter(fid, d.date_traitement or d.date_demande, 'fa-circle-check', 'success',
+                        f"Encaissement de {fcfa(montant)} validé par {d.traite_par_nom or '—'}"
+                        f" (demandé par {d.demandeur_nom or '—'}){versement}{globale}")
+            elif d.statut == 'refusee':
+                motif = f" — motif : {d.motif_refus}" if d.motif_refus else ''
+                ajouter(fid, d.date_traitement or d.date_demande, 'fa-circle-xmark', 'danger',
+                        f"Encaissement de {fcfa(montant)} refusé par {d.traite_par_nom or '—'}{motif}{globale}")
+            else:
+                ajouter(fid, d.date_demande, 'fa-hourglass-half', 'warning',
+                        f"Encaissement de {fcfa(montant)} demandé par {d.demandeur_nom or '—'} — en attente de validation{versement}{globale}")
+
+    journal = JournalMouvement.query.filter(
+        JournalMouvement.structure_id == structure_id,
+        JournalMouvement.reference_type == 'facture_assurance',
+        JournalMouvement.reference_id.in_(list(ids))).all()
+    depot_journal, cloture_journal = set(), set()
+    for j in journal:
+        par = f" par {j.utilisateur_nom}" if j.utilisateur_nom and j.utilisateur_nom != 'Systeme' else ''
+        if j.categorie == 'depot_facture_assurance':
+            depot_journal.add(j.reference_id)
+            ajouter(j.reference_id, j.date_mouvement, 'fa-truck', 'primary', f"Bordereau déposé chez l'assureur{par}")
+        elif j.categorie == 'cloture_facture_assurance':
+            cloture_journal.add(j.reference_id)
+            ajouter(j.reference_id, j.date_mouvement, 'fa-lock', 'dark', f"Facture clôturée{par}")
+        elif j.categorie == 'paiement_assurance' and not valides_par_facture.get(j.reference_id):
+            # encaissement ancien (avant les demandes de validation)
+            ajouter(j.reference_id, j.date_mouvement, 'fa-circle-check', 'success',
+                    f"Encaissement de {fcfa(j.montant)} enregistré{par}")
+
+    for f in factures:
+        ajouter(f.id, f.created_at or f.date_facture, 'fa-file-invoice', 'secondary', 'Facture générée')
+        if f.date_depot and f.id not in depot_journal:
+            ajouter(f.id, f.date_depot, 'fa-truck', 'primary', "Bordereau déposé chez l'assureur")
+        if f.cloturee and f.id not in cloture_journal:
+            ajouter(f.id, None, 'fa-lock', 'dark', 'Facture clôturée')
+
+    def cle_tri(e):
+        # par jour, puis dans l'ordre logique (générée, dépôt, encaissements, clôture) :
+        # une date de dépôt sans heure ne passe plus avant la génération du même jour
+        d = e['date']
+        if d is None:
+            return (1, datetime.max.date(), e['rang'], datetime.max)
+        moment = d if isinstance(d, datetime) else datetime(d.year, d.month, d.day)
+        return (0, moment.date(), e['rang'], moment)
+    for fid in evenements:
+        evenements[fid].sort(key=cle_tri)
+    return evenements
+
+
+@app.route('/assurance/factures-complementaires')
+@login_required
+def page_factures_complementaires():
+    if not (session.get('is_admin') or session.get('role') in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable', 'sous_comptable']):
+        flash('Accès non autorisé', 'danger')
+        return redirect(url_for('dashboard'))
+    structure_id = session.get('structure_id')
+    choisie = _nom_assurance_canonique(request.args.get('assurance'))
+    toutes = _factures_complementaires(structure_id)
+    assurances = sorted({_nom_assurance_canonique(f.assurance) for f in toutes if f.assurance})
+    factures = [f for f in toutes if not choisie or _nom_assurance_canonique(f.assurance) == choisie]
+    factures.sort(key=lambda f: (f.mois_reference or '', _nom_assurance_canonique(f.assurance), f.societe or ''), reverse=True)
+    evenements = _evenements_factures_assurance(structure_id, factures)
+
+    lignes, totaux = [], {'facture': 0.0, 'encaisse': 0.0, 'reste': 0.0, 'en_attente': 0.0, 'a_deposer': 0}
+    for f in factures:
+        total = float(f.montant_total or 0)
+        encaisse = float(f.montant_rembourse or 0)
+        reste = max(total - encaisse, 0.0)
+        en_attente = sum(1 for e in evenements[f.id] if e['couleur'] == 'warning')
+        if f.cloturee:
+            etat = ('Clôturée', 'bg-dark')
+        elif reste <= 0.5:
+            etat = ('Payée', 'bg-success')
+        elif encaisse > 0:
+            etat = ('Partiellement payée', 'bg-info text-dark')
+        elif f.date_depot:
+            etat = ('Déposée, en attente de paiement', 'bg-primary')
+        else:
+            etat = ('À déposer', 'bg-warning text-dark')
+        totaux['facture'] += total
+        totaux['encaisse'] += encaisse
+        totaux['reste'] += reste if reste > 0.5 else 0
+        if not f.date_depot and not f.cloturee and reste > 0.5:
+            totaux['a_deposer'] += 1
+        lignes.append({
+            'f': f, 'assurance': _nom_assurance_canonique(f.assurance), 'periode': _libelle_mois_reference(f.mois_reference),
+            'total': total, 'encaisse': encaisse, 'reste': reste, 'etat': etat,
+            'encaissements_en_attente': en_attente, 'evenements': evenements[f.id],
+        })
+    totaux['en_attente'] = sum(l['encaissements_en_attente'] for l in lignes)
+    peut_encaisser = session.get('role') in ['admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable', 'sous_comptable']
+    return render_template('assurance_factures_complementaires.html', lignes=lignes, totaux=totaux,
+                           assurances=assurances, choisie=choisie, peut_encaisser=peut_encaisser)
+
+
 @app.route('/assurance/factures-amu/historique')
 @login_required
 def historique_factures_amu():

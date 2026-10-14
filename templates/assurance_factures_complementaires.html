@@ -1,0 +1,350 @@
+{% extends "base.html" %}
+{% block title %}Factures assurances complémentaires{% endblock %}
+{% block content %}
+{# ⭐ Factures des assurances complémentaires (patron, 2026-10-14) : accessibles directement
+   depuis Finances (comme les factures AMU), filtrables par assurance, avec l'historique de
+   chaque facture — génération, dépôt du bordereau, encaissements demandés / validés /
+   refusés, clôture. Les actions réutilisent les mêmes circuits que la page « Factures
+   assurances » (encaissement en attente de validation, clôture réservée à l'admin). #}
+<style>
+    .puces-assurances { display: flex; flex-wrap: wrap; gap: 6px; }
+    .puces-assurances a {
+        border: 1px solid var(--th-primaire, #0d6efd); border-radius: 20px; padding: 4px 12px;
+        font-size: .88rem; font-weight: 600; text-decoration: none; color: var(--th-primaire-fonce, #0A3D5C);
+    }
+    .puces-assurances a.active { background: var(--th-primaire-fonce, #0A3D5C); color: #fff; }
+    [data-bs-theme="dark"] .puces-assurances a { color: var(--th-primaire, #00E599); border-color: var(--th-primaire, #00E599); }
+    [data-bs-theme="dark"] .puces-assurances a.active { background: var(--th-primaire, #00E599); color: #0A0A0A; }
+    .tuile-resume { border: 1px solid rgba(128, 128, 128, .25); border-radius: 10px; padding: 10px 14px; }
+    .tuile-resume .valeur { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .tuile-resume .libelle { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; opacity: .75; }
+    .historique-facture { list-style: none; padding-left: 0; margin: 0; }
+    .historique-facture li { display: flex; gap: 10px; padding: 4px 0; align-items: baseline; }
+    .historique-facture .quand { min-width: 92px; font-variant-numeric: tabular-nums; opacity: .8; font-size: .85rem; }
+    td.montant { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h4 class="mb-0"><i class="fas fa-file-invoice-dollar me-2"></i>Factures assurances complémentaires{% if choisie %} — {{ choisie }}{% endif %}</h4>
+    {% if session.role in ['caissier', 'secretaire'] %}
+    <a href="{{ url_for('page_factures_assurances') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-layer-group me-1"></i> Générer les factures du mois / paiement global
+    </a>
+    {% elif a_acces('statistiques') %}
+    <a href="{{ url_for('statistiques_ventes') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-layer-group me-1"></i> Générer les factures du mois / paiement global
+    </a>
+    {% endif %}
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="puces-assurances mb-3">
+            <a href="{{ url_for('page_factures_complementaires') }}" class="{{ 'active' if not choisie }}">Toutes</a>
+            {% for a in assurances %}
+            <a href="{{ url_for('page_factures_complementaires', assurance=a) }}" class="{{ 'active' if a == choisie }}">{{ a }}</a>
+            {% endfor %}
+        </div>
+        <div class="row g-2">
+            <div class="col-6 col-md"><div class="tuile-resume"><div class="libelle">Facturé</div><div class="valeur">{{ '{:,.0f}'.format(totaux.facture).replace(',', ' ') }} F</div></div></div>
+            <div class="col-6 col-md"><div class="tuile-resume"><div class="libelle">Encaissé</div><div class="valeur text-success">{{ '{:,.0f}'.format(totaux.encaisse).replace(',', ' ') }} F</div></div></div>
+            <div class="col-6 col-md"><div class="tuile-resume"><div class="libelle">Reste à encaisser</div><div class="valeur text-danger">{{ '{:,.0f}'.format(totaux.reste).replace(',', ' ') }} F</div></div></div>
+            <div class="col-6 col-md"><div class="tuile-resume"><div class="libelle">Bordereaux à déposer</div><div class="valeur">{{ totaux.a_deposer }}</div></div></div>
+            <div class="col-6 col-md"><div class="tuile-resume"><div class="libelle">Encaissements à valider</div><div class="valeur">{{ totaux.en_attente }}</div></div></div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div class="mb-3">
+            <input type="text" id="rechercheFacture" class="form-control" style="max-width:380px;"
+                   placeholder="Rechercher : assurance, société, mois, statut…">
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Période</th>
+                        <th>Assurance / société</th>
+                        <th class="text-end">Montant</th>
+                        <th class="text-end">Encaissé</th>
+                        <th class="text-end">Reste</th>
+                        <th>Statut</th>
+                        <th>Dépôt</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for l in lignes %}
+                    {% set f = l.f %}
+                    <tr class="ligne-facture" data-recherche="{{ (l.assurance ~ ' ' ~ (f.societe or '') ~ ' ' ~ l.periode ~ ' ' ~ l.etat[0])|lower }}">
+                        <td>{{ l.periode }}</td>
+                        <td><strong>{{ l.assurance }}</strong>{% if f.societe %}<br><small class="text-muted">{{ f.societe }}</small>{% endif %}</td>
+                        <td class="montant">{{ '{:,.0f}'.format(l.total).replace(',', ' ') }} F</td>
+                        <td class="montant">{{ '{:,.0f}'.format(l.encaisse).replace(',', ' ') }} F</td>
+                        <td class="montant {{ 'text-danger fw-bold' if l.reste > 0.5 }}">{{ '{:,.0f}'.format(l.reste).replace(',', ' ') }} F</td>
+                        <td>
+                            <span class="badge {{ l.etat[1] }}">{% if f.cloturee %}<i class="fas fa-lock me-1"></i>{% endif %}{{ l.etat[0] }}</span>
+                            {% if l.encaissements_en_attente %}
+                            <br><span class="badge bg-warning text-dark mt-1"><i class="fas fa-hourglass-half me-1"></i>{{ l.encaissements_en_attente }} encaissement(s) à valider</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ f.date_depot.strftime('%d/%m/%Y') if f.date_depot else '—' }}</td>
+                        <td class="text-end text-nowrap">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" title="Historique de la facture"
+                                    data-bs-toggle="collapse" data-bs-target="#historique{{ f.id }}" aria-expanded="false">
+                                <i class="fas fa-clock-rotate-left"></i>
+                            </button>
+                            {% if session.role in ['caissier', 'secretaire'] or a_acces('statistiques') %}
+                            <button type="button" class="btn btn-sm btn-outline-primary" title="Bordereau détaillé (à imprimer et déposer)"
+                                    onclick='voirBordereau({{ f.assurance|tojson }}, {{ (f.societe or "")|tojson }}, {{ f.mois_reference|tojson }})'>
+                                <i class="fas fa-print"></i>
+                            </button>
+                            {% endif %}
+                            {% if not f.cloturee %}
+                            <button type="button" class="btn btn-sm btn-outline-dark" title="{{ 'Modifier la date de dépôt' if f.date_depot else 'Marquer le bordereau comme déposé' }}"
+                                    onclick="ouvrirDepot({{ f.id }}, '{{ f.date_depot.strftime('%Y-%m-%d') if f.date_depot else '' }}')">
+                                <i class="fas fa-truck"></i>
+                            </button>
+                            {% endif %}
+                            {% if peut_encaisser and l.reste > 0.5 %}
+                            <button type="button" class="btn btn-sm btn-success" title="Encaisser"
+                                    onclick='showPaiementModal({{ f.id }}, {{ (l.assurance ~ ((" / " ~ f.societe) if f.societe else ""))|tojson }}, {{ l.periode|tojson }}, {{ l.total }}, {{ l.encaisse }}, "{{ f.date_depot.strftime('%Y-%m-%d') if f.date_depot else '' }}")'>
+                                <i class="fas fa-cash-register"></i>
+                            </button>
+                            {% endif %}
+                            {% if session.is_admin and not f.cloturee %}
+                            <button type="button" class="btn btn-sm btn-danger" title="Clôturer"
+                                    onclick="ouvrirModalCloture({{ f.id }}, '{{ f.date_depot.strftime('%Y-%m-%d') if f.date_depot else '' }}')">
+                                <i class="fas fa-lock"></i>
+                            </button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr class="ligne-historique">
+                        <td colspan="8" class="p-0 border-0">
+                            <div class="collapse" id="historique{{ f.id }}">
+                                <div class="px-4 py-2 border-start border-3 ms-3 my-2">
+                                    <ul class="historique-facture">
+                                        {% for e in l.evenements %}
+                                        <li>
+                                            <span class="quand">{{ e.date.strftime('%d/%m/%Y') if e.date else '—' }}</span>
+                                            <i class="fas {{ e.icone }} text-{{ e.couleur }}"></i>
+                                            <span>{{ e.texte }}</span>
+                                        </li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-4">
+                            Aucune facture d'assurance complémentaire{% if choisie %} pour {{ choisie }}{% endif %}.
+                            Les factures se génèrent chaque mois depuis « Générer les factures du mois ».
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p id="aucunResultat" class="text-center text-muted py-3" style="display:none;">Aucune facture ne correspond à cette recherche.</p>
+        <p class="small text-muted mb-0">
+            <i class="fas fa-info-circle me-1"></i>
+            Un encaissement enregistré ici reste <strong>en attente de validation</strong> par l'administrateur ou le gestionnaire
+            avant d'être pris en compte (caisse, comptabilité) — même circuit que pour l'AMU.
+        </p>
+    </div>
+</div>
+
+<!-- Dépôt du bordereau -->
+<div class="modal fade" id="modalDepot" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title"><i class="fas fa-truck me-1"></i> Dépôt du bordereau</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <input type="hidden" id="depotFactureId">
+                <label class="form-label" for="depotDate">Date de dépôt chez l'assureur</label>
+                <input type="date" class="form-control" id="depotDate">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-primary" onclick="enregistrerDepot()">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Encaissement : même modal et même circuit que les autres pages d'assurance -->
+<div class="modal fade" id="paiementModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">Enregistrer un encaissement assurance</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="paiementFactureId">
+                <div class="mb-2"><label class="form-label">Assurance</label><input type="text" class="form-control" id="paiementAssurance" readonly></div>
+                <div class="mb-2"><label class="form-label">Mois de référence</label><input type="text" class="form-control" id="paiementMois" readonly></div>
+                <div class="row g-2 mb-2">
+                    <div class="col"><label class="form-label">Montant de la facture</label><input type="text" class="form-control" id="paiementTotal" readonly></div>
+                    <div class="col"><label class="form-label">Déjà encaissé</label><input type="text" class="form-control" id="paiementDeja" readonly></div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Montant de l'encaissement (FCFA)</label>
+                    <input type="number" class="form-control" id="paiementMontant" min="1">
+                    <small class="text-muted" id="paiementResteHint"></small>
+                </div>
+                <hr>
+                <p class="text-muted small mb-2"><i class="fas fa-file-invoice me-1"></i>Pièces justificatives du versement (obligatoire, pour la traçabilité)</p>
+                <div class="mb-2"><label class="form-label">N° de référence du versement</label>
+                    <input type="text" class="form-control" id="paiementReference" placeholder="Ex : référence du virement bancaire"></div>
+                <div class="mb-2"><label class="form-label">Date de versement</label>
+                    <input type="date" class="form-control" id="paiementDateVersement">
+                    <div class="form-text" id="paiementDateVersementAide"></div></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-success" id="btnValiderPaiement" onclick="enregistrerPaiement()">Envoyer pour validation</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Clôture (administrateur) -->
+<div class="modal fade" id="modalCloture" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title"><i class="fas fa-lock me-1"></i> Clôturer la facture</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <input type="hidden" id="clotureFactureId">
+                <label class="form-label" for="clotureDateDepot">Date de dépôt</label>
+                <input type="date" id="clotureDateDepot" class="form-control mb-2">
+                <p class="text-danger fw-bold mb-0">
+                    ⚠️ Après cette étape, AUCUNE modification ne sera plus possible (montants, date de dépôt).
+                    L'encaissement reste possible. Vérifiez bien avant de clôturer.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button class="btn btn-danger" onclick="confirmerCloture()">Clôturer définitivement</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const AUJOURDHUI_ISO = new Date().toISOString().slice(0, 10);
+
+document.getElementById('rechercheFacture').addEventListener('input', function () {
+    const q = this.value.trim().toLowerCase();
+    let visibles = 0;
+    document.querySelectorAll('.ligne-facture').forEach(tr => {
+        const ok = !q || tr.dataset.recherche.includes(q);
+        tr.style.display = ok ? '' : 'none';
+        const histo = tr.nextElementSibling;
+        if (histo && histo.classList.contains('ligne-historique')) histo.style.display = ok ? '' : 'none';
+        if (ok) visibles++;
+    });
+    document.getElementById('aucunResultat').style.display = (q && !visibles) ? '' : 'none';
+});
+
+// même bordereau que la page « Factures assurances » (mois entier, société éventuelle)
+function voirBordereau(assurance, societe, moisReference) {
+    const [annee, mois] = moisReference.split('-').map(Number);
+    const dernierJour = new Date(annee, mois, 0).getDate();
+    let url = `/api/statistiques/assurance/bordereau?assurance=${encodeURIComponent(assurance)}&periode=personnalise`
+            + `&date_debut=${moisReference}-01&date_fin=${moisReference}-${String(dernierJour).padStart(2, '0')}`;
+    if (societe) url += `&societe=${encodeURIComponent(societe)}`;
+    window.open(url, '_blank');
+}
+
+async function appelPost(url, corps) {
+    try {
+        const r = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(corps)});
+        return await r.json();
+    } catch (e) {
+        return {success: false, error: 'Erreur réseau : ' + e};
+    }
+}
+
+function ouvrirDepot(id, dateActuelle) {
+    document.getElementById('depotFactureId').value = id;
+    const champ = document.getElementById('depotDate');
+    champ.value = dateActuelle || AUJOURDHUI_ISO;
+    champ.max = AUJOURDHUI_ISO;
+    new bootstrap.Modal(document.getElementById('modalDepot')).show();
+}
+async function enregistrerDepot() {
+    const id = document.getElementById('depotFactureId').value;
+    const date = document.getElementById('depotDate').value;
+    if (!date) { await afficherMessage('La date de dépôt est obligatoire.'); return; }
+    const d = await appelPost(`/api/assurances/factures/${id}/marquer_depose`, {date_depot: date});
+    if (d.success) window.location.reload();
+    else await afficherMessage('Erreur : ' + (d.error || 'inconnue'), {type: 'danger'});
+}
+
+function showPaiementModal(id, assurance, mois, total, deja, dateDepot) {
+    const champDate = document.getElementById('paiementDateVersement');
+    champDate.max = AUJOURDHUI_ISO;
+    champDate.min = dateDepot || '';
+    document.getElementById('paiementDateVersementAide').textContent = dateDepot
+        ? 'Bordereau déposé le ' + dateDepot.split('-').reverse().join('/') + ' : la date de virement doit être ce jour ou après.' : '';
+    document.getElementById('paiementFactureId').value = id;
+    document.getElementById('paiementAssurance').value = assurance;
+    document.getElementById('paiementMois').value = mois;
+    document.getElementById('paiementTotal').value = Math.round(total).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('paiementDeja').value = Math.round(deja).toLocaleString('fr-FR') + ' FCFA';
+    const reste = total - deja;
+    document.getElementById('paiementMontant').value = Math.round(reste);
+    document.getElementById('paiementResteHint').textContent = 'Reste : ' + Math.round(reste).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('paiementReference').value = '';
+    champDate.value = '';
+    new bootstrap.Modal(document.getElementById('paiementModal')).show();
+}
+async function enregistrerPaiement() {
+    const id = document.getElementById('paiementFactureId').value;
+    const montant = parseFloat(document.getElementById('paiementMontant').value);
+    const reference = document.getElementById('paiementReference').value.trim();
+    const dateVersement = document.getElementById('paiementDateVersement').value;
+    if (!montant || montant <= 0) { await afficherMessage('Montant valide requis'); return; }
+    if (!reference || !dateVersement) {
+        await afficherMessage('Le numéro de référence du versement et la date de versement sont obligatoires (pièces justificatives).');
+        return;
+    }
+    if (!await demanderConfirmation(`Envoyer la demande d'encaissement de ${Math.round(montant).toLocaleString('fr-FR')} FCFA ?`)) return;
+    const btn = document.getElementById('btnValiderPaiement');
+    btn.disabled = true;
+    const d = await appelPost(`/api/assurances/factures/${id}/payer`,
+                              {montant: montant, numero_reference_versement: reference, date_versement: dateVersement});
+    btn.disabled = false;
+    if (d.success) {
+        await afficherMessage(d.en_attente ? d.message : 'Encaissement enregistré !', {type: 'success'});
+        window.location.reload();
+    } else {
+        await afficherMessage('Erreur : ' + (d.error || 'inconnue'), {type: 'danger'});
+    }
+}
+
+function ouvrirModalCloture(id, dateDepot) {
+    document.getElementById('clotureFactureId').value = id;
+    const champ = document.getElementById('clotureDateDepot');
+    champ.value = dateDepot || AUJOURDHUI_ISO;
+    champ.max = AUJOURDHUI_ISO;
+    new bootstrap.Modal(document.getElementById('modalCloture')).show();
+}
+async function confirmerCloture() {
+    const id = document.getElementById('clotureFactureId').value;
+    const date = document.getElementById('clotureDateDepot').value;
+    if (!date) { await afficherMessage('La date de dépôt est obligatoire.'); return; }
+    const d = await appelPost(`/api/assurances/factures/${id}/cloturer`, {date_depot: date});
+    if (d.success) window.location.reload();
+    else await afficherMessage('Erreur : ' + (d.error || 'inconnue'), {type: 'danger'});
+}
+</script>
+{% endblock %}

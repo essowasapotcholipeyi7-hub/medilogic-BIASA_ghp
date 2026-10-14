@@ -125,6 +125,10 @@ DOMAINES = [
         Onglet('facture_amu_inam', 'Facture AMU INAM', 'page_facture_amu_inam', 'fa-file-invoice',
                'Facture mensuelle INAM', 'inam bordereau',
                visible=_pas_cache('factures_amu')),
+        # ⭐ (patron, 2026-10-14) factures + historique des assurances complémentaires
+        Onglet('factures_complementaires', 'Factures assurances complémentaires', 'page_factures_complementaires',
+               'fa-file-invoice-dollar', 'Dépôt, paiements, historique', 'cac complementaire gta fidelia bordereau assurance',
+               visible=lambda c: c.is_admin or c.role in ('admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable', 'sous_comptable')),
         Onglet('historique_factures_amu', 'Historique factures AMU', 'historique_factures_amu', 'fa-clock-rotate-left',
                'Factures AMU passées', 'historique bordereau',
                visible=_pas_cache('factures_amu')),
@@ -255,7 +259,7 @@ PARCOURS = [
 # Onglets d'un compte comptable / agent comptable (le reste via un rôle supplémentaire).
 ONGLETS_COMPTA = {
     'factures', 'depenses_saisie', 'admin_finances', 'statistiques',
-    'facture_amu_cnss', 'facture_amu_tns', 'facture_amu_inam', 'historique_factures_amu', 'supports_cnss', 'supports_inam',
+    'facture_amu_cnss', 'facture_amu_tns', 'facture_amu_inam', 'factures_complementaires', 'historique_factures_amu', 'supports_cnss', 'supports_inam',
     'historique_ventes', 'part_medecin', 'gestion_stock',
     'comptabilite', 'annulations', 'journal', 'pbr', 'rh', 'theme', 'mot_de_passe',
 }

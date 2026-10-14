@@ -32,7 +32,7 @@ def onglets_recherchables(role, is_admin, a_acces, onglet_cache_fn, bloq):
     role_compta = role in ('comptable', 'sous_comptable')   # ⭐ comptabilité cloisonnée
     endpoints_compta = {'comptabilite.index', 'admin_finances', 'page_depenses_saisie', 'statistiques_ventes',
                         'historique_annulations', 'journal.page_journal', 'factures', 'historique_ventes',
-                        'page_facture_amu_cnss', 'page_facture_amu_inam', 'historique_factures_amu',
+                        'page_facture_amu_cnss', 'page_facture_amu_inam', 'historique_factures_amu', 'page_factures_complementaires',
                         'page_amu_supports', 'page_pbr_complementaires', 'gestion_stock', 'page_part_medecin',
                         'rh.gestion_rh', 'page_changer_mot_de_passe', 'page_parametres_theme'}
 
@@ -79,6 +79,8 @@ def onglets_recherchables(role, is_admin, a_acces, onglet_cache_fn, bloq):
             not role_labo_radio and not bloq)
     ajouter('Historique factures AMU', 'historique_factures_amu',
             not role_labo_radio and not bloq)
+    ajouter('Factures assurances complémentaires', 'page_factures_complementaires',
+            (is_admin or role in ('admin', 'caissier', 'secretaire', 'gestionnaire', 'comptable', 'sous_comptable')) and not bloq)
     ajouter('Enregistrer une charge', 'page_depenses_saisie', not role_labo_radio)
     ajouter('Finances / Caisse & Charges', 'admin_finances',
             not role_labo_radio and a_acces('finances') and not onglet_cache_fn('finances') and not bloq)
