@@ -28,7 +28,7 @@
             <i class="fas fa-info-circle me-1"></i>
             L'encaissement enregistré ici reste <strong>en attente de validation</strong> par l'administrateur
             avant d'être réellement pris en compte (caisse, comptabilité) — même circuit que la page
-            <a href="{{ url_for('page_factures_assurances') if session.role in ['caissier','secretaire'] else url_for('statistiques_ventes') }}">Factures assurances</a>.
+            <a href="{{ url_for('page_factures_assurances') if session.role in ['caissier','secretaire'] else url_for('statistiques_ventes', onglet='assurances') }}">Factures assurances</a>.
         </div>
         <div class="mb-3">
             <input type="text" id="rechercheNumero" class="form-control" style="max-width:360px;"

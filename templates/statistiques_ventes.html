@@ -223,6 +223,13 @@
                             <button class="btn btn-light btn-sm me-2" onclick="genererFactures()">
                                 <i class="fas fa-file-invoice"></i> Generer factures
                             </button>
+                            {# ⭐ manquaient ici pour l'admin / le gestionnaire (2026-10-14) #}
+                            <button class="btn btn-light btn-sm me-2" onclick="ouvrirPaiementGlobal()">
+                                <i class="fas fa-layer-group"></i> Paiement global
+                            </button>
+                            <button class="btn btn-light btn-sm me-2" onclick="ouvrirBordereauGlobal()">
+                                <i class="fas fa-file-invoice"></i> Bordereau global
+                            </button>
                             <button class="btn btn-light btn-sm" onclick="rafraichirFactures()">
                                 <i class="fas fa-sync-alt"></i> Rafraichir
                             </button>
@@ -1982,4 +1989,16 @@ function exporterStatsPatientsCSV() {
     URL.revokeObjectURL(link.href);
 }
 </script>
+<script>
+// crochets du bloc partagé (paiement / bordereau globaux)
+window.apresOperationAssurance = () => chargerFactures();
+window.moisReferenceCourant = () => (document.getElementById('factureMois') || {}).value;
+// ⭐ ouverture directe sur un onglet : /statistiques_ventes?onglet=assurances (ou #assurances)
+document.addEventListener('DOMContentLoaded', function () {
+    const voulu = new URLSearchParams(location.search).get('onglet') || location.hash.replace('#', '');
+    const bouton = voulu && document.getElementById(voulu + '-tab');
+    if (bouton && window.bootstrap) bootstrap.Tab.getOrCreateInstance(bouton).show();
+});
+</script>
+{% include 'partials/assurances_operations_globales.html' %}
 {% endblock %}

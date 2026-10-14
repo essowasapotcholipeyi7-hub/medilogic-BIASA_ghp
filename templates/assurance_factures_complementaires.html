@@ -30,15 +30,20 @@
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <h4 class="mb-0"><i class="fas fa-file-invoice-dollar me-2"></i>Factures assurances complémentaires
         <small class="text-muted fw-normal">— {{ libelle_periode }}{% if choisie %} — {{ choisie }}{% endif %}</small></h4>
-    {% if session.role in ['caissier', 'secretaire'] %}
-    <a href="{{ url_for('page_factures_assurances') }}" class="btn btn-outline-secondary btn-sm">
-        <i class="fas fa-layer-group me-1"></i> Générer les factures du mois / paiement global
-    </a>
-    {% elif a_acces('statistiques') %}
-    <a href="{{ url_for('statistiques_ventes') }}" class="btn btn-outline-secondary btn-sm">
-        <i class="fas fa-layer-group me-1"></i> Générer les factures du mois / paiement global
-    </a>
-    {% endif %}
+    {# ⭐ actions directement ici (plus de détour par les Statistiques, 2026-10-14) #}
+    <div class="d-flex flex-wrap gap-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnGenererMois" onclick="genererFacturesDuMois()">
+            <i class="fas fa-calculator me-1"></i> Générer les factures {{ 'de ' ~ libelle_periode if periode == 'mois' else 'du mois' }}
+        </button>
+        {% if peut_encaisser %}
+        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="ouvrirPaiementGlobal()">
+            <i class="fas fa-layer-group me-1"></i> Paiement global
+        </button>
+        {% endif %}
+        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="ouvrirBordereauGlobal()">
+            <i class="fas fa-file-invoice me-1"></i> Bordereau global
+        </button>
+    </div>
 </div>
 
 <div class="card mb-3">
@@ -286,6 +291,21 @@
 
 <script>
 const AUJOURDHUI_ISO = new Date().toISOString().slice(0, 10);
+const MOIS_PAGE = {{ (mois if periode == 'mois' else mois_courant)|tojson }};
+
+// crochets du bloc partagé (paiement / bordereau globaux)
+window.moisReferenceCourant = () => MOIS_PAGE;
+
+// même génération que « Factures assurances » / Statistiques (les factures clôturées ne bougent pas)
+async function genererFacturesDuMois() {
+    if (!await demanderConfirmation(`Générer (ou mettre à jour) les factures d'assurance de ${MOIS_PAGE} à partir des ventes ?`)) return;
+    const bouton = document.getElementById('btnGenererMois');
+    bouton.disabled = true;
+    const d = await appelPost('/api/assurances/generer_factures', {mois_reference: MOIS_PAGE});
+    bouton.disabled = false;
+    if (d.success) { await afficherMessage('Factures générées pour ' + MOIS_PAGE + '.', {type: 'success'}); window.location.reload(); }
+    else await afficherMessage('Erreur : ' + (d.error || 'inconnue'), {type: 'danger'});
+}
 
 function afficherChampsPeriode() {
     const p = document.getElementById('choixPeriode').value;
@@ -403,4 +423,5 @@ async function confirmerCloture() {
     else await afficherMessage('Erreur : ' + (d.error || 'inconnue'), {type: 'danger'});
 }
 </script>
+{% include 'partials/assurances_operations_globales.html' %}
 {% endblock %}
