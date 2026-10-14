@@ -40,7 +40,7 @@ MODULES_STRUCTURE = {
     'protocoles':           {'label': 'Protocoles et Modèles',           'endpoints': ['protocoles.page_protocoles']},
     'rendez_vous':          {'label': 'Programmer Rendez-vous',          'endpoints': ['rendez_vous']},
     'rappels':              {'label': 'Rappels des rendez-vous',         'endpoints': ['rappels']},
-    'statistiques':         {'label': 'Statistiques ventes/assurances',  'endpoints': ['statistiques_ventes']},
+    'statistiques':         {'label': 'Assurances & statistiques',  'endpoints': ['statistiques_ventes']},
     'annulations':          {'label': 'Historique des annulations',      'endpoints': ['historique_annulations']},
     'journal':               {'label': 'Journal des mouvements',          'endpoints': ['journal.page_journal']},
     'finances':              {'label': 'Finances / Caisse & Charges',     'endpoints': ['admin_finances']},

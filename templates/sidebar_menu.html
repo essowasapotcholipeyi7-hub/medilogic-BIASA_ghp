@@ -274,7 +274,7 @@
                 <!-- ===== ADMINISTRATION ===== -->
                 {% if a_acces('statistiques') and not onglet_cache('statistiques') and not _bloq %}
                 <a class="nav-link {% if request.endpoint == 'statistiques_ventes' %}active{% endif %}" href="{{ url_for('statistiques_ventes') }}">
-                    <span class="menu-text">Statistiques ventes/assurances</span>
+                    <span class="menu-text">Assurances &amp; statistiques</span>
                 </a>
                 {% endif %}
 

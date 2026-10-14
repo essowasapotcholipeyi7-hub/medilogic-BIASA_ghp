@@ -10270,6 +10270,35 @@ def _demander_validation(structure_id, type_demande, payload, resume, user_id, u
 from utils.dates import normaliser_date_peremption as _normaliser_date_peremption
 
 
+@app.route('/api/produits/alertes')
+@login_required
+def api_produits_alertes():
+    """⭐ 2026-10-14 (patron) : la carte « À surveiller » du tableau de bord téléchargeait la
+    liste COMPLÈTE des produits (≈ 300 Ko pour la plus grosse structure) pour n'en afficher
+    que trois nombres. Mêmes produits (même lecture que /api/produits) et mêmes seuils que
+    la page Gestion de stock, mais seuls les trois compteurs partent vers le navigateur."""
+    reponse = api_get_produits()
+    if isinstance(reponse, tuple):
+        reponse = reponse[0]
+    produits = reponse.get_json(silent=True) or []
+    aujourdhui = datetime.now().date()
+    limite = aujourdhui + timedelta(days=30)
+    perimes = bientot = stock_bas = 0
+    for p in produits:
+        try:
+            peremption = datetime.strptime(str(p.get('date_peremption') or '')[:10], '%Y-%m-%d').date()
+        except ValueError:
+            peremption = None
+        if peremption:
+            if peremption <= aujourdhui:
+                perimes += 1
+            elif peremption <= limite:
+                bientot += 1
+        if (p.get('quantite_stock') or 0) <= (p.get('seuil_alerte') or 10):
+            stock_bas += 1
+    return jsonify({'perimes': perimes, 'peremption_proche': bientot, 'stock_bas': stock_bas})
+
+
 @app.route('/api/produits')
 @login_required
 def api_get_produits():
@@ -17232,6 +17261,52 @@ def api_finances_stats():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/finances/rapport')
+@login_required
+def api_finances_rapport():
+    """⭐ Rapport financier détaillé (2026-10-14) — recettes par source, charges par motif
+    (avec chaque charge), activité des ventes ; même calcul que le PDF. Voir
+    utils/rapport_finances.py."""
+    if not a_acces('finances'):
+        return jsonify({'error': 'Non autorise'}), 403
+    from utils.rapport_finances import calculer_rapport, lire_periode
+    debut, fin = lire_periode(request.args.get('date_debut'), request.args.get('date_fin'))
+    try:
+        return jsonify(calculer_rapport(db.execute_query, session.get('structure_id'), debut, fin))
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Erreur api_finances_rapport: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/finances/rapport/pdf')
+@login_required
+def finances_rapport_pdf():
+    """⭐ Rapport financier en PDF (remplace l'export CSV, 2026-10-14 : « mieux en PDF, pour
+    que ça s'affiche bien et non modifiable par celui qui l'imprime ») — PDF verrouillé :
+    impression autorisée, modification et copie interdites."""
+    if not a_acces('finances'):
+        flash("Accès non autorisé.", 'danger')
+        return redirect(url_for('dashboard'))
+    from utils.rapport_finances import calculer_rapport, lire_periode, generer_pdf
+    structure_id = session.get('structure_id')
+    debut, fin = lire_periode(request.args.get('date_debut'), request.args.get('date_fin'))
+    rapport = calculer_rapport(db.execute_query, structure_id, debut, fin)
+    nom_structure = session.get('structure_nom') or ''
+    if not nom_structure:
+        try:
+            fiche = next((x for x in sheets_helper.get_all_records('structures', use_prefix=False)
+                          if str(x.get('ID')) == str(structure_id)), {})
+            nom_structure = fiche.get('nom') or ''
+        except Exception:
+            pass
+    pdf = generer_pdf(rapport, nom_structure, session.get('user_name', ''))
+    nom_fichier = f"rapport_financier_{debut.isoformat()}_{fin.isoformat()}.pdf"
+    mode = 'attachment' if request.args.get('telecharger') else 'inline'
+    return Response(pdf, mimetype='application/pdf',
+                    headers={'Content-Disposition': f'{mode}; filename="{nom_fichier}"'})
+
+
 @app.route('/api/finances/recettes/detail')
 @login_required
 def api_recettes_detail():
@@ -19124,46 +19199,6 @@ def calculer_age(date_naissance):
     if (today.month, today.day) < (date_naissance.month, date_naissance.day):
         age -= 1
     return age
-
-@app.route('/api/finances/recettes/source')
-@login_required
-def api_recettes_source():
-    if not a_acces('finances'):
-        return jsonify({'error': 'Non autorise'}), 403
-    
-    try:
-        structure_id = session.get('structure_id')
-        date_debut = request.args.get('date_debut')
-        date_fin = request.args.get('date_fin')
-        
-        where_clause = "WHERE structure_id = %s AND (est_annulation IS NULL OR est_annulation = FALSE)"
-        params = [structure_id]
-        
-        if date_debut and date_fin:
-            date_debut_formatted = date_debut + " 00:00:00"
-            date_fin_formatted = date_fin + " 23:59:59"
-            where_clause += " AND date_recette BETWEEN %s AND %s"
-            params.extend([date_debut_formatted, date_fin_formatted])
-        
-        # 🔥 Recettes par source
-        query = f"""
-            SELECT 
-                source,
-                source_type,
-                COUNT(*) as nombre,
-                COALESCE(SUM(montant), 0) as total
-            FROM recettes 
-            {where_clause}
-            GROUP BY source, source_type
-            ORDER BY source, source_type
-        """
-        recettes = db.execute_query(query, params)
-        
-        return jsonify(recettes)
-        
-    except Exception as e:
-        print(f"Erreur: {e}")
-        return jsonify([]), 500
 
 # ============================================
 # ROUTES PROFORMA AVEC DOUBLE ASSURANCE

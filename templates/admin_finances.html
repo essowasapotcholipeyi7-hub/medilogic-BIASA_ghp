@@ -65,6 +65,15 @@
         transform: translateY(-5px);
         box-shadow: 0 15px 35px rgba(0,0,0,0.1);
     }
+    /* ⭐ Rapport détaillé (2026-10-14) */
+    .rapport-table td, .rapport-table th { vertical-align: middle; }
+    .rapport-table .ligne-groupe td { font-weight: 700; background: rgba(var(--bs-secondary-rgb), .12); }
+    .rapport-table .ligne-detail td { font-size: .85rem; color: var(--bs-secondary-color); }
+    .rapport-table .ligne-detail td:first-child { padding-left: 2rem; }
+    .rapport-table .ligne-total td { font-weight: 700; border-top: 2px solid var(--bs-emphasis-color); }
+    .rapport-table .btn-detail { padding: 0 .4rem; font-size: .75rem; }
+    .rapport-table .montant { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .equation-caisse { font-size: .8rem; }
 </style>
 {% endblock %}
 
@@ -94,19 +103,21 @@
             </button>
         </div>
         <div class="card-body">
-            <div class="row g-3 mb-4">
-                <div class="col-md-4">
+            {# ⭐ 2026-10-14 (patron : « regarde s'il y a la logique entre les sommes ») : les trois
+               montants se lisent comme une opération — recettes − charges = solde de caisse. #}
+            <div class="row g-3 mb-2">
+                <div class="col-md-3">
                     <div class="card stat-card-finance border-0 shadow-sm">
                         <div class="card-body text-center">
-                            <div class="stat-icon-finance bg-success bg-opacity-10 mx-auto mb-2">
-                                <i class="fas fa-arrow-up text-success fa-2x"></i>
+                            <div class="stat-icon-finance bg-primary bg-opacity-10 mx-auto mb-2">
+                                <i class="fas fa-coins text-primary fa-2x"></i>
                             </div>
-                            <h5 class="text-success" id="soldeActuel">{{ (total_recettes - total_depenses)|round(0)|format_currency }}</h5>
-                            <small class="text-muted">Solde actuel</small>
+                            <h5 class="text-primary" id="totalRecettes">{{ total_recettes|round(0)|format_currency }}</h5>
+                            <small class="text-muted">Total recettes encaissées</small>
                         </div>
                     </div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <div class="card stat-card-finance border-0 shadow-sm">
                         <div class="card-body text-center">
                             <div class="stat-icon-finance bg-danger bg-opacity-10 mx-auto mb-2">
@@ -117,7 +128,18 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
+                    <div class="card stat-card-finance border-0 shadow-sm">
+                        <div class="card-body text-center">
+                            <div class="stat-icon-finance bg-success bg-opacity-10 mx-auto mb-2">
+                                <i class="fas fa-wallet text-success fa-2x"></i>
+                            </div>
+                            <h5 class="text-success" id="soldeActuel">{{ (total_recettes - total_depenses)|round(0)|format_currency }}</h5>
+                            <small class="text-muted">Solde de caisse</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
                     <div class="card stat-card-finance border-0 shadow-sm">
                         <div class="card-body text-center">
                             <div class="stat-icon-finance bg-warning bg-opacity-10 mx-auto mb-2">
@@ -135,6 +157,12 @@
                     </div>
                 </div>
             </div>
+            <p class="equation-caisse text-muted text-center mb-4">
+                Depuis l'ouverture : recettes encaissées {{ total_recettes|round(0)|format_currency }}
+                − charges {{ total_depenses|round(0)|format_currency }}
+                = solde de caisse {{ (total_recettes - total_depenses)|round(0)|format_currency }}.
+                Le détail par période est dans l'onglet <strong>Rapports</strong>.
+            </p>
 
             <!-- Filtres charges -->
             <div class="filter-bar">
@@ -233,7 +261,7 @@
                                     {% else %}{{ d.motif_personnalise or 'Autres' }}{% endif %}
                                 </span>
                             </td>
-                            <td class="text-danger fw-bold">{{ d.montant|round(0)|int }} FCFA</td>
+                            <td class="text-danger fw-bold">{{ d.montant|round(0)|format_currency }}</td>
                             <td>{{ d.description or '-' }}</td>
                             <td>{{ d.created_by_nom or '-' }}</td>
                             <td>
@@ -265,188 +293,108 @@
         </div>
     </div>
 </div>
-            <!-- ONGLET RAPPORTS -->
+            <!-- ONGLET RAPPORTS — ⭐ refait le 2026-10-14 : détail des recettes par source et des
+                 charges par motif (sur la période choisie, et une seule fois), PDF non modifiable -->
             <div class="tab-pane fade" id="rapports" role="tabpanel">
                 <div class="card">
-                    <div class="card-header bg-info text-white">
-                        <h5>Rapports financiers</h5>
+                    <div class="card-header bg-info text-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+                        <h5 class="mb-0">Rapport financier <small id="rapportPeriodeLibelle" class="fw-normal"></small></h5>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-light btn-sm" onclick="ouvrirRapportPdf(false)" title="Ouvre le rapport en PDF pour l'imprimer">
+                                <i class="fas fa-print me-1"></i> Imprimer (PDF)
+                            </button>
+                            <button class="btn btn-light btn-sm" onclick="ouvrirRapportPdf(true)">
+                                <i class="fas fa-file-pdf me-1"></i> Télécharger le PDF
+                            </button>
+                        </div>
                     </div>
                     <div class="card-body">
                         <div class="filter-bar">
-                            <div class="row g-2">
-                                <div class="col-md-4">
-                                    <label class="form-label small">Date début</label>
-                                    <input type="date" id="rapportDateDebut" class="form-control form-control-sm">
+                            <div class="row g-2 align-items-end">
+                                <div class="col-md-3">
+                                    <label class="form-label small" for="rapportPeriode">Période</label>
+                                    <select id="rapportPeriode" class="form-select form-select-sm" onchange="choisirPeriodeRapport(this.value)">
+                                        <option value="mois">Mois en cours</option>
+                                        <option value="mois_precedent">Mois précédent</option>
+                                        <option value="annee">Année en cours</option>
+                                        <option value="personnalise">Personnalisée</option>
+                                    </select>
                                 </div>
-                                <div class="col-md-4">
-                                    <label class="form-label small">Date fin</label>
-                                    <input type="date" id="rapportDateFin" class="form-control form-control-sm">
+                                <div class="col-md-3">
+                                    <label class="form-label small" for="rapportDateDebut">Du</label>
+                                    <input type="date" id="rapportDateDebut" class="form-control form-control-sm" onchange="document.getElementById('rapportPeriode').value = 'personnalise'">
                                 </div>
-                                <div class="col-md-4 d-flex align-items-end">
+                                <div class="col-md-3">
+                                    <label class="form-label small" for="rapportDateFin">Au</label>
+                                    <input type="date" id="rapportDateFin" class="form-control form-control-sm" onchange="document.getElementById('rapportPeriode').value = 'personnalise'">
+                                </div>
+                                <div class="col-md-3">
                                     <button class="btn btn-primary btn-sm w-100" onclick="genererRapport()">
-                                        Générer
+                                        <i class="fas fa-sync-alt me-1"></i> Afficher
                                     </button>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- 4 cartes statistiques -->
-                        <div class="row g-3 mb-4">
+                        <!-- synthèse -->
+                        <div class="row g-3 mb-2">
                             <div class="col-md-3">
-                                <div class="card stat-card border-0 shadow-sm">
-                                    <div class="card-body text-center">
-                                        <div class="rounded-3 p-2 mb-2 bg-success bg-opacity-10 mx-auto" style="width: 50px; height: 50px;">
-                                            <i class="fas fa-arrow-up text-success fa-2x"></i>
-                                        </div>
-                                        <div class="stat-value text-success" id="rapportTotalRecettes">0</div>
-                                        <div class="stat-label">Total Recettes</div>
-                                        <div class="stat-sub">FCFA</div>
-                                    </div>
-                                </div>
+                                <div class="card stat-card border-0 shadow-sm"><div class="card-body text-center">
+                                    <div class="stat-value text-success fs-5 fw-bold" id="rapportTotalRecettes">0</div>
+                                    <div class="stat-label">Recettes encaissées</div>
+                                </div></div>
                             </div>
                             <div class="col-md-3">
-                                <div class="card stat-card border-0 shadow-sm">
-                                    <div class="card-body text-center">
-                                        <div class="rounded-3 p-2 mb-2 bg-danger bg-opacity-10 mx-auto" style="width: 50px; height: 50px;">
-                                            <i class="fas fa-arrow-down text-danger fa-2x"></i>
-                                        </div>
-                                        <div class="stat-value text-danger" id="rapportTotalDepenses">0</div>
-                                        <div class="stat-label">Total Dépenses</div>
-                                        <div class="stat-sub">FCFA</div>
-                                    </div>
-                                </div>
+                                <div class="card stat-card border-0 shadow-sm"><div class="card-body text-center">
+                                    <div class="stat-value text-danger fs-5 fw-bold" id="rapportTotalDepenses">0</div>
+                                    <div class="stat-label">Charges</div>
+                                </div></div>
                             </div>
                             <div class="col-md-3">
-                                <div class="card stat-card border-0 shadow-sm">
-                                    <div class="card-body text-center">
-                                        <div class="rounded-3 p-2 mb-2 bg-primary bg-opacity-10 mx-auto" style="width: 50px; height: 50px;">
-                                            <i class="fas fa-wallet text-primary fa-2x"></i>
-                                        </div>
-                                        <div class="stat-value text-primary" id="rapportSolde">0</div>
-                                        <div class="stat-label">Solde</div>
-                                        <div class="stat-sub">FCFA</div>
-                                    </div>
-                                </div>
+                                <div class="card stat-card border-0 shadow-sm"><div class="card-body text-center">
+                                    <div class="stat-value text-primary fs-5 fw-bold" id="rapportSolde">0</div>
+                                    <div class="stat-label">Solde de la période</div>
+                                </div></div>
                             </div>
                             <div class="col-md-3">
-                                <div class="card stat-card border-0 shadow-sm">
-                                    <div class="card-body text-center">
-                                        <div class="rounded-3 p-2 mb-2 bg-info bg-opacity-10 mx-auto" style="width: 50px; height: 50px;">
-                                            <i class="fas fa-chart-line text-info fa-2x"></i>
-                                        </div>
-                                        <div class="stat-value text-info" id="rapportMarge">0</div>
-                                        <div class="stat-label">Marge</div>
-                                        <div class="stat-sub">%</div>
-                                    </div>
-                                </div>
+                                <div class="card stat-card border-0 shadow-sm"><div class="card-body text-center">
+                                    <div class="stat-value text-info fs-5 fw-bold" id="rapportMarge">0</div>
+                                    <div class="stat-label">Marge (%)</div>
+                                </div></div>
                             </div>
+                        </div>
+                        <p class="equation-caisse text-muted text-center mb-4" id="rapportEquation"></p>
+
+                        <!-- recettes par source -->
+                        <h6 class="fw-bold mt-2"><i class="fas fa-arrow-down text-success me-1"></i> Recettes par source</h6>
+                        <div class="table-responsive mb-4">
+                            <table class="table table-sm rapport-table mb-0">
+                                <thead class="table-light"><tr><th>Origine</th><th class="text-end">Opérations</th><th class="text-end">Montant</th></tr></thead>
+                                <tbody id="rapportRecettesList"><tr><td colspan="3" class="text-center text-muted py-3">Chargement…</td></tr></tbody>
+                            </table>
                         </div>
 
-                        <!-- Détail des recettes et nombre de transactions -->
-                        <div class="row g-3 mb-4">
-                            <div class="col-md-6">
-                                <div class="card bg-light border-0">
-                                    <div class="card-body">
-                                        <h6 class="text-muted">Détail des recettes</h6>
-                                        <div class="row mt-2">
-                                            <div class="col-6">
-                                                <span class="text-primary">Actes médicaux</span>
-                                                <h4 class="text-primary" id="rapportRecettesActes">0 FCFA</h4>
-                                            </div>
-                                            <div class="col-6">
-                                                <span class="text-success">Pharmacie</span>
-                                                <h4 class="text-success" id="rapportRecettesPharma">0 FCFA</h4>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="card bg-light border-0">
-                                    <div class="card-body">
-                                        <h6 class="text-muted">Nombre de transactions</h6>
-                                        <div class="row mt-2">
-                                            <div class="col-6">
-                                                <span class="text-primary">Ventes actes</span>
-                                                <h4 class="text-primary" id="rapportNbActes">0</h4>
-                                            </div>
-                                            <div class="col-6">
-                                                <span class="text-success">Ventes pharmacie</span>
-                                                <h4 class="text-success" id="rapportNbPharma">0</h4>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                        <!-- charges par motif -->
+                        <h6 class="fw-bold"><i class="fas fa-arrow-up text-danger me-1"></i> Charges par motif</h6>
+                        <div class="table-responsive mb-4">
+                            <table class="table table-sm rapport-table mb-0">
+                                <thead class="table-light"><tr><th>Motif</th><th class="text-end">Nombre</th><th class="text-end">%</th><th class="text-end">Montant</th></tr></thead>
+                                <tbody id="rapportChargesList"><tr><td colspan="4" class="text-center text-muted py-3">Chargement…</td></tr></tbody>
+                            </table>
                         </div>
 
-                        <!-- 🔥 RECETTES PAR SOURCE ET DEPENSES PAR MOTIF -->
-                        <div class="row mt-3">
-                            <div class="col-md-6">
-                                <div class="card bg-light border-0">
-                                    <div class="card-body">
-                                        <h6 class="text-muted">Recettes par source</h6>
-                                        <div id="recettesParSource">
-                                            <span class="spinner-border spinner-border-sm"></span> Chargement...
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="card bg-light border-0">
-                                    <div class="card-body">
-                                        <h6 class="text-muted">Depenses par motif</h6>
-                                        <div id="depensesParMotif">
-                                            <span class="spinner-border spinner-border-sm"></span> Chargement...
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                        <!-- activité des ventes -->
+                        <h6 class="fw-bold"><i class="fas fa-cash-register text-primary me-1"></i> Activité des ventes <small class="text-muted fw-normal">(pour information)</small></h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm rapport-table mb-1">
+                                <thead class="table-light"><tr><th>Type</th><th class="text-end">Ventes</th><th class="text-end">Net patient</th><th class="text-end">Encaissé</th><th class="text-end">Reste dû</th><th class="text-end">Part assurances</th></tr></thead>
+                                <tbody id="rapportVentesList"><tr><td colspan="6" class="text-center text-muted py-3">Chargement…</td></tr></tbody>
+                            </table>
                         </div>
-                        
-                        <!-- Dépenses par motif -->
-                        <div class="card mt-3">
-                            <div class="card-header bg-secondary text-white">
-                                <h6>Dépenses par motif</h6>
-                            </div>
-                            <div class="card-body">
-                                <div class="table-responsive">
-                                    <table class="table table-hover table-sm" id="rapportMotifsTable">
-                                        <thead class="table-dark">
-                                            <tr>
-                                                <th>Motif</th>
-                                                <th class="text-end">Montant (FCFA)</th>
-                                                <th class="text-end">%</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="rapportMotifsList">
-                                            <tr>
-                                                <td colspan="3" class="text-center text-muted py-4">
-                                                    <i class="fas fa-chart-pie me-2"></i>Sélectionnez une période
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                        <tfoot class="table-light">
-                                            <tr class="fw-bold">
-                                                <td class="text-end">TOTAL</td>
-                                                <td class="text-end text-danger" id="totalDepensesFooter">0 FCFA</td>
-                                                <td class="text-end">100%</td>
-                                            </tr>
-                                        </tfoot>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Boutons export -->
-                        <div class="mt-3 text-end">
-                            <button class="btn btn-secondary btn-sm" onclick="exporterRapport()">
-                                Exporter en CSV
-                            </button>
-                            <button class="btn btn-info btn-sm" onclick="imprimerRapport()">
-                                Imprimer
-                            </button>
-                        </div>
+                        <p class="small text-muted mb-0">
+                            « Encaissé » est déjà compté dans les recettes ci-dessus. « Reste dû » est la part laissée en créance par les patients :
+                            elle entre en recette quand elle est réglée. « Part assurances » est ce que les assurances doivent : elle entre en recette à leur remboursement.
+                        </p>
                     </div>
                 </div>
             </div>
@@ -767,212 +715,122 @@ function chargerSolde() {
         });
 }
 
-function chargerDetailFinances() {
-    // Recettes par source
-    fetch('/api/finances/recettes/source')
-        .then(r => r.json())
-        .then(data => {
-            const container = document.getElementById('recettesParSource');
-            if (container) {
-                if (data && data.length) {
-                    container.innerHTML = data.map(s => {
-                        let label = s.source;
-                        if (label === 'patients') label = 'Patients';
-                        else if (label === 'assurance') label = 'Assurances';
-                        else if (label === 'autres') label = 'Autres';
-                        return `
-                            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
-                                <span class="fw-semibold">${label}</span>
-                                <span class="text-success fw-bold">${Math.round(s.total).toLocaleString('fr-FR')} FCFA</span>
-                            </div>
-                        `;
-                    }).join('');
-                } else {
-                    container.innerHTML = '<p class="text-muted mb-0">Aucune recette</p>';
-                }
-            }
-        })
-        .catch(err => {
-            console.error('Erreur:', err);
-            const container = document.getElementById('recettesParSource');
-            if (container) container.innerHTML = '<p class="text-danger">Erreur chargement</p>';
-        });
-    
-    // Depenses par motif
-    fetch('/api/finances/depenses/motif')
-        .then(r => r.json())
-        .then(data => {
-            const container = document.getElementById('depensesParMotif');
-            if (container) {
-                if (data && data.length) {
-                    container.innerHTML = data.map(d => {
-                        let motifLabel = d.motif;
-                        if (motifLabel === 'salaire') motifLabel = 'Salaires';
-                        else if (motifLabel === 'reparation') motifLabel = 'Reparations';
-                        else if (motifLabel === 'fourniture') motifLabel = 'Fournitures';
-                        else if (motifLabel === 'assurance') motifLabel = 'Assurances';
-                        else if (motifLabel === 'eau') motifLabel = 'Eau';
-                        else if (motifLabel === 'electricite') motifLabel = 'Electricite';
-                        else if (motifLabel === 'internet') motifLabel = 'Internet';
-                        else if (motifLabel === 'loyer') motifLabel = 'Loyer';
-                        else motifLabel = motifLabel.charAt(0).toUpperCase() + motifLabel.slice(1);
-                        
-                        return `
-                            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
-                                <span class="fw-semibold">${motifLabel}</span>
-                                <span class="text-danger fw-bold">${Math.round(d.total).toLocaleString('fr-FR')} FCFA</span>
-                            </div>
-                        `;
-                    }).join('');
-                } else {
-                    container.innerHTML = '<p class="text-muted mb-0">Aucune depense</p>';
-                }
-            }
-        })
-        .catch(err => {
-            console.error('Erreur:', err);
-            const container = document.getElementById('depensesParMotif');
-            if (container) container.innerHTML = '<p class="text-danger">Erreur chargement</p>';
-        });
+// ============================================
+// RAPPORT DÉTAILLÉ (⭐ 2026-10-14) — un seul appel, mêmes chiffres que le PDF
+// ============================================
+const fcfa = v => Math.round(v || 0).toLocaleString('fr-FR') + ' FCFA';
+const echapper = t => String(t ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const isoLocal = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+function choisirPeriodeRapport(choix) {
+    const auj = new Date();
+    let debut = null, fin = auj;
+    if (choix === 'mois') debut = new Date(auj.getFullYear(), auj.getMonth(), 1);
+    else if (choix === 'mois_precedent') { debut = new Date(auj.getFullYear(), auj.getMonth() - 1, 1); fin = new Date(auj.getFullYear(), auj.getMonth(), 0); }
+    else if (choix === 'annee') debut = new Date(auj.getFullYear(), 0, 1);
+    if (!debut) return;   // personnalisée : on garde les dates saisies
+    document.getElementById('rapportDateDebut').value = isoLocal(debut);
+    document.getElementById('rapportDateFin').value = isoLocal(fin);
+    genererRapport();
 }
 
-// ============================================
-// RAPPORTS
-// ============================================
+function parametresRapport() {
+    return new URLSearchParams({
+        date_debut: document.getElementById('rapportDateDebut').value,
+        date_fin: document.getElementById('rapportDateFin').value,
+    });
+}
+
+// Lignes de détail repliées sous chaque ligne (bouton « détail »)
+let compteurDetail = 0;
+function lignesAvecDetail(colonnes, details, colonnesDetail) {
+    if (!details || !details.length) return `<tr>${colonnes}</tr>`;
+    const id = 'det' + (++compteurDetail);
+    const bouton = `<button type="button" class="btn btn-outline-secondary btn-detail ms-2" onclick="basculerDetail('${id}', this)" aria-expanded="false">détail (${details.length})</button>`;
+    return `<tr>${colonnes.replace('</td>', bouton + '</td>')}</tr>`
+        + details.map(d => `<tr class="ligne-detail ${id} d-none">${colonnesDetail(d)}</tr>`).join('');
+}
+function basculerDetail(id, bouton) {
+    const lignes = document.querySelectorAll('.' + id);
+    const ouvrir = lignes.length && lignes[0].classList.contains('d-none');
+    lignes.forEach(l => l.classList.toggle('d-none', !ouvrir));
+    bouton.setAttribute('aria-expanded', ouvrir ? 'true' : 'false');
+}
+
+function afficherRapport(r) {
+    document.getElementById('rapportPeriodeLibelle').textContent = '— ' + r.periode.libelle;
+    document.getElementById('rapportTotalRecettes').textContent = fcfa(r.total_recettes);
+    document.getElementById('rapportTotalDepenses').textContent = fcfa(r.total_charges);
+    document.getElementById('rapportSolde').textContent = fcfa(r.solde);
+    document.getElementById('rapportMarge').textContent = r.marge + ' %';
+    document.getElementById('rapportEquation').textContent =
+        `Recettes ${fcfa(r.total_recettes)} − charges ${fcfa(r.total_charges)} = solde de la période ${fcfa(r.solde)}`;
+
+    // recettes
+    let html = '';
+    r.recettes.forEach(g => {
+        html += `<tr class="ligne-groupe"><td>${echapper(g.groupe)}</td><td></td><td class="montant">${fcfa(g.total)}</td></tr>`;
+        g.lignes.forEach(l => {
+            html += lignesAvecDetail(
+                `<td>${echapper(l.libelle)}</td><td class="text-end">${l.nombre}</td><td class="montant">${fcfa(l.total)}</td>`,
+                l.details,
+                d => `<td>${d.date ? echapper(d.date) + ' — ' : ''}${echapper(d.libelle)}</td><td class="text-end">${d.nombre}</td><td class="montant">${fcfa(d.total)}</td>`);
+        });
+    });
+    html += r.recettes.length
+        ? `<tr class="ligne-total"><td>TOTAL DES RECETTES</td><td></td><td class="montant">${fcfa(r.total_recettes)}</td></tr>`
+        : '<tr><td colspan="3" class="text-center text-muted py-3">Aucune recette sur la période</td></tr>';
+    document.getElementById('rapportRecettesList').innerHTML = html;
+
+    // charges
+    html = '';
+    r.charges.forEach(m => {
+        html += lignesAvecDetail(
+            `<td>${echapper(m.libelle)}</td><td class="text-end">${m.nombre}</td><td class="text-end">${m.pourcentage} %</td><td class="montant text-danger">${fcfa(m.total)}</td>`,
+            m.details,
+            d => `<td>${echapper(d.date)} — ${echapper(d.libelle)}${d.par ? ' <span class="text-muted">(par ' + echapper(d.par) + ')</span>' : ''}</td><td></td><td></td><td class="montant">${fcfa(d.total)}</td>`);
+    });
+    html += r.charges.length
+        ? `<tr class="ligne-total"><td>TOTAL DES CHARGES</td><td></td><td class="text-end">100 %</td><td class="montant text-danger">${fcfa(r.total_charges)}</td></tr>`
+        : '<tr><td colspan="4" class="text-center text-muted py-3">Aucune charge sur la période</td></tr>';
+    document.getElementById('rapportChargesList').innerHTML = html;
+
+    // activité des ventes
+    const ligneVente = (a, total) => `<tr class="${total ? 'ligne-total' : ''}"><td>${echapper(a.libelle)}</td><td class="text-end">${a.nombre}</td><td class="montant">${fcfa(a.net_patient)}</td><td class="montant">${fcfa(a.encaisse)}</td><td class="montant">${fcfa(a.reste)}</td><td class="montant">${fcfa(a.part_assurances)}</td></tr>`;
+    document.getElementById('rapportVentesList').innerHTML = r.ventes.length
+        ? r.ventes.map(a => ligneVente(a, false)).join('') + ligneVente(Object.assign({libelle: 'TOTAL'}, r.total_ventes), true)
+        : '<tr><td colspan="6" class="text-center text-muted py-3">Aucune vente sur la période</td></tr>';
+}
+
 function genererRapport(options) {
     const silencieux = options && options.silencieux;
-    let dateDebut = document.getElementById('rapportDateDebut').value;
-    let dateFin = document.getElementById('rapportDateFin').value;
-    
-    // Si les dates sont vides, prendre le mois en cours
-    if (!dateDebut || !dateFin) {
-        const today = new Date();
-        const lastMonth = new Date();
-        lastMonth.setMonth(today.getMonth() - 1);
-        dateDebut = lastMonth.toISOString().split('T')[0];
-        dateFin = today.toISOString().split('T')[0];
-        document.getElementById('rapportDateDebut').value = dateDebut;
-        document.getElementById('rapportDateFin').value = dateFin;
+    if (!document.getElementById('rapportDateDebut').value || !document.getElementById('rapportDateFin').value) {
+        const auj = new Date();
+        document.getElementById('rapportDateDebut').value = isoLocal(new Date(auj.getFullYear(), auj.getMonth(), 1));
+        document.getElementById('rapportDateFin').value = isoLocal(auj);
     }
-    
-    let url = `/api/finances/stats?date_debut=${dateDebut}&date_fin=${dateFin}`;
-    let detailUrl = `/api/finances/recettes/detail?date_debut=${dateDebut}&date_fin=${dateFin}`;
-    
     if (silencieux) {
         ['rapportTotalRecettes', 'rapportTotalDepenses', 'rapportSolde', 'rapportMarge'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.innerHTML = '…';
+            document.getElementById(id).textContent = '…';
         });
     } else {
-        showLoader('Génération du rapport...');
+        showLoader('Préparation du rapport...');
     }
-
-    // Appel pour les stats
-    fetch(url)
-        .then(response => response.json())
-        .then(stats => {
-            // Mettre à jour les cartes
-            document.getElementById('rapportTotalRecettes').innerHTML = Math.round(stats.total_recettes || 0).toLocaleString('fr-FR');
-            document.getElementById('rapportTotalDepenses').innerHTML = Math.round(stats.total_depenses || 0).toLocaleString('fr-FR');
-            document.getElementById('rapportSolde').innerHTML = Math.round((stats.total_recettes - stats.total_depenses) || 0).toLocaleString('fr-FR');
-            
-            const marge = stats.total_recettes > 0 ? ((stats.total_recettes - stats.total_depenses) / stats.total_recettes * 100) : 0;
-            document.getElementById('rapportMarge').innerHTML = marge.toFixed(1);
-            
-            // Dépenses par motif
-            const tbody = document.getElementById('rapportMotifsList');
-            if (stats.depenses_par_motif && stats.depenses_par_motif.length > 0) {
-                let totalDepenses = 0;
-                tbody.innerHTML = stats.depenses_par_motif.map(m => {
-                    let motifNom = m.motif_nom || m.motif;
-                    if (motifNom === 'salaire') motifNom = 'Salaires';
-                    else if (motifNom === 'reparation') motifNom = 'Reparations';
-                    else if (motifNom === 'fourniture') motifNom = 'Fournitures';
-                    else if (motifNom === 'assurance') motifNom = 'Assurances';
-                    else motifNom = motifNom.charAt(0).toUpperCase() + motifNom.slice(1);
-                    
-                    const montant = m.total;
-                    totalDepenses += montant;
-                    const pourcentage = stats.total_depenses > 0 ? ((montant / stats.total_depenses) * 100).toFixed(1) : 0;
-                    return `
-                        <tr>
-                            <td>${motifNom}</td>
-                            <td class="text-end text-danger">${Math.round(montant).toLocaleString('fr-FR')} FCFA</td>
-                            <td class="text-end">${pourcentage}%</td>
-                        </tr>
-                    `;
-                }).join('');
-                document.getElementById('totalDepensesFooter').innerHTML = Math.round(totalDepenses).toLocaleString('fr-FR') + ' FCFA';
-            } else {
-                tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-4">Aucune dépense</td></tr>';
-                document.getElementById('totalDepensesFooter').innerHTML = '0 FCFA';
-            }
-            
-            return fetch(detailUrl);
-        })
-        .then(response => response.json())
-        .then(data => {
-            // 🔥 CORRECTION : Utiliser les bonnes données
-            let recettesActes = 0;
-            let recettesPharma = 0;
-            let nbActes = 0;
-            let nbPharma = 0;
-            
-            // 🔥 Vérifier la structure des données retournées
-            const recettesList = data.recettes || data || [];
-            
-            if (recettesList.length) {
-                recettesList.forEach(item => {
-                    // 🔥 Utiliser total_net (net_a_payer) au lieu de total_recettes
-                    const montant = item.total_net || item.total_recettes || 0;
-                    
-                    if (item.type === 'actes') {
-                        recettesActes = montant;
-                        nbActes = item.nombre_ventes || 0;
-                    } else if (item.type === 'pharmacie' || item.type === 'pharma') {
-                        recettesPharma = montant;
-                        nbPharma = item.nombre_ventes || 0;
-                    }
-                });
-            }
-            
-            // Mettre à jour l'affichage
-            document.getElementById('rapportRecettesActes').innerHTML = Math.round(recettesActes).toLocaleString('fr-FR') + ' FCFA';
-            document.getElementById('rapportRecettesPharma').innerHTML = Math.round(recettesPharma).toLocaleString('fr-FR') + ' FCFA';
-            document.getElementById('rapportNbActes').innerHTML = nbActes;
-            document.getElementById('rapportNbPharma').innerHTML = nbPharma;
-            
-            // 🔥 Afficher les détails des montants (optionnel)
-            if (data.totaux) {
-                console.log('💰 Net payé total:', data.totaux.total_net);
-                console.log('💰 Montant donné total:', data.totaux.total_donne);
-                console.log('💰 Rendu total:', data.totaux.total_rendu);
-            }
-            
+    fetch('/api/finances/rapport?' + parametresRapport())
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(r => { afficherRapport(r); hideLoader(); })
+        .catch(async e => {
             hideLoader();
-        })
-        .catch(async error => {
-            hideLoader();
-            console.error('Erreur:', error);
-            await afficherMessage('Erreur lors de la génération du rapport', {type: 'danger'});
+            console.error('Rapport :', e);
+            await afficherMessage('Le rapport n\'a pas pu être préparé. Réessayez.', {type: 'danger'});
         });
 }
 
-async function exporterRapport() {
-    const dateDebut = document.getElementById('rapportDateDebut').value;
-    const dateFin = document.getElementById('rapportDateFin').value;
-    
-    if (!dateDebut || !dateFin) {
-        await afficherMessage('Veuillez sélectionner une période avant d\'exporter');
-        return;
-    }
-    
-    const url = `/api/finances/export/csv?date_debut=${dateDebut}&date_fin=${dateFin}`;
-    window.open(url, '_blank');
-}
-
-function imprimerRapport() {
-    window.print();
+// PDF verrouillé (impression permise, modification interdite) — remplace l'export CSV
+function ouvrirRapportPdf(telecharger) {
+    const params = parametresRapport();
+    if (telecharger) params.set('telecharger', '1');
+    window.open('/finances/rapport/pdf?' + params, '_blank');
 }
 
 // ============================================
@@ -983,28 +841,16 @@ function imprimerRapport() {
 // le rapport (2 + 2 demandes, avec écran de chargement) n'est plus fabriqué en arrière-plan
 // à l'ouverture : il se prépare quand on ouvre l'onglet Rapports.
 document.addEventListener('DOMContentLoaded', function() {
-    // Définir les dates par défaut pour le rapport
-    const today = new Date();
-    const lastMonth = new Date();
-    lastMonth.setMonth(today.getMonth() - 1);
-    
-    const dateDebut = document.getElementById('rapportDateDebut');
-    const dateFin = document.getElementById('rapportDateFin');
-    
-    if (dateDebut) dateDebut.value = lastMonth.toISOString().split('T')[0];
-    if (dateFin) dateFin.value = today.toISOString().split('T')[0];
-    
+    // Période par défaut du rapport : le mois en cours
+    const auj = new Date();
+    document.getElementById('rapportDateDebut').value = isoLocal(new Date(auj.getFullYear(), auj.getMonth(), 1));
+    document.getElementById('rapportDateFin').value = isoLocal(auj);
 });
 
 // Rapport (re)calculé à chaque ouverture de l'onglet Rapports, sans écran de chargement
-let detailFinancesCharge = false;
 const rapportsTab = document.getElementById('rapports-tab');
 if (rapportsTab) {
     rapportsTab.addEventListener('shown.bs.tab', function() {
-        if (!detailFinancesCharge) {
-            detailFinancesCharge = true;
-            chargerDetailFinances();
-        }
         genererRapport({silencieux: true});
     });
 }

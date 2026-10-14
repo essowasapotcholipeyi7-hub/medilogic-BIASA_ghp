@@ -67,7 +67,7 @@
                         <td>{{ f.date_depot.strftime('%d/%m/%Y') if f.date_depot else '—' }}</td>
                         <td>
                             {% if not f.encaissement %}
-                            <span class="badge bg-secondary" title="Générez d'abord les factures assurance du mois depuis Statistiques des ventes.">
+                            <span class="badge bg-secondary" title="Générez d'abord les factures assurance du mois depuis Assurances &amp; statistiques.">
                                 Non générée
                             </span>
                             {% elif f.encaissement.reste <= 0.5 %}

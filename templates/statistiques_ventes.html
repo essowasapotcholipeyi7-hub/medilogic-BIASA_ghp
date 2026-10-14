@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Statistiques des ventes{% endblock %}
+{% block title %}Assurances &amp; statistiques{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -44,13 +44,10 @@
 {% block content %}
         <!-- Onglets -->
         <ul class="nav nav-tabs mb-4" id="statsTab" role="tablist">
+            {# ⭐ 2026-10-14 (patron) : sous-onglet « Ventes » retiré — c'était la même liste que
+               l'Historique des ventes, en moins complet. #}
             <li class="nav-item">
-                <button class="nav-link active" id="ventes-tab" data-bs-toggle="tab" data-bs-target="#ventes" type="button" role="tab">
-                    <i class="fas fa-chart-line"></i> Ventes
-                </button>
-            </li>
-            <li class="nav-item">
-                <button class="nav-link" id="assurances-tab" data-bs-toggle="tab" data-bs-target="#assurances" type="button" role="tab">
+                <button class="nav-link active" id="assurances-tab" data-bs-toggle="tab" data-bs-target="#assurances" type="button" role="tab">
                     <i class="fas fa-shield-alt"></i> Assurances
                 </button>
             </li>
@@ -62,151 +59,8 @@
         </ul>
 
         <div class="tab-content">
-            <!-- ========== ONGLET VENTES ========== -->
-            <div class="tab-pane fade show active" id="ventes" role="tabpanel">
-                <div class="card">
-                    <div class="card-header bg-primary text-white">
-                        <h5><i class="fas fa-chart-bar"></i> Statistiques des ventes</h5>
-                    </div>
-                    <div class="card-body">
-                        <!-- Cartes recap -->
-                        <div class="row g-3 mb-4">
-                            <div class="col-md-3">
-                                <div class="card stats-card border-0 shadow-sm bg-success bg-opacity-10">
-                                    <div class="card-body text-center">
-                                        <h3 class="text-success" id="totalVentes">0</h3>
-                                        <small class="text-muted">Total ventes</small>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="card stats-card border-0 shadow-sm bg-info bg-opacity-10">
-                                    <div class="card-body text-center">
-                                        <h3 class="text-info" id="totalCA">0 FCFA</h3>
-                                        <small class="text-muted">Chiffre d'affaires</small>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="card stats-card border-0 shadow-sm bg-warning bg-opacity-10">
-                                    <div class="card-body text-center">
-                                        <h3 class="text-warning" id="totalActes">0</h3>
-                                        <small class="text-muted">Actes</small>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="card stats-card border-0 shadow-sm bg-danger bg-opacity-10">
-                                    <div class="card-body text-center">
-                                        <h3 class="text-danger" id="totalPharma">0</h3>
-                                        <small class="text-muted">Pharmacie</small>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Filtres -->
-                        <div class="filter-bar">
-                            <div class="row g-2">
-                                <div class="col-md-2">
-                                    <label class="form-label small">Date debut</label>
-                                    <input type="date" id="filtreDateDebut" class="form-control form-control-sm">
-                                </div>
-                                <div class="col-md-2">
-                                    <label class="form-label small">Date fin</label>
-                                    <input type="date" id="filtreDateFin" class="form-control form-control-sm">
-                                </div>
-                                <div class="col-md-2">
-                                    <label class="form-label small">Heure debut</label>
-                                    <input type="time" id="filtreHeureDebut" class="form-control form-control-sm">
-                                </div>
-                                <div class="col-md-2">
-                                    <label class="form-label small">Heure fin</label>
-                                    <input type="time" id="filtreHeureFin" class="form-control form-control-sm">
-                                </div>
-                                <div class="col-md-2">
-                                    <label class="form-label small">Type</label>
-                                    <select id="filtreType" class="form-control form-control-sm">
-                                        <option value="tous">Tous</option>
-                                        <option value="actes">Actes</option>
-                                        <option value="pharmacie">Pharmacie</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-2">
-                                    <label class="form-label small">Statut paiement</label>
-                                    <select id="filtreStatutPaiement" class="form-control form-control-sm">
-                                        <option value="tous">Tous</option>
-                                        <option value="total">✅ Total</option>
-                                        <option value="partiel">⚠️ Partiel</option>
-                                        <option value="impaye">❌ Impayé</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="row mt-2 g-2">
-                                <div class="col-md-3">
-                                    <label class="form-label small">Patient</label>
-                                    <input type="text" id="filtrePatient" class="form-control form-control-sm" 
-                                           placeholder="Nom du patient">
-                                </div>
-                                <div class="col-md-3">
-                                    <label class="form-label small">Vendeur</label>
-                                    <input type="text" id="filtreVendeur" class="form-control form-control-sm" 
-                                           placeholder="Nom du vendeur">
-                                </div>
-                                <div class="col-md-6 d-flex gap-2">
-                                    <button class="btn btn-primary btn-sm" onclick="appliquerFiltres()">
-                                        <i class="fas fa-search"></i> Filtrer
-                                    </button>
-                                    <button class="btn btn-secondary btn-sm" onclick="resetFiltres()">
-                                        <i class="fas fa-sync-alt"></i> Reset
-                                    </button>
-                                    <button class="btn btn-success btn-sm" onclick="exporterCSV()">
-                                        <i class="fas fa-file-excel"></i> Export
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Tableau -->
-                        <div class="table-responsive">
-                            <table class="table table-hover table-sm" id="ventesStatsTable">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>ID</th>
-                                        <th>Date</th>
-                                        <th>Heure</th>
-                                        <th>Patient</th>
-                                        <th>Type</th>
-                                        <th>Détail</th>
-                                        <th>PBR</th>
-                                        <th>Net à payer</th>
-                                        <th>Payé</th>
-                                        <th>Reste</th>
-                                        <th>Statut paiement</th>
-                                        <th>Assurances</th>
-                                        <th>Vendeur</th>
-                                        <th>Statut</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="ventesStatsList">
-                                    <tr><td colspan="14" class="text-center">Chargement...</td></tr>
-                                </tbody>
-                                <tfoot class="table-light">
-                                    <tr class="fw-bold">
-                                        <td colspan="8" class="text-end">Total encaissé :</td>
-                                        <td id="totalPayeFooter">0 FCFA</td>
-                                        <td id="totalResteFooter">0 FCFA</td>
-                                        <td colspan="4"></td>
-                                    </tr>
-                                </tfoot>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <!-- ========== ONGLET ASSURANCES ========== -->
-            <div class="tab-pane fade" id="assurances" role="tabpanel">
+            <div class="tab-pane fade show active" id="assurances" role="tabpanel">
                 <div class="card">
                     <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
                         <h5><i class="fas fa-shield-alt"></i> Suivi des assurances</h5>
@@ -678,11 +532,9 @@ document.addEventListener('DOMContentLoaded', function() {
         factureMois.value = currentMonth;
     }
     
-    // ⭐ 2026-10-14 : chaque onglet charge ses données quand on l'ouvre (avant : toutes les
-    // ventes ET les statistiques des assurances au chargement, quel que soit l'onglet affiché)
-    const ongletDemande = new URLSearchParams(location.search).get('onglet') || location.hash.replace('#', '');
-    if (!ongletDemande || ongletDemande === 'ventes' || !document.getElementById(ongletDemande + '-tab')) chargerVentesUneFois();
-    document.getElementById('ventes-tab')?.addEventListener('shown.bs.tab', chargerVentesUneFois);
+    // ⭐ 2026-10-14 : l'onglet Assurances (ouvert par défaut) affiche tout de suite les
+    // factures du mois ; les statistiques se chargent à l'ouverture de leur onglet.
+    chargerFactures();
     
     // Initialiser les dates pour les stats
     const now = new Date();

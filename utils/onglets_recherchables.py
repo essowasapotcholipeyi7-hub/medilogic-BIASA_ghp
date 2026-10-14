@@ -87,7 +87,7 @@ def onglets_recherchables(role, is_admin, a_acces, onglet_cache_fn, bloq):
     ajouter('Part Médecin', 'page_part_medecin',
             not role_labo_radio and not onglet_cache_fn('part_medecin') and not bloq
             and role in ('admin', 'secretaire', 'caissier', 'gestionnaire', 'comptable'))
-    ajouter('Statistiques ventes/assurances', 'statistiques_ventes',
+    ajouter('Assurances & statistiques', 'statistiques_ventes',
             not role_labo_radio and a_acces('statistiques') and not onglet_cache_fn('statistiques') and not bloq)
     ajouter('Demandes en attente', 'page_validations',
             not role_labo_radio and (is_admin or role == 'gestionnaire'))

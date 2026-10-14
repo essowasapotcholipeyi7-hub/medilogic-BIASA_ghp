@@ -25,7 +25,7 @@ PERMISSIONS = {
     'rappels': 'Rappels des rendez-vous',
     'comptabilite': 'Comptabilité',
     'finances': 'Finances / Caisse & Charges',
-    'statistiques': 'Statistiques ventes/assurances',
+    'statistiques': 'Assurances & statistiques',
     'annulations': 'Historique des annulations',
     'journal': 'Journal des mouvements',
     'rh': 'Ressources humaines',

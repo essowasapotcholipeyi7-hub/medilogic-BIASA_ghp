@@ -435,25 +435,12 @@ function chargerAlertesStock() {
     const carte = document.getElementById('carteAlertesStock');
     if (!carte) return; // rôle non autorisé à voir cette carte (absente du DOM)
 
-    fetch('/api/produits')
+    // ⭐ 2026-10-14 : les trois compteurs sont calculés par le serveur (/api/produits/alertes,
+    // mêmes seuils que la page Gestion de stock) — plus de téléchargement de toute la liste.
+    fetch('/api/produits/alertes')
         .then(r => r.json())
-        .then(produits => {
-            // Mêmes seuils que la page Gestion de stock (updateStats()) :
-            // stock bas = quantite_stock <= seuil_alerte, péremption
-            // proche = dans les 30 jours, périmé = date dépassée.
-            const today = new Date();
-            const dateLimite = new Date();
-            dateLimite.setDate(dateLimite.getDate() + 30);
-
-            let perimes = 0, bientotPerimes = 0, stockBas = 0;
-            (produits || []).forEach(p => {
-                if (p.date_peremption) {
-                    const perempDate = new Date(p.date_peremption);
-                    if (perempDate < today) perimes++;
-                    else if (perempDate <= dateLimite) bientotPerimes++;
-                }
-                if ((p.quantite_stock || 0) <= (p.seuil_alerte || 10)) stockBas++;
-            });
+        .then(a => {
+            const perimes = a.perimes || 0, bientotPerimes = a.peremption_proche || 0, stockBas = a.stock_bas || 0;
 
             document.getElementById('alertePerimes').textContent = perimes;
             document.getElementById('alertePeremptionProche').textContent = bientotPerimes;
