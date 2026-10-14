@@ -640,6 +640,28 @@ class SheetsHelper:
     # ============================================
     # MÉTHODES DE MANIPULATION DES DONNÉES
     # ============================================
+    def prechauffer(self, noms_feuilles):
+        """⭐ 2026-10-14 (patron : « certains onglets prennent du temps pour s'afficher ») :
+        Proformas et Prescriptions reçues lisaient deux feuilles l'une APRÈS l'autre
+        (≈ 0,4 s chacune chez Google, et le cache ne dure que 10 s). Lit EN MÊME TEMPS
+        celles dont le cache a expiré — même lecture que get_all_records(), mêmes
+        données, simplement en parallèle ; les appels suivants les trouvent en cache.
+        `noms_feuilles` : noms complets (préfixe struct_N_ déjà appliqué)."""
+        maintenant = time.time()
+        a_lire = []
+        for nom in dict.fromkeys(noms_feuilles):
+            en_cache = self._cache.get(nom)
+            if not en_cache or maintenant - en_cache[1] >= self._durees_cache.get(nom, self._cache_duration):
+                a_lire.append(nom)
+        if len(a_lire) < 2:
+            return
+        from concurrent.futures import ThreadPoolExecutor
+        try:
+            with ThreadPoolExecutor(max_workers=len(a_lire)) as pool:
+                list(pool.map(lambda nom: self.get_all_records(nom, use_prefix=False), a_lire))
+        except Exception as e:
+            print(f"⚠️ Préchauffage des feuilles {a_lire} : {e}")   # les lectures normales suivent
+
     def _onglet(self, sheet_name):
         """L'onglet Google Sheets, retrouvé une seule fois (évite un appel par lecture)."""
         if sheet_name not in self._onglets:

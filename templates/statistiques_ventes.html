@@ -678,20 +678,18 @@ document.addEventListener('DOMContentLoaded', function() {
         factureMois.value = currentMonth;
     }
     
-    // Charger les ventes
-    chargerVentes();
+    // ⭐ 2026-10-14 : chaque onglet charge ses données quand on l'ouvre (avant : toutes les
+    // ventes ET les statistiques des assurances au chargement, quel que soit l'onglet affiché)
+    const ongletDemande = new URLSearchParams(location.search).get('onglet') || location.hash.replace('#', '');
+    if (!ongletDemande || ongletDemande === 'ventes' || !document.getElementById(ongletDemande + '-tab')) chargerVentesUneFois();
+    document.getElementById('ventes-tab')?.addEventListener('shown.bs.tab', chargerVentesUneFois);
     
     // Initialiser les dates pour les stats
     const now = new Date();
     document.getElementById('statsDateDebut').value = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
     document.getElementById('statsDateFin').value = now.toISOString().split('T')[0];
     
-    // Charger les assurances puis les stats
-    chargerAssurances().then(() => {
-        chargerStatsAssurances();
-    });
-    
-    // Recharger les stats quand l'onglet est activé
+    // Charger les stats quand l'onglet est activé (à chaque ouverture)
     document.getElementById('statsassurances-tab').addEventListener('shown.bs.tab', function() {
         chargerAssurances().then(() => {
             chargerStatsAssurances();
@@ -712,6 +710,13 @@ document.addEventListener('DOMContentLoaded', function() {
 // ============================================================
 // ONGLET VENTES
 // ============================================================
+let ventesDemandees = false;
+function chargerVentesUneFois() {
+    if (ventesDemandees) return;
+    ventesDemandees = true;
+    chargerVentes();
+}
+
 function chargerVentes() {
     const ventesList = document.getElementById('ventesStatsList');
     if (!ventesList) return;

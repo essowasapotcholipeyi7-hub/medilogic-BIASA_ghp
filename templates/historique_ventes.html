@@ -465,22 +465,35 @@ function toggleFiltres() {
 // ============================================
 // CHARGEMENT HISTORIQUE
 // ============================================
+// ⭐ 2026-10-14 (patron : « le chargement se fait deux fois de suite ») : les ventes et
+// leurs compléments (règlements de créance, parts déjà remboursées) sont demandés EN MÊME
+// TEMPS et la liste n'est dessinée qu'une fois les deux reçus — avant, la liste
+// s'affichait, puis les compléments arrivaient et elle était redessinée.
 function chargerHistorique() {
     showLoader('Chargement des ventes...');
-    
-    fetch('/api/ventes/all')
-        .then(function(response) {
+
+    var complements = fetch('/api/ventes/historique_complements')
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .catch(function(e) { console.error('Compléments historique :', e); return null; });
+
+    Promise.all([
+        fetch('/api/ventes/all').then(function(response) {
             if (!response.ok) throw new Error('Erreur HTTP: ' + response.status);
             return response.json();
-        })
-        .then(function(ventes) {
-            toutesLesVentes = ventes || [];
-            console.log('Ventes chargées:', toutesLesVentes.length);
+        }),
+        complements
+    ])
+        .then(function(resultats) {
+            toutesLesVentes = resultats[0] || [];
+            var c = resultats[1];
+            if (c) {
+                toutesLesReglements = c.reglements || [];
+                assurancesPayees = c.assurances_payees || {};
+            }
             peuplerFiltresAssuranceSociete();
             filtrerHistorique();
             changerPeriodeStats('tous');
             hideLoader();
-            chargerComplementsHistorique();
         })
         .catch(function(error) {
             console.error('❌ Erreur:', error);

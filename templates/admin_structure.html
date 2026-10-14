@@ -713,6 +713,8 @@ document.getElementById('structureForm').addEventListener('submit', function(e) 
     };
 
     showLoader();
+    // les infos gardées 10 min par base.html seront relues après l'enregistrement
+    try { localStorage.removeItem('structureInfosMemo'); } catch (e) {}
     fetch('/api/admin/structure', {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},

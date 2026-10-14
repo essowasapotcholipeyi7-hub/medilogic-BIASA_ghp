@@ -2004,7 +2004,7 @@
        posait ses couleurs sur chaque élément et l'emportait sur les règles d'impression
        (texte gris pâle, voire fond noir, sur les reçus imprimés en thème sombre). #}
     {% if theme_css and not (cacher_navigation is defined and cacher_navigation) %}<style id="themeStructure">{{ theme_css|safe }}</style>{% endif %}
-    {% if session.user_id and not (cacher_navigation is defined and cacher_navigation) %}<script src="{{ url_for('static', filename='js/theme_sombre.js') }}?v=3" defer></script>{% endif %}
+    {% if session.user_id and not (cacher_navigation is defined and cacher_navigation) %}<script src="{{ url_for('static', filename='js/theme_sombre.js') }}" defer></script>{% endif %}
 <script>
 // ⭐ Bande passante (2026-10-12) : chaque vérification automatique (badges,
 // messages, tableau de bord...) interroge le serveur et la base, même quand
@@ -3257,9 +3257,31 @@ function getStructureNom(callback) {
         .catch(() => callback('Notre établissement'));
 }
     
+// ⭐ 2026-10-14 : les infos de la structure étaient demandées DEUX fois à chaque
+// changement d'onglet (ici et pour le logo plus bas). Une seule demande par page,
+// et gardée 10 minutes dans le navigateur ; un changement de structure, de nom, de
+// logo ou de téléphone (session) la fait redemander aussitôt.
+function infosStructure() {
+    if (!window._infosStructure) {
+        const signature = {{ [session.get('structure_id'), session.get('structure_nom'), session.get('structure_logo'), session.get('structure_telephone')]|tojson }};
+        let memo = null;
+        try { memo = JSON.parse(localStorage.getItem('structureInfosMemo') || 'null'); } catch (e) {}
+        if (memo && JSON.stringify(memo.signature) === JSON.stringify(signature) && Date.now() - memo.t < 600000) {
+            window._infosStructure = Promise.resolve(memo.data);
+        } else {
+            window._infosStructure = fetch('/api/structure/infos')
+                .then(response => response.json())
+                .then(data => {
+                    try { localStorage.setItem('structureInfosMemo', JSON.stringify({signature, t: Date.now(), data})); } catch (e) {}
+                    return data;
+                });
+        }
+    }
+    return window._infosStructure;
+}
+
 function chargerInfosStructure() {
-    fetch('/api/structure/infos')
-        .then(response => response.json())
+    infosStructure()
         .then(data => {
             if (data.nom) localStorage.setItem('structureNom', data.nom);
             if (data.telephone) localStorage.setItem('structureTelephone', data.telephone);
@@ -3370,9 +3392,8 @@ document.addEventListener('click', function(e) {
 document.addEventListener('DOMContentLoaded', function() {
     loadSelectedPatient();
     
-    // Logo via API
-    fetch('/api/structure/infos')
-        .then(response => response.json())
+    // Logo (même demande que chargerInfosStructure, faite une seule fois)
+    infosStructure()
         .then(data => {
             if (data.logo_url) {
                 const brand = document.querySelector('.structure-brand');

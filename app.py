@@ -96,6 +96,9 @@ app.secret_key = Config.SECRET_KEY
 # ⭐ réponses compressées en gzip (bande passante Render) — voir utils/compression.py
 from utils.compression import activer_compression
 activer_compression(app)
+# ⭐ fichiers statiques gardés par le navigateur (adresse versionnée) — voir utils/cache_statique.py
+from utils.cache_statique import activer_cache_statique
+activer_cache_statique(app)
 # ⭐ heures de calcul Neon : les tâches automatiques ne réveillent plus la base
 # quand personne ne travaille — voir utils/activite.py
 from utils.activite import noter_activite, activite_recente
@@ -6237,164 +6240,11 @@ def recu_structure(vente_id, type):
 @app.route('/historique_ventes')
 @login_required
 def historique_ventes():
-    """Affiche l'historique des ventes avec stats"""
-    structure_id = session.get('structure_id')
-    
-    # ========== 1. VENTES ACTES (Neon) ==========
-    ventes_actes_db = db.execute_query("""
-        SELECT
-            id, patient_nom, net_a_payer, taux_assurance,
-            date_vente, actes, created_by_nom,
-            montant_donne, rendu,
-            sous_total, prise_en_charge, prise_en_charge2,
-            applique_tva
-        FROM ventes
-        WHERE structure_id = %s
-        AND type = 'actes'
-        AND (statut IS NULL OR statut != 'annulee')
-        ORDER BY date_vente DESC
-    """, (structure_id,))
-    
-    ventes_actes = []
-    ca_actes = 0
-    
-    for v in ventes_actes_db:
-        if isinstance(v, dict):
-            import json
-            actes_data = v.get('actes')
-            if isinstance(actes_data, str):
-                try:
-                    actes_data = json.loads(actes_data)
-                except:
-                    actes_data = []
-            
-            nom_acte = 'Acte'
-            if actes_data and len(actes_data) > 0:
-                nom_acte = actes_data[0].get('nom', 'Acte')
-            
-            montant_donne = float(v.get('montant_donne') or 0)
-            rendu = float(v.get('rendu') or 0)
-            ca_effectif = montant_donne - rendu
-            ca_actes += ca_effectif
-            
-            ventes_actes.append({
-                'ID': v.get('id'),
-                'patient_nom': v.get('patient_nom', 'Patient'),
-                'type': 'actes',
-                'acte_nom': nom_acte,
-                'net_a_payer': float(v.get('net_a_payer') or 0),
-                'taux_assurance': v.get('taux_assurance', 0),
-                'date': str(v.get('date_vente', '')),
-                'created_by_nom': v.get('created_by_nom', 'System'),
-                'montant_donne': montant_donne,
-                'rendu': rendu,
-                'ca_effectif': ca_effectif,
-                'applique_tva': bool(v.get('applique_tva', False))
-            })
-
-    # ========== 2. VENTES PHARMACIE (Neon) ==========
-    ventes_pharma_db = db.execute_query("""
-        SELECT
-            id, patient_nom, net_a_payer, taux_assurance,
-            date_vente, produits, created_by_nom,
-            montant_donne, rendu,
-            applique_tva
-        FROM ventes
-        WHERE structure_id = %s
-        AND type IN ('pharma', 'pharmacie')
-        AND (statut IS NULL OR statut != 'annulee')
-        ORDER BY date_vente DESC
-    """, (structure_id,))
-    
-    ventes_pharma = []
-    ca_pharma = 0
-    
-    for v in ventes_pharma_db:
-        if isinstance(v, dict):
-            import json
-            produits_data = v.get('produits')
-            if isinstance(produits_data, str):
-                try:
-                    produits_data = json.loads(produits_data)
-                except:
-                    produits_data = []
-            
-            nom_produit = 'Produit'
-            if produits_data and len(produits_data) > 0:
-                nom_produit = produits_data[0].get('nom', 'Produit')
-            
-            montant_donne = float(v.get('montant_donne') or 0)
-            rendu = float(v.get('rendu') or 0)
-            ca_effectif = montant_donne - rendu
-            ca_pharma += ca_effectif
-            
-            ventes_pharma.append({
-                'ID': v.get('id'),
-                'patient_nom': v.get('patient_nom', 'Patient'),
-                'type': 'pharma',
-                'acte_nom': nom_produit,
-                'produit_nom': nom_produit,
-                'net_a_payer': float(v.get('net_a_payer') or 0),
-                'taux_assurance': v.get('taux_assurance', 0),
-                'date': str(v.get('date_vente', '')),
-                'created_by_nom': v.get('created_by_nom', 'System'),
-                'montant_donne': montant_donne,
-                'rendu': rendu,
-                'ca_effectif': ca_effectif,
-                'applique_tva': bool(v.get('applique_tva', False))
-            })
-
-    # ========== 3. FUSIONNER ET TRIER ==========
-    toutes_ventes = ventes_actes + ventes_pharma
-    
-    def get_date_key(x):
-        date_val = x.get('date', '')
-        return str(date_val) if date_val else ''
-    
-    toutes_ventes.sort(key=get_date_key, reverse=True)
-    
-    # ========== 4. STATISTIQUES ==========
-    total_actes = len(ventes_actes)
-    total_pharma = len(ventes_pharma)
-    
-    # 🔥 CA total = somme des CA effectifs
-    ca_total = ca_actes + ca_pharma
-    
-    # Top actes
-    actes_count = {}
-    for v in ventes_actes:
-        nom = v.get('acte_nom', 'Acte')
-        # Compter les ventes, pas les quantités (car on a pas la quantité dans la vente)
-        if nom not in actes_count:
-            actes_count[nom] = {'quantite': 0, 'total': 0}
-        actes_count[nom]['quantite'] += 1
-        actes_count[nom]['total'] += v.get('net_a_payer', 0)
-    
-    top_actes = sorted(actes_count.items(), key=lambda x: x[1]['quantite'], reverse=True)[:5]
-    top_actes_list = [{'nom': k, 'quantite': v['quantite'], 'total': v['total']} for k, v in top_actes]
-    
-    # Top produits
-    produits_count = {}
-    for v in ventes_pharma:
-        nom = v.get('produit_nom', 'Produit')
-        if nom not in produits_count:
-            produits_count[nom] = {'quantite': 0, 'total': 0}
-        produits_count[nom]['quantite'] += 1
-        produits_count[nom]['total'] += v.get('net_a_payer', 0)
-    
-    top_produits = sorted(produits_count.items(), key=lambda x: x[1]['quantite'], reverse=True)[:5]
-    top_produits_list = [{'nom': k, 'quantite': v['quantite'], 'total': v['total']} for k, v in top_produits]
-    
-    stats = {
-        'total_ventes': len(toutes_ventes),
-        'total_actes': total_actes,
-        'total_pharma': total_pharma,
-        'ca_total': ca_total,  # ✅ CA corrigé
-        'top_actes': top_actes_list,
-        'top_produits': top_produits_list
-    }
-    
-    return render_template('historique_ventes.html', ventes=toutes_ventes, stats=stats)
+    """Historique des ventes. ⭐ 2026-10-14 (patron : « le chargement se fait deux fois
+    de suite ») : la page relisait ici TOUTES les ventes (deux requêtes + statistiques)
+    sans jamais s'en servir — la liste et les totaux viennent de /api/ventes/all, chargé
+    une seule fois par la page."""
+    return render_template('historique_ventes.html')
 
 # ========== ADMIN STRUCTURE API ==========
 @app.route('/api/admin/users', methods=['POST'])
@@ -17232,51 +17082,30 @@ def api_get_annulations():
 @login_required
 @permission_requise('finances')
 def admin_finances():
-    """Page d'administration financière"""
+    """Page d'administration financière (caisse et charges).
+    ⭐ 2026-10-14 : ne lit plus toutes les recettes ni la table caisse (inutilisées par la
+    page) ; les deux totaux en une requête ; les cartes sont affichées telles quelles, la
+    page ne les recharge plus."""
     structure_id = session.get('structure_id')
-    
-    # 🔥 Récupérer les recettes (exclure les annulations)
-    recettes = db.execute_query("""
-        SELECT * FROM recettes 
-        WHERE structure_id = %s 
-        AND (est_annulation IS NULL OR est_annulation = FALSE)
-        ORDER BY date_recette DESC
-    """, (structure_id,))
-    
-    # Récupérer les dépenses
+
     depenses = db.execute_query("""
-        SELECT * FROM depenses 
-        WHERE structure_id = %s 
+        SELECT * FROM depenses
+        WHERE structure_id = %s
         ORDER BY date_depense DESC
     """, (structure_id,))
-    
-    # Récupérer le solde de caisse
-    caisse = db.execute_query("""
-        SELECT * FROM caisse WHERE structure_id = %s
-    """, (structure_id,))
-    
-    solde = caisse[0]['solde_actuel'] if caisse and len(caisse) > 0 else 0
-    
-    # 🔥 Calculer les totaux (exclure annulations)
-    total_recettes = db.execute_query("""
-        SELECT COALESCE(SUM(montant), 0) as total 
-        FROM recettes 
-        WHERE structure_id = %s 
-        AND (est_annulation IS NULL OR est_annulation = FALSE)
-    """, (structure_id,))
-    total_recettes = total_recettes[0]['total'] if total_recettes else 0
-    
-    total_depenses = db.execute_query("""
-        SELECT COALESCE(SUM(montant), 0) as total 
-        FROM depenses 
-        WHERE structure_id = %s
-    """, (structure_id,))
-    total_depenses = total_depenses[0]['total'] if total_depenses else 0
-    
+
+    # 🔥 recettes hors annulations (même calcul que /api/finances/stats)
+    totaux = db.execute_query("""
+        SELECT
+            (SELECT COALESCE(SUM(montant), 0) FROM recettes
+              WHERE structure_id = %s AND (est_annulation IS NULL OR est_annulation = FALSE)) AS total_recettes,
+            (SELECT COALESCE(SUM(montant), 0) FROM depenses WHERE structure_id = %s) AS total_depenses
+    """, (structure_id, structure_id))
+    total_recettes = totaux[0]['total_recettes'] if totaux else 0
+    total_depenses = totaux[0]['total_depenses'] if totaux else 0
+
     return render_template('admin_finances.html',
-                         recettes=recettes,
                          depenses=depenses,
-                         solde=solde,
                          total_recettes=total_recettes,
                          total_depenses=total_depenses)
 
@@ -18116,36 +17945,9 @@ def api_finances_sources():
 @login_required
 @permission_requise('statistiques')
 def statistiques_ventes():
-    """Page des statistiques de ventes"""
-    structure_id = session.get('structure_id')
-    
-    # Recuperer toutes les ventes (y compris annulees pour les stats)
-    ventes = db.execute_query("""
-        SELECT 
-            v.id,
-            v.patient_nom,
-            v.type,
-            v.net_a_payer,
-            v.montant_donne,
-            v.reste_a_payer,
-            v.base_remboursement,
-            v.sous_total,
-            v.taux_assurance,
-            v.date_vente,
-            v.mode_paiement,
-            v.statut,
-            v.created_by_nom as vendeur,
-            v.actes,
-            v.produits,
-            v.assurance2_nom,
-            v.taux_assurance2,
-            v.prise_en_charge2
-        FROM ventes v
-        WHERE v.structure_id = %s
-        ORDER BY v.date_vente DESC
-    """, (structure_id,))
-    
-    return render_template('statistiques_ventes.html', ventes=ventes)
+    """Page des statistiques de ventes. ⭐ 2026-10-14 : plus de lecture de toutes les
+    ventes ici — la page ne s'en servait pas (liste chargée par /api/ventes/all)."""
+    return render_template('statistiques_ventes.html')
 
 # ========== API ASSURANCES ==========
 @app.route('/api/assurances/factures', methods=['POST'])
@@ -19404,7 +19206,8 @@ def proformas():
     
     stats = stats[0] if stats else {'total': 0, 'en_attente': 0, 'acceptees': 0, 'converties': 0, 'total_montant': 0}
     
-    # Récupérer les actes et produits depuis Google Sheets
+    # Récupérer les actes et produits depuis Google Sheets (lus en parallèle)
+    sheets_helper.prechauffer([sheets_helper.get_sheet_name('actes'), sheets_helper.get_sheet_name('produits')])
     actes = sheets_helper.get_all_records('actes')
     produits = sheets_helper.get_all_records('produits')
 
@@ -25554,7 +25357,8 @@ def prescriptions_recues():
         except Exception:
             counts = {'attente': 0, 'anciennes': 0, 'historique': 0}
 
-        # ⭐ Charger les produits et actes pour les prix
+        # ⭐ Charger les produits et actes pour les prix (les deux feuilles lues en parallèle)
+        sheets_helper.prechauffer([f"struct_{structure_id}_produits", sheets_helper.get_sheet_name('actes')])
         produits = sheets_helper.get_medicamentos(structure_id)
         actes = sheets_helper.get_all_records('actes', use_prefix=True)
         

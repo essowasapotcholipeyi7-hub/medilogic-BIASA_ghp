@@ -101,7 +101,7 @@
                             <div class="stat-icon-finance bg-success bg-opacity-10 mx-auto mb-2">
                                 <i class="fas fa-arrow-up text-success fa-2x"></i>
                             </div>
-                            <h5 class="text-success" id="soldeActuel">{{ (total_recettes - total_depenses)|round(0)|int }} FCFA</h5>
+                            <h5 class="text-success" id="soldeActuel">{{ (total_recettes - total_depenses)|round(0)|format_currency }}</h5>
                             <small class="text-muted">Solde actuel</small>
                         </div>
                     </div>
@@ -112,7 +112,7 @@
                             <div class="stat-icon-finance bg-danger bg-opacity-10 mx-auto mb-2">
                                 <i class="fas fa-chart-line text-danger fa-2x"></i>
                             </div>
-                            <h5 class="text-danger" id="totalDepenses">{{ total_depenses|round(0)|int }} FCFA</h5>
+                            <h5 class="text-danger" id="totalDepenses">{{ total_depenses|round(0)|format_currency }}</h5>
                             <small class="text-muted">Total charges</small>
                         </div>
                     </div>
@@ -256,7 +256,7 @@
                     <tfoot class="table-light">
                         <tr class="fw-bold">
                             <td colspan="3" class="text-end">Total charges :</td>
-                            <td class="text-danger" id="totalDepensesFilter">{{ total_depenses|round(0)|int }} FCFA</td>
+                            <td class="text-danger" id="totalDepensesFilter">{{ total_depenses|round(0)|format_currency }}</td>
                             <td colspan="2"></td>
                         </tr>
                     </tfoot>
@@ -839,7 +839,8 @@ function chargerDetailFinances() {
 // ============================================
 // RAPPORTS
 // ============================================
-function genererRapport() {
+function genererRapport(options) {
+    const silencieux = options && options.silencieux;
     let dateDebut = document.getElementById('rapportDateDebut').value;
     let dateFin = document.getElementById('rapportDateFin').value;
     
@@ -857,8 +858,15 @@ function genererRapport() {
     let url = `/api/finances/stats?date_debut=${dateDebut}&date_fin=${dateFin}`;
     let detailUrl = `/api/finances/recettes/detail?date_debut=${dateDebut}&date_fin=${dateFin}`;
     
-    showLoader('Génération du rapport...');
-    
+    if (silencieux) {
+        ['rapportTotalRecettes', 'rapportTotalDepenses', 'rapportSolde', 'rapportMarge'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = '…';
+        });
+    } else {
+        showLoader('Génération du rapport...');
+    }
+
     // Appel pour les stats
     fetch(url)
         .then(response => response.json())
@@ -970,10 +978,11 @@ function imprimerRapport() {
 // ============================================
 // INITIALISATION
 // ============================================
+// ⭐ 2026-10-14 (patron : « dans caisse et charges le chargement se fait deux fois ») :
+// les cartes de la caisse arrivent déjà calculées avec la page (plus de rechargement), et
+// le rapport (2 + 2 demandes, avec écran de chargement) n'est plus fabriqué en arrière-plan
+// à l'ouverture : il se prépare quand on ouvre l'onglet Rapports.
 document.addEventListener('DOMContentLoaded', function() {
-    chargerSolde();
-    chargerDetailFinances();
-    
     // Définir les dates par défaut pour le rapport
     const today = new Date();
     const lastMonth = new Date();
@@ -985,17 +994,18 @@ document.addEventListener('DOMContentLoaded', function() {
     if (dateDebut) dateDebut.value = lastMonth.toISOString().split('T')[0];
     if (dateFin) dateFin.value = today.toISOString().split('T')[0];
     
-    // Générer automatiquement le rapport au chargement
-    setTimeout(function() {
-        genererRapport();
-    }, 500);
 });
 
-// Régénérer quand on clique sur l'onglet Rapports
+// Rapport (re)calculé à chaque ouverture de l'onglet Rapports, sans écran de chargement
+let detailFinancesCharge = false;
 const rapportsTab = document.getElementById('rapports-tab');
 if (rapportsTab) {
-    rapportsTab.addEventListener('click', function() {
-        genererRapport();
+    rapportsTab.addEventListener('shown.bs.tab', function() {
+        if (!detailFinancesCharge) {
+            detailFinancesCharge = true;
+            chargerDetailFinances();
+        }
+        genererRapport({silencieux: true});
     });
 }
 </script>
