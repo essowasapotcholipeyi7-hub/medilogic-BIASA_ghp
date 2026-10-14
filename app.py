@@ -23352,25 +23352,6 @@ def _journaliser_facture_assurance(facture, categorie, texte):
         print(f"⚠️ Journal d'activité (facture assurance #{facture.id}, {categorie}) : {e}")
 
 
-@app.route('/api/assurances/complementaires/liste')
-@login_required
-def api_liste_assurances_complementaires():
-    """Assurances complémentaires qui ont des factures — pour le menu Finances (survol)."""
-    groupes = {}
-    for f in _factures_complementaires(session.get('structure_id')):
-        cle = _nom_assurance_canonique(f.assurance)
-        if not cle:
-            continue
-        g = groupes.setdefault(cle, {'nom': cle, 'nb_factures': 0, 'reste': 0.0, 'a_deposer': 0})
-        g['nb_factures'] += 1
-        reste = float(f.montant_total or 0) - float(f.montant_rembourse or 0)
-        if reste > 0.5:
-            g['reste'] += reste
-        if not f.date_depot and not f.cloturee and reste > 0.5:
-            g['a_deposer'] += 1
-    return jsonify({'success': True, 'assurances': sorted(groupes.values(), key=lambda g: g['nom'])})
-
-
 def _evenements_factures_assurance(structure_id, factures):
     """Historique de chaque facture : génération, dépôt, encaissements (demandés, validés,
     refusés — y compris la part d'un encaissement global), anciens encaissements du journal,

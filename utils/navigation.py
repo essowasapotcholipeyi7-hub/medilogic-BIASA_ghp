@@ -137,7 +137,7 @@ DOMAINES = [
         Onglet('supports_inam', 'Supports AMU INAM', 'page_amu_supports', 'fa-folder-open',
                'Fiches à imprimer', 'fiche document inam', kwargs={'type_amu': 'inam'}),
     ]),
-    Domaine('finances', 'Finances', 'fa-sack-dollar', [
+    Domaine('finances', 'Finances & Assurances', 'fa-sack-dollar', [
         Onglet('factures', 'Factures et créances', 'factures', 'fa-file-invoice-dollar',
                'Factures clients', 'créance impayé facture',
                visible=_pas_cache('factures')),
