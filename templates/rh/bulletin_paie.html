@@ -72,7 +72,7 @@
     <div class="titre">BULLETIN DE PAIE</div>
     <table class="infos">
         <tr><th style="width:12%">Matric.</th><th style="width:44%">Nom &amp; Prénoms</th><th style="width:8%">Pers</th><th style="width:16%">N° bulletin</th><th style="width:20%">Période</th></tr>
-        <tr><td>{{ employe.matricule }}</td><td>{{ employe.nom }} {{ employe.prenom }}</td><td>{{ paie.personnes_a_charge or '' }}</td><td>{{ paie.id }}</td><td>{{ periode_maj }}</td></tr>
+        <tr><td>{{ employe.matricule }}</td><td>{{ employe.nom }} {{ employe.prenom }}</td><td>{{ paie.personnes_a_charge or '' }}</td><td>{{ paie.numero_local or paie.id }}</td><td>{{ periode_maj }}</td></tr>
     </table>
     <table class="infos">
         <tr><th style="width:8%">Cat.</th><th style="width:30%">Emploi</th><th style="width:26%">Direction</th><th style="width:22%">Division</th><th style="width:14%">Date emb.</th></tr>

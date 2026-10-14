@@ -480,8 +480,10 @@ def generer_ou_maj_paie(structure_id, employe_id, annee, mois, salaire_base=None
         return None, "Cette paie a déjà été payée — impossible de la recalculer"
 
     if not paie:
+        # ⭐ N° de bulletin propre à la structure : 1, 2, 3... (l'id technique est partagé par toutes)
+        dernier = db.session.query(db.func.max(Paie.numero_local)).filter(Paie.structure_id == structure_id).scalar()
         paie = Paie(structure_id=structure_id, employe_id=employe_id, annee=annee, mois=mois,
-                     created_by=user_nom)
+                     created_by=user_nom, numero_local=int(dernier or 0) + 1)
         db.session.add(paie)
 
     for champ, valeur in calc.items():
