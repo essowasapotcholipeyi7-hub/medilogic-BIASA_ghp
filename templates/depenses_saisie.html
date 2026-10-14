@@ -37,6 +37,7 @@
                             <option value="materiel">Matériel informatique</option>
                             <option value="transport">Transport</option>
                             <option value="communication">Communication</option>
+                            <option value="remboursement_patient">Remboursement patient (vente de plus de 72 h)</option>
                             <option value="autres">Autres (à préciser)</option>
                         </select>
                     </div>
@@ -243,6 +244,14 @@ function chargerMesDemandes() {
 
 document.addEventListener('DOMContentLoaded', function() {
     chargerMesDemandes();
+    // ⭐ 2026-10-14 : ouverte depuis l'historique des ventes (vente de plus de 72 h) —
+    // motif « Remboursement patient » et description préremplis
+    const params = new URLSearchParams(location.search);
+    const motifVoulu = params.get('motif');
+    const selectMotif = document.getElementById('depenseMotif');
+    if (motifVoulu && [...selectMotif.options].some(o => o.value === motifVoulu)) selectMotif.value = motifVoulu;
+    if (params.get('description')) document.getElementById('depenseDescription').value = params.get('description');
+    if (params.get('montant')) document.getElementById('depenseMontant').value = params.get('montant');
     toggleMotifPersonnalise(); // le motif "Abonnement SSoftOneV10" est sélectionné par défaut
 });
 </script>

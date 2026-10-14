@@ -954,6 +954,10 @@ function afficherPageVentes(page) {
         if (peutDemanderAnnulation && v.statut !== 'annulee' && annulableDelai) {
             html += ' <button class="btn btn-sm btn-outline-danger" onclick="annulerVente(' + (v.ID || start + i + 1) + ', \'' + v.type + '\')" title="Demander l\'annulation">';
             html += '<i class="fas fa-ban"></i></button>';
+        } else if (peutDemanderAnnulation && v.statut !== 'annulee') {
+            // ⭐ plus de 72 h : plus d'annulation, on montre les alternatives
+            html += ' <button class="btn btn-sm btn-outline-secondary" onclick="alternativesAnnulation(' + (v.ID || start + i + 1) + ')" title="Plus de 72 h : annulation impossible — que faire ?">';
+            html += '<i class="fas fa-circle-question"></i></button>';
         }
         html += '</td>';
         html += '</tr>';
@@ -1372,6 +1376,62 @@ function printDocument(docType) {
 // ============================================
 // ANNULATION
 // ============================================
+// ⭐ 2026-10-14 (patron) : au-delà de 72 h, la vente ne s'annule plus ; si c'est vraiment
+// nécessaire, on explique quoi faire à la place (rembourser le patient de façon tracée…).
+function alternativesAnnulation(venteId) {
+    const v = (toutesLesVentes || []).find(x => String(x.ID) === String(venteId)) || {};
+    const numero = v.numero_local || venteId;
+    const patient = v.patient_nom || '';
+    const dateFr = v.date_vente ? new Date(String(v.date_vente).replace(' ', 'T').slice(0, 19)).toLocaleDateString('fr-FR') : '';
+    const description = `Remboursement vente n° ${numero}${patient ? ' — ' + patient : ''}${dateFr ? ' (vente du ' + dateFr + ')' : ''} — motif : `;
+    const lien = '{{ url_for("page_depenses_saisie") }}?motif=remboursement_patient&description=' + encodeURIComponent(description);
+    let modal = document.getElementById('modalAlternativesAnnulation');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.className = 'modal fade';
+        modal.id = 'modalAlternativesAnnulation';
+        modal.tabIndex = -1;
+        document.body.appendChild(modal);
+    }
+    modal.innerHTML = `
+      <div class="modal-dialog modal-lg"><div class="modal-content">
+        <div class="modal-header bg-secondary text-white">
+          <h5 class="modal-title"><i class="fas fa-clock-rotate-left me-2"></i>Vente n° ${numero} — plus de 72 h</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p>Une vente ne peut plus être <strong>annulée</strong> plus de 72 h après : la caisse, la comptabilité,
+             la part médecin et les factures assurance de cette période sont déjà arrêtées. Si c'est vraiment nécessaire :</p>
+          <div class="list-group mb-2">
+            <div class="list-group-item">
+              <div class="fw-semibold"><i class="fas fa-hand-holding-dollar text-success me-2"></i>Le patient doit être remboursé</div>
+              <div class="small text-muted mb-2">Enregistrez un <strong>remboursement patient</strong> : il est validé par l'administrateur, sort de la caisse
+                avec une trace (n° de vente, motif) et vient en diminution du chiffre d'affaires en comptabilité (compte 709).
+                La vente d'origine reste visible dans l'historique.</div>
+              <a class="btn btn-sm btn-success" href="${lien}"><i class="fas fa-arrow-right me-1"></i>Enregistrer le remboursement</a>
+            </div>
+            <div class="list-group-item">
+              <div class="fw-semibold"><i class="fas fa-pen-to-square text-primary me-2"></i>Erreur de saisie (article, prix, patient)</div>
+              <div class="small text-muted">Faites une <strong>nouvelle vente correcte</strong>, puis remboursez la différence au patient
+                (ci-dessus) ou encaissez le complément. Les deux opérations restent tracées.</div>
+            </div>
+            <div class="list-group-item">
+              <div class="fw-semibold"><i class="fas fa-file-invoice-dollar text-warning me-2"></i>Vente à crédit jamais payée</div>
+              <div class="small text-muted">La créance reste dans <strong>Factures et créances</strong>. Si elle ne sera jamais payée,
+                le comptable peut la provisionner (Comptabilité &gt; créances douteuses).</div>
+            </div>
+            <div class="list-group-item">
+              <div class="fw-semibold"><i class="fas fa-shield-halved text-info me-2"></i>Part prise en charge par l'assurance</div>
+              <div class="small text-muted">Si le bordereau du mois n'est pas encore déposé, signalez-le avant le dépôt ;
+                sinon, prévenez l'assureur pour qu'il déduise cette prise en charge.</div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button></div>
+      </div></div>`;
+    bootstrap.Modal.getOrCreateInstance(modal).show();
+}
+
 async function annulerVente(venteId, type) {
     var motif = await demanderSaisie("Motif de l'annulation :", "Annulation manuelle");
     if (motif === null) return;

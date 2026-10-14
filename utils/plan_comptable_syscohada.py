@@ -294,6 +294,9 @@ COMPTE_CHARGE_DIVERSE = '65800000'
 # compte de charge. Reprend le même schéma de sous-comptes que le reste du
 # plan (8 chiffres).
 COMPTE_PAR_MOTIF_DEPENSE = {
+    # ⭐ 2026-10-14 : remboursement d'une vente de plus de 72 h (plus annulable) —
+    # pas une charge mais une diminution des ventes : 709 RRR accordés.
+    'remboursement_patient': '70900000', 'remboursement patient': '70900000',
     # ⭐ en tête : « part médecin » doit l'emporter sur toute autre sous-chaîne
     'part médecin': '63240000', 'part medecin': '63240000', 'honoraire': '63240000',
     'abonnement': '63400000', 'ssoftone': '63400000', 'logiciel': '63400000',

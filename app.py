@@ -17298,6 +17298,7 @@ def api_finances_stats():
             'materiel': 'Materiel',
             'transport': 'Transport',
             'communication': 'Communication',
+            'remboursement_patient': 'Remboursements patients',
             'autres': 'Autres'
         }
         
@@ -17460,6 +17461,7 @@ def api_finances_depenses_motif():
             'materiel': 'Materiel',
             'transport': 'Transport',
             'communication': 'Communication',
+            'remboursement_patient': 'Remboursements patients',
             'autres': 'Autres'
         }
         
