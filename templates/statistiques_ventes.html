@@ -636,6 +636,7 @@ async function chargerFactures() {
                 if (f.statut === 'en_attente') { statutText = 'En attente'; statutClass = 'bg-warning'; }
                 else if (f.statut === 'payee') { statutText = 'Payee'; statutClass = 'bg-success'; }
                 else if (f.statut === 'partielle') { statutText = 'Partielle'; statutClass = 'bg-info'; }
+                else if (f.statut === 'annulee') { statutText = 'Annulée'; statutClass = 'bg-secondary'; }
                 
                 const row = tbody.insertRow();
                 row.insertCell(0).innerHTML = f.mois_reference;

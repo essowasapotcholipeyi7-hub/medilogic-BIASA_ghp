@@ -139,7 +139,10 @@ async function validerDemande(id) {
         .then(r => r.json())
         .then(async data => {
             if (data.success) {
-                await afficherMessage('' + data.message, {type: 'success'});
+                // ⭐ 2026-10-14 : annulation de vente — ce qui reste à régulariser à la main
+                const avert = (data.resultat && data.resultat.avertissements) || [];
+                await afficherMessage('' + data.message + (avert.length ? '\n\nÀ régulariser :\n• ' + avert.join('\n• ') : ''),
+                                      {type: avert.length ? 'warning' : 'success'});
                 // ⭐ Abonnement SSoftOneV10 validé : ouvre tout de suite le
                 // reçu (PDF + WhatsApp), avant même de revenir sur la liste.
                 if (data.recu && data.recu.depense_id) {

@@ -295,6 +295,28 @@ def _compte_tresorerie(mode_paiement):
     return COMPTE_BANQUE
 
 
+def annuler_ecriture(ecriture, libelle, source_type, source_id, user_nom='SYSTEME'):
+    """⭐ 2026-10-14 : annule une écriture selon son état. Validée → contre-passation
+    (une seule fois). Pas encore validée (brouillon / en attente) → marquée « refusée » :
+    contre-passer une écriture jamais validée créerait une diminution validée sans
+    l'augmentation correspondante (chiffre d'affaires et trésorerie faussés)."""
+    if not ecriture:
+        return None
+    if ecriture.statut == 'valide':
+        deja = EcritureComptable.query.filter_by(
+            structure_id=ecriture.structure_id,
+            commentaire=f"Contre-passation de l'écriture #{ecriture.id}").first()
+        if deja:
+            return deja
+        return _contre_passer(ecriture, libelle=libelle, source_type=source_type,
+                              source_id=source_id, user_nom=user_nom)
+    if ecriture.statut in ('brouillon', 'en_attente', None):
+        ecriture.statut = 'refuse'
+        ecriture.commentaire = ((ecriture.commentaire or '') + f" — {libelle} : écriture non validée, écartée").strip(' —')
+        db.session.commit()
+    return None
+
+
 def _contre_passer(ecriture_origine, libelle, source_type, source_id, user_nom='SYSTEME'):
     """Crée une écriture miroir (débit <-> crédit inversés) qui annule une
     écriture d'origine — utilisé pour les annulations de vente."""
@@ -530,6 +552,9 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
     si générée, est stockée séparément sur `vente.ecriture_encaissement_id`.
     """
     try:
+        # ⭐ 2026-10-14 : jamais d'écriture pour une vente déjà annulée (rattrapages)
+        if (getattr(vente, 'statut', None) or '') == 'annulee':
+            return None
         structure_id = vente.structure_id
         montant_donne = _to_float(vente.montant_donne)
         rendu = _to_float(vente.rendu)
@@ -755,10 +780,11 @@ def generer_ecriture_annulation_vente(vente, annulation, user_nom='SYSTEME'):
         if not vente.ecriture_id:
             return None
 
+        # ⭐ annuler_ecriture : contre-passation si validée, sinon écartée (voir sa docstring)
         if vente.ecriture_encaissement_id:
             ecriture_encaissement_origine = EcritureComptable.query.get(vente.ecriture_encaissement_id)
             if ecriture_encaissement_origine:
-                _contre_passer(
+                annuler_ecriture(
                     ecriture_encaissement_origine,
                     libelle=f"Annulation vente #{vente.id} — {vente.patient_nom} (encaissement)",
                     source_type='annulation_vente',
@@ -769,7 +795,7 @@ def generer_ecriture_annulation_vente(vente, annulation, user_nom='SYSTEME'):
         ecriture_origine = EcritureComptable.query.get(vente.ecriture_id)
         if not ecriture_origine:
             return None
-        return _contre_passer(
+        return annuler_ecriture(
             ecriture_origine,
             libelle=f"Annulation vente #{vente.id} — {vente.patient_nom}",
             source_type='annulation_vente',

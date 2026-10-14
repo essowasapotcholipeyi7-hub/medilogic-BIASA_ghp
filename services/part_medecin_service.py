@@ -176,9 +176,14 @@ def prestations_en_attente(structure_id, medecin_id):
     """PrestationMedecin pas encore incluses dans une clôture, pour ce
     médecin — c'est ce total qui s'affiche sur /part-medecin avant de
     clôturer."""
+    # ⭐ 2026-10-14 : les actes d'une vente annulée ne sont plus dus au médecin
+    from models import Vente
+    ventes_annulees = db.session.query(Vente.id).filter(Vente.structure_id == structure_id,
+                                                        Vente.statut == 'annulee')
     return PrestationMedecin.query.filter_by(
         structure_id=structure_id, medecin_id=medecin_id, periode_part_medecin_id=None,
-    ).order_by(PrestationMedecin.created_at.asc()).all()
+    ).filter(db.or_(PrestationMedecin.vente_id.is_(None), ~PrestationMedecin.vente_id.in_(ventes_annulees))) \
+        .order_by(PrestationMedecin.created_at.asc()).all()
 
 
 def calculer_periode_part_medecin(structure_id, medecin_id, date_debut, date_fin, user_name):

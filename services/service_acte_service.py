@@ -220,10 +220,15 @@ def creer_lignes_service(structure_id, articles, vente_id, service_id_force=None
 def generer_rapport_recettes_service(structure_id, date_debut, date_fin):
     """Agrège les RecetteService de la période par service — le rapport
     "Recettes par service" (comparaison + décision de ristourne)."""
+    # ⭐ 2026-10-14 : hors ventes annulées (elles restaient comptées dans le rapport)
+    from models import Vente
+    ventes_annulees = db.session.query(Vente.id).filter(Vente.structure_id == structure_id,
+                                                        Vente.statut == 'annulee')
     lignes = RecetteService.query.filter(
         RecetteService.structure_id == structure_id,
         RecetteService.created_at >= date_debut,
         RecetteService.created_at < date_fin,
+        db.or_(RecetteService.vente_id.is_(None), ~RecetteService.vente_id.in_(ventes_annulees)),
     ).all()
 
     agrege = {}

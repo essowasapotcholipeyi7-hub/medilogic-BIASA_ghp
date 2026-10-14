@@ -947,7 +947,11 @@ function afficherPageVentes(page) {
         html += '<i class="fas fa-eye"></i></button>';
         html += ' <button class="btn btn-sm btn-outline-secondary" onclick="reimprimer(' + (v.ID || start + i + 1) + ', \'' + v.type + '\')" title="Imprimer">';
         html += '<i class="fas fa-print"></i></button>';
-        if (peutDemanderAnnulation && v.statut !== 'annulee') {
+        // ⭐ 2026-10-14 : plus d'annulation au-delà de 72 h après la vente
+        // (date « AAAA-MM-JJ HH:MM:SS.ffffff » : lue en ISO ; illisible → bouton laissé, le serveur tranche)
+        var tVente = v.date_vente ? new Date(String(v.date_vente).replace(" ", "T").slice(0, 19)).getTime() : NaN;
+        var annulableDelai = isNaN(tVente) || (Date.now() - tVente) <= 72 * 3600 * 1000;
+        if (peutDemanderAnnulation && v.statut !== 'annulee' && annulableDelai) {
             html += ' <button class="btn btn-sm btn-outline-danger" onclick="annulerVente(' + (v.ID || start + i + 1) + ', \'' + v.type + '\')" title="Demander l\'annulation">';
             html += '<i class="fas fa-ban"></i></button>';
         }

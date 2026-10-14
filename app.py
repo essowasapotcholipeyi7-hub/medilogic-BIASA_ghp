@@ -16825,6 +16825,29 @@ def api_get_actes():
         traceback.print_exc()
         return jsonify({'data': [], 'total': 0, 'error': str(e)}), 500
 
+# ⭐ 2026-10-14 (patron) : « on refuse toute annulation après 72 h de la vente ».
+DELAI_ANNULATION_VENTE_HEURES = 72
+
+
+def _erreur_delai_annulation(date_vente, a_la_date=None):
+    """Message de refus si la vente a plus de 72 h à `a_la_date` (maintenant par
+    défaut ; date de la demande lors de sa validation), sinon None."""
+    if not date_vente:
+        return None
+    if isinstance(date_vente, str):
+        try:
+            date_vente = datetime.fromisoformat(date_vente.replace('Z', '')[:19])
+        except ValueError:
+            return None
+    if getattr(date_vente, 'tzinfo', None):
+        date_vente = date_vente.replace(tzinfo=None)
+    reference = a_la_date or datetime.utcnow()
+    if reference - date_vente > timedelta(hours=DELAI_ANNULATION_VENTE_HEURES):
+        return (f"Annulation impossible : la vente date du {date_vente:%d/%m/%Y à %H:%M}, "
+                f"une vente ne peut plus être annulée plus de {DELAI_ANNULATION_VENTE_HEURES} h après.")
+    return None
+
+
 @app.route('/api/ventes/<int:vente_id>/annuler', methods=['POST'])
 @login_required
 def annuler_vente(vente_id):
@@ -16845,9 +16868,12 @@ def annuler_vente(vente_id):
 
     # Récupérer un minimum d'infos pour un résumé lisible côté admin
     vente_info = db.execute_query("""
-        SELECT net_a_payer, type FROM ventes WHERE id = %s AND structure_id = %s
+        SELECT net_a_payer, type, date_vente FROM ventes WHERE id = %s AND structure_id = %s
     """, (vente_id, structure_id))
     montant = float(vente_info[0].get('net_a_payer') or 0) if vente_info else 0
+    erreur_delai = _erreur_delai_annulation(vente_info[0].get('date_vente')) if vente_info else None
+    if erreur_delai:
+        return jsonify({'success': False, 'error': erreur_delai}), 400
     try:
         demande = _demander_validation(
             structure_id=structure_id, type_demande='annulation_vente',
@@ -16867,7 +16893,7 @@ def annuler_vente(vente_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-def _executer_annulation_vente(vente_id, motif, structure_id, user_id, user_name):
+def _executer_annulation_vente(vente_id, motif, structure_id, user_id, user_name, date_demande=None):
     """Exécute réellement l'annulation (restock, écritures, caisse...).
     Appelée directement par un admin, ou depuis la validation d'une demande
     en attente. Lève une exception en cas d'échec (à catcher par l'appelant)."""
@@ -16876,13 +16902,19 @@ def _executer_annulation_vente(vente_id, motif, structure_id, user_id, user_name
 
     if True:
         # Recuperer la vente
+        # ⭐ 2026-10-14 : 'partielle' (vente à crédit) acceptée — la demande d'annulation
+        # était proposée puis échouait à la validation ; sa créance est annulée plus bas.
         vente = db.execute_query("""
             SELECT * FROM ventes
-            WHERE id = %s AND structure_id = %s AND (statut = 'validee' OR statut IS NULL)
+            WHERE id = %s AND structure_id = %s AND (statut IN ('validee', 'partielle') OR statut IS NULL)
         """, (vente_id, structure_id))
 
         if not vente or len(vente) == 0:
             raise ValueError('Vente non trouvee ou deja annulee')
+        # ⭐ 72 h : comptées jusqu'à la DEMANDE (une demande faite à temps reste valable)
+        erreur_delai = _erreur_delai_annulation(vente[0].get('date_vente'), date_demande)
+        if erreur_delai:
+            raise ValueError(erreur_delai)
 
         v = vente[0] if isinstance(vente[0], dict) else vente[0]
         
@@ -16970,10 +17002,16 @@ def _executer_annulation_vente(vente_id, motif, structure_id, user_id, user_name
             WHERE id = %s AND structure_id = %s
         """, (user_id, motif, vente_id, structure_id))
         
+        # ⭐ 2026-10-14 : créance patient, factures assurance, facture AMU — voir
+        # services/annulation_vente_service.py (avant : seule la caisse et l'écriture
+        # de la vente étaient corrigées)
+        from services.annulation_vente_service import regulariser_annulation
+        avertissements = regulariser_annulation(vente_id, structure_id, motif, user_name)
+
         # 🔥 METTRE À JOUR LE SOLDE DE CAISSE (recalculer)
         recettes = db.execute_query("""
-            SELECT COALESCE(SUM(montant), 0) as total 
-            FROM recettes 
+            SELECT COALESCE(SUM(montant), 0) as total
+            FROM recettes
             WHERE structure_id = %s AND (est_annulation IS NULL OR est_annulation = FALSE)
         """, (structure_id,))
         
@@ -17027,7 +17065,8 @@ def _executer_annulation_vente(vente_id, motif, structure_id, user_id, user_name
             'success': True,
             'message': f'Vente #{vente_id} annulee avec succes',
             'type': vente_type,
-            'nouveau_solde': nouveau_solde
+            'nouveau_solde': nouveau_solde,
+            'avertissements': avertissements,
         }
 
 
@@ -19102,6 +19141,7 @@ def api_valider_demande(demande_id):
             resultat = _executer_annulation_vente(
                 payload['vente_id'], payload['motif'], structure_id,
                 demande.demandeur_id, demande.demandeur_nom,
+                date_demande=demande.date_demande,
             )
         elif demande.type_demande == 'depense':
             resultat = _executer_ajout_depense(
