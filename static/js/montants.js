@@ -12,7 +12,8 @@
  * (attribut data-montants-caches) ou sur le montant lui-même le révèle, sans
  * déclencher l'action de la carte. data-montants-caches="bascule" : un
  * nouveau clic le recache. Les montants d'un même groupe
- * (data-groupe-montants="x") se révèlent ensemble.
+ * (data-groupe-montants="x") se révèlent ensemble. Un détail chiffré de la carte
+ * (classe « montant-detail ») reste caché tant que la carte n'est pas révélée.
  */
 (function () {
     'use strict';
@@ -38,6 +39,7 @@
         + '.montant-masquable:not(.revele)::after{content:"\\2022\\2022\\2022\\2022\\2022\\2022\\2022\\00a0 FCFA";'
         + 'visibility:visible;position:absolute;inset:0;text-align:inherit;white-space:nowrap;letter-spacing:.08em;}'
         + '[data-montants-caches] .montant-indice{font-size:.72rem;opacity:.7;}'
+        + '[data-montants-caches]:not(.montants-reveles) .montant-detail{visibility:hidden;}'
         + '[data-montants-caches].montants-reveles .montant-indice{display:none;}'
         + '.montant-masquable.revele{animation:montantApparait .35s ease;}'
         + '@keyframes montantApparait{from{opacity:0;filter:blur(6px);}to{opacity:1;filter:none;}}';

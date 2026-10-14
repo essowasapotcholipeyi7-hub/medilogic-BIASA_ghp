@@ -11842,12 +11842,16 @@ def api_ventes_stats():
         today = datetime.now().strftime('%Y-%m-%d')
         
         # 🔥 Récupérer UNIQUEMENT les ventes valides (non annulées)
+        # ⭐ 2026-10-14 : et seulement celles du jour — avant, toutes les ventes de la
+        # structure (des milliers) étaient relues à chaque affichage du tableau de bord.
+        demain = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
         ventes = db.execute_query("""
             SELECT type, net_a_payer, sous_total, date_vente
-            FROM ventes 
-            WHERE structure_id = %s 
+            FROM ventes
+            WHERE structure_id = %s
             AND (statut IS NULL OR statut != 'annulee')
-        """, (structure_id,))
+            AND date_vente >= %s AND date_vente < %s
+        """, (structure_id, today, demain))
         
         actes_today = 0
         pharma_today = 0
@@ -22429,36 +22433,13 @@ def consultation():
 @app.route('/api/assurances/stats')
 @login_required
 def api_assurances_stats():
-    """Récupérer les statistiques des assurances"""
+    """Situation des assurances : reste à percevoir (prise en charge − remboursé),
+    encaissements en attente de validation, facturé ce mois — voir
+    services/creances_assurances.py (patron, 2026-10-14 : « est-ce que ces
+    sommes diminuent quand l'assurance rembourse ? » — avant : non, simple cumul)."""
     try:
-        structure_id = session.get('structure_id')
-        
-        # Total prise en charge assurance principale
-        principale = db.execute_query("""
-            SELECT COALESCE(SUM(prise_en_charge), 0) as total
-            FROM ventes 
-            WHERE structure_id = %s 
-            AND (statut IS NULL OR statut != 'annulee')
-            AND prise_en_charge > 0
-        """, (structure_id,))
-        
-        # Total prise en charge assurance complementaire
-        complementaire = db.execute_query("""
-            SELECT COALESCE(SUM(prise_en_charge2), 0) as total
-            FROM ventes 
-            WHERE structure_id = %s 
-            AND (statut IS NULL OR statut != 'annulee')
-            AND prise_en_charge2 > 0
-        """, (structure_id,))
-        
-        total_principale = principale[0]['total'] if principale else 0
-        total_complementaire = complementaire[0]['total'] if complementaire else 0
-        
-        return jsonify({
-            'total_prise_en_charge': total_principale,
-            'total_prise_en_charge2': total_complementaire
-        })
-        
+        from services.creances_assurances import situation_assurances
+        return jsonify(situation_assurances(session.get('structure_id')))
     except Exception as e:
         print(f"❌ Erreur: {e}")
         return jsonify({'total_prise_en_charge': 0, 'total_prise_en_charge2': 0}), 500

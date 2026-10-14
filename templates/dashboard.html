@@ -145,41 +145,58 @@
         </div>
 
         <!-- 🔥 NOUVELLE LIGNE : STATISTIQUES DES ASSURANCES -->
+        {# ⭐ 2026-10-14 (patron : « est-ce que ces sommes diminuent quand l'assurance rembourse ? ») :
+           avant, cumul des prises en charge depuis l'ouverture (ne baissait jamais) et « total
+           facturé » du seul jour. Maintenant : ce qui reste réellement à percevoir (prise en
+           charge − remboursements validés) et ce qui a été facturé aux assurances ce mois.
+           Montants masqués : 1er clic → affichés (les trois), clic suivant → factures assurance. #}
         {% if session.is_admin %}
         <div class="row g-3 mb-4">
             <div class="col-md-4 col-6">
-                <div class="card stat-card shadow-sm border border-success">
+                <div class="card stat-card shadow-sm border border-success h-100" data-montants-caches data-groupe-montants="assurances"
+                     style="cursor:pointer;" title="Cliquer pour afficher, puis pour ouvrir les factures assurance"
+                     onclick="location.href='{{ url_for('statistiques_ventes') }}?onglet=assurances'">
                     <div class="card-body text-center">
                         <div class="stat-icon bg-success bg-opacity-10 mx-auto">
                             <i class="fas fa-shield-alt fa-2x text-success"></i>
                         </div>
-                        <div class="stat-value text-success" id="totalPriseEnCharge">0</div>
-                        <div class="stat-label">Prise en charge</div>
+                        <div class="stat-value text-success montant-masquable" id="resteAssurance1">0</div>
+                        <div class="stat-label">Reste à percevoir</div>
                         <div class="stat-sub">Assurance principale</div>
+                        <div class="small text-muted mt-1 montant-detail" id="detailAssurance1"></div>
+                        <div class="montant-indice text-muted"><i class="fas fa-eye"></i> cliquer pour afficher</div>
                     </div>
                 </div>
             </div>
             <div class="col-md-4 col-6">
-                <div class="card stat-card shadow-sm border border-info">
+                <div class="card stat-card shadow-sm border border-info h-100" data-montants-caches data-groupe-montants="assurances"
+                     style="cursor:pointer;" title="Cliquer pour afficher, puis pour ouvrir les factures assurance"
+                     onclick="location.href='{{ url_for('statistiques_ventes') }}?onglet=assurances'">
                     <div class="card-body text-center">
                         <div class="stat-icon bg-info bg-opacity-10 mx-auto">
                             <i class="fas fa-plus-circle fa-2x text-info"></i>
                         </div>
-                        <div class="stat-value text-info" id="totalPriseEnCharge2">0</div>
-                        <div class="stat-label">Prise en charge</div>
+                        <div class="stat-value text-info montant-masquable" id="resteAssurance2">0</div>
+                        <div class="stat-label">Reste à percevoir</div>
                         <div class="stat-sub">Assurance complémentaire</div>
+                        <div class="small text-muted mt-1 montant-detail" id="detailAssurance2"></div>
+                        <div class="montant-indice text-muted"><i class="fas fa-eye"></i> cliquer pour afficher</div>
                     </div>
                 </div>
             </div>
             <div class="col-md-4 col-6">
-                <div class="card stat-card shadow-sm border border-danger">
+                <div class="card stat-card shadow-sm border border-danger h-100" data-montants-caches data-groupe-montants="assurances"
+                     style="cursor:pointer;" title="Cliquer pour afficher, puis pour ouvrir les factures assurance"
+                     onclick="location.href='{{ url_for('statistiques_ventes') }}?onglet=assurances'">
                     <div class="card-body text-center">
                         <div class="stat-icon bg-danger bg-opacity-10 mx-auto">
                             <i class="fas fa-chart-line fa-2x text-danger"></i>
                         </div>
-                        <div class="stat-value text-danger" id="caBrut">0</div>
-                        <div class="stat-label">Total facturé</div>
-                        <div class="stat-sub">Avec assurances</div>
+                        <div class="stat-value text-danger montant-masquable" id="factureAssurancesMois">0</div>
+                        <div class="stat-label">Facturé aux assurances</div>
+                        <div class="stat-sub" id="moisAssurances">ce mois</div>
+                        <div class="small text-muted mt-1 montant-detail" id="detailAssurancesMois"></div>
+                        <div class="montant-indice text-muted"><i class="fas fa-eye"></i> cliquer pour afficher</div>
                     </div>
                 </div>
             </div>
@@ -350,17 +367,28 @@ function chargerDashboard() {
             // toString() : ni séparateur de milliers, ni arrondi (le
             // "1414714.20" collé signalé par le patron). 'fr-FR' + arrondi
             // en amont pour un FCFA propre partout : "1 414 714".
-            document.getElementById('caNet').innerHTML = Math.round(data.ca_net_today || 0).toLocaleString('fr-FR');
-            document.getElementById('caBrut').innerHTML = Math.round(data.ca_brut_today || 0).toLocaleString('fr-FR');
+            document.getElementById('caNet').innerHTML = formatEntier(data.ca_net_today);
         })
         .catch(err => console.error('Erreur stats:', err));
     
     // 🔥 Charger les statistiques des assurances
-    fetch('/api/assurances/stats')
+    // ⭐ 2026-10-14 : reste à percevoir = prise en charge − remboursements validés
+    if (document.getElementById('resteAssurance1')) fetch('/api/assurances/stats')
         .then(r => r.json())
         .then(data => {
-            document.getElementById('totalPriseEnCharge').innerHTML = Math.round(data.total_prise_en_charge || 0).toLocaleString('fr-FR');
-            document.getElementById('totalPriseEnCharge2').innerHTML = Math.round(data.total_prise_en_charge2 || 0).toLocaleString('fr-FR');
+            [['1', data.principale], ['2', data.complementaire]].forEach(([n, b]) => {
+                if (!b) return;
+                document.getElementById('resteAssurance' + n).textContent = formatEntier(b.reste);
+                document.getElementById('detailAssurance' + n).innerHTML =
+                    `sur ${formatEntier(b.prise_en_charge)} pris en charge · ${formatEntier(b.rembourse)} remboursés`
+                    + (b.en_attente > 0 ? `<br><span class="text-warning">${formatEntier(b.en_attente)} en attente de validation</span>` : '');
+            });
+            if (data.mois) {
+                document.getElementById('factureAssurancesMois').textContent = formatEntier(data.mois.total);
+                document.getElementById('moisAssurances').textContent = data.mois.libelle;
+                document.getElementById('detailAssurancesMois').textContent =
+                    `principale ${formatEntier(data.mois.principale)} · complémentaire ${formatEntier(data.mois.complementaire)}`;
+            }
         })
         .catch(err => console.error('Erreur assurances:', err));
     
@@ -402,7 +430,7 @@ function chargerDashboard() {
                                 </div>
                             </div>
                             <div class="text-end">
-                                <div class="fw-bold text-success">${Math.round(act.montant).toLocaleString('fr-FR')} FCFA</div>
+                                <div class="fw-bold text-success">${formatFCFA(act.montant)}</div>
                                 <button class="btn btn-sm btn-outline-secondary rounded-pill mt-1" onclick="reimprimer(${act.id}, '${act.type}')">
                                     <i class="fas fa-print me-1"></i> Réimprimer
                                 </button>
