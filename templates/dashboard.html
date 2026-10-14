@@ -136,9 +136,11 @@
                         <div class="stat-icon bg-warning bg-opacity-10 mx-auto">
                             <i class="fas fa-hand-holding-usd fa-2x text-warning"></i>
                         </div>
+                        {# ⭐ 2026-10-14 : ce qui a réellement été encaissé aujourd'hui (registre de caisse) #}
                         <div class="stat-value text-warning" id="caNet">0</div>
-                        <div class="stat-label">À payer (patient)</div>
-                        <div class="stat-sub">Net perçu</div>
+                        <div class="stat-label">Encaissé (patients)</div>
+                        <div class="stat-sub">aujourd'hui</div>
+                        <div class="small text-muted mt-1" id="caNetDetail"></div>
                     </div>
                 </div>
             </div>
@@ -367,7 +369,12 @@ function chargerDashboard() {
             // toString() : ni séparateur de milliers, ni arrondi (le
             // "1414714.20" collé signalé par le patron). 'fr-FR' + arrondi
             // en amont pour un FCFA propre partout : "1 414 714".
-            document.getElementById('caNet').innerHTML = formatEntier(data.ca_net_today);
+            // ⭐ réellement encaissé (recettes du jour), plus ce montant dû sur les ventes
+            document.getElementById('caNet').innerHTML = formatEntier(data.encaisse_today);
+            const details = [];
+            if (data.creances_recouvrees_today > 0) details.push(`dont ${formatEntier(data.creances_recouvrees_today)} de créances recouvrées`);
+            if (data.reste_du_today > 0) details.push(`<span class="text-danger">${formatEntier(data.reste_du_today)} non payés (créances du jour)</span>`);
+            document.getElementById('caNetDetail').innerHTML = details.join('<br>');
         })
         .catch(err => console.error('Erreur stats:', err));
     

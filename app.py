@@ -11876,11 +11876,33 @@ def api_ventes_stats():
                         ca_net_today += float(v.get('net_a_payer') or 0)
                         ca_brut_today += float(v.get('sous_total') or 0)
         
+        # ⭐ 2026-10-14 (patron : « qu'elle affiche réellement ce qu'on a encaissé ») :
+        # ca_net_today = ce que les patients DOIVENT sur les ventes du jour, pas ce qu'ils
+        # ont versé (crédit non payé compté, créance d'hier payée aujourd'hui oubliée).
+        # Encaissé = registre des recettes « patients » du jour (ventes, proformas
+        # converties, créances recouvrées), hors encaissements annulés.
+        enc = db.execute_query("""
+            SELECT COALESCE(SUM(montant), 0) AS total,
+                   COALESCE(SUM(CASE WHEN source_type = 'facture' THEN montant ELSE 0 END), 0) AS creances
+            FROM recettes
+            WHERE structure_id = %s AND source = 'patients'
+            AND (est_annulation IS NULL OR est_annulation = FALSE)
+            AND date_recette >= %s AND date_recette < %s
+        """, (structure_id, today, demain))
+        reste = db.execute_query("""
+            SELECT COALESCE(SUM(reste_a_payer), 0) AS total FROM ventes
+            WHERE structure_id = %s AND (statut IS NULL OR statut != 'annulee')
+            AND reste_a_payer > 0 AND date_vente >= %s AND date_vente < %s
+        """, (structure_id, today, demain))
+
         return jsonify({
             'actes_today': actes_today,
             'pharma_today': pharma_today,
             'ca_net_today': ca_net_today,
-            'ca_brut_today': ca_brut_today
+            'ca_brut_today': ca_brut_today,
+            'encaisse_today': float(enc[0]['total']) if enc else 0,
+            'creances_recouvrees_today': float(enc[0]['creances']) if enc else 0,
+            'reste_du_today': float(reste[0]['total']) if reste else 0,
         })
         
     except Exception as e:
@@ -16931,10 +16953,12 @@ def _executer_annulation_vente(vente_id, motif, structure_id, user_id, user_name
             UPDATE recettes 
             SET est_annulation = TRUE, 
                 description = CONCAT(description, ' [ANNULEE - ', %s, ']')
-            WHERE source_id = %s 
-            AND source_type IN ('vente_acte', 'vente_pharma') 
+            WHERE source_id = %s
+            AND source_type IN ('vente_acte', 'vente_pharma', 'vente_proforma')
             AND structure_id = %s
         """, (motif, vente_id, structure_id))
+        # ⭐ 2026-10-14 : 'vente_proforma' manquait — annuler une vente issue d'une
+        # proforma convertie laissait son encaissement dans la caisse.
         
         # 🔥 Marquer la vente comme annulée
         db.execute_query("""
