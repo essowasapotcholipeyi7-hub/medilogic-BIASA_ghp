@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+
+{% block title %}Paramètres décisions RH{% endblock %}
+
+{% block content %}
+<!-- ⭐ Patron (2026-10-14) : « il y a d'autres paramètres mélangés dans les paramètres de
+     paie [...] mets-les dans un autre onglet après Déclarations, paramètres décisions ».
+     Congés, permissions et circuit de validation ; la paie garde ses propres paramètres. -->
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h1 class="h4 mb-0"><i class="fas fa-scale-balanced me-2 text-success"></i>Paramètres décisions — congés, permissions et validations</h1>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('rh.gestion_rh') }}" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i> Ressources humaines</a>
+        <a href="{{ url_for('rh.page_parametres_paie') }}" class="btn btn-outline-primary btn-sm"><i class="fas fa-sliders-h me-1"></i> Paramètres de paie</a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-warning bg-opacity-25"><h5 class="mb-0"><i class="fas fa-umbrella-beach me-1"></i> Solde de congés et validation des congés</h5></div>
+    <div class="card-body">
+                
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="deduirePermissionsConges">
+                    <label class="form-check-label small" for="deduirePermissionsConges">
+                        Anciennes permissions (non classées, d'avant les règles ci-dessous) : les décompter du solde de congés annuel
+                    </label>
+                </div>
+                <small class="text-muted">
+                    Si désactivé, les permissions (autorisations d'absence) sont un droit totalement séparé
+                    et n'entament plus le solde de congés annuel. Seul le congé de type « Annuel » est de
+                    toute façon décompté — maladie, maternité, paternité, sans solde et exceptionnel
+                    (congés conventionnels) ne le sont jamais.
+                </small>
+
+                <div class="mt-3">
+                    <label class="form-label small">Nombre de niveaux de validation requis</label>
+                    <input type="number" class="form-control form-control-sm" id="niveauxValidationConges" style="max-width:120px;" min="1" max="5">
+                </div>
+                <small class="text-muted">
+                    1 (défaut) : un seul clic « Approuver » valide directement le congé, comme aujourd'hui.
+                    2 ou plus : chaque clic « Approuver » ne valide qu'un niveau — le congé ne passe à
+                    « Approuvé » qu'une fois tous les niveaux validés (par exemple un premier validateur
+                    puis un second). Un refus à n'importe quel niveau refuse le congé immédiatement.
+                </small>
+
+
+        <div class="text-end mt-3">
+            <button class="btn btn-warning" onclick="sauvegarderDecisions()"><i class="fas fa-save"></i> Enregistrer</button>
+        </div>
+    </div>
+</div>
+
+<!-- ⭐ Règles congés / permissions — Code du travail togolais (patron, 2026-10-10 :
+     « je veux une vraie GRH », « fais ce qui sera bon avec possibilité de choix »).
+     Voir utils/regles_absences.py ; enregistré dans ParametragePaie.regles_absences. -->
+<div class="card mt-4" id="carteReglesAbsences">
+    <div class="card-header bg-success text-white">
+        <h5 class="mb-0"><i class="fas fa-scale-balanced"></i> Règles congés et permissions — Code du travail</h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-4">
+            <div class="col-lg-4">
+                <h6 class="text-success"><i class="fas fa-umbrella-beach"></i> Congé annuel payé</h6>
+                <label class="form-label small mb-0">Acquis après (mois de service effectif)</label>
+                <input type="number" class="form-control form-control-sm mb-2" id="rAnciennete" min="0" max="60" style="max-width:120px;">
+                <label class="form-label small mb-0">Congé réduit possible à partir de (mois), avec l'accord de l'employeur</label>
+                <input type="number" class="form-control form-control-sm mb-2" id="rDerogation" min="0" max="60" style="max-width:120px;">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="rDerogationAdmin">
+                    <label class="form-check-label small" for="rDerogationAdmin">Seule la direction (administrateur) peut accorder cette dérogation</label>
+                </div>
+                <small class="text-muted d-block mt-1">Avant le second seuil : aucun congé annuel. Entre les deux : congé possible seulement
+                    en cochant « accord de l'employeur » avec un motif, gardé dans l'historique.</small>
+                <h6 class="text-success mt-3"><i class="fas fa-calendar-check"></i> Contrôle des dates</h6>
+                <label class="form-label small mb-0">Écart minimum entre deux congés annuels (jours, 0 = aucun)</label>
+                <input type="number" class="form-control form-control-sm mb-2" id="rEcart" min="0" max="365" style="max-width:120px;">
+                <label class="form-label small mb-0">Saisie normale tolérée dans le passé (jours, 0 = aucune)</label>
+                <input type="number" class="form-control form-control-sm" id="rTolerance" min="0" max="60" style="max-width:120px;">
+                <small class="text-muted d-block mt-1">Au-delà, un congé ou une permission à une date passée n'est accepté qu'en
+                    « régularisation » (absence déjà prise, saisie après coup) avec un motif. Deux absences ne peuvent jamais se superposer.</small>
+            </div>
+            <div class="col-lg-4">
+                <h6 class="text-success"><i class="fas fa-user-clock"></i> Permission de convenance personnelle</h6>
+                <label class="form-label small mb-0">Plafond annuel (jours)</label>
+                <input type="number" class="form-control form-control-sm mb-2" id="rConvenanceMax" min="0" max="365" style="max-width:120px;">
+                <label class="form-label small mb-0">Au-delà du plafond</label>
+                <select class="form-select form-select-sm mb-2" id="rDepassement">
+                    <option value="avertir">Accepter avec une alerte</option>
+                    <option value="bloquer">Refuser la demande</option>
+                </select>
+                <label class="form-label small mb-0">Les jours pris sont</label>
+                <select class="form-select form-select-sm mb-2" id="rDeduction">
+                    <option value="salaire">Retenus sur le salaire (toujours)</option>
+                    <option value="conge_si_solde">Pris sur le congé si acquis et suffisant, sinon retenus sur le salaire</option>
+                    <option value="au_choix">Au choix à chaque demande (congé possible seulement s'il est acquis)</option>
+                </select>
+                <label class="form-label small mb-0">Salaire journalier pour la retenue</label>
+                <select class="form-select form-select-sm" id="rDiviseur">
+                    <option value="26">Salaire de base ÷ 26</option>
+                    <option value="30">Salaire de base ÷ 30</option>
+                    <option value="0">Salaire de base ÷ jours ouvrables du mois</option>
+                </select>
+            </div>
+            <div class="col-lg-4">
+                <h6 class="text-success"><i class="fas fa-people-roof"></i> Permission exceptionnelle (événement familial)</h6>
+                <label class="form-label small mb-0">Justificatif (acte de mariage, de naissance, de décès...)</label>
+                <select class="form-select form-select-sm mb-2" id="rJustificatif">
+                    <option value="a_la_demande">Obligatoire dès la demande</option>
+                    <option value="avant_approbation">Obligatoire avant l'approbation (peut être ajouté après)</option>
+                    <option value="facultatif">Facultatif</option>
+                </select>
+                <h6 class="text-success mt-3"><i class="fas fa-sitemap"></i> Validation</h6>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="rSuperieur">
+                    <label class="form-check-label small" for="rSuperieur">Avis du supérieur hiérarchique (N+1) avant l'approbation finale</label>
+                </div>
+                <small class="text-muted">Le N+1 est celui de l'organigramme ; son avis est enregistré depuis la liste des permissions.
+                    Un avis défavorable refuse la demande.</small>
+            </div>
+        </div>
+
+        <h6 class="text-success mt-4"><i class="fas fa-list-check"></i> Événements familiaux et durée (jours ouvrables)</h6>
+        <div class="alert alert-warning small py-2">Durées de départ : mariage 3 jours et décès du conjoint ou d'un enfant 4 jours
+            (cahier des charges) ; les autres sont à vérifier et ajuster selon votre convention collective.</div>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle" style="max-width:640px;">
+                <thead><tr><th>Événement</th><th style="width:120px;">Jours</th><th style="width:50px;"></th></tr></thead>
+                <tbody id="rEvenements"></tbody>
+            </table>
+        </div>
+        <button class="btn btn-outline-success btn-sm" type="button" onclick="ajouterEvenement()"><i class="fas fa-plus"></i> Ajouter un événement</button>
+
+        <div class="text-end mt-3">
+            <button class="btn btn-success" onclick="sauvegarderRegles()"><i class="fas fa-save"></i> Enregistrer les règles</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function ligneEvenement(e) {
+    e = e || {code: '', libelle: '', jours: 1};
+    const tr = document.createElement('tr');
+    tr.dataset.code = e.code || '';
+    tr.innerHTML = '<td><input class="form-control form-control-sm ev-libelle" placeholder="Ex. Décès d\'un grand-parent"></td>' +
+        '<td><input type="number" min="1" max="60" class="form-control form-control-sm ev-jours"></td>' +
+        '<td><button class="btn btn-sm btn-outline-danger" type="button" aria-label="Retirer"><i class="fas fa-trash"></i></button></td>';
+    tr.querySelector('.ev-libelle').value = e.libelle || '';
+    tr.querySelector('.ev-jours').value = e.jours || 1;
+    tr.querySelector('button').onclick = () => tr.remove();
+    document.getElementById('rEvenements').appendChild(tr);
+}
+function ajouterEvenement() { ligneEvenement(); }
+
+function chargerRegles() {
+    fetch('/rh/api/regles-absences').then(r => r.json()).then(d => {
+        const r = d.regles || {};
+        document.getElementById('rAnciennete').value = r.anciennete_conge_mois;
+        document.getElementById('rDerogation').value = r.derogation_conge_mois;
+        document.getElementById('rDerogationAdmin').checked = !!r.derogation_reservee_admin;
+        document.getElementById('rEcart').value = r.ecart_min_conges_jours;
+        document.getElementById('rTolerance').value = r.tolerance_retroactive_jours;
+        document.getElementById('rConvenanceMax').value = r.convenance_max_jours;
+        document.getElementById('rDepassement').value = r.convenance_depassement;
+        document.getElementById('rDeduction').value = r.convenance_deduction;
+        document.getElementById('rDiviseur').value = String(r.diviseur_journalier);
+        document.getElementById('rJustificatif').value = r.justificatif_exceptionnelle;
+        document.getElementById('rSuperieur').checked = !!r.validation_superieur;
+        document.getElementById('rEvenements').innerHTML = '';
+        (r.evenements || []).forEach(ligneEvenement);
+    });
+}
+
+async function sauvegarderRegles() {
+    const corps = {
+        anciennete_conge_mois: document.getElementById('rAnciennete').value,
+        derogation_conge_mois: document.getElementById('rDerogation').value,
+        derogation_reservee_admin: document.getElementById('rDerogationAdmin').checked,
+        ecart_min_conges_jours: document.getElementById('rEcart').value,
+        tolerance_retroactive_jours: document.getElementById('rTolerance').value,
+        convenance_max_jours: document.getElementById('rConvenanceMax').value,
+        convenance_depassement: document.getElementById('rDepassement').value,
+        convenance_deduction: document.getElementById('rDeduction').value,
+        diviseur_journalier: document.getElementById('rDiviseur').value,
+        justificatif_exceptionnelle: document.getElementById('rJustificatif').value,
+        validation_superieur: document.getElementById('rSuperieur').checked,
+        evenements: [...document.querySelectorAll('#rEvenements tr')].map(tr => ({
+            code: tr.dataset.code, libelle: tr.querySelector('.ev-libelle').value, jours: tr.querySelector('.ev-jours').value})),
+    };
+    const r = await fetch('/rh/api/regles-absences', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(corps)});
+    const res = await r.json();
+    if (!res.success) { await afficherMessage(res.error || 'Enregistrement impossible.', {type: 'danger'}); return; }
+    await afficherMessage('Règles congés et permissions enregistrées.');
+    chargerRegles();
+}
+document.addEventListener('DOMContentLoaded', chargerRegles);
+</script>
+
+<script>
+function chargerDecisions() {
+    fetch('/rh/api/parametres-paie').then(r => r.json()).then(p => {
+        document.getElementById('deduirePermissionsConges').checked = p.deduire_permissions_des_conges !== false;
+        document.getElementById('niveauxValidationConges').value = p.niveaux_validation_conges || 1;
+    });
+}
+async function sauvegarderDecisions() {
+    const r = await fetch('/rh/api/parametres-paie', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+        deduire_permissions_des_conges: document.getElementById('deduirePermissionsConges').checked,
+        niveaux_validation_conges: parseInt(document.getElementById('niveauxValidationConges').value || 1),
+    })}).then(r => r.json());
+    if (!r.success) { await afficherMessage(r.error || 'Enregistrement impossible.', {type: 'danger'}); return; }
+    await afficherMessage('Paramètres enregistrés.');
+    chargerDecisions();
+}
+document.addEventListener('DOMContentLoaded', chargerDecisions);
+</script>
+{% endblock %}

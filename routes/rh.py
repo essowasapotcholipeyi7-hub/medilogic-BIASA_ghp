@@ -3112,6 +3112,15 @@ def page_paie(structure_id):
     return render_template('rh/paie.html')
 
 
+@rh_bp.route('/parametres-decisions')
+@require_structure
+def page_parametres_decisions(structure_id):
+    """⭐ Congés, permissions et circuit de validation (sortis des Paramètres
+    de paie — patron, 2026-10-14). Mêmes API : /api/parametres-paie (2 champs)
+    et /api/regles-absences."""
+    return render_template('rh/parametres_decisions.html')
+
+
 @rh_bp.route('/parametres-paie')
 @require_structure
 def page_parametres_paie(structure_id):
@@ -3281,9 +3290,22 @@ def api_generer_paie(structure_id):
         if 'taux_amu_patronal_override' in data and data['taux_amu_patronal_override'] not in (None, ''):
             employe.taux_amu_patronal_override = max(float(data['taux_amu_patronal_override']), demi_amu)
         _maj_infos_bulletin(employe, data)
+        # ⭐ Patron (2026-10-14) : « le salaire de base ne reste pas » — celui saisi
+        # ici devient le salaire de la fiche (repris aux mois suivants et en masse).
+        if data.get('salaire_base') not in (None, ''):
+            try:
+                nouveau_base = float(data['salaire_base'])
+                if nouveau_base >= 0:
+                    employe.salaire_base = nouveau_base
+            except (TypeError, ValueError):
+                return jsonify({'success': False, 'error': 'Salaire de base invalide'}), 400
         if isinstance(data.get('rubriques'), list):   # ⭐ éléments permanents de l'employé
             _enregistrer_rubriques_employe(structure_id, employe, data['rubriques'])
         db.session.commit()
+
+        if float(data.get('salaire_base') if data.get('salaire_base') not in (None, '') else (employe.salaire_base or 0)) <= 0:
+            db.session.rollback()
+            return jsonify({'success': False, 'error': "Salaire de base requis : renseignez-le avant de générer le bulletin."}), 400
 
         paie, erreur = generer_ou_maj_paie(
             structure_id=structure_id,
@@ -3334,8 +3356,11 @@ def api_generer_paie_masse(structure_id):
         deja_ids = {p.employe_id for p in Paie.query.filter_by(
             structure_id=structure_id, annee=annee, mois=mois).all()}
         a_generer = [e for e in employes if e.id not in deja_ids]
+        # ⭐ Pas de bulletin à 0 F : un employé sans salaire de base est signalé, pas payé à zéro
+        sans_salaire = [e for e in a_generer if float(e.salaire_base or 0) <= 0]
+        a_generer = [e for e in a_generer if float(e.salaire_base or 0) > 0]
 
-        generees, erreurs = [], []
+        generees, erreurs = [], [f"{e.nom} {e.prenom} : salaire de base non renseigné (fiche employé)" for e in sans_salaire]
         for employe in a_generer:
             try:
                 paie, erreur = generer_ou_maj_paie(

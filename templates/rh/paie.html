@@ -418,8 +418,11 @@ function ouvrirGenererPaie(employeId, nom, paieId) {
             .then(r => r.json())
             .then(p => {
                 if (p.error) return;
-                document.getElementById('gpPrimes').value = p.primes || 0;
-                document.getElementById('gpIndemnites').value = p.indemnites || 0;
+                // ⭐ Seules les primes / indemnités PONCTUELLES (lignes 190 / 195) sont reprises :
+                // Paie.primes contient aussi les rubriques, qui sont recalculées (sinon comptées deux fois).
+                const ligneCode = code => (p.lignes || []).find(l => String(l.code) === code);
+                document.getElementById('gpPrimes').value = p.lignes ? ((ligneCode('190') || {}).gain || 0) : (p.primes || 0);
+                document.getElementById('gpIndemnites').value = p.lignes ? ((ligneCode('195') || {}).gain || 0) : (p.indemnites || 0);
                 document.getElementById('gpPersonnesCharge').value = p.personnes_a_charge || 0;
                 document.getElementById('gpPrets').value = p.prets_deduction || 0;
                 document.getElementById('gpAcomptes').value = p.acomptes_deduction || 0;
