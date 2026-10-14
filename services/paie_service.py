@@ -479,19 +479,30 @@ def generer_ou_maj_paie(structure_id, employe_id, annee, mois, salaire_base=None
     if paie and paie.statut == 'payee':
         return None, "Cette paie a déjà été payée — impossible de la recalculer"
 
+    nouveau = not paie
     if not paie:
-        # ⭐ N° de bulletin propre à la structure : 1, 2, 3... (l'id technique est partagé par toutes)
-        dernier = db.session.query(db.func.max(Paie.numero_local)).filter(Paie.structure_id == structure_id).scalar()
         paie = Paie(structure_id=structure_id, employe_id=employe_id, annee=annee, mois=mois,
-                     created_by=user_nom, numero_local=int(dernier or 0) + 1)
+                     created_by=user_nom)
         db.session.add(paie)
 
     for champ, valeur in calc.items():
         setattr(paie, champ, valeur)
     paie.statut = 'valide'
 
+    if nouveau:
+        db.session.flush()
+        numeroter_bulletins(employe_id)   # ⭐ 1er, 2e... bulletin de cet employé, dans l'ordre des mois
     db.session.commit()
     return paie, None
+
+
+def numeroter_bulletins(employe_id):
+    """⭐ N° de bulletin de l'employé = rang du bulletin dans l'ordre des mois
+    (1 = son premier bulletin). Recalculé à chaque nouveau bulletin, pour
+    rester juste si un mois passé est généré après coup."""
+    for rang, p in enumerate(Paie.query.filter_by(employe_id=employe_id).order_by(Paie.annee, Paie.mois, Paie.id).all(), start=1):
+        if p.numero_local != rang:
+            p.numero_local = rang
 
 
 def marquer_paie_payee(paie, mode_paiement='especes', user_nom='System', force=False):

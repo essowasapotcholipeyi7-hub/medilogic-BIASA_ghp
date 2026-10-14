@@ -4760,8 +4760,8 @@ class Paie(db.Model):
     # [{code, libelle, base, taux, gain, retenue}] tel qu'imprimé, jours
     # travaillés, base CNSS (gains soumis) et base IRPP retenue (arrondie).
     lignes = db.Column(db.JSON)
-    # ⭐ N° de bulletin propre à la structure (1, 2, 3...) — patron, 2026-10-14 :
-    # « pour tout le monde le numéro de bulletin va commencer par 1 ».
+    # ⭐ N° de bulletin de l'EMPLOYÉ (1er, 2e, 3e... bulletin de la même personne,
+    # dans l'ordre des mois) — patron, 2026-10-14. Voir paie_service.numeroter_bulletins.
     numero_local = db.Column(db.Integer)
     jours_travailles = db.Column(db.Integer)
     base_cnss = db.Column(db.Numeric)
