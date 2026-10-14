@@ -107,13 +107,15 @@
                montants se lisent comme une opération — recettes − charges = solde de caisse. #}
             <div class="row g-3 mb-2">
                 <div class="col-md-3">
-                    <div class="card stat-card-finance border-0 shadow-sm">
+                    {# ⭐ 2026-10-14 (patron) : recettes et solde de caisse masqués, un clic les affiche #}
+                    <div class="card stat-card-finance border-0 shadow-sm" data-montants-caches="bascule" data-groupe-montants="caisse" style="cursor:pointer;" title="Cliquer pour afficher / masquer">
                         <div class="card-body text-center">
                             <div class="stat-icon-finance bg-primary bg-opacity-10 mx-auto mb-2">
                                 <i class="fas fa-coins text-primary fa-2x"></i>
                             </div>
-                            <h5 class="text-primary" id="totalRecettes">{{ total_recettes|round(0)|format_currency }}</h5>
+                            <h5 class="text-primary montant-masquable" id="totalRecettes">{{ total_recettes|round(0)|format_currency }}</h5>
                             <small class="text-muted">Total recettes encaissées</small>
+                            <div class="montant-indice text-muted"><i class="fas fa-eye"></i> cliquer pour afficher</div>
                         </div>
                     </div>
                 </div>
@@ -129,13 +131,14 @@
                     </div>
                 </div>
                 <div class="col-md-3">
-                    <div class="card stat-card-finance border-0 shadow-sm">
+                    <div class="card stat-card-finance border-0 shadow-sm" data-montants-caches="bascule" data-groupe-montants="caisse" style="cursor:pointer;" title="Cliquer pour afficher / masquer">
                         <div class="card-body text-center">
                             <div class="stat-icon-finance bg-success bg-opacity-10 mx-auto mb-2">
                                 <i class="fas fa-wallet text-success fa-2x"></i>
                             </div>
-                            <h5 class="text-success" id="soldeActuel">{{ (total_recettes - total_depenses)|round(0)|format_currency }}</h5>
+                            <h5 class="text-success montant-masquable" id="soldeActuel">{{ (total_recettes - total_depenses)|round(0)|format_currency }}</h5>
                             <small class="text-muted">Solde de caisse</small>
+                            <div class="montant-indice text-muted"><i class="fas fa-eye"></i> cliquer pour afficher</div>
                         </div>
                     </div>
                 </div>
@@ -158,9 +161,9 @@
                 </div>
             </div>
             <p class="equation-caisse text-muted text-center mb-4">
-                Depuis l'ouverture : recettes encaissées {{ total_recettes|round(0)|format_currency }}
+                Depuis l'ouverture : recettes encaissées <span class="montant-masquable d-inline-block" data-groupe-montants="caisse">{{ total_recettes|round(0)|format_currency }}</span>
                 − charges {{ total_depenses|round(0)|format_currency }}
-                = solde de caisse {{ (total_recettes - total_depenses)|round(0)|format_currency }}.
+                = solde de caisse <span class="montant-masquable d-inline-block" data-groupe-montants="caisse">{{ (total_recettes - total_depenses)|round(0)|format_currency }}</span>.
                 Le détail par période est dans l'onglet <strong>Rapports</strong>.
             </p>
 
@@ -670,7 +673,7 @@ function filtrerDepenses() {
         }
     });
     
-    document.getElementById('totalDepensesFilter').innerHTML = Math.round(totalVisible).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('totalDepensesFilter').innerHTML = formatEntier(totalVisible) + ' FCFA';
     document.getElementById('depensesResultCount').innerHTML = visibleCount;
 }
 
@@ -702,13 +705,13 @@ function chargerSolde() {
             const totalDepensesElement = document.getElementById('totalDepenses');
             const tauxElement = document.getElementById('tauxDepenses');
             
-            if (soldeElement) soldeElement.innerHTML = Math.round(solde).toLocaleString('fr-FR') + ' FCFA';
-            if (totalDepensesElement) totalDepensesElement.innerHTML = Math.round(totalDepenses).toLocaleString('fr-FR') + ' FCFA';
+            if (soldeElement) soldeElement.innerHTML = formatEntier(solde) + ' FCFA';
+            if (totalDepensesElement) totalDepensesElement.innerHTML = formatEntier(totalDepenses) + ' FCFA';
             if (tauxElement) tauxElement.innerHTML = taux + '%';
             
             // Mettre à jour aussi les totaux dans les filtres
             const totalDepensesFilter = document.getElementById('totalDepensesFilter');
-            if (totalDepensesFilter) totalDepensesFilter.innerHTML = Math.round(totalDepenses).toLocaleString('fr-FR') + ' FCFA';
+            if (totalDepensesFilter) totalDepensesFilter.innerHTML = formatEntier(totalDepenses) + ' FCFA';
         })
         .catch(error => {
             console.error('Erreur chargerSolde:', error);
@@ -718,7 +721,7 @@ function chargerSolde() {
 // ============================================
 // RAPPORT DÉTAILLÉ (⭐ 2026-10-14) — un seul appel, mêmes chiffres que le PDF
 // ============================================
-const fcfa = v => Math.round(v || 0).toLocaleString('fr-FR') + ' FCFA';
+const fcfa = v => formatEntier(v || 0) + ' FCFA';
 const echapper = t => String(t ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const isoLocal = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 

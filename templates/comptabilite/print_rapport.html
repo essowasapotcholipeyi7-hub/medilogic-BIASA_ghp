@@ -2,6 +2,8 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
+    {#- ⭐ 2026-10-14 : montants ronds avec espaces (« 3 450 567 F ») -#}
+    {%- macro mt(v) -%}{{ '{:,.0f}'.format((v or 0)|float).replace(',', ' ') }}{%- endmacro %}
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ titre }} - Rapport comptable</title>
     <style>
@@ -429,16 +431,16 @@
                     <div class="label">Lignes</div>
                 </div>
                 <div class="stat-box">
-                    <div class="number">{{ data|sum(attribute='debit')|round(2) }} F</div>
+                    <div class="number">{{ mt(data|sum(attribute='debit')) }} F</div>
                     <div class="label">Total Débit</div>
                 </div>
                 <div class="stat-box">
-                    <div class="number">{{ data|sum(attribute='credit')|round(2) }} F</div>
+                    <div class="number">{{ mt(data|sum(attribute='credit')) }} F</div>
                     <div class="label">Total Crédit</div>
                 </div>
                 <div class="stat-box">
                     <div class="number {% if (data|sum(attribute='debit') - data|sum(attribute='credit'))|round(2) >= 0 %}text-success{% else %}text-danger{% endif %}">
-                        {{ (data|sum(attribute='debit') - data|sum(attribute='credit'))|round(2) }} F
+                        {{ mt((data|sum(attribute='debit') - data|sum(attribute='credit'))) }} F
                     </div>
                     <div class="label">Solde</div>
                 </div>
@@ -463,21 +465,21 @@
                             <td><strong>{{ item.piece or '-' }}</strong></td>
                             <td>{{ item.libelle or '-' }}</td>
                             <td>{{ item.compte_numero or '' }} - {{ item.compte_nom or '' }}</td>
-                            <td class="text-end">{{ (item.debit or 0)|round(2) }} F</td>
-                            <td class="text-end">{{ (item.credit or 0)|round(2) }} F</td>
+                            <td class="text-end">{{ mt((item.debit or 0)) }} F</td>
+                            <td class="text-end">{{ mt((item.credit or 0)) }} F</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                     <tfoot style="font-weight:bold; background:#f5f7fb;">
                         <tr>
                             <td colspan="4" class="text-end">TOTAUX</td>
-                            <td class="text-end">{{ data|sum(attribute='debit')|round(2) }} F</td>
-                            <td class="text-end">{{ data|sum(attribute='credit')|round(2) }} F</td>
+                            <td class="text-end">{{ mt(data|sum(attribute='debit')) }} F</td>
+                            <td class="text-end">{{ mt(data|sum(attribute='credit')) }} F</td>
                         </tr>
                         <tr style="background:#e8edf5;">
                             <td colspan="4" class="text-end">SOLDE</td>
                             <td colspan="2" class="text-end {% if (data|sum(attribute='debit') - data|sum(attribute='credit'))|round(2) >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                {{ (data|sum(attribute='debit') - data|sum(attribute='credit'))|round(2) }} F
+                                {{ mt((data|sum(attribute='debit') - data|sum(attribute='credit'))) }} F
                             </td>
                         </tr>
                     </tfoot>
@@ -492,16 +494,16 @@
                     <div class="label">Lignes</div>
                 </div>
                 <div class="stat-box">
-                    <div class="number">{{ data|sum(attribute='debit')|round(2) }} F</div>
+                    <div class="number">{{ mt(data|sum(attribute='debit')) }} F</div>
                     <div class="label">Total Débit</div>
                 </div>
                 <div class="stat-box">
-                    <div class="number">{{ data|sum(attribute='credit')|round(2) }} F</div>
+                    <div class="number">{{ mt(data|sum(attribute='credit')) }} F</div>
                     <div class="label">Total Crédit</div>
                 </div>
                 <div class="stat-box">
                     <div class="number {% if (data|sum(attribute='debit') - data|sum(attribute='credit'))|round(2) >= 0 %}text-success{% else %}text-danger{% endif %}">
-                        {{ (data|sum(attribute='debit') - data|sum(attribute='credit'))|round(2) }} F
+                        {{ mt((data|sum(attribute='debit') - data|sum(attribute='credit'))) }} F
                     </div>
                     <div class="label">Solde</div>
                 </div>
@@ -527,10 +529,10 @@
                             <td>{{ item.date or '-' }}</td>
                             <td>{{ item.compte_numero or '' }} - {{ item.compte_nom or '' }}</td>
                             <td>{{ item.libelle or '-' }}</td>
-                            <td class="text-end">{{ (item.debit or 0)|round(2) }} F</td>
-                            <td class="text-end">{{ (item.credit or 0)|round(2) }} F</td>
+                            <td class="text-end">{{ mt((item.debit or 0)) }} F</td>
+                            <td class="text-end">{{ mt((item.credit or 0)) }} F</td>
                             <td class="text-end fw-bold {% if ns.solde >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                {{ ns.solde|round(2) }} F
+                                {{ mt(ns.solde) }} F
                             </td>
                         </tr>
                         {% endfor %}
@@ -538,10 +540,10 @@
                     <tfoot style="font-weight:bold; background:#f5f7fb;">
                         <tr>
                             <td colspan="3" class="text-end">TOTAUX</td>
-                            <td class="text-end">{{ data|sum(attribute='debit')|round(2) }} F</td>
-                            <td class="text-end">{{ data|sum(attribute='credit')|round(2) }} F</td>
+                            <td class="text-end">{{ mt(data|sum(attribute='debit')) }} F</td>
+                            <td class="text-end">{{ mt(data|sum(attribute='credit')) }} F</td>
                             <td class="text-end {% if (data|sum(attribute='debit') - data|sum(attribute='credit'))|round(2) >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                {{ (data|sum(attribute='debit') - data|sum(attribute='credit'))|round(2) }} F
+                                {{ mt((data|sum(attribute='debit') - data|sum(attribute='credit'))) }} F
                             </td>
                         </tr>
                     </tfoot>
@@ -556,16 +558,16 @@
                     <div class="label">Comptes</div>
                 </div>
                 <div class="stat-box">
-                    <div class="number">{{ data|sum(attribute='total_debit')|round(2) }} F</div>
+                    <div class="number">{{ mt(data|sum(attribute='total_debit')) }} F</div>
                     <div class="label">Total Débit</div>
                 </div>
                 <div class="stat-box">
-                    <div class="number">{{ data|sum(attribute='total_credit')|round(2) }} F</div>
+                    <div class="number">{{ mt(data|sum(attribute='total_credit')) }} F</div>
                     <div class="label">Total Crédit</div>
                 </div>
                 <div class="stat-box">
                     <div class="number {% if (data|sum(attribute='total_debit') - data|sum(attribute='total_credit'))|round(2) >= 0 %}text-success{% else %}text-danger{% endif %}">
-                        {{ (data|sum(attribute='total_debit') - data|sum(attribute='total_credit'))|round(2) }} F
+                        {{ mt((data|sum(attribute='total_debit') - data|sum(attribute='total_credit'))) }} F
                     </div>
                     <div class="label">Solde</div>
                 </div>
@@ -585,10 +587,10 @@
                         {% for item in data %}
                         <tr>
                             <td><strong>{{ item.compte_numero or '' }} - {{ item.compte_nom or '' }}</strong></td>
-                            <td class="text-end">{{ (item.total_debit or 0)|round(2) }} F</td>
-                            <td class="text-end">{{ (item.total_credit or 0)|round(2) }} F</td>
+                            <td class="text-end">{{ mt((item.total_debit or 0)) }} F</td>
+                            <td class="text-end">{{ mt((item.total_credit or 0)) }} F</td>
                             <td class="text-end fw-bold {% if (item.solde or 0) >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                {{ (item.solde or 0)|round(2) }} F
+                                {{ mt((item.solde or 0)) }} F
                             </td>
                         </tr>
                         {% endfor %}
@@ -596,10 +598,10 @@
                     <tfoot style="font-weight:bold; background:#f5f7fb;">
                         <tr>
                             <td class="text-end">TOTAUX</td>
-                            <td class="text-end">{{ data|sum(attribute='total_debit')|round(2) }} F</td>
-                            <td class="text-end">{{ data|sum(attribute='total_credit')|round(2) }} F</td>
+                            <td class="text-end">{{ mt(data|sum(attribute='total_debit')) }} F</td>
+                            <td class="text-end">{{ mt(data|sum(attribute='total_credit')) }} F</td>
                             <td class="text-end {% if (data|sum(attribute='total_debit') - data|sum(attribute='total_credit'))|round(2) >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                {{ (data|sum(attribute='total_debit') - data|sum(attribute='total_credit'))|round(2) }} F
+                                {{ mt((data|sum(attribute='total_debit') - data|sum(attribute='total_credit'))) }} F
                             </td>
                         </tr>
                     </tfoot>
@@ -614,15 +616,15 @@
                     <div class="label">Ventes avec TVA</div>
                 </div>
                 <div class="stat-box">
-                    <div class="number text-success">{{ (data.total_collectee or 0)|round(2) }} F</div>
+                    <div class="number text-success">{{ mt((data.total_collectee or 0)) }} F</div>
                     <div class="label">TVA collectée</div>
                 </div>
                 <div class="stat-box">
-                    <div class="number">{{ (data.total_deductible or 0)|round(2) }} F</div>
+                    <div class="number">{{ mt((data.total_deductible or 0)) }} F</div>
                     <div class="label">TVA déductible</div>
                 </div>
                 <div class="stat-box">
-                    <div class="number" style="font-size:22px;">{{ (data.tva_nette or 0)|round(2) }} F</div>
+                    <div class="number" style="font-size:22px;">{{ mt((data.tva_nette or 0)) }} F</div>
                     <div class="label">TVA nette à payer (taux {{ data.taux or 0 }}%)</div>
                 </div>
             </div>
@@ -650,7 +652,7 @@
                             <td><strong>{{ l.piece or '' }}</strong></td>
                             <td>{{ l.libelle or '' }}</td>
                             <td><span class="badge-statut produit">Collectée</span></td>
-                            <td class="text-end">{{ (l.montant or 0)|round(2) }} F</td>
+                            <td class="text-end">{{ mt((l.montant or 0)) }} F</td>
                         </tr>
                         {% endfor %}
                         {% endif %}
@@ -662,7 +664,7 @@
                             <td><strong>{{ l.piece or '' }}</strong></td>
                             <td>{{ l.libelle or '' }}</td>
                             <td><span class="badge-statut charge">Déductible</span></td>
-                            <td class="text-end">{{ (l.montant or 0)|round(2) }} F</td>
+                            <td class="text-end">{{ mt((l.montant or 0)) }} F</td>
                         </tr>
                         {% endfor %}
                         {% endif %}
@@ -670,7 +672,7 @@
                     <tfoot style="font-weight:bold; background:#f5f7fb;">
                         <tr>
                             <td colspan="4" class="text-end">TVA NETTE À PAYER (collectée - déductible)</td>
-                            <td class="text-end">{{ (data.tva_nette or 0)|round(2) }} F</td>
+                            <td class="text-end">{{ mt((data.tva_nette or 0)) }} F</td>
                         </tr>
                     </tfoot>
                 </table>
@@ -685,16 +687,16 @@
                     <div class="label">Lignes</div>
                 </div>
                 <div class="stat-box">
-                    <div class="number text-success">{{ (data.total_produits or 0)|round(2) }} F</div>
+                    <div class="number text-success">{{ mt((data.total_produits or 0)) }} F</div>
                     <div class="label">Total Produits</div>
                 </div>
                 <div class="stat-box">
-                    <div class="number text-danger">{{ (data.total_charges or 0)|round(2) }} F</div>
+                    <div class="number text-danger">{{ mt((data.total_charges or 0)) }} F</div>
                     <div class="label">Total Charges</div>
                 </div>
                 <div class="stat-box">
                     <div class="number {% if (data.resultat or 0) >= 0 %}text-success{% else %}text-danger{% endif %}" style="font-size:22px;">
-                        {{ (data.resultat or 0)|round(2) }} F
+                        {{ mt((data.resultat or 0)) }} F
                     </div>
                     <div class="label">{{ data.resultat_text or 'Bénéfice' }}</div>
                 </div>
@@ -717,13 +719,13 @@
                         {% for p in data.produits %}
                         <tr>
                             <td>{{ p.numero or '' }} - {{ p.nom or '' }}</td>
-                            <td class="text-end text-success">{{ (p.montant or 0)|round(2) }} F</td>
+                            <td class="text-end text-success">{{ mt((p.montant or 0)) }} F</td>
                             <td><span class="badge-statut produit">Produit</span></td>
                         </tr>
                         {% endfor %}
                         <tr style="font-weight:bold; background:#e8f5ed;">
                             <td>TOTAL PRODUITS</td>
-                            <td class="text-end text-success">{{ (data.total_produits or 0)|round(2) }} F</td>
+                            <td class="text-end text-success">{{ mt((data.total_produits or 0)) }} F</td>
                             <td></td>
                         </tr>
                         {% endif %}
@@ -735,13 +737,13 @@
                         {% for c in data.charges %}
                         <tr>
                             <td>{{ c.numero or '' }} - {{ c.nom or '' }}</td>
-                            <td class="text-end text-danger">{{ (c.montant or 0)|round(2) }} F</td>
+                            <td class="text-end text-danger">{{ mt((c.montant or 0)) }} F</td>
                             <td><span class="badge-statut charge">Charge</span></td>
                         </tr>
                         {% endfor %}
                         <tr style="font-weight:bold; background:#f5e8ed;">
                             <td>TOTAL CHARGES</td>
-                            <td class="text-end text-danger">{{ (data.total_charges or 0)|round(2) }} F</td>
+                            <td class="text-end text-danger">{{ mt((data.total_charges or 0)) }} F</td>
                             <td></td>
                         </tr>
                         {% endif %}
@@ -749,7 +751,7 @@
                         <tr style="font-weight:bold; background:#e8edf5; font-size:16px;">
                             <td>RESULTAT NET</td>
                             <td class="text-end {% if (data.resultat or 0) >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                {{ (data.resultat or 0)|round(2) }} F
+                                {{ mt((data.resultat or 0)) }} F
                             </td>
                             <td>
                                 <span class="badge-statut {% if (data.resultat or 0) >= 0 %}produit{% else %}charge{% endif %}" style="font-size:12px;">
@@ -814,11 +816,11 @@
                     <div class="label">Lignes</div>
                 </div>
                 <div class="stat-box">
-                    <div class="number text-primary">{{ (data.total_actif or 0)|round(2) }} F</div>
+                    <div class="number text-primary">{{ mt((data.total_actif or 0)) }} F</div>
                     <div class="label">Total Actif</div>
                 </div>
                 <div class="stat-box">
-                    <div class="number text-warning">{{ (data.total_passif or 0)|round(2) }} F</div>
+                    <div class="number text-warning">{{ mt((data.total_passif or 0)) }} F</div>
                     <div class="label">Total Passif</div>
                 </div>
                 <div class="stat-box">
@@ -846,13 +848,13 @@
                         {% for a in data.actifs %}
                         <tr>
                             <td>{{ a.numero or '' }} - {{ a.nom or '' }}</td>
-                            <td class="text-end text-primary">{{ (a.montant or 0)|round(2) }} F</td>
+                            <td class="text-end text-primary">{{ mt((a.montant or 0)) }} F</td>
                             <td><span class="badge-statut actif">Actif</span></td>
                         </tr>
                         {% endfor %}
                         <tr style="font-weight:bold; background:#e8edf5;">
                             <td>TOTAL ACTIFS</td>
-                            <td class="text-end text-primary">{{ (data.total_actif or 0)|round(2) }} F</td>
+                            <td class="text-end text-primary">{{ mt((data.total_actif or 0)) }} F</td>
                             <td></td>
                         </tr>
                         {% endif %}
@@ -864,13 +866,13 @@
                         {% for p in data.passifs %}
                         <tr>
                             <td>{{ p.numero or '' }} - {{ p.nom or '' }}</td>
-                            <td class="text-end text-warning">{{ (p.montant or 0)|round(2) }} F</td>
+                            <td class="text-end text-warning">{{ mt((p.montant or 0)) }} F</td>
                             <td><span class="badge-statut passif">Passif</span></td>
                         </tr>
                         {% endfor %}
                         <tr style="font-weight:bold; background:#f5f0e8;">
                             <td>TOTAL PASSIFS</td>
-                            <td class="text-end text-warning">{{ (data.total_passif or 0)|round(2) }} F</td>
+                            <td class="text-end text-warning">{{ mt((data.total_passif or 0)) }} F</td>
                             <td></td>
                         </tr>
                         {% endif %}
@@ -882,13 +884,13 @@
                         {% for c in data.capitaux_propres %}
                         <tr>
                             <td>{{ c.numero or '' }} - {{ c.nom or '' }}</td>
-                            <td class="text-end text-info">{{ (c.montant or 0)|round(2) }} F</td>
+                            <td class="text-end text-info">{{ mt((c.montant or 0)) }} F</td>
                             <td><span class="badge-statut capitaux">Capitaux propres</span></td>
                         </tr>
                         {% endfor %}
                         <tr style="font-weight:bold; background:#e8f0f5;">
                             <td>TOTAL CAPITAUX PROPRES</td>
-                            <td class="text-end text-info">{{ (data.total_capitaux or 0)|round(2) }} F</td>
+                            <td class="text-end text-info">{{ mt((data.total_capitaux or 0)) }} F</td>
                             <td></td>
                         </tr>
                         {% endif %}
@@ -896,7 +898,7 @@
                         <tr style="font-weight:bold; background:#e8edf5; font-size:14px;">
                             <td>{% if data.est_equilibre %}✓{% else %}✗{% endif %} EQUILIBRE</td>
                             <td class="text-end">
-                                {{ (data.total_actif or 0)|round(2) }} = {{ ((data.total_passif or 0) + (data.total_capitaux or 0))|round(2) }} F
+                                {{ mt((data.total_actif or 0)) }} = {{ mt(((data.total_passif or 0) + (data.total_capitaux or 0))) }} F
                             </td>
                             <td>
                                 <span class="badge-statut {% if data.est_equilibre %}produit{% else %}charge{% endif %}" style="font-size:12px;">
