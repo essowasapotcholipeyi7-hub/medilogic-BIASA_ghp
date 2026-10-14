@@ -1384,7 +1384,8 @@ function alternativesAnnulation(venteId) {
     const patient = v.patient_nom || '';
     const dateFr = v.date_vente ? new Date(String(v.date_vente).replace(' ', 'T').slice(0, 19)).toLocaleDateString('fr-FR') : '';
     const description = `Remboursement vente n° ${numero}${patient ? ' — ' + patient : ''}${dateFr ? ' (vente du ' + dateFr + ')' : ''} — motif : `;
-    const lien = '{{ url_for("page_depenses_saisie") }}?motif=remboursement_patient&description=' + encodeURIComponent(description);
+    const lien = '{{ url_for("page_depenses_saisie") }}?motif=remboursement_patient&vente=' + encodeURIComponent(venteId)
+               + '&description=' + encodeURIComponent(description);
     let modal = document.getElementById('modalAlternativesAnnulation');
     if (!modal) {
         modal = document.createElement('div');

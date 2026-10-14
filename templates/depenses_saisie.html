@@ -17,7 +17,9 @@
                 <form id="depenseForm">
                     <div class="mb-3">
                         <label class="form-label">Montant (FCFA) *</label>
-                        <input type="number" class="form-control" id="depenseMontant" required min="1">
+                        <input type="number" class="form-control" id="depenseMontant" required min="1" oninput="plafonnerRemboursement()">
+                        {# ⭐ remboursement patient : vente rattachée + plafond (2026-10-14) #}
+                        <div class="alert alert-info py-2 small mt-2 mb-0" id="remboursementInfo" style="display:none;"></div>
                         <small class="text-muted" id="depenseMontantAide" style="display:none;">
                             Montant fixé par l'éditeur SSoftOneV10, non modifiable.
                         </small>
@@ -138,6 +140,7 @@ function toggleMotifPersonnalise() {
 
     const montantInput = document.getElementById('depenseMontant');
     const aide = document.getElementById('depenseMontantAide');
+    afficherInfoRemboursement(motif);
     if (motif === 'abonnement_ssoftonev10') {
         montantInput.readOnly = true;
         aide.style.display = 'block';
@@ -159,6 +162,62 @@ function toggleMotifPersonnalise() {
     }
 }
 
+// ⭐ 2026-10-14 (patron) : remboursement patient — ouvert depuis l'historique des ventes
+// (?vente=<id>) ; montant prérempli = payé − déjà remboursé, modifiable vers le bas seulement.
+let remboursement = null;   // réponse de /api/ventes/<id>/remboursable
+const fcfaR = n => (typeof formatFCFA === 'function') ? formatFCFA(n) : (Math.round(n) + ' FCFA');
+
+async function chargerRemboursement(venteId) {
+    try {
+        remboursement = await fetch('/api/ventes/' + encodeURIComponent(venteId) + '/remboursable').then(r => r.json());
+    } catch (e) {
+        remboursement = {ok: false, erreur: 'Impossible de lire la vente.'};
+    }
+    const montantInput = document.getElementById('depenseMontant');
+    if (remboursement.ok) {
+        montantInput.value = remboursement.remboursable;
+        montantInput.max = remboursement.remboursable;
+    }
+    afficherInfoRemboursement(document.getElementById('depenseMotif').value);
+}
+
+function afficherInfoRemboursement(motif) {
+    const bloc = document.getElementById('remboursementInfo');
+    const montantInput = document.getElementById('depenseMontant');
+    if (!bloc) return;
+    if (motif !== 'remboursement_patient') {
+        bloc.style.display = 'none';
+        montantInput.removeAttribute('max');
+        return;
+    }
+    bloc.style.display = 'block';
+    if (!remboursement) {
+        bloc.className = 'alert alert-warning py-2 small mt-2 mb-0';
+        bloc.innerHTML = "<i class=\"fas fa-circle-info me-1\"></i>Un remboursement se lance depuis l'<strong>historique des ventes</strong> " +
+            "(bouton <i class=\"fas fa-circle-question\"></i> sur la vente) : le montant payé par le patient est alors repris automatiquement.";
+        return;
+    }
+    if (!remboursement.ok) {
+        bloc.className = 'alert alert-danger py-2 small mt-2 mb-0';
+        bloc.textContent = remboursement.erreur;
+        return;
+    }
+    montantInput.max = remboursement.remboursable;
+    bloc.className = 'alert alert-info py-2 small mt-2 mb-0';
+    bloc.innerHTML = `<i class="fas fa-receipt me-1"></i>Vente n° <strong>${remboursement.numero}</strong> du ${remboursement.date}` +
+        (remboursement.patient ? ` — ${remboursement.patient}` : '') +
+        `<br>Payé par le patient : <strong>${fcfaR(remboursement.encaisse)}</strong>` +
+        (remboursement.deja_rembourse ? ` · déjà remboursé : ${fcfaR(remboursement.deja_rembourse)}` : '') +
+        (remboursement.en_attente ? ` · en attente de validation : ${fcfaR(remboursement.en_attente)}` : '') +
+        `<br>Maximum remboursable : <strong>${fcfaR(remboursement.remboursable)}</strong> — vous pouvez diminuer ce montant, pas l'augmenter.`;
+}
+
+function plafonnerRemboursement() {
+    if (document.getElementById('depenseMotif').value !== 'remboursement_patient' || !remboursement || !remboursement.ok) return;
+    const montantInput = document.getElementById('depenseMontant');
+    if (parseFloat(montantInput.value) > remboursement.remboursable) montantInput.value = remboursement.remboursable;
+}
+
 async function saveDepense() {
     const montant = document.getElementById('depenseMontant').value;
     if (!montant || montant <= 0) {
@@ -175,6 +234,18 @@ async function saveDepense() {
         motif_personnalise: motif === 'autres' ? motifPersonnalise : '',
         description: document.getElementById('depenseDescription').value
     };
+    // ⭐ remboursement patient : vente obligatoire, montant jamais au-dessus du payé (le serveur re-vérifie)
+    if (motif === 'remboursement_patient') {
+        if (!remboursement || !remboursement.ok) {
+            await afficherMessage((remboursement && remboursement.erreur) || "Lancez le remboursement depuis l'historique des ventes (bouton « ? » sur la vente).");
+            return;
+        }
+        if (data.montant > remboursement.remboursable) {
+            await afficherMessage('Le remboursement ne peut pas dépasser ' + fcfaR(remboursement.remboursable) + '.');
+            return;
+        }
+        data.vente_id = remboursement.vente_id;
+    }
     // ⭐ Salaire lié à la RH : employé / paie globale + mois (patron, 2026-10-09)
     if (motif === 'salaire' && window.chargeSalaireDonnees && !(await chargeSalaireDonnees(data))) return;
 
@@ -251,8 +322,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const selectMotif = document.getElementById('depenseMotif');
     if (motifVoulu && [...selectMotif.options].some(o => o.value === motifVoulu)) selectMotif.value = motifVoulu;
     if (params.get('description')) document.getElementById('depenseDescription').value = params.get('description');
-    if (params.get('montant')) document.getElementById('depenseMontant').value = params.get('montant');
     toggleMotifPersonnalise(); // le motif "Abonnement SSoftOneV10" est sélectionné par défaut
+    if (params.get('vente')) chargerRemboursement(params.get('vente'));
 });
 </script>
 {% endblock %}

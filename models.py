@@ -2582,6 +2582,9 @@ class Depense(db.Model):
     moyen_paiement = db.Column(db.String(20))
     reference_paiement = db.Column(db.String(100))
     date_paiement = db.Column(db.Date)
+    # ⭐ Remboursement patient (2026-10-14) : vente remboursée — plafond = payé − déjà remboursé
+    # (voir services/remboursement_service.py)
+    vente_id = db.Column(db.Integer, index=True)
 
 
 class Fournisseur(db.Model):

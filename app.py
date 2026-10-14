@@ -17541,6 +17541,15 @@ def api_finances_recettes_source():
         traceback.print_exc()
         return jsonify([]), 500
 
+@app.route('/api/ventes/<int:vente_id>/remboursable')
+@login_required
+def api_vente_remboursable(vente_id):
+    """⭐ 2026-10-14 : montant maximum remboursable au patient sur une vente
+    (payé − déjà remboursé − en attente) — préremplit la charge « Remboursement patient »."""
+    from services.remboursement_service import montant_remboursable
+    return jsonify(montant_remboursable(session.get('structure_id'), vente_id))
+
+
 @app.route('/api/finances/depenses', methods=['POST'])
 @login_required
 def api_add_depense():
@@ -17596,6 +17605,17 @@ def api_add_depense():
         moyen_libelle = MOYENS_PAIEMENT_LABELS.get(moyen_paiement, moyen_paiement)
         resume = (f"Dépense — Abonnement SSoftOneV10 — {int(montant):,} FCFA".replace(',', ' ') +
                   f" — {moyen_libelle} réf. {reference_paiement} du {date_paiement}")
+
+    # ⭐ 2026-10-14 : remboursement patient — rattaché à une vente, jamais plus que ce que
+    # le patient a payé (moins ce qui lui a déjà été remboursé ou est en attente)
+    if motif == 'remboursement_patient':
+        from services.remboursement_service import controler_remboursement
+        info, erreur = controler_remboursement(structure_id, data.get('vente_id'), montant)
+        if erreur:
+            return jsonify({'success': False, 'error': erreur}), 400
+        payload['vente_id'] = info['vente_id']
+        resume = (f"Remboursement patient — vente n° {info['numero']} du {info['date']} — {info['patient']} — "
+                  f"{int(montant):,} FCFA (payé {int(info['encaisse']):,} F)").replace(',', ' ')[:500]
 
     # ⭐ Patron (2026-10-09) : charge « Salaire du personnel » liée à la RH —
     # employé choisi (ou paie globale du mois) ; le montant est TOUJOURS le
@@ -17871,7 +17891,8 @@ def admin_installation_recu(paiement_id):
 
 def _executer_ajout_depense(structure_id, montant, motif, motif_personnalise, description, user_name,
                              moyen_paiement=None, reference_paiement=None, date_paiement=None,
-                             employe_id=None, employe_ids=None, mois_paie=None):
+                             employe_id=None, employe_ids=None, mois_paie=None,
+                             vente_id=None, demande_id=None):
     """Exécute réellement l'enregistrement de la dépense (caisse, écriture
     comptable...). Lève une exception en cas d'échec.
     moyen_paiement/reference_paiement/date_paiement : justificatif de
@@ -17919,10 +17940,18 @@ def _executer_ajout_depense(structure_id, montant, motif, motif_personnalise, de
         if montant > solde:
             raise ValueError(f'Solde insuffisant. Solde actuel: {int(solde)} FCFA')
 
+        # ⭐ Remboursement patient : plafond re-vérifié à la validation (une autre demande
+        # a pu être validée entre-temps) — 2026-10-14
+        if motif == 'remboursement_patient':
+            from services.remboursement_service import controler_remboursement
+            _info, erreur = controler_remboursement(structure_id, vente_id, montant, exclure_demande_id=demande_id)
+            if erreur:
+                raise ValueError(erreur)
+
         result = db.execute_query("""
             INSERT INTO depenses (structure_id, montant, motif, motif_personnalise, description, created_by_nom,
-                                   moyen_paiement, reference_paiement, date_paiement)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                   moyen_paiement, reference_paiement, date_paiement, vente_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             structure_id,
@@ -17933,7 +17962,8 @@ def _executer_ajout_depense(structure_id, montant, motif, motif_personnalise, de
             user_name,
             moyen_paiement,
             reference_paiement,
-            date_paiement
+            date_paiement,
+            vente_id if motif == 'remboursement_patient' else None
         ))
         
         # 🔥 Mettre à jour le solde de caisse
@@ -19157,6 +19187,9 @@ def api_valider_demande(demande_id):
                 employe_id=payload.get('employe_id'),
                 employe_ids=payload.get('employe_ids'),
                 mois_paie=payload.get('mois'),
+                # ⭐ remboursement patient (2026-10-14)
+                vente_id=payload.get('vente_id'),
+                demande_id=demande.id,
             )
         elif demande.type_demande == 'encaissement_assurance':
             resultat = _executer_paiement_assurance(
