@@ -13848,6 +13848,63 @@ def api_creer_taux_part_medecin():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/taux-part-medecin/lot', methods=['POST'])
+@login_required
+@roles_required('admin', 'gestionnaire', 'secretaire', 'caissier')
+def api_taux_part_medecin_lot():
+    """⭐ 2026-10-15 (patron) : relier PLUSIEURS actes à UN médecin en une fois, chacun
+    avec son taux. {medecin_id, lignes: [{nom_acte, taux}]}. Acte pas encore configuré :
+    créé avec ce taux, le médecin y est affecté. Acte déjà configuré : son taux et ses
+    autres médecins restent ; ce médecin y est ajouté (ou mis à jour) avec ce taux."""
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        try:
+            medecin_id = int(data.get('medecin_id'))
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'Choisissez un médecin.'}), 400
+        if not Medecin.query.filter_by(id=medecin_id, structure_id=structure_id).first():
+            return jsonify({'success': False, 'error': 'Médecin inconnu dans cette structure'}), 400
+        lignes, vus = [], set()
+        for l in (data.get('lignes') or []):
+            nom = ((l or {}).get('nom_acte') or '').strip()
+            if not nom or nom in vus:
+                continue
+            try:
+                taux = float(l.get('taux'))
+            except (TypeError, ValueError):
+                return jsonify({'success': False, 'error': f'Taux manquant ou invalide pour « {nom} »'}), 400
+            if taux <= 0 or taux > 100:
+                return jsonify({'success': False, 'error': f'Le taux de « {nom} » doit être entre 0 (exclu) et 100 %'}), 400
+            vus.add(nom)
+            lignes.append((nom, taux))
+        if not lignes:
+            return jsonify({'success': False, 'error': 'Ajoutez au moins un acte.'}), 400
+        user = session.get('user_name', 'System')
+        crees = maj = 0
+        for nom, taux in lignes:
+            acte = TauxPartMedecin.query.filter_by(structure_id=structure_id, nom_acte=nom).first()
+            if not acte:
+                db.session.add(TauxPartMedecin(structure_id=structure_id, nom_acte=nom, taux_medecin=taux,
+                                               toujours_demander_medecin=False, created_by=user))
+                taux_propre, crees = None, crees + 1          # le taux de l'acte = celui du médecin
+            else:
+                acte.actif = True
+                taux_propre = None if float(acte.taux_medecin or 0) == taux else taux
+                maj += 1
+            aff = AffectationPartMedecin.query.filter_by(structure_id=structure_id, nom_acte=nom, medecin_id=medecin_id).first()
+            if aff:
+                aff.taux_medecin = taux_propre
+            else:
+                db.session.add(AffectationPartMedecin(structure_id=structure_id, nom_acte=nom, medecin_id=medecin_id,
+                                                      taux_medecin=taux_propre, created_by=user))
+        db.session.commit()
+        return jsonify({'success': True, 'crees': crees, 'mis_a_jour': maj, 'total': len(lignes)})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/taux-part-medecin/<int:ligne_id>', methods=['DELETE'])
 @login_required
 @roles_required('admin', 'gestionnaire', 'secretaire', 'caissier')  # ⭐ 2026-10-15 : secrétaire / caissière aussi

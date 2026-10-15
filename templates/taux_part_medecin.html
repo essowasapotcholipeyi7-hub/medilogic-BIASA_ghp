@@ -13,6 +13,10 @@
         <button class="btn btn-dark btn-sm" onclick="ouvrirModalTaux()">
             <i class="fas fa-plus me-1"></i> Configurer un acte
         </button>
+        {# ⭐ 2026-10-15 (patron) : plusieurs actes d'un coup pour un médecin, un taux par acte #}
+        <button class="btn btn-primary btn-sm ms-1" onclick="ouvrirModalLot()">
+            <i class="fas fa-layer-group me-1"></i> Plusieurs actes pour un médecin
+        </button>
     </div>
 </div>
 
@@ -97,8 +101,150 @@
     </div>
 </div>
 
+<!-- ⭐ 2026-10-15 (patron) : relier plusieurs actes à un médecin, un taux par acte -->
+<div class="modal fade" id="modalLot" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-layer-group me-2"></i>Plusieurs actes pour un médecin</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label mb-1 fw-bold">Médecin</label>
+                <select class="form-select mb-3" id="lotMedecin" onchange="chargerActesDuMedecin()">
+                    <option value="">— Choisir le médecin —</option>
+                    {% for m in medecins %}<option value="{{ m.id }}">{{ m.nom_complet }}{% if m.specialite %} — {{ m.specialite }}{% endif %}</option>{% endfor %}
+                </select>
+                <div class="position-relative mb-2">
+                    <label class="form-label mb-1 fw-bold">Ajouter des actes</label>
+                    <input type="text" class="form-control" id="lotSearch" placeholder="Rechercher un acte (2 lettres min.) puis cliquer pour l'ajouter…" autocomplete="off">
+                    <div id="lotResultats" class="list-group position-absolute w-100" style="z-index:1000; max-height:240px; overflow-y:auto; display:none;"></div>
+                </div>
+                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                    <span class="small text-muted">Même taux pour toutes les lignes :</span>
+                    <div class="input-group input-group-sm" style="width:130px;">
+                        <input type="number" class="form-control" id="lotTauxTous" min="1" max="100" step="1" placeholder="ex: 60">
+                        <span class="input-group-text">%</span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="appliquerTauxTous()">Appliquer à tous</button>
+                    <span class="ms-auto small"><strong id="lotNb">0</strong> acte(s)</span>
+                </div>
+                <div class="border rounded" style="max-height:320px; overflow-y:auto;" id="lotListe"></div>
+                <div class="form-text">Un acte déjà configuré garde son taux et ses autres médecins : ce médecin y est seulement ajouté
+                    avec le taux indiqué. Un acte nouveau est créé avec ce taux.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="enregistrerLot()"><i class="fas fa-check me-1"></i> Enregistrer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 const MEDECINS = {{ medecins|tojson }};
+// ⭐ 2026-10-15 : plusieurs actes pour un médecin — [{nom_acte, taux, deja}] ('deja' = déjà relié)
+let lotLignes = [];
+let debounceLot = null;
+function echapperLot(t) { return String(t).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])); }
+function ouvrirModalLot() {
+    lotLignes = [];
+    document.getElementById('lotMedecin').value = '';
+    document.getElementById('lotSearch').value = '';
+    document.getElementById('lotTauxTous').value = '';
+    rendreLot();
+    new bootstrap.Modal(document.getElementById('modalLot')).show();
+}
+function chargerActesDuMedecin() {
+    const mid = parseInt(document.getElementById('lotMedecin').value, 10);
+    // actes déjà reliés à ce médecin : affichés pour pouvoir changer leur taux
+    lotLignes = lotLignes.filter(l => !l.deja);
+    if (mid) {
+        TOUS_TAUX.forEach(l => {
+            const a = (l.medecins || []).find(m => m.medecin_id === mid);
+            if (a && !lotLignes.some(x => x.nom_acte === l.nom_acte)) {
+                lotLignes.push({nom_acte: l.nom_acte, taux: a.taux != null ? a.taux : l.taux_medecin, deja: true});
+            }
+        });
+    }
+    rendreLot();
+}
+function ajouterActeLot(nom) {
+    if (!lotLignes.some(l => l.nom_acte === nom)) {
+        const existant = TOUS_TAUX.find(l => l.nom_acte === nom);
+        const tous = document.getElementById('lotTauxTous').value;
+        lotLignes.push({nom_acte: nom, taux: tous || (existant ? existant.taux_medecin : ''), deja: false});
+    }
+    document.getElementById('lotSearch').value = '';
+    document.getElementById('lotResultats').style.display = 'none';
+    rendreLot();
+    document.getElementById('lotSearch').focus();
+}
+function retirerActeLot(i) { lotLignes.splice(i, 1); rendreLot(); }
+function appliquerTauxTous() {
+    const t = document.getElementById('lotTauxTous').value;
+    if (!t) return;
+    lotLignes.forEach(l => l.taux = t);
+    rendreLot();
+}
+function rendreLot() {
+    document.getElementById('lotNb').textContent = lotLignes.length;
+    document.getElementById('lotListe').innerHTML = lotLignes.length ? lotLignes.map((l, i) => {
+        const existant = TOUS_TAUX.find(x => x.nom_acte === l.nom_acte);
+        const info = l.deja ? '<span class="badge bg-secondary ms-1">déjà relié</span>'
+            : (existant ? '<span class="badge bg-light text-dark border ms-1">acte déjà configuré (' + existant.taux_medecin + ' %)</span>'
+                        : '<span class="badge bg-success ms-1">nouvel acte</span>');
+        return `<div class="d-flex align-items-center gap-2 px-2 py-1 border-bottom">
+            <div class="flex-grow-1 small">${echapperLot(l.nom_acte)}${info}</div>
+            <div class="input-group input-group-sm" style="width:120px;">
+                <input type="number" class="form-control" min="1" max="100" step="1" value="${l.taux}" placeholder="Taux" oninput="lotLignes[${i}].taux = this.value">
+                <span class="input-group-text">%</span>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-danger" title="Retirer de la liste" onclick="retirerActeLot(${i})"><i class="fas fa-times"></i></button>
+        </div>`;
+    }).join('') : '<div class="text-muted small p-3 text-center">Choisissez le médecin puis ajoutez les actes avec la recherche.</div>';
+}
+document.getElementById('lotSearch').addEventListener('input', function () {
+    const q = this.value.trim();
+    clearTimeout(debounceLot);
+    if (q.length < 2) { document.getElementById('lotResultats').style.display = 'none'; return; }
+    debounceLot = setTimeout(() => {
+        fetch('/api/actes?search=' + encodeURIComponent(q) + '&limit=30').then(r => r.json()).then(data => {
+            const box = document.getElementById('lotResultats');
+            const liste = (data.data || []).filter(a => !lotLignes.some(l => l.nom_acte === a.nom));
+            if (!liste.length) { box.style.display = 'none'; return; }
+            box.innerHTML = liste.map(a => `<a href="#" class="list-group-item list-group-item-action small" data-nom="${echapperLot(a.nom)}">${echapperLot(a.nom)}</a>`).join('');
+            box.querySelectorAll('a').forEach(el => el.addEventListener('click', e => { e.preventDefault(); ajouterActeLot(el.dataset.nom); }));
+            box.style.display = 'block';
+        });
+    }, 250);
+});
+document.addEventListener('click', function (e) {
+    const box = document.getElementById('lotResultats');
+    if (box && !e.target.closest('#lotSearch') && !e.target.closest('#lotResultats')) box.style.display = 'none';
+});
+async function enregistrerLot() {
+    const medecin_id = parseInt(document.getElementById('lotMedecin').value, 10);
+    if (!medecin_id) { await afficherMessage('Choisissez le médecin.'); return; }
+    if (!lotLignes.length) { await afficherMessage('Ajoutez au moins un acte.'); return; }
+    for (const l of lotLignes) {
+        const t = parseFloat(l.taux);
+        if (isNaN(t) || t <= 0 || t > 100) { await afficherMessage('Taux manquant ou invalide pour « ' + l.nom_acte + ' » (1 à 100).'); return; }
+    }
+    fetch('/api/taux-part-medecin/lot', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({medecin_id: medecin_id, lignes: lotLignes.map(l => ({nom_acte: l.nom_acte, taux: parseFloat(l.taux)}))})
+    }).then(r => r.json()).then(async data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('modalLot')).hide();
+            chargerTaux();
+            await afficherMessage(`${data.total} acte(s) relié(s) au médecin (${data.crees} nouveau(x), ${data.mis_a_jour} déjà configuré(s)).`, {type: 'success'});
+        } else {
+            await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
+        }
+    }).catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
+}
+
 let tauxChoisi = null;
 let debounceTaux = null;
 let TOUS_TAUX = [];
