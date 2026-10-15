@@ -216,11 +216,13 @@ def creer_lignes_part_medecin(structure_id, articles, vente_id, user_name):
         if prix is None:
             prix = a.get('prix_unitaire') or a.get('prix_reel') or 0
         prix = float(prix or 0)
-        # ⭐ 2026-10-15 : prix de base propre à ce médecin pour cet acte (sinon prix de vente) —
-        # jamais au-dessus du prix réellement vendu (patron : « par défaut le prix de l'acte, ou en baisse »)
+        # ⭐ 2026-10-15 (patron) : prix NON modifié -> la part suit le prix appliqué au patient
+        # (prix clinique, tarif assurance privée ou prix non assuré, déjà dans `prix`) ; prix
+        # MODIFIÉ pour ce médecin -> la part se calcule sur ce prix, que le patient soit assuré
+        # ou non (plafonné au prix de l'acte à la configuration).
         prix_base = prix_base_pour(nom, medecin_id, affectations)
         if prix_base:
-            prix = min(prix_base, prix)
+            prix = prix_base
         quantite = int(a.get('quantite') or 1)
         montant = round(prix * quantite * taux / 100, 2)
 
