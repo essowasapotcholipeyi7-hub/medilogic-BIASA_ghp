@@ -19363,7 +19363,10 @@ def proformas():
                          proformas=proformas,
                          stats=stats,
                          actes=actes_filtres,
-                         produits=produits_filtres)
+                         produits=produits_filtres,
+                         # ⭐ 2026-10-15 : l'écran calcule comme le serveur (prix non assuré)
+                         prix_non_assure_actes=charger_prix_non_assure(structure_id, 'acte'),
+                         prix_non_assure_produits=charger_prix_non_assure(structure_id, 'produit'))
 
 
 @app.route('/api/proformas', methods=['POST'])
@@ -19449,13 +19452,18 @@ def api_creer_proforma():
             'pbr_prive_par_acte': charger_pbr_complementaires(structure_id, assurance2_nom_pour_pbr) if (data.get('assurance2_active', False) and assurance2_nom_pour_pbr) else {},
             'applique_pbr_prive': bool(applique_pbr_cac), 'variante': pbr_cac_variante,
         }
-        prix_non_assure_proforma = charger_prix_non_assure(structure_id) if (type_proforma_actes := str(data.get('type', 'actes')).lower() in ('actes', 'acte')) else {}
+        # ⭐ 2026-10-15 : prix non assuré de CHAQUE ligne selon son type (acte / produit) — avant,
+        # seulement pour une proforma de type « actes », alors que l'écran envoie toujours « mixte »
+        # (un non-assuré ne voyait donc jamais son prix non assuré sur la proforma).
+        prix_non_assure_proforma = {'acte': charger_prix_non_assure(structure_id, 'acte'),
+                                    'produit': charger_prix_non_assure(structure_id, 'produit')}
         for article in articles:
             prix = float(article.get('prix', article.get('prix_unitaire', 0)))
             pbr = float(article.get('pbr', prix))
             quantite = float(article.get('quantite', 1))
-            if article.get('prix_non_assure') is None and type_proforma_actes:
-                article['prix_non_assure'] = prix_non_assure_proforma.get(article.get('nom'))
+            if article.get('prix_non_assure') is None:
+                carte_na = prix_non_assure_proforma['produit' if article.get('type') == 'produit' else 'acte']
+                article['prix_non_assure'] = carte_na.get(article.get('nom'))
             ligne = repartir_ligne({
                 'nom': article.get('nom'), 'prix': prix, 'pbr': pbr, 'quantite': quantite,
                 'prix_non_assure': article.get('prix_non_assure'), 'prix_modifie': article.get('prix_modifie'),

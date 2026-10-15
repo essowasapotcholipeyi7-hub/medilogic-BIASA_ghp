@@ -614,6 +614,66 @@
 // VARIABLES GLOBALES
 // ============================================
 let panierArticles = [];
+
+// ============================================
+// ⭐ TARIFICATION (patron, 2026-10-15) — miroir de services/tarification_service.py, la
+// même règle que la vente d'actes / la pharmacie et que le serveur à l'enregistrement :
+//   tarif = tarif privé de la compagnie (si elle prend la ligne) ; sinon, si plus aucune
+//   assurance ne prend la ligne, prix non assuré ; sinon prix de base.
+//   part AMU = taux x min(tarif, PBR AMU) ; part privée = taux x PBR privé (plafonnée au
+//   reste après AMU) s'il existe, sinon taux x reste. Avant, l'écran ignorait tarif privé,
+//   PBR privé et prix non assuré : la proforma enregistrée ne correspondait pas à l'écran.
+// ============================================
+const PRIX_NA_PROFORMA = {acte: {{ (prix_non_assure_actes or {})|tojson|safe }}, produit: {{ (prix_non_assure_produits or {})|tojson|safe }}};
+let pbrCacMapProforma = {};
+let pbrCacMapProformaPour = null;
+function chargerPbrCacProforma() {
+    const nom = (assurance2Active && assurance2Nom && assurance2Nom !== 'Aucune') ? assurance2Nom : '';
+    if (nom === pbrCacMapProformaPour) return;
+    pbrCacMapProformaPour = nom;
+    if (!nom) { pbrCacMapProforma = {}; return; }
+    fetch('/api/pbr-complementaires?compagnie=' + encodeURIComponent(nom))
+        .then(r => r.json())
+        .then(m => { if (pbrCacMapProformaPour === nom) { pbrCacMapProforma = m || {}; afficherPanier(); } })
+        .catch(() => {});
+}
+function contexteTarifProforma() {
+    const typeA = document.getElementById('assuranceNom').value;
+    const estAssure = typeA && typeA !== '' && typeA !== 'Non assuré';
+    const tauxAMU = estAssure ? (parseFloat(document.getElementById('tauxAssurance').value) || 0) : 0;
+    const taux2 = assurance2Active ? (parseFloat(document.getElementById('assurance2TauxApplique').value) || 0) : 0;
+    return {amu: tauxAMU > 0, tauxAMU: tauxAMU,
+            privee: !!(assurance2Active && assurance2Nom && assurance2Nom !== 'Aucune' && taux2 > 0), tauxPrivee: taux2};
+}
+function tauxAMUArticleProforma(nom, taux) {
+    if (nom && nom.includes('O101')) return 100;
+    return (nom && nom.includes('P160')) ? 90 : taux;
+}
+function repartirLigneProforma(item, ctx) {
+    const q = parseFloat(item.quantite) || 0;
+    const amuLigne = ctx.amu && item.prise_en_charge_amu !== false;
+    const priveeLigne = ctx.privee && item.prise_en_charge_cac !== false;
+    let tarif = parseFloat(item.prix) || 0, source = 'base';
+    if (!item.prix_modifie) {
+        const entree = priveeLigne ? pbrCacMapProforma[item.nom] : undefined;
+        const na = parseFloat((PRIX_NA_PROFORMA[item.type === 'produit' ? 'produit' : 'acte'] || {})[item.nom]) || 0;
+        if (entree && entree.tarif_prive) { tarif = parseFloat(entree.tarif_prive); source = 'prive'; }
+        else if (!amuLigne && !priveeLigne && na > 0) { tarif = na; source = 'non_assure'; }
+    }
+    const total = tarif * q;
+    const pbr = parseFloat(item.pbr) || 0;
+    let partAMU = 0;
+    if (amuLigne && pbr > 0) partAMU = Math.min(tarif, pbr) * q * tauxAMUArticleProforma(item.nom, ctx.tauxAMU) / 100;
+    let partPrivee = 0;
+    if (priveeLigne && ctx.tauxPrivee > 0) {
+        const reste = Math.max(total - partAMU, 0);
+        const e = pbrCacMapProforma[item.nom];
+        const pbrPrive = (e && e.pbr_1 !== null && e.pbr_1 !== undefined && e.pbr_1 > 0) ? e.pbr_1 : null;
+        partPrivee = pbrPrive !== null ? Math.min(pbrPrive * q * ctx.tauxPrivee / 100, reste) : reste * ctx.tauxPrivee / 100;
+    }
+    return {tarif: tarif, source: source, total: total, partAMU: partAMU, partPrivee: partPrivee,
+            partPatient: Math.max(total - partAMU - partPrivee, 0)};
+}
 let patientsList = [];
 let actesList = [];
 let produitsList = [];
@@ -1490,6 +1550,7 @@ async function modifierPrixPanier(index, nouveauPrix) {
         return;
     }
     item.prix = prix;
+    item.prix_modifie = true;   // ⭐ 2026-10-15 : le prix saisi prime sur tout tarif automatique
     item.total = item.quantite * prix;
     afficherPanier();
 }
@@ -1557,33 +1618,16 @@ function afficherPanier() {
     const tauxAMUPourPanier = estAssurePourPanier ? (parseFloat(document.getElementById('tauxAssurance').value) || 0) : 0;
     const tauxCACPourPanier = assurance2Active ? (parseFloat(document.getElementById('assurance2TauxApplique').value) || 0) : 0;
 
+    chargerPbrCacProforma();
+    const ctxTarif = contexteTarifProforma();
     panierArticles.forEach((item, index) => {
+        // ⭐ 2026-10-15 : même calcul que le serveur (voir repartirLigneProforma)
+        const l = repartirLigneProforma(item, ctxTarif);
+        item.total = l.total;
         sousTotal += item.total;
-
-        const prixLigne = item.prix || 0;
-        const pbrLigne = (item.pbr !== undefined && item.pbr !== null) ? item.pbr : 0;
-        const quantiteLigne = item.quantite || 1;
-        const totalLigne = prixLigne * quantiteLigne;
-        const eligibleAMU = item.prise_en_charge_amu !== false && pbrLigne > 0;
-        const eligibleCAC = item.prise_en_charge_cac !== false;
-
-        // ⭐ Part AMU de cette ligne précise — même formule que
-        // actes_vente.html/pharma_vente.html : min(prix,pbr) × qté × taux.
-        let partAMULigne = 0;
-        if (eligibleAMU && tauxAMUPourPanier > 0) {
-            partAMULigne = (Math.min(prixLigne, pbrLigne) * quantiteLigne * tauxAMUPourPanier) / 100;
-        }
-
-        // ⭐ Part CAC de cette ligne — reste après Part AMU de CETTE ligne
-        // si éligible, sinon le prix total (même logique que la base CAC
-        // article par article dans calculerTotal() ci-dessous).
-        let partCACLigne = 0;
-        if (eligibleCAC && tauxCACPourPanier > 0) {
-            const baseCACLigne = eligibleAMU ? Math.max(totalLigne - partAMULigne, 0) : totalLigne;
-            partCACLigne = (baseCACLigne * tauxCACPourPanier) / 100;
-        }
-
-        const partPatientLigne = Math.max(totalLigne - partAMULigne - partCACLigne, 0);
+        const partAMULigne = l.partAMU, partCACLigne = l.partPrivee, partPatientLigne = l.partPatient;
+        const libelleTarif = l.source === 'prive' ? 'tarif ' + (assurance2Nom || 'privé')
+            : (l.source === 'non_assure' ? 'prix non assuré' : (item.prix_modifie ? 'prix saisi' : ''));
 
         const row = tbody.insertRow();
         row.innerHTML = `
@@ -1602,8 +1646,9 @@ function afficherPanier() {
                 </div>
             </td>
             <td>
-                <input type="number" class="form-control form-control-sm" value="${item.prix}"
+                <input type="number" class="form-control form-control-sm" value="${l.tarif}"
                        style="width:100px;" onchange="modifierPrixPanier(${index}, this.value)">
+                ${libelleTarif ? '<div class="small text-muted">' + libelleTarif + '</div>' : ''}
             </td>
             <td class="text-center">${partAMULigne > 0 ? '<span class="badge bg-success">' + Math.round(partAMULigne).toLocaleString('fr-FR') + ' F</span>' : '<span class="text-muted">-</span>'}</td>
             <td class="text-center">${partCACLigne > 0 ? '<span class="badge bg-info">' + Math.round(partCACLigne).toLocaleString('fr-FR') + ' F</span>' : '<span class="text-muted">-</span>'}</td>
@@ -1660,60 +1705,20 @@ function onChangeTypeAideProforma() {
 }
 
 function calculerTotal() {
-    let sousTotal = 0;
-    let pbrTotalAMU = 0;
-    let sousTotalAMU = 0;
-    let baseCAC = 0;  // 🔥 Base CAC calculée article par article
-    
-    // 🔥 1. Calculer les bases article par article
+    // ⭐ 2026-10-15 : lignes calculées comme au serveur (repartirLigneProforma)
+    chargerPbrCacProforma();
+    const ctxTotal = contexteTarifProforma();
+    let sousTotal = 0, partAMUTotal = 0, partPriveeTotal = 0;
     for (const item of panierArticles) {
-        const prix = item.prix || 0;
-        const pbr = (item.pbr !== undefined && item.pbr !== null) ? item.pbr : 0;
-        const quantite = item.quantite || 1;
-        const total = prix * quantite;
-        
-        sousTotal += total;
-        
-        // 🔥 AMU
-        if (item.prise_en_charge_amu !== false && pbr > 0) {
-            sousTotalAMU += total;
-            pbrTotalAMU += Math.min(prix, pbr) * quantite;
-        }
-        
-        // 🔥🔥🔥 CORRECTION : CAC article par article 🔥🔥🔥
-        if (item.prise_en_charge_cac !== false) {
-            if (item.prise_en_charge_amu !== false && pbr > 0) {
-                // Article avec AMU → CAC sur le reste après AMU
-                const baseAMU = Math.min(prix, pbr) * quantite;
-                const tauxPrincipal = parseFloat(document.getElementById('tauxAssurance').value) || 0;
-                const priseAMU = (baseAMU * tauxPrincipal) / 100;
-                const reste = total - priseAMU;
-                if (reste > 0) {
-                    baseCAC += reste;
-                }
-            } else {
-                // Article sans AMU → CAC sur le prix total
-                baseCAC += total;
-            }
-        }
+        const l = repartirLigneProforma(item, ctxTotal);
+        sousTotal += l.total;
+        partAMUTotal += l.partAMU;
+        partPriveeTotal += l.partPrivee;
     }
-    
-    // 🔥 2. Vérifier si le patient a une assurance principale
-    const typeAssurance = document.getElementById('assuranceNom').value;
-    const estAssure = typeAssurance && typeAssurance !== '' && typeAssurance !== 'Non assuré';
-    let tauxPrincipal = parseFloat(document.getElementById('tauxAssurance').value) || 0;
-    
-    // 🔥 3. AMU
-    let priseEnChargeAMU = 0;
-    let baseRemboursement = 0;
-    
-    if (estAssure && tauxPrincipal > 0) {
-        baseRemboursement = Math.min(sousTotalAMU, pbrTotalAMU);
-        if (baseRemboursement > 0) {
-            priseEnChargeAMU = (baseRemboursement * tauxPrincipal) / 100;
-        }
-    }
-    
+
+    // 🔥 2-3. AMU
+    let priseEnChargeAMU = partAMUTotal;
+
     // 🔥 4. CAC
     let priseEnChargeCAC = 0;
     let tauxComplementaire = 0;
@@ -1730,9 +1735,9 @@ function calculerTotal() {
             document.getElementById('tauxModifieBadge').style.display = 'none';
         }
         
-        // 🔥🔥🔥 CAC sur la BASE CAC calculée article par article 🔥🔥🔥
-        if (tauxComplementaire > 0 && baseCAC > 0) {
-            priseEnChargeCAC = (baseCAC * tauxComplementaire) / 100;
+        // ⭐ 2026-10-15 : somme des parts privées par ligne (tarif / PBR de la compagnie)
+        if (tauxComplementaire > 0) {
+            priseEnChargeCAC = partPriveeTotal;
         }
         
         document.getElementById('assurance2TauxProforma').textContent = tauxComplementaire + '%';
@@ -1814,7 +1819,8 @@ async function sauvegarderProforma() {
         prise_en_charge_amu: item.prise_en_charge_amu !== false,
         prise_en_charge_cac: item.prise_en_charge_cac !== false,
         commentaire_amu: item.commentaire_amu || '',
-        commentaire_cac: item.commentaire_cac || ''
+        commentaire_cac: item.commentaire_cac || '',
+        prix_modifie: !!item.prix_modifie   // ⭐ 2026-10-15 : sinon le serveur remplaçait le prix saisi
     }));
     
     let tauxComplementaire = 0;
@@ -4036,6 +4042,29 @@ document.addEventListener('input', function (e) {
         unite.dispatchEvent(new Event('change'));   // bornes du champ + recalcul (fonctions de la page)
     }
 }, true);
+</script>
+<script>
+// ⭐ 2026-10-15 (patron) : double-clic (ou Entrée) sur un acte / un produit = ajout direct au
+// panier, comme en vente d'actes et en pharmacie (mêmes contrôles que « Ajouter sélection »).
+document.addEventListener('DOMContentLoaded', function () {
+    ['acteSelect', 'produitSelect'].forEach(function (id) {
+        const liste = document.getElementById(id);
+        if (!liste) return;
+        const autre = document.getElementById(id === 'acteSelect' ? 'produitSelect' : 'acteSelect');
+        function ajouterCeluiCi(option) {
+            if (!option || !option.value || option.disabled) return;
+            if (autre) Array.from(autre.options).forEach(function (o) { o.selected = false; });
+            Array.from(liste.options).forEach(function (o) { o.selected = (o === option); });
+            ajouterArticleSelectionne();
+        }
+        liste.addEventListener('dblclick', function (e) {
+            if (e.target && e.target.tagName === 'OPTION') ajouterCeluiCi(e.target);
+        });
+        liste.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { e.preventDefault(); ajouterCeluiCi(liste.selectedOptions[0]); }
+        });
+    });
+});
 </script>
 {# styles de la recherche mise en exergue (zone-recherche-articles) ; la liste déroulante
    de la vente n'est pas branchée ici (listes à choix multiple, chargées par le serveur) #}
