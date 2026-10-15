@@ -70,26 +70,32 @@
              résumé des assurances, partials/reglages_assurance_pliables.html). -->
         <div class="mb-3" id="medecinJourPliable">
         <button type="button" class="resume-reglages-assurance" data-bs-toggle="collapse" data-bs-target="#corpsMedecinJour" aria-expanded="false" aria-controls="corpsMedecinJour">
-            <span><i class="fas fa-user-md me-1"></i> <strong>Médecin du jour :</strong> <span id="medecinJourResume">{{ medecin_du_jour.nom_complet if medecin_du_jour else 'non défini' }}</span></span>
-            <span class="action">{{ 'Changer' if medecin_du_jour else 'Définir' }} <i class="fas fa-chevron-down"></i></span>
+            {# ⭐ 2026-10-15 (patron) : plusieurs médecins du jour, chacun avec sa spécialité #}
+            {% set _mj = medecins_du_jour or [] %}
+            <span><i class="fas fa-user-md me-1"></i> <strong>Médecin{{ 's' if _mj|length > 1 else '' }} du jour :</strong> <span id="medecinJourResume">{% if _mj %}{% for m in _mj %}{{ m.nom_complet }}{% if m.specialite %} ({{ m.specialite }}){% endif %}{{ ', ' if not loop.last else '' }}{% endfor %}{% else %}non défini{% endif %}</span></span>
+            <span class="action">{{ 'Changer' if _mj else 'Définir' }} <i class="fas fa-chevron-down"></i></span>
         </button>
         <div class="collapse pt-2" id="corpsMedecinJour">
         <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-2 mb-0" id="bandeauMedecinJour">
-            <div>
+            <div class="w-100">
                 <i class="fas fa-user-md"></i>
-                Médecin du jour :
-                <strong id="medecinJourLabel">{{ medecin_du_jour.nom_complet if medecin_du_jour else 'non défini' }}</strong>
-                — appliqué automatiquement aux actes concernés (consultation, imagerie...), sauf ceux qui demandent toujours le médecin (ex : infiltration).
+                <strong>Médecins du jour</strong> — cochez le ou les médecins qui consultent aujourd'hui (un par spécialité).
+                Pour chaque acte, le médecin réalisateur est pris parmi ceux affectés à l'acte et présents ce jour ;
+                sans affectation, le médecin du jour s'il n'y en a qu'un. Les actes « toujours demander » (ex : infiltration) restent au choix.
+                <div class="d-flex flex-wrap gap-2 mt-2" id="medecinsJourCases">
+                    {% set _ids_jour = (medecins_du_jour or [])|map(attribute='id')|list %}
+                    {% for medecin in medecins_liste %}
+                    <label class="border rounded px-2 py-1 bg-white small mb-0" style="cursor:pointer;">
+                        <input type="checkbox" class="form-check-input me-1 case-medecin-jour" value="{{ medecin.id }}" {% if medecin.id in _ids_jour %}checked{% endif %}>
+                        {{ medecin.nom_complet }}{% if medecin.specialite %} <span class="text-muted">({{ medecin.specialite }})</span>{% endif %}
+                    </label>
+                    {% endfor %}
+                </div>
             </div>
             <div class="d-flex align-items-center gap-2">
-                <select class="form-control form-control-sm" id="medecinJourSelect" style="width:auto;">
-                    <option value="">-- Choisir --</option>
-                    {% for medecin in medecins_liste %}
-                    <option value="{{ medecin.id }}" {% if medecin_du_jour and medecin_du_jour.id == medecin.id %}selected{% endif %}>{{ medecin.nom_complet }}</option>
-                    {% endfor %}
-                </select>
+                <strong id="medecinJourLabel" class="d-none"></strong>
                 <button type="button" class="btn btn-sm btn-outline-primary" onclick="definirMedecinDuJour()">
-                    {{ 'Changer' if medecin_du_jour else 'Définir' }}
+                    <i class="fas fa-check me-1"></i>Enregistrer
                 </button>
                 <!-- ⭐ Lien temporaire — patron : "en attendant... un lien qui
                      mène vers où on ajoute un médecin... depuis la page acte
@@ -654,6 +660,10 @@ const TARIF_NUIT_ACTIF = {{ 'true' if tarif_nuit_actif else 'false' }};
 // quand on change/définit le médecin depuis le bandeau — voir
 // toggleMedecinRealisateur() et ajouterActe().
 let MEDECIN_JOUR_ID = {{ medecin_du_jour.id if medecin_du_jour else 'null' }};
+// ⭐ 2026-10-15 : tous les médecins du jour (un par spécialité)
+let MEDECINS_JOUR_IDS = {{ (medecins_du_jour or [])|map(attribute='id')|list|tojson }};
+let MEDECINS_JOUR_SPECIALITES = {{ (medecins_du_jour or [])|map(attribute='specialite')|list|tojson }};
+const _sansAccents = t => (t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 let MEDECIN_JOUR_NOM = {{ (medecin_du_jour.nom_complet | tojson) if medecin_du_jour else 'null' }};
 let tauxTvaActuel = 18;
 let panier = [];
@@ -1161,8 +1171,25 @@ function toggleMedecinRealisateur() {
     const affectes = (option.getAttribute('data-medecins-affectes') || '').split(',').map(x => x.trim()).filter(Boolean);
     [...medecinSelect.options].forEach(o => { if (o.value && o.value !== 'aucun') o.hidden = affectes.length > 0 && !affectes.includes(o.value); });
     if (affectes.length === 1) { medecinSelect.value = affectes[0]; return; }
-    if (affectes.length > 1) { medecinSelect.value = (!obligatoire && MEDECIN_JOUR_ID && affectes.includes(String(MEDECIN_JOUR_ID))) ? MEDECIN_JOUR_ID : ''; return; }
-    medecinSelect.value = (!obligatoire && MEDECIN_JOUR_ID) ? MEDECIN_JOUR_ID : '';
+    // ⭐ 2026-10-15 : plusieurs médecins du jour — parmi les affectés, celui qui est présent
+    // aujourd'hui (s'il n'y en a qu'un) ; sans affectation, le médecin du jour s'il est seul.
+    const presents = MEDECINS_JOUR_IDS.map(String);
+    if (affectes.length > 1) {
+        const dispo = affectes.filter(a => presents.includes(a));
+        medecinSelect.value = (!obligatoire && dispo.length === 1) ? dispo[0] : '';
+        return;
+    }
+    if (!obligatoire && presents.length > 1) {
+        // plusieurs médecins du jour : celui dont la spécialité figure dans le nom de l'acte
+        const nomActe = _sansAccents(option.text);
+        const parSpecialite = presents.filter((id, i) => {
+            const sp = _sansAccents(MEDECINS_JOUR_SPECIALITES[i]);
+            return sp && nomActe.includes(sp);
+        });
+        medecinSelect.value = parSpecialite.length === 1 ? parSpecialite[0] : '';
+        return;
+    }
+    medecinSelect.value = (!obligatoire && presents.length === 1) ? presents[0] : '';
 }
 
 // ⭐ Recettes par service (patron, 2026-09-30) : pré-remplit #serviceActeSelect
@@ -1180,36 +1207,38 @@ function preRemplirServiceActe() {
 
 // ⭐ Médecin du jour : défini/modifié/effacé depuis le bandeau en haut de
 // la page (voir #bandeauMedecinJour) — partagé entre tous les postes de
-// la structure, upserté côté serveur pour AUJOURD'HUI. Laisser "--
-// Choisir --" efface le médecin du jour (repasse à "non défini") au
-// lieu d'être bloqué — patron : "je veux pouvoir choisir rien" pour
-// forcer un nouveau choix explicite (ex: changement d'équipe) plutôt que
-// de risquer de rester sur le mauvais médecin.
+// la structure, enregistré côté serveur pour AUJOURD'HUI. Plusieurs médecins
+// possibles (un par spécialité). Tout décocher efface les médecins du jour
+// (repasse à "non défini") — patron : "je veux pouvoir choisir rien" pour
+// forcer un nouveau choix explicite (ex: changement d'équipe).
 function definirMedecinDuJour() {
-    const select = document.getElementById('medecinJourSelect');
-    if (!select) return;
+    // ⭐ 2026-10-15 : plusieurs médecins du jour (cases à cocher) ; aucune case = effacer
+    const ids = [...document.querySelectorAll('.case-medecin-jour:checked')].map(c => parseInt(c.value, 10));
     fetch('/api/medecin-du-jour', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ medecin_id: select.value || null })
+        body: JSON.stringify({ medecin_ids: ids })
     })
     .then(r => r.json())
     .then(async data => {
         if (data.success) {
+            const liste = data.medecins || [];
+            MEDECINS_JOUR_IDS = liste.map(m => m.id);
+            MEDECINS_JOUR_SPECIALITES = liste.map(m => m.specialite || '');
             MEDECIN_JOUR_ID = data.medecin_id;
             MEDECIN_JOUR_NOM = data.medecin_nom;
-            document.getElementById('medecinJourLabel').textContent = data.medecin_nom || 'non défini';
-            const btn = document.querySelector('#bandeauMedecinJour button');
-            if (btn) btn.textContent = data.medecin_nom ? 'Changer' : 'Définir';
+            const texte = liste.length ? liste.map(m => m.nom_complet + (m.specialite ? ' (' + m.specialite + ')' : '')).join(', ') : 'non défini';
             // ⭐ ligne repliée mise à jour, puis le bandeau se replie
             const resume = document.getElementById('medecinJourResume');
-            if (resume) resume.textContent = data.medecin_nom || 'non défini';
+            if (resume) resume.textContent = texte;
+            const titre = document.querySelector('#medecinJourPliable .resume-reglages-assurance strong');
+            if (titre) titre.textContent = (liste.length > 1 ? 'Médecins du jour :' : 'Médecin du jour :');
             const action = document.querySelector('#medecinJourPliable .resume-reglages-assurance .action');
-            if (action) action.firstChild.textContent = (data.medecin_nom ? 'Changer' : 'Définir') + ' ';
+            if (action) action.firstChild.textContent = (liste.length ? 'Changer' : 'Définir') + ' ';
             const corps = document.getElementById('corpsMedecinJour');
             if (corps && window.bootstrap) bootstrap.Collapse.getOrCreateInstance(corps, {toggle: false}).hide();
             if (typeof showToastActes === 'function') {
-                showToastActes(data.medecin_nom ? `Médecin du jour : ${data.medecin_nom}` : 'Médecin du jour effacé', 'success');
+                showToastActes(liste.length ? 'Médecin(s) du jour : ' + texte : 'Médecins du jour effacés', 'success');
             }
             toggleMedecinRealisateur();
         } else {

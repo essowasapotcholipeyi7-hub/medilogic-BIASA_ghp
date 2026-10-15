@@ -5164,6 +5164,8 @@ class MedecinDuJour(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # ⭐ 2026-10-15 (patron) : PLUSIEURS médecins du jour (un par spécialité) —
+    # voir migrate_medecins_du_jour.py
     __table_args__ = (
-        db.UniqueConstraint('structure_id', 'date', name='uq_structure_medecin_du_jour'),
+        db.UniqueConstraint('structure_id', 'date', 'medecin_id', name='uq_structure_date_medecin_du_jour'),
     )

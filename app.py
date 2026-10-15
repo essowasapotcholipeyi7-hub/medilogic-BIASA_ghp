@@ -4350,10 +4350,10 @@ def _contexte_vente_actes(structure_id):
           (SELECT coalesce(json_agg(json_build_object('n', nom_acte, 's', service_id) ORDER BY id), '[]'::json)
              FROM classification_service_actes WHERE structure_id = :s) AS classification_service,
           EXISTS (SELECT 1 FROM jours_feries WHERE structure_id = :s AND date = :jour) AS ferie,
-          (SELECT json_build_object('id', m.id, 'titre', m.titre, 'prenom', m.prenom, 'nom', m.nom)
+          (SELECT coalesce(json_agg(json_build_object('id', m.id, 'titre', m.titre, 'prenom', m.prenom, 'nom', m.nom, 'sp', m.specialite) ORDER BY j.id), '[]'::json)
              FROM medecin_du_jour j JOIN medecins m ON m.id = j.medecin_id
-             WHERE j.structure_id = :s AND j.date = :jour ORDER BY j.id LIMIT 1) AS medecin_jour,
-          (SELECT coalesce(json_agg(json_build_object('id', id, 'titre', titre, 'prenom', prenom, 'nom', nom) ORDER BY nom, id), '[]'::json)
+             WHERE j.structure_id = :s AND j.date = :jour) AS medecins_jour,
+          (SELECT coalesce(json_agg(json_build_object('id', id, 'titre', titre, 'prenom', prenom, 'nom', nom, 'sp', specialite) ORDER BY nom, id), '[]'::json)
              FROM medecins WHERE structure_id = :s AND actif = true) AS medecins,
           (SELECT coalesce(json_agg(json_build_object('n', nom_acte, 'p', prix) ORDER BY id), '[]'::json)
              FROM prix_non_assure_actes WHERE structure_id = :s AND type = 'acte' AND prix IS NOT NULL) AS prix_non_assure
@@ -4373,7 +4373,8 @@ def _contexte_vente_actes(structure_id):
     from datetime import time as _time
     heure = moment.time()
     tarif_nuit_actif = bool(heure >= _time(18, 0) or heure < _time(6, 0) or moment.weekday() == 6 or ligne['ferie'])
-    mj = ligne['medecin_jour']
+    # ⭐ 2026-10-15 : plusieurs médecins du jour ; « medecin_du_jour » seulement s'il n'y en a qu'un
+    medecins_jour = [{'id': m['id'], 'nom_complet': nom_complet(m), 'specialite': m.get('sp') or ''} for m in ligne['medecins_jour']]
     return {
         'taux_part_medecin': {r['n']: float(r['t'] or 0) for r in ligne['taux']},
         'toujours_demander_medecin': {r['n']: bool(r['d']) for r in ligne['taux']},
@@ -4383,8 +4384,10 @@ def _contexte_vente_actes(structure_id):
         'services': [{'id': r['id'], 'nom': r['nom']} for r in ligne['services']] if choix_service_actif else [],
         'classification_service': {r['n']: r['s'] for r in ligne['classification_service']} if choix_service_actif else {},
         'tarif_nuit_actif': tarif_nuit_actif,
-        'medecin_du_jour': {'id': mj['id'], 'nom_complet': nom_complet(mj)} if mj else None,
-        'medecins_liste': [{'id': m['id'], 'nom_complet': nom_complet(m)} for m in ligne['medecins']],
+        'medecin_du_jour': ({'id': medecins_jour[0]['id'], 'nom_complet': medecins_jour[0]['nom_complet']}
+                            if len(medecins_jour) == 1 else None),
+        'medecins_du_jour': medecins_jour,
+        'medecins_liste': [{'id': m['id'], 'nom_complet': nom_complet(m), 'specialite': m.get('sp') or ''} for m in ligne['medecins']],
         'prix_non_assure': {r['n']: float(r['p']) for r in ligne['prix_non_assure']},
     }
 
@@ -4642,6 +4645,7 @@ def actes_vente():
                           catalogue_a_tarif_nuit=catalogue_a_tarif_nuit,
                           medecins_liste=medecins_liste,
                           medecin_du_jour=medecin_du_jour,
+                          medecins_du_jour=ctx.get('medecins_du_jour', []),
                           choix_service_actif=choix_service_actif,
                           services_liste=services_liste_vente)
 
@@ -12074,19 +12078,23 @@ def est_tarif_nuit_actif(structure_id, moment=None):
     return bool(nuit_horaire or dimanche or ferie)
 
 
-def medecin_du_jour_actuel(structure_id, moment=None):
-    """Le médecin par défaut déclaré pour AUJOURD'HUI, pour cette
-    structure — ou None si personne ne l'a encore défini. Une seule ligne
-    par (structure_id, date), upsertée par api_definir_medecin_du_jour().
-    `moment` overridable (tests) — sinon `datetime.utcnow()`."""
+def medecins_du_jour_actuels(structure_id, moment=None):
+    """⭐ 2026-10-15 (patron) : les médecins du jour d'AUJOURD'HUI pour cette structure
+    (plusieurs possibles, un par spécialité) — [{id, nom_complet, specialite}]."""
     moment = moment or datetime.utcnow()
-    ligne = MedecinDuJour.query.filter_by(structure_id=structure_id, date=moment.date()).first()
-    if not ligne:
-        return None
-    medecin = Medecin.query.get(ligne.medecin_id)
-    if not medecin:
-        return None
-    return {'id': medecin.id, 'nom_complet': medecin.get_nom_complet()}
+    ids = [l.medecin_id for l in MedecinDuJour.query.filter_by(structure_id=structure_id, date=moment.date())
+           .order_by(MedecinDuJour.id).all()]
+    medecins = {m.id: m for m in Medecin.query.filter(Medecin.id.in_(ids)).all()} if ids else {}
+    return [{'id': m.id, 'nom_complet': m.get_nom_complet(), 'specialite': m.specialite or ''}
+            for m in (medecins.get(i) for i in ids) if m]
+
+
+def medecin_du_jour_actuel(structure_id, moment=None):
+    """Le médecin par défaut d'AUJOURD'HUI s'il n'y en a QU'UN — None sinon (aucun, ou
+    plusieurs médecins du jour : pas de pré-remplissage à l'aveugle ; voir
+    medecins_du_jour_actuels). `moment` overridable (tests)."""
+    liste = medecins_du_jour_actuels(structure_id, moment)
+    return {'id': liste[0]['id'], 'nom_complet': liste[0]['nom_complet']} if len(liste) == 1 else None
 
 
 def _reinitialiser_medecin_du_jour_connexion(structure_id):
@@ -13940,31 +13948,39 @@ def api_definir_medecin_du_jour():
     try:
         structure_id = session.get('structure_id')
         data = request.json or {}
-        medecin_id = data.get('medecin_id')
-        aujourdhui = datetime.utcnow().date()
-        ligne = MedecinDuJour.query.filter_by(structure_id=structure_id, date=aujourdhui).first()
-
-        if not medecin_id:
-            if ligne:
-                db.session.delete(ligne)
-                db.session.commit()
-            return jsonify({'success': True, 'medecin_id': None, 'medecin_nom': None})
-
-        medecin = Medecin.query.filter_by(id=medecin_id, structure_id=structure_id, actif=True).first()
-        if not medecin:
-            return jsonify({'success': False, 'error': 'Médecin introuvable'}), 404
-
-        if ligne:
-            ligne.medecin_id = medecin.id
-            ligne.defini_par = session.get('user_name', 'System')
+        # ⭐ 2026-10-15 (patron) : PLUSIEURS médecins du jour (un par spécialité) — la liste
+        # envoyée remplace celle du jour ; liste vide = effacer. `medecin_id` seul (ancien
+        # appel) reste accepté.
+        if 'medecin_ids' in data:
+            brut = data.get('medecin_ids') or []
         else:
-            ligne = MedecinDuJour(
-                structure_id=structure_id, date=aujourdhui, medecin_id=medecin.id,
-                defini_par=session.get('user_name', 'System'),
-            )
-            db.session.add(ligne)
+            brut = [data.get('medecin_id')] if data.get('medecin_id') else []
+        ids = []
+        for v in brut:
+            try:
+                v = int(v)
+            except (TypeError, ValueError):
+                return jsonify({'success': False, 'error': 'Médecin invalide'}), 400
+            if v not in ids:
+                ids.append(v)
+        valides = {m.id for m in Medecin.query.filter(Medecin.structure_id == structure_id, Medecin.actif.is_(True),
+                                                       Medecin.id.in_(ids)).all()} if ids else set()
+        if any(i not in valides for i in ids):
+            return jsonify({'success': False, 'error': 'Médecin introuvable'}), 404
+        aujourdhui = datetime.utcnow().date()
+        existants = {l.medecin_id: l for l in MedecinDuJour.query.filter_by(structure_id=structure_id, date=aujourdhui).all()}
+        for mid, l in existants.items():
+            if mid not in ids:
+                db.session.delete(l)
+        for mid in ids:
+            if mid not in existants:
+                db.session.add(MedecinDuJour(structure_id=structure_id, date=aujourdhui, medecin_id=mid,
+                                             defini_par=session.get('user_name', 'System')))
         db.session.commit()
-        return jsonify({'success': True, 'medecin_id': medecin.id, 'medecin_nom': medecin.get_nom_complet()})
+        liste = medecins_du_jour_actuels(structure_id)
+        return jsonify({'success': True, 'medecins': liste,
+                        'medecin_id': liste[0]['id'] if len(liste) == 1 else None,
+                        'medecin_nom': liste[0]['nom_complet'] if len(liste) == 1 else None})
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
