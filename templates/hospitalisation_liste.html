@@ -70,7 +70,7 @@
                     {% for h in hospitalisations %}
                     <tr class="ligne-sejour" data-statut="{{ h.statut }}">
                         <td>#{{ h.numero_local or h.id }}</td>
-                        <td>{{ h.patient_nom }}</td>
+                        <td><span class="notranslate">{{ h.patient_nom }}</span></td>
                         <td>{{ h.chambre_service or '-' }}</td>
                         <td>{{ h.date_entree.strftime('%d/%m/%Y') if h.date_entree else '-' }}</td>
                         <td>{{ h.date_sortie.strftime('%d/%m/%Y') if h.date_sortie else '-' }}</td>

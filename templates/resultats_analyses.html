@@ -333,7 +333,7 @@ function filtrerResultats() {
             }
             return `
                 <tr>
-                    <td><strong>${l.patient_nom}</strong></td>
+                    <td><strong><span class="notranslate">${l.patient_nom}</span></strong></td>
                     <td>${l.acte_nom}</td>
                     <td>${filiereBadge}</td>
                     <td>${l.resultat_id ? '<span class="badge bg-info">Disponible</span>' : '<span class="badge bg-secondary">Non saisi</span>'}</td>

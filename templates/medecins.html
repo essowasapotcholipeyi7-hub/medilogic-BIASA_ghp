@@ -564,7 +564,7 @@ function voirHistorique(id) {
                         <tr class="historique-item">
                             <td>${rdv.date_rdv || '-'}</td>
                             <td>${rdv.heure_rdv || '-'}</td>
-                            <td><strong>${rdv.patient_nom || 'Patient'}</strong></td>
+                            <td><strong><span class="notranslate">${rdv.patient_nom || 'Patient'}</span></strong></td>
                             <td>${rdv.motif || '-'}</td>
                             <td><span class="badge ${statutClass}">${statutLabel}</span></td>
                         </tr>
@@ -705,7 +705,7 @@ async function imprimerHistoriqueMedecin() {
                     <tr>
                         <td>${rdv.date_rdv || '-'}</td>
                         <td>${rdv.heure_rdv || '-'}</td>
-                        <td>${rdv.patient_nom || 'Patient'}</td>
+                        <td><span class="notranslate">${rdv.patient_nom || 'Patient'}</span></td>
                         <td>${rdv.motif || '-'}</td>
                         <td>${rdv.statut || 'Programme'}</td>
                     </tr>

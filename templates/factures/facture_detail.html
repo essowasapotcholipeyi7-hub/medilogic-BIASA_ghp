@@ -23,7 +23,7 @@
                     <div class="col-md-6">
                         <h6>Informations patient</h6>
                         <p>
-                            <strong>Nom :</strong> {{ facture.patient_nom }}<br>
+                            <strong>Nom :</strong> <span class="notranslate">{{ facture.patient_nom }}</span><br>
                             <strong>Téléphone :</strong> {{ facture.patient_telephone or 'Non renseigné' }}<br>
                             <strong>Date d'émission :</strong> {{ facture.date_emission.strftime('%d/%m/%Y %H:%M') if facture.date_emission else '-' }}<br>
                             <strong>Date d'échéance :</strong> {{ facture.date_echeance.strftime('%d/%m/%Y') if facture.date_echeance else '-' }}

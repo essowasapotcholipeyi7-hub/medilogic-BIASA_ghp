@@ -99,7 +99,7 @@
                     {% for rdv in rdvs|sort(attribute='heure_rendez_vous') %}
                     <tr>
                         <td class="heure">{{ rdv.heure_rendez_vous }}</td>
-                        <td class="patient">{{ rdv.patient_nom }}</td>
+                        <td class="patient"><span class="notranslate">{{ rdv.patient_nom }}</span></td>
                         <td>{{ rdv.patient_telephone or '—' }}</td>
                         <td>{% if rdv.medecin %}{{ rdv.medecin.get_nom_complet() }}{% if rdv.medecin.specialite %} <span style="color:var(--gris);">({{ rdv.medecin.specialite }})</span>{% endif %}{% else %}—{% endif %}</td>
                         <td>{{ rdv.motif or '' }}</td>

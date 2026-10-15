@@ -54,7 +54,7 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                     <tbody>
                         {% for d in demandes %}
                         <tr style="border-bottom:1px solid #eee;">
-                            <td style="padding:6px;">{{ d.patient_nom }}</td>
+                            <td style="padding:6px;"><span class="notranslate">{{ d.patient_nom }}</span></td>
                             <td style="padding:6px;">{{ d.acte_nom }}</td>
                             <td style="padding:6px; text-align:right;">{{ (d.prix|float * d.quantite)|round(0)|int }} F</td>
                         </tr>

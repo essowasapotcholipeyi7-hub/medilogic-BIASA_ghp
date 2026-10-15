@@ -297,7 +297,7 @@
                     {% set p = patients_par_id.get(d.patient_id) %}
                     <tr data-type="{{ d.type_demande }}">
                         <td>{{ d.created_at.strftime('%d/%m/%Y %H:%M') if d.created_at else '' }}</td>
-                        <td>{{ (p.nom + ' ' + p.prenom) if p else ('Patient #' ~ d.patient_id) }}</td>
+                        <td><span class="notranslate">{{ (p.nom + ' ' + p.prenom) if p else ('Patient #' ~ d.patient_id) }}</span></td>
                         <td>{{ medecins_par_id.get(d.medecin_id, '—') }}</td>
                         <td>{{ type_amu_labels.get(d.type_amu, d.type_amu) }}</td>
                         <td><span class="tpc-badge-type">{{ {'identification': 'Identification', 'renouvellement': 'Renouvellement', 'modification': 'Modification', 'rectification': 'Rectification'}.get(d.type_demande, d.type_demande) }}</span></td>
@@ -520,7 +520,7 @@ document.getElementById('patientSearch').addEventListener('input', function() {
                 }
                 box.innerHTML = liste.map(p => `
                     <a href="#" class="list-group-item list-group-item-action p-2" onclick='appliquerPatientTpc(${escapeHtml(JSON.stringify(p))}); return false;'>
-                        <strong>${escapeHtml(p.nom)} ${escapeHtml(p.prenom)}</strong> — ${escapeHtml(p.telephone)} <span class="text-muted">(${escapeHtml(p.type_assurance)})</span>
+                        <strong><span class="notranslate">${escapeHtml(p.nom)} ${escapeHtml(p.prenom)}</span></strong> — ${escapeHtml(p.telephone)} <span class="text-muted">(${escapeHtml(p.type_assurance)})</span>
                     </a>`).join('');
                 box.style.display = 'block';
             });

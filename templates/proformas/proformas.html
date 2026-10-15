@@ -89,7 +89,7 @@
                             {% for p in proformas %}
                             <tr>
                                 <td><strong>#{{ p.numero_proforma or p.id }}</strong></td>
-                                <td>{{ p.patient_nom }}</td>
+                                <td><span class="notranslate">{{ p.patient_nom }}</span></td>
                                 <td>{{ p.created_at.strftime('%d/%m/%Y') if p.created_at else '-' }}</td>
                                 <td><strong>{{ p.net_a_payer|round(0)|int }} FCFA</strong></td>
                                 <td>{{ p.assurance_nom or 'Non assuré' }} ({{ p.taux_assurance or 0 }}%)</td>
@@ -2181,7 +2181,7 @@ function afficherModalConversion(data) {
                         <i class="fas fa-user"></i> Patient
                     </div>
                     <div class="card-body">
-                        <p><strong>${data.patient_nom || 'Patient'}</strong></p>
+                        <p><strong><span class="notranslate">${data.patient_nom || 'Patient'}</span></strong></p>
                         <p class="text-muted">Tél: ${data.patient_telephone || '-'}</p>
                         <p>
                             <span class="badge bg-primary">${data.assurance_nom || 'Non assuré'}</span>

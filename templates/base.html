@@ -1986,6 +1986,14 @@
     <style>
         /* ⭐ Interrupteur Soleil / Lune + transition douce entre clair et sombre */
         #themeSoleilLune .btn { color: #8a94a6; background: transparent; transition: background .25s, color .25s; }
+        /* ⭐ 2026-10-15 : langue FR / EN (Google Traduction) — bandeau Google masqué */
+        #langueFrEn .btn { color: #8a94a6; background: transparent; }
+        #langueFrEn .btn.actif { background: #0A3D5C; color: #fff; }
+        [data-bs-theme="dark"] #langueFrEn { background: rgba(255,255,255,0.08) !important; box-shadow: none !important; }
+        [data-bs-theme="dark"] #langueFrEn .btn.actif { background: var(--th-primaire, #00E599); color: #0A0A0A; }
+        .goog-te-banner-frame, iframe.skiptranslate, #goog-gt-tt, .goog-te-balloon-frame, .goog-te-spinner-pos { display: none !important; }
+        body { top: 0 !important; }
+        .goog-text-highlight { background: none !important; box-shadow: none !important; }
         #themeSoleilLune .btn.actif { background: #0A3D5C; color: #fff; }
         #themeSoleilLune .btn:hover:not(.actif) { color: #0A3D5C; }
         [data-bs-theme="dark"] #themeSoleilLune { background: rgba(255,255,255,0.08) !important; box-shadow: none !important; }
@@ -2203,6 +2211,14 @@ window.sondagePeriodique = function (fn, ms) {
                  style="background: rgba(255,255,255,0.8); border-radius: 40px; padding: 3px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); gap: 2px;">
                 <button type="button" class="btn btn-sm rounded-pill border-0 th-soleil {{ '' if theme_sombre else 'actif' }}" onclick="basculerTheme('clair')" title="Thème clair (Classique)" style="padding: 5px 10px; line-height: 1;"><i class="fas fa-sun"></i></button>
                 <button type="button" class="btn btn-sm rounded-pill border-0 th-lune {{ 'actif' if theme_sombre else '' }}" onclick="basculerTheme('sombre')" title="Thème sombre" style="padding: 5px 10px; line-height: 1;"><i class="fas fa-moon"></i></button>
+            </div>
+
+            <!-- ⭐ Langue (patron, 2026-10-15) : français / anglais par Google Traduction —
+                 jamais les noms des patients. Voir choisirLangue() en bas de page. -->
+            <div id="langueFrEn" class="d-flex align-items-center notranslate" role="group" aria-label="Langue" translate="no"
+                 style="background: rgba(255,255,255,0.8); border-radius: 40px; padding: 3px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); gap: 2px;">
+                <button type="button" class="btn btn-sm rounded-pill border-0 lg-fr" onclick="choisirLangue('fr')" title="Français" style="padding: 5px 9px; line-height: 1; font-weight: 600;">FR</button>
+                <button type="button" class="btn btn-sm rounded-pill border-0 lg-en" onclick="choisirLangue('en')" title="English (Google Translate)" style="padding: 5px 9px; line-height: 1; font-weight: 600;">EN</button>
             </div>
 
             {% if session.is_admin or session.role == 'gestionnaire' %}
@@ -4452,5 +4468,79 @@ if ('serviceWorker' in navigator) {
 })();
 </script>
 {% block scripts %}{% endblock %}
+<!-- ⭐ Traduction français / anglais (patron, 2026-10-15) — Google Traduction n'est chargé
+     que si l'anglais est choisi (en français rien n'est envoyé à Google). Les NOMS DES PATIENTS
+     ne sont jamais traduits : marqués « notranslate » (Google les laisse tels quels et ne les
+     envoie pas) — explicitement sur les écrans principaux, et automatiquement pour tout texte
+     contenant un mot entièrement en MAJUSCULES (le NOM), y compris le contenu ajouté ensuite. -->
+<div id="google_translate_element" style="display:none;"></div>
+<script>
+(function () {
+    function langueActuelle() {
+        const m = document.cookie.match(/(?:^|;\s*)googtrans=\/fr\/(\w+)/);
+        return m ? m[1] : 'fr';
+    }
+    window.choisirLangue = function (langue) {
+        const valeur = langue === 'fr' ? '' : '/fr/' + langue;
+        const fin = langue === 'fr' ? 'Thu, 01 Jan 1970 00:00:00 GMT' : 'Fri, 31 Dec 2100 23:59:59 GMT';
+        document.cookie = 'googtrans=' + valeur + '; expires=' + fin + '; path=/';
+        document.cookie = 'googtrans=' + valeur + '; expires=' + fin + '; path=/; domain=' + location.hostname;
+        const parent = location.hostname.split('.').slice(-2).join('.');
+        if (parent !== location.hostname) document.cookie = 'googtrans=' + valeur + '; expires=' + fin + '; path=/; domain=.' + parent;
+        location.reload();
+    };
+    const langue = langueActuelle();
+    document.querySelectorAll('#langueFrEn .btn').forEach(b => b.classList.toggle('actif', b.classList.contains('lg-' + langue)));
+    if (langue === 'fr') return;
+
+    // Mots en majuscules qui ne sont PAS des noms (sigles de l'application) : traduisibles.
+    const SIGLES = new Set(['FCFA', 'CFA', 'AMU', 'CAC', 'PBR', 'CNSS', 'INAM', 'TNS', 'TVA', 'NIF', 'RSPS', 'PDF', 'ID', 'OK', 'RDV',
+        'SMS', 'CSV', 'HT', 'TTC', 'QR', 'OTR', 'TG', 'EN', 'FR', 'AM', 'PM', 'NB', 'N°', 'GHP', 'TOTAL', 'PATIENT', 'NOM', 'PRENOM', 'PRÉNOM']);
+    const MOT_MAJ = /(^|[^A-Za-zÀ-ÖØ-öø-ÿ])([A-ZÀ-ÖØ-Þ][A-ZÀ-ÖØ-Þ'’-]{1,})(?=$|[^A-Za-zÀ-ÖØ-öø-ÿ0-9])/g;
+    function contientNom(texte) {
+        MOT_MAJ.lastIndex = 0;
+        let m;
+        while ((m = MOT_MAJ.exec(texte))) { if (!SIGLES.has(m[2])) return true; }
+        return false;
+    }
+    const IGNORER = {SCRIPT: 1, STYLE: 1, TEXTAREA: 1, TITLE: 1, NOSCRIPT: 1, CODE: 1, PRE: 1};
+    function proteger(racine) {
+        if (!racine) return;
+        if (racine.nodeType === 3) { protegerTexte(racine); return; }
+        if (racine.nodeType !== 1 || IGNORER[racine.tagName] || racine.closest('.notranslate')) return;
+        const marcheur = document.createTreeWalker(racine, NodeFilter.SHOW_TEXT);
+        const noeuds = [];
+        while (marcheur.nextNode()) noeuds.push(marcheur.currentNode);
+        noeuds.forEach(protegerTexte);
+    }
+    function protegerTexte(n) {
+        const parent = n.parentElement;
+        if (!parent || IGNORER[parent.tagName] || !n.nodeValue.trim() || parent.closest('.notranslate')) return;
+        if (!contientNom(n.nodeValue)) return;
+        // élément qui ne contient que ce texte (cellule, option…) : on le marque lui-même
+        if (parent.childNodes.length === 1 || parent.tagName === 'OPTION') { parent.classList.add('notranslate'); return; }
+        const s = document.createElement('span');
+        s.className = 'notranslate';
+        parent.insertBefore(s, n);
+        s.appendChild(n);
+    }
+    function demarrer() {
+        // nom / sigle de la clinique (« SI SI » deviendrait « YES YES »)
+        document.querySelectorAll('.navbar-brand').forEach(e => e.classList.add('notranslate'));
+        proteger(document.body);
+        new MutationObserver(liste => liste.forEach(m => {
+            if (m.type === 'characterData') protegerTexte(m.target);
+            else m.addedNodes.forEach(proteger);
+        })).observe(document.body, {childList: true, subtree: true, characterData: true});
+        window.googleTranslateElementInit = function () {
+            new google.translate.TranslateElement({pageLanguage: 'fr', includedLanguages: 'en,fr', autoDisplay: false}, 'google_translate_element');
+        };
+        const s = document.createElement('script');
+        s.src = 'https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit';
+        document.head.appendChild(s);
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', demarrer); else demarrer();
+})();
+</script>
 </body>
 </html>

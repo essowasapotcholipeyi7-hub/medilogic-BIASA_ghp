@@ -59,7 +59,7 @@
                     {% for e in episodes %}
                     <tr class="ligne-episode" data-statut="{{ e.statut }}">
                         <td>#{{ e.numero_local or e.id }}</td>
-                        <td>{{ e.patient_nom }}</td>
+                        <td><span class="notranslate">{{ e.patient_nom }}</span></td>
                         <td>{{ e.motif or '-' }}{% if e.mise_en_observation %} <span class="badge bg-info text-dark">Mise en observation</span>{% endif %}</td>
                         <td>{{ e.date_debut.strftime('%d/%m/%Y') if e.date_debut else '-' }}</td>
                         <td>{{ e.date_fin.strftime('%d/%m/%Y') if e.date_fin else '-' }}</td>

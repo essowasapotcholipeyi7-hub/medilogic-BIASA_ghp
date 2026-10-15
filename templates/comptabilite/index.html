@@ -3281,7 +3281,7 @@ function chargerCreancesDouteuses() {
             const badgeTranche = { '0-30j': 'bg-light text-dark', '31-59j': 'bg-warning text-dark', '60-89j': 'bg-orange text-white', '90j+': 'bg-danger' };
             tbody.innerHTML = data.map(c => `
                 <tr>
-                    <td>${c.patient_nom}</td>
+                    <td><span class="notranslate">${c.patient_nom}</span></td>
                     <td>${c.numero_facture}</td>
                     <td>${c.date_echeance}</td>
                     <td><span class="badge ${badgeTranche[c.tranche] || 'bg-secondary'}">${c.jours_retard}j (${c.tranche})</span></td>
@@ -3343,7 +3343,7 @@ function chargerProvisions() {
             const badges = { 'active': 'bg-warning text-dark', 'reprise': 'bg-success', 'perte': 'bg-danger' };
             tbody.innerHTML = data.map(p => `
                 <tr>
-                    <td>${p.patient_nom}</td>
+                    <td><span class="notranslate">${p.patient_nom}</span></td>
                     <td class="text-end">${formatEntier(p.montant_creance)} F</td>
                     <td>${p.taux_provision}%</td>
                     <td class="text-end">${formatEntier(p.montant_provisionne)} F</td>

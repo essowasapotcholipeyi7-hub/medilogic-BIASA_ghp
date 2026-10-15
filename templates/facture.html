@@ -32,7 +32,7 @@
                 <!-- Infos patient -->
                 <div class="row mb-3">
                     <div class="col-12">
-                        <strong>Patient :</strong> {{ patient_nom or "Patient" }}<br>
+                        <strong>Patient :</strong> <span class="notranslate">{{ patient_nom or "Patient" }}</span><br>
                         <strong>Assurance :</strong> {{ type_assurance or "Non assuré" }} ({{ taux_assurance|default(0) }}%)<br>
                         {% if numero_assure and numero_assure != '' %}
                         <strong>N° Assuré :</strong> {{ numero_assure }}<br>

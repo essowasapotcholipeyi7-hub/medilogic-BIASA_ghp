@@ -102,7 +102,7 @@ function filtrerDemandes() {
             }
             corps.innerHTML = lignes.map(l => `
                 <tr>
-                    <td><strong>${l.patient_nom || 'Patient'}</strong></td>
+                    <td><strong><span class="notranslate">${l.patient_nom || 'Patient'}</span></strong></td>
                     <td>${l.acte_nom}${l.quantite > 1 ? ' <span class="text-muted">x' + l.quantite + '</span>' : ''}</td>
                     <td class="text-end">${Math.round(l.prix * l.quantite).toLocaleString('fr-FR')} F</td>
                     <td>${badgePaiement(l.statut_paiement, l.motif)}</td>

@@ -245,7 +245,7 @@
                     {% for l in g.lignes %}
                     <tr>
                         <td>{{ l.date }}</td>
-                        <td><strong>{{ l.patient_nom }}</strong></td>
+                        <td><strong><span class="notranslate">{{ l.patient_nom }}</span></strong></td>
                         <td>{{ l.numero_assure }}</td>
                         <td class="prestations">
                             {% for p in l.prestations %}<div>{{ p }}</div>{% endfor %}
@@ -266,7 +266,7 @@
                     {% for l in lignes %}
                     <tr>
                         <td>{{ l.date }}</td>
-                        <td><strong>{{ l.patient_nom }}</strong></td>
+                        <td><strong><span class="notranslate">{{ l.patient_nom }}</span></strong></td>
                         <td>{{ l.numero_assure }}</td>
                         <td class="prestations">
                             {% for p in l.prestations %}<div>{{ p }}</div>{% endfor %}

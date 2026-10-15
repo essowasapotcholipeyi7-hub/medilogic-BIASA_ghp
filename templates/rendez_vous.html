@@ -370,7 +370,7 @@ body.modal-open {
                         {% for d in demandes_portail %}
                         <tr>
                             <td>{{ d.demande_le.strftime('%d/%m/%Y %H:%M') if d.demande_le else '-' }}</td>
-                            <td><strong>{{ d.patient_nom }}</strong></td>
+                            <td><strong><span class="notranslate">{{ d.patient_nom }}</span></strong></td>
                             <td>{{ d.patient_telephone or '-' }}</td>
                             <td>{{ d.date_rendez_vous.strftime('%d/%m/%Y') if d.date_rendez_vous else '-' }}</td>
                             <td>{{ {'matin': 'Matin', 'apres_midi': 'Après-midi', 'indifferent': 'Indifférent'}.get(d.creneau_souhaite, '-') }}</td>
@@ -531,7 +531,7 @@ body.modal-open {
                         {% set paiement = paiements.get(rdv.id) if paiements is defined else None %}
                         <tr data-id="{{ rdv.id }}" data-statut="{{ rdv.statut }}" data-date="{{ rdv.date_rendez_vous }}" data-paiement="{{ paiement.texte if paiement else '' }}">
                             <td>{{ loop.index }}</td>
-                            <td>{{ rdv.patient_nom }}</td>
+                            <td><span class="notranslate">{{ rdv.patient_nom }}</span></td>
                             <td>{{ rdv.patient_telephone or '-' }}</td>
                             <td>
                                 {% if rdv.medecin %}
@@ -1289,7 +1289,7 @@ function calRendre() {
         if (calMode === 'mois' && i >= 35 && horsMois) break;
         html += `<div class="cal-jour ${calMode} ${horsMois ? 'hors-mois' : ''} ${iso === auj ? 'aujourdhui' : ''}">
             <div class="cal-num"><span>${d.getDate()}${calMode === 'semaine' ? ' ' + CAL_MOIS[d.getMonth()] : ''}</span>${rdvs.length ? `<span class="nb">${rdvs.length}</span>` : ''}</div>
-            ${rdvs.slice(0, maxChips).map(r => `<span class="cal-chip ${r.statut}" title="${r.patient} — ${r.motif}" onclick="calVoir(${r.id})"><strong>${r.heure}</strong> ${r.patient}</span>`).join('')}
+            ${rdvs.slice(0, maxChips).map(r => `<span class="cal-chip ${r.statut}" title="${r.patient} — ${r.motif}" onclick="calVoir(${r.id})"><strong>${r.heure}</strong> <span class="notranslate">${r.patient}</span></span>`).join('')}
             ${rdvs.length > maxChips ? `<span class="cal-chip plus" onclick="calMode='semaine'; calRef=new Date('${iso}T00:00:00'); calCharger();">+ ${rdvs.length - maxChips} autre(s)…</span>` : ''}
         </div>`;
     }
@@ -1300,7 +1300,7 @@ function calVoir(id) {
     if (!r) return;
     const zone = document.getElementById('calDetail');
     zone.innerHTML = `<div class="d-flex justify-content-between flex-wrap gap-2">
-        <div><strong>${r.patient}</strong>${r.telephone ? ' · ' + r.telephone : ''}<br>
+        <div><strong><span class="notranslate">${r.patient}</span></strong>${r.telephone ? ' · ' + r.telephone : ''}<br>
             <span class="text-muted">${r.date.split('-').reverse().join('/')} à ${r.heure}</span>${r.medecin ? ' — ' + r.medecin : ''}<br>${r.motif}
             <span class="badge bg-secondary ms-1">${r.statut_label}</span></div>
         <div><a class="btn btn-sm btn-outline-primary" href="/rendez_vous/api/${r.id}/print" target="_blank"><i class="fas fa-print"></i> Reçu</a></div></div>`;

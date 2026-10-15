@@ -23,7 +23,7 @@
 
                 <!-- Infos patient -->
                 <div style="margin-bottom: 10px;">
-                    <strong>Patient :</strong> {{ patient_nom or "Patient" }}<br>
+                    <strong>Patient :</strong> <span class="notranslate">{{ patient_nom or "Patient" }}</span><br>
                     <strong>Assurance :</strong> {{ type_assurance or "Non assuré" }} ({{ taux_assurance or 0 }}%)<br>
                     {% if numero_assure and numero_assure != '' %}
                     <strong>N° Assuré :</strong> {{ numero_assure }}<br>

@@ -60,7 +60,7 @@
                     </div>
                     <div class="card-body text-center">
                         <h4>Mes rendez-vous</h4>
-                        <p>Bonjour <strong>{{ patient.nom }} {{ patient.prenom }}</strong></p>
+                        <p>Bonjour <strong><span class="notranslate">{{ patient.nom }} {{ patient.prenom }}</span></strong></p>
                         {% if patient.type_assurance %}
                         <p>Assurance: {{ patient.type_assurance }} ({{ patient.taux_prise_charge }}%)</p>
                         {% endif %}

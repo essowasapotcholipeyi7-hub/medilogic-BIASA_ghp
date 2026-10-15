@@ -1221,7 +1221,7 @@ function afficherPatientsAssurances(patients) {
         row.innerHTML = `
             <td><span class="badge ${badgeClass}">${assuranceDisplay}</span></td>
             <td>${p.societe ? `<small>${p.societe}</small>` : '-'}</td>
-            <td><strong>${p.patient_nom}</strong></td>
+            <td><strong><span class="notranslate">${p.patient_nom}</span></strong></td>
             <td>${numeroAssure}</td>
             <td>${p.derniere_visite || '-'}</td>
             <td>${p.nb_actes || 0}</td>

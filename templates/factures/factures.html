@@ -387,7 +387,7 @@ function afficherFactures(factures) {
         const row = tbody.insertRow();
         row.innerHTML = `
             <td><strong>${f.numero_facture}</strong></td>
-            <td>${f.patient_nom}</td>
+            <td><span class="notranslate">${f.patient_nom}</span></td>
             <td>${Math.round(f.net_a_payer).toLocaleString('fr-FR')} FCFA</td>
             <td style="color:#28a745;">${Math.round(f.montant_paye).toLocaleString('fr-FR')} FCFA</td>
             <td style="color:#dc3545; font-weight:bold;">${Math.round(f.reste_a_payer).toLocaleString('fr-FR')} FCFA</td>
@@ -487,7 +487,7 @@ async function voirFacture(id) {
         <div class="row">
             <div class="col-md-6">
                 <p><strong>N° Facture :</strong> ${facture.numero_facture}</p>
-                <p><strong>Patient :</strong> ${facture.patient_nom}</p>
+                <p><strong>Patient :</strong> <span class="notranslate">${facture.patient_nom}</span></p>
                 <p><strong>Date d'émission :</strong> ${facture.date_emission || '-'}</p>
                 <p><strong>Date d'échéance :</strong> ${facture.date_echeance || '-'}</p>
             </div>

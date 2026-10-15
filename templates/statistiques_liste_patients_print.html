@@ -139,7 +139,7 @@
                         {% if l.est_double_assurance %}<span class="badge badge-double">double</span>{% endif %}
                     </td>
                     <td>{{ l.societe or '-' }}</td>
-                    <td><strong>{{ l.patient_nom }}</strong></td>
+                    <td><strong><span class="notranslate">{{ l.patient_nom }}</span></strong></td>
                     <td>{{ l.numero_assure2 or l.numero_assure or '-' }}</td>
                     <td>{{ l.derniere_visite or '-' }}</td>
                     <td class="num">{{ l.nb_actes or 0 }}</td>

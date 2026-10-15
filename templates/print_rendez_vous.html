@@ -162,7 +162,7 @@
         <div class="corps">
             <div class="titre-section">Patient</div>
             <div class="grille">
-                <div class="champ"><div class="etiquette">Nom et prénom</div><div class="valeur">{{ rdv.patient_nom }}</div></div>
+                <div class="champ"><div class="etiquette">Nom et prénom</div><div class="valeur"><span class="notranslate">{{ rdv.patient_nom }}</span></div></div>
                 <div class="champ"><div class="etiquette">Téléphone</div><div class="valeur secondaire">{{ rdv.patient_telephone or 'Non renseigné' }}</div></div>
                 {% if patient and patient.numero_local %}
                 <div class="champ"><div class="etiquette">N° patient</div><div class="valeur secondaire">{{ patient.numero_local }}</div></div>

@@ -625,7 +625,7 @@
 
         <!-- Infos patient -->
         <div style="margin-bottom: 10px; font-size: 11px;">
-            <strong>Patient :</strong> {{ facture.patient_nom }}<br>
+            <strong>Patient :</strong> <span class="notranslate">{{ facture.patient_nom }}</span><br>
             <strong>Téléphone :</strong> {{ facture.patient_telephone or 'Non renseigné' }}<br>
             <strong>Échéance :</strong> {{ facture.date_echeance.strftime('%d/%m/%Y') if facture.date_echeance else '-' }}
             {% if facture.assurance_nom and facture.assurance_nom != 'non_assure' %}

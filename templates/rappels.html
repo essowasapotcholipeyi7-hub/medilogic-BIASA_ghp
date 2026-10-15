@@ -54,7 +54,7 @@
                     <tbody id="moins7List">
                         {% for rdv in moins_7_jours %}
                         <tr>
-                            <td>{{ rdv.patient_nom }}</td>
+                            <td><span class="notranslate">{{ rdv.patient_nom }}</span></td>
                             <td>{{ rdv.patient_telephone }}</td>
                             <td>{{ rdv.date_rendez_vous.strftime('%d/%m/%Y') }}</td>
                             <td>{{ rdv.heure_rendez_vous }}</td>
@@ -102,7 +102,7 @@
                     <tbody id="depassesList">
                         {% for rdv in depasses %}
                         <tr>
-                            <td>{{ rdv.patient_nom }}</td>
+                            <td><span class="notranslate">{{ rdv.patient_nom }}</span></td>
                             <td>{{ rdv.patient_telephone }}</td>
                             <td>{{ rdv.date_rendez_vous.strftime('%d/%m/%Y') }}</td>
                             <td>{{ rdv.heure_rendez_vous }}</td>

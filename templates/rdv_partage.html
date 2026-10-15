@@ -137,7 +137,7 @@ function calRendre() {
         if (calMode === 'mois' && i >= 35 && horsMois) break;
         html += `<div class="cal-jour ${calMode} ${horsMois ? 'hors-mois' : ''} ${iso === auj ? 'aujourdhui' : ''}">
             <div class="cal-num"><span>${d.getDate()}${calMode === 'semaine' ? ' ' + CAL_MOIS[d.getMonth()] : ''}</span>${rdvs.length ? `<span class="nb">${rdvs.length}</span>` : ''}</div>
-            ${rdvs.slice(0, maxChips).map(r => `<span class="cal-chip ${r.statut}" title="${r.patient} — ${r.motif}" onclick="calVoir(${r.id})"><strong>${r.heure}</strong> ${r.patient}</span>`).join('')}
+            ${rdvs.slice(0, maxChips).map(r => `<span class="cal-chip ${r.statut}" title="${r.patient} — ${r.motif}" onclick="calVoir(${r.id})"><strong>${r.heure}</strong> <span class="notranslate">${r.patient}</span></span>`).join('')}
             ${rdvs.length > maxChips ? `<span class="cal-chip plus" onclick="calMode='semaine'; calRef=new Date('${iso}T00:00:00'); calCharger();">+ ${rdvs.length - maxChips} autre(s)…</span>` : ''}
         </div>`;
     }
@@ -146,13 +146,13 @@ function calRendre() {
 function calVoir(id) {
     const r = calDonnees.find(x => x.id === id); if (!r) return;
     const z = document.getElementById('calDetail');
-    z.innerHTML = `<strong>${r.patient}</strong> — ${fmtDate(r.date)} à ${r.heure}${r.medecin ? ' — ' + r.medecin : ''}<br>${r.motif} <span class="badge bg-secondary ms-1">${r.statut_label}</span>`;
+    z.innerHTML = `<strong><span class="notranslate">${r.patient}</span></strong> — ${fmtDate(r.date)} à ${r.heure}${r.medecin ? ' — ' + r.medecin : ''}<br>${r.motif} <span class="badge bg-secondary ms-1">${r.statut_label}</span>`;
     z.style.display = '';
 }
 function rendreListe() {
     const lignes = donneesFiltrees().slice().sort((a, b) => (a.date + a.heure).localeCompare(b.date + b.heure));
     document.getElementById('listeRdv').innerHTML = lignes.length ? lignes.map(r => `<tr>
-        <td>${fmtDate(r.date)}</td><td><strong>${r.heure}</strong></td><td>${r.patient}</td><td>${r.medecin || '—'}</td><td>${r.motif}</td>
+        <td>${fmtDate(r.date)}</td><td><strong>${r.heure}</strong></td><td><span class="notranslate">${r.patient}</span></td><td>${r.medecin || '—'}</td><td>${r.motif}</td>
         <td><span class="cal-chip ${r.statut}" style="display:inline-block;cursor:default;">${r.statut_label}</span></td></tr>`).join('')
         : '<tr><td colspan="6" class="text-center text-muted py-3">Aucun rendez-vous sur cette période.</td></tr>';
 }
