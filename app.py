@@ -8226,6 +8226,20 @@ def rendez_vous():
         statut=statut if statut != 'tous' else None,
         medecin_id=medecin_id
     )
+
+    # ⭐ 2026-10-15 (patron) : filtre par service (= spécialité du médecin) ; les boutons de
+    # service comptent les rendez-vous de la vue et des filtres en cours.
+    service_choisi = request.args.get('service', '').strip()
+    par_service = {}
+    for r in rendez_vous:
+        nom_service = _service_rdv(r)
+        nom_aff, nb = par_service.get(nom_service.lower(), (nom_service, 0))
+        par_service[nom_service.lower()] = (nom_aff, nb + 1)
+    services_compteurs = sorted(par_service.values(), key=lambda x: (x[0] == SERVICE_RDV_AUCUN, x[0].lower()))
+    total_tous = total
+    if service_choisi:
+        rendez_vous = [r for r in rendez_vous if _service_rdv(r).lower() == service_choisi.lower()]
+        total = len(rendez_vous)
     
     # ⭐ Demandes reçues du portail patient, à examiner (patron, 2026-10-07)
     demandes_portail = RendezVous.query.filter_by(structure_id=structure_id, statut='demande') \
@@ -8252,7 +8266,10 @@ def rendez_vous():
         statut=statut,
         medecin_id=medecin_id,
         total=total,
-        today=today.isoformat()
+        today=today.isoformat(),
+        services_compteurs=services_compteurs,
+        service_choisi=service_choisi,
+        total_tous=total_tous
     )
 
 
@@ -8819,6 +8836,17 @@ def api_reporter_rendez_vous():
 
 # ---------- ⭐ Lien de consultation partagé aux médecins (patron, 2026-10-07) ----------
 
+SERVICE_RDV_AUCUN = 'Non attribué'
+
+
+def _service_rdv(rdv):
+    """⭐ 2026-10-15 (patron) : service d'un rendez-vous = spécialité de son médecin
+    en majuscules (CARDIOLOGIE, ORL… : « Cardiologie » et « CARDIOLOGIE » = un seul service) ;
+    sans médecin (demande du portail pas encore attribuée) -> 'Non attribué'."""
+    sp = (rdv.medecin.specialite or '').strip().upper() if rdv.medecin else ''
+    return sp or SERVICE_RDV_AUCUN
+
+
 def _rdv_calendrier_json(structure_id, debut, fin, avec_telephone=True):
     q = RendezVous.query.filter_by(structure_id=structure_id).filter(
         RendezVous.date_rendez_vous >= debut, RendezVous.date_rendez_vous <= fin)
@@ -8829,7 +8857,7 @@ def _rdv_calendrier_json(structure_id, debut, fin, avec_telephone=True):
         'id': r.id, 'date': r.date_rendez_vous.isoformat(), 'heure': r.heure_rendez_vous or '',
         'patient': r.patient_nom, 'telephone': (r.patient_telephone or '') if avec_telephone else '',
         'medecin': r.medecin.get_nom_complet() if r.medecin else '', 'motif': r.motif or '',
-        'statut': r.statut, 'statut_label': r.get_statut_label(),
+        'statut': r.statut, 'statut_label': r.get_statut_label(), 'service': _service_rdv(r),
     } for r in rdvs]
 
 
@@ -8904,9 +8932,18 @@ def page_rdv_partage(token):
     if not lien:
         return render_template('rdv_partage.html', token='', structure_nom='Lien invalide ou expiré', medecins=[]), 404
     structure = RappelsService._get_structure(lien.structure_id) or {}
-    medecins = [{'id': m.id, 'nom_complet': m.get_nom_complet()}
-                for m in Medecin.query.filter_by(structure_id=lien.structure_id, actif=True).order_by(Medecin.nom).all()]
-    return render_template('rdv_partage.html', token=token, structure_nom=structure.get('nom', ''), medecins=medecins)
+    actifs = Medecin.query.filter_by(structure_id=lien.structure_id, actif=True).order_by(Medecin.nom).all()
+    medecins = [{'id': m.id, 'nom_complet': m.get_nom_complet()} for m in actifs]
+    # ⭐ 2026-10-15 (patron) : lien limité à un service (?service=CARDIOLOGIE), toujours en lecture seule
+    services, vus = [], set()
+    for m in actifs:
+        sp = (m.specialite or '').strip().upper()
+        if sp and sp.lower() not in vus:
+            vus.add(sp.lower())
+            services.append(sp)
+    services.sort(key=str.lower)
+    return render_template('rdv_partage.html', token=token, structure_nom=structure.get('nom', ''), medecins=medecins,
+                           services=services + [SERVICE_RDV_AUCUN], service_initial=request.args.get('service', '').strip())
 
 
 @app.route('/rendez_vous/partage/<token>/api')
@@ -9154,6 +9191,11 @@ def print_rendez_vous():
         date_debut=date_debut,
         date_fin=date_fin
     )
+    # ⭐ 2026-10-15 (patron) : liste d'un seul service (spécialité du médecin)
+    service = request.args.get('service', '').strip()
+    if service:
+        rendez_vous = [r for r in rendez_vous if _service_rdv(r).lower() == service.lower()]
+        libelle_periode = f"Service {service} — {libelle_periode}"
     
     # Organiser par jour
     rdv_par_jour = {}

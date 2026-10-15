@@ -35,10 +35,15 @@
     <div class="col-md-8">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3 mb-2">
             <div>
-                <h5 class="mb-0"><i class="fas fa-calendar-check me-2"></i>Rendez-vous — {{ structure_nom }}</h5>
+                <h5 class="mb-0"><i class="fas fa-calendar-check me-2"></i>Rendez-vous — {{ structure_nom }}<span id="titreService"></span></h5>
                 <div class="small text-muted">Consultation seule, réservée aux médecins. Pour toute modification, contactez le secrétariat.</div>
             </div>
             <div class="d-flex align-items-center gap-2 flex-wrap">
+                {# ⭐ 2026-10-15 (patron) : lien limité à un service (?service=…) #}
+                <select class="form-select form-select-sm" id="filtreService" style="width:auto;" onchange="majTitreService(); calRendre(); rendreListe();">
+                    <option value="">Tous les services</option>
+                    {% for s in (services or []) %}<option value="{{ s }}" {% if (service_initial or '')|lower == s|lower %}selected{% endif %}>{{ s }}</option>{% endfor %}
+                </select>
                 <select class="form-select form-select-sm" id="filtreMedecin" style="width:auto;" onchange="calRendre(); rendreListe();">
                     <option value="">Tous les médecins</option>
                     {% for m in medecins %}<option value="{{ m.nom_complet }}">{{ m.nom_complet }}</option>{% endfor %}
@@ -86,7 +91,16 @@ const CAL_JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const CAL_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 const calIso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 const fmtDate = iso => iso.split('-').reverse().join('/');
-function donneesFiltrees() { const m = document.getElementById('filtreMedecin').value; return m ? calDonnees.filter(r => r.medecin === m) : calDonnees; }
+function donneesFiltrees() {
+    const m = document.getElementById('filtreMedecin').value;
+    const s = (document.getElementById('filtreService').value || '').toLowerCase();
+    return calDonnees.filter(r => (!m || r.medecin === m) && (!s || (r.service || '').toLowerCase() === s));
+}
+function majTitreService() {
+    const s = document.getElementById('filtreService').value;
+    document.getElementById('titreService').textContent = s ? ' — service ' + s : '';
+}
+majTitreService();
 function calChangerMode(mode) { calMode = mode; calCharger(); }
 function calAujourdhui() { calRef = new Date(); calCharger(); }
 function calNaviguer(sens) { if (calMode === 'semaine') calRef.setDate(calRef.getDate() + 7 * sens); else calRef.setMonth(calRef.getMonth() + sens, 1); calCharger(); }
