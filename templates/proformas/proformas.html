@@ -2121,7 +2121,13 @@ async function convertirEnVente(proformaId) {
                 // perdue ici — la vente créée à la conversion n'avait donc
                 // jamais de médecin attaché, même quand la proforma en avait un.
                 medecin_id: a.medecin_id || null,
-                medecin_nom: a.medecin_nom || null
+                medecin_nom: a.medecin_nom || null,
+                // ⭐ 2026-10-15 : de quoi re-tarifer la ligne si une assurance est décochée
+                // à la conversion (voir retarifierConversion)
+                source_tarif: a.source_tarif || null,
+                prix_base: a.prix_base,
+                prix_non_assure: a.prix_non_assure,
+                _prix_proforma: a.prix || a.prix_unitaire || 0
             })) : [];
             
             console.log('📊 Panier conversion avec PBR:', panierConversion);
@@ -2878,7 +2884,37 @@ function rafraichirCouverturesConversion() {
     cellules.forEach((cel, i) => { cel.innerHTML = celluleCouvertureConversion(panierConversion[i], i); });
 }
 
+// ⭐ 2026-10-15 (patron) : une ligne tarifée au TARIF PRIVÉ dont l'assurance privée est
+// décochée (sur la ligne ou pour toute la vente) se comporte comme sans cette assurance :
+// AMU encore active sur la ligne -> prix de base ; aucune -> prix non assuré. Miroir de
+// services/tarification_service.tarif_unitaire et de la conversion côté serveur.
+function prixLigneConversion(item, c) {
+    const base = item._prix_proforma !== undefined ? item._prix_proforma : item.prix;
+    if (item.prix_modifie || item.source_tarif !== 'prive') return item.prix;
+    if (c.cac && item.prise_en_charge_cac !== false) return base;
+    const amuLigne = c.amu && item.prise_en_charge_amu !== false;
+    const na = parseFloat(item.prix_non_assure) || 0;
+    return (amuLigne || na <= 0) ? (parseFloat(item.prix_base) || base) : na;
+}
+function retarifierConversion() {
+    const c = couverturesConversionActives();
+    const rows = document.getElementById('convertPanierBody')?.getElementsByTagName('tr') || [];
+    panierConversion.forEach((item, i) => {
+        const prix = prixLigneConversion(item, c);
+        if (prix === item.prix) return;
+        item.prix = prix;
+        item.total = prix * (item.quantite || 1);
+        const cells = rows[i] ? rows[i].getElementsByTagName('td') : [];
+        if (cells.length >= 5) {
+            const champ = cells[3].querySelector('input');
+            if (champ) champ.value = prix;
+            cells[4].textContent = Math.round(item.total).toLocaleString('fr-FR') + ' F';
+        }
+    });
+}
+
 function mettreAJourTotauxConversion() {
+    retarifierConversion();
     rafraichirCouverturesConversion();
     const sousTotal = calculeSousTotalConversion();
     const priseEnCharge = calculePriseEnChargeConversion();
@@ -2976,6 +3012,7 @@ function modifierArticleConversion(index, champ, valeur) {
         panierConversion[index].quantite = parseInt(valeur) || 1;
     } else if (champ === 'prix') {
         panierConversion[index].prix = parseFloat(valeur) || 0;
+        panierConversion[index].prix_modifie = true;   // ⭐ prix saisi à la main : plus de re-tarification
     }
     panierConversion[index].total = panierConversion[index].prix * panierConversion[index].quantite;
     
@@ -3152,6 +3189,10 @@ async function finaliserConversionVente() {
         total: item.prix * item.quantite,
         prise_en_charge_amu: item.prise_en_charge_amu !== false,  // 🔥 TRUE/FALSE réel
         prise_en_charge_cac: item.prise_en_charge_cac !== false,  // 🔥 TRUE/FALSE réel
+        // ⭐ 2026-10-15 : le serveur re-tarife lui aussi (même règle, voir prixLigneConversion)
+        source_tarif: item.prix_modifie ? null : (item.source_tarif || null),
+        prix_base: item.prix_base,
+        prix_non_assure: item.prix_non_assure,
         // ⭐ Voir le commentaire sur panierConversion plus haut — sans ces
         // deux champs ici, la vente perdait la date par article même quand
         // la proforma l'avait (signalé, constaté sur une vraie vente).

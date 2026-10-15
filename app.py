@@ -20042,6 +20042,20 @@ def api_convertir_proforma():
             prix = float(a.get('prix', a.get('prix_unitaire', 0)))
             pbr = float(a.get('pbr', prix))
             quantite = int(a.get('quantite', 1))
+            # ⭐ 2026-10-15 (patron) : ligne tarifée au TARIF PRIVÉ dont l'assurance privée ne
+            # s'applique plus (décochée sur la ligne ou pour la vente) -> comme sans elle :
+            # AMU encore active sur la ligne -> prix de base ; aucune -> prix non assuré.
+            # Même règle que services/tarification_service.tarif_unitaire et proformas.html.
+            if a.get('source_tarif') == 'prive':
+                from services.tarification_service import _pris
+                privee_ligne = bool(assurance2_active and float(taux_assurance2 or 0) > 0) and _pris(a.get('prise_en_charge_cac'))
+                if not privee_ligne:
+                    amu_ligne = bool(est_assure and float(taux_assurance or 0) > 0) and _pris(a.get('prise_en_charge_amu'))
+                    prix_na = float(a.get('prix_non_assure') or 0)
+                    if amu_ligne or prix_na <= 0:
+                        prix = float(a.get('prix_base') or prix)
+                    else:
+                        prix = prix_na
             total = prix * quantite
 
             sous_total += total

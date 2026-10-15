@@ -15,6 +15,11 @@ Règles (termes du patron) :
                               sinon taux privé x (tarif - part AMU).
   Patient = tarif - part AMU - part privée (jamais négatif).
 
+⭐ Par LIGNE (patron, 2026-10-15) : une assurance décochée sur un article (refus,
+patient qui n'est plus couvert…) ou non prise en charge au catalogue ne compte
+plus pour cet article — il suit le cas des assurances qui restent : AMU seule
+-> prix de base / PBR AMU ; aucune -> prix non assuré (cas 1).
+
 Garde-fous conservés de l'existant : la base AMU est min(tarif, PBR AMU)
 (un PBR officiel supérieur au tarif pratiqué ne fait pas rembourser plus
 que le tarif) ; la part privée ne dépasse jamais ce qui reste après l'AMU.
@@ -52,6 +57,13 @@ def pbr_prive_valeur(entree, variante='defaut'):
     return valeur if valeur > 0 else None
 
 
+def _pris(valeur):
+    """Prise en charge d'une ligne : absente = oui ; False / 'FALSE' = non."""
+    if valeur is None or valeur == '':
+        return True
+    return valeur if isinstance(valeur, bool) else str(valeur).strip().upper() != 'FALSE'
+
+
 def tarif_unitaire(article, contexte):
     """(tarif, source) — source : 'prive' | 'non_assure' | 'base'."""
     prix = _nombre(article.get('prix'))
@@ -59,10 +71,13 @@ def tarif_unitaire(article, contexte):
     # explicite prime sur tout tarif automatique.
     if article.get('prix_modifie'):
         return prix, 'base'
-    entree = contexte.get('pbr_prive_par_acte', {}).get(article.get('nom')) if contexte.get('privee') else None
+    # ⭐ 2026-10-15 : seules les assurances qui prennent ENCORE cet article comptent
+    amu_ligne = bool(contexte.get('amu')) and _pris(article.get('prise_en_charge_amu'))
+    privee_ligne = bool(contexte.get('privee')) and _pris(article.get('prise_en_charge_cac'))
+    entree = contexte.get('pbr_prive_par_acte', {}).get(article.get('nom')) if privee_ligne else None
     if entree and contexte.get('appliquer_tarif_prive', True) and _nombre(entree.get('tarif_prive')) > 0:
         return _nombre(entree.get('tarif_prive')), 'prive'
-    if not contexte.get('amu') and not contexte.get('privee') and _nombre(article.get('prix_non_assure')) > 0:
+    if not amu_ligne and not privee_ligne and _nombre(article.get('prix_non_assure')) > 0:
         return _nombre(article.get('prix_non_assure')), 'non_assure'
     return prix, 'base'
 
@@ -85,10 +100,8 @@ def repartir_ligne(article, contexte):
     # (pharmacie : "non pris en charge") = aucune part AMU.
     pbr_raw = article.get('pbr')
     pbr_amu = tarif if pbr_raw is None or pbr_raw == '' else _nombre(pbr_raw)
-    prise_amu = article.get('prise_en_charge_amu', True)
-    prise_cac = article.get('prise_en_charge_cac', True)
-    prise_amu = prise_amu if isinstance(prise_amu, bool) else str(prise_amu).upper() != 'FALSE'
-    prise_cac = prise_cac if isinstance(prise_cac, bool) else str(prise_cac).upper() != 'FALSE'
+    prise_amu = _pris(article.get('prise_en_charge_amu'))
+    prise_cac = _pris(article.get('prise_en_charge_cac'))
 
     base_amu = 0.0
     part_amu = 0.0

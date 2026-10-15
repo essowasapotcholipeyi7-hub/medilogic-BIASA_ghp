@@ -596,10 +596,14 @@ function contexteTarificationPharma() {
 function tarifUnitairePharma(item, ctx) {
     const prixBase = parseFloat(item.prix) || 0;
     if (item.prix_modifie) return { tarif: prixBase, source: 'base' };
-    const entree = ctx.privee ? pbrCacMapPharma[item.nom] : undefined;
+    // ⭐ 2026-10-15 (patron) : une assurance décochée sur la ligne (ou non prise en charge au
+    // catalogue) ne compte plus pour cet article — AMU seule -> prix de base ; aucune -> prix non assuré.
+    const amuLigne = ctx.amu && item.prise_en_charge_amu !== false;
+    const priveeLigne = ctx.privee && item.prise_en_charge_cac !== false;
+    const entree = priveeLigne ? pbrCacMapPharma[item.nom] : undefined;
     if (entree && entree.tarif_prive) return { tarif: parseFloat(entree.tarif_prive), source: 'prive' };
     const prixNonAssure = parseFloat(item.prix_non_assure !== undefined && item.prix_non_assure !== null ? item.prix_non_assure : PRIX_NON_ASSURE_PAR_PRODUIT[item.nom]) || 0;
-    if (!ctx.amu && !ctx.privee && prixNonAssure > 0) return { tarif: prixNonAssure, source: 'non_assure' };
+    if (!amuLigne && !priveeLigne && prixNonAssure > 0) return { tarif: prixNonAssure, source: 'non_assure' };
     return { tarif: prixBase, source: 'base' };
 }
 

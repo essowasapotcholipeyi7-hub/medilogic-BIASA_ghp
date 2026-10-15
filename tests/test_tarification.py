@@ -164,3 +164,32 @@ def test_pbr_prive_saisi_plafonne_et_quantite():
     r = repartir_ligne(article, ctx(amu=True, taux_amu=80, privee=True, taux_privee=100))
     # total 20 000 ; AMU 2 x 4 200 = 8 400 ; privée 100 % x 18 000 = 18 000 plafonnée au reste 11 600
     assert arrondi(r) == (8400, 11600, 0)
+
+
+def test_assurance_decochee_sur_la_ligne_patron_2026_10_15():
+    """« Si on désactive un article pour une assurance, l'article se comporte comme
+    non assuré » — sauf si l'AMU prend encore l'article (prix de base / PBR AMU).
+    Exemple du patron : consultation génétique médicale, patient ASK AFRICA (80 %)
+    qui n'est plus couvert. Prix non assuré distinct du prix clinique pour bien voir."""
+    base = {'nom': 'S101 Consultation specialisee (GENETIQUE MEDICALE)', 'prix': 10000, 'pbr': 5250,
+            'prix_non_assure': 9000, 'quantite': 1}
+    ask = dict(privee=True, taux_privee=80, pbr_prive=8500, tarif_prive=15000, nom=base['nom'])
+    # ASK seule, cochée : tarif privé
+    assert tarif_unitaire(base, ctx(**ask)) == (15000, 'prive')
+    assert arrondi(repartir_ligne(base, ctx(**ask))) == (0, 6800, 8200)
+    # ASK seule, décochée sur la ligne : comme un non-assuré
+    sans_ask = {**base, 'prise_en_charge_cac': False}
+    assert tarif_unitaire(sans_ask, ctx(**ask)) == (9000, 'non_assure')
+    assert arrondi(repartir_ligne(sans_ask, ctx(**ask))) == (0, 0, 9000)
+    # AMU + ASK, ASK décochée : cas AMU seule (prix de base, part AMU sur le PBR AMU)
+    amu_ask = dict(amu=True, taux_amu=80, **ask)
+    assert tarif_unitaire(sans_ask, ctx(**amu_ask)) == (10000, 'base')
+    assert arrondi(repartir_ligne(sans_ask, ctx(**amu_ask))) == (4200, 0, 5800)
+    # AMU + ASK, AMU décochée : cas privée seule (tarif privé)
+    sans_amu = {**base, 'prise_en_charge_amu': False}
+    assert tarif_unitaire(sans_amu, ctx(**amu_ask)) == (15000, 'prive')
+    assert arrondi(repartir_ligne(sans_amu, ctx(**amu_ask))) == (0, 6800, 8200)
+    # AMU + ASK, les deux décochées (ou valeurs texte 'FALSE' venant du catalogue) : non assuré
+    aucune = {**base, 'prise_en_charge_amu': 'FALSE', 'prise_en_charge_cac': False}
+    assert tarif_unitaire(aucune, ctx(**amu_ask)) == (9000, 'non_assure')
+    assert arrondi(repartir_ligne(aucune, ctx(**amu_ask))) == (0, 0, 9000)
