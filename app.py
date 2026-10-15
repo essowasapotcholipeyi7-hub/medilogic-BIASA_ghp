@@ -13756,7 +13756,7 @@ def print_rapport_recettes_service():
 # ============================================================
 @app.route('/taux-part-medecin')
 @login_required
-@roles_required('admin', 'gestionnaire')
+@roles_required('admin', 'gestionnaire', 'secretaire', 'caissier')  # ⭐ 2026-10-15 : secrétaire / caissière aussi
 def page_taux_part_medecin():
     medecins = Medecin.query.filter_by(structure_id=session.get('structure_id'), actif=True).order_by(Medecin.nom).all()
     return render_template('taux_part_medecin.html',
@@ -13781,7 +13781,7 @@ def api_lister_taux_part_medecin():
 
 @app.route('/api/taux-part-medecin', methods=['POST'])
 @login_required
-@roles_required('admin', 'gestionnaire')
+@roles_required('admin', 'gestionnaire', 'secretaire', 'caissier')  # ⭐ 2026-10-15 : secrétaire / caissière aussi
 def api_creer_taux_part_medecin():
     """Taux de l'acte + ⭐ affectation à un ou plusieurs médecins (chacun
     avec éventuellement son propre taux) — patron, 2026-10-08."""
@@ -13850,7 +13850,7 @@ def api_creer_taux_part_medecin():
 
 @app.route('/api/taux-part-medecin/<int:ligne_id>', methods=['DELETE'])
 @login_required
-@roles_required('admin', 'gestionnaire')
+@roles_required('admin', 'gestionnaire', 'secretaire', 'caissier')  # ⭐ 2026-10-15 : secrétaire / caissière aussi
 def api_supprimer_taux_part_medecin(ligne_id):
     try:
         structure_id = session.get('structure_id')

@@ -2639,7 +2639,7 @@ async function appliquerPropositionTheme() {
                     Part Médecin
                 </a>
                 {% endif %}
-                {% if session.is_admin or session.role == 'gestionnaire' %}
+                {% if session.is_admin or session.role in ['gestionnaire', 'secretaire', 'caissier'] %}
                 <a class="menu-item" href="{{ url_for('page_taux_part_medecin') }}">
                     Configurer les taux
                 </a>
