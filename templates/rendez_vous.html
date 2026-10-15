@@ -231,7 +231,6 @@ body.modal-open {
         </div>
         <div class="card-body">
             <form id="filtreForm" method="GET" action="{{ url_for('rendez_vous') }}">
-                {% if service_choisi %}<input type="hidden" name="service" value="{{ service_choisi }}">{% endif %}
                 <div class="row g-3">
                     <div class="col-md-3">
                         <label class="form-label small fw-bold">Période</label>
@@ -264,6 +263,21 @@ body.modal-open {
                         </select>
                     </div>
                     
+                    {# ⭐ 2026-10-15 (patron) : service = spécialité du médecin ; liste déroulante (tient la même place
+                       qu'il y ait 5 ou 1000 services ; taper les premières lettres pour aller au service) #}
+                    <div class="col-md-2">
+                        <label class="form-label small fw-bold">Service</label>
+                        <select name="service" id="filtreService" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">Tous les services ({{ total_tous }})</option>
+                            {% set _service_dans_liste = namespace(ok=false) %}
+                            {% for nom_s, nb in services_compteurs %}
+                            {% if (service_choisi or '')|lower == nom_s|lower %}{% set _service_dans_liste.ok = true %}{% endif %}
+                            <option value="{{ nom_s }}" {% if (service_choisi or '')|lower == nom_s|lower %}selected{% endif %}>{{ nom_s }} ({{ nb }})</option>
+                            {% endfor %}
+                            {% if service_choisi and not _service_dans_liste.ok %}<option value="{{ service_choisi }}" selected>{{ service_choisi }} (0)</option>{% endif %}
+                        </select>
+                    </div>
+
                     <div class="col-md-2">
                         <label class="form-label small fw-bold">Médecin</label>
                         <select name="medecin_id" class="form-select form-select-sm" onchange="this.form.submit()">
@@ -458,30 +472,14 @@ body.modal-open {
     <!-- ⭐ 2026-10-15 (patron) : rendez-vous par service (= spécialité du médecin) — un clic
          sur un service montre ses patients programmés, à imprimer ou à envoyer aux médecins
          en lecture seule. -->
-    {% if services_compteurs or service_choisi %}
-    <div class="card shadow-sm mb-3" id="barreServices">
-        <div class="card-body py-2">
-            <div class="d-flex flex-wrap align-items-center gap-2">
-                <span class="small fw-bold text-muted me-1"><i class="fas fa-hospital me-1"></i>Services :</span>
-                <a class="btn btn-sm {{ 'btn-outline-primary' if service_choisi else 'btn-primary' }}"
-                   href="{{ url_for('rendez_vous', periode=periode, date_debut=date_debut, date_fin=date_fin, medecin_id=medecin_id) }}">
-                    Tous <span class="badge bg-light text-dark ms-1">{{ total_tous }}</span></a>
-                {% for nom_s, nb in services_compteurs %}
-                <a class="btn btn-sm {{ 'btn-primary' if (service_choisi or '')|lower == nom_s|lower else 'btn-outline-primary' }}"
-                   href="{{ url_for('rendez_vous', periode=periode, date_debut=date_debut, date_fin=date_fin, medecin_id=medecin_id, service=nom_s) }}">
-                    {{ nom_s }} <span class="badge bg-light text-dark ms-1">{{ nb }}</span></a>
-                {% endfor %}
-            </div>
-            {% if service_choisi %}
-            <div class="alert alert-primary d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2 mb-0 py-2">
-                <div><i class="fas fa-user-injured me-1"></i>Service <strong>{{ service_choisi }}</strong> :
-                    {{ total }} patient(s) dans la liste ci-dessous (période choisie).</div>
-                <div class="d-flex gap-2 flex-wrap">
-                    <button type="button" class="btn btn-sm btn-light" onclick="imprimerCalendrier()"><i class="fas fa-print me-1"></i>Imprimer la liste du service</button>
-                    <button type="button" class="btn btn-sm btn-success" onclick="ouvrirPartageService()"><i class="fab fa-whatsapp me-1"></i>Envoyer aux médecins (lecture seule)</button>
-                </div>
-            </div>
-            {% endif %}
+    {% if service_choisi %}
+    <div class="alert alert-primary d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 py-2" id="barreServices">
+        <div><i class="fas fa-hospital me-1"></i>Service <strong>{{ service_choisi }}</strong> :
+            {{ total }} patient(s) dans la liste ci-dessous.
+            <a href="#" class="ms-2 small" onclick="document.getElementById('filtreService').value=''; document.getElementById('filtreForm').submit(); return false;">voir tous les services</a></div>
+        <div class="d-flex gap-2 flex-wrap">
+            <button type="button" class="btn btn-sm btn-light" onclick="imprimerCalendrier()"><i class="fas fa-print me-1"></i>Imprimer la liste du service</button>
+            <button type="button" class="btn btn-sm btn-success" onclick="ouvrirPartageService()"><i class="fab fa-whatsapp me-1"></i>Envoyer aux médecins (lecture seule)</button>
         </div>
     </div>
     {% endif %}
