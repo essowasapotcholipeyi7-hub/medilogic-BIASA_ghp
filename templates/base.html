@@ -4503,6 +4503,10 @@ if ('serviceWorker' in navigator) {
         while ((m = MOT_MAJ.exec(texte))) { if (!SIGLES.has(m[2])) return true; }
         return false;
     }
+    // ⭐ Glossaire maison (patron, 2026-10-15 : « Bon à payer » ne doit pas devenir « Good to pay ») :
+    // un texte égal à l'une de ces expressions reçoit NOTRE traduction, et Google n'y touche plus.
+    const GLOSSAIRE = {"absent": "No-show", "acte": "Procedure", "actes": "Procedures", "actes & vente": "Procedures & Sales", "actes médicaux": "Medical procedures", "actifs": "Active", "annulé": "Cancelled", "annulés": "Cancelled", "archivés": "Archived", "assuré": "Insured", "aujourd'hui": "Today", "bon à payer": "To be paid", "caisse": "Cash desk", "ce mois": "This month", "cette semaine": "This week", "confirmé": "Confirmed", "demande du patient": "Patient request", "durée": "Duration", "dépassés": "Overdue", "en attente": "Pending", "encaissé": "Collected", "heure": "Time", "motif": "Reason", "médecin": "Doctor", "médecin du jour": "Doctor of the day", "médecins du jour": "Doctors of the day", "net à payer": "Net payable", "non assuré": "Uninsured", "ordonnance": "Prescription", "part assurance": "Insurer share", "part médecin": "Doctor's share", "part patient": "Patient share", "payé": "Paid", "payée": "Paid", "personnalisé": "Custom", "prise en charge": "Coverage", "proforma": "Pro forma", "proformas": "Pro formas", "programmé": "Scheduled", "période": "Period", "reporté": "Rescheduled", "reste à payer": "Balance due", "reçu": "Receipt", "réalisé par": "Performed by", "sans frais": "Free of charge", "soins ambulatoires": "Outpatient care", "statut": "Status", "terminé": "Completed", "terminés": "Completed", "téléphone": "Phone", "validée": "Validated"};
+    const normaliser = t => t.trim().replace(/\s+/g, ' ').toLowerCase();
     const IGNORER = {SCRIPT: 1, STYLE: 1, TEXTAREA: 1, TITLE: 1, NOSCRIPT: 1, CODE: 1, PRE: 1};
     function proteger(racine) {
         if (!racine) return;
@@ -4516,7 +4520,11 @@ if ('serviceWorker' in navigator) {
     function protegerTexte(n) {
         const parent = n.parentElement;
         if (!parent || IGNORER[parent.tagName] || !n.nodeValue.trim() || parent.closest('.notranslate')) return;
-        if (!contientNom(n.nodeValue)) return;
+        const traduction = GLOSSAIRE[normaliser(n.nodeValue)];
+        if (traduction) {
+            const debut = n.nodeValue.match(/^\s*/)[0], fin = n.nodeValue.match(/\s*$/)[0];
+            n.nodeValue = debut + traduction + fin;
+        } else if (!contientNom(n.nodeValue)) return;
         // élément qui ne contient que ce texte (cellule, option…) : on le marque lui-même
         if (parent.childNodes.length === 1 || parent.tagName === 'OPTION') { parent.classList.add('notranslate'); return; }
         const s = document.createElement('span');
