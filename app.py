@@ -13771,6 +13771,34 @@ def page_taux_part_medecin():
                            medecins=[{'id': m.id, 'nom_complet': m.get_nom_complet(), 'specialite': m.specialite or ''} for m in medecins])
 
 
+def _prix_catalogue_actes(noms):
+    """⭐ 2026-10-15 : {nom: prix de l'acte au catalogue, ou None si introuvable} — une seule
+    lecture (en cache) de la feuille des actes de la structure."""
+    try:
+        actes = sheets_helper.get_all_records('actes', use_prefix=True) or []
+    except Exception:
+        return {}
+    par_nom = {}
+    for a in actes:
+        n = a.get('nom')
+        if not n:
+            continue
+        try:
+            par_nom[normaliser_nom_article(n)] = float(str(a.get('prix') or 0).replace(' ', '').replace('\u00a0', '').replace(',', '') or 0)
+        except ValueError:
+            pass
+    return {nom: par_nom.get(normaliser_nom_article(nom)) for nom in noms}
+
+
+def _erreur_prix_base_trop_haut(nom_acte, prix_base, prix_acte):
+    """Message si le prix de base dépasse le prix de l'acte (sinon None)."""
+    if prix_base and prix_acte and prix_base > prix_acte + 0.5:
+        f = lambda v: f"{v:,.0f}".replace(',', ' ')
+        return (f"Le prix de base de « {nom_acte} » ({f(prix_base)} F) ne peut pas dépasser le prix "
+                f"de l'acte ({f(prix_acte)} F) : laissez vide ou mettez un prix plus bas.")
+    return None
+
+
 @app.route('/api/taux-part-medecin', methods=['GET'])
 @login_required
 def api_lister_taux_part_medecin():
@@ -13782,7 +13810,8 @@ def api_lister_taux_part_medecin():
         'id': l.id, 'nom_acte': l.nom_acte, 'taux_medecin': float(l.taux_medecin or 0), 'actif': l.actif,
         'toujours_demander_medecin': bool(l.toujours_demander_medecin),
         # ⭐ médecins affectés à cet acte (vide = tous proposés, comme avant)
-        'medecins': [{'medecin_id': a['medecin_id'], 'nom': noms.get(a['medecin_id'], '—'), 'taux': a['taux']}
+        'medecins': [{'medecin_id': a['medecin_id'], 'nom': noms.get(a['medecin_id'], '—'), 'taux': a['taux'],
+                      'prix_base': a.get('prix_base')}
                      for a in affectations.get(l.nom_acte, [])],
     } for l in lignes])
 
@@ -13828,8 +13857,22 @@ def api_creer_taux_part_medecin():
                     return jsonify({'success': False, 'error': 'Taux propre invalide (ex : 60 ou 2/3)'}), 400
                 if taux_propre <= 0 or taux_propre > 100:
                     return jsonify({'success': False, 'error': 'Le taux propre doit être entre 0 (exclu) et 100 %'}), 400
+            # ⭐ 2026-10-15 : prix de base propre à ce médecin (vide = prix de vente)
+            try:
+                from services.part_medecin_service import lire_prix_base
+                prix_base = lire_prix_base(m.get('prix'))
+            except (TypeError, ValueError):
+                return jsonify({'success': False, 'error': 'Prix de base invalide pour un médecin'}), 400
             if mid not in [a[0] for a in affectations]:
-                affectations.append((mid, taux_propre))
+                affectations.append((mid, taux_propre, prix_base))
+
+        # ⭐ prix de base : jamais au-dessus du prix de l'acte
+        if any(a[2] for a in affectations):
+            prix_acte = _prix_catalogue_actes([nom_acte]).get(nom_acte)
+            for _mid, _t, prix_base in affectations:
+                erreur = _erreur_prix_base_trop_haut(nom_acte, prix_base, prix_acte)
+                if erreur:
+                    return jsonify({'success': False, 'error': erreur}), 400
 
         existante = TauxPartMedecin.query.filter_by(structure_id=structure_id, nom_acte=nom_acte).first()
         if existante:
@@ -13847,9 +13890,10 @@ def api_creer_taux_part_medecin():
             mis_a_jour = False
 
         AffectationPartMedecin.query.filter_by(structure_id=structure_id, nom_acte=nom_acte).delete()
-        for mid, taux_propre in affectations:
+        for mid, taux_propre, prix_base in affectations:
             db.session.add(AffectationPartMedecin(structure_id=structure_id, nom_acte=nom_acte, medecin_id=mid,
-                                                  taux_medecin=taux_propre, created_by=session.get('user_name', 'System')))
+                                                  taux_medecin=taux_propre, prix_base=prix_base,
+                                                  created_by=session.get('user_name', 'System')))
         db.session.commit()
         return jsonify({'success': True, 'id': ligne.id, 'mis_a_jour': mis_a_jour, 'nb_medecins': len(affectations)})
     except Exception as e:
@@ -13886,13 +13930,25 @@ def api_taux_part_medecin_lot():
                 return jsonify({'success': False, 'error': f'Taux manquant ou invalide pour « {nom} » (ex : 60 ou 2/3)'}), 400
             if taux <= 0 or taux > 100:
                 return jsonify({'success': False, 'error': f'Le taux de « {nom} » doit être entre 0 (exclu) et 100 %'}), 400
+            try:
+                from services.part_medecin_service import lire_prix_base
+                prix_base = lire_prix_base(l.get('prix'))   # ⭐ prix de base propre au médecin (vide = prix de vente)
+            except (TypeError, ValueError):
+                return jsonify({'success': False, 'error': f'Prix de base invalide pour « {nom} »'}), 400
             vus.add(nom)
-            lignes.append((nom, taux))
+            lignes.append((nom, taux, prix_base))
         if not lignes:
             return jsonify({'success': False, 'error': 'Ajoutez au moins un acte.'}), 400
+        # ⭐ prix de base : jamais au-dessus du prix de l'acte
+        if any(p for _n, _t, p in lignes):
+            prix_actes = _prix_catalogue_actes([n for n, _t, p in lignes if p])
+            for nom, _t, prix_base in lignes:
+                erreur = _erreur_prix_base_trop_haut(nom, prix_base, prix_actes.get(nom))
+                if erreur:
+                    return jsonify({'success': False, 'error': erreur}), 400
         user = session.get('user_name', 'System')
         crees = maj = 0
-        for nom, taux in lignes:
+        for nom, taux, prix_base in lignes:
             acte = TauxPartMedecin.query.filter_by(structure_id=structure_id, nom_acte=nom).first()
             if not acte:
                 db.session.add(TauxPartMedecin(structure_id=structure_id, nom_acte=nom, taux_medecin=taux,
@@ -13905,9 +13961,10 @@ def api_taux_part_medecin_lot():
             aff = AffectationPartMedecin.query.filter_by(structure_id=structure_id, nom_acte=nom, medecin_id=medecin_id).first()
             if aff:
                 aff.taux_medecin = taux_propre
+                aff.prix_base = prix_base
             else:
                 db.session.add(AffectationPartMedecin(structure_id=structure_id, nom_acte=nom, medecin_id=medecin_id,
-                                                      taux_medecin=taux_propre, created_by=user))
+                                                      taux_medecin=taux_propre, prix_base=prix_base, created_by=user))
         db.session.commit()
         return jsonify({'success': True, 'crees': crees, 'mis_a_jour': maj, 'total': len(lignes)})
     except Exception as e:

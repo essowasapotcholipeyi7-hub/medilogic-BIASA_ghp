@@ -100,8 +100,32 @@ def charger_affectations(structure_id):
         out.setdefault(a.nom_acte, []).append({
             'medecin_id': a.medecin_id,
             'taux': float(a.taux_medecin) if a.taux_medecin is not None else None,
+            'prix_base': float(a.prix_base) if getattr(a, 'prix_base', None) is not None else None,
         })
     return out
+
+
+def prix_base_pour(nom_acte, medecin_id, affectations):
+    """⭐ 2026-10-15 : prix de base propre à (acte, médecin) s'il est fixé, sinon None
+    (la part se calcule alors sur le prix de vente)."""
+    for a in affectations.get(nom_acte, []):
+        if str(a['medecin_id']) == str(medecin_id) and a.get('prix_base'):
+            return float(a['prix_base'])
+    return None
+
+
+def lire_prix_base(valeur):
+    """Prix saisi (« 15 000 », « 15000 F ») -> float > 0 ; vide -> None ; ValueError sinon."""
+    if valeur is None or (isinstance(valeur, str) and not valeur.strip()):
+        return None
+    if isinstance(valeur, (int, float)) and not isinstance(valeur, bool):
+        prix = float(valeur)
+    else:
+        s = str(valeur).upper().replace('FCFA', '').replace('F', '').replace(' ', '').replace('\u00a0', '').replace(',', '.')
+        prix = float(s)
+    if prix <= 0:
+        raise ValueError('prix négatif ou nul')
+    return prix
 
 
 def charger_medecins_affectes_csv(structure_id):
@@ -192,6 +216,11 @@ def creer_lignes_part_medecin(structure_id, articles, vente_id, user_name):
         if prix is None:
             prix = a.get('prix_unitaire') or a.get('prix_reel') or 0
         prix = float(prix or 0)
+        # ⭐ 2026-10-15 : prix de base propre à ce médecin pour cet acte (sinon prix de vente) —
+        # jamais au-dessus du prix réellement vendu (patron : « par défaut le prix de l'acte, ou en baisse »)
+        prix_base = prix_base_pour(nom, medecin_id, affectations)
+        if prix_base:
+            prix = min(prix_base, prix)
         quantite = int(a.get('quantite') or 1)
         montant = round(prix * quantite * taux / 100, 2)
 

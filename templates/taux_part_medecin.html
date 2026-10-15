@@ -30,6 +30,8 @@
          spécialités, échographie réalisée par plusieurs médecins, chacun sa part. -->
     <strong>Affectez l'acte à un ou plusieurs médecins</strong> : seuls ces médecins seront proposés à la vente
     (pré-rempli s'il n'y en a qu'un), et chacun peut avoir son propre taux. Sans affectation, tous les médecins restent proposés.
+    <br><strong>Prix de base</strong> (facultatif) : la part d'un médecin peut être calculée sur un prix plus bas que celui de l'acte
+    (ex : consultation à 10 000 F, part du Dr X calculée sur 8 000 F) — jamais plus haut. Le patient paie toujours le prix de l'acte.
 </div>
 
 <div class="card">
@@ -90,7 +92,9 @@
                 <div class="border rounded" style="max-height:260px; overflow-y:auto;" id="listeMedecins">
                     {% if not medecins %}<div class="text-muted small p-2">Aucun médecin actif — <a href="{{ url_for('gestion_medecins') }}">enregistrez-en d'abord</a>.</div>{% endif %}
                 </div>
-                <div class="form-text">Cochez un ou plusieurs médecins. Taux propre facultatif : vide = taux de l'acte ci-dessus.</div>
+                <div class="form-text">Cochez un ou plusieurs médecins. Taux propre facultatif : vide = taux de l'acte ci-dessus.
+                    Prix de base facultatif : vide = prix de l'acte ; sinon la part de ce médecin est calculée sur ce prix,
+                    au plus égal au prix de l'acte (le patient paie toujours le prix de l'acte).</div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
@@ -132,7 +136,9 @@
                 </div>
                 <div class="border rounded" style="max-height:320px; overflow-y:auto;" id="lotListe"></div>
                 <div class="form-text">Un acte déjà configuré garde son taux et ses autres médecins : ce médecin y est seulement ajouté
-                    avec le taux indiqué. Un acte nouveau est créé avec ce taux.</div>
+                    avec le taux indiqué. Un acte nouveau est créé avec ce taux. Prix de base facultatif : vide = prix de l'acte ;
+                    sinon la part de ce médecin est calculée sur ce prix, au plus égal au prix de l'acte
+                    (le patient paie toujours le prix de l'acte).</div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
@@ -164,6 +170,33 @@ function fractionDuTaux(t) {   // 66,666… -> "2/3" (dénominateur jusqu'à 12)
         if (n > 0 && Math.abs(n / d * 100 - t) < 1e-6) return n + '/' + d;
     }
     return null;
+}
+// ⭐ 2026-10-15 (patron) : prix des actes (catalogue) affichés dans la configuration,
+// et prix de base propre à un médecin (sa part est calculée sur ce prix).
+let PRIX_ACTES = {};
+function chargerPrixActes() {
+    return fetch('/api/actes?limit=5000').then(r => r.json()).then(d => {
+        (d.data || []).forEach(a => { PRIX_ACTES[a.nom] = a.prix; });
+    }).catch(() => {});
+}
+function prixF(n) { return (typeof formatEntier === 'function' ? formatEntier(n) : String(Math.round(n))) + ' F'; }
+function prixActeTexte(nom) { const p = PRIX_ACTES[nom]; return p ? prixF(p) : ''; }
+// « 15 000 » -> 15000 ; vide -> null ; NaN si illisible
+function lirePrix(v) {
+    const s = String(v == null ? '' : v).toUpperCase().replace('FCFA', '').replace('F', '').replace(/\s/g, '').replace(',', '.');
+    if (!s) return null;
+    const n = Number(s);
+    return isFinite(n) && n > 0 ? n : NaN;
+}
+// prix de base au-dessus du prix de l'acte : interdit (patron : « par défaut le prix de l'acte, ou en baisse »)
+function prixBaseTropHaut(nom, v) {
+    const p = lirePrix(v), acte = Number(PRIX_ACTES[nom] || 0);
+    return p !== null && !Number.isNaN(p) && acte > 0 && p > acte;
+}
+// prix de base envoyé : rien s'il est vide ou égal au prix de l'acte
+function prixBaseAEnvoyer(nom, v) {
+    const p = lirePrix(v);
+    return (p === null || (PRIX_ACTES[nom] && p === Number(PRIX_ACTES[nom]))) ? null : p;
 }
 // valeur à remettre dans un champ de saisie : "2/3" plutôt que 66.666666…
 function tauxEnSaisie(t) { return (t === '' || t == null) ? '' : (fractionDuTaux(t) || String(Math.round(Number(t) * 10000) / 10000)); }
@@ -203,7 +236,8 @@ function chargerActesDuMedecin() {
         TOUS_TAUX.forEach(l => {
             const a = (l.medecins || []).find(m => m.medecin_id === mid);
             if (a && !lotLignes.some(x => x.nom_acte === l.nom_acte)) {
-                lotLignes.push({nom_acte: l.nom_acte, taux: tauxEnSaisie(a.taux != null ? a.taux : l.taux_medecin), deja: true});
+                lotLignes.push({nom_acte: l.nom_acte, taux: tauxEnSaisie(a.taux != null ? a.taux : l.taux_medecin),
+                                prix: a.prix_base ? String(a.prix_base) : '', deja: true});
             }
         });
     }
@@ -213,7 +247,7 @@ function ajouterActeLot(nom) {
     if (!lotLignes.some(l => l.nom_acte === nom)) {
         const existant = TOUS_TAUX.find(l => l.nom_acte === nom);
         const tous = document.getElementById('lotTauxTous').value;
-        lotLignes.push({nom_acte: nom, taux: tous || (existant ? tauxEnSaisie(existant.taux_medecin) : ''), deja: false});
+        lotLignes.push({nom_acte: nom, taux: tous || (existant ? tauxEnSaisie(existant.taux_medecin) : ''), prix: '', deja: false});
     }
     document.getElementById('lotSearch').value = '';
     document.getElementById('lotResultats').style.display = 'none';
@@ -235,7 +269,14 @@ function rendreLot() {
             : (existant ? '<span class="badge bg-light text-dark border ms-1">acte déjà configuré (' + tauxAffiche(existant.taux_medecin) + ')</span>'
                         : '<span class="badge bg-success ms-1">nouvel acte</span>');
         return `<div class="d-flex align-items-center gap-2 px-2 py-1 border-bottom">
-            <div class="flex-grow-1 small">${echapperLot(l.nom_acte)}${info}</div>
+            <div class="flex-grow-1 small">${echapperLot(l.nom_acte)}${info}${prixActeTexte(l.nom_acte) ? '<div class="text-muted">Prix de l\'acte : ' + prixActeTexte(l.nom_acte) + '</div>' : ''}</div>
+            <div style="width:130px;">
+                <div class="input-group input-group-sm">
+                    <input type="text" inputmode="numeric" class="form-control" value="${echapperLot(l.prix || '')}" placeholder="${PRIX_ACTES[l.nom_acte] ? formatEntier(PRIX_ACTES[l.nom_acte]) : 'Prix de base'}" title="Prix de base de la part de ce médecin : vide = prix de l'acte, ou plus bas" oninput="lotLignes[${i}].prix = this.value; this.classList.toggle('is-invalid', prixBaseTropHaut(lotLignes[${i}].nom_acte, this.value))">
+                    <span class="input-group-text">F</span>
+                </div>
+                <div class="small text-muted">prix de base</div>
+            </div>
             <div style="width:150px;">
                 <div class="input-group input-group-sm">
                     <input type="text" inputmode="decimal" class="form-control" value="${echapperLot(l.taux)}" placeholder="60 ou 2/3" oninput="lotLignes[${i}].taux = this.value; apercuTaux(this)">
@@ -256,7 +297,8 @@ document.getElementById('lotSearch').addEventListener('input', function () {
             const box = document.getElementById('lotResultats');
             const liste = (data.data || []).filter(a => !lotLignes.some(l => l.nom_acte === a.nom));
             if (!liste.length) { box.style.display = 'none'; return; }
-            box.innerHTML = liste.map(a => `<a href="#" class="list-group-item list-group-item-action small" data-nom="${echapperLot(a.nom)}">${echapperLot(a.nom)}</a>`).join('');
+            liste.forEach(a => { PRIX_ACTES[a.nom] = a.prix; });
+            box.innerHTML = liste.map(a => `<a href="#" class="list-group-item list-group-item-action small d-flex justify-content-between gap-2" data-nom="${echapperLot(a.nom)}"><span>${echapperLot(a.nom)}</span><span class="text-muted text-nowrap">${a.prix ? prixF(a.prix) : ''}</span></a>`).join('');
             box.querySelectorAll('a').forEach(el => el.addEventListener('click', e => { e.preventDefault(); ajouterActeLot(el.dataset.nom); }));
             box.style.display = 'block';
         });
@@ -273,10 +315,12 @@ async function enregistrerLot() {
     for (const l of lotLignes) {
         const t = lireTaux(l.taux);
         if (isNaN(t) || t <= 0 || t > 100) { await afficherMessage('Taux manquant ou invalide pour « ' + l.nom_acte + ' » (ex : 60 ou 2/3).'); return; }
+        if (Number.isNaN(lirePrix(l.prix))) { await afficherMessage('Prix de base invalide pour « ' + l.nom_acte + ' » (ex : 8 000, ou vide).'); return; }
+        if (prixBaseTropHaut(l.nom_acte, l.prix)) { await afficherMessage('Le prix de base de « ' + l.nom_acte + ' » ne peut pas dépasser le prix de l\'acte (' + prixActeTexte(l.nom_acte) + ') : laissez vide ou mettez un prix plus bas.'); return; }
     }
     fetch('/api/taux-part-medecin/lot', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({medecin_id: medecin_id, lignes: lotLignes.map(l => ({nom_acte: l.nom_acte, taux: lireTaux(l.taux)}))})
+        body: JSON.stringify({medecin_id: medecin_id, lignes: lotLignes.map(l => ({nom_acte: l.nom_acte, taux: lireTaux(l.taux), prix: prixBaseAEnvoyer(l.nom_acte, l.prix)}))})
     }).then(r => r.json()).then(async data => {
         if (data.success) {
             bootstrap.Modal.getInstance(document.getElementById('modalLot')).hide();
@@ -308,7 +352,7 @@ function ouvrirModalTaux(ligne) {
         document.getElementById('tauxValeur').value = tauxEnSaisie(ligne.taux_medecin);
         apercuTaux(document.getElementById('tauxValeur'), 'tauxValeurApercu');
         document.getElementById('tauxToujoursDemander').checked = !!ligne.toujours_demander_medecin;
-        (ligne.medecins || []).forEach(m => { etatMedecins[m.medecin_id] = {coche: true, taux: m.taux == null ? '' : tauxEnSaisie(m.taux)}; });
+        (ligne.medecins || []).forEach(m => { etatMedecins[m.medecin_id] = {coche: true, taux: m.taux == null ? '' : tauxEnSaisie(m.taux), prix: m.prix_base ? String(m.prix_base) : ''}; });
     }
     rendreMedecins();
     new bootstrap.Modal(document.getElementById('modalTaux')).show();
@@ -320,7 +364,8 @@ function rendreMedecins() {
     const zone = document.getElementById('listeMedecins');
     if (!MEDECINS.length) return;
     zone.innerHTML = liste.map(m => {
-        const e = etatMedecins[m.id] || {coche: false, taux: ''};
+        const e = etatMedecins[m.id] || {coche: false, taux: '', prix: ''};
+        const prixActe = tauxChoisi ? PRIX_ACTES[tauxChoisi] : null;
         return `<div class="d-flex align-items-center gap-2 px-2 py-1 border-bottom">
             <input type="checkbox" class="form-check-input mt-0" id="med${m.id}" ${e.coche ? 'checked' : ''} onchange="toggleMedecin(${m.id}, this.checked)">
             <label for="med${m.id}" class="flex-grow-1 mb-0" style="cursor:pointer;">${m.nom_complet}${m.specialite ? ' <span class="text-muted small">— ' + m.specialite + '</span>' : ''}</label>
@@ -331,12 +376,19 @@ function rendreMedecins() {
                 </div>
                 <div class="apercu-taux small text-success">${fractionDuTaux(lireTaux(e.taux)) ? '= ' + tauxAffiche(lireTaux(e.taux)) : ''}</div>
             </div>
+            <div style="width:140px;">
+                <div class="input-group input-group-sm">
+                    <input type="text" inputmode="numeric" class="form-control" placeholder="${prixActe ? formatEntier(prixActe) : 'Prix de base'}" title="Prix de base de la part de ce médecin : vide = prix de l'acte, ou plus bas" value="${e.prix || ''}" ${e.coche ? '' : 'disabled'} oninput="etatMedecins[${m.id}] = etatMedecins[${m.id}] || {coche:true}; etatMedecins[${m.id}].prix = this.value; this.classList.toggle('is-invalid', prixBaseTropHaut(tauxChoisi, this.value))">
+                    <span class="input-group-text">F</span>
+                </div>
+                <div class="small text-muted">prix de base</div>
+            </div>
         </div>`;
     }).join('') || '<div class="text-muted small p-2">Aucun médecin ne correspond.</div>';
     document.getElementById('nbMedecinsCoches').textContent = Object.values(etatMedecins).filter(e => e.coche).length;
 }
 function toggleMedecin(id, coche) {
-    etatMedecins[id] = Object.assign(etatMedecins[id] || {taux: ''}, {coche: coche});
+    etatMedecins[id] = Object.assign(etatMedecins[id] || {taux: '', prix: ''}, {coche: coche});
     rendreMedecins();
 }
 function cocherTousMedecins(etat) { Object.keys(etatMedecins).forEach(k => etatMedecins[k].coche = etat); rendreMedecins(); }
@@ -356,9 +408,10 @@ document.getElementById('tauxSearch').addEventListener('input', function() {
             const box = document.getElementById('tauxResultats');
             const liste = data.data || [];
             if (!liste.length) { box.style.display = 'none'; return; }
+            liste.forEach(a => { PRIX_ACTES[a.nom] = a.prix; });
             box.innerHTML = liste.map(a => `
-                <a href="#" class="list-group-item list-group-item-action" onclick='choisirActeTaux(${JSON.stringify(a.nom).replace(/'/g, "&apos;")}); return false;'>
-                    ${a.nom}
+                <a href="#" class="list-group-item list-group-item-action d-flex justify-content-between gap-2" onclick='choisirActeTaux(${JSON.stringify(a.nom).replace(/'/g, "&apos;")}); return false;'>
+                    <span>${a.nom}</span><span class="text-muted text-nowrap">${a.prix ? prixF(a.prix) : ''}</span>
                 </a>`).join('');
             box.style.display = 'block';
         });
@@ -367,7 +420,7 @@ document.getElementById('tauxSearch').addEventListener('input', function() {
 
 function choisirActeTaux(nom) {
     tauxChoisi = nom;
-    document.getElementById('tauxChoisiNom').textContent = nom;
+    document.getElementById('tauxChoisiNom').textContent = nom + (prixActeTexte(nom) ? ' — prix de l\'acte : ' + prixActeTexte(nom) : '');
     document.getElementById('tauxChoisiBloc').style.display = '';
     document.getElementById('tauxResultats').style.display = 'none';
     document.getElementById('tauxSearch').value = nom;
@@ -377,7 +430,7 @@ function choisirActeTaux(nom) {
         document.getElementById('tauxValeur').value = tauxEnSaisie(existante.taux_medecin);
         apercuTaux(document.getElementById('tauxValeur'), 'tauxValeurApercu');
         document.getElementById('tauxToujoursDemander').checked = !!existante.toujours_demander_medecin;
-        (existante.medecins || []).forEach(m => { etatMedecins[m.medecin_id] = {coche: true, taux: m.taux == null ? '' : tauxEnSaisie(m.taux)}; });
+        (existante.medecins || []).forEach(m => { etatMedecins[m.medecin_id] = {coche: true, taux: m.taux == null ? '' : tauxEnSaisie(m.taux), prix: m.prix_base ? String(m.prix_base) : ''}; });
         rendreMedecins();
     }
 }
@@ -394,7 +447,9 @@ async function enregistrerTaux() {
         if (!e.coche) continue;
         const t = e.taux === '' || e.taux == null ? null : lireTaux(e.taux);
         if (t !== null && (isNaN(t) || t <= 0 || t > 100)) { await afficherMessage('Taux propre invalide pour un médecin (ex : 60 ou 2/3).'); return; }
-        medecins.push({medecin_id: parseInt(id, 10), taux: t});
+        if (Number.isNaN(lirePrix(e.prix))) { await afficherMessage('Prix de base invalide pour un médecin (ex : 8 000, ou vide).'); return; }
+        if (prixBaseTropHaut(tauxChoisi, e.prix)) { await afficherMessage('Un prix de base ne peut pas dépasser le prix de l\'acte (' + prixActeTexte(tauxChoisi) + ') : laissez vide ou mettez un prix plus bas.'); return; }
+        medecins.push({medecin_id: parseInt(id, 10), taux: t, prix: prixBaseAEnvoyer(tauxChoisi, e.prix)});
     }
     const toujours_demander_medecin = document.getElementById('tauxToujoursDemander').checked;
     fetch('/api/taux-part-medecin', {
@@ -425,6 +480,8 @@ function modifierTaux(id) { const l = TOUS_TAUX.find(x => x.id === id); if (l) o
 function chargerTaux() {
     fetch('/api/taux-part-medecin').then(r => r.json()).then(lignes => { TOUS_TAUX = lignes; rendreTaux(); });
 }
+// prix des actes : une seule lecture du catalogue au chargement de la page
+chargerPrixActes().then(() => { if (TOUS_TAUX.length) rendreTaux(); });
 
 function rendreTaux() {
     const q = (document.getElementById('rechercheTaux').value || '').trim().toLowerCase();
@@ -435,12 +492,13 @@ function rendreTaux() {
             <div class="list-group-item d-flex justify-content-between align-items-start gap-2 flex-wrap">
                 <div>
                     <div><strong>${l.nom_acte}</strong>
+                        ${prixActeTexte(l.nom_acte) ? '<span class="text-muted small ms-1">' + prixActeTexte(l.nom_acte) + '</span>' : ''}
                         <span class="badge bg-success ms-1">${tauxAffiche(l.taux_medecin)} médecin</span>
                         ${l.toujours_demander_medecin ? '<span class="badge bg-warning text-dark ms-1">Toujours demander</span>' : ''}
                     </div>
                     <div class="small mt-1">
                         ${(l.medecins && l.medecins.length)
-                            ? l.medecins.map(m => `<span class="badge bg-light text-dark border me-1"><i class="fas fa-user-md me-1"></i>${m.nom}${m.taux != null ? ' · ' + tauxAffiche(m.taux) : ''}</span>`).join('')
+                            ? l.medecins.map(m => `<span class="badge bg-light text-dark border me-1"><i class="fas fa-user-md me-1"></i>${m.nom}${m.taux != null ? ' · ' + tauxAffiche(m.taux) : ''}${m.prix_base ? ' · sur ' + prixF(m.prix_base) + ' = ' + prixF(m.prix_base * (m.taux != null ? m.taux : l.taux_medecin) / 100) : ''}</span>`).join('')
                             : '<span class="text-muted">Tous les médecins proposés (aucune affectation)</span>'}
                     </div>
                 </div>

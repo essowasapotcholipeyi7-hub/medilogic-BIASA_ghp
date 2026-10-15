@@ -1969,6 +1969,11 @@ class AffectationPartMedecin(db.Model):
     nom_acte = db.Column(db.String(255), nullable=False)
     medecin_id = db.Column(db.Integer, nullable=False)
     taux_medecin = db.Column(db.Numeric)
+    # ⭐ 2026-10-15 (patron) : prix sur lequel la part de CE médecin est calculée (ex : consultation
+    # à 10 000 F au catalogue, part du Dr X calculée sur 8 000 F) — jamais au-dessus du prix de
+    # l'acte. Vide = prix de vente. Le patient paie toujours le prix du catalogue.
+    # Voir migrate_prix_base_part_medecin.py
+    prix_base = db.Column(db.Numeric)
     created_by = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
