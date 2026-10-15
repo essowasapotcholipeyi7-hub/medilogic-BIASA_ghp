@@ -13801,10 +13801,11 @@ def api_creer_taux_part_medecin():
         toujours_demander_medecin = bool(data.get('toujours_demander_medecin'))
         if not nom_acte:
             return jsonify({'success': False, 'error': 'Acte requis'}), 400
+        from services.part_medecin_service import lire_taux_part
         try:
-            taux_medecin = float(taux_medecin)
+            taux_medecin = lire_taux_part(taux_medecin)   # ⭐ 60, « 66,5 » ou « 2/3 »
         except (TypeError, ValueError):
-            return jsonify({'success': False, 'error': 'Taux invalide'}), 400
+            return jsonify({'success': False, 'error': 'Taux invalide (ex : 60 ou 2/3)'}), 400
         if taux_medecin <= 0 or taux_medecin > 100:
             return jsonify({'success': False, 'error': 'Le taux doit être entre 0 (exclu) et 100 %'}), 400
 
@@ -13822,9 +13823,9 @@ def api_creer_taux_part_medecin():
                 taux_propre = None
             else:
                 try:
-                    taux_propre = float(taux_propre)
+                    taux_propre = lire_taux_part(taux_propre)
                 except (TypeError, ValueError):
-                    return jsonify({'success': False, 'error': 'Taux propre invalide'}), 400
+                    return jsonify({'success': False, 'error': 'Taux propre invalide (ex : 60 ou 2/3)'}), 400
                 if taux_propre <= 0 or taux_propre > 100:
                     return jsonify({'success': False, 'error': 'Le taux propre doit être entre 0 (exclu) et 100 %'}), 400
             if mid not in [a[0] for a in affectations]:
@@ -13879,9 +13880,10 @@ def api_taux_part_medecin_lot():
             if not nom or nom in vus:
                 continue
             try:
-                taux = float(l.get('taux'))
+                from services.part_medecin_service import lire_taux_part
+                taux = lire_taux_part(l.get('taux'))   # ⭐ 60, « 66,5 » ou « 2/3 »
             except (TypeError, ValueError):
-                return jsonify({'success': False, 'error': f'Taux manquant ou invalide pour « {nom} »'}), 400
+                return jsonify({'success': False, 'error': f'Taux manquant ou invalide pour « {nom} » (ex : 60 ou 2/3)'}), 400
             if taux <= 0 or taux > 100:
                 return jsonify({'success': False, 'error': f'Le taux de « {nom} » doit être entre 0 (exclu) et 100 %'}), 400
             vus.add(nom)
@@ -13898,7 +13900,7 @@ def api_taux_part_medecin_lot():
                 taux_propre, crees = None, crees + 1          # le taux de l'acte = celui du médecin
             else:
                 acte.actif = True
-                taux_propre = None if float(acte.taux_medecin or 0) == taux else taux
+                taux_propre = None if abs(float(acte.taux_medecin or 0) - taux) < 1e-9 else taux
                 maj += 1
             aff = AffectationPartMedecin.query.filter_by(structure_id=structure_id, nom_acte=nom, medecin_id=medecin_id).first()
             if aff:
@@ -26428,6 +26430,13 @@ def format_currency(value):
 # Élargi à « lettre + 3 à 7 chiffres » : le catalogue pharmacie a aussi des codes
 # C000010 (« C000010 Acide Acetylsalicylique… »), que l'ancien motif laissait passer.
 _CODE_ACTE_OU_PRODUIT_RE = re.compile(r'^(?:[A-Z]\d{3,7}|\d{4,})\s+')
+
+@app.template_filter('taux_part')
+def _filtre_taux_part(taux):
+    """⭐ 2026-10-15 : '60 %' ou '2/3 (66,67 %)' (voir taux_part_texte)."""
+    from services.part_medecin_service import taux_part_texte
+    return taux_part_texte(taux)
+
 
 @app.template_filter('sans_code')
 def sans_code(nom):

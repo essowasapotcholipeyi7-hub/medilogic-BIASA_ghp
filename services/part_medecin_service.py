@@ -32,6 +32,48 @@ from models import (db, TauxPartMedecin, PrestationMedecin, PeriodePartMedecin, 
 TAUX_RSPS_DEFAUT = 5.0
 
 
+def lire_taux_part(valeur):
+    """⭐ 2026-10-15 (patron) : taux saisi en pourcentage (60, « 66,5 », « 60 % ») OU en
+    fraction (« 2/3 » = 66,666… %, gardé en pleine précision : 2/3 de 9 000 = 6 000 F).
+    Renvoie le pourcentage (float) ; ValueError si illisible."""
+    if isinstance(valeur, (int, float)) and not isinstance(valeur, bool):
+        return float(valeur)
+    s = str(valeur if valeur is not None else '').strip().replace('%', '').replace(' ', '').replace(',', '.')
+    if '/' in s:
+        a, _, b = s.partition('/')
+        num, den = float(a), float(b)
+        if den <= 0:
+            raise ValueError('dénominateur nul')
+        return num / den * 100.0
+    return float(s)
+
+
+def fraction_du_taux(taux):
+    """66,666… -> '2/3' (dénominateur jusqu'à 12) ; None si le taux tient en 2 décimales (60, 12,5) ou sans fraction simple."""
+    try:
+        t = float(taux)
+    except (TypeError, ValueError):
+        return None
+    if abs(t - round(t, 2)) < 1e-9:   # 60, 12,5 : pas de fraction affichée
+        return None
+    for d in range(2, 13):
+        n = round(t / 100.0 * d)
+        if n > 0 and abs(n / d * 100.0 - t) < 1e-6:
+            return f'{n}/{d}'
+    return None
+
+
+def taux_part_texte(taux):
+    """Affichage d'un taux : '60 %', '12,5 %', '2/3 (66,67 %)'."""
+    try:
+        t = float(taux or 0)
+    except (TypeError, ValueError):
+        return ''
+    pct = f'{round(t, 2):g}'.replace('.', ',') + ' %'
+    f = fraction_du_taux(t)
+    return f'{f} ({pct})' if f else pct
+
+
 def charger_taux_part_medecin(structure_id):
     """{nom_acte: taux} pour les actes actifs de cette structure — chargé
     une fois par actes_vente() pour poser data-taux-medecin sur chaque

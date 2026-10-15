@@ -70,7 +70,7 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                             <td style="padding:6px; text-align:right;">{{ r.nombre }}</td>
                             <td style="padding:6px; text-align:right;">{{ r.pu|round(0)|int }} F</td>
                             <td style="padding:6px; text-align:right;">{{ r.montant|round(0)|int }} F</td>
-                            <td style="padding:6px; text-align:right;">{{ r.taux|round(1)|string|replace('.0', '') }} %</td>
+                            <td style="padding:6px; text-align:right;">{{ r.taux|taux_part }}</td>
                             <td style="padding:6px; text-align:right;">{{ r.part|round(0)|int }} F</td>
                         </tr>
                         {% endfor %}

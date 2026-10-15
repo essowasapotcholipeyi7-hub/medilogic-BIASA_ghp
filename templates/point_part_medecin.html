@@ -106,7 +106,7 @@
                     <td class="num">{{ r.nombre }}</td>
                     <td class="num">{{ '{:,.0f}'.format(r.pu).replace(',', ' ') }} F</td>
                     <td class="num">{{ '{:,.0f}'.format(r.montant).replace(',', ' ') }} F</td>
-                    <td class="num">{{ r.taux|round(1)|string|replace('.0', '') }} %</td>
+                    <td class="num">{{ r.taux|taux_part }}</td>
                     <td class="num">{{ '{:,.0f}'.format(r.part).replace(',', ' ') }} F</td>
                 </tr>
                 {% endfor %}

@@ -64,9 +64,10 @@
                 </div>
                 <div class="row g-2">
                     <div class="col-md-5">
-                        <label class="form-label mb-1">Taux de l'acte pour le réalisateur (%)</label>
-                        <input type="number" class="form-control" id="tauxValeur" min="1" max="100" step="1" placeholder="ex: 60">
-                        <div class="form-text">Le reste (100 - ce taux) revient à la clinique. S'applique à chaque médecin affecté sans taux propre.</div>
+                        <label class="form-label mb-1">Taux de l'acte pour le réalisateur (% ou fraction)</label>
+                        <input type="text" inputmode="decimal" class="form-control" id="tauxValeur" placeholder="ex : 60 ou 2/3" oninput="apercuTaux(this, 'tauxValeurApercu')">
+                        <div class="small text-success" id="tauxValeurApercu"></div>
+                        <div class="form-text">En pourcentage (60) ou en fraction (2/3 = 66,67 %). Le reste revient à la clinique. S'applique à chaque médecin affecté sans taux propre.</div>
                     </div>
                     <div class="col-md-7">
                         <div class="form-check mt-md-4 pt-md-2">
@@ -122,8 +123,8 @@
                 </div>
                 <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
                     <span class="small text-muted">Même taux pour toutes les lignes :</span>
-                    <div class="input-group input-group-sm" style="width:130px;">
-                        <input type="number" class="form-control" id="lotTauxTous" min="1" max="100" step="1" placeholder="ex: 60">
+                    <div class="input-group input-group-sm" style="width:150px;">
+                        <input type="text" inputmode="decimal" class="form-control" id="lotTauxTous" placeholder="60 ou 2/3" title="Pourcentage (60) ou fraction (2/3)">
                         <span class="input-group-text">%</span>
                     </div>
                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="appliquerTauxTous()">Appliquer à tous</button>
@@ -143,6 +144,45 @@
 
 <script>
 const MEDECINS = {{ medecins|tojson }};
+// ⭐ 2026-10-15 (patron) : taux en pourcentage (60, 66,5) OU en fraction (2/3 = 66,67 %),
+// même lecture que lire_taux_part() côté serveur.
+function lireTaux(v) {
+    const s = String(v == null ? '' : v).trim().replace('%', '').replace(/\s/g, '').replace(',', '.');
+    if (!s) return NaN;
+    if (s.includes('/')) {
+        const [a, b] = s.split('/');
+        const n = Number(a), d = Number(b);
+        return (a !== '' && b !== '' && isFinite(n) && isFinite(d) && d > 0) ? n / d * 100 : NaN;
+    }
+    return Number(s);
+}
+function fractionDuTaux(t) {   // 66,666… -> "2/3" (dénominateur jusqu'à 12), sinon null
+    t = Number(t);
+    if (!isFinite(t) || Math.abs(t - Math.round(t * 100) / 100) < 1e-9) return null;   // 60, 12,5 : pas de fraction
+    for (let d = 2; d <= 12; d++) {
+        const n = Math.round(t / 100 * d);
+        if (n > 0 && Math.abs(n / d * 100 - t) < 1e-6) return n + '/' + d;
+    }
+    return null;
+}
+// valeur à remettre dans un champ de saisie : "2/3" plutôt que 66.666666…
+function tauxEnSaisie(t) { return (t === '' || t == null) ? '' : (fractionDuTaux(t) || String(Math.round(Number(t) * 10000) / 10000)); }
+function tauxAffiche(t) {
+    const pct = String(Math.round(Number(t) * 100) / 100).replace('.', ',') + ' %';
+    const f = fractionDuTaux(t);
+    return f ? f + ' (' + pct + ')' : pct;
+}
+// aperçu sous le champ : « = 2/3 (66,67 %) » ou « taux invalide »
+function apercuTaux(input, idApercu) {
+    const el = idApercu ? document.getElementById(idApercu) : input.closest('.input-group').parentElement.querySelector('.apercu-taux');
+    if (!el) return;
+    const v = input.value.trim();
+    const t = lireTaux(v);
+    const ok = !isNaN(t) && t > 0 && t <= 100;
+    el.classList.toggle('text-danger', !!v && !ok);
+    el.classList.toggle('text-success', ok);
+    el.textContent = !v ? '' : (ok ? '= ' + tauxAffiche(t) : 'taux invalide');
+}
 // ⭐ 2026-10-15 : plusieurs actes pour un médecin — [{nom_acte, taux, deja}] ('deja' = déjà relié)
 let lotLignes = [];
 let debounceLot = null;
@@ -163,7 +203,7 @@ function chargerActesDuMedecin() {
         TOUS_TAUX.forEach(l => {
             const a = (l.medecins || []).find(m => m.medecin_id === mid);
             if (a && !lotLignes.some(x => x.nom_acte === l.nom_acte)) {
-                lotLignes.push({nom_acte: l.nom_acte, taux: a.taux != null ? a.taux : l.taux_medecin, deja: true});
+                lotLignes.push({nom_acte: l.nom_acte, taux: tauxEnSaisie(a.taux != null ? a.taux : l.taux_medecin), deja: true});
             }
         });
     }
@@ -173,7 +213,7 @@ function ajouterActeLot(nom) {
     if (!lotLignes.some(l => l.nom_acte === nom)) {
         const existant = TOUS_TAUX.find(l => l.nom_acte === nom);
         const tous = document.getElementById('lotTauxTous').value;
-        lotLignes.push({nom_acte: nom, taux: tous || (existant ? existant.taux_medecin : ''), deja: false});
+        lotLignes.push({nom_acte: nom, taux: tous || (existant ? tauxEnSaisie(existant.taux_medecin) : ''), deja: false});
     }
     document.getElementById('lotSearch').value = '';
     document.getElementById('lotResultats').style.display = 'none';
@@ -192,13 +232,16 @@ function rendreLot() {
     document.getElementById('lotListe').innerHTML = lotLignes.length ? lotLignes.map((l, i) => {
         const existant = TOUS_TAUX.find(x => x.nom_acte === l.nom_acte);
         const info = l.deja ? '<span class="badge bg-secondary ms-1">déjà relié</span>'
-            : (existant ? '<span class="badge bg-light text-dark border ms-1">acte déjà configuré (' + existant.taux_medecin + ' %)</span>'
+            : (existant ? '<span class="badge bg-light text-dark border ms-1">acte déjà configuré (' + tauxAffiche(existant.taux_medecin) + ')</span>'
                         : '<span class="badge bg-success ms-1">nouvel acte</span>');
         return `<div class="d-flex align-items-center gap-2 px-2 py-1 border-bottom">
             <div class="flex-grow-1 small">${echapperLot(l.nom_acte)}${info}</div>
-            <div class="input-group input-group-sm" style="width:120px;">
-                <input type="number" class="form-control" min="1" max="100" step="1" value="${l.taux}" placeholder="Taux" oninput="lotLignes[${i}].taux = this.value">
-                <span class="input-group-text">%</span>
+            <div style="width:150px;">
+                <div class="input-group input-group-sm">
+                    <input type="text" inputmode="decimal" class="form-control" value="${echapperLot(l.taux)}" placeholder="60 ou 2/3" oninput="lotLignes[${i}].taux = this.value; apercuTaux(this)">
+                    <span class="input-group-text">%</span>
+                </div>
+                <div class="apercu-taux small text-success">${fractionDuTaux(lireTaux(l.taux)) ? '= ' + tauxAffiche(lireTaux(l.taux)) : ''}</div>
             </div>
             <button type="button" class="btn btn-sm btn-outline-danger" title="Retirer de la liste" onclick="retirerActeLot(${i})"><i class="fas fa-times"></i></button>
         </div>`;
@@ -228,12 +271,12 @@ async function enregistrerLot() {
     if (!medecin_id) { await afficherMessage('Choisissez le médecin.'); return; }
     if (!lotLignes.length) { await afficherMessage('Ajoutez au moins un acte.'); return; }
     for (const l of lotLignes) {
-        const t = parseFloat(l.taux);
-        if (isNaN(t) || t <= 0 || t > 100) { await afficherMessage('Taux manquant ou invalide pour « ' + l.nom_acte + ' » (1 à 100).'); return; }
+        const t = lireTaux(l.taux);
+        if (isNaN(t) || t <= 0 || t > 100) { await afficherMessage('Taux manquant ou invalide pour « ' + l.nom_acte + ' » (ex : 60 ou 2/3).'); return; }
     }
     fetch('/api/taux-part-medecin/lot', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({medecin_id: medecin_id, lignes: lotLignes.map(l => ({nom_acte: l.nom_acte, taux: parseFloat(l.taux)}))})
+        body: JSON.stringify({medecin_id: medecin_id, lignes: lotLignes.map(l => ({nom_acte: l.nom_acte, taux: lireTaux(l.taux)}))})
     }).then(r => r.json()).then(async data => {
         if (data.success) {
             bootstrap.Modal.getInstance(document.getElementById('modalLot')).hide();
@@ -256,14 +299,16 @@ function ouvrirModalTaux(ligne) {
     etatMedecins = {};
     document.getElementById('tauxSearch').value = '';
     document.getElementById('tauxValeur').value = '';
+    document.getElementById('tauxValeurApercu').textContent = '';
     document.getElementById('tauxToujoursDemander').checked = false;
     document.getElementById('filtreMedecins').value = '';
     viderTauxChoisi();
     if (ligne) {
         choisirActeTaux(ligne.nom_acte);
-        document.getElementById('tauxValeur').value = ligne.taux_medecin;
+        document.getElementById('tauxValeur').value = tauxEnSaisie(ligne.taux_medecin);
+        apercuTaux(document.getElementById('tauxValeur'), 'tauxValeurApercu');
         document.getElementById('tauxToujoursDemander').checked = !!ligne.toujours_demander_medecin;
-        (ligne.medecins || []).forEach(m => { etatMedecins[m.medecin_id] = {coche: true, taux: m.taux == null ? '' : m.taux}; });
+        (ligne.medecins || []).forEach(m => { etatMedecins[m.medecin_id] = {coche: true, taux: m.taux == null ? '' : tauxEnSaisie(m.taux)}; });
     }
     rendreMedecins();
     new bootstrap.Modal(document.getElementById('modalTaux')).show();
@@ -279,9 +324,12 @@ function rendreMedecins() {
         return `<div class="d-flex align-items-center gap-2 px-2 py-1 border-bottom">
             <input type="checkbox" class="form-check-input mt-0" id="med${m.id}" ${e.coche ? 'checked' : ''} onchange="toggleMedecin(${m.id}, this.checked)">
             <label for="med${m.id}" class="flex-grow-1 mb-0" style="cursor:pointer;">${m.nom_complet}${m.specialite ? ' <span class="text-muted small">— ' + m.specialite + '</span>' : ''}</label>
-            <div class="input-group input-group-sm" style="width:150px;">
-                <input type="number" class="form-control" min="1" max="100" step="1" placeholder="Taux propre" value="${e.taux}" ${e.coche ? '' : 'disabled'} oninput="etatMedecins[${m.id}] = etatMedecins[${m.id}] || {coche:true}; etatMedecins[${m.id}].taux = this.value;">
-                <span class="input-group-text">%</span>
+            <div style="width:150px;">
+                <div class="input-group input-group-sm">
+                    <input type="text" inputmode="decimal" class="form-control" placeholder="Taux propre" title="Pourcentage (60) ou fraction (2/3)" value="${e.taux}" ${e.coche ? '' : 'disabled'} oninput="etatMedecins[${m.id}] = etatMedecins[${m.id}] || {coche:true}; etatMedecins[${m.id}].taux = this.value; apercuTaux(this)">
+                    <span class="input-group-text">%</span>
+                </div>
+                <div class="apercu-taux small text-success">${fractionDuTaux(lireTaux(e.taux)) ? '= ' + tauxAffiche(lireTaux(e.taux)) : ''}</div>
             </div>
         </div>`;
     }).join('') || '<div class="text-muted small p-2">Aucun médecin ne correspond.</div>';
@@ -326,25 +374,26 @@ function choisirActeTaux(nom) {
     // acte déjà configuré : reprendre ses médecins
     const existante = TOUS_TAUX.find(l => l.nom_acte === nom);
     if (existante && !Object.keys(etatMedecins).length) {
-        document.getElementById('tauxValeur').value = existante.taux_medecin;
+        document.getElementById('tauxValeur').value = tauxEnSaisie(existante.taux_medecin);
+        apercuTaux(document.getElementById('tauxValeur'), 'tauxValeurApercu');
         document.getElementById('tauxToujoursDemander').checked = !!existante.toujours_demander_medecin;
-        (existante.medecins || []).forEach(m => { etatMedecins[m.medecin_id] = {coche: true, taux: m.taux == null ? '' : m.taux}; });
+        (existante.medecins || []).forEach(m => { etatMedecins[m.medecin_id] = {coche: true, taux: m.taux == null ? '' : tauxEnSaisie(m.taux)}; });
         rendreMedecins();
     }
 }
 
 async function enregistrerTaux() {
     if (!tauxChoisi) { await afficherMessage('Choisissez un acte dans la liste.'); return; }
-    const taux_medecin = parseFloat(document.getElementById('tauxValeur').value);
+    const taux_medecin = lireTaux(document.getElementById('tauxValeur').value);
     if (isNaN(taux_medecin) || taux_medecin <= 0 || taux_medecin > 100) {
-        await afficherMessage('Entrez un taux entre 1 et 100.');
+        await afficherMessage('Entrez un taux en pourcentage (ex : 60) ou en fraction (ex : 2/3).');
         return;
     }
     const medecins = [];
     for (const [id, e] of Object.entries(etatMedecins)) {
         if (!e.coche) continue;
-        const t = e.taux === '' || e.taux == null ? null : parseFloat(e.taux);
-        if (t !== null && (isNaN(t) || t <= 0 || t > 100)) { await afficherMessage('Taux propre invalide pour un médecin (1 à 100).'); return; }
+        const t = e.taux === '' || e.taux == null ? null : lireTaux(e.taux);
+        if (t !== null && (isNaN(t) || t <= 0 || t > 100)) { await afficherMessage('Taux propre invalide pour un médecin (ex : 60 ou 2/3).'); return; }
         medecins.push({medecin_id: parseInt(id, 10), taux: t});
     }
     const toujours_demander_medecin = document.getElementById('tauxToujoursDemander').checked;
@@ -386,12 +435,12 @@ function rendreTaux() {
             <div class="list-group-item d-flex justify-content-between align-items-start gap-2 flex-wrap">
                 <div>
                     <div><strong>${l.nom_acte}</strong>
-                        <span class="badge bg-success ms-1">${l.taux_medecin}% médecin</span>
+                        <span class="badge bg-success ms-1">${tauxAffiche(l.taux_medecin)} médecin</span>
                         ${l.toujours_demander_medecin ? '<span class="badge bg-warning text-dark ms-1">Toujours demander</span>' : ''}
                     </div>
                     <div class="small mt-1">
                         ${(l.medecins && l.medecins.length)
-                            ? l.medecins.map(m => `<span class="badge bg-light text-dark border me-1"><i class="fas fa-user-md me-1"></i>${m.nom}${m.taux != null ? ' · ' + m.taux + ' %' : ''}</span>`).join('')
+                            ? l.medecins.map(m => `<span class="badge bg-light text-dark border me-1"><i class="fas fa-user-md me-1"></i>${m.nom}${m.taux != null ? ' · ' + tauxAffiche(m.taux) : ''}</span>`).join('')
                             : '<span class="text-muted">Tous les médecins proposés (aucune affectation)</span>'}
                     </div>
                 </div>

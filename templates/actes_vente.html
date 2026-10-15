@@ -154,7 +154,7 @@
             {{ acte.nom }} - {{ acte.prix }} FCFA
             {% if tarif_nuit_actif and acte.prix_nuit %}(nuit: {{ acte.prix_nuit }} FCFA){% endif %}
             {% if acte.pbr %}(PBR: {{ acte.pbr }} FCFA){% endif %}
-            {% if acte.taux_medecin %}[Part médecin {{ acte.taux_medecin }}%]{% endif %}
+            {% if acte.taux_medecin %}[Part médecin {{ acte.taux_medecin|taux_part }}]{% endif %}
             {% if acte.prise_en_charge_amu == false and acte.prise_en_charge_cac == false %}
                 🚫 NON PRIS EN CHARGE (AMU & CAC)
             {% elif acte.prise_en_charge_amu == false %}
