@@ -563,9 +563,22 @@
                 align-self: flex-start;
             }
         }
+        /* ⭐ 2026-10-15 (patron) : proforma déjà convertie en vente */
+        .filigrane-facturee {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg);
+            font-size: 64px; font-weight: 900; color: rgba(220, 53, 69, .16); white-space: nowrap;
+            pointer-events: none; z-index: 1000; letter-spacing: 4px;
+            -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        }
+        .bandeau-facturee {
+            border: 2px solid #dc3545; color: #dc3545; background: #fff5f5; font-weight: 700;
+            text-align: center; padding: 8px 10px; margin: 10px 0; border-radius: 6px; letter-spacing: .5px;
+            -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        }
     </style>
 </head>
 <body>
+    {% if vente_facturee %}<div class="filigrane-facturee">PROFORMA DÉJÀ FACTURÉE</div>{% endif %}
     <div class="proforma-container">
         <!-- ===== EN-TÊTE ===== -->
         <div class="proforma-header">
@@ -589,6 +602,11 @@
             </div>
         </div>
 
+        {% if vente_facturee %}
+        <div class="bandeau-facturee">
+            PROFORMA DÉJÀ FACTURÉE — vente n° {{ vente_facturee.numero_local or vente_facturee.id }}{% if vente_facturee.date_vente %} du {{ vente_facturee.date_vente.strftime('%d/%m/%Y') }}{% endif %}{% if vente_facturee.statut == 'annulee' %} (vente annulée){% endif %}
+        </div>
+        {% endif %}
         <!-- ===== STRUCTURE INFO ===== -->
         <div class="structure-info">
             <span class="nom">FACTURE PROFORMA</span>

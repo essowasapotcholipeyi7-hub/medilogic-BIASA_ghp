@@ -115,12 +115,17 @@
                                 </td>
                                 <td>
                                     <div class="btn-group btn-group-sm">
-                                        <a href="{{ url_for('proforma_print', proforma_id=p.id) }}?format=80mm" target="_blank" class="btn btn-secondary" title="Ticket 80mm">
-                                            <i class="fas fa-receipt"></i>
-                                        </a>
-                                        <a href="{{ url_for('proforma_print', proforma_id=p.id) }}?format=A4" target="_blank" class="btn btn-info" title="A4">
+                                        {# ⭐ 2026-10-15 (patron) : proforma imprimée en A4 uniquement (plus de ticket 80 mm) #}
+                                        <a href="{{ url_for('proforma_print', proforma_id=p.id) }}?format=A4" target="_blank" class="btn btn-info" title="Imprimer la proforma (A4){{ ' — déjà facturée' if p.statut == 'converti_en_vente' else '' }}">
                                             <i class="fas fa-file-pdf"></i>
                                         </a>
+                                        {% if p.statut == 'converti_en_vente' and p.vente_id %}
+                                        {# ⭐ réimpression des documents de la vente (80 mm / A4), comme dans Historique #}
+                                        <button type="button" class="btn btn-outline-primary" title="Réimprimer le reçu / la facture de la vente"
+                                                onclick="ouvrirReimpressionVente({{ p.vente_id }}, '{{ p.vente_type or 'mixte' }}', '— vente n° {{ p.vente_numero or p.vente_id }}')">
+                                            <i class="fas fa-print"></i> Reçu
+                                        </button>
+                                        {% endif %}
                                         {% if p.statut != 'converti_en_vente' %}
                                         <!-- ⭐ Modifier/Accepter/Refuser n'ont plus de sens une
                                              fois la proforma CONVERTIE EN VENTE — une vraie
@@ -4047,6 +4052,7 @@ document.addEventListener('input', function (e) {
     }
 }, true);
 </script>
+{% include 'partials/reimpression_vente.html' %}
 <script>
 // ⭐ 2026-10-15 (patron) : double-clic (ou Entrée) sur un acte / un produit = ajout direct au
 // panier, comme en vente d'actes et en pharmacie (mêmes contrôles que « Ajouter sélection »).

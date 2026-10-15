@@ -1,0 +1,70 @@
+{# ⭐ Réimpression des documents d'une vente (patron, 2026-10-15 : « réimprimer le reçu d'une
+   proforma convertie depuis Proforma, format 80 mm et A4, exactement comme dans Historique »).
+   Mêmes documents, mêmes formats et même choix Détaillée / Cumulée que la fenêtre
+   « Choisir le document » de historique_ventes.html (printDocument) ; noms préfixés « reimp »
+   pour pouvoir l'inclure dans n'importe quelle page.
+   Ouvrir : ouvrirReimpressionVente(venteId, typeVente). #}
+<div class="modal fade" id="reimpressionVenteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-print me-1"></i> Choisir le document <small id="reimpVenteTitre" class="ms-1"></small></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                {% with id_format='reimpFormat' %}{% include 'partials/choix_format_impression.html' %}{% endwith %}
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Type de document</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="reimpModeDetail" id="reimpModeDetailComplet" autocomplete="off" checked onchange="reimpVente.detail='complet'">
+                        <label class="btn btn-outline-secondary btn-sm" for="reimpModeDetailComplet">Détaillée</label>
+                        <input type="radio" class="btn-check" name="reimpModeDetail" id="reimpModeDetailCumule" autocomplete="off" onchange="reimpVente.detail='cumule'">
+                        <label class="btn btn-outline-secondary btn-sm" for="reimpModeDetailCumule">Cumulée (par catégorie)</label>
+                    </div>
+                </div>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-primary" onclick="imprimerDocumentVente('recu_client')"><i class="fas fa-receipt"></i> Reçu Patient</button>
+                    <button class="btn btn-outline-success" onclick="imprimerDocumentVente('facture_client')"><i class="fas fa-file-invoice"></i> Facture Patient</button>
+                    <button class="btn btn-outline-danger" onclick="imprimerDocumentVente('facture_structure')"><i class="fas fa-archive"></i> Facture Structure (archive)</button>
+                    <button class="btn btn-outline-success" onclick="imprimerDocumentVente('les_deux_factures')"><i class="fas fa-layer-group"></i> Les deux factures (patient + structure)</button>
+                    <button class="btn btn-outline-secondary" onclick="imprimerDocumentVente('recu_structure')"><i class="fas fa-copy"></i> Reçu Structure</button>
+                    <button class="btn btn-outline-info" onclick="imprimerDocumentVente('les_deux')"><i class="fas fa-layer-group"></i> Les deux reçus (patient, puis copie structure)</button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+const reimpVente = {id: null, type: null, detail: 'complet'};
+function ouvrirReimpressionVente(venteId, typeVente, libelle) {
+    reimpVente.id = venteId;
+    reimpVente.type = typeVente || 'mixte';
+    reimpVente.detail = 'complet';
+    document.getElementById('reimpModeDetailComplet').checked = true;
+    choisirFormatImpression('80mm', 'reimpFormat');
+    document.getElementById('reimpVenteTitre').textContent = libelle || ('— vente n° ' + venteId);
+    new bootstrap.Modal(document.getElementById('reimpressionVenteModal')).show();
+}
+// Mêmes adresses que printDocument() de l'historique des ventes
+function imprimerDocumentVente(docType) {
+    const format = document.getElementById('reimpFormat').value;
+    const base = reimpVente.id + '/' + reimpVente.type;
+    const d = '&detail=' + reimpVente.detail;
+    let url = '';
+    if (docType === 'recu_client') url = '/recu/' + base + '?format=' + format + d;
+    else if (docType === 'recu_structure') url = '/recu_structure/' + base + '?format=' + format + d;
+    else if (docType === 'facture_client') url = '/facture/' + base + '?format=' + format + d;
+    else if (docType === 'les_deux_factures') url = format === 'A4'
+        ? '/factures_deux/' + base + '?imprimer=1' + d
+        : '/facture/' + base + '?format=' + format + d + '&ensuite=structure';
+    else if (docType === 'facture_structure') url = '/facture_structure/' + base + '?format=' + format + d;
+    else if (docType === 'les_deux') url = format === 'A4'
+        ? '/recus_deux/' + base + '?imprimer=1' + d
+        : '/recu/' + base + '?format=' + format + d + '&ensuite=structure';
+    if (url) window.open(url, '_blank');
+    bootstrap.Modal.getInstance(document.getElementById('reimpressionVenteModal')).hide();
+}
+</script>

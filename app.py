@@ -19324,8 +19324,10 @@ def proformas():
                 WHEN p.statut = 'converti_en_vente' THEN 'Convertie en vente'
                 WHEN p.statut = 'expire' THEN 'Expirée'
                 ELSE p.statut
-            END as statut_label
+            END as statut_label,
+            v.type AS vente_type, v.numero_local AS vente_numero
         FROM proformas p
+        LEFT JOIN ventes v ON v.id = p.vente_id AND v.structure_id = p.structure_id
         WHERE p.structure_id = %s
         ORDER BY p.created_at DESC
     """, (structure_id,))
@@ -19773,7 +19775,15 @@ def proforma_print(proforma_id):
         return redirect(url_for('proformas'))
     
     proforma = proforma[0]
-    
+
+    # ⭐ 2026-10-15 (patron) : proforma déjà convertie en vente -> filigrane « déjà facturée »
+    vente_facturee = None
+    if proforma.get('statut') == 'converti_en_vente':
+        vf = db.execute_query(
+            "SELECT id, numero_local, date_vente, statut FROM ventes WHERE id = %s AND structure_id = %s",
+            (proforma.get('vente_id'), structure_id)) if proforma.get('vente_id') else None
+        vente_facturee = vf[0] if vf else {'id': proforma.get('vente_id')}
+
     # Récupérer les infos de la structure depuis Google Sheets
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
@@ -19876,7 +19886,7 @@ def proforma_print(proforma_id):
     if taux_modifie:
         print(f"   ⚠️ Taux modifié: {taux_assurance2}% (original: {taux_original}%)")
     
-    return render_template('proformas/proforma_print.html', 
+    return render_template('proformas/proforma_print.html', vente_facturee=vente_facturee, 
                          proforma=proforma,
                          structure=structure_info,  # ⭐ Adresse formatée
                          logo_url=logo_url,
