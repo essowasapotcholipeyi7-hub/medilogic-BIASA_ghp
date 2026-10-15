@@ -22408,6 +22408,82 @@ def api_get_proforma(proforma_id):
         return jsonify({'error': str(e)}), 500
 
 
+def _calculer_montants_proforma(structure_id, data, articles, applique_pbr_cac=True, pbr_cac_variante='defaut'):
+    """⭐ 2026-10-15 (patron) : montants d'une proforma — MÊME calcul que la création
+    (api_creer_proforma) : tarif par type de patient (tarif privé de la compagnie, prix non
+    assuré), part AMU sur le PBR AMU, part privée sur le PBR privé, assurance décochée par
+    ligne. Utilisé par la modification, qui recalculait AMU = sous-total x taux (sans PBR).
+    Complète chaque article (prix appliqué, prix_base, source_tarif, total)."""
+    def _bool(v):
+        if isinstance(v, str):
+            return v.strip().lower() not in ('false', '0', 'non', '')
+        return True if v is None else bool(v)
+    for article in articles:
+        article['prise_en_charge_amu'] = _bool(article.get('prise_en_charge_amu', True))
+        article['prise_en_charge_cac'] = _bool(article.get('prise_en_charge_cac', True))
+    assurance_principale_active = data.get('assurance_principale_active', True)
+    taux_assurance = float(data.get('taux_assurance') or 0) if assurance_principale_active else 0
+    assurance_nom = data.get('assurance_nom') or 'Non assuré'
+    est_assure = assurance_nom not in ('', 'Non assuré', 'non_assure')
+    assurance2_active = bool(data.get('assurance2_active', False))
+    assurance2_nom = data.get('assurance2_nom', '') or ''
+    taux_assurance2 = float(data.get('taux_assurance2') or 0) if assurance2_active else 0
+    contexte = {
+        'amu': bool(est_assure and taux_assurance > 0), 'taux_amu': taux_assurance,
+        'privee': taux_assurance2 > 0, 'taux_privee': taux_assurance2,
+        'pbr_prive_par_acte': charger_pbr_complementaires(structure_id, assurance2_nom) if (assurance2_active and assurance2_nom) else {},
+        'applique_pbr_prive': bool(applique_pbr_cac), 'variante': pbr_cac_variante or 'defaut',
+    }
+    cartes_na = {'acte': charger_prix_non_assure(structure_id, 'acte'),
+                 'produit': charger_prix_non_assure(structure_id, 'produit')}
+    sous_total = sous_total_amu = pbr_total_amu = part_amu = part_privee = 0.0
+    for article in articles:
+        prix = float(article.get('prix', article.get('prix_unitaire', 0)) or 0)
+        pbr = float(article.get('pbr', 0) or 0)
+        quantite = float(article.get('quantite', 1) or 0)
+        if article.get('prix_non_assure') is None:
+            article['prix_non_assure'] = cartes_na['produit' if article.get('type') == 'produit' else 'acte'].get(article.get('nom'))
+        ligne = repartir_ligne({
+            'nom': article.get('nom'), 'prix': prix, 'pbr': pbr, 'quantite': quantite,
+            'prix_non_assure': article.get('prix_non_assure'), 'prix_modifie': article.get('prix_modifie'),
+            'pbr_variante': article.get('pbr_variante'), 'pbr_prive_modifie': article.get('pbr_prive_modifie'),
+            'prise_en_charge_amu': article['prise_en_charge_amu'], 'prise_en_charge_cac': article['prise_en_charge_cac'],
+        }, contexte)
+        article['prix_base'] = prix
+        article['prix'] = article['prix_unitaire'] = ligne['tarif_unitaire']
+        article['source_tarif'] = ligne['source_tarif']
+        article['total'] = ligne['total']
+        article['pbr'] = pbr
+        sous_total += ligne['total']
+        if article['prise_en_charge_amu'] and pbr > 0:
+            sous_total_amu += ligne['total']
+            pbr_total_amu += min(ligne['tarif_unitaire'], pbr) * quantite
+        part_amu += ligne['part_amu']
+        part_privee += ligne['part_privee']
+    prise_en_charge = part_amu if (est_assure and taux_assurance > 0 and min(sous_total_amu, pbr_total_amu) > 0) else 0.0
+    prise_en_charge2 = part_privee if (assurance2_active and taux_assurance2 > 0) else 0.0
+    if articles and all(not a['prise_en_charge_amu'] and not a['prise_en_charge_cac'] for a in articles):
+        prise_en_charge = prise_en_charge2 = 0.0
+    net_a_payer = max(sous_total - prise_en_charge - prise_en_charge2, 0.0)
+    type_aide = data.get('type_aide', 'pourcentage')
+    if type_aide not in ('pourcentage', 'montant'):
+        type_aide = 'pourcentage'
+    taux_aide = max(float(data.get('taux_aide', 0) or 0), 0.0)
+    if type_aide == 'pourcentage' and taux_aide > 100:
+        taux_aide = 100
+    aide = 0.0
+    if taux_aide > 0 and net_a_payer > 0:
+        aide = min(taux_aide, net_a_payer) if type_aide == 'montant' else net_a_payer * taux_aide / 100
+        net_a_payer = max(net_a_payer - aide, 0.0)
+    return {
+        'articles': articles, 'sous_total': sous_total, 'prise_en_charge': prise_en_charge,
+        'prise_en_charge2': prise_en_charge2, 'base_remboursement': min(sous_total_amu, pbr_total_amu) if est_assure else 0.0,
+        'base_cac': part_privee, 'net_a_payer': net_a_payer, 'aide_hospitaliere': aide,
+        'taux_aide': taux_aide, 'type_aide': type_aide, 'taux_assurance': taux_assurance,
+        'taux_assurance2': taux_assurance2, 'assurance_principale_active': assurance_principale_active,
+    }
+
+
 @app.route('/api/proformas/<int:proforma_id>', methods=['PUT'])
 @login_required
 def api_update_proforma(proforma_id):
@@ -22422,7 +22498,7 @@ def api_update_proforma(proforma_id):
         
         # Vérifier que la proforma existe
         check = db.execute_query("""
-            SELECT id, statut FROM proformas 
+            SELECT id, statut, applique_pbr_cac, pbr_cac_variante FROM proformas
             WHERE id = %s AND structure_id = %s
         """, (proforma_id, structure_id))
         
@@ -22434,56 +22510,24 @@ def api_update_proforma(proforma_id):
             return jsonify({'success': False, 'error': 'Seules les proformas en attente peuvent être modifiées'}), 400
         
         # Récupérer les données
+        # ⭐ 2026-10-15 : même calcul que la création (voir _calculer_montants_proforma) —
+        # avant : AMU = sous-total x taux (sans PBR), complémentaire = taux x reste.
         articles = data.get('articles', [])
-        sous_total = 0
-        for item in articles:
-            sous_total += item.get('prix_unitaire', 0) * item.get('quantite', 0)
-        
         assurance_nom = data.get('assurance_nom', 'Non assuré')
-        # ⭐ Désactivation de l'assurance principale — absente jusqu'ici du
-        # formulaire ET de la route de modification (déjà gérée à la
-        # création et à la conversion) ; même mécanisme : taux forcé à 0
-        # si désactivée, quoi que le front envoie.
-        assurance_principale_active = data.get('assurance_principale_active', True)
-        taux_assurance = float(data.get('taux_assurance') or 0) if assurance_principale_active else 0
         numero_assure = data.get('numero_assure', '')
-
         assurance2_active = data.get('assurance2_active', False)
         assurance2_nom = data.get('assurance2_nom', '')
-        taux_assurance2 = float(data.get('taux_assurance2') or 0)
+        calc = _calculer_montants_proforma(
+            structure_id, data, articles,
+            applique_pbr_cac=check[0].get('applique_pbr_cac') is not False,
+            pbr_cac_variante=check[0].get('pbr_cac_variante') or 'defaut')
+        articles = calc['articles']
+        sous_total, prise_en_charge, prise_en_charge2 = calc['sous_total'], calc['prise_en_charge'], calc['prise_en_charge2']
+        net_a_payer, aide_hospitaliere = calc['net_a_payer'], calc['aide_hospitaliere']
+        taux_aide, type_aide = calc['taux_aide'], calc['type_aide']
+        taux_assurance, taux_assurance2 = calc['taux_assurance'], calc['taux_assurance2']
+        assurance_principale_active = calc['assurance_principale_active']
 
-        # Recalculer les prises en charge
-        prise_en_charge = (sous_total * taux_assurance) / 100 if taux_assurance > 0 else 0
-        reste_apres_principal = sous_total - prise_en_charge
-
-        prise_en_charge2 = 0
-        if assurance2_active and taux_assurance2 > 0 and reste_apres_principal > 0:
-            prise_en_charge2 = (reste_apres_principal * taux_assurance2) / 100
-
-        net_a_payer = sous_total - prise_en_charge - prise_en_charge2
-        if net_a_payer < 0:
-            net_a_payer = 0
-
-        # ⭐ Aide hospitalière (remise) — % (plafonné à 100) ou montant
-        # direct FCFA, même mécanisme que création/conversion ; absente
-        # jusqu'ici de la modification.
-        type_aide = data.get('type_aide', 'pourcentage')
-        if type_aide not in ('pourcentage', 'montant'):
-            type_aide = 'pourcentage'
-        taux_aide = float(data.get('taux_aide', 0) or 0)
-        if taux_aide < 0:
-            taux_aide = 0
-        if type_aide == 'pourcentage' and taux_aide > 100:
-            taux_aide = 100
-
-        aide_hospitaliere = 0
-        if taux_aide > 0 and net_a_payer > 0:
-            aide_hospitaliere = min(taux_aide, net_a_payer) if type_aide == 'montant' else (net_a_payer * taux_aide) / 100
-            net_a_payer -= aide_hospitaliere
-            if net_a_payer < 0:
-                net_a_payer = 0
-
-        # 🔥 Mise à jour
         db.execute_query("""
             UPDATE proformas
             SET
@@ -22502,6 +22546,8 @@ def api_update_proforma(proforma_id):
                 aide_hospitaliere = %s,
                 type_aide = %s,
                 net_a_payer = %s,
+                base_remboursement = %s,
+                base_cac = %s,
                 notes = %s,
                 updated_at = NOW()
             WHERE id = %s AND structure_id = %s
@@ -22521,6 +22567,8 @@ def api_update_proforma(proforma_id):
             aide_hospitaliere,
             type_aide,
             net_a_payer,
+            calc['base_remboursement'],
+            calc['base_cac'],
             data.get('notes', ''),
             proforma_id,
             structure_id
