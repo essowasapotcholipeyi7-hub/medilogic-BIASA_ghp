@@ -234,3 +234,13 @@ def test_cesarienne_k233_publique_seulement_patron_2026_10_16():
     art = {'nom': 'K233 Cesarienne dans les formations sanitaires publiques', 'prix': 10000, 'pbr': 10000, 'quantite': 1}
     assert arrondi(repartir_ligne(art, ctx(amu=True, taux_amu=80, structure_publique=True))) == (10000, 0, 0)
     assert arrondi(repartir_ligne(art, ctx(amu=True, taux_amu=80, structure_publique=False))) == (8000, 0, 2000)
+
+
+def test_bordereau_amu_mensuel_meme_taux_que_la_vente_patron_2026_10_16():
+    # facture AMU mensuelle (CNSS / INAM) : avant, seul P160 était connu (O101 compté à 80 %)
+    from services.facturation_amu_service import _part_amu_ligne
+    assert _part_amu_ligne({'nom': 'O101 - Oxygénothérapie', 'prix': 5000, 'pbr': 5000, 'quantite': 2}, 80) == 10000
+    assert _part_amu_ligne({'nom': 'S102 Consultation en pediatrie', 'prix': 8000, 'pbr': 5250, 'quantite': 1}, 80) == 5250
+    assert _part_amu_ligne({'nom': 'K233 Cesarienne', 'prix': 10000, 'pbr': 10000, 'quantite': 1}, 80, True) == 10000
+    assert _part_amu_ligne({'nom': 'K233 Cesarienne', 'prix': 10000, 'pbr': 10000, 'quantite': 1}, 80, False) == 8000
+    assert _part_amu_ligne({'nom': 'S101 Consultation', 'prix': 8000, 'pbr': 5250, 'quantite': 1}, 80) == 4200

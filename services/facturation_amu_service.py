@@ -61,16 +61,16 @@ _CONFIG_PAR_TYPE = {
 }
 
 
-def _taux_amu_pour_article(nom_article, taux_defaut):
-    """Copie locale de app.py:taux_amu_pour_article() (P160 = 90%, reste =
-    taux de la vente) — même raison de duplication que
-    routes/statistiques.py:taux_amu_pour_article() et
-    services/hospitalisation_service.py:_taux_amu_article() : éviter un
-    import circulaire avec app.py."""
-    return 90 if (nom_article and 'P160' in nom_article) else taux_defaut
+def _taux_amu_pour_article(nom_article, taux_defaut, structure_publique=None):
+    """⭐ 2026-10-16 : la règle commune (services/tarification_service.taux_amu_article) —
+    O101 100 %, P160 90 %, S102/S113 (enfants 0-5 ans) 100 %, K233 100 % en structure publique,
+    sinon le taux de la vente. Avant : copie locale qui ne connaissait que P160 (le bordereau
+    comptait donc O101 à 80 % alors que la vente l'avait remboursé à 100 %)."""
+    from services.tarification_service import taux_amu_article
+    return taux_amu_article(nom_article, taux_defaut, structure_publique)
 
 
-def _part_amu_ligne(item, taux_defaut):
+def _part_amu_ligne(item, taux_defaut, structure_publique=None):
     """Part AMU d'UNE ligne (acte ou produit) — réplique la formule
     CANONIQUE utilisée à la création de la vente
     (api_convertir_proforma/api_facturer_hospitalisation, app.py) :
@@ -101,7 +101,7 @@ def _part_amu_ligne(item, taux_defaut):
     # prix/prix_unitaire comme avant.
     prix = float(item.get('prix_reel', item.get('prix', item.get('prix_unitaire', 0))) or 0)
     quantite = int(item.get('quantite', 1) or 1)
-    taux_item = _taux_amu_pour_article(item.get('nom'), taux_defaut)
+    taux_item = _taux_amu_pour_article(item.get('nom'), taux_defaut, structure_publique)
     return min(prix, pbr) * quantite * taux_item / 100
 
 
@@ -130,6 +130,9 @@ def generer_lignes_facture_amu(structure_id, annee, mois, type_amu='cnss'):
     bordereau_assurance() (routes/statistiques.py) ; même formule de part
     AMU par ligne (_part_amu_ligne ci-dessus)."""
     config = _CONFIG_PAR_TYPE[type_amu]
+    # ⭐ 2026-10-16 : statut de CETTE structure (K233 à 100 % seulement en structure publique)
+    from services.statut_structure import structure_est_publique
+    structure_publique = structure_est_publique(structure_id)
 
     debut = datetime(annee, mois, 1)
     fin = (datetime(annee + 1, 1, 1) if mois == 12 else datetime(annee, mois + 1, 1)) - timedelta(seconds=1)
@@ -169,7 +172,7 @@ def generer_lignes_facture_amu(structure_id, annee, mois, type_amu='cnss'):
         for item in actes:
             if not isinstance(item, dict) or not item.get('prise_en_charge_amu', True):
                 continue
-            montant = _part_amu_ligne(item, taux_defaut)
+            montant = _part_amu_ligne(item, taux_defaut, structure_publique)
             nom = item.get('nom') or 'Acte'
             if item.get('date_fin_prestation'):
                 categorie = categorie_hospitalisation
@@ -197,7 +200,7 @@ def generer_lignes_facture_amu(structure_id, annee, mois, type_amu='cnss'):
         for item in produits:
             if not isinstance(item, dict) or not item.get('prise_en_charge_amu', True):
                 continue
-            montant = _part_amu_ligne(item, taux_defaut)
+            montant = _part_amu_ligne(item, taux_defaut, structure_publique)
             lignes[categorie_pharmacie]['nombre_feuilles'] += 1
             lignes[categorie_pharmacie]['montant'] += montant
 
