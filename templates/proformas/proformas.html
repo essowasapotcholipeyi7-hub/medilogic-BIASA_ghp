@@ -1582,6 +1582,9 @@ async function viderPanier() {
 function basculerCouvertureProforma(index, cle) {
     const champ = cle === 'amu' ? 'prise_en_charge_amu' : 'prise_en_charge_cac';
     const item = panierArticles[index];
+    // ⭐ 2026-10-16 (patron) : non pris en charge selon le catalogue -> jamais activable
+    const catalogueCouvre = item['_catalogue_' + champ] !== undefined ? item['_catalogue_' + champ] : item[champ] !== false;
+    if (catalogueCouvre === false) return;
     if (item['_catalogue_' + champ] === undefined) item['_catalogue_' + champ] = item[champ] !== false;
     item[champ] = item[champ] === false;
     afficherPanier();
@@ -1590,6 +1593,10 @@ function boutonCouvertureProforma(item, index, cle, libelle) {
     const champ = cle === 'amu' ? 'prise_en_charge_amu' : 'prise_en_charge_cac';
     const pris = item[champ] !== false;
     const origine = item['_catalogue_' + champ];
+    // ⭐ 2026-10-16 : article non couvert selon le catalogue -> bouton grisé, non cliquable
+    if ((origine !== undefined ? origine : pris) === false) {
+        return '<span class="btn btn-sm btn-secondary disabled py-0 px-1" style="font-size:11px; white-space:nowrap; opacity:.8;" title="Non pris en charge par ' + libelle + ' selon le catalogue">✗ ' + libelle + ' <small>(catalogue)</small></span>';
+    }
     const manuel = origine !== undefined && origine !== pris;
     const titre = pris ? 'Cliquer si ' + libelle + ' ne prend pas cet article (plafond, refus...)' : 'Cliquer pour que ' + libelle + ' reprenne cet article';
     return '<button type="button" class="btn btn-sm ' + (pris ? 'btn-outline-success' : 'btn-danger') + ' py-0 px-1" style="font-size:11px; white-space:nowrap;" title="' + titre.replace(/"/g, '&quot;') + '" onclick="basculerCouvertureProforma(' + index + ', \'' + cle + '\')">'
@@ -2873,10 +2880,28 @@ function couverturesConversionActives() {
     const cac = !!(d.assurance2_nom && assurance2ConversionActive() && tauxAssurance2ConversionActuel() > 0);
     return {amu: amu, cac: cac, nomCac: d.assurance2_nom || 'Privée'};
 }
+// ⭐ 2026-10-16 : ce que dit le CATALOGUE pour cet article (true / false), null si introuvable
+function catalogueCouvreConversion(item, champ) {
+    const d = proformaConversionData || {};
+    for (const id of ['acteSelect', 'produitSelect']) {
+        const sel = document.getElementById(id);
+        if (!sel) continue;
+        const opt = [...sel.options].find(o => o.dataset && o.dataset.nom === item.nom);
+        if (!opt) continue;
+        let v;
+        if (champ === 'prise_en_charge_cac') v = opt.dataset.priseEnChargeCac;
+        else v = d.assurance_nom === 'amu_tns' ? opt.dataset.priseEnChargeAmuTns : opt.dataset.priseEnChargeAmu;
+        return String(v).toLowerCase() !== 'false';
+    }
+    return null;
+}
 function boutonCouvertureConversion(item, index, cle, libelle) {
     const champ = cle === 'amu' ? 'prise_en_charge_amu' : 'prise_en_charge_cac';
     const pris = item[champ] !== false;
     const origine = item['_catalogue_' + champ];
+    if (catalogueCouvreConversion(item, champ) === false) {
+        return '<span class="btn btn-sm btn-secondary disabled py-0 px-1" style="font-size:11px; white-space:nowrap; opacity:.8;" title="Non pris en charge par ' + libelle + ' selon le catalogue">✗ ' + libelle + ' <small>(catalogue)</small></span>';
+    }
     const manuel = origine !== undefined && origine !== pris;
     const titre = pris ? 'Cliquer si ' + libelle + ' ne prend pas cet article (plafond, refus...)' : 'Cliquer pour que ' + libelle + ' reprenne cet article';
     return '<button type="button" class="btn btn-sm ' + (pris ? 'btn-outline-success' : 'btn-danger') + ' py-0 px-1" style="font-size:11px; white-space:nowrap;" title="' + titre.replace(/"/g, '&quot;') + '" onclick="basculerCouvertureConversion(' + index + ', \'' + cle + '\')">'
@@ -2894,6 +2919,7 @@ function basculerCouvertureConversion(index, cle) {
     const item = panierConversion[index];
     if (!item) return;
     const champ = cle === 'amu' ? 'prise_en_charge_amu' : 'prise_en_charge_cac';
+    if (catalogueCouvreConversion(item, champ) === false) return;   // ⭐ 2026-10-16 : jamais activable
     if (item['_catalogue_' + champ] === undefined) item['_catalogue_' + champ] = item[champ] !== false;
     item[champ] = item[champ] === false;
     mettreAJourTotauxConversion();

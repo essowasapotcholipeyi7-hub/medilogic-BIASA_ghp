@@ -1639,6 +1639,9 @@ function changerVariantePbrLigne(index, valeur) {
 function basculerCouverture(index, cle) {
     const champ = cle === 'amu' ? 'prise_en_charge_amu' : 'prise_en_charge_cac';
     const item = panier[index];
+    // ⭐ 2026-10-16 (patron) : non pris en charge selon le catalogue -> jamais activable
+    const catalogueCouvre = item['_catalogue_' + champ] !== undefined ? item['_catalogue_' + champ] : item[champ] !== false;
+    if (catalogueCouvre === false) return;
     if (item['_catalogue_' + champ] === undefined) item['_catalogue_' + champ] = item[champ] !== false;
     item[champ] = item[champ] === false;
     afficherPanier();
@@ -1649,6 +1652,10 @@ function boutonCouverture(item, index, cle, libelle) {
     const champ = cle === 'amu' ? 'prise_en_charge_amu' : 'prise_en_charge_cac';
     const pris = item[champ] !== false;
     const origine = item['_catalogue_' + champ];
+    // ⭐ 2026-10-16 : article non couvert selon le catalogue -> bouton grisé, non cliquable
+    if ((origine !== undefined ? origine : pris) === false) {
+        return '<span class="btn btn-sm btn-secondary disabled py-0 px-1" style="font-size:11px; white-space:nowrap; opacity:.8;" title="Non pris en charge par ' + libelle + ' selon le catalogue">✗ ' + libelle + ' <small>(catalogue)</small></span>';
+    }
     const manuel = origine !== undefined && origine !== pris;
     const titre = pris
         ? 'Cliquer si ' + libelle + ' ne prend pas cet article pour cette vente (plafond du panier, refus...)'

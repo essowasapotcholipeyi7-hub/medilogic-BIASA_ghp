@@ -21660,6 +21660,36 @@ def api_ajouter_soin_hospitalisation(hospit_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+def _catalogue_couvre(nom, type_article, assurance, tns=False):
+    """⭐ 2026-10-16 (patron) : False seulement si le catalogue de la structure (session) dit
+    explicitement FALSE pour cette assurance — on ne peut alors jamais activer la prise en charge
+    sur une ligne. Article introuvable ou case vide -> True (comme le reste du logiciel)."""
+    try:
+        feuille = 'produits' if type_article in ('produit', 'medicament') else 'actes'
+        cible = (nom or '').strip()
+        for r in sheets_helper.get_all_records(feuille) or []:
+            if str(r.get('nom', '')).strip() != cible:
+                continue
+            if assurance == 'cac':
+                v = r.get('prise_en_charge_cac')
+            elif tns and r.get('AMU-TNS') not in (None, ''):
+                v = r.get('AMU-TNS')
+            else:
+                v = r.get('prise_en_charge_amu')
+            return not (v is False or str(v).strip().upper() == 'FALSE')
+    except Exception as e:
+        print(f"⚠️ Lecture du catalogue pour la prise en charge impossible : {e}")
+    return True
+
+
+def _patient_amu_tns(patient_id):
+    try:
+        p = Patient.query.get(patient_id)
+        return bool(p and (p.type_assurance or '') == 'amu_tns')
+    except Exception:
+        return False
+
+
 @app.route('/api/hospitalisation/<int:hospit_id>/soins/<int:soin_id>/couverture', methods=['POST'])
 @login_required
 def api_couverture_soin_hospitalisation(hospit_id, soin_id):
@@ -21678,6 +21708,10 @@ def api_couverture_soin_hospitalisation(hospit_id, soin_id):
         if assurance not in ('amu', 'cac'):
             return jsonify({'success': False, 'error': "assurance doit être 'amu' ou 'cac'"}), 400
         prise = bool(data.get('prise'))
+        hospit = Hospitalisation.query.get(hospit_id)
+        if prise and not _catalogue_couvre(soin.nom, getattr(soin, 'type', 'acte'), assurance,
+                                           _patient_amu_tns(hospit.patient_id) if hospit else False):
+            return jsonify({'success': False, 'error': "Cet article n'est pas pris en charge par cette assurance selon le catalogue."}), 400
         if assurance == 'amu':
             soin.prise_en_charge_amu = prise
         else:
@@ -22407,6 +22441,10 @@ def api_couverture_ligne_soin_ambulatoire(episode_id, ligne_id):
         if assurance not in ('amu', 'cac'):
             return jsonify({'success': False, 'error': "assurance doit être 'amu' ou 'cac'"}), 400
         prise = bool(data.get('prise'))
+        episode = SoinsAmbulatoires.query.get(episode_id)
+        if prise and not _catalogue_couvre(ligne.nom, getattr(ligne, 'type', 'acte'), assurance,
+                                           _patient_amu_tns(episode.patient_id) if episode else False):
+            return jsonify({'success': False, 'error': "Cet article n'est pas pris en charge par cette assurance selon le catalogue."}), 400
         if assurance == 'amu':
             ligne.prise_en_charge_amu = prise
         else:
