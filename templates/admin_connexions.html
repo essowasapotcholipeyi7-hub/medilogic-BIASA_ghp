@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}Tentatives de connexion — Administration{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ⭐ Journal des tentatives de connexion (patron, 2026-10-16) — administrateur global */
+    .cx-carte { border-radius: 10px; padding: 12px 16px; background: #f8f9fa; border: 1px solid #e3e8ee; height: 100%; }
+    .cx-carte .val { font-size: 26px; font-weight: 700; line-height: 1.1; }
+    .cx-carte .lib { font-size: 13px; color: #6c757d; }
+    .cx-echec td { background: #fff5f5 !important; }
+    .cx-blocage td { background: #ffe9e9 !important; }
+    .cx-table td, .cx-table th { font-size: 13px; vertical-align: middle; }
+    .cx-ua { font-size: 11px; color: #8a94a6; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h4 class="mb-0"><i class="fas fa-user-shield me-2"></i>Tentatives de connexion</h4>
+        <a href="{{ url_for('admin_global') }}" class="btn btn-sm btn-light"><i class="fas fa-arrow-left me-1"></i> Administration globale</a>
+    </div>
+    <div class="card-body">
+        <p class="text-muted small mb-3">
+            Chaque tentative de connexion (formulaire, code QR, empreinte, administration globale) est enregistrée avec
+            l'heure, le compte visé, le résultat, l'adresse IP et l'appareil. Après 4 mots de passe faux de suite, le compte
+            est bloqué 10 minutes et son titulaire reçoit un e-mail. Heures affichées en heure de Lomé (GMT).
+        </p>
+
+        <div class="row g-3 mb-3">
+            <div class="col-6 col-md-3"><div class="cx-carte"><div class="val text-danger">{{ resume.echecs_24h }}</div><div class="lib">échecs sur 24 h</div></div></div>
+            <div class="col-6 col-md-3"><div class="cx-carte"><div class="val text-danger">{{ resume.blocages_7j }}</div><div class="lib">blocages sur 7 jours</div></div></div>
+            <div class="col-12 col-md-3"><div class="cx-carte"><div class="lib mb-1">Comptes les plus visés (échecs, 7 j)</div>
+                {% for email, nb in resume.comptes_vises %}<div class="small"><strong>{{ nb }}</strong> — {{ email }}</div>{% else %}<div class="small text-muted">Aucun</div>{% endfor %}</div></div>
+            <div class="col-12 col-md-3"><div class="cx-carte"><div class="lib mb-1">Adresses IP avec le plus d'échecs (7 j)</div>
+                {% for ip, nb in resume.ip_echecs %}<div class="small"><strong>{{ nb }}</strong> — <a href="{{ url_for('page_admin_connexions', jours=7, ip=ip) }}">{{ ip }}</a></div>{% else %}<div class="small text-muted">Aucune</div>{% endfor %}</div></div>
+        </div>
+
+        <form method="GET" class="row g-2 align-items-end mb-3">
+            <div class="col-6 col-md-2">
+                <label class="form-label small fw-bold mb-1">Période</label>
+                <select name="jours" class="form-select form-select-sm" onchange="this.form.submit()">
+                    {% for j, lib in [(1, '24 heures'), (7, '7 jours'), (30, '30 jours'), (90, '90 jours')] %}
+                    <option value="{{ j }}" {% if jours == j %}selected{% endif %}>{{ lib }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-3">
+                <label class="form-label small fw-bold mb-1">Structure</label>
+                <select name="structure_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">Toutes</option>
+                    {% for sid, nom in structures_liste %}
+                    <option value="{{ sid }}" {% if structure_id == sid %}selected{% endif %}>{{ sid }} — {{ nom }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label small fw-bold mb-1">Résultat</label>
+                <select name="resultat" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">Tous</option>
+                    <option value="echecs" {% if resultat == 'echecs' %}selected{% endif %}>Échecs seulement</option>
+                    <option value="reussie" {% if resultat == 'reussie' %}selected{% endif %}>Réussies seulement</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-3">
+                <label class="form-label small fw-bold mb-1">E-mail, nom ou IP</label>
+                <input type="text" name="q" value="{{ q or ip or '' }}" class="form-control form-control-sm" placeholder="ex : nonkou, 41.207…">
+            </div>
+            <div class="col-12 col-md-2"><button class="btn btn-sm btn-primary w-100"><i class="fas fa-search me-1"></i> Filtrer</button></div>
+        </form>
+
+        <div class="table-responsive">
+            <table class="table table-sm table-hover cx-table mb-1">
+                <thead class="table-light"><tr>
+                    <th>Date et heure</th><th>Structure</th><th>Compte visé</th><th>Moyen</th><th>Résultat</th><th>Adresse IP</th><th>Appareil</th>
+                </tr></thead>
+                <tbody>
+                {% for t in tentatives %}
+                <tr class="{{ 'cx-blocage' if t.resultat in ('blocage_declenche', 'compte_bloque') else ('cx-echec' if t.resultat in resultats_echec else '') }}">
+                    <td class="text-nowrap">{{ t.date.strftime('%d/%m/%Y %H:%M:%S') }}</td>
+                    <td>{% if t.structure_id %}{{ t.structure_id }} — {{ noms_structures.get(t.structure_id, '') }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                    <td><span class="notranslate">{{ t.compte_nom or '' }}</span>{% if t.email %}<div class="small text-muted">{{ t.email }}</div>{% endif %}</td>
+                    <td class="small">{{ libelles_type.get(t.type_compte, t.type_compte or '—') }}</td>
+                    <td class="small fw-semibold {{ 'text-success' if t.resultat == 'reussie' else ('text-danger' if t.resultat in resultats_echec else 'text-warning') }}">{{ libelles_resultat.get(t.resultat, t.resultat) }}</td>
+                    <td class="text-nowrap"><a href="{{ url_for('page_admin_connexions', jours=jours, ip=t.ip) }}" title="Voir toutes les tentatives de cette adresse">{{ t.ip or '—' }}</a></td>
+                    <td>{{ t.appareil or '—' }}<div class="cx-ua" title="{{ t.user_agent or '' }}">{{ t.user_agent or '' }}</div></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="text-center text-muted py-4">Aucune tentative sur cette période.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="small text-muted">{{ tentatives|length }} tentative(s) affichée(s){% if tentatives|length >= limite %} — seules les {{ limite }} plus récentes sont listées, affinez les filtres{% endif %}.</div>
+    </div>
+</div>
+{% endblock %}

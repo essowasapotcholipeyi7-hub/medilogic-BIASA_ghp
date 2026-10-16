@@ -1,3 +1,4 @@
+import hmac
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, Response
 from flask_mail import Mail, Message
 from config import Config
@@ -16,6 +17,7 @@ from types import SimpleNamespace
 from models import Vente
 # ⭐ Importer depuis db_helper et models
 from db_helper import db as db_helper
+from services.journal_connexion import journaliser as journaliser_connexion
 from models import db, StructureMapping, Patient, Utilisateur, Structure, Employe, Service, Conge, Permission, DocumentRH, Vente, SignatureRH, AnnulationVente, Facture, PaiementFacture, FactureAssurance, Recette, Depense, ValidationDemande, HabilitationTemporaire, RoleSupplementaire, VerrouillageConnexion, CodeQrConnexion, IdentifiantWebauthn, ParametrageAbonnement, PaiementInstallation, Proforma, Hospitalisation, SoinHospitalisation, ServiceHospitalisation, ChambreHospitalisation, LitHospitalisation, SoinsAmbulatoires, LigneSoinAmbulatoire, PbrComplementaire, CompagnieComplementaire, ParametrageTva, ClassificationAmuCnss, ParametrageAmuCnss, ParametrageAmuInam, CorrespondanceSalleAmu, CodeBarreArticle, FactureAmuMensuelle, ClassificationActe, PrescripteurExterne, PatientExterne, DemandeExamen, ModeleResultat, ResultatExamen, AccesPortailPatient, PeriodeRistourne, SignatureIntervenant, VenteEnAttente, ParametrageAffichageStructure, PreinscriptionPatient, FaqQuestion, FaqQuestionUtilisateur, JourFerie, TauxPartMedecin, PrestationMedecin, PeriodePartMedecin, MedecinDuJour, ParametrageService, ClassificationServiceActe, RecetteService, LogoStructure
 from utils.permissions import a_acces, PERMISSIONS, LIBELLES_ROLES, roles_supplementaires_valides
 from utils.themes import VARIABLES_THEME, POLICES
@@ -680,6 +682,7 @@ def _enregistrer_echec(email, nom=None):
     db.session.commit()
     if vient_de_se_verrouiller:
         _envoyer_email_verrouillage(email, nom)
+    return vient_de_se_verrouiller   # ⭐ 2026-10-16 : pour le journal des tentatives
 
 
 def _envoyer_email_verrouillage(email, nom):
@@ -2267,6 +2270,7 @@ def index():
 
         minutes_restantes = _verrouillage_actif(email)
         if minutes_restantes:
+            journaliser_connexion('compte_bloque', email)
             flash(f'🔒 Compte temporairement bloqué suite à plusieurs mots de passe incorrects. Réessayez dans {minutes_restantes} min.', 'danger')
             return redirect(url_for('index'))
 
@@ -2347,15 +2351,19 @@ def index():
                                 _reinitialiser_medecin_du_jour_connexion(structure_id)
 
                                 print(f"✅ Connexion réussie pour {row.get('nom')} (rôle: {role})")
+                                journaliser_connexion('reussie', email, structure_id, row.get('nom'), 'utilisateur')
                                 flash(f'Bienvenue {row.get("nom")}', 'success')
                                 return redirect(url_for('page_accueil'))
                             else:
                                 print("❌ Structure non active")
+                                journaliser_connexion('structure_inactive', email, structure_id, row.get('nom'), 'utilisateur')
                                 flash('Structure non activée', 'warning')
                                 return redirect(url_for('index'))
                         else:
                             print("❌ Mot de passe incorrect")
-                            _enregistrer_echec(email, row.get('nom'))
+                            bloque = _enregistrer_echec(email, row.get('nom'))
+                            journaliser_connexion('blocage_declenche' if bloque else 'mot_de_passe_incorrect', email,
+                                                  title.split('_')[1] if title.count('_') >= 2 else None, row.get('nom'), 'utilisateur')
                             flash('Mot de passe incorrect', 'danger')
                             return redirect(url_for('index'))
         
@@ -2382,20 +2390,25 @@ def index():
                             session['role'] = 'admin'
                             session['is_admin'] = True
                             session['type_compte'] = 'structure'  # compte propriétaire (feuille structures)
+                            journaliser_connexion('reussie', email, structure.get('ID'), structure.get('nom'), 'structure')
                             _reinitialiser_medecin_du_jour_connexion(structure.get('ID'))
 
                             flash(f'Bienvenue {structure.get("nom")}', 'success')
                             return redirect(url_for('page_accueil'))
                         else:
+                            journaliser_connexion('structure_inactive', email, structure.get('ID'), structure.get('nom'), 'structure')
                             flash('Structure en attente d\'activation', 'warning')
                             return redirect(url_for('index'))
                     else:
-                        _enregistrer_echec(email, structure.get('nom'))
+                        bloque = _enregistrer_echec(email, structure.get('nom'))
+                        journaliser_connexion('blocage_declenche' if bloque else 'mot_de_passe_incorrect', email,
+                                              structure.get('ID'), structure.get('nom'), 'structure')
                         flash('Mot de passe incorrect', 'danger')
                         return redirect(url_for('index'))
 
         # ========== 3. GESTION DES ERREURS ==========
         if not user_trouve:
+            journaliser_connexion('email_inconnu', email)
             flash('Email non trouvé', 'danger')
         elif not mdp_ok:
             flash('Mot de passe incorrect', 'danger')
@@ -2564,6 +2577,7 @@ def login_qr():
     nom_bienvenue, erreur = _poser_session_compte(qr.structure_id, qr.utilisateur_id, qr.type_compte, se_souvenir)
     if erreur:
         return erreur
+    journaliser_connexion('reussie', None, qr.structure_id, nom_bienvenue, 'qr')
 
     qr.date_derniere_utilisation = datetime.utcnow()
     db.session.commit()
@@ -2775,6 +2789,7 @@ def login_webauthn_verifier():
     )
     if erreur:
         return erreur
+    journaliser_connexion('reussie', None, identifiant.structure_id, nom_bienvenue, 'empreinte')
 
     flash(f'Bienvenue {nom_bienvenue}', 'success')
     return jsonify({'success': True, 'redirect': url_for('page_accueil')})
@@ -5326,6 +5341,79 @@ def facture_structure(vente_id, type):
                          taux_modifie=taux_modifie,
                          taux_original=taux_original)
 
+CLE_SECRETE_PAR_DEFAUT = 'medilogic-secret-key-2024'
+
+
+def _alertes_securite():
+    """⭐ 2026-10-16 : réglages dangereux, affichés en rouge à l'administrateur global (le code est
+    public sur GitHub : tout secret écrit dedans est connu de tous)."""
+    alertes = []
+    if not os.getenv('ADMIN_PASSWORD'):
+        alertes.append("Le mot de passe de l'administration globale est celui écrit dans le code, qui est public sur GitHub. "
+                       "Définissez ADMIN_EMAIL et ADMIN_PASSWORD dans les variables d'environnement de Render.")
+    if app.secret_key in (None, '', CLE_SECRETE_PAR_DEFAUT):
+        alertes.append("La clé secrète des sessions est la clé par défaut, publique : quelqu'un pourrait fabriquer une session "
+                       "d'administrateur. Définissez SECRET_KEY (longue valeur aléatoire) dans les variables d'environnement de Render.")
+    return alertes
+
+
+@app.route('/admin_global/connexions')
+def page_admin_connexions():
+    """⭐ 2026-10-16 (patron) : journal des tentatives de connexion de toutes les structures."""
+    if 'super_admin' not in session:
+        return redirect(url_for('admin_login'))
+    from models import TentativeConnexion
+    from services.journal_connexion import LIBELLES_RESULTAT, LIBELLES_TYPE, RESULTATS_ECHEC
+    from sqlalchemy import func
+    jours = request.args.get('jours', 7, type=int)
+    jours = jours if jours in (1, 7, 30, 90) else 7
+    structure_id = request.args.get('structure_id', type=int)
+    resultat = request.args.get('resultat', '')
+    q = (request.args.get('q') or '').strip()
+    ip = (request.args.get('ip') or '').strip()
+    depuis = datetime.utcnow() - timedelta(days=jours)
+    req = TentativeConnexion.query.filter(TentativeConnexion.date >= depuis)
+    if structure_id:
+        req = req.filter(TentativeConnexion.structure_id == structure_id)
+    if resultat == 'echecs':
+        req = req.filter(TentativeConnexion.resultat.in_(RESULTATS_ECHEC))
+    elif resultat == 'reussie':
+        req = req.filter(TentativeConnexion.resultat == 'reussie')
+    if ip:
+        req = req.filter(TentativeConnexion.ip == ip)
+    elif q:
+        motif = f'%{q}%'
+        req = req.filter(db.or_(TentativeConnexion.email.ilike(motif), TentativeConnexion.compte_nom.ilike(motif),
+                                TentativeConnexion.ip.ilike(motif)))
+    limite = 500
+    tentatives = req.order_by(TentativeConnexion.date.desc()).limit(limite).all()
+    il_y_a_24h, il_y_a_7j = datetime.utcnow() - timedelta(hours=24), datetime.utcnow() - timedelta(days=7)
+    echecs_7j = TentativeConnexion.query.filter(TentativeConnexion.date >= il_y_a_7j,
+                                                TentativeConnexion.resultat.in_(RESULTATS_ECHEC))
+    resume = {
+        'echecs_24h': TentativeConnexion.query.filter(TentativeConnexion.date >= il_y_a_24h,
+                                                      TentativeConnexion.resultat.in_(RESULTATS_ECHEC)).count(),
+        'blocages_7j': TentativeConnexion.query.filter(TentativeConnexion.date >= il_y_a_7j,
+                                                       TentativeConnexion.resultat == 'blocage_declenche').count(),
+        'comptes_vises': db.session.query(TentativeConnexion.email, func.count()).filter(
+            TentativeConnexion.date >= il_y_a_7j, TentativeConnexion.resultat.in_(RESULTATS_ECHEC),
+            TentativeConnexion.email.isnot(None)).group_by(TentativeConnexion.email).order_by(func.count().desc()).limit(5).all(),
+        'ip_echecs': db.session.query(TentativeConnexion.ip, func.count()).filter(
+            TentativeConnexion.date >= il_y_a_7j, TentativeConnexion.resultat.in_(RESULTATS_ECHEC),
+            TentativeConnexion.ip.isnot(None)).group_by(TentativeConnexion.ip).order_by(func.count().desc()).limit(5).all(),
+    }
+    try:
+        noms_structures = {int(s.get('ID')): s.get('nom') for s in sheets_helper.get_all_records('structures', use_prefix=False)
+                           if str(s.get('ID') or '').isdigit()}
+    except Exception:
+        noms_structures = {}
+    return render_template('admin_connexions.html', tentatives=tentatives, resume=resume, jours=jours,
+                           structure_id=structure_id, resultat=resultat, q=q, ip=ip, limite=limite,
+                           noms_structures=noms_structures, structures_liste=sorted(noms_structures.items()),
+                           libelles_resultat=LIBELLES_RESULTAT, libelles_type=LIBELLES_TYPE,
+                           resultats_echec=RESULTATS_ECHEC)
+
+
 @app.route('/admin_global')
 def admin_global():
     # 🔥 Vérifier si l'admin est connecté
@@ -5350,7 +5438,7 @@ def admin_global():
         for p in ParametrageAmuCnss.query.all()
     }
     faq_en_attente_count = FaqQuestionUtilisateur.query.filter_by(statut='en_attente').count()
-    return render_template('admin_global.html', structures=structures,
+    return render_template('admin_global.html', alertes_securite=_alertes_securite(), structures=structures,
                             guide_pdf_autorisations=guide_pdf_autorisations,
                             niveaux_soins_par_structure=niveaux_soins_par_structure,
                             faq_en_attente_count=faq_en_attente_count)
@@ -9915,19 +10003,35 @@ def admin_login():
         return redirect(url_for('admin_global'))
     
     if request.method == 'POST':
-        email = request.form.get('email')
-        password = request.form.get('password')
-        
-        # Identifiants par défaut
-        ADMIN_EMAIL = "essowasainfo60@gmail.com"
-        ADMIN_PASSWORD = "essowasa1234A"
-        
-        if email == ADMIN_EMAIL and password == ADMIN_PASSWORD:
+        email = (request.form.get('email') or '').strip()
+        password = request.form.get('password') or ''
+        # ⭐ 2026-10-16 : identifiants dans les variables d'environnement (le code est public sur
+        # GitHub). Les valeurs de secours ne servent que tant que ADMIN_PASSWORD n'est pas défini
+        # sur Render — une alerte rouge le rappelle sur la page de l'administration globale.
+        ADMIN_EMAIL = (os.getenv('ADMIN_EMAIL') or "essowasainfo60@gmail.com").strip().lower()
+        ADMIN_PASSWORD_SECOURS = "essowasa1234A"
+        ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD') or ADMIN_PASSWORD_SECOURS
+        email_min = email.lower()
+        minutes_restantes = _verrouillage_actif(email_min)
+        if minutes_restantes:
+            journaliser_connexion('compte_bloque', email_min, None, 'Administration globale', 'admin_global')
+            flash(f'Trop de tentatives : réessayez dans {minutes_restantes} min.', 'danger')
+            return render_template('admin_login.html')
+        if email_min == ADMIN_EMAIL and hmac.compare_digest(password.encode(), ADMIN_PASSWORD.encode()):
+            _reinitialiser_echecs(email_min)
+            journaliser_connexion('reussie', email_min, None, 'Administration globale', 'admin_global')
             session['super_admin'] = True
             session['super_admin_name'] = 'Super Admin'
             flash('Bienvenue dans l\'administration globale !', 'success')
             return redirect(url_for('admin_global'))
         else:
+            if email_min == ADMIN_EMAIL:
+                # 4 échecs -> 10 min de blocage + e-mail d'alerte à l'adresse de l'administrateur
+                bloque = _enregistrer_echec(email_min, 'Administration globale')
+                journaliser_connexion('blocage_declenche' if bloque else 'mot_de_passe_incorrect', email_min, None,
+                                      'Administration globale', 'admin_global')
+            else:
+                journaliser_connexion('email_inconnu', email_min, None, 'Administration globale', 'admin_global')
             flash('Email ou mot de passe incorrect', 'danger')
     
     return render_template('admin_login.html')

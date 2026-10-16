@@ -2523,6 +2523,24 @@ class VerrouillageConnexion(db.Model):
     derniere_tentative = db.Column(db.DateTime)
 
 
+class TentativeConnexion(db.Model):
+    """⭐ 2026-10-16 (patron) : journal de CHAQUE tentative de connexion (formulaire, QR, empreinte,
+    administration globale) — heure, compte visé, résultat, IP, appareil. Consulté par
+    l'administrateur global (/admin_global/connexions). Voir services/journal_connexion.py et
+    migrate_tentatives_connexion.py."""
+    __tablename__ = 'tentatives_connexion'
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    email = db.Column(db.String(255))
+    structure_id = db.Column(db.Integer)
+    compte_nom = db.Column(db.String(255))
+    type_compte = db.Column(db.String(30))      # utilisateur | structure | admin_global | qr | empreinte
+    resultat = db.Column(db.String(40), nullable=False)
+    ip = db.Column(db.String(64))
+    appareil = db.Column(db.String(120))
+    user_agent = db.Column(db.String(400))
+
+
 class MessageChat(db.Model):
     """Chat interne : salon commun (destinataire_id NULL) + messages
     privés entre deux employés. Comptes utilisateurs en Google Sheets, pas

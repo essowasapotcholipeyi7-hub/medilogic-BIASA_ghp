@@ -3,6 +3,9 @@
 {% block title %}Admin Global{% endblock %}
 
 {% block content %}
+{% for alerte in (alertes_securite or []) %}
+<div class="alert alert-danger d-flex align-items-start gap-2 mb-2"><i class="fas fa-triangle-exclamation mt-1"></i><div><strong>Sécurité :</strong> {{ alerte }}</div></div>
+{% endfor %}
 <div class="card">
     <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
     <h4><i class="fas fa-globe"></i> Administration Globale</h4>
@@ -13,6 +16,9 @@
         </a>
         <a href="{{ url_for('page_admin_themes') }}" class="btn btn-sm btn-light me-2" title="Thèmes du logiciel : catalogue, prix, essais et activations par structure">
             <i class="fas fa-palette"></i> Thèmes
+        </a>
+        <a href="{{ url_for('page_admin_connexions') }}" class="btn btn-sm btn-light me-2" title="Journal des tentatives de connexion de toutes les structures (heure, compte, résultat, IP, appareil)">
+            <i class="fas fa-user-shield"></i> Connexions
         </a>
         <a href="{{ url_for('page_admin_faq') }}" class="btn btn-sm btn-light me-2" title="Gérer la FAQ et répondre aux questions des structures">
             <i class="fas fa-circle-question"></i> FAQ
