@@ -18505,6 +18505,9 @@ def generer_factures_assurance():
         date_debut = f"{annee}-{mois:02d}-01"
         dernier_jour = calendar.monthrange(annee, mois)[1]
         date_fin = f"{annee}-{mois:02d}-{dernier_jour}"
+        # ⭐ 2026-10-16 : borne EXCLUE = 1er du mois suivant (avant : « <= dernier jour » s'arrêtait
+        # au dernier jour à 00:00 — les ventes de ce jour-là n'entraient dans aucune facture)
+        date_fin_exclue = f"{annee + 1}-01-01" if mois == 12 else f"{annee}-{mois + 1:02d}-01"
         
         print(f"Periode: du {date_debut} au {date_fin}")
         
@@ -18530,7 +18533,7 @@ def generer_factures_assurance():
             LEFT JOIN patients p ON v.patient_id = p.id
             WHERE v.structure_id = %s
             AND v.date_vente >= %s
-            AND v.date_vente <= %s
+            AND v.date_vente < %s
             AND (v.statut IS NULL OR v.statut != 'annulee')
             AND (
                 (p.type_assurance IS NOT NULL AND p.type_assurance != 'non_assure')
@@ -18538,7 +18541,7 @@ def generer_factures_assurance():
                 OR (v.assurance2_nom IS NOT NULL AND v.assurance2_nom != '')
             )
             ORDER BY p.type_assurance, p.assurance2_nom
-        """, (structure_id, date_debut, date_fin))
+        """, (structure_id, date_debut, date_fin_exclue))
         
         print(f"Ventes avec assurance trouvees: {len(ventes)}")
         
@@ -18632,26 +18635,44 @@ def generer_factures_assurance():
             # ÉCRASAIT son montant/type/détails au lieu d'en créer une
             # nouvelle — les deux se mélangeaient en une seule facture.
             existing = db.execute_query("""
-                SELECT id, montant_rembourse, cloturee
+                SELECT id, montant_rembourse, cloturee, details
                 FROM factures_assurance
                 WHERE structure_id = %s AND mois_reference = %s AND assurance = %s
                 AND (societe = %s OR (societe IS NULL AND %s IS NULL))
                 AND type_assurance = %s
-            """, (structure_id, mois_reference, assurance, societe, societe, type_assurance_cle))
+                ORDER BY id
+            """, (structure_id, mois_reference, assurance, societe, societe, type_assurance_cle)) or []
 
-            if existing and len(existing) > 0:
-                facture_id = existing[0]['id']
-                # ⭐ Clôturée = verrouillée — patron : "apres cette étape
-                # aucune modification n'est plus possible", y compris la
-                # régénération automatique mensuelle qui écraserait sinon
-                # montant_total/statut/details en silence.
-                if existing[0].get('cloturee'):
+            # ⭐ Clôturée = verrouillée — patron : "apres cette étape aucune modification n'est plus
+            # possible". ⭐ 2026-10-16 (patron : « 225 000 au tableau de bord, 221 000 dans les
+            # factures ») : une vente faite APRÈS la clôture n'entrait plus dans aucune facture.
+            # Les ventes absentes des factures clôturées vont dans une facture COMPLÉMENTAIRE du même
+            # mois (même assurance, même société), mise à jour à chaque génération tant qu'elle
+            # n'est pas clôturée à son tour.
+            cloturees = [e for e in existing if e.get('cloturee')]
+            existing = [e for e in existing if not e.get('cloturee')]
+            if cloturees:
+                deja_factures = set()
+                for e in cloturees:
+                    det = e.get('details')
+                    try:
+                        det = json.loads(det) if isinstance(det, str) else (det or [])
+                    except ValueError:
+                        det = []
+                    deja_factures.update(x.get('id') for x in det if isinstance(x, dict))
+                restantes = [x for x in data_assurance['ventes'] if x.get('id') not in deja_factures]
+                if not restantes:
                     resultats.append({
                         'assurance': assurance, 'societe': societe,
-                        'montant': float(existing[0]['montant_rembourse'] or 0),
+                        'montant': float(cloturees[-1]['montant_rembourse'] or 0),
                         'statut': 'cloturee_ignoree', 'type': data_assurance['type'],
                     })
                     continue
+                data_assurance = dict(data_assurance, ventes=restantes,
+                                      total=sum(float(x.get('montant_assurance') or 0) for x in restantes))
+
+            if existing and len(existing) > 0:
+                facture_id = existing[0]['id']
                 deja_rembourse = float(existing[0]['montant_rembourse'] or 0)
                 nouveau_total = data_assurance['total']
                 type_assurance = data_assurance['type']
