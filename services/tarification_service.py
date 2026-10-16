@@ -23,15 +23,43 @@ plus pour cet article — il suit le cas des assurances qui restent : AMU seule
 Garde-fous conservés de l'existant : la base AMU est min(tarif, PBR AMU)
 (un PBR officiel supérieur au tarif pratiqué ne fait pas rembourser plus
 que le tarif) ; la part privée ne dépasse jamais ce qui reste après l'AMU.
-Taux AMU par article : P160 (chambre) 90 %, O101 (oxygène) 100 %, sinon le
-taux du patient — voir utils/grille_amu_hospitalisation.py.
+Taux AMU par article : P160 (chambre) 90 %, O101 (oxygène) 100 %, S102 / S113
+(consultation enfant 0-5 ans) 100 %, K233 (forfait césarienne) 100 % en structure
+publique, sinon le taux du patient — voir utils/grille_amu_hospitalisation.py.
 """
+import re
+
+# ⭐ 2026-10-16 (patron) : consultation des enfants de 0 à 5 ans remboursée à 100 % du PBR AMU
+CODES_ENFANT_0_5_ANS = ('S102', 'S113')
+# forfait césarienne : 100 % seulement dans une structure PUBLIQUE (aide de l'État)
+CODE_CESARIENNE_PUBLIQUE = 'K233'
+_CODE_ACTE = re.compile(r'\s*([A-Z]\d{3})\b')
 
 
-def taux_amu_article(nom, taux_defaut):
+def code_acte(nom):
+    """'S102 Consultation en pediatrie…' -> 'S102' ; '' si le nom ne commence pas par un code."""
+    m = _CODE_ACTE.match(nom or '')
+    return m.group(1) if m else ''
+
+
+def taux_amu_article(nom, taux_defaut, structure_publique=None):
+    """Taux AMU de CET article. `structure_publique` : None = lu dans les paramètres AMU de la
+    structure de la session (services/statut_structure.py)."""
     if nom and 'O101' in nom:
         return 100
-    return 90 if (nom and 'P160' in nom) else taux_defaut
+    if nom and 'P160' in nom:
+        return 90
+    code = code_acte(nom)
+    if _nombre(taux_defaut) > 0:   # seulement pour un patient AMU (jamais pour un non assuré)
+        if code in CODES_ENFANT_0_5_ANS:
+            return 100
+        if code == CODE_CESARIENNE_PUBLIQUE:
+            if structure_publique is None:
+                from services.statut_structure import structure_est_publique
+                structure_publique = structure_est_publique()
+            if structure_publique:
+                return 100
+    return taux_defaut
 
 
 def _nombre(valeur, defaut=0.0):
@@ -108,7 +136,7 @@ def repartir_ligne(article, contexte):
     taux_amu = _nombre(contexte.get('taux_amu'))
     if contexte.get('amu') and prise_amu and pbr_amu > 0:
         base_amu = min(tarif, pbr_amu) * quantite
-        taux_item = taux_amu_article(article.get('nom'), taux_amu)
+        taux_item = taux_amu_article(article.get('nom'), taux_amu, contexte.get('structure_publique'))
         if taux_item > 0:
             part_amu = base_amu * taux_item / 100
 

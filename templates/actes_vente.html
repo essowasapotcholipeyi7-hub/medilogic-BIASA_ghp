@@ -1866,7 +1866,12 @@ function afficherPanier() {
 // était donc remboursé à tort à 90% au lieu de 80%.
 function tauxAMUPourArticle(item, tauxDefaut) {
     if (item.nom && item.nom.includes('O101')) return 100;
-    return (item.nom && item.nom.includes('P160')) ? 90 : tauxDefaut;
+    if (item.nom && item.nom.includes('P160')) return 90;
+    // ⭐ 2026-10-16 (patron) : S102/S113 (enfants 0-5 ans) 100 % ; K233 césarienne 100 % en
+    // structure publique — même règle que services/tarification_service.taux_amu_article
+    const codeActe = ((item.nom || '').match(/^\s*([A-Z]\d{3})\b/) || [])[1];
+    if ((parseFloat(tauxDefaut) || 0) > 0 && (codeActe === 'S102' || codeActe === 'S113' || (codeActe === 'K233' && window.STRUCTURE_PUBLIQUE))) return 100;
+    return tauxDefaut;
 }
 
 // ============================================

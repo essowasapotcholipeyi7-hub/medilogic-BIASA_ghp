@@ -652,7 +652,12 @@ function contexteTarifProforma() {
 }
 function tauxAMUArticleProforma(nom, taux) {
     if (nom && nom.includes('O101')) return 100;
-    return (nom && nom.includes('P160')) ? 90 : taux;
+    if (nom && nom.includes('P160')) return 90;
+    // ⭐ 2026-10-16 (patron) : S102/S113 (enfants 0-5 ans) 100 % ; K233 césarienne 100 % en
+    // structure publique — même règle que services/tarification_service.taux_amu_article
+    const codeActe = ((nom || '').match(/^\s*([A-Z]\d{3})\b/) || [])[1];
+    if ((parseFloat(taux) || 0) > 0 && (codeActe === 'S102' || codeActe === 'S113' || (codeActe === 'K233' && window.STRUCTURE_PUBLIQUE))) return 100;
+    return taux;
 }
 function repartirLigneProforma(item, ctx, carte) {
     carte = carte || pbrCacMapProforma;
@@ -2583,7 +2588,12 @@ function calculeSousTotalConversion() {
 // seul cet aperçu avant validation en tenait pas compte).
 function tauxAMUPourArticleConversion(item, tauxDefaut) {
     if (item.nom && item.nom.includes('O101')) return 100;
-    return (item.nom && item.nom.includes('P160')) ? 90 : tauxDefaut;
+    if (item.nom && item.nom.includes('P160')) return 90;
+    // ⭐ 2026-10-16 (patron) : S102/S113 (enfants 0-5 ans) 100 % ; K233 césarienne 100 % en
+    // structure publique — même règle que services/tarification_service.taux_amu_article
+    const codeActe = ((item.nom || '').match(/^\s*([A-Z]\d{3})\b/) || [])[1];
+    if ((parseFloat(tauxDefaut) || 0) > 0 && (codeActe === 'S102' || codeActe === 'S113' || (codeActe === 'K233' && window.STRUCTURE_PUBLIQUE))) return 100;
+    return tauxDefaut;
 }
 
 // ⭐ Taux d'assurance principale actuellement affiché dans le modal de

@@ -212,9 +212,8 @@ def _taux_amu_article(nom, taux_defaut):
     un import circulaire (app.py importe déjà ce module). O101
     (oxygénothérapie) remboursé à 100% quel que soit le taux général — voir
     utils/grille_amu_hospitalisation.py."""
-    if nom and 'O101' in nom:
-        return 100
-    return 90 if (nom and 'P160' in nom) else taux_defaut
+    from services.tarification_service import taux_amu_article   # ⭐ 2026-10-16 : une seule règle
+    return taux_amu_article(nom, taux_defaut)
 
 
 def charger_pbr_complementaires(structure_id, compagnie):

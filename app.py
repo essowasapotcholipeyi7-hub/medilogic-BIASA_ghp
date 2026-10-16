@@ -411,9 +411,10 @@ def taux_amu_pour_article(nom_article, taux_defaut):
     (trop remboursé). Même chose pour O101 (oxygénothérapie) : remboursé à
     100% quel que soit le taux général — voir
     utils/grille_amu_hospitalisation.py."""
-    if nom_article and 'O101' in nom_article:
-        return 100
-    return 90 if (nom_article and 'P160' in nom_article) else taux_defaut
+    # ⭐ 2026-10-16 : une seule règle (services/tarification_service.taux_amu_article) —
+    # S102/S113 enfants 0-5 ans 100 %, K233 césarienne 100 % en structure publique.
+    from services.tarification_service import taux_amu_article
+    return taux_amu_article(nom_article, taux_defaut)
 
 
 from sqlalchemy import text, inspect
@@ -9567,6 +9568,14 @@ def _guide_section_visible(section_id):
     if roles_autorises is None:
         return True
     return session.get('role') in roles_autorises
+
+
+@app.context_processor
+def injecter_statut_structure():
+    """⭐ 2026-10-16 : statut public de la structure pour le calcul côté écran (K233 césarienne
+    à 100 % en structure publique) — window.STRUCTURE_PUBLIQUE dans base.html."""
+    from services.statut_structure import structure_est_publique
+    return {'structure_publique': structure_est_publique() if session.get('structure_id') else False}
 
 
 @app.context_processor
@@ -23188,6 +23197,8 @@ def page_parametrage_amu_cnss():
         parametrage.code_prestataire = request.form.get('code_prestataire', '').strip()
         statut_structure = request.form.get('statut_structure', '')
         parametrage.statut_structure = statut_structure if statut_structure in ('public', 'prive', 'confessionnel') else None
+        from services.statut_structure import oublier as _oublier_statut
+        _oublier_statut(structure_id)   # ⭐ K233 : le nouveau statut s'applique tout de suite
         niveau_soins = request.form.get('niveau_soins', '')
         parametrage.niveau_soins = niveau_soins if niveau_soins in ('1', '2', '3') else None
         parametrage.nom_banque = request.form.get('nom_banque', '').strip()

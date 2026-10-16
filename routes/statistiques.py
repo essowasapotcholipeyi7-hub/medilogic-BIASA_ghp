@@ -327,9 +327,8 @@ def taux_amu_pour_article(nom_article, taux_defaut):
     app.py:taux_amu_pour_article() (dupliquée ici plutôt qu'importée depuis
     app.py, pour éviter un import circulaire : app.py enregistre ce
     blueprint, donc ce module ne doit pas importer app.py)."""
-    if nom_article and 'O101' in nom_article:
-        return 100
-    return 90 if (nom_article and 'P160' in nom_article) else taux_defaut
+    from services.tarification_service import taux_amu_article   # ⭐ 2026-10-16 : une seule règle
+    return taux_amu_article(nom_article, taux_defaut)
 
 
 def calculer_montants_vente(vente):

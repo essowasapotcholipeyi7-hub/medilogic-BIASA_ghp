@@ -193,3 +193,44 @@ def test_assurance_decochee_sur_la_ligne_patron_2026_10_15():
     aucune = {**base, 'prise_en_charge_amu': 'FALSE', 'prise_en_charge_cac': False}
     assert tarif_unitaire(aucune, ctx(**amu_ask)) == (9000, 'non_assure')
     assert arrondi(repartir_ligne(aucune, ctx(**amu_ask))) == (0, 0, 9000)
+
+
+# ⭐ 2026-10-16 (patron) : taux AMU particuliers
+from services.tarification_service import taux_amu_article, code_acte
+
+
+@pytest.mark.parametrize("nom, taux, publique, attendu", [
+    ('S102 Consultation en pediatrie (Enfants 0 a 05 ans)', 80, False, 100),
+    ('S113 Consultation specialisee interne pour enfant de 0 a 5 ans', 80, False, 100),
+    ('S102 Consultation en pediatrie (Enfants 0 a 05 ans)', 0, False, 0),      # non assuré : jamais d'AMU
+    ('K233 Cesarienne dans les formations sanitaires publiques', 80, True, 100),
+    ('K233 Cesarienne dans les formations sanitaires publiques', 80, False, 80),  # structure privée
+    ('K223 Cesarienne', 80, True, 80),
+    ('K211 Cesarienne', 80, True, 80),
+    ('O101 - Oxygénothérapie', 80, False, 100),
+    ('P160 Hospitalisation', 80, False, 90),
+    ('S101 Consultation specialisee', 80, True, 80),
+    ('Consultation S1020 sans code en tête', 80, True, 80),
+])
+def test_taux_amu_particuliers(nom, taux, publique, attendu):
+    assert taux_amu_article(nom, taux, publique) == attendu
+
+
+def test_code_acte():
+    assert code_acte('  S102 Consultation') == 'S102'
+    assert code_acte('O101 - Oxygénothérapie') == 'O101'
+    assert code_acte('Consultation') == ''
+
+
+def test_pediatrie_0_5_ans_100_pour_cent_du_pbr_patron_2026_10_16():
+    # Cabinet Médical Élite : S102 à 8 000, PBR AMU 5 250 -> l'AMU rembourse 5 250, le patient paie 2 750
+    art = {'nom': 'S102 Consultation en pediatrie (Enfants 0 a 05 ans)', 'prix': 8000, 'pbr': 5250, 'quantite': 1}
+    assert arrondi(repartir_ligne(art, ctx(amu=True, taux_amu=80, nom=art['nom']))) == (5250, 0, 2750)
+    # le surplus est couvert par l'assurance privée s'il y en a une (comme d'habitude)
+    assert arrondi(repartir_ligne(art, ctx(amu=True, taux_amu=80, privee=True, taux_privee=100, nom=art['nom'])))[0] == 5250
+
+
+def test_cesarienne_k233_publique_seulement_patron_2026_10_16():
+    art = {'nom': 'K233 Cesarienne dans les formations sanitaires publiques', 'prix': 10000, 'pbr': 10000, 'quantite': 1}
+    assert arrondi(repartir_ligne(art, ctx(amu=True, taux_amu=80, structure_publique=True))) == (10000, 0, 0)
+    assert arrondi(repartir_ligne(art, ctx(amu=True, taux_amu=80, structure_publique=False))) == (8000, 0, 2000)

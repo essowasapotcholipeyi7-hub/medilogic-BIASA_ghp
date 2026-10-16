@@ -2011,6 +2011,8 @@
        sur une page sans navigation — reçus, factures, ordonnances, portail patient : le thème
        posait ses couleurs sur chaque élément et l'emportait sur les règles d'impression
        (texte gris pâle, voire fond noir, sur les reçus imprimés en thème sombre). #}
+    {# ⭐ 2026-10-16 : K233 (césarienne) remboursé à 100 % seulement en structure publique #}
+    <script>window.STRUCTURE_PUBLIQUE = {{ 'true' if structure_publique else 'false' }};</script>
     {% if theme_css and not (cacher_navigation is defined and cacher_navigation) %}<style id="themeStructure">{{ theme_css|safe }}</style>{% endif %}
     {# ⭐ 2026-10-14 : formatEntier / formatFCFA (« 3 450 567 FCFA ») et montants masqués jusqu'au clic #}
     <script src="{{ url_for('static', filename='js/montants.js') }}"></script>
