@@ -462,7 +462,7 @@
     <!-- 🔥 Prise en charge principale -->
     {% if prise_en_charge_val > 0 %}
     <div style="display: flex; justify-content: space-between; color: #28a745;">
-        <span>Prise en charge ({{ taux_assurance|default(0) }}%) :</span> <span>- {{ prise_en_charge_val|round(0)|int }} FCFA</span>
+        <span>Prise en charge ({{ libelle_taux_pec_amu(articles, taux_assurance|default(0)) }}) :</span> <span>- {{ prise_en_charge_val|round(0)|int }} FCFA</span>
     </div>
     {% endif %}
     

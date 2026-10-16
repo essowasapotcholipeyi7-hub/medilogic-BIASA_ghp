@@ -206,6 +206,35 @@ def _absorber_reveil_neon():
 app.jinja_env.globals['a_acces'] = a_acces
 
 
+def libelle_taux_pec_amu(articles, taux_assurance):
+    """⭐ 2026-10-16 (patron) : taux affiché à côté de « Prise en charge AMU » sur les reçus,
+    factures et proformas — celui des actes pris en charge (100 % pour O101, S102/S113, K233 en
+    structure publique ; 90 % pour P160), « taux par acte » s'ils diffèrent. Avant : toujours
+    le taux du patient (« 80 % » affiché pour une prise en charge à 100 %). Affichage seul."""
+    def pct(v):
+        return f"{float(v):g}%"
+    try:
+        defaut = float(taux_assurance or 0)
+    except (TypeError, ValueError):
+        return f"{taux_assurance}%"
+    taux = set()
+    for a in articles or []:
+        if not isinstance(a, dict) or a.get('prise_en_charge_amu') is False:
+            continue
+        try:
+            if a.get('pbr') not in (None, '') and float(a.get('pbr')) <= 0:
+                continue          # PBR 0 : pas de part AMU sur cette ligne
+        except (TypeError, ValueError):
+            pass
+        taux.add(round(float(taux_amu_pour_article(a.get('nom'), defaut)), 2))
+    if len(taux) == 1:
+        return pct(taux.pop())
+    return 'taux par acte' if taux else pct(defaut)
+
+
+app.jinja_env.globals['libelle_taux_pec_amu'] = libelle_taux_pec_amu
+
+
 # ⭐ Rôles RH cloisonnés (patron, 2026-10-10 : « ces gens n'ont pas besoin de
 # voir les patients, leurs rendez-vous etc. ils ont juste besoin de voir ce
 # qui les concerne ») — liste BLANCHE : la GRH, plus le strict nécessaire

@@ -537,7 +537,7 @@
     <!-- 🔥 PRISE EN CHARGE AMU -->
     {% if type_assurance in ['AMU-CNSS', 'AMU-INAM', 'AMU-TNS'] and assurance_principale_active != false and prise_en_charge > 0 %}
     <div style="display:flex; justify-content:space-between; color:#28a745;">
-        <span>Prise en charge AMU ({{ taux_assurance }}%) :</span>
+        <span>Prise en charge AMU ({{ libelle_taux_pec_amu(articles, taux_assurance) }}) :</span>
         <span>- {{ prise_en_charge|default(0)|round(0)|int }} FCFA</span>
     </div>
     {% endif %}

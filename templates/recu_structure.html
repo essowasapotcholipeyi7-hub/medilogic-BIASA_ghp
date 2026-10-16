@@ -489,7 +489,7 @@
                     
                     {% if prise_en_charge > 0 %}
                     <div style="color:#28a745;">
-                        <strong>Prise en charge ({{ taux_assurance }}%):</strong> - {{ prise_en_charge|default(0)|round(0)|int }} FCFA
+                        <strong>Prise en charge ({{ libelle_taux_pec_amu(articles, taux_assurance) }}):</strong> - {{ prise_en_charge|default(0)|round(0)|int }} FCFA
                     </div>
                     {% endif %}
                     

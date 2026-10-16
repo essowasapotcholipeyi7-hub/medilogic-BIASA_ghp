@@ -750,7 +750,7 @@
                     
                     {% if prise_en_charge and prise_en_charge > 0 and est_assure %}
                     <div class="ligne principale">
-                        <span>Prise en charge {{ assurance_nom }} ({{ taux_assurance }}%)</span>
+                        <span>Prise en charge {{ assurance_nom }} ({{ libelle_taux_pec_amu(proforma.articles, taux_assurance) }})</span>
                         <span>- {{ prise_en_charge|round(0)|int }} FCFA</span>
                     </div>
                     {% endif %}
