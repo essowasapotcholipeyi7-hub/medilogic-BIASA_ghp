@@ -134,13 +134,21 @@
                             <option value="personnalise">Personnalisée</option>
                         </select>
                     </div>
-                    <div class="col-md-2" id="dateDebutGroup" style="display: none;">
-                        <label class="form-label small">Début</label>
-                        <input type="date" id="filtreDateDebut" class="form-control form-control-sm" onchange="filtrerHistorique()">
+                    {# ⭐ 2026-10-17 (patron) : heures en plus des dates, pour une prise de service
+                       (ex. du 17/10 à 16:00 au 18/10 à 09:00) #}
+                    <div class="col-md-3" id="dateDebutGroup" style="display: none;">
+                        <label class="form-label small">Début (date et heure)</label>
+                        <div class="d-flex gap-1">
+                            <input type="date" id="filtreDateDebut" class="form-control form-control-sm" onchange="filtrerHistorique()">
+                            <input type="time" id="filtreHeureDebut" class="form-control form-control-sm" style="max-width:100px;" value="00:00" onchange="filtrerHistorique()">
+                        </div>
                     </div>
-                    <div class="col-md-2" id="dateFinGroup" style="display: none;">
-                        <label class="form-label small">Fin</label>
-                        <input type="date" id="filtreDateFin" class="form-control form-control-sm" onchange="filtrerHistorique()">
+                    <div class="col-md-3" id="dateFinGroup" style="display: none;">
+                        <label class="form-label small">Fin (date et heure)</label>
+                        <div class="d-flex gap-1">
+                            <input type="date" id="filtreDateFin" class="form-control form-control-sm" onchange="filtrerHistorique()">
+                            <input type="time" id="filtreHeureFin" class="form-control form-control-sm" style="max-width:100px;" value="23:59" onchange="filtrerHistorique()">
+                        </div>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label small">Type</label>
@@ -604,14 +612,15 @@ function trierVentesFiltrees(cle) {
 function dansPeriodeChoisie(dateTexte, periode, dateDebut, dateFin) {
     var d = dateTexte ? new Date(dateTexte) : null;
     if (!d || isNaN(d.getTime())) return true;
+    // ⭐ 2026-10-17 : bornes « AAAA-MM-JJ » (journée entière) ou « AAAA-MM-JJTHH:MM » (heure précise)
     if (dateDebut) {
-        var debut = new Date(dateDebut);
-        debut.setHours(0, 0, 0, 0);
+        var debut = new Date(dateDebut.length > 10 ? dateDebut : dateDebut + 'T00:00');
+        if (dateDebut.length <= 10) debut.setHours(0, 0, 0, 0);
         if (d < debut) return false;
     }
     if (dateFin) {
-        var fin = new Date(dateFin);
-        fin.setHours(23, 59, 59);
+        var fin = new Date(dateFin.length > 10 ? dateFin : dateFin + 'T00:00');
+        if (dateFin.length <= 10) fin.setHours(23, 59, 59, 999); else fin.setSeconds(59, 999);
         if (d > fin) return false;
     }
     if (periode !== 'tous' && periode !== 'personnalise') {
@@ -719,6 +728,11 @@ function filtrerHistorique() {
     searchGlobalActuel = searchGlobal;  // ⭐ pour l'affichage du détail par acte (afficherPageVentes)
     var dateDebut = document.getElementById('filtreDateDebut').value;
     var dateFin = document.getElementById('filtreDateFin').value;
+    // ⭐ 2026-10-17 : heure de prise / fin de service
+    var heureDebut = (document.getElementById('filtreHeureDebut') || {}).value || '00:00';
+    var heureFin = (document.getElementById('filtreHeureFin') || {}).value || '23:59';
+    if (dateDebut && heureDebut !== '00:00') dateDebut += 'T' + heureDebut;
+    if (dateFin && heureFin !== '23:59') dateFin += 'T' + heureFin;
     var filtreStatutPaiement = document.getElementById('filtreStatutPaiement').value;
     // 🔥 NOUVEAU FILTRE AIDE
     var filtreAide = document.getElementById('filtreAide').value;
@@ -1310,6 +1324,8 @@ function resetFiltres() {
     document.getElementById('searchGlobal').value = '';
     document.getElementById('filtreDateDebut').value = '';
     document.getElementById('filtreDateFin').value = '';
+    document.getElementById('filtreHeureDebut').value = '00:00';
+    document.getElementById('filtreHeureFin').value = '23:59';
     document.getElementById('filtreStatutPaiement').value = '';
     document.getElementById('filtreAide').value = '';  // 🔥 NOUVEAU
     document.getElementById('filtreAssurance').value = '';  // ⭐ NOUVEAU
@@ -1551,8 +1567,10 @@ async function imprimerHistorique() {
     if (selPeriode.value === 'personnalise') {
         var dDeb = document.getElementById('filtreDateDebut').value;
         var dFin = document.getElementById('filtreDateFin').value;
+        var hDeb = document.getElementById('filtreHeureDebut').value || '00:00';
+        var hFin = document.getElementById('filtreHeureFin').value || '23:59';
         var fmt = function(d) { return d ? d.split('-').reverse().join('/') : '…'; };
-        libellePeriode = 'du ' + fmt(dDeb) + ' au ' + fmt(dFin);
+        libellePeriode = 'du ' + fmt(dDeb) + ' à ' + hDeb + ' au ' + fmt(dFin) + ' à ' + hFin;
     }
     mentions.push('Période : ' + libellePeriode);
     var typesImpr = typesVenteCoches();

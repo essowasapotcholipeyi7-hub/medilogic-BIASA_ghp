@@ -217,6 +217,27 @@ def creer_lignes_service(structure_id, articles, vente_id, service_id_force=None
     return lignes
 
 
+def detail_recettes_service(structure_id, date_debut, date_fin, service_id=None):
+    """⭐ 2026-10-17 (patron) : lignes d'UN service sur la période (service_id None = non classé),
+    avec la vente et le patient — pour le détail et l'impression. Mêmes filtres que le rapport."""
+    from sqlalchemy import text
+    filtre = 'r.service_id = :sv' if service_id else 'r.service_id IS NULL'
+    lignes = db.session.execute(text(f"""
+        SELECT r.created_at, r.vente_id, v.numero_local, v.patient_nom, r.nom_acte, r.type_source,
+               r.quantite, r.prix, r.montant
+        FROM recettes_service r LEFT JOIN ventes v ON v.id = r.vente_id
+        WHERE r.structure_id = :s AND r.created_at >= :d AND r.created_at < :f AND {filtre}
+          AND (r.vente_id IS NULL OR v.statut IS NULL OR v.statut != 'annulee')
+        ORDER BY r.created_at, r.id
+    """), {'s': structure_id, 'd': date_debut, 'f': date_fin, 'sv': service_id}).mappings().all()
+    return [{
+        'date': l['created_at'].strftime('%d/%m/%Y %H:%M') if l['created_at'] else '',
+        'vente_id': l['vente_id'], 'numero': l['numero_local'] or l['vente_id'],
+        'patient': l['patient_nom'] or '', 'acte': l['nom_acte'], 'type': l['type_source'] or '',
+        'quantite': int(l['quantite'] or 1), 'prix': float(l['prix'] or 0), 'montant': float(l['montant'] or 0),
+    } for l in lignes]
+
+
 def generer_rapport_recettes_service(structure_id, date_debut, date_fin):
     """Agrège les RecetteService de la période par service — le rapport
     "Recettes par service" (comparaison + décision de ristourne)."""

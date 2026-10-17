@@ -14,13 +14,20 @@
 <div class="card mb-3">
     <div class="card-body">
         <div class="row g-2 align-items-end">
+            {# ⭐ 2026-10-17 (patron) : heures possibles, pour une prise de service #}
             <div class="col-auto">
-                <label class="form-label small mb-1">Du</label>
-                <input type="date" class="form-control form-control-sm" id="rrsDateDebut">
+                <label class="form-label small mb-1">Du (date et heure)</label>
+                <div class="d-flex gap-1">
+                    <input type="date" class="form-control form-control-sm" id="rrsDateDebut">
+                    <input type="time" class="form-control form-control-sm" id="rrsHeureDebut" value="00:00" style="max-width:100px;">
+                </div>
             </div>
             <div class="col-auto">
-                <label class="form-label small mb-1">Au</label>
-                <input type="date" class="form-control form-control-sm" id="rrsDateFin">
+                <label class="form-label small mb-1">Au (date et heure)</label>
+                <div class="d-flex gap-1">
+                    <input type="date" class="form-control form-control-sm" id="rrsDateFin">
+                    <input type="time" class="form-control form-control-sm" id="rrsHeureFin" value="23:59" style="max-width:100px;">
+                </div>
             </div>
             <div class="col-auto">
                 <button class="btn btn-dark btn-sm" onclick="chargerRapportService()">
@@ -45,6 +52,25 @@
         <div id="rrsListe"><div class="text-center text-muted py-4">Chargement...</div></div>
     </div>
 </div>
+<p class="small text-muted mt-2"><i class="fas fa-hand-pointer me-1"></i>Cliquez sur un service pour voir le détail de ses recettes et l'imprimer.</p>
+
+<!-- ⭐ 2026-10-17 (patron) : détail des recettes d'un service sur la période -->
+<div class="card mt-3" id="rrsDetailCarte" style="display:none;">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span><i class="fas fa-list me-1"></i> <strong id="rrsDetailTitre"></strong> <small id="rrsDetailPeriode" class="ms-1"></small></span>
+        <span>
+            <button class="btn btn-light btn-sm" onclick="imprimerDetailService()"><i class="fas fa-print me-1"></i> Imprimer le détail</button>
+            <button class="btn btn-outline-light btn-sm" onclick="document.getElementById('rrsDetailCarte').style.display='none'"><i class="fas fa-times"></i></button>
+        </span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+            <thead class="table-light"><tr><th>Date et heure</th><th>N° vente</th><th>Patient</th><th>Acte / produit</th><th class="text-end">Qté</th><th class="text-end">Prix</th><th class="text-end">Montant</th></tr></thead>
+            <tbody id="rrsDetailLignes"></tbody>
+            <tfoot class="table-light fw-bold"><tr><td colspan="6" class="text-end">Total</td><td class="text-end" id="rrsDetailTotal"></td></tr></tfoot>
+        </table>
+    </div>
+</div>
 
 <script>
 function anneeCourante() {
@@ -61,7 +87,7 @@ function chargerRapportService() {
     const liste = document.getElementById('rrsListe');
     liste.innerHTML = '<div class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin"></i> Chargement...</div>';
 
-    fetch(`/api/rapports/recettes-service?date_debut=${dateDebut}&date_fin=${dateFin}`)
+    fetch(`/api/rapports/recettes-service?${parametresPeriode()}`)
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
@@ -79,7 +105,8 @@ function chargerRapportService() {
                 const largeur = Math.max(Math.round((s.montant_total / max) * 100), 2);
                 const estNonClasse = !s.service_id;
                 return `
-                <div class="list-group-item">
+                <div class="list-group-item list-group-item-action" style="cursor:pointer;" title="Voir le détail de ce service"
+                     onclick='voirDetailService(${JSON.stringify(s.service_id ? String(s.service_id) : 'non_classe')}, ${JSON.stringify(s.service_nom).replace(/'/g, '&#39;')})'>
                     <div class="d-flex justify-content-between align-items-baseline mb-1">
                         <span class="fw-bold ${estNonClasse ? 'text-muted' : ''}">
                             ${estNonClasse ? '<i class="fas fa-question-circle me-1"></i>' : ''}${s.service_nom}
@@ -113,7 +140,47 @@ async function imprimerRecettesService() {
         await afficherMessage('Choisissez une période avant d\'imprimer.');
         return;
     }
-    window.open(`/rapport-recettes-service/print?date_debut=${dateDebut}&date_fin=${dateFin}`, '_blank', 'width=1100,height=800');
+    window.open(`/rapport-recettes-service/print?${parametresPeriode()}`, '_blank', 'width=1100,height=800');
+}
+
+// ⭐ 2026-10-17 (patron) : période avec heures + détail / impression d'un service
+function parametresPeriode() {
+    const p = new URLSearchParams({
+        date_debut: document.getElementById('rrsDateDebut').value,
+        date_fin: document.getElementById('rrsDateFin').value,
+        heure_debut: document.getElementById('rrsHeureDebut').value || '00:00',
+        heure_fin: document.getElementById('rrsHeureFin').value || '23:59',
+    });
+    return p.toString();
+}
+let rrsServiceCourant = null;
+function voirDetailService(serviceId, serviceNom) {
+    rrsServiceCourant = {id: serviceId, nom: serviceNom};
+    const carte = document.getElementById('rrsDetailCarte');
+    carte.style.display = '';
+    document.getElementById('rrsDetailTitre').textContent = serviceNom;
+    document.getElementById('rrsDetailPeriode').textContent = '';
+    document.getElementById('rrsDetailLignes').innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> Chargement...</td></tr>';
+    document.getElementById('rrsDetailTotal').textContent = '';
+    fetch(`/api/rapports/recettes-service/detail?${parametresPeriode()}&service=${encodeURIComponent(serviceId)}`)
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success) { document.getElementById('rrsDetailLignes').innerHTML = `<tr><td colspan="7" class="text-danger text-center">${d.error || 'Erreur'}</td></tr>`; return; }
+            const esc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+            const f = n => Math.round(n).toLocaleString('fr-FR') + ' F';
+            document.getElementById('rrsDetailPeriode').textContent = '— ' + d.periode;
+            document.getElementById('rrsDetailLignes').innerHTML = d.lignes.length ? d.lignes.map(l => `<tr>
+                <td class="text-nowrap">${esc(l.date)}</td><td>${esc(l.numero)}</td><td><span class="notranslate">${esc(l.patient)}</span></td><td>${esc(l.acte)}</td>
+                <td class="text-end">${l.quantite}</td><td class="text-end">${f(l.prix)}</td><td class="text-end">${f(l.montant)}</td></tr>`).join('')
+                : '<tr><td colspan="7" class="text-center text-muted py-3">Aucune recette pour ce service sur la période.</td></tr>';
+            document.getElementById('rrsDetailTotal').textContent = f(d.total);
+            carte.scrollIntoView({behavior: 'smooth', block: 'start'});
+        })
+        .catch(() => { document.getElementById('rrsDetailLignes').innerHTML = '<tr><td colspan="7" class="text-danger text-center">Erreur réseau</td></tr>'; });
+}
+function imprimerDetailService() {
+    if (!rrsServiceCourant) return;
+    window.open(`/rapport-recettes-service/print?${parametresPeriode()}&service=${encodeURIComponent(rrsServiceCourant.id)}&service_nom=${encodeURIComponent(rrsServiceCourant.nom)}`, '_blank', 'width=1100,height=800');
 }
 </script>
 

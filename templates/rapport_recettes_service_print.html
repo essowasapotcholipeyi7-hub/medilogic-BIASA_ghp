@@ -285,9 +285,11 @@
                 <span id="structureTel"></span>
                 <span id="structureEmail"></span>
             </div>
-            <div class="titre-rapport">Recettes par service</div>
+            <div class="titre-rapport">{% if lignes is defined %}Recettes du service : {{ service_nom }}{% else %}Recettes par service{% endif %}</div>
             <div class="period">
-                {% if date_debut and date_fin %}
+                {% if libelle_periode is defined and libelle_periode %}
+                Période {{ libelle_periode }}
+                {% elif date_debut and date_fin %}
                 Période du {{ date_debut }} au {{ date_fin }}
                 {% else %}
                 Toutes les périodes
@@ -300,8 +302,8 @@
 
         <div class="stat-boxes">
             <div class="stat-box">
-                <div class="number">{{ services|length }}</div>
-                <div class="label">Services</div>
+                <div class="number">{{ lignes|length if lignes is defined else services|length }}</div>
+                <div class="label">{{ 'Lignes' if lignes is defined else 'Services' }}</div>
             </div>
             <div class="stat-box">
                 <div class="number">{{ total|round(0)|int }} F</div>
@@ -309,6 +311,29 @@
             </div>
         </div>
 
+        {% if lignes is defined %}
+        {# ⭐ 2026-10-17 : détail d'un service #}
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr><th>Date et heure</th><th>N° vente</th><th>Patient</th><th>Acte / produit</th><th>Qté</th><th class="text-end">Prix</th><th class="text-end">Montant</th></tr>
+                </thead>
+                <tbody>
+                    {% for l in lignes %}
+                    <tr>
+                        <td>{{ l.date }}</td><td>{{ l.numero or '' }}</td><td><span class="notranslate">{{ l.patient }}</span></td><td>{{ l.acte }}</td>
+                        <td>{{ l.quantite }}</td><td class="text-end">{{ l.prix|round(0)|int }} F</td><td class="text-end">{{ l.montant|round(0)|int }} F</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="7" style="text-align:center;">Aucune recette pour ce service sur la période.</td></tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot style="font-weight:bold; background:#f5f7fb;">
+                    <tr><td colspan="6" class="text-end">TOTAL</td><td class="text-end">{{ total|round(0)|int }} F</td></tr>
+                </tfoot>
+            </table>
+        </div>
+        {% else %}
         <div class="table-container">
             <table>
                 <thead>
@@ -337,6 +362,7 @@
                 </tfoot>
             </table>
         </div>
+        {% endif %}
 
         <div class="rapport-footer">
             <div class="signature">

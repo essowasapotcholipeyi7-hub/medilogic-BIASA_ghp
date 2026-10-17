@@ -13894,18 +13894,43 @@ def page_rapport_recettes_service():
     return render_template('rapport_recettes_service.html')
 
 
+def _bornes_periode_heures(args):
+    """⭐ 2026-10-17 (patron) : période avec heures (prise de service, ex. du 17/10 16:00 au
+    18/10 09:00). Renvoie (début, fin EXCLUE, libellé « du … au … »). Sans heure : journées entières.
+    ValueError si les dates sont invalides."""
+    d = datetime.strptime(args.get('date_debut') or '', '%Y-%m-%d')
+    f = datetime.strptime(args.get('date_fin') or '', '%Y-%m-%d')
+    hd = (args.get('heure_debut') or '00:00').strip() or '00:00'
+    hf = (args.get('heure_fin') or '23:59').strip() or '23:59'
+    debut = datetime.combine(d.date(), datetime.strptime(hd, '%H:%M').time())
+    fin_exclue = datetime.combine(f.date(), datetime.strptime(hf, '%H:%M').time()) + timedelta(minutes=1)
+    libelle = f"du {d.strftime('%d/%m/%Y')} à {hd} au {f.strftime('%d/%m/%Y')} à {hf}"
+    return debut, fin_exclue, libelle
+
+
+@app.route('/api/rapports/recettes-service/detail', methods=['GET'])
+@admin_required
+def api_detail_recettes_service():
+    """⭐ 2026-10-17 : lignes d'un service (service=<id> ou 'non_classe') sur la période."""
+    from services.service_acte_service import detail_recettes_service
+    try:
+        debut, fin, libelle = _bornes_periode_heures(request.args)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'Dates ou heures invalides'}), 400
+    sv = request.args.get('service')
+    service_id = int(sv) if sv and sv.isdigit() else None
+    lignes = detail_recettes_service(session.get('structure_id'), debut, fin, service_id)
+    return jsonify({'success': True, 'lignes': lignes, 'periode': libelle,
+                    'total': round(sum(l['montant'] for l in lignes), 2)})
+
+
 @app.route('/api/rapports/recettes-service', methods=['GET'])
 @admin_required
 def api_rapport_recettes_service():
     structure_id = session.get('structure_id')
-    date_debut_str = request.args.get('date_debut')
-    date_fin_str = request.args.get('date_fin')
     try:
-        date_debut = datetime.strptime(date_debut_str, '%Y-%m-%d')
-        # ⭐ Borne de fin EXCLUSIVE, +1 jour — pour inclure toute la
-        # journée de date_fin (les RecetteService.created_at portent une
-        # heure, pas juste une date).
-        date_fin = datetime.strptime(date_fin_str, '%Y-%m-%d') + timedelta(days=1)
+        # ⭐ Borne de fin EXCLUSIVE ; 2026-10-17 : heures possibles (prise de service)
+        date_debut, date_fin, _libelle = _bornes_periode_heures(request.args)
     except (TypeError, ValueError):
         return jsonify({'success': False, 'error': 'Dates invalides'}), 400
 
@@ -13922,20 +13947,28 @@ def print_rapport_recettes_service():
     autonome (pas d'entête/sidebar), impression déclenchée automatiquement
     à l'ouverture, fermeture automatique après impression."""
     structure_id = session.get('structure_id')
-    date_debut_str = request.args.get('date_debut')
-    date_fin_str = request.args.get('date_fin')
     try:
-        date_debut = datetime.strptime(date_debut_str, '%Y-%m-%d')
-        date_fin_bornee = datetime.strptime(date_fin_str, '%Y-%m-%d') + timedelta(days=1)
+        date_debut, date_fin_bornee, libelle_periode = _bornes_periode_heures(request.args)
     except (TypeError, ValueError):
         flash('Dates invalides', 'danger')
         return redirect(url_for('page_rapport_recettes_service'))
 
+    # ⭐ 2026-10-17 : impression du DÉTAIL d'un seul service (service=<id> ou 'non_classe')
+    sv = request.args.get('service')
+    if sv:
+        from services.service_acte_service import detail_recettes_service
+        service_id = int(sv) if sv.isdigit() else None
+        lignes = detail_recettes_service(structure_id, date_debut, date_fin_bornee, service_id)
+        service_nom = request.args.get('service_nom') or ('Non classé' if not service_id else f'Service {service_id}')
+        return render_template('rapport_recettes_service_print.html', services=[], lignes=lignes,
+                               service_nom=service_nom, total=round(sum(l['montant'] for l in lignes), 2),
+                               libelle_periode=libelle_periode, date_debut=None, date_fin=None, now=datetime.now())
+
     resultat = generer_rapport_recettes_service(structure_id, date_debut, date_fin_bornee)
     total = round(sum(r['montant_total'] for r in resultat), 2)
     return render_template('rapport_recettes_service_print.html',
-                            services=resultat, total=total,
-                            date_debut=date_debut_str, date_fin=date_fin_str,
+                            services=resultat, total=total, libelle_periode=libelle_periode,
+                            date_debut=None, date_fin=None,
                             now=datetime.now())
 
 
