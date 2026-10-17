@@ -18,7 +18,7 @@ from datetime import timedelta
 # ⭐ Import différé (pas de circularité : models.py n'importe jamais ce
 # module) — utilisé uniquement par charger_pbr_complementaires() ci-dessous.
 from models import PbrComplementaire, PrixNonAssureActe
-from services.tarification_service import repartir_ligne, pbr_prive_valeur
+from services.tarification_service import repartir_ligne, pbr_prive_valeur, objets_doublons_amu
 from utils.grille_amu_hospitalisation import pbr_officiel_p160, JOURS_MAX_SANS_PALIER
 
 # Suffixe (normalisé) -> palier 1/2/3. Plusieurs variantes tolérées
@@ -335,11 +335,12 @@ def calculer_repartition_assurance(soins, hospit, pbr_cac_par_acte=None, pbr_cac
         'appliquer_tarif_prive': False,
     }
     sous_total = part_amu = part_cac = 0.0
+    doublons_amu = objets_doublons_amu(soins)   # un seul acte par code AMU
     for s in soins:
         ligne = repartir_ligne({
             'nom': s.nom, 'prix': float(s.prix or 0), 'pbr': float(s.pbr or 0),
             'quantite': int(s.quantite or 0),
-            'prise_en_charge_amu': bool(s.prise_en_charge_amu),
+            'prise_en_charge_amu': bool(s.prise_en_charge_amu) and id(s) not in doublons_amu,
             'prise_en_charge_cac': bool(s.prise_en_charge_cac),
         }, contexte)
         sous_total += ligne['total']

@@ -3,6 +3,7 @@
 {% block title %}Actes & Vente{% endblock %}
 
 {% block content %}
+<script src="{{ url_for('static', filename='js/doublons_amu.js') }}"></script>
 
 <!-- Info patient sélectionné -->
 <style>
@@ -722,6 +723,8 @@ function contexteTarificationActes() {
     const privee = !!(assurance2Active && patientAssurance2 && patientAssurance2 !== 'Aucune');
     const tauxPrivee = privee ? (tauxTempModifie ? tauxTempValeur : (patientTaux2Original || 0)) : 0;
     const toggle = document.getElementById('toggleAppliquePbrCac');
+    // ⭐ un seul acte par code AMU dans la vente (static/js/doublons_amu.js)
+    if (window.marquerDoublonsAMU) marquerDoublonsAMU(panier);
     return {
         estAssure: estAssure, amu: amu, tauxAMU: tauxAMU, privee: privee, tauxPrivee: tauxPrivee,
         appliquePbrPrive: toggle ? toggle.checked : true,
@@ -734,7 +737,8 @@ function tarifUnitaireActes(item, ctx) {
     if (item.prix_modifie) return { tarif: prixBase, source: 'base' };
     // ⭐ 2026-10-15 (patron) : une assurance décochée sur la ligne (ou non prise en charge au
     // catalogue) ne compte plus pour cet article — AMU seule -> prix de base ; aucune -> prix non assuré.
-    const amuLigne = ctx.amu && item.prise_en_charge_amu !== false;
+    // ⭐ amu_doublon (même code AMU qu'une ligne au-dessus) : l'AMU ne prend pas cette ligne
+    const amuLigne = ctx.amu && item.prise_en_charge_amu !== false && !item.amu_doublon;
     const priveeLigne = ctx.privee && item.prise_en_charge_cac !== false;
     const entree = priveeLigne ? pbrCacMapActes[item.nom] : undefined;
     if (entree && entree.tarif_prive) return { tarif: parseFloat(entree.tarif_prive), source: 'prive' };
@@ -751,7 +755,7 @@ function repartirLigneActes(item, ctx) {
     const total = tarif * quantite;
     // PBR absent = le tarif sert de base ; PBR explicitement 0 = pas de part AMU
     const pbrAMU = (item.pbr === undefined || item.pbr === null || item.pbr === '') ? tarif : (parseFloat(item.pbr) || 0);
-    const priseAMU = item.prise_en_charge_amu !== false;
+    const priseAMU = item.prise_en_charge_amu !== false && !item.amu_doublon;
     const priseCAC = item.prise_en_charge_cac !== false;
 
     let baseAMU = 0, partAMU = 0;
@@ -1665,7 +1669,10 @@ function boutonCouverture(item, index, cle, libelle) {
 }
 function celluleCouvertureActes(item, index, ctx) {
     let html = '';
-    if (ctx.amu) html += boutonCouverture(item, index, 'amu', 'AMU') + '<br>';
+    if (ctx.amu && item.amu_doublon) {
+        // ⭐ même code AMU qu'une ligne au-dessus : l'AMU n'en prend qu'un par vente
+        html += '<span class="badge bg-secondary" title="L\'AMU ne prend en charge qu\'un seul acte ' + (window.codeActeAMU ? codeActeAMU(item.nom) : '') + ' par vente : celui-ci reste au patient ou à son assurance complémentaire.">AMU : ' + (window.codeActeAMU ? codeActeAMU(item.nom) : '') + ' déjà compté</span><br>';
+    } else if (ctx.amu) html += boutonCouverture(item, index, 'amu', 'AMU') + '<br>';
     if (ctx.privee) html += boutonCouverture(item, index, 'cac', patientAssurance2 || 'Privée');
     if (!html) html = (item.prise_en_charge_amu === false || item.prise_en_charge_cac === false) ? '<span class="text-muted small">non pris en charge</span>' : '<span class="text-muted small">—</span>';
     return html;

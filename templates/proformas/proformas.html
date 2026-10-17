@@ -3,6 +3,7 @@
 {% block title %}Factures Proforma{% endblock %}
 
 {% block content %}
+<script src="{{ url_for('static', filename='js/doublons_amu.js') }}"></script>
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5>Factures Proforma</h5>
@@ -662,7 +663,9 @@ function tauxAMUArticleProforma(nom, taux) {
 function repartirLigneProforma(item, ctx, carte) {
     carte = carte || pbrCacMapProforma;
     const q = parseFloat(item.quantite) || 0;
-    const amuLigne = ctx.amu && item.prise_en_charge_amu !== false;
+    // ⭐ amu_doublon : même code AMU qu'une ligne au-dessus, l'AMU n'en prend qu'un par vente
+    // (static/js/doublons_amu.js — même règle que tarification_service.appliquer_code_amu_unique)
+    const amuLigne = ctx.amu && item.prise_en_charge_amu !== false && !item.amu_doublon;
     const priveeLigne = ctx.privee && item.prise_en_charge_cac !== false;
     let tarif = parseFloat(item.prix) || 0, source = 'base';
     if (!item.prix_modifie) {
@@ -1604,7 +1607,11 @@ function boutonCouvertureProforma(item, index, cle, libelle) {
 }
 function celluleCouvertureProforma(item, index, amuActive, cacActive) {
     let html = '';
-    if (amuActive) html += boutonCouvertureProforma(item, index, 'amu', 'AMU') + ' ';
+    if (amuActive && item.amu_doublon) {
+        // ⭐ même code AMU qu'une ligne au-dessus : l'AMU n'en prend qu'un par vente
+        const code = window.codeActeAMU ? codeActeAMU(item.nom) : '';
+        html += '<span class="badge bg-secondary" title="L\'AMU ne prend en charge qu\'un seul acte ' + code + ' par vente : celui-ci reste au patient ou à son assurance complémentaire.">AMU : ' + code + ' déjà compté</span> ';
+    } else if (amuActive) html += boutonCouvertureProforma(item, index, 'amu', 'AMU') + ' ';
     if (cacActive) html += boutonCouvertureProforma(item, index, 'cac', assurance2Nom || 'Privée');
     return html ? '<div class="mt-1">' + html + '</div>' : '';
 }
@@ -1638,6 +1645,7 @@ function afficherPanier() {
 
     chargerPbrCacProforma();
     const ctxTarif = contexteTarifProforma();
+    if (window.marquerDoublonsAMU) marquerDoublonsAMU(panierArticles);   // un seul acte par code AMU
     panierArticles.forEach((item, index) => {
         // ⭐ 2026-10-15 : même calcul que le serveur (voir repartirLigneProforma)
         const l = repartirLigneProforma(item, ctxTarif);
@@ -1727,6 +1735,7 @@ function calculerTotal() {
     chargerPbrCacProforma();
     const ctxTotal = contexteTarifProforma();
     let sousTotal = 0, partAMUTotal = 0, partPriveeTotal = 0;
+    if (window.marquerDoublonsAMU) marquerDoublonsAMU(panierArticles);   // un seul acte par code AMU
     for (const item of panierArticles) {
         const l = repartirLigneProforma(item, ctxTotal);
         sousTotal += l.total;
@@ -1852,7 +1861,8 @@ async function sauvegarderProforma() {
     // 🔥🔥🔥 CALCUL DE LA BASE CAC (article par article) 🔥🔥🔥
     let tauxPrincipal = parseFloat(document.getElementById('tauxAssurance').value) || 0;
     let baseCAC = 0;
-    
+
+    if (window.marquerDoublonsAMU) marquerDoublonsAMU(panierArticles);   // un seul acte par code AMU
     for (const item of panierArticles) {
         // 🔥 Si l'article est pris en charge par CAC
         if (item.prise_en_charge_cac !== false) {
@@ -1862,7 +1872,7 @@ async function sauvegarderProforma() {
             const total = prix * quantite;
             
             // 🔥 Si l'article a AMU, CAC sur le reste après AMU
-            if (item.prise_en_charge_amu !== false && pbr > 0 && tauxPrincipal > 0) {
+            if (item.prise_en_charge_amu !== false && !item.amu_doublon && pbr > 0 && tauxPrincipal > 0) {
                 const baseAMU = Math.min(prix, pbr) * quantite;
                 const priseAMU = (baseAMU * tauxPrincipal) / 100;
                 const reste = total - priseAMU;
@@ -2628,6 +2638,9 @@ function calculePriseEnChargeConversion() {
 // Réutilisé à la fois pour le total et pour le détail "Voir part
 // assurance" ci-dessous, pour qu'ils restent toujours cohérents entre eux.
 function partAMUArticleConversion(item, tauxDefaut) {
+    // ⭐ un seul acte par code AMU dans la vente (static/js/doublons_amu.js)
+    if (window.marquerDoublonsAMU && typeof panierConversion !== 'undefined') marquerDoublonsAMU(panierConversion);
+    if (item.amu_doublon) return 0;
     const prix = item.prix || 0;
     const pbr = (item.pbr !== undefined && item.pbr !== null) ? item.pbr : 0;
     const quantite = item.quantite || 1;
@@ -2677,7 +2690,7 @@ function partCACArticleConversion(item, taux2) {
     const pbr = (item.pbr !== undefined && item.pbr !== null) ? item.pbr : 0;
 
     let baseCAC;
-    if (item.prise_en_charge_amu !== false && pbr > 0) {
+    if (item.prise_en_charge_amu !== false && !item.amu_doublon && pbr > 0) {
         const priseAMU = partAMUArticleConversion(item, tauxAMU);
         const reste = total - priseAMU;
         baseCAC = reste > 0 ? reste : 0;
@@ -3027,7 +3040,7 @@ function calculePriseEnCharge2ConversionPourVariante(variante) {
         const pbr = (item.pbr !== undefined && item.pbr !== null) ? item.pbr : 0;
 
         let baseCAC;
-        if (item.prise_en_charge_amu !== false && pbr > 0) {
+        if (item.prise_en_charge_amu !== false && !item.amu_doublon && pbr > 0) {
             const priseAMU = partAMUArticleConversion(item, tauxAMU);
             const reste = totalItem - priseAMU;
             baseCAC = reste > 0 ? reste : 0;
@@ -3714,6 +3727,7 @@ function calculerTotalModif() {
     const articles = window.modifArticles || [];
     chargerPbrCacModif();
     const ctxModif = contexteTarifModif();
+    if (window.marquerDoublonsAMU) marquerDoublonsAMU(articles);   // un seul acte par code AMU
     const lignes = articles.map(item => repartirLigneProforma(item, ctxModif, pbrCacMapModif));
     afficherArticlesModif(lignes);
     let sousTotal = 0, priseEnCharge = 0, priseEnCharge2 = 0;

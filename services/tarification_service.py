@@ -36,6 +36,56 @@ CODE_CESARIENNE_PUBLIQUE = 'K233'
 _CODE_ACTE = re.compile(r'\s*([A-Z]\d{3})\b')
 
 
+# ⭐ Un seul acte par code AMU dans une même vente (patron, 2026-10-17) : une clinique
+# peut éclater un code AMU en plusieurs actes (ex. Q436 « Echo Doppler des vaisseaux
+# quelle que soit la région » -> écho-doppler artériel / veineux / TSA / artério-veineux),
+# mais l'AMU n'en prend en charge qu'UN par vente : les lignes suivantes du même code
+# (sous un AUTRE nom) passent « non prises en charge AMU » — le patient ou son
+# assurance complémentaire (taux / PBR privé) les couvrent. Le même acte sur deux lignes
+# reste couvert (comme une quantité 2). Chambre (P160) et lunettes jamais concernées.
+CODES_HORS_REGLE_UNIQUE = {'P160', 'D000293'}
+
+
+def _vrai(valeur):
+    return valeur if isinstance(valeur, bool) else str(valeur).upper() not in ('FALSE', '0', '', 'NONE')
+
+
+def appliquer_code_amu_unique(articles):
+    """Marque (sur place) les doublons de code AMU d'un panier : prise_en_charge_amu
+    passe à False, amu_doublon=True, et la valeur d'origine est gardée dans
+    prise_amu_origine — rejouable : un premier passage restaure tout avant de remarquer
+    (retirer le premier acte d'une proforma rend sa prise en charge au suivant)."""
+    from utils.categorisation import extraire_code_acte
+    for a in articles or []:
+        if isinstance(a, dict):
+            if 'prise_amu_origine' in a:
+                a['prise_en_charge_amu'] = a.pop('prise_amu_origine')
+            a.pop('amu_doublon', None)
+    vus = {}
+    for a in articles or []:
+        if not isinstance(a, dict) or not _vrai(a.get('prise_en_charge_amu', True)):
+            continue
+        code = extraire_code_acte(a.get('nom'))
+        if not code or code in CODES_HORS_REGLE_UNIQUE:
+            continue
+        nom = str(a.get('nom') or '').strip()
+        if code not in vus:
+            vus[code] = nom
+        elif vus[code] != nom:
+            a['prise_amu_origine'] = a.get('prise_en_charge_amu', True)
+            a['prise_en_charge_amu'] = False
+            a['amu_doublon'] = True
+    return articles
+
+
+def objets_doublons_amu(lignes):
+    """Même règle pour des lignes-objets (soins d'hospitalisation, soins ambulatoires :
+    attributs .nom / .prise_en_charge_amu) — renvoie l'ensemble des id() des doublons."""
+    articles = [{'nom': l.nom, 'prise_en_charge_amu': bool(l.prise_en_charge_amu), '_obj': id(l)} for l in lignes]
+    appliquer_code_amu_unique(articles)
+    return {a['_obj'] for a in articles if a.get('amu_doublon')}
+
+
 def code_acte(nom):
     """'S102 Consultation en pediatrie…' -> 'S102' ; '' si le nom ne commence pas par un code."""
     m = _CODE_ACTE.match(nom or '')
@@ -180,6 +230,7 @@ def repartir_ligne(article, contexte):
 def repartir_panier(articles, contexte):
     """Somme des lignes + aide hospitalière (patron : sur le reste après
     assurances, en % plafonné à 100 ou en montant plafonné au reste)."""
+    appliquer_code_amu_unique(articles)   # un seul acte par code AMU (voir plus haut)
     lignes = [repartir_ligne(a, contexte) for a in articles]
     sous_total = sum(l['total'] for l in lignes)
     base_amu = sum(l['base_amu'] for l in lignes)

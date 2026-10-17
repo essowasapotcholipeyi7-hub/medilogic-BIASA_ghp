@@ -26,7 +26,7 @@ from utils.modules_structure import MODULES_STRUCTURE
 from utils.onglets_recherchables import onglets_recherchables
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
 from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure
-from services.tarification_service import repartir_ligne, repartir_panier
+from services.tarification_service import repartir_ligne, repartir_panier, appliquer_code_amu_unique, objets_doublons_amu
 from services.laboratoire_service import charger_classification_actes, determiner_type_prestation, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
 from services.part_medecin_service import (charger_taux_part_medecin, creer_lignes_part_medecin, prestations_en_attente,
                                            calculer_periode_part_medecin, charger_toujours_demander_medecin,
@@ -12413,6 +12413,7 @@ def api_liste_ventes_en_attente():
         patient_info = _charger_patient_pour_finalisation(v.patient_id, structure_id) if v.patient_id else None
         taux_amu = patient_info['taux'] if patient_info else 0
         taux_cac = patient_info['taux2'] if patient_info else 0
+        appliquer_code_amu_unique(articles)   # un seul acte par code AMU
         repartitions_brutes = [_repartition_ligne_vente_attente(a, taux_amu, taux_cac) for a in articles]
 
         # ⭐ Les totaux s'arrondissent UNE SEULE FOIS sur la somme des valeurs
@@ -19824,6 +19825,7 @@ def api_creer_proforma():
             'pbr_prive_par_acte': charger_pbr_complementaires(structure_id, assurance2_nom_pour_pbr) if (data.get('assurance2_active', False) and assurance2_nom_pour_pbr) else {},
             'applique_pbr_prive': bool(applique_pbr_cac), 'variante': pbr_cac_variante,
         }
+        appliquer_code_amu_unique(articles)   # un seul acte par code AMU (enregistré tel quel)
         # ⭐ 2026-10-15 : prix non assuré de CHAQUE ligne selon son type (acte / produit) — avant,
         # seulement pour une proforma de type « actes », alors que l'écran envoie toujours « mixte »
         # (un non-assuré ne voyait donc jamais son prix non assuré sur la proforma).
@@ -20425,6 +20427,7 @@ def api_convertir_proforma():
         # comportement inchangé (reste après AMU, non plafonné).
         pbr_cac_par_acte = charger_pbr_complementaires(structure_id, assurance2_nom) if (assurance2_nom and applique_pbr_cac) else {}
 
+        appliquer_code_amu_unique(articles)   # un seul acte par code AMU
         articles_transformes = []
         for a in articles:
             prix = float(a.get('prix', a.get('prix_unitaire', 0)))
@@ -21977,6 +21980,7 @@ def api_facturer_hospitalisation(hospit_id):
         prise_en_charge_par_article = 0
         articles = []
 
+        doublons_amu = objets_doublons_amu(soins)   # un seul acte par code AMU
         for s in soins:
             prix = float(s.prix or 0)
             pbr = float(s.pbr or prix)
@@ -21984,7 +21988,7 @@ def api_facturer_hospitalisation(hospit_id):
             total = prix * quantite
             sous_total += total
 
-            prise_amu = bool(s.prise_en_charge_amu)
+            prise_amu = bool(s.prise_en_charge_amu) and id(s) not in doublons_amu
             prise_cac = bool(s.prise_en_charge_cac)
             taux_item = taux_amu_pour_article(s.nom, taux_assurance) if est_assure else 0
 
@@ -22607,6 +22611,7 @@ def api_facturer_soins_ambulatoires(episode_id):
         prise_en_charge_par_article = 0
         articles = []
 
+        doublons_amu = objets_doublons_amu(lignes)   # un seul acte par code AMU
         for l in lignes:
             prix = float(l.prix or 0)
             pbr = float(l.pbr or prix)
@@ -22614,7 +22619,7 @@ def api_facturer_soins_ambulatoires(episode_id):
             total = prix * quantite
             sous_total += total
 
-            prise_amu = bool(l.prise_en_charge_amu)
+            prise_amu = bool(l.prise_en_charge_amu) and id(l) not in doublons_amu
             prise_cac = bool(l.prise_en_charge_cac)
             taux_item = taux_amu_pour_article(l.nom, taux_assurance) if est_assure else 0
 

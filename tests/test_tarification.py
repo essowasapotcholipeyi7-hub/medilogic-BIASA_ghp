@@ -244,3 +244,54 @@ def test_bordereau_amu_mensuel_meme_taux_que_la_vente_patron_2026_10_16():
     assert _part_amu_ligne({'nom': 'K233 Cesarienne', 'prix': 10000, 'pbr': 10000, 'quantite': 1}, 80, True) == 10000
     assert _part_amu_ligne({'nom': 'K233 Cesarienne', 'prix': 10000, 'pbr': 10000, 'quantite': 1}, 80, False) == 8000
     assert _part_amu_ligne({'nom': 'S101 Consultation', 'prix': 8000, 'pbr': 5250, 'quantite': 1}, 80) == 4200
+# ⭐ Un seul acte par code AMU dans une même vente (patron, 2026-10-17 — Cabinet Elite,
+# Q436 éclaté en écho-doppler artériel / veineux / TSA / artério-veineux).
+def test_un_seul_acte_par_code_amu_exemple_du_patron():
+    from services.tarification_service import repartir_panier
+    articles = [
+        {'nom': 'Q436 Echodoppler artériel', 'prix': 40000, 'pbr': 17680, 'quantite': 1},
+        {'nom': 'Q436 Echodoppler artério-veineux', 'prix': 50000, 'pbr': 17680, 'quantite': 1},
+    ]
+    r = repartir_panier(articles, {'amu': True, 'taux_amu': 80})
+    assert round(r['part_amu']) == 14144            # une seule fois 80 % x 17 680
+    assert round(r['net_a_payer']) == 75856          # 90 000 - 14 144
+    assert articles[0].get('prise_en_charge_amu', True) is True and not articles[0].get('amu_doublon')
+    assert articles[1]['prise_en_charge_amu'] is False and articles[1]['amu_doublon'] is True
+
+
+def test_doublon_amu_couvert_par_la_complementaire():
+    from services.tarification_service import repartir_panier
+    articles = [
+        {'nom': 'Q436 Echodoppler artériel', 'prix': 40000, 'pbr': 17680, 'quantite': 1},
+        {'nom': 'Q436 Echodoppler veineux', 'prix': 40000, 'pbr': 17680, 'quantite': 1},
+    ]
+    r = repartir_panier(articles, {'amu': True, 'taux_amu': 80, 'privee': True, 'taux_privee': 80})
+    # ligne 1 : AMU 14 144, privée 80 % x (40 000 - 14 144) ; ligne 2 : privée 80 % x 40 000
+    assert round(r['part_amu']) == 14144
+    assert round(r['part_privee']) == round(0.8 * (40000 - 14144) + 0.8 * 40000)
+
+
+def test_meme_acte_sur_deux_lignes_et_chambre_restent_couverts():
+    from services.tarification_service import repartir_panier
+    articles = [
+        {'nom': 'Q436 Echodoppler artériel', 'prix': 40000, 'pbr': 17680, 'quantite': 1},
+        {'nom': 'Q436 Echodoppler artériel', 'prix': 40000, 'pbr': 17680, 'quantite': 1},
+        {'nom': 'P160 Chambre commune', 'prix': 5000, 'pbr': 5000, 'quantite': 1},
+        {'nom': 'P160 Chambre individuelle', 'prix': 10000, 'pbr': 5000, 'quantite': 1},
+    ]
+    r = repartir_panier(articles, {'amu': True, 'taux_amu': 80})
+    assert not any(a.get('amu_doublon') for a in articles)
+    assert round(r['part_amu']) == round(2 * 14144 + 5000 * 0.9 + 5000 * 0.9)
+
+
+def test_regle_rejouable_quand_on_retire_le_premier_acte():
+    from services.tarification_service import appliquer_code_amu_unique
+    articles = [
+        {'nom': 'Q436 Echodoppler artériel', 'prise_en_charge_amu': True},
+        {'nom': 'Q436 Echodoppler veineux', 'prise_en_charge_amu': True},
+    ]
+    appliquer_code_amu_unique(articles)
+    assert articles[1]['prise_en_charge_amu'] is False
+    reste = articles[1:]                       # le premier acte est retiré de la proforma
+    appliquer_code_amu_unique(reste)
+    assert reste[0]['prise_en_charge_amu'] is True and 'amu_doublon' not in reste[0]
