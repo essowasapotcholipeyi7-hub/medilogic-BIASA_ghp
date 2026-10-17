@@ -309,6 +309,12 @@
                 <div class="number">{{ total|round(0)|int }} F</div>
                 <div class="label">Total recettes</div>
             </div>
+            {% if totaux is defined %}
+            {# ⭐ 2026-10-17 : situation au jour de l'impression #}
+            <div class="stat-box"><div class="number">{{ totaux.encaisse|round(0)|int }} F</div><div class="label">Réellement encaissé</div></div>
+            <div class="stat-box"><div class="number">{{ totaux.du_assurances|round(0)|int }} F</div><div class="label">Dû par les assurances</div></div>
+            <div class="stat-box"><div class="number">{{ totaux.du_patients|round(0)|int }} F</div><div class="label">Dû par les patients</div></div>
+            {% endif %}
         </div>
 
         {% if lignes is defined %}
@@ -316,20 +322,23 @@
         <div class="table-container">
             <table>
                 <thead>
-                    <tr><th>Date et heure</th><th>N° vente</th><th>Patient</th><th>Acte / produit</th><th>Qté</th><th class="text-end">Prix</th><th class="text-end">Montant</th></tr>
+                    <tr><th>Date et heure</th><th>N° vente</th><th>Patient</th><th>Acte / produit</th><th>Qté</th><th class="text-end">Prix</th><th class="text-end">Montant</th>
+                        <th class="text-end">Encaissé</th><th class="text-end">Dû assur.</th><th class="text-end">Dû patient</th></tr>
                 </thead>
                 <tbody>
                     {% for l in lignes %}
                     <tr>
                         <td>{{ l.date }}</td><td>{{ l.numero or '' }}</td><td><span class="notranslate">{{ l.patient }}</span></td><td>{{ l.acte }}</td>
                         <td>{{ l.quantite }}</td><td class="text-end">{{ l.prix|round(0)|int }} F</td><td class="text-end">{{ l.montant|round(0)|int }} F</td>
+                        <td class="text-end">{{ l.encaisse|round(0)|int }} F</td><td class="text-end">{{ l.du_assurances|round(0)|int }} F</td><td class="text-end">{{ l.du_patients|round(0)|int }} F</td>
                     </tr>
                     {% else %}
-                    <tr><td colspan="7" style="text-align:center;">Aucune recette pour ce service sur la période.</td></tr>
+                    <tr><td colspan="10" style="text-align:center;">Aucune recette pour ce service sur la période.</td></tr>
                     {% endfor %}
                 </tbody>
                 <tfoot style="font-weight:bold; background:#f5f7fb;">
-                    <tr><td colspan="6" class="text-end">TOTAL</td><td class="text-end">{{ total|round(0)|int }} F</td></tr>
+                    <tr><td colspan="6" class="text-end">TOTAL</td><td class="text-end">{{ total|round(0)|int }} F</td>
+                        <td class="text-end">{{ totaux.encaisse|round(0)|int }} F</td><td class="text-end">{{ totaux.du_assurances|round(0)|int }} F</td><td class="text-end">{{ totaux.du_patients|round(0)|int }} F</td></tr>
                 </tfoot>
             </table>
         </div>
@@ -338,10 +347,13 @@
             <table>
                 <thead>
                     <tr>
-                        <th style="width:45%">Service</th>
-                        <th style="width:20%">Lignes</th>
-                        <th style="width:20%">Part</th>
-                        <th style="width:15%">Montant</th>
+                        <th style="width:26%">Service</th>
+                        <th style="width:8%">Lignes</th>
+                        <th style="width:8%">Part</th>
+                        <th style="width:14%" class="text-end">Montant</th>
+                        <th style="width:15%" class="text-end">Encaissé</th>
+                        <th style="width:15%" class="text-end">Dû assurances</th>
+                        <th style="width:14%" class="text-end">Dû patients</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -351,6 +363,9 @@
                         <td>{{ s.nb_lignes }}</td>
                         <td>{{ ((s.montant_total / total * 100) if total else 0)|round(1) }} %</td>
                         <td class="text-end">{{ s.montant_total|round(0)|int }} F</td>
+                        <td class="text-end">{{ s.encaisse|round(0)|int }} F</td>
+                        <td class="text-end">{{ s.du_assurances|round(0)|int }} F</td>
+                        <td class="text-end">{{ s.du_patients|round(0)|int }} F</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -358,6 +373,9 @@
                     <tr>
                         <td colspan="3" class="text-end">TOTAL</td>
                         <td class="text-end">{{ total|round(0)|int }} F</td>
+                        <td class="text-end">{{ totaux.encaisse|round(0)|int }} F</td>
+                        <td class="text-end">{{ totaux.du_assurances|round(0)|int }} F</td>
+                        <td class="text-end">{{ totaux.du_patients|round(0)|int }} F</td>
                     </tr>
                 </tfoot>
             </table>

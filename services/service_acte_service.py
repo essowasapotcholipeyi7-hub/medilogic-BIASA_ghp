@@ -217,6 +217,90 @@ def creer_lignes_service(structure_id, articles, vente_id, service_id_force=None
     return lignes
 
 
+def situation_ventes(structure_id, vente_ids):
+    """⭐ 2026-10-17 (patron) : situation financière ACTUELLE de chaque vente, pour répartir ses
+    recettes par service. {vente_id: {base, encaisse, rembourse, du_assurances, du_patients, aides}}
+      base          = sous-total de la vente (= somme de ses lignes de recettes par service)
+      encaisse      = payé par le patient (à la vente + règlements de sa créance) − remboursements
+                      + payé par les assurances (factures assurance, au prorata de ce qu'elles ont réglé)
+      rembourse     = remboursé au patient (dépenses « remboursement patient »)
+      du_assurances = parts AMU + privée − déjà payé par les assurances
+      du_patients   = reste impayé par le patient
+      aides         = aide hospitalière / remise (ce qui n'est dû par personne)
+    Même calcul de « payé par le patient » que services/remboursement_service.py."""
+    import json
+    from collections import defaultdict
+    from models import Vente, Recette, Depense, Facture
+    ids = [int(i) for i in set(vente_ids or []) if i]
+    if not ids:
+        return {}
+    ventes = {v.id: v for v in Vente.query.filter(Vente.structure_id == structure_id, Vente.id.in_(ids)).all()}
+    non_annulee = db.or_(Recette.est_annulation.is_(None), Recette.est_annulation.is_(False))
+    paye_vente = dict(db.session.query(Recette.source_id, db.func.sum(Recette.montant)).filter(
+        Recette.structure_id == structure_id, Recette.source == 'patients', non_annulee,
+        Recette.source_id.in_(ids), Recette.source_type.in_(['vente_acte', 'vente_pharma', 'vente_proforma'])
+    ).group_by(Recette.source_id).all())
+    facture_vente = dict(db.session.query(Facture.id, Facture.vente_id).filter(
+        Facture.structure_id == structure_id, Facture.vente_id.in_(ids)).all())
+    paye_creance = defaultdict(float)
+    if facture_vente:
+        for fid, total in db.session.query(Recette.source_id, db.func.sum(Recette.montant)).filter(
+                Recette.structure_id == structure_id, Recette.source == 'patients', non_annulee,
+                Recette.source_type == 'facture', Recette.source_id.in_(list(facture_vente))).group_by(Recette.source_id).all():
+            paye_creance[facture_vente[fid]] += float(total or 0)
+    rembourse = dict(db.session.query(Depense.vente_id, db.func.sum(Depense.montant)).filter(
+        Depense.structure_id == structure_id, Depense.motif == 'remboursement_patient',
+        Depense.vente_id.in_(ids)).group_by(Depense.vente_id).all())
+    # paiements des assurances : chaque facture assurance liste ses ventes ; ce qu'elle a réglé est
+    # réparti sur ses ventes au prorata de leur part
+    paye_assurance = defaultdict(float)
+    from sqlalchemy import text as _text
+    for f in db.session.execute(_text("""SELECT details, montant_total, montant_rembourse FROM factures_assurance
+                                         WHERE structure_id = :s AND COALESCE(montant_rembourse, 0) > 0"""),
+                                {'s': structure_id}).mappings():
+        total = float(f['montant_total'] or 0)
+        if total <= 0:
+            continue
+        ratio = min(float(f['montant_rembourse'] or 0) / total, 1.0)
+        det = f['details']
+        try:
+            det = json.loads(det) if isinstance(det, str) else (det or [])
+        except ValueError:
+            det = []
+        for x in det:
+            if isinstance(x, dict) and x.get('id') in ventes:
+                paye_assurance[x['id']] += float(x.get('montant_assurance') or 0) * ratio
+    res = {}
+    for vid, v in ventes.items():
+        base = float(v.sous_total or 0)
+        part_assurances = max(float(v.prise_en_charge or 0), 0) + max(float(v.prise_en_charge2 or 0), 0)
+        net = float(v.net_a_payer or 0)
+        paye_patient = float(paye_vente.get(vid) or 0) + paye_creance.get(vid, 0.0)
+        remb = float(rembourse.get(vid) or 0)
+        assur_payee = min(paye_assurance.get(vid, 0.0), part_assurances)
+        du_patients = max(net - paye_patient, 0.0)
+        res[vid] = {
+            'base': base,
+            'encaisse': paye_patient - remb + assur_payee,
+            'rembourse': remb,
+            'du_assurances': max(part_assurances - assur_payee, 0.0),
+            'du_patients': du_patients,
+            'aides': max(base - part_assurances - min(paye_patient, net) - du_patients, 0.0),
+        }
+    return res
+
+
+CLES_SITUATION = ('encaisse', 'du_assurances', 'du_patients', 'rembourse', 'aides')
+
+
+def _repartir(montant_ligne, situation):
+    """Part d'une ligne dans la situation de sa vente (au prorata de son montant)."""
+    if not situation or situation['base'] <= 0:
+        return {k: 0.0 for k in CLES_SITUATION}
+    part = float(montant_ligne or 0) / situation['base']
+    return {k: situation[k] * part for k in CLES_SITUATION}
+
+
 def detail_recettes_service(structure_id, date_debut, date_fin, service_id=None):
     """⭐ 2026-10-17 (patron) : lignes d'UN service sur la période (service_id None = non classé),
     avec la vente et le patient — pour le détail et l'impression. Mêmes filtres que le rapport."""
@@ -230,11 +314,13 @@ def detail_recettes_service(structure_id, date_debut, date_fin, service_id=None)
           AND (r.vente_id IS NULL OR v.statut IS NULL OR v.statut != 'annulee')
         ORDER BY r.created_at, r.id
     """), {'s': structure_id, 'd': date_debut, 'f': date_fin, 'sv': service_id}).mappings().all()
+    situations = situation_ventes(structure_id, [l['vente_id'] for l in lignes])
     return [{
         'date': l['created_at'].strftime('%d/%m/%Y %H:%M') if l['created_at'] else '',
         'vente_id': l['vente_id'], 'numero': l['numero_local'] or l['vente_id'],
         'patient': l['patient_nom'] or '', 'acte': l['nom_acte'], 'type': l['type_source'] or '',
         'quantite': int(l['quantite'] or 1), 'prix': float(l['prix'] or 0), 'montant': float(l['montant'] or 0),
+        **{k: round(v, 2) for k, v in _repartir(l['montant'], situations.get(l['vente_id'])).items()},
     } for l in lignes]
 
 
@@ -252,15 +338,21 @@ def generer_rapport_recettes_service(structure_id, date_debut, date_fin):
         db.or_(RecetteService.vente_id.is_(None), ~RecetteService.vente_id.in_(ventes_annulees)),
     ).all()
 
+    # ⭐ 2026-10-17 (patron) : encaissé / dû assurances / dû patients par service
+    situations = situation_ventes(structure_id, [l.vente_id for l in lignes])
     agrege = {}
     for l in lignes:
         cle = l.service_id if l.service_id else 'non_classe'
         if cle not in agrege:
-            agrege[cle] = {'service_id': l.service_id, 'service_nom': l.service_nom or 'Non classé', 'montant_total': 0.0, 'nb_lignes': 0}
+            agrege[cle] = {'service_id': l.service_id, 'service_nom': l.service_nom or 'Non classé', 'montant_total': 0.0,
+                           'nb_lignes': 0, **{k: 0.0 for k in CLES_SITUATION}}
         agrege[cle]['montant_total'] += float(l.montant or 0)
         agrege[cle]['nb_lignes'] += 1
+        for k, v in _repartir(l.montant, situations.get(l.vente_id)).items():
+            agrege[cle][k] += v
 
     resultat = sorted(agrege.values(), key=lambda r: r['montant_total'], reverse=True)
     for r in resultat:
-        r['montant_total'] = round(r['montant_total'], 2)
+        for k in ('montant_total',) + CLES_SITUATION:
+            r[k] = round(r[k], 2)
     return resultat

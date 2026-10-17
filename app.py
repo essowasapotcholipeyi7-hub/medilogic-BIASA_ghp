@@ -13921,8 +13921,10 @@ def api_detail_recettes_service():
     sv = request.args.get('service')
     service_id = int(sv) if sv and sv.isdigit() else None
     lignes = detail_recettes_service(session.get('structure_id'), debut, fin, service_id)
+    from services.service_acte_service import CLES_SITUATION
     return jsonify({'success': True, 'lignes': lignes, 'periode': libelle,
-                    'total': round(sum(l['montant'] for l in lignes), 2)})
+                    'total': round(sum(l['montant'] for l in lignes), 2),
+                    'totaux': {k: round(sum(l[k] for l in lignes), 2) for k in CLES_SITUATION}})
 
 
 @app.route('/api/rapports/recettes-service', methods=['GET'])
@@ -13937,7 +13939,9 @@ def api_rapport_recettes_service():
 
     resultat = generer_rapport_recettes_service(structure_id, date_debut, date_fin)
     total = round(sum(r['montant_total'] for r in resultat), 2)
-    return jsonify({'success': True, 'services': resultat, 'total': total})
+    from services.service_acte_service import CLES_SITUATION
+    totaux = {k: round(sum(r[k] for r in resultat), 2) for k in CLES_SITUATION}   # ⭐ 2026-10-17
+    return jsonify({'success': True, 'services': resultat, 'total': total, 'totaux': totaux})
 
 
 @app.route('/rapport-recettes-service/print')
@@ -13961,13 +13965,17 @@ def print_rapport_recettes_service():
         service_id = int(sv) if sv.isdigit() else None
         lignes = detail_recettes_service(structure_id, date_debut, date_fin_bornee, service_id)
         service_nom = request.args.get('service_nom') or ('Non classé' if not service_id else f'Service {service_id}')
+        from services.service_acte_service import CLES_SITUATION
         return render_template('rapport_recettes_service_print.html', services=[], lignes=lignes,
+                               totaux={k: round(sum(l[k] for l in lignes), 2) for k in CLES_SITUATION},
                                service_nom=service_nom, total=round(sum(l['montant'] for l in lignes), 2),
                                libelle_periode=libelle_periode, date_debut=None, date_fin=None, now=datetime.now())
 
     resultat = generer_rapport_recettes_service(structure_id, date_debut, date_fin_bornee)
     total = round(sum(r['montant_total'] for r in resultat), 2)
+    from services.service_acte_service import CLES_SITUATION
     return render_template('rapport_recettes_service_print.html',
+                            totaux={k: round(sum(r[k] for r in resultat), 2) for k in CLES_SITUATION},
                             services=resultat, total=total, libelle_periode=libelle_periode,
                             date_debut=None, date_fin=None,
                             now=datetime.now())
