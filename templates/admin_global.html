@@ -20,6 +20,10 @@
         <a href="{{ url_for('page_admin_connexions') }}" class="btn btn-sm btn-light me-2" title="Journal des tentatives de connexion de toutes les structures (heure, compte, résultat, IP, appareil)">
             <i class="fas fa-user-shield"></i> Connexions
         </a>
+        <a href="{{ url_for('page_admin_messages_support') }}" class="btn btn-sm btn-light me-2" title="Messages laissés par les structures (page « Nous contacter »)">
+            <i class="fas fa-envelope"></i> Messages
+            {% if messages_support_nouveaux %}<span class="badge bg-danger ms-1">{{ messages_support_nouveaux }}</span>{% endif %}
+        </a>
         <a href="{{ url_for('page_admin_faq') }}" class="btn btn-sm btn-light me-2" title="Gérer la FAQ et répondre aux questions des structures">
             <i class="fas fa-circle-question"></i> FAQ
             {% if faq_en_attente_count %}

@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Nous contacter{% endblock %}
+
+{% block content %}
+{# ⭐ 2026-10-18 (patron) : les structures laissent leurs messages au service SSoftOne. Le message part
+   par e-mail à l'adresse du service ; « Répondre » dans cette boîte répond directement à l'e-mail de la
+   structure. Une copie part aussi à la structure. #}
+<div class="row justify-content-center">
+<div class="col-lg-9">
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h4 class="mb-0"><i class="fas fa-envelope me-2"></i>Nous contacter</h4>
+    <a href="{{ url_for('page_faq') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-circle-question me-1"></i> FAQ</a>
+</div>
+
+<div class="alert alert-light border small">
+    Votre message est envoyé au service SSoftOne (<strong>{{ email_support }}</strong>).
+    La réponse arrivera à l'adresse e-mail indiquée ci-dessous, et une copie de votre message y est envoyée.
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-5">
+                <label class="form-label small mb-1">Sujet</label>
+                <select class="form-select" id="csCategorie">
+                    {% for cle, libelle in categories.items() %}
+                    <option value="{{ cle }}">{{ libelle }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-7">
+                <label class="form-label small mb-1">Objet</label>
+                <input type="text" class="form-control" id="csObjet" maxlength="200" placeholder="En quelques mots">
+            </div>
+            <div class="col-12">
+                <label class="form-label small mb-1">Message</label>
+                <textarea class="form-control" id="csMessage" rows="6" placeholder="Décrivez votre demande. Pour un problème : la page, ce que vous avez fait et ce qui s'est passé."></textarea>
+            </div>
+            <div class="col-md-7">
+                <label class="form-label small mb-1">E-mail pour la réponse</label>
+                <input type="email" class="form-control" id="csEmail" value="{{ email_structure }}" placeholder="contact@mastructure.com">
+            </div>
+            <div class="col-md-5">
+                <label class="form-label small mb-1">Téléphone (facultatif)</label>
+                <input type="text" class="form-control" id="csTel" maxlength="50">
+            </div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap mt-3">
+            <button class="btn btn-primary" id="csEnvoyer" onclick="envoyerMessageSupport()">
+                <i class="fas fa-paper-plane me-1"></i> Envoyer
+            </button>
+            <button class="btn btn-outline-secondary" onclick="ouvrirMessagerie()" title="Écrire depuis la messagerie de ce poste (Outlook, Gmail...)">
+                <i class="fas fa-envelope-open-text me-1"></i> Écrire depuis ma messagerie
+            </button>
+        </div>
+    </div>
+</div>
+
+<h6 class="text-muted">Messages envoyés par votre structure</h6>
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead class="table-light"><tr><th>Date</th><th>Par</th><th>Sujet</th><th>Objet</th><th>Suivi</th></tr></thead>
+                <tbody>
+                    {% for m in messages %}
+                    <tr>
+                        <td class="small text-nowrap">{{ m.date }}</td>
+                        <td class="small">{{ m.user_name or '' }}</td>
+                        <td class="small">{{ categories.get(m.categorie, m.categorie) }}</td>
+                        <td class="small">{{ m.objet or '' }}</td>
+                        <td class="small">
+                            {% if m.statut == 'traite' %}<span class="badge bg-success">Traité</span>
+                            {% else %}<span class="badge bg-warning text-dark">Reçu</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5" class="text-center text-muted small py-3">Aucun message pour l'instant.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+</div>
+</div>
+
+<script>
+const EMAIL_SUPPORT = {{ email_support|tojson }};
+const NOM_STRUCTURE = {{ (session.structure_nom or '')|tojson }};
+
+function champsSupport() {
+    const sel = document.getElementById('csCategorie');
+    return {
+        categorie: sel.value,
+        categorie_libelle: sel.options[sel.selectedIndex].text,
+        objet: document.getElementById('csObjet').value.trim(),
+        message: document.getElementById('csMessage').value.trim(),
+        email_reponse: document.getElementById('csEmail').value.trim(),
+        telephone: document.getElementById('csTel').value.trim(),
+    };
+}
+
+async function envoyerMessageSupport() {
+    const c = champsSupport();
+    if (!c.message) { await afficherMessage('Écrivez votre message.'); return; }
+    if (!c.email_reponse || !c.email_reponse.includes('@')) { await afficherMessage("Indiquez l'e-mail où recevoir la réponse."); return; }
+    const btn = document.getElementById('csEnvoyer');
+    btn.disabled = true;
+    try {
+        const r = await fetch('/api/contact-support', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(c) });
+        const d = await r.json();
+        if (!d.success) { await afficherMessage(d.error || 'Erreur', {type: 'danger'}); btn.disabled = false; return; }
+        await afficherMessage('Message envoyé au service SSoftOne. La réponse arrivera à ' + c.email_reponse + '.', {type: 'success'});
+        window.location.reload();
+    } catch (e) {
+        await afficherMessage('Erreur réseau', {type: 'danger'});
+        btn.disabled = false;
+    }
+}
+
+function ouvrirMessagerie() {
+    const c = champsSupport();
+    const sujet = '[SSoftOne] ' + (NOM_STRUCTURE ? NOM_STRUCTURE + ' — ' : '') + (c.objet || c.categorie_libelle);
+    const corps = c.message + (c.telephone ? '\n\nTéléphone : ' + c.telephone : '');
+    window.location.href = 'mailto:' + EMAIL_SUPPORT + '?subject=' + encodeURIComponent(sujet) + '&body=' + encodeURIComponent(corps);
+}
+</script>
+{% endblock %}

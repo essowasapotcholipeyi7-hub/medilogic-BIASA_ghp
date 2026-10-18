@@ -963,6 +963,150 @@ def _faq_question_visible(faq):
     return session.get('role') in roles
 
 
+# ============================================================
+# ⭐ NOUS CONTACTER (patron, 2026-10-18) : « infos@medilogicghp.com, voici mon mail du service, pour que
+# les structures laissent leurs messages là, à travers les mails des structures ». Le message part par
+# le serveur d'e-mails de l'appli vers SUPPORT_EMAIL, avec « Répondre à » = e-mail de la structure (la
+# réponse lui arrive directement) et une copie à la structure ; il est aussi gardé en base pour
+# l'administrateur global, même si l'e-mail ne part pas.
+# ============================================================
+from models import MessageSupport
+EMAIL_SUPPORT = os.getenv('SUPPORT_EMAIL', 'infos@medilogicghp.com')
+CATEGORIES_SUPPORT = {
+    'question': "Question sur l'utilisation",
+    'probleme': 'Problème / erreur',
+    'demande': 'Demande de fonctionnalité',
+    'abonnement': 'Abonnement / facturation',
+    'autre': 'Autre',
+}
+
+
+def _envoyer_message_support(message_id):
+    """Envoi en arrière-plan (même principe que _envoyer_email_verrouillage) ; le résultat est noté
+    sur le message (email_envoye / erreur_email)."""
+    def _send():
+        with app.app_context():
+            m = MessageSupport.query.get(message_id)
+            if not m:
+                return
+            try:
+                if not (app.config.get('MAIL_USERNAME') and app.config.get('MAIL_PASSWORD')):
+                    raise RuntimeError("serveur d'e-mails non configuré (MAIL_USERNAME / MAIL_PASSWORD)")
+                from markupsafe import escape
+                categorie = CATEGORIES_SUPPORT.get(m.categorie, m.categorie or '')
+                structure = m.structure_nom or f"Structure {m.structure_id}"
+                msg = Message(
+                    subject=f"[SSoftOne] {structure} — {m.objet or categorie}",
+                    sender=(re.sub(r'[<>"]', '', f"SSoftOne — {structure}")[:70], app.config['MAIL_USERNAME']),
+                    recipients=[EMAIL_SUPPORT],
+                    cc=[m.email_reponse] if m.email_reponse else None,
+                    reply_to=m.email_reponse or None,
+                    body=(f"Structure : {structure} (n° {m.structure_id})\nDe : {m.user_name or ''} ({m.role or ''})\n"
+                          f"E-mail : {m.email_reponse or ''}\nTéléphone : {m.telephone or ''}\nSujet : {categorie}\n"
+                          f"Objet : {m.objet or ''}\n\n{m.message}\n"),
+                    html=f"""
+                    <html><body style="font-family:Arial,sans-serif; color:#333;">
+                        <table style="font-size:14px; border-collapse:collapse;">
+                            <tr><td style="color:#888; padding-right:12px;">Structure</td><td><strong>{escape(structure)}</strong> (n° {m.structure_id})</td></tr>
+                            <tr><td style="color:#888;">De</td><td>{escape(m.user_name or '')} ({escape(m.role or '')})</td></tr>
+                            <tr><td style="color:#888;">E-mail</td><td>{escape(m.email_reponse or '')}</td></tr>
+                            <tr><td style="color:#888;">Téléphone</td><td>{escape(m.telephone or '')}</td></tr>
+                            <tr><td style="color:#888;">Sujet</td><td>{escape(categorie)}</td></tr>
+                            <tr><td style="color:#888;">Objet</td><td><strong>{escape(m.objet or '')}</strong></td></tr>
+                        </table>
+                        <div style="margin-top:14px; padding:12px; background:#f5f7fa; border-radius:6px; white-space:pre-wrap;">{escape(m.message)}</div>
+                        <p style="color:#888; font-size:12px; margin-top:16px;">Envoyé depuis SSoftOne (page « Nous contacter »).
+                        « Répondre » répond directement à la structure.</p>
+                    </body></html>""",
+                )
+                mail.send(msg)
+                m.email_envoye, m.erreur_email = True, None
+                print(f"✅ Message support {m.id} envoyé à {EMAIL_SUPPORT}")
+            except Exception as e:
+                m.email_envoye, m.erreur_email = False, str(e)[:300]
+                print(f"⚠️ Message support {m.id} non envoyé par e-mail : {e}")
+            db.session.commit()
+    thread = threading.Thread(target=_send)
+    thread.daemon = True
+    thread.start()
+
+
+@app.route('/contact-support')
+@login_required
+def page_contact_support():
+    structure_id = session.get('structure_id')
+    messages = MessageSupport.query.filter_by(structure_id=structure_id)\
+        .order_by(MessageSupport.created_at.desc()).limit(30).all()
+    for m in messages:
+        m.date = m.created_at.strftime('%d/%m/%Y %H:%M') if m.created_at else ''
+    return render_template('contact_support.html', messages=messages, categories=CATEGORIES_SUPPORT,
+                           email_support=EMAIL_SUPPORT, email_structure=session.get('structure_email') or '')
+
+
+@app.route('/api/contact-support', methods=['POST'])
+@login_required
+def api_contact_support():
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        message = (data.get('message') or '').strip()
+        email = (data.get('email_reponse') or '').strip()
+        categorie = data.get('categorie') if data.get('categorie') in CATEGORIES_SUPPORT else 'autre'
+        if not message:
+            return jsonify({'success': False, 'error': 'Écrivez votre message.'}), 400
+        if len(message) > 5000:
+            return jsonify({'success': False, 'error': 'Message trop long (5000 caractères au plus).'}), 400
+        if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+            return jsonify({'success': False, 'error': "Indiquez un e-mail valide pour la réponse."}), 400
+        # garde-fou : 10 messages par heure et par structure
+        recents = MessageSupport.query.filter(MessageSupport.structure_id == structure_id,
+                                              MessageSupport.created_at >= datetime.utcnow() - timedelta(hours=1)).count()
+        if recents >= 10:
+            return jsonify({'success': False, 'error': "Trop de messages en une heure — réessayez plus tard."}), 429
+        m = MessageSupport(
+            structure_id=structure_id, structure_nom=session.get('structure_nom'),
+            user_id=session.get('user_id'), user_name=session.get('user_name'),
+            role=session.get('role') or ('admin' if session.get('is_admin') else None),
+            email_reponse=email[:255], telephone=(data.get('telephone') or '').strip()[:50] or None,
+            categorie=categorie, objet=(data.get('objet') or '').strip()[:200] or None, message=message,
+        )
+        db.session.add(m)
+        db.session.commit()
+        _envoyer_message_support(m.id)
+        return jsonify({'success': True, 'id': m.id})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/admin_global/messages')
+def page_admin_messages_support():
+    if 'super_admin' not in session:
+        return redirect(url_for('admin_login'))
+    statut = request.args.get('statut', '')
+    q = MessageSupport.query
+    if statut in ('nouveau', 'traite'):
+        q = q.filter_by(statut=statut)
+    messages = q.order_by(MessageSupport.created_at.desc()).limit(300).all()
+    for m in messages:
+        m.date = m.created_at.strftime('%d/%m/%Y %H:%M') if m.created_at else ''
+    return render_template('admin_messages_support.html', messages=messages, statut=statut,
+                           categories=CATEGORIES_SUPPORT, email_support=EMAIL_SUPPORT)
+
+
+@app.route('/api/admin/messages-support/<int:message_id>/statut', methods=['POST'])
+def api_admin_message_support_statut(message_id):
+    if 'super_admin' not in session:
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    m = MessageSupport.query.get(message_id)
+    if not m:
+        return jsonify({'success': False, 'error': 'Introuvable'}), 404
+    m.statut = 'nouveau' if m.statut == 'traite' else 'traite'
+    m.traite_le = datetime.utcnow() if m.statut == 'traite' else None
+    db.session.commit()
+    return jsonify({'success': True, 'statut': m.statut})
+
+
 @app.route('/faq')
 @login_required
 def page_faq():
@@ -5439,7 +5583,13 @@ def admin_global():
         for p in ParametrageAmuCnss.query.all()
     }
     faq_en_attente_count = FaqQuestionUtilisateur.query.filter_by(statut='en_attente').count()
+    try:
+        messages_support_nouveaux = MessageSupport.query.filter_by(statut='nouveau').count()
+    except Exception:
+        db.session.rollback()
+        messages_support_nouveaux = 0
     return render_template('admin_global.html', alertes_securite=_alertes_securite(), structures=structures,
+                            messages_support_nouveaux=messages_support_nouveaux,
                             guide_pdf_autorisations=guide_pdf_autorisations,
                             niveaux_soins_par_structure=niveaux_soins_par_structure,
                             faq_en_attente_count=faq_en_attente_count)

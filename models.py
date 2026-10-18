@@ -2541,6 +2541,29 @@ class TentativeConnexion(db.Model):
     user_agent = db.Column(db.String(400))
 
 
+class MessageSupport(db.Model):
+    """⭐ 2026-10-18 (patron) : message d'une structure au service SSoftOne (page « Nous contacter ») —
+    envoyé par e-mail à SUPPORT_EMAIL (réponse directe à email_reponse) et gardé ici pour
+    l'administrateur global (/admin_global/messages)."""
+    __tablename__ = 'messages_support'
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    structure_id = db.Column(db.Integer)
+    structure_nom = db.Column(db.String(200))
+    user_id = db.Column(db.Integer)
+    user_name = db.Column(db.String(255))
+    role = db.Column(db.String(50))
+    email_reponse = db.Column(db.String(255))
+    telephone = db.Column(db.String(50))
+    categorie = db.Column(db.String(40))
+    objet = db.Column(db.String(200))
+    message = db.Column(db.Text, nullable=False)
+    statut = db.Column(db.String(20), default='nouveau', nullable=False)   # nouveau / traite
+    email_envoye = db.Column(db.Boolean, default=False, nullable=False)
+    erreur_email = db.Column(db.String(300))
+    traite_le = db.Column(db.DateTime)
+
+
 class MessageChat(db.Model):
     """Chat interne : salon commun (destinataire_id NULL) + messages
     privés entre deux employés. Comptes utilisateurs en Google Sheets, pas

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Messages des structures — Administration{% endblock %}
+
+{% block content %}
+{# ⭐ 2026-10-18 (patron) : messages laissés par les structures (page « Nous contacter »), aussi reçus par
+   e-mail à l'adresse du service. #}
+<div class="card">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h4 class="mb-0"><i class="fas fa-envelope me-2"></i>Messages des structures</h4>
+        <a href="{{ url_for('admin_global') }}" class="btn btn-sm btn-light"><i class="fas fa-arrow-left me-1"></i> Administration globale</a>
+    </div>
+    <div class="card-body">
+        <p class="text-muted small mb-3">
+            Chaque message arrive aussi par e-mail à <strong>{{ email_support }}</strong> : « Répondre » dans cette boîte
+            répond directement à l'e-mail de la structure. Heures en heure de Lomé (GMT).
+        </p>
+        <div class="btn-group btn-group-sm mb-3">
+            <a href="{{ url_for('page_admin_messages_support') }}" class="btn btn-outline-primary {{ 'active' if not statut }}">Tous</a>
+            <a href="{{ url_for('page_admin_messages_support', statut='nouveau') }}" class="btn btn-outline-primary {{ 'active' if statut == 'nouveau' }}">À traiter</a>
+            <a href="{{ url_for('page_admin_messages_support', statut='traite') }}" class="btn btn-outline-primary {{ 'active' if statut == 'traite' }}">Traités</a>
+        </div>
+        {% for m in messages %}
+        <div class="border rounded p-3 mb-2 {{ 'bg-light' if m.statut == 'traite' else '' }}">
+            <div class="d-flex justify-content-between flex-wrap gap-2">
+                <div>
+                    <strong>{{ m.structure_nom or ('Structure ' ~ m.structure_id) }}</strong>
+                    <span class="text-muted small">— {{ m.user_name or '' }}{% if m.role %} ({{ m.role }}){% endif %} — {{ m.date }}</span>
+                    <div class="small mt-1">
+                        <span class="badge bg-secondary">{{ categories.get(m.categorie, m.categorie) }}</span>
+                        <strong>{{ m.objet or '' }}</strong>
+                    </div>
+                </div>
+                <div class="text-end small">
+                    {% if m.email_reponse %}<a href="mailto:{{ m.email_reponse }}?subject={{ ('Re: ' ~ (m.objet or 'votre message'))|urlencode }}">{{ m.email_reponse }}</a><br>{% endif %}
+                    {% if m.telephone %}{{ m.telephone }}<br>{% endif %}
+                    {% if not m.email_envoye %}<span class="text-danger" title="{{ m.erreur_email or '' }}"><i class="fas fa-exclamation-triangle"></i> e-mail non parti</span><br>{% endif %}
+                    <button class="btn btn-sm {{ 'btn-outline-secondary' if m.statut == 'traite' else 'btn-success' }} mt-1"
+                            onclick="basculerStatut({{ m.id }})">
+                        {{ 'Remettre à traiter' if m.statut == 'traite' else 'Marquer traité' }}
+                    </button>
+                </div>
+            </div>
+            <div class="mt-2" style="white-space: pre-wrap;">{{ m.message }}</div>
+        </div>
+        {% else %}
+        <p class="text-muted">Aucun message.</p>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+function basculerStatut(id) {
+    fetch('/api/admin/messages-support/' + id + '/statut', { method: 'POST' })
+        .then(r => r.json()).then(async d => { if (d.success) window.location.reload(); else await afficherMessage(d.error || 'Erreur', {type: 'danger'}); });
+}
+</script>
+{% endblock %}

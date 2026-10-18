@@ -395,6 +395,12 @@
                     <span class="menu-text">FAQ</span>
                 </a>
 
+                <!-- ⭐ 2026-10-18 : écrire au service SSoftOne -->
+                <a class="nav-link {% if request.endpoint == 'page_contact_support' %}active{% endif %}" href="{{ url_for('page_contact_support') }}">
+                    <i class="fas fa-envelope"></i>
+                    <span class="menu-text">Nous contacter</span>
+                </a>
+
 </div>
 
 <!-- ============================================================
