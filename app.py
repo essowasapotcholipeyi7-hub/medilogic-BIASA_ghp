@@ -36,7 +36,7 @@ from services.service_acte_service import charger_services, deviner_service_acte
 from services.service_acte_service import TYPES_SERVICE, TYPES_SANS_HOSPITALISATION
 from models import ConsommableLabo, UsageConsommable, MouvementConsommable, ParametrageStockLabo
 from services import comptes_service   # ⭐ 2026-10-18 : comptes (structures, personnel) dans Neon
-from services.modele_formulaire import est_formulaire, docx_a_des_controles, docx_vers_formulaire, proposer_modele, mots_modele
+from services.modele_formulaire import est_formulaire, docx_a_des_controles, docx_vers_formulaire, proposer_modele, mots_modele, adapter_entete
 from services.facturation_amu_service import generer_lignes_facture_amu_cnss, charger_classification_amu_cnss, generer_lignes_facture_amu
 from utils.categories_amu_cnss import CATEGORIES_AMU_CNSS, CATEGORIES_AMU_CNSS_DICT
 from utils.categories_amu_inam import CATEGORIES_AMU_INAM, CATEGORIES_AMU_INAM_PLATES, CATEGORIES_AMU_INAM_DICT, REGIMES_AMU_INAM
@@ -15238,6 +15238,18 @@ def _convertir_fichier_en_html(fichier_data, fichier_nom, fichier_mime):
     return None, "Conversion non prise en charge pour ce type de fichier (.doc/.xls ancien format, PDF...) — réenregistrez-le en .docx/.xlsx depuis Word/Excel, ou retapez le contenu directement."
 
 
+def _fiche_structure_resultats(structure_id):
+    """Fiche de la structure (nom, adresse, téléphone, e-mail, logo) pour l'en-tête des comptes rendus."""
+    try:
+        fiche = next((dict(s) for s in sheets_helper.get_all_records('structures', use_prefix=False)
+                      if str(s.get('ID')) == str(structure_id)), {})
+        fiche['adresse'] = sheets_helper.format_adresse(fiche.get('adresse', ''))
+        return fiche
+    except Exception as e:
+        print(f"⚠️ Fiche structure (en-tête des résultats) : {e}")
+        return {}
+
+
 @app.route('/api/modeles-resultats/<int:modele_id>/convertir-html', methods=['GET'])
 @login_required
 def api_convertir_modele_html(modele_id):
@@ -15249,13 +15261,15 @@ def api_convertir_modele_html(modele_id):
     if not modele:
         return jsonify({'success': False, 'error': 'Introuvable'}), 404
     if modele.contenu_html:
-        return jsonify({'success': True, 'contenu_html': modele.contenu_html,
-                        'formulaire': est_formulaire(modele.contenu_html)})
+        formulaire = est_formulaire(modele.contenu_html)
+        contenu = adapter_entete(modele.contenu_html, _fiche_structure_resultats(structure_id), modele.type_prestation) if formulaire else modele.contenu_html
+        return jsonify({'success': True, 'contenu_html': contenu, 'formulaire': formulaire})
     if not modele.fichier_data:
         return jsonify({'success': False, 'error': 'Aucun fichier à convertir'}), 400
     try:
         if (modele.fichier_nom or '').lower().endswith('.docx') and docx_a_des_controles(modele.fichier_data):
-            return jsonify({'success': True, 'contenu_html': docx_vers_formulaire(modele.fichier_data), 'formulaire': True})
+            return jsonify({'success': True, 'formulaire': True,
+                            'contenu_html': adapter_entete(docx_vers_formulaire(modele.fichier_data), _fiche_structure_resultats(structure_id), modele.type_prestation)})
         html, erreur = _convertir_fichier_en_html(modele.fichier_data, modele.fichier_nom, modele.fichier_mime)
         if erreur:
             return jsonify({'success': False, 'error': erreur}), 400
@@ -15683,6 +15697,12 @@ def api_identite_resultat(demande_id):
            'age': '', 'telephone': '',
            'date': datetime.now().strftime('%d/%m/%y'),
            'date_prelevement': demande.created_at.strftime('%d/%m/%y') if demande.created_at else ''}
+    # ⭐ 2026-10-18 (patron : « ça doit commencer par 1 ») : N° du compte rendu propre à la structure et à
+    # la filière (labo / imagerie), compté sur les comptes rendus saisis sur un modèle formulaire
+    deja = db.session.query(db.func.count(ResultatExamen.id)).join(DemandeExamen, DemandeExamen.id == ResultatExamen.demande_id)        .filter(ResultatExamen.structure_id == structure_id, DemandeExamen.type_prestation == demande.type_prestation,
+                ResultatExamen.contenu_html.like('%mf-identite%')).scalar() or 0
+    existant = ResultatExamen.query.filter_by(demande_id=demande.id, structure_id=structure_id).first()
+    res['numero'] = '' if existant else str(deja + 1)
     p = Patient.query.get(demande.patient_id) if demande.patient_id else None
     if p and str(p.structure_id) == str(structure_id):
         dechiffrer_patients_orm([p])
@@ -15763,7 +15783,7 @@ def page_apercu_modele_resultat(modele_id):
     return (f'<!doctype html><html><head><meta charset="utf-8"><title>{_esc(modele.nom)}</title>'
             '<style>body{background:#eef0f3;margin:0;padding:20px;font-family:Arial}'
             '.page{background:#fff;max-width:820px;margin:auto;padding:24px;box-shadow:0 1px 4px #0003}</style></head>'
-            f'<body><div class="page">{modele.contenu_html}</div></body></html>')
+            f'<body><div class="page">{adapter_entete(modele.contenu_html, _fiche_structure_resultats(session.get("structure_id")), modele.type_prestation)}</div></body></html>')
 
 
 @app.route('/api/resultats-analyses/<int:demande_id>', methods=['POST'])

@@ -138,21 +138,38 @@ class _Convertisseur:
             if cle in listes:
                 self.n += 1
                 opts = ''.join(f'<option>{escape(o)}</option>' for o in listes[cle])
-                return (f'<select class="mf-champ mf-liste" data-mf="{self.n}" data-id="{cle}"><option value=""></option>'
+                return (f'<select class="mf-champ mf-liste" data-mf="{self.n}" data-id="{cle}"><option value="">— choisir —</option>'
                         f'{opts}<option value="__autre__">✎ Autre…</option></select>')
             return texte(cle, largeur)
 
+        def saisie(cle, largeur='12em'):
+            """Case à taper avec les choix du Word proposés (hypothèse, nature du prélèvement)."""
+            if cle not in listes:
+                return texte(cle, largeur)
+            self.n += 1
+            liste_id = f'mfl-{self.n}'
+            return (f'<input type="text" class="mf-champ mf-combo" data-mf="{self.n}" data-id="{cle}" list="{liste_id}" '
+                    f'autocomplete="off" placeholder="taper ou choisir" style="min-width:{largeur}">'
+                    f'<datalist id="{liste_id}">' + ''.join(f'<option>{escape(o)}</option>' for o in listes[cle]) + '</datalist>')
+
+        def item(libelle, contenu):
+            # ⭐ 2026-10-18 (patron : « là où il y a les listes déroulantes, il n'y a aucun titre ») : chaque
+            # case a son intitulé ; à l'impression, une case laissée vide disparaît avec son intitulé
+            return f'<span class="mf-item"><span class="mf-libelle">{libelle} :</span> {contenu}</span>'
+
+        # ⭐ 2026-10-18 : numéro, dates (compte rendu, prélèvement), identité, sexe et âge remplis par le
+        # logiciel depuis la fiche du patient (le sexe n'est à choisir que s'il manque dans la fiche)
         return ('<table class="mf-identite">'
-                f'<tr><td style="width:36%">N° {texte("numero", "7em")}</td>'
-                f'<td style="width:30%;text-align:center">Compte rendu du <b>{texte("date", "5em")}</b></td>'
-                '<td style="text-align:center"><u>Hypothèse de diagnostic :</u></td></tr>'
-                f'<tr><td colspan="2" style="text-align:center;font-weight:bold;font-size:12pt">{texte("nom", "8em")} &nbsp; {texte("prenom", "8em")}</td>'
-                f'<td style="text-align:center">{champ("hypothese")}</td></tr>'
-                f'<tr><td colspan="2" style="text-align:center;font-weight:bold">{champ("sexe")} &nbsp; {texte("age", "3em")}'
-                f' &nbsp;&nbsp;&nbsp; {texte("telephone", "6em")}</td>'
-                f'<td style="text-align:center">{champ("prelevement")} {texte("date_prelevement", "5em")}</td></tr>'
-                f'<tr><td style="font-weight:bold">{champ("service")}</td>'
-                f'<td colspan="2"><b>Prescripteur :</b> {champ("prescripteur")}</td></tr>'
+                f'<tr><td style="width:30%">{item("N°", texte("numero", "5em"))}</td>'
+                f'<td style="width:35%">{item("Compte rendu du", texte("date", "6em"))}</td>'
+                f'<td>{item("Prélèvement du", texte("date_prelevement", "6em"))}</td></tr>'
+                f'<tr><td colspan="2" style="font-size:12pt">{item("Nom et prénom", "<b>" + texte("nom", "8em") + " " + texte("prenom", "8em") + "</b>")}</td>'
+                f'<td>{item("Sexe", champ("sexe"))} &nbsp; {item("Âge", texte("age", "4em"))}</td></tr>'
+                f'<tr><td>{item("Téléphone", texte("telephone", "7em"))}</td>'
+                f'<td>{item("Service", champ("service"))}</td>'
+                f'<td>{item("Prescripteur", champ("prescripteur"))}</td></tr>'
+                f'<tr><td colspan="2">{item("Hypothèse de diagnostic", saisie("hypothese", "16em"))}</td>'
+                f'<td>{item("Nature du prélèvement", saisie("prelevement", "10em"))}</td></tr>'
                 '</table>')
 
     # ------------------------------------------------------------ champs
@@ -196,7 +213,7 @@ class _Convertisseur:
             courant = texte.strip()
             if courant and courant not in vus:
                 options.insert(0, courant)
-            opts = ['<option value=""></option>'] + [
+            opts = ['<option value="">— choisir —</option>'] + [
                 f'<option{" selected" if o == courant else ""}>{escape(o)}</option>' for o in options]
             opts.append('<option value="__autre__">✎ Autre…</option>')
             # data-defaut : la valeur montrée par le Word (« Résultat: », « ans »...) ne compte pas comme saisie
@@ -224,7 +241,7 @@ class _Convertisseur:
             return (f'<span class="mf-champ mf-texte" data-mf="{self.n}" contenteditable="true"'
                     + (f' style="{style}"' if style else '') + f'>{escape(courant)}</span>')
         liste_id = f'mfl-{self.n}'
-        return (f'<input type="text" class="mf-champ mf-combo" data-mf="{self.n}" list="{liste_id}" autocomplete="off"'
+        return (f'<input type="text" class="mf-champ mf-combo" data-mf="{self.n}" list="{liste_id}" autocomplete="off" placeholder="taper ou choisir"'
                 + (f' value="{escape(courant)}" data-defaut="1"' if courant else '')
                 + (f' style="{style}"' if style else '') + '>'
                 + f'<datalist id="{liste_id}">' + ''.join(f'<option>{escape(o)}</option>' for o in options) + '</datalist>')
@@ -525,6 +542,10 @@ STYLE = """<style>
 .modele-formulaire .mf-texte{display:inline-block;min-width:5em;min-height:1.2em;border-bottom:1px solid #0d6efd;background:#eef5ff;padding:0 3px;outline:none;cursor:text}
 .modele-formulaire .mf-texte:focus,.modele-formulaire .mf-liste:focus,.modele-formulaire .mf-combo:focus{background:#fff8d6}
 .modele-formulaire .mf-norme{white-space:nowrap}
+.modele-formulaire .mf-item{display:inline-block;margin-right:6px}
+.modele-formulaire .mf-libelle{font-size:9.5pt;color:#555;font-weight:normal}
+.modele-formulaire .mf-a-completer{outline:2px solid #fd7e14}
+.modele-formulaire .mf-combo::placeholder{color:#8aa;font-style:italic;font-size:9pt}
 .modele-formulaire tr.mf-retiree{opacity:.3;text-decoration:line-through}
 </style>"""
 
@@ -539,6 +560,47 @@ def docx_vers_formulaire(data):
     # paragraphes vides en série (espacements Word) : un seul
     contenu = re.sub(r'(?:<p style="margin:0">&nbsp;</p>){2,}', '<p style="margin:0">&nbsp;</p>', contenu)
     return f'<div class="{MARQUEUR}" data-champs="{conv.n}">{STYLE}{_en_tete(z, racine)}{contenu}</div>'
+
+
+def adapter_entete(html, structure, type_prestation='analyse'):
+    """⭐ 2026-10-18 (patron : « je me suis connecté dans une autre structure, mais je vois le logo et
+    les informations d'une autre structure ») : l'en-tête d'un modèle formulaire vient du Word de la
+    structure qui l'a fourni. On le garde s'il est bien celui de la structure connectée (même nom ou
+    même e-mail), sinon il est remplacé par l'en-tête de la structure connectée (logo, nom, adresse,
+    téléphone, e-mail). `structure` : fiche de la structure (dict : nom, adresse, telephone, email,
+    logo_url)."""
+    if not est_formulaire(html):
+        return html
+    structure = structure or {}
+    nom = (structure.get('nom') or '').strip()
+    email = (structure.get('email') or '').strip().lower()
+    m = re.search(r'<table class="mf-entete">.*?</table>', html, flags=re.S)
+    if m:
+        texte = _norm_txt(re.sub(r'<[^>]+>', ' ', m.group(0)))
+        if (nom and _norm_txt(nom) in texte) or (email and email in texte):
+            # en-tête du Word de la structure elle-même : gardé, mais avec le logo ENREGISTRÉ de la
+            # structure (s'il existe) plutôt que la copie collée dans le Word
+            if structure.get('logo_url'):
+                nouvel = re.sub(r'<img src="data:image/[^"]*"', f'<img src="{escape(structure["logo_url"])}"', m.group(0), count=1)
+                return html.replace(m.group(0), nouvel, 1)
+            return html
+    if not nom:
+        return html
+    logo = structure.get('logo_url') or ''
+    titre = "COMPTE RENDU D'ANALYSES MÉDICALES" if type_prestation == 'analyse' else "COMPTE RENDU D'EXAMEN"
+    contacts = [c for c in (structure.get('adresse') or '', f"Tél : {structure['telephone']}" if structure.get('telephone') else '',
+                            f"E-mail : {structure['email']}" if structure.get('email') else '') if c]
+    entete = ('<table class="mf-entete"><tr>'
+              f'<td style="width:22%;text-align:center">'
+              + (f'<img src="{escape(logo)}" alt="" style="max-height:80px;max-width:120px">' if logo else '') + '</td>'
+              f'<td style="text-align:center;vertical-align:middle"><div style="font-weight:bold;font-size:14pt">{escape(nom)}</div>'
+              f'<div style="margin-top:10px;font-size:11pt">{titre}</div></td>'
+              f'<td style="width:30%;font-size:9.5pt;font-weight:bold;vertical-align:middle;white-space:pre-line">{escape(chr(10).join(contacts))}</td>'
+              '</tr></table>')
+    if m:
+        return html.replace(m.group(0), entete, 1)
+    i = html.find('</style>')
+    return html[:i + 8] + entete + html[i + 8:] if i >= 0 else html
 
 
 def _norm_txt(t):
@@ -641,7 +703,7 @@ def nfs_depuis_docx(data):
     options = ''.join(f'<option>{escape(n)}</option>' for n in jeux)
     selecteur = (f'<select class="mf-champ mf-liste mf-normes" data-mf="{conv.n}" data-garder="1" '
                  f'data-normes="{escape(json.dumps(jeux, ensure_ascii=False), quote=True)}">'
-                 f'<option value=""></option>{options}</select>')
+                 f'<option value="">— âge / sexe —</option>{options}</select>')
     entete = ('<tr><td style="background:#D9D9D9;font-weight:bold;text-align:center;width:34%">PARAMÈTRES</td>'
               '<td colspan="2" style="background:#D9D9D9;font-weight:bold;text-align:center">RÉSULTATS</td>'
               f'<td style="background:#D9D9D9;font-weight:bold;text-align:center">NORMES {selecteur}</td></tr>')

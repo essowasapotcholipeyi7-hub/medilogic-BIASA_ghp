@@ -201,6 +201,22 @@ function afficherFormulaire(html) {
     fetch('/api/resultats-analyses/' + demandeChoisie + '/identite').then(r => r.json()).then(d => {
         if (!d.success) return;
         choisirNormes(zone, d.sexe_code || '', d.age_jours);
+        // ⭐ 2026-10-18 (patron) : le sexe est enregistré avec le patient — affiché, plus à choisir ;
+        // seulement s'il manque dans la fiche (anciens patients), la liste reste, signalée en orange
+        zone.querySelectorAll('select[data-id="sexe"]').forEach(sel => {
+            if (d.sexe) {
+                const sp = document.createElement('span');
+                sp.className = 'mf-champ mf-texte';
+                sp.dataset.id = 'sexe';
+                sp.contentEditable = 'false';
+                sp.title = 'Sexe de la fiche du patient';
+                sp.textContent = d.sexe;
+                sel.replaceWith(sp);
+            } else {
+                sel.classList.add('mf-a-completer');
+                sel.title = "Sexe absent de la fiche du patient : choisissez-le ici (et complétez la fiche patient)";
+            }
+        });
         zone.querySelectorAll('[data-id]').forEach(el => {
             const v = d[el.dataset.id];
             if (!v) return;
@@ -308,6 +324,11 @@ function figerFormulaire() {
     });
     c.querySelectorAll('tr.mf-retiree').forEach(tr => tr.remove());
     if (document.getElementById('mfMasquerVides').checked) {
+        // cadre d'identification : une case vide disparaît avec son intitulé (ex. pas d'hypothèse)
+        c.querySelectorAll('.mf-identite .mf-item').forEach(it => {
+            const v = it.querySelectorAll('.mf-valeur');
+            if (v.length && [...v].every(x => x.dataset.vide)) it.remove();
+        });
         // sections entières (ligne de titre sur fond coloré + lignes suivantes) sans aucune case remplie
         c.querySelectorAll('table').forEach(t => {
             if (t.closest('.mf-identite') || t.closest('.mf-entete')) return;
