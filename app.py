@@ -35,6 +35,7 @@ from services.part_medecin_service import (charger_taux_part_medecin, creer_lign
 from services.service_acte_service import charger_services, deviner_service_acte, creer_lignes_service, generer_rapport_recettes_service
 from services.service_acte_service import TYPES_SERVICE, TYPES_SANS_HOSPITALISATION
 from models import ConsommableLabo, UsageConsommable, MouvementConsommable, ParametrageStockLabo
+from services import comptes_service   # ⭐ 2026-10-18 : comptes (structures, personnel) dans Neon
 from services.modele_formulaire import est_formulaire, docx_a_des_controles, docx_vers_formulaire, proposer_modele, mots_modele
 from services.facturation_amu_service import generer_lignes_facture_amu_cnss, charger_classification_amu_cnss, generer_lignes_facture_amu
 from utils.categories_amu_cnss import CATEGORIES_AMU_CNSS, CATEGORIES_AMU_CNSS_DICT
@@ -2361,22 +2362,10 @@ def _maj_derniere_connexion_en_fond(feuille, id_ligne, nb_colonnes, index_colonn
     id_ligne = str(id_ligne or '').strip()
     if not id_ligne:
         return
+    nom = feuille if isinstance(feuille, str) else getattr(feuille, 'title', '?')
 
-    def tache():
-        nom = feuille if isinstance(feuille, str) else getattr(feuille, 'title', '?')
-        try:
-            ws = sheets_helper.spreadsheet.worksheet(feuille) if isinstance(feuille, str) else feuille
-            cell = ws.find(id_ligne, in_column=1)
-            if not cell or cell.row <= 1:   # jamais la ligne 1 (l'en-tête) — une écriture dessus casse la feuille
-                return
-            ligne = ws.row_values(cell.row)
-            while len(ligne) < nb_colonnes:
-                ligne.append('')
-            ligne[index_colonne] = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
-            derniere_col = chr(ord('A') + nb_colonnes - 1)
-            ws.update(range_name=f'A{cell.row}:{derniere_col}{cell.row}', values=[ligne[:nb_colonnes]])
-        except Exception as e:
-            print(f"⚠️ Dernière connexion ({nom}) : {e}")
+    def tache():   # ⭐ 2026-10-18 : comptes dans Neon (nb_colonnes / index_colonne ne servent plus)
+        comptes_service.marquer_connexion(nom, id_ligne)
 
     threading.Thread(target=tache, daemon=True).start()
 
@@ -2422,36 +2411,20 @@ def index():
             return redirect(url_for('index'))
 
         try:
-            spreadsheet = sheets_helper.spreadsheet
-            all_worksheets = spreadsheet.worksheets()
+            # ⭐ 2026-10-18 : comptes du personnel dans Neon (voir services/comptes_service.py)
+            comptes_par_feuille = comptes_service.utilisateurs_par_feuille()
         except Exception as e:
-            print(f"❌ Erreur accès Google Sheets: {e}")
-            flash('Connexion à Google Sheets impossible pour le moment. Réessayez dans un instant.', 'danger')
+            print(f"❌ Erreur accès aux comptes : {e}")
+            flash('Connexion à la base impossible pour le moment. Réessayez dans un instant.', 'danger')
             return redirect(url_for('index'))
-        
+
         user_trouve = False
         mdp_ok = False
 
-        # ========== 1. RECHERCHE DANS LES FEUILLES UTILISATEURS ==========
-        valeurs_par_feuille = _lire_feuilles_utilisateurs_groupees(
-            [w for w in all_worksheets if w.title.endswith('_users')])
-        for worksheet in all_worksheets:
-            title = worksheet.title
-            if title.endswith('_users'):
-                print(f"📂 Vérification dans: {title}")
-
-                try:
-                    valeurs = valeurs_par_feuille[title] if title in valeurs_par_feuille else worksheet.get_all_values()
-                    if len(valeurs) <= 1:
-                        continue
-                    records = _lire_feuille_utilisateurs(valeurs)
-                    if not records:
-                        continue
-                        
-                except Exception as e:
-                    print(f"   ⚠️ Erreur lecture feuille: {e}")
-                    continue
-                
+        # ========== 1. RECHERCHE DANS LES COMPTES DU PERSONNEL ==========
+        for title, records in comptes_par_feuille.items():
+            worksheet = title
+            if records:
                 for row in records:
                     if str(row.get('email')) == email:
                         user_trouve = True
@@ -2585,18 +2558,7 @@ def _poser_session_compte(structure_id, utilisateur_id, type_compte, se_souvenir
         if structure.get('statut') != 'active':
             return None, (jsonify({'success': False, 'error': 'Structure non activée'}), 403)
 
-        try:
-            sheet_structures = sheets_helper.spreadsheet.worksheet("structures")
-            cell = sheet_structures.find(str(structure.get('ID')), in_column=1)
-            if cell:
-                row_num = cell.row
-                current_row = sheet_structures.row_values(row_num)
-                while len(current_row) < 13:
-                    current_row.append('')
-                current_row[12] = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
-                sheet_structures.update(range_name=f'A{row_num}:M{row_num}', values=[current_row])
-        except Exception:
-            pass
+        comptes_service.marquer_connexion('structures', structure.get('ID'))   # ⭐ comptes dans Neon
 
         session.permanent = se_souvenir
         session['user_id'] = structure.get('ID')
@@ -2625,18 +2587,7 @@ def _poser_session_compte(structure_id, utilisateur_id, type_compte, se_souvenir
     if structure.get('statut') != 'active':
         return None, (jsonify({'success': False, 'error': 'Structure non activée'}), 403)
 
-    try:
-        worksheet = sheets_helper.spreadsheet.worksheet(f"struct_{structure_id}_users")
-        cell = worksheet.find(str(row.get('ID')), in_column=1)
-        if cell:
-            row_num = cell.row
-            current_row = worksheet.row_values(row_num)
-            while len(current_row) < 9:
-                current_row.append('')
-            current_row[8] = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
-            worksheet.update(range_name=f'A{row_num}:I{row_num}', values=[current_row])
-    except Exception:
-        pass
+    comptes_service.marquer_connexion(f"struct_{structure_id}_users", row.get('ID'))   # ⭐ comptes dans Neon
 
     role = row.get('role', 'caissier')
     session.permanent = se_souvenir
@@ -3337,20 +3288,10 @@ def api_changer_mot_de_passe():
     if not nom_feuille:
         return jsonify({'success': False, 'error': 'Session trop ancienne : déconnectez-vous puis reconnectez-vous, et réessayez.'}), 400
     try:
-        feuille = sheets_helper.spreadsheet.worksheet(nom_feuille)
-        valeurs = feuille.get_all_values()
-        entete = [(c or '').strip() for c in (valeurs[0] if valeurs else [])]
-        if 'mot_de_passe' in entete:
-            col_mdp = entete.index('mot_de_passe')
-        elif nom_feuille != 'structures':
-            col_mdp = ENTETES_UTILISATEURS.index('mot_de_passe')   # en-tête abîmé : position standard
-        else:
-            return jsonify({'success': False, 'error': 'Colonne du mot de passe introuvable : contactez l\'éditeur.'}), 500
-        ligne_num = next((i + 1 for i, ligne in enumerate(valeurs) if i > 0 and ligne and str(ligne[0]).strip() == user_id), None)
-        if not ligne_num:
+        compte = comptes_service.trouver(nom_feuille, user_id)   # ⭐ 2026-10-18 : comptes dans Neon
+        if not compte:
             return jsonify({'success': False, 'error': 'Compte introuvable : contactez votre administrateur.'}), 404
-        ligne = valeurs[ligne_num - 1]
-        actuel = ligne[col_mdp] if len(ligne) > col_mdp else ''
+        actuel = compte.get('mot_de_passe') or ''
 
         if actuel != hash_password(ancien):
             echecs = int(session.get('mdp_echecs') or 0) + 1
@@ -3362,18 +3303,17 @@ def api_changer_mot_de_passe():
             return jsonify({'success': False, 'error': f"Ancien mot de passe incorrect ({MDP_ECHECS_MAX - echecs} essai(s) restant(s))."}), 400
 
         nouveau_hash = hash_password(nouveau)
-        feuille.update_cell(ligne_num, col_mdp + 1, nouveau_hash)
+        comptes_service.maj_par_id(nom_feuille, user_id, {'mot_de_passe': nouveau_hash})
         # Relecture : un mot de passe ne doit jamais être annoncé changé sans l'être.
-        if feuille.cell(ligne_num, col_mdp + 1).value != nouveau_hash:
+        if (comptes_service.trouver(nom_feuille, user_id) or {}).get('mot_de_passe') != nouveau_hash:
             return jsonify({'success': False, 'error': "L'enregistrement n'a pas pu être vérifié : réessayez."}), 500
-        sheets_helper.clear_cache(nom_feuille)
         session.pop('mdp_echecs', None)
         session.pop('mdp_bloque_jusqua', None)
         print(f"🔑 Mot de passe changé : {nom_feuille} ID {user_id}")
         return jsonify({'success': True, 'message': 'Mot de passe changé. Utilisez le nouveau à votre prochaine connexion.'})
     except Exception as e:
         print(f"❌ Changement de mot de passe : {e}")
-        return jsonify({'success': False, 'error': 'Google Sheets ne répond pas pour le moment : réessayez dans un instant.'}), 503
+        return jsonify({'success': False, 'error': 'La base ne répond pas pour le moment : réessayez dans un instant.'}), 503
 
 
 def send_verification_code_email(email, code, nom):
@@ -5634,23 +5574,7 @@ def activate_structure(structure_id):
     if 'super_admin' not in session:
         return redirect(url_for('admin_login'))
     try:
-        sheet_structures = sheets_helper.spreadsheet.worksheet("structures")
-        
-        # Trouver la ligne de la structure
-        cell = sheet_structures.find(str(structure_id), in_column=1)
-        
-        if cell:
-            row_num = cell.row
-            # Lire toutes les valeurs de la ligne
-            current_row = sheet_structures.row_values(row_num)
-            
-            # Modifier le statut (colonne 7 = index 6)
-            if len(current_row) > 6:
-                current_row[6] = 'active'  # statut = actif
-            
-            # Mettre à jour la ligne entière
-            sheet_structures.update(f'A{row_num}:K{row_num}', [current_row])
-            sheets_helper.clear_cache('structures')   # reçus : nouvelles infos tout de suite
+        if comptes_service.maj_par_id('structures', structure_id, {'statut': 'active'}):   # ⭐ comptes dans Neon
             flash(f'Structure {structure_id} activée avec succès', 'success')
         else:
             flash(f'Structure {structure_id} non trouvée', 'danger')
@@ -5697,23 +5621,7 @@ def suspend_structure(structure_id):
     if 'super_admin' not in session:
         return redirect(url_for('admin_login'))
     try:
-        sheet_structures = sheets_helper.spreadsheet.worksheet("structures")
-        
-        # Trouver la ligne de la structure
-        cell = sheet_structures.find(str(structure_id), in_column=1)
-        
-        if cell:
-            row_num = cell.row
-            # Lire toutes les valeurs de la ligne
-            current_row = sheet_structures.row_values(row_num)
-            
-            # Modifier le statut (colonne 7 = index 6)
-            if len(current_row) > 6:
-                current_row[6] = 'suspended'  # statut = suspendu
-            
-            # Mettre à jour la ligne entière
-            sheet_structures.update(f'A{row_num}:K{row_num}', [current_row])
-            sheets_helper.clear_cache('structures')   # reçus : nouvelles infos tout de suite
+        if comptes_service.maj_par_id('structures', structure_id, {'statut': 'suspended'}):   # ⭐ comptes dans Neon
             flash(f'Structure {structure_id} suspendue', 'warning')
         else:
             flash(f'Structure {structure_id} non trouvée', 'danger')
@@ -5781,13 +5689,7 @@ def delete_structure(structure_id):
     if 'super_admin' not in session:
         return redirect(url_for('admin_login'))
     try:
-        sheet_structures = sheets_helper.spreadsheet.worksheet("structures")
-        
-        # Trouver la ligne de la structure
-        cell = sheet_structures.find(str(structure_id), in_column=1)
-        
-        if cell:
-            sheet_structures.delete_row(cell.row)
+        if comptes_service.supprimer_par_id('structures', structure_id):   # ⭐ comptes dans Neon
             flash(f'Structure {structure_id} supprimée', 'info')
         else:
             flash(f'Structure {structure_id} non trouvée', 'danger')
@@ -6557,18 +6459,7 @@ def api_add_user():
         data = request.json
         structure_id = session.get('structure_id')
         
-        sheet_name = f"struct_{structure_id}_users"
-        
-        # Récupérer la feuille
-        try:
-            worksheet = sheets_helper.spreadsheet.worksheet(sheet_name)
-        except:
-            # Si la feuille n'existe pas, la créer
-            worksheet = sheets_helper.spreadsheet.add_worksheet(title=sheet_name, rows=100, cols=10)
-            # Ajouter les en-têtes
-            headers = ['ID', 'nom', 'email', 'mot_de_passe', 'role', 'structure_id', 'created_at', 'actif']
-            worksheet.append_row(headers)
-        
+        sheet_name = f"struct_{structure_id}_users"   # ⭐ 2026-10-18 : comptes dans Neon
         user_id = data.get('id')
 
         # ⭐ Patron (2026-10-10) : le rôle restait « Caissier » par défaut — il
@@ -6581,47 +6472,34 @@ def api_add_user():
         if nouveau and not (data.get('password') or '').strip():
             return jsonify({'success': False, 'error': "Indiquez un mot de passe pour le nouvel utilisateur."}), 400
 
+        email = (data.get('email') or '').strip()
         if user_id and user_id != '' and user_id != 'null' and user_id != 0:
             # Modification
             print(f"✏️ Modification ID: {user_id}")
-            cell = worksheet.find(str(user_id), in_column=1)
-            if cell:
-                row_num = cell.row
-                current_row = worksheet.row_values(row_num)
-                while len(current_row) < 9:
-                    current_row.append('')
-                current_row[1] = data.get('nom')
-                current_row[2] = data.get('email')
-                if data.get('password') and data.get('password').strip():
-                    current_row[3] = hash_password(data.get('password'))
-                current_row[4] = data.get('role')
-                current_row[7] = data.get('actif', 'oui')
-                # current_row[8] = dernière connexion (ne pas toucher)
-
-                worksheet.update(range_name=f'A{row_num}:H{row_num}', values=[current_row])
-                _enregistrer_roles_supplementaires(structure_id, user_id, supplementaires)
-                return jsonify({'success': True, 'id': user_id})
-            else:
+            actuel = comptes_service.trouver(sheet_name, user_id)
+            if not actuel:
                 return jsonify({'success': False, 'error': 'Utilisateur non trouvé'}), 404
+            # ⭐ 2026-10-18 : un e-mail ne sert qu'à un seul compte (la connexion ne saurait pas lequel ouvrir)
+            if email.lower() != str(actuel.get('email') or '').strip().lower() \
+                    and comptes_service.email_deja_utilise(email, structure_id, user_id):
+                return jsonify({'success': False, 'error': "Cet e-mail est déjà utilisé par un autre compte."}), 400
+            champs = {'nom': data.get('nom'), 'email': email, 'role': data.get('role'), 'actif': data.get('actif', 'oui')}
+            if data.get('password') and data.get('password').strip():
+                champs['mot_de_passe'] = hash_password(data.get('password'))
+            comptes_service.maj_par_id(sheet_name, user_id, champs)   # dernière connexion : jamais touchée
+            _enregistrer_roles_supplementaires(structure_id, user_id, supplementaires)
+            return jsonify({'success': True, 'id': user_id})
         else:
             # Ajout
             print(f"➕ Ajout nouvel utilisateur")
-            all_records = worksheet.get_all_records()
-            existing_ids = [int(r.get('ID') or 0) for r in all_records if r.get('ID')]
-            new_id = max(existing_ids) + 1 if existing_ids else 1
-            
-            new_user = [
-                new_id,
-                data.get('nom'),
-                data.get('email'),
-                hash_password(data.get('password', 'default123')),
-                data.get('role', 'caissier'),
-                structure_id,
-                datetime.now().isoformat(),
-                data.get('actif', 'oui'),
-                ''  # dernière connexion (vide)
-            ]
-            worksheet.append_row(new_user)
+            if comptes_service.email_deja_utilise(email):
+                return jsonify({'success': False, 'error': "Cet e-mail est déjà utilisé par un autre compte."}), 400
+            new_id = comptes_service.ajouter(sheet_name, {
+                'nom': data.get('nom'), 'email': email,
+                'mot_de_passe': hash_password(data.get('password', 'default123')),
+                'role': data.get('role', 'caissier'), 'structure_id': structure_id,
+                'created_at': datetime.now().isoformat(), 'actif': data.get('actif', 'oui'), 'derniere_connexion': '',
+            })
             _enregistrer_roles_supplementaires(structure_id, new_id, supplementaires)
             return jsonify({'success': True, 'id': new_id})
             
@@ -6655,31 +6533,9 @@ def api_toggle_user(user_id):
         structure_id = session.get('structure_id')
         nouveau_statut = data.get('actif', 'non')
         
-        sheet_name = f"struct_{structure_id}_users"
-        worksheet = sheets_helper.spreadsheet.worksheet(sheet_name)
-        
-        # Trouver l'utilisateur
-        cell = worksheet.find(str(user_id), in_column=1)
-        if not cell:
+        # ⭐ 2026-10-18 : comptes dans Neon
+        if not comptes_service.maj_par_id(f"struct_{structure_id}_users", user_id, {'actif': nouveau_statut}):
             return jsonify({'success': False, 'error': 'Utilisateur non trouvé'}), 404
-        
-        row_num = cell.row
-        current_row = worksheet.row_values(row_num)
-        
-        print(f"Ligne actuelle: {current_row}")
-        print(f"Nombre de colonnes: {len(current_row)}")
-        
-        # Ajouter la colonne actif si elle n'existe pas
-        if len(current_row) < 9:
-            # Étendre la ligne jusqu'à la colonne I
-            while len(current_row) < 9:
-                current_row.append('')
-        
-        # Mettre à jour la colonne actif (index 7 = colonne H)
-        current_row[7] = nouveau_statut
-        
-        # 🔥 Correction : update avec les bons paramètres
-        worksheet.update(range_name=f'A{row_num}:I{row_num}', values=[current_row])
         
         return jsonify({'success': True, 'message': f'Statut mis à jour'})
         
@@ -6698,20 +6554,8 @@ def api_delete_user(user_id):
         structure_id = session.get('structure_id')
         RoleSupplementaire.query.filter_by(structure_id=structure_id, utilisateur_id=user_id).delete()
         db.session.commit()
-        sheet_name = f"struct_{structure_id}_users"
-        
-        print(f"Recherche dans la feuille: {sheet_name}")
-        
-        # Récupérer la feuille
-        worksheet = sheets_helper.spreadsheet.worksheet(sheet_name)
-        
-        # Chercher l'utilisateur
-        cell = worksheet.find(str(user_id), in_column=1)
-        
-        if cell:
-            print(f"Utilisateur trouvé à la ligne {cell.row}, suppression...")
-            # 🔥 Utiliser delete_rows au lieu de delete_row
-            worksheet.delete_rows(cell.row)
+        # ⭐ 2026-10-18 : comptes dans Neon (numéro jamais réattribué)
+        if comptes_service.supprimer_par_id(f"struct_{structure_id}_users", user_id):
             return jsonify({'success': True, 'message': 'Utilisateur supprimé'})
         else:
             print(f"Utilisateur {user_id} non trouvé")
@@ -7418,18 +7262,7 @@ def api_delete_acte(acte_id):
 def _ecrire_logo_url_fiche(structure_id, url):
     """Écrit logo_url (colonne L) dans la feuille structures — non bloquant."""
     try:
-        sheet_structures = sheets_helper.spreadsheet.worksheet("structures")
-        cell = sheet_structures.find(str(structure_id), in_column=1)
-        if not cell:
-            return False
-        row_num = cell.row
-        current_row = sheet_structures.row_values(row_num)
-        while len(current_row) <= 11:
-            current_row.append('')
-        current_row[11] = url
-        sheet_structures.update(f'A{row_num}:L{row_num}', [current_row[:12]])
-        sheets_helper.clear_cache('structures')   # reçus : nouvelles infos tout de suite
-        return True
+        return comptes_service.maj_par_id('structures', structure_id, {'logo_url': url})   # ⭐ comptes dans Neon
     except Exception as e:
         print(f"⚠️ logo_url non écrit dans la fiche structure {structure_id}: {e}")
         return False
@@ -7509,40 +7342,12 @@ def api_update_structure():
     structure_id = session.get('structure_id')
     
     try:
-        sheet_structures = sheets_helper.spreadsheet.worksheet("structures")
-        cell = sheet_structures.find(str(structure_id), in_column=1)
-        
-        if cell:
-            row_num = cell.row
-            current_row = sheet_structures.row_values(row_num)
-            
-            # 🔥 INDEX CORRECTS (0-based)
-            # A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7, I=8, J=9, K=10, L=11, M=12...
-            
-            # Mettre à jour les colonnes
-            current_row[1] = data.get('nom')           # colonne B (nom)
-            current_row[2] = data.get('email')         # colonne C (email)
-            current_row[3] = data.get('telephone')     # colonne D (téléphone)
-            current_row[4] = data.get('adresse')       # colonne E (adresse)
-            
-            # 🔥 LOGO_URL à l'index 11 (colonne L)
-            if len(current_row) > 11:
-                current_row[11] = data.get('logo_url', '')
-            else:
-                while len(current_row) <= 11:
-                    current_row.append('')
-                current_row[11] = data.get('logo_url', '')
-
-            # ⭐ ENTETE_A4 à l'index 16 (colonne Q) — texte d'en-tête
-            # supplémentaire (spécialités/labo...) affiché uniquement sur les
-            # impressions A4, voir structure_entete_a4 (facture/recu routes).
-            while len(current_row) <= 16:
-                current_row.append('')
-            current_row[16] = data.get('entete_a4', '')
-
-            # Mettre à jour jusqu'à la colonne Q (index 16)
-            sheet_structures.update(f'A{row_num}:Q{row_num}', [current_row])
-            sheets_helper.clear_cache('structures')   # reçus : nouvelles infos tout de suite
+        # ⭐ 2026-10-18 : comptes dans Neon. entete_a4 : texte d'en-tête supplémentaire (spécialités,
+        # labo...) affiché uniquement sur les impressions A4, voir structure_entete_a4.
+        if comptes_service.maj_par_id('structures', structure_id, {
+                'nom': data.get('nom'), 'email': data.get('email'), 'telephone': data.get('telephone'),
+                'adresse': data.get('adresse'), 'logo_url': data.get('logo_url', ''),
+                'entete_a4': data.get('entete_a4', '')}):
             # ⭐ La barre du haut lit session.structure_logo / structure_nom :
             # rafraîchis tout de suite (avant : logo changé invisible jusqu'à la reconnexion)
             session['structure_logo'] = data.get('logo_url', '') or ''

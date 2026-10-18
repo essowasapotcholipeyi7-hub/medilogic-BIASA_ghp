@@ -187,19 +187,8 @@ def _desactiver_compte_utilisateur(structure_id, compte_id):
     extraction partagée. Best-effort : ne bloque JAMAIS l'enregistrement
     du départ si Sheets est injoignable — retourne juste False."""
     try:
-        from sheets_helper import sheets_helper
-        sheets_helper.set_structure(structure_id)
-        worksheet = sheets_helper.spreadsheet.worksheet(f"struct_{structure_id}_users")
-        cell = worksheet.find(str(compte_id), in_column=1)
-        if not cell:
-            return False
-        row_num = cell.row
-        current_row = worksheet.row_values(row_num)
-        while len(current_row) < 9:
-            current_row.append('')
-        current_row[7] = 'non'
-        worksheet.update(range_name=f'A{row_num}:I{row_num}', values=[current_row])
-        return True
+        from services import comptes_service   # ⭐ 2026-10-18 : comptes dans Neon
+        return comptes_service.maj_par_id(f"struct_{structure_id}_users", compte_id, {'actif': 'non'})
     except Exception as e:
         print(f"⚠️ Erreur désactivation compte utilisateur {compte_id} (structure {structure_id}): {e}")
         return False

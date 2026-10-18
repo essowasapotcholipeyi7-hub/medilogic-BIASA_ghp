@@ -14,6 +14,12 @@ from threading import Timer
 from datetime import datetime
 
 
+def _feuille_comptes(sheet_name):
+    """⭐ 2026-10-18 : « structures » et « struct_N_users » sont dans Neon (services/comptes_service.py)."""
+    from services.comptes_service import feuille_comptes
+    return feuille_comptes(sheet_name)
+
+
 def normaliser_nom_article(nom):
     """Normalise un nom de médicament/acte pour un matching robuste entre
     gestion_patients et le catalogue GHP (Sheets) — patron : "pourquoi
@@ -398,6 +404,9 @@ class SheetsHelper:
     def get_all_records(self, base_name, use_prefix=True, force_refresh=False):
         """Récupère tous les enregistrements avec cache"""
         sheet_name = self.get_sheet_name(base_name) if use_prefix else base_name
+        if _feuille_comptes(sheet_name):   # ⭐ comptes : dans Neon, plus dans Google Sheets
+            from services import comptes_service
+            return comptes_service.lister(sheet_name)
         
         # Vérifier le cache
         if not force_refresh and sheet_name in self._cache:
@@ -727,6 +736,10 @@ class SheetsHelper:
         """Ajoute un enregistrement et vide le cache"""
         try:
             sheet_name = self.get_sheet_name(base_name) if use_prefix else base_name
+            if _feuille_comptes(sheet_name):   # ⭐ comptes : dans Neon
+                from services import comptes_service
+                comptes_service.ajouter(sheet_name, data)
+                return True
             
             try:
                 worksheet = self.spreadsheet.worksheet(sheet_name)
@@ -788,6 +801,13 @@ class SheetsHelper:
     def update_record_by_id(self, base_name, id_value, updates, id_column='ID', use_prefix=True):
         """Met à jour un enregistrement par son ID"""
         sheet_name = self.get_sheet_name(base_name) if use_prefix else base_name
+        if _feuille_comptes(sheet_name):   # ⭐ comptes : dans Neon
+            from services import comptes_service
+            try:
+                return comptes_service.maj_par_id(sheet_name, id_value, updates, id_column)
+            except Exception as e:
+                print(f"❌ Erreur mise à jour du compte {sheet_name} {id_value}: {e}")
+                return False
         
         try:
             worksheet = self.spreadsheet.worksheet(sheet_name)
@@ -847,6 +867,13 @@ class SheetsHelper:
     def delete_record_by_id(self, base_name, id_value, id_column='ID', use_prefix=True):
         """Supprime un enregistrement par son ID"""
         sheet_name = self.get_sheet_name(base_name) if use_prefix else base_name
+        if _feuille_comptes(sheet_name):   # ⭐ comptes : dans Neon
+            from services import comptes_service
+            try:
+                return comptes_service.supprimer_par_id(sheet_name, id_value)
+            except Exception as e:
+                print(f"❌ Erreur suppression du compte {sheet_name} {id_value}: {e}")
+                return False
         
         try:
             worksheet = self.spreadsheet.worksheet(sheet_name)
@@ -945,6 +972,8 @@ class SheetsHelper:
         }
         
         for sheet_name, headers in sheets_config.items():
+            if sheet_name == 'users':   # ⭐ 2026-10-18 : comptes du personnel dans Neon
+                continue
             full_name = self.get_sheet_name(sheet_name)
             self.get_or_create_worksheet(full_name, headers)
         
