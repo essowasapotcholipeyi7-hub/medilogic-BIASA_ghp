@@ -12,7 +12,7 @@ import math
 from datetime import datetime
 from decimal import Decimal
 
-from models import db, ConsommableLabo, UsageConsommable, MouvementConsommable
+from models import db, ConsommableLabo, UsageConsommable, MouvementConsommable, ParametrageStockLabo
 
 CATEGORIES = {
     'examen': {'film': 'Film', 'autre': 'Autre consommable'},
@@ -20,7 +20,15 @@ CATEGORIES = {
 }
 UNITES_PAR_DEFAUT = {'film': 'film(s)', 'tube': 'tube(s)', 'reactif': 'ml', 'autre': 'unité(s)'}
 TYPES_MOUVEMENT = {'entree': 'Approvisionnement', 'sortie': 'Examen réalisé', 'retour': 'Examen annulé (remis en stock)',
-                   'inventaire': 'Écart d\'inventaire', 'correction': 'Correction'}
+                   'utilisation': 'Utilisation saisie', 'inventaire': 'Écart d\'inventaire', 'correction': 'Correction'}
+# ce qui compte comme « utilisé » dans l'inventaire (examens enregistrés ou utilisation saisie à la main)
+TYPES_UTILISATION = ('sortie', 'retour', 'utilisation')
+
+
+def deduction_auto(structure_id, filiere):
+    """Le stock baisse-t-il tout seul quand un examen est marqué réalisé ? (oui par défaut)"""
+    p = ParametrageStockLabo.query.filter_by(structure_id=structure_id, filiere=filiere).first()
+    return True if p is None else bool(p.deduction_auto)
 SEUIL_PAR_DEFAUT = Decimal('0.20')
 
 
@@ -59,12 +67,14 @@ def examens_possibles(quantite, quantite_par_examen):
     return int(max(_d(quantite), 0) / qpe)
 
 
-def mouvement(c, type_mouvement, quantite, auteur=None, demande=None, commentaire=None):
-    """Applique un mouvement (quantité signée) au stock et le garde. Le stock ne descend pas sous 0."""
+def mouvement(c, type_mouvement, quantite, auteur=None, demande=None, commentaire=None, date=None, nb_examens=None):
+    """Applique un mouvement (quantité signée) au stock et le garde. Le stock ne descend pas sous 0.
+    `date` : jour de l'utilisation saisie à la main (par défaut maintenant)."""
     q = _d(quantite)
     c.quantite = max(_d(c.quantite) + q, Decimal(0))
     m = MouvementConsommable(
-        structure_id=c.structure_id, consommable_id=c.id, date=datetime.utcnow(), type_mouvement=type_mouvement,
+        structure_id=c.structure_id, consommable_id=c.id, date=date or datetime.utcnow(), type_mouvement=type_mouvement,
+        nb_examens=nb_examens,
         quantite=q, stock_apres=c.quantite, demande_id=demande.id if demande else None,
         acte_nom=demande.acte_nom if demande else None, commentaire=(commentaire or '')[:300] or None, auteur=auteur)
     db.session.add(m)
@@ -72,7 +82,10 @@ def mouvement(c, type_mouvement, quantite, auteur=None, demande=None, commentair
 
 
 def consommer_pour_demande(demande, auteur=None):
-    """Examen réalisé : déduit chaque article lié à son acte (une seule fois par demande)."""
+    """Examen réalisé : déduit chaque article lié à son acte (une seule fois par demande) — sauf si la
+    structure saisit l'utilisation à la main pour cette filière."""
+    if not deduction_auto(demande.structure_id, demande.type_prestation):
+        return []
     usages = UsageConsommable.query.filter_by(structure_id=demande.structure_id, acte_nom=demande.acte_nom).all()
     if not usages:
         return []
@@ -142,11 +155,14 @@ def rapport_periode(structure_id, filiere, debut, fin):
         periode = somme(tous, debut, fin)
         stock_debut = stock_fin - periode
         entrees = somme(('entree',), debut, fin)
-        consommation = -(somme(('sortie', 'retour'), debut, fin))
+        consommation = -(somme(TYPES_UTILISATION, debut, fin))
         ecarts = somme(('inventaire', 'correction'), debut, fin)
         nb_examens = db.session.query(db.func.count(db.func.distinct(MouvementConsommable.demande_id))).filter(
             MouvementConsommable.consommable_id == c.id, MouvementConsommable.date >= debut,
             MouvementConsommable.date < fin, MouvementConsommable.type_mouvement == 'sortie').scalar() or 0
+        nb_examens += db.session.query(db.func.coalesce(db.func.sum(MouvementConsommable.nb_examens), 0)).filter(
+            MouvementConsommable.consommable_id == c.id, MouvementConsommable.date >= debut,
+            MouvementConsommable.date < fin, MouvementConsommable.type_mouvement == 'utilisation').scalar() or 0
         besoin = max(consommation, _d(c.seuil_alerte))
         a_commander = max(math.ceil(besoin - stock_fin), 0) if (consommation > 0 or niveau(c) != 'ok') else 0
         res.append({

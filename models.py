@@ -3787,6 +3787,17 @@ class MouvementConsommable(db.Model):
     acte_nom = db.Column(db.String(255))
     commentaire = db.Column(db.String(300))
     auteur = db.Column(db.String(255))
+    nb_examens = db.Column(db.Integer)   # ⭐ utilisation saisie à la main : nombre d'examens faits
+
+
+class ParametrageStockLabo(db.Model):
+    """⭐ 2026-10-18 : déduire ou non le stock quand un examen est marqué réalisé (par filière). Une
+    structure qui ne passe pas tous ses examens dans le logiciel saisit l'utilisation à la main."""
+    __tablename__ = 'parametrage_stock_labo'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    filiere = db.Column(db.String(10), nullable=False)
+    deduction_auto = db.Column(db.Boolean, nullable=False, default=True)
 
 
 class ModeleResultat(db.Model):

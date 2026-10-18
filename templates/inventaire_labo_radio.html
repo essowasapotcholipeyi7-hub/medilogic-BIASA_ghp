@@ -83,8 +83,19 @@
                 </tbody>
             </table>
         </div>
+        <div class="no-print border rounded p-2 mb-2 small">
+            <div class="fw-semibold mb-1">Quand la quantité comptée est inférieure au stock du logiciel, la différence est :</div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="modeEcart" id="modeEcartUtilisation" value="utilisation" {{ 'checked' if not deduction_auto }}>
+                <label class="form-check-label" for="modeEcartUtilisation">utilisée pour des examens (comptée dans « Utilisé »)</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="modeEcart" id="modeEcartPerte" value="inventaire" {{ 'checked' if deduction_auto }}>
+                <label class="form-check-label" for="modeEcartPerte">un écart (perte, casse, erreur)</label>
+            </div>
+        </div>
         <div class="small text-muted">
-            « Utilisé » : quantité déduite par les examens réalisés pendant le mois (examens annulés remis).
+            « Utilisé » : quantité déduite par les examens réalisés pendant le mois (examens annulés remis) et utilisation saisie à la main.
             « À commander » : de quoi couvrir au moins la consommation du mois (ou le seuil d'alerte) au-delà du stock restant.
             Saisissez la quantité réellement comptée puis « Enregistrer le comptage » : l'écart est enregistré et le stock corrigé.
         </div>
@@ -104,7 +115,8 @@ async function validerInventaire() {
     if (!await demanderConfirmation(`Enregistrer le comptage de ${comptes.length} article(s) ? ${ecarts} écart(s) seront enregistrés et le stock corrigé.`)) return;
     try {
         const r = await fetch('/api/stock-labo-radio/inventaire', { method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({filiere: {{ filiere|tojson }}, comptes}) });
+            body: JSON.stringify({filiere: {{ filiere|tojson }}, comptes,
+                                  mode_ecart: (document.querySelector('input[name="modeEcart"]:checked') || {}).value}) });
         const d = await r.json();
         if (!d.success) { await afficherMessage(d.error || 'Erreur', {type: 'danger'}); return; }
         await afficherMessage(`Comptage enregistré : ${d.ecarts} écart(s) corrigé(s).`, {type: 'success'});

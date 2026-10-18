@@ -34,6 +34,19 @@
     </div>
 </div>
 
+<div class="card mb-3">
+    <div class="card-body py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="stkDeductionAuto" {{ 'checked' if deduction_auto }} onchange="changerDeductionAuto(this)">
+            <label class="form-check-label" for="stkDeductionAuto">Déduire automatiquement quand un examen est marqué « réalisé »</label>
+        </div>
+        <div class="small text-muted" id="stkModeTexte">
+            {% if deduction_auto %}Vous pouvez aussi saisir une utilisation à la main (bouton « Utilisé »).
+            {% else %}Saisie à la main : bouton « Utilisé » sur chaque article, ou différence comptée à l'inventaire.{% endif %}
+        </div>
+    </div>
+</div>
+
 <div id="stkAlertes"></div>
 
 <div class="card">
@@ -156,6 +169,48 @@
     </div>
 </div>
 
+<!-- ⭐ 2026-10-18 : utilisation saisie à la main -->
+<div class="modal fade" id="modalUtilisation" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Utilisé — <span id="utNom"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="small text-muted mb-2">Disponible : <strong id="utStock"></strong></div>
+                <div class="mb-2">
+                    <label class="form-label small mb-1">Date</label>
+                    <input type="date" class="form-control" id="utDate" max="{{ aujourdhui }}">
+                    <div class="form-text">Par exemple le dernier jour du mois pour tout le mois.</div>
+                </div>
+                <div class="btn-group btn-group-sm w-100 mb-2" role="group">
+                    <input type="radio" class="btn-check" name="utMode" id="utModeExamens" value="examens" checked onchange="majModeUtilisation()">
+                    <label class="btn btn-outline-primary" for="utModeExamens">Nombre d'examens faits</label>
+                    <input type="radio" class="btn-check" name="utMode" id="utModeQuantite" value="quantite" onchange="majModeUtilisation()">
+                    <label class="btn btn-outline-primary" for="utModeQuantite">Quantité utilisée</label>
+                </div>
+                <div id="utBlocExamens">
+                    <select class="form-select mb-2" id="utActe" onchange="majQuantiteUtilisee()"></select>
+                    <input type="number" step="1" min="1" class="form-control" id="utNb" placeholder="Nombre d'examens faits" oninput="majQuantiteUtilisee()">
+                    <div class="form-text" id="utCalcul"></div>
+                </div>
+                <div id="utBlocQuantite" style="display:none">
+                    <div class="input-group">
+                        <input type="number" step="any" min="0" class="form-control" id="utQuantite" placeholder="Quantité utilisée">
+                        <span class="input-group-text" id="utUnite"></span>
+                    </div>
+                </div>
+                <input type="text" class="form-control form-control-sm mt-2" id="utCommentaire" maxlength="200" placeholder="Commentaire (facultatif)">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-warning" onclick="enregistrerUtilisation()"><i class="fas fa-check me-1"></i>Enregistrer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Historique -->
 <div class="modal fade" id="modalHistorique" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
@@ -227,6 +282,7 @@ async function charger() {
             <td class="text-center">${badgeNiveau(a.niveau)}</td>
             <td class="text-end text-nowrap">
                 <button class="btn btn-sm btn-success" onclick="approvisionner(${a.id})" title="Approvisionner"><i class="fas fa-plus"></i> Entrée</button>
+                <button class="btn btn-sm btn-warning" onclick="ouvrirUtilisation(${a.id})" title="Saisir la quantité utilisée ou le nombre d'examens faits"><i class="fas fa-minus"></i> Utilisé</button>
                 <button class="btn btn-sm btn-outline-primary" onclick="ouvrirUsages(${a.id})" title="Examens réalisés avec cet article"><i class="fas fa-link"></i></button>
                 <button class="btn btn-sm btn-outline-secondary" onclick="ouvrirArticle(${a.id})" title="Modifier"><i class="fas fa-pen"></i></button>
                 <button class="btn btn-sm btn-outline-dark" onclick="historique(${a.id})" title="Mouvements"><i class="fas fa-history"></i></button>
@@ -436,6 +492,67 @@ async function historique(id) {
             <td class="text-end">${nb(m.stock_apres)}</td>
             <td class="small text-muted">${esc([m.acte_nom, m.patient, m.commentaire, m.auteur].filter(Boolean).join(' — '))}</td>
         </tr>`).join('') : '<tr><td colspan="5" class="text-muted small">Aucun mouvement.</td></tr>';
+}
+
+// ⭐ 2026-10-18 : déduction automatique ou saisie à la main
+async function changerDeductionAuto(caseACocher) {
+    const actif = caseACocher.checked;
+    const msg = actif
+        ? "Le stock baissera tout seul quand un examen est marqué « réalisé ». Ne saisissez plus ces examens à la main, sinon ils compteront deux fois. Continuer ?"
+        : "Le stock ne baissera plus tout seul : vous saisirez l'utilisation à la main (bouton « Utilisé » ou inventaire). Continuer ?";
+    if (!await demanderConfirmation(msg)) { caseACocher.checked = !actif; return; }
+    if (!await appel('/api/stock-labo-radio/parametrage', {filiere: FILIERE_STOCK, deduction_auto: actif})) { caseACocher.checked = !actif; return; }
+    document.getElementById('stkModeTexte').textContent = actif
+        ? 'Vous pouvez aussi saisir une utilisation à la main (bouton « Utilisé »).'
+        : "Saisie à la main : bouton « Utilisé » sur chaque article, ou différence comptée à l'inventaire.";
+}
+
+function majModeUtilisation() {
+    const examens = document.getElementById('utModeExamens').checked;
+    document.getElementById('utBlocExamens').style.display = examens ? '' : 'none';
+    document.getElementById('utBlocQuantite').style.display = examens ? 'none' : '';
+}
+
+function majQuantiteUtilisee() {
+    const a = articleCourant;
+    const u = a.usages.find(x => x.acte_nom === document.getElementById('utActe').value);
+    const n = parseInt(document.getElementById('utNb').value);
+    document.getElementById('utCalcul').textContent = (u && n > 0)
+        ? `= ${nb(n * u.quantite_par_examen)} ${a.unite} (${nb(u.quantite_par_examen)} par examen)` : '';
+}
+
+function ouvrirUtilisation(id) {
+    articleCourant = ARTICLES.find(x => x.id === id);
+    const a = articleCourant;
+    document.getElementById('utNom').textContent = a.nom;
+    document.getElementById('utStock').textContent = nb(a.quantite) + ' ' + a.unite;
+    document.getElementById('utUnite').textContent = a.unite || '';
+    document.getElementById('utDate').value = {{ aujourdhui|tojson }};
+    ['utNb', 'utQuantite', 'utCommentaire'].forEach(i => document.getElementById(i).value = '');
+    document.getElementById('utCalcul').textContent = '';
+    document.getElementById('utActe').innerHTML = a.usages.map(u => `<option>${esc(u.acte_nom)}</option>`).join('');
+    const parExamens = a.usages.length > 0;
+    document.getElementById('utModeExamens').disabled = !parExamens;
+    document.getElementById(parExamens ? 'utModeExamens' : 'utModeQuantite').checked = true;
+    majModeUtilisation();
+    new bootstrap.Modal(document.getElementById('modalUtilisation')).show();
+}
+
+async function enregistrerUtilisation() {
+    const corps = { date: document.getElementById('utDate').value, commentaire: document.getElementById('utCommentaire').value.trim() };
+    if (document.getElementById('utModeExamens').checked) {
+        corps.acte_nom = document.getElementById('utActe').value;
+        corps.nb_examens = document.getElementById('utNb').value;
+        if (!(parseInt(corps.nb_examens) > 0)) { await afficherMessage("Indiquez le nombre d'examens faits."); return; }
+    } else {
+        corps.quantite = document.getElementById('utQuantite').value;
+        if (!(parseFloat(corps.quantite) > 0)) { await afficherMessage('Indiquez la quantité utilisée.'); return; }
+    }
+    const d = await appel(`/api/stock-labo-radio/${articleCourant.id}/utilisation`, corps);
+    if (!d) return;
+    bootstrap.Modal.getInstance(document.getElementById('modalUtilisation')).hide();
+    await afficherMessage(`${nb(d.quantite_utilisee)} ${articleCourant.unite} déduit(s). Reste : ${nb(d.stock)}.`, {type: 'success'});
+    charger();
 }
 
 chargerActes();

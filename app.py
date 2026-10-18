@@ -34,7 +34,7 @@ from services.part_medecin_service import (charger_taux_part_medecin, creer_lign
                                            montant_net_periode, point_prestations, rsps_a_verser, enregistrer_versement_rsps)
 from services.service_acte_service import charger_services, deviner_service_acte, creer_lignes_service, generer_rapport_recettes_service
 from services.service_acte_service import TYPES_SERVICE, TYPES_SANS_HOSPITALISATION
-from models import ConsommableLabo, UsageConsommable, MouvementConsommable
+from models import ConsommableLabo, UsageConsommable, MouvementConsommable, ParametrageStockLabo
 from services.modele_formulaire import est_formulaire, docx_a_des_controles, docx_vers_formulaire, proposer_modele, mots_modele
 from services.facturation_amu_service import generer_lignes_facture_amu_cnss, charger_classification_amu_cnss, generer_lignes_facture_amu
 from utils.categories_amu_cnss import CATEGORIES_AMU_CNSS, CATEGORIES_AMU_CNSS_DICT
@@ -14736,8 +14736,77 @@ def page_stock_labo_radio():
     filiere = request.args.get('filiere')
     if filiere not in filieres:
         filiere = filieres[0]
+    from services.consommables_service import deduction_auto
     return render_template('stock_labo_radio.html', filiere=filiere, filieres=filieres,
-                           categories=CATEGORIES[filiere], unites=UNITES_PAR_DEFAUT)
+                           categories=CATEGORIES[filiere], unites=UNITES_PAR_DEFAUT,
+                           deduction_auto=deduction_auto(session.get('structure_id'), filiere),
+                           aujourdhui=date.today().isoformat())
+
+
+@app.route('/api/stock-labo-radio/parametrage', methods=['POST'])
+@login_required
+def api_parametrage_stock_labo():
+    """⭐ 2026-10-18 : déduire ou non le stock à la réalisation des examens (sinon : saisie à la main)."""
+    try:
+        data = request.json or {}
+        filiere = data.get('filiere')
+        if filiere not in _filieres_stock():
+            return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+        structure_id = session.get('structure_id')
+        p = ParametrageStockLabo.query.filter_by(structure_id=structure_id, filiere=filiere).first()
+        if not p:
+            p = ParametrageStockLabo(structure_id=structure_id, filiere=filiere)
+            db.session.add(p)
+        p.deduction_auto = bool(data.get('deduction_auto'))
+        db.session.commit()
+        return jsonify({'success': True, 'deduction_auto': p.deduction_auto})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/stock-labo-radio/<int:article_id>/utilisation', methods=['POST'])
+@login_required
+def api_utilisation_article_stock(article_id):
+    """⭐ 2026-10-18 : utilisation saisie à la main — quantité utilisée, ou nombre d'examens faits pour un
+    examen lié à l'article (quantité = nombre × quantité par examen), au jour choisi."""
+    from services.consommables_service import mouvement, _d, nombre
+    try:
+        c = _article_stock(article_id)
+        if not c:
+            return jsonify({'success': False, 'error': 'Article introuvable'}), 404
+        data = request.json or {}
+        jour = date.today()
+        if data.get('date'):
+            try:
+                jour = datetime.strptime(data['date'], '%Y-%m-%d').date()
+            except ValueError:
+                return jsonify({'success': False, 'error': 'Date invalide'}), 400
+        if jour > date.today():
+            return jsonify({'success': False, 'error': 'La date ne peut pas être dans le futur'}), 400
+        moment = datetime.utcnow() if jour == date.today() else datetime.combine(jour, datetime.min.time()).replace(hour=12)
+        nb, acte = None, None
+        if data.get('nb_examens') not in (None, ''):
+            nb = int(float(data['nb_examens']))
+            acte = (data.get('acte_nom') or '').strip()
+            u = UsageConsommable.query.filter_by(consommable_id=c.id, acte_nom=acte).first() if acte else None
+            if nb <= 0 or not u:
+                return jsonify({'success': False, 'error': "Choisissez l'examen et le nombre d'examens faits"}), 400
+            q = _d(u.quantite_par_examen) * nb
+        else:
+            q = _d(data.get('quantite'))
+        if q <= 0:
+            return jsonify({'success': False, 'error': 'Quantité invalide'}), 400
+        commentaire = ((f"{nb} × {acte}" if nb else '') + (' — ' if nb and data.get('commentaire') else '')
+                       + (data.get('commentaire') or '').strip())
+        m = mouvement(c, 'utilisation', -q, session.get('user_name'), commentaire=commentaire or None,
+                      date=moment, nb_examens=nb)
+        m.acte_nom = acte or None
+        db.session.commit()
+        return jsonify({'success': True, 'quantite_utilisee': nombre(q), 'stock': nombre(c.quantite)})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/stock-labo-radio', methods=['GET'])
@@ -14971,7 +15040,7 @@ def api_mouvements_article_stock(article_id):
 @app.route('/stock-labo-radio/inventaire')
 @login_required
 def page_inventaire_labo_radio():
-    from services.consommables_service import rapport_periode, CATEGORIES
+    from services.consommables_service import rapport_periode, CATEGORIES, deduction_auto
     filieres = _filieres_stock()
     if not filieres:
         flash('Accès non autorisé pour votre rôle.', 'danger')
@@ -14991,7 +15060,8 @@ def page_inventaire_labo_radio():
                            libelle_mois=f"{mois_fr[debut.month - 1]} {debut.year}",
                            lignes=rapport_periode(session.get('structure_id'), filiere, debut, fin),
                            categories=CATEGORIES[filiere], structure_nom=session.get('structure_nom') or '',
-                           maintenant=datetime.now().strftime('%d/%m/%Y %H:%M'))
+                           maintenant=datetime.now().strftime('%d/%m/%Y %H:%M'),
+                           deduction_auto=deduction_auto(session.get('structure_id'), filiere))
 
 
 @app.route('/api/stock-labo-radio/inventaire', methods=['POST'])
@@ -15013,7 +15083,9 @@ def api_inventaire_labo_radio():
                 return jsonify({'success': False, 'error': f"Quantité comptée invalide pour {c.nom}"}), 400
             ecart = compte - _d(c.quantite)
             if ecart != 0:
-                mouvement(c, 'inventaire', ecart, session.get('user_name'), commentaire=f"Inventaire : compté {compte}")
+                # ⭐ 2026-10-18 : un manque peut être compté comme UTILISÉ (examens faits hors du logiciel)
+                type_m = 'utilisation' if ecart < 0 and data.get('mode_ecart') == 'utilisation' else 'inventaire'
+                mouvement(c, type_m, ecart, session.get('user_name'), commentaire=f"Inventaire : compté {compte}")
                 ecarts += 1
         db.session.commit()
         return jsonify({'success': True, 'ecarts': ecarts})
