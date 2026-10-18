@@ -33,6 +33,7 @@ from services.part_medecin_service import (charger_taux_part_medecin, creer_lign
                                            charger_affectations, charger_medecins_affectes_csv, parametres_rsps, parametres_rsps_structure,
                                            montant_net_periode, point_prestations, rsps_a_verser, enregistrer_versement_rsps)
 from services.service_acte_service import charger_services, deviner_service_acte, creer_lignes_service, generer_rapport_recettes_service
+from services.service_acte_service import TYPES_SERVICE, TYPES_SANS_HOSPITALISATION
 from services.facturation_amu_service import generer_lignes_facture_amu_cnss, charger_classification_amu_cnss, generer_lignes_facture_amu
 from utils.categories_amu_cnss import CATEGORIES_AMU_CNSS, CATEGORIES_AMU_CNSS_DICT
 from utils.categories_amu_inam import CATEGORIES_AMU_INAM, CATEGORIES_AMU_INAM_PLATES, CATEGORIES_AMU_INAM_DICT, REGIMES_AMU_INAM
@@ -4390,7 +4391,7 @@ def _contexte_vente_actes(structure_id):
              FROM classification_actes WHERE structure_id = :s) AS classification,
           (SELECT count(*) FROM parametrage_service WHERE structure_id = :s) AS nb_parametrage_service,
           (SELECT choix_service_actif FROM parametrage_service WHERE structure_id = :s ORDER BY id LIMIT 1) AS choix_service_actif,
-          (SELECT coalesce(json_agg(json_build_object('id', id, 'nom', nom) ORDER BY nom, id), '[]'::json)
+          (SELECT coalesce(json_agg(json_build_object('id', id, 'nom', nom, 'type', coalesce(type_service, 'clinique')) ORDER BY nom, id), '[]'::json)
              FROM services_hospitalisation WHERE structure_id = :s AND actif = true) AS services,
           (SELECT coalesce(json_agg(json_build_object('n', nom_acte, 's', service_id) ORDER BY id), '[]'::json)
              FROM classification_service_actes WHERE structure_id = :s) AS classification_service,
@@ -4426,7 +4427,7 @@ def _contexte_vente_actes(structure_id):
         'medecins_affectes': {nom: ','.join(str(x) for x in ids) for nom, ids in affectations.items()},
         'classification_examens': {r['n']: r['t'] for r in ligne['classification']},
         'choix_service_actif': choix_service_actif,
-        'services': [{'id': r['id'], 'nom': r['nom']} for r in ligne['services']] if choix_service_actif else [],
+        'services': [{'id': r['id'], 'nom': r['nom'], 'type': r.get('type') or 'clinique'} for r in ligne['services']] if choix_service_actif else [],
         'classification_service': {r['n']: r['s'] for r in ligne['classification_service']} if choix_service_actif else {},
         'tarif_nuit_actif': tarif_nuit_actif,
         'medecin_du_jour': ({'id': medecins_jour[0]['id'], 'nom_complet': medecins_jour[0]['nom_complet']}
@@ -13887,6 +13888,133 @@ def api_supprimer_classification_service(ligne_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+# ============================================================
+# ⭐ SERVICES DE LA STRUCTURE (patron, 2026-10-17) : « il faut que ça soit bien clair la création des
+# services, actuellement c'est mélangé... on est obligé de créer même le laboratoire, la pharmacie
+# dans l'hospitalisation ». Une seule page pour tous les services, chacun avec son type ; la page
+# Chambres et lits et l'admission d'un séjour ne montrent que les services d'hospitalisation.
+# ============================================================
+def _peut_gerer_services():
+    return bool(session.get('is_admin')) or session.get('role') in ('admin', 'gestionnaire')
+
+
+def _service_du_meme_nom(structure_id, nom, sauf_id=None):
+    """Service existant au nom identique (casse, accents et espaces ignorés), ou None."""
+    import unicodedata
+    def norm(t):
+        t = unicodedata.normalize('NFKD', t or '')
+        return ' '.join(''.join(c for c in t if not unicodedata.combining(c)).lower().split())
+    cible = norm(nom)
+    for s in ServiceHospitalisation.query.filter_by(structure_id=structure_id).all():
+        if s.id != sauf_id and norm(s.nom) == cible:
+            return s
+    return None
+
+
+@app.route('/services-structure')
+@login_required
+def page_services_structure():
+    if not _peut_gerer_services():
+        flash('Accès non autorisé pour votre rôle.', 'danger')
+        return redirect(url_for('dashboard'))
+    structure_id = session.get('structure_id')
+    services = ServiceHospitalisation.query.filter_by(structure_id=structure_id).all()
+    nb_chambres = dict(db.session.query(ChambreHospitalisation.service_id, db.func.count(ChambreHospitalisation.id))
+                       .filter(ChambreHospitalisation.structure_id == structure_id, ChambreHospitalisation.actif.isnot(False))
+                       .group_by(ChambreHospitalisation.service_id).all())
+    sejours = dict(db.session.query(Hospitalisation.service_id, db.func.count(Hospitalisation.id))
+                   .filter(Hospitalisation.structure_id == structure_id, Hospitalisation.statut == 'en_cours',
+                           Hospitalisation.service_id.isnot(None))
+                   .group_by(Hospitalisation.service_id).all())
+    ordre = {t: i for i, t in enumerate(TYPES_SERVICE)}
+    lignes = sorted(({
+        'id': s.id, 'nom': s.nom, 'type': s.type_service if s.type_service in TYPES_SERVICE else 'clinique',
+        'hospitalisation': s.hospitalisation is not False, 'actif': s.actif is not False,
+        'nb_chambres': nb_chambres.get(s.id, 0), 'sejours': sejours.get(s.id, 0),
+    } for s in services), key=lambda l: (not l['actif'], ordre[l['type']], l['nom'].lower()))
+    return render_template('services_structure.html', services=lignes, types=TYPES_SERVICE,
+                           types_sans_hospit=TYPES_SANS_HOSPITALISATION)
+
+
+@app.route('/api/services-structure', methods=['POST'])
+@login_required
+def api_creer_service_structure():
+    if not _peut_gerer_services():
+        return jsonify({'success': False, 'error': 'Accès non autorisé pour votre rôle.'}), 403
+    try:
+        structure_id = session.get('structure_id')
+        data = request.json or {}
+        nom = (data.get('nom') or '').strip()
+        type_service = data.get('type_service') or 'clinique'
+        if not nom:
+            return jsonify({'success': False, 'error': 'Nom du service requis'}), 400
+        if type_service not in TYPES_SERVICE:
+            return jsonify({'success': False, 'error': 'Type de service inconnu'}), 400
+        doublon = _service_du_meme_nom(structure_id, nom)
+        if doublon:
+            return jsonify({'success': False, 'error': f"Le service « {doublon.nom} » existe déjà."}), 400
+        hospit = bool(data.get('hospitalisation')) and type_service not in TYPES_SANS_HOSPITALISATION
+        service = ServiceHospitalisation(structure_id=structure_id, nom=nom, actif=True,
+                                         type_service=type_service, hospitalisation=hospit)
+        db.session.add(service)
+        db.session.commit()
+        return jsonify({'success': True, 'service_id': service.id})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/services-structure/<int:service_id>', methods=['POST'])
+@login_required
+def api_modifier_service_structure(service_id):
+    if not _peut_gerer_services():
+        return jsonify({'success': False, 'error': 'Accès non autorisé pour votre rôle.'}), 403
+    try:
+        structure_id = session.get('structure_id')
+        service = ServiceHospitalisation.query.filter_by(id=service_id, structure_id=structure_id).first()
+        if not service:
+            return jsonify({'success': False, 'error': 'Service introuvable'}), 404
+        data = request.json or {}
+        if 'nom' in data:
+            nom = (data.get('nom') or '').strip()
+            if not nom:
+                return jsonify({'success': False, 'error': 'Nom du service requis'}), 400
+            doublon = _service_du_meme_nom(structure_id, nom, sauf_id=service.id)
+            if doublon:
+                return jsonify({'success': False, 'error': f"Le service « {doublon.nom} » existe déjà."}), 400
+            service.nom = nom
+        type_service = service.type_service or 'clinique'
+        hospit = service.hospitalisation is not False
+        if 'type_service' in data:
+            type_service = data.get('type_service')
+            if type_service not in TYPES_SERVICE:
+                return jsonify({'success': False, 'error': 'Type de service inconnu'}), 400
+            if type_service in TYPES_SANS_HOSPITALISATION:
+                hospit = False
+        if 'hospitalisation' in data:
+            hospit = bool(data.get('hospitalisation')) and type_service not in TYPES_SANS_HOSPITALISATION
+        if not hospit and service.hospitalisation is not False:
+            # on ne retire pas l'hospitalisation à un service qui a des patients ou des chambres
+            en_cours = Hospitalisation.query.filter_by(structure_id=structure_id, service_id=service.id, statut='en_cours').count()
+            if en_cours:
+                return jsonify({'success': False, 'error': f"{en_cours} patient(s) hospitalisé(s) en ce moment dans ce service : "
+                                                           "il reste un service d'hospitalisation."}), 400
+            chambres = ChambreHospitalisation.query.filter_by(structure_id=structure_id, service_id=service.id) \
+                .filter(ChambreHospitalisation.actif.isnot(False)).count()
+            if chambres:
+                return jsonify({'success': False, 'error': f"Ce service a {chambres} chambre(s) active(s) : désactivez-les d'abord "
+                                                           "(Chambres et lits) ou gardez-le en hospitalisation."}), 400
+        service.type_service = type_service
+        service.hospitalisation = hospit
+        if 'actif' in data:
+            service.actif = bool(data.get('actif'))
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/rapport-recettes-service')
 @admin_required
 def page_rapport_recettes_service():
@@ -20966,7 +21094,10 @@ def api_convertir_proforma():
 @login_required
 def page_hospitalisation_configuration():
     structure_id = session.get('structure_id')
+    # ⭐ 2026-10-17 : seulement les services qui reçoivent des hospitalisés (les autres —
+    # laboratoire, pharmacie... — se gèrent dans « Services de la structure »)
     services = ServiceHospitalisation.query.filter_by(structure_id=structure_id)\
+        .filter(db.or_(ServiceHospitalisation.hospitalisation.is_(None), ServiceHospitalisation.hospitalisation.is_(True)))\
         .order_by(ServiceHospitalisation.nom).all()
 
     chambres_par_service = {}
@@ -20998,9 +21129,9 @@ def page_hospitalisation_configuration():
 @login_required
 def api_lister_services_hospitalisation():
     structure_id = session.get('structure_id')
-    services = ServiceHospitalisation.query.filter_by(structure_id=structure_id, actif=True)\
-        .order_by(ServiceHospitalisation.nom).all()
-    return jsonify({'success': True, 'services': [{'id': s.id, 'nom': s.nom} for s in services]})
+    # ⭐ 2026-10-17 : admission d'un séjour -> seulement les services d'hospitalisation
+    services = charger_services(structure_id, 'hospitalisation')
+    return jsonify({'success': True, 'services': [{'id': s['id'], 'nom': s['nom']} for s in services]})
 
 
 @app.route('/api/hospitalisation/services', methods=['POST'])
@@ -21012,7 +21143,11 @@ def api_creer_service_hospitalisation():
         nom = (data.get('nom') or '').strip()
         if not nom:
             return jsonify({'success': False, 'error': 'Nom du service requis'}), 400
-        service = ServiceHospitalisation(structure_id=structure_id, nom=nom, actif=True)
+        doublon = _service_du_meme_nom(structure_id, nom)
+        if doublon:
+            return jsonify({'success': False, 'error': f"Le service « {doublon.nom} » existe déjà."}), 400
+        service = ServiceHospitalisation(structure_id=structure_id, nom=nom, actif=True,
+                                         type_service='clinique', hospitalisation=True)
         db.session.add(service)
         db.session.commit()
         return jsonify({'success': True, 'service_id': service.id})
@@ -21166,7 +21301,9 @@ def page_hospitalisation():
     # sinon repli sur le champ texte libre d'origine (zéro régression pour
     # une structure qui n'a pas encore fait sa configuration).
     a_inventaire = db.session.query(ServiceHospitalisation.id)\
-        .filter_by(structure_id=structure_id, actif=True).first() is not None
+        .filter_by(structure_id=structure_id, actif=True)\
+        .filter(db.or_(ServiceHospitalisation.hospitalisation.is_(None), ServiceHospitalisation.hospitalisation.is_(True)))\
+        .first() is not None
     return render_template('hospitalisation_liste.html', hospitalisations=hospitalisations, a_inventaire=a_inventaire)
 
 
@@ -22202,7 +22339,7 @@ def page_soins_ambulatoires():
     # au moins un service (même garde-fou que a_inventaire côté
     # hospitalisation) — zéro régression pour une structure qui n'en a
     # pas besoin.
-    services_liste = charger_services(structure_id)
+    services_liste = charger_services(structure_id, 'soins')   # ⭐ 2026-10-17 : sans labo / imagerie / pharmacie
     return render_template('soins_ambulatoires_liste.html', episodes=episodes, services_liste=services_liste)
 
 

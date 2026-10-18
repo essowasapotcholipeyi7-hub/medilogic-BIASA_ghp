@@ -3,7 +3,9 @@
 [évaluer] les efforts de chaque service... pour décider de ristourne ou
 pas". Réutilise ServiceHospitalisation (déjà réel, déjà peuplé pour
 Service > Chambre > Lit) comme référentiel UNIQUE des services — pas de
-deuxième liste à maintenir.
+deuxième liste à maintenir. ⭐ 2026-10-17 : ces services se créent dans la page
+« Services de la structure », chacun avec un TYPE (TYPES_SERVICE) et la case
+« Hospitalisation » ; seuls ces derniers sont proposés à l'admission d'un séjour.
 
 Résolution du service d'une ligne vendue, dans cet ordre (le premier qui
 tranche gagne) :
@@ -41,11 +43,33 @@ def _normaliser(texte):
     return texte.lower().strip()
 
 
-def charger_services(structure_id):
-    """Services actifs de cette structure — {id: nom} — pour peupler le
-    sélecteur "Service" et pour la détection automatique."""
-    services = ServiceHospitalisation.query.filter_by(structure_id=structure_id, actif=True).order_by(ServiceHospitalisation.nom).all()
-    return [{'id': s.id, 'nom': s.nom} for s in services]
+# ⭐ 2026-10-17 (patron : « il faut que la création des services soit bien claire ») — avant, la seule
+# liste était celle de l'hospitalisation, et le laboratoire ou la pharmacie y étaient créés comme des
+# services d'hospitalisation.
+TYPES_SERVICE = {
+    'clinique': 'Médical / chirurgical',
+    'laboratoire': 'Laboratoire',
+    'imagerie': 'Imagerie / radiologie',
+    'pharmacie': 'Pharmacie',
+    'autre': 'Autre (soins, administratif...)',
+}
+TYPES_SANS_HOSPITALISATION = ('laboratoire', 'imagerie', 'pharmacie')
+
+
+def charger_services(structure_id, usage=None):
+    """Services actifs de cette structure — [{id, nom, type, hospitalisation}] — pour peupler le
+    sélecteur "Service" et pour la détection automatique.
+    usage='hospitalisation' : seulement ceux qui reçoivent des hospitalisés (admission d'un séjour) ;
+    usage='soins' : sans laboratoire / imagerie / pharmacie (épisode de soins ambulatoires)."""
+    q = ServiceHospitalisation.query.filter_by(structure_id=structure_id, actif=True)
+    if usage == 'hospitalisation':
+        q = q.filter(db.or_(ServiceHospitalisation.hospitalisation.is_(None), ServiceHospitalisation.hospitalisation.is_(True)))
+    elif usage == 'soins':
+        q = q.filter(db.or_(ServiceHospitalisation.type_service.is_(None),
+                            ~ServiceHospitalisation.type_service.in_(TYPES_SANS_HOSPITALISATION)))
+    services = q.order_by(ServiceHospitalisation.nom).all()
+    return [{'id': s.id, 'nom': s.nom, 'type': s.type_service or 'clinique',
+             'hospitalisation': s.hospitalisation is not False} for s in services]
 
 
 def _trouver_service_par_mot_cle(services, mots_cles):
@@ -60,11 +84,20 @@ def _trouver_service_par_mot_cle(services, mots_cles):
     return None
 
 
+def _trouver_service_par_type(services, type_service, mots_cles):
+    """⭐ 2026-10-17 : d'abord le service déclaré de ce TYPE (page Services de la structure), sinon
+    le premier dont le nom contient un des mots-clés (services créés avant les types)."""
+    for s in services:
+        if s.get('type') == type_service:
+            return s
+    return _trouver_service_par_mot_cle(services, mots_cles)
+
+
 # ⭐ Uniquement les préfixes que le patron a dits "d'office connus" — le
 # reste (P, B, C...) reste volontairement non deviné (voir docstring).
 _MOTS_CLES_PAR_PREFIXE = {
-    'Q': ['radiologie', 'imagerie'],
-    'R': ['laboratoire', 'biologie'],
+    'Q': ('imagerie', ['radiologie', 'imagerie']),
+    'R': ('laboratoire', ['laboratoire', 'biologie']),
 }
 
 
@@ -103,9 +136,9 @@ def deviner_service_acte(nom_acte, services):
     # Préfixe de code au début du nom (ex. "Q100 Examen...", "R100 ...").
     m = re.match(r'^([A-Z]{1,3})\d{2,4}\b', nom)
     if m:
-        mots_cles = _MOTS_CLES_PAR_PREFIXE.get(m.group(1).upper())
-        if mots_cles:
-            return _trouver_service_par_mot_cle(services, mots_cles)
+        regle = _MOTS_CLES_PAR_PREFIXE.get(m.group(1).upper())
+        if regle:
+            return _trouver_service_par_type(services, regle[0], regle[1])
 
     return None
 
@@ -177,7 +210,7 @@ def creer_lignes_service(structure_id, articles, vente_id, service_id_force=None
         service_id_choisi = a.get('service_id')
         origine_si_choisi = 'choix_manuel'
         if type_source == 'produit' and not service_id_choisi and not service_id_force:
-            pharmacie = _trouver_service_par_mot_cle(services, ['pharmacie'])
+            pharmacie = _trouver_service_par_type(services, 'pharmacie', ['pharmacie'])
             service_id_choisi = pharmacie['id'] if pharmacie else None
             origine_si_choisi = 'auto'
 
@@ -340,11 +373,14 @@ def generer_rapport_recettes_service(structure_id, date_debut, date_fin):
 
     # ⭐ 2026-10-17 (patron) : encaissé / dû assurances / dû patients par service
     situations = situation_ventes(structure_id, [l.vente_id for l in lignes])
+    # nom ACTUEL du service (il a pu être renommé depuis la vente)
+    noms_actuels = {s.id: s.nom for s in ServiceHospitalisation.query.filter_by(structure_id=structure_id).all()}
     agrege = {}
     for l in lignes:
         cle = l.service_id if l.service_id else 'non_classe'
         if cle not in agrege:
-            agrege[cle] = {'service_id': l.service_id, 'service_nom': l.service_nom or 'Non classé', 'montant_total': 0.0,
+            agrege[cle] = {'service_id': l.service_id, 'service_nom': noms_actuels.get(l.service_id) or l.service_nom or 'Non classé',
+                           'montant_total': 0.0,
                            'nb_lignes': 0, **{k: 0.0 for k in CLES_SITUATION}}
         agrege[cle]['montant_total'] += float(l.montant or 0)
         agrege[cle]['nb_lignes'] += 1

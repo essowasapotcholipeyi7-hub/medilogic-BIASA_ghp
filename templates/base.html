@@ -2868,8 +2868,11 @@ async function appliquerPropositionTheme() {
                 </a>
                 {% endif %}
                 {% if session.is_admin or session.role == 'gestionnaire' %}
+                <a class="menu-item" href="{{ url_for('page_services_structure') }}">
+                    Services de la structure
+                </a>
                 <a class="menu-item" href="{{ url_for('page_hospitalisation_configuration') }}">
-                    Configuration des services
+                    Chambres et lits
                 </a>
                 {% endif %}
                 {% if session.is_admin or session.role in ['gestionnaire', 'secretaire', 'caissier', 'pharmacien'] %}

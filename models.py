@@ -3999,11 +3999,17 @@ class PeriodePartMedecin(db.Model):
 # (app.py). `actif` = suppression douce : désactiver un service/chambre/lit
 # ne casse pas l'historique des séjours qui le référencent déjà.
 class ServiceHospitalisation(db.Model):
+    """Services de la structure (page « Services de la structure ») — malgré le nom de la table,
+    TOUS les services : médicaux, laboratoire, imagerie, pharmacie... (patron, 2026-10-17)."""
     __tablename__ = 'services_hospitalisation'
     id = db.Column(db.Integer, primary_key=True)
     structure_id = db.Column(db.Integer, nullable=False)
     nom = db.Column(db.String(255), nullable=False)
     actif = db.Column(db.Boolean, default=True)
+    # ⭐ 2026-10-17 : voir TYPES_SERVICE (services/service_acte_service.py) ; NULL = 'clinique'
+    type_service = db.Column(db.String(20))
+    # reçoit des hospitalisés : proposé à l'admission d'un séjour, peut avoir chambres et lits
+    hospitalisation = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
