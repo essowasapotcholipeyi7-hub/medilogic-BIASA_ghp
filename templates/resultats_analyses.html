@@ -112,8 +112,21 @@
                             <option value="">-- Partir d'une page vierge --</option>
                         </select>
                     </div>
-                    <label class="form-label mb-1">Contenu du résultat</label>
-                    <div id="editeurResultat" style="height:220px; background:#fff;"></div>
+                    <div id="blocQuillResultat">
+                        <label class="form-label mb-1">Contenu du résultat</label>
+                        <div id="editeurResultat" style="height:220px; background:#fff;"></div>
+                    </div>
+                    <!-- ⭐ 2026-10-18 : modèle « formulaire » importé de Word — listes et zones à remplir -->
+                    <div id="blocFormulaire" style="display:none;">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1 small">
+                            <span class="text-muted">Remplissez les cases bleues (Tab pour passer à la suivante). Survolez une ligne et cliquez <i class="fas fa-times"></i> pour la retirer.</span>
+                            <div class="form-check mb-0">
+                                <input class="form-check-input" type="checkbox" id="mfMasquerVides" checked>
+                                <label class="form-check-label" for="mfMasquerVides">Ne pas imprimer les lignes laissées vides</label>
+                            </div>
+                        </div>
+                        <div id="zoneFormulaire" style="border:1px solid #dee2e6; border-radius:6px; padding:14px; max-height:65vh; overflow:auto; background:#fff; position:relative;"></div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -144,9 +157,141 @@ function choisirModeResultat(mode) {
     }
 }
 
+// ⭐ 2026-10-18 : modèles « formulaire » (Word avec listes déroulantes) — voir services/modele_formulaire.py
+let formulaireActif = false;
+
+function basculerFormulaire(actif) {
+    formulaireActif = actif;
+    document.getElementById('blocFormulaire').style.display = actif ? 'block' : 'none';
+    document.getElementById('blocQuillResultat').style.display = actif ? 'none' : 'block';
+    document.querySelector('#modalResultat .modal-dialog').classList.toggle('modal-xl', actif);
+    if (!actif) document.getElementById('zoneFormulaire').innerHTML = '';
+}
+
+function _sansAccents(t) { return (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim(); }
+
+function afficherFormulaire(html) {
+    const zone = document.getElementById('zoneFormulaire');
+    zone.innerHTML = html;
+    basculerFormulaire(true);
+    // identité du patient (nom, prénom, sexe, âge, téléphone, dates)
+    fetch('/api/resultats-analyses/' + demandeChoisie + '/identite').then(r => r.json()).then(d => {
+        if (!d.success) return;
+        zone.querySelectorAll('[data-id]').forEach(el => {
+            const v = d[el.dataset.id];
+            if (!v) return;
+            if (el.tagName === 'SELECT') {
+                const o = [...el.options].find(o => o.value !== '' && _sansAccents(o.textContent).startsWith(_sansAccents(v).slice(0, 3)));
+                if (o) el.value = o.value;
+            } else if (!el.textContent.trim()) {
+                el.textContent = v;
+            }
+        });
+    });
+    const premier = zone.querySelector('.modele-formulaire > table:not(.mf-entete):not(.mf-identite) .mf-champ');
+    if (premier) setTimeout(() => premier.focus(), 300);
+}
+
+// « ✎ Autre… » dans une liste : valeur saisie à la main
+document.addEventListener('change', async e => {
+    const s = e.target;
+    if (!s.matches || !s.matches('#zoneFormulaire select.mf-liste') || s.value !== '__autre__') return;
+    const v = await demanderSaisie('Valeur à inscrire', '');
+    if (v && v.trim()) {
+        const o = document.createElement('option');
+        o.textContent = v.trim();
+        s.insertBefore(o, s.lastElementChild);
+        s.value = o.value;
+    } else {
+        s.value = '';
+    }
+});
+
+// retirer / remettre une ligne : petit bouton au survol
+const _btnRetirerLigne = document.createElement('button');
+_btnRetirerLigne.type = 'button';
+_btnRetirerLigne.className = 'btn btn-sm btn-outline-danger py-0 px-1';
+_btnRetirerLigne.style.cssText = 'position:absolute; display:none; z-index:5; font-size:11px;';
+_btnRetirerLigne.innerHTML = '<i class="fas fa-times"></i>';
+let _ligneSurvolee = null;
+_btnRetirerLigne.addEventListener('click', () => {
+    if (_ligneSurvolee) _ligneSurvolee.classList.toggle('mf-retiree');
+});
+document.addEventListener('mouseover', e => {
+    const zone = document.getElementById('zoneFormulaire');
+    if (!zone || !formulaireActif || !zone.contains(e.target) || e.target === _btnRetirerLigne || _btnRetirerLigne.contains(e.target)) return;
+    const tr = e.target.closest('tr');
+    if (!tr || tr.closest('.mf-entete') || tr.closest('.mf-identite')) return;
+    _ligneSurvolee = tr;
+    if (_btnRetirerLigne.parentNode !== zone) zone.appendChild(_btnRetirerLigne);
+    const rz = zone.getBoundingClientRect(), rt = tr.getBoundingClientRect();
+    _btnRetirerLigne.style.top = (rt.top - rz.top + zone.scrollTop + 2) + 'px';
+    _btnRetirerLigne.style.left = (rt.right - rz.left + zone.scrollLeft - 26) + 'px';
+    _btnRetirerLigne.title = tr.classList.contains('mf-retiree') ? 'Remettre cette ligne' : 'Retirer cette ligne';
+    _btnRetirerLigne.style.display = 'block';
+});
+
+// Formulaire -> HTML figé : valeurs en texte, lignes retirées ou laissées vides enlevées
+function figerFormulaire() {
+    const src = document.querySelector('#zoneFormulaire .modele-formulaire');
+    const c = src.cloneNode(true);
+    c.querySelectorAll('button').forEach(b => b.remove());
+    const listesSrc = src.querySelectorAll('select.mf-liste');
+    c.querySelectorAll('select.mf-liste').forEach((s, i) => {
+        const o = listesSrc[i].selectedOptions[0];
+        const v = o && o.value !== '' && o.value !== '__autre__' ? o.textContent.trim() : '';
+        const sp = document.createElement('span');
+        sp.className = 'mf-valeur';
+        if (s.dataset.id) sp.dataset.id = s.dataset.id;
+        if (s.getAttribute('style')) sp.setAttribute('style', s.getAttribute('style'));
+        if (!v || (s.dataset.defaut && o && o.defaultSelected)) sp.dataset.vide = '1';
+        sp.textContent = v;
+        s.replaceWith(sp);
+    });
+    c.querySelectorAll('.mf-texte').forEach(t => {
+        const v = t.innerText.trim();
+        const sp = document.createElement('span');
+        sp.className = 'mf-valeur' + (t.classList.contains('notranslate') ? ' notranslate' : '');
+        if (t.dataset.id) sp.dataset.id = t.dataset.id;
+        if (t.getAttribute('style') && !t.getAttribute('style').startsWith('min-width')) sp.setAttribute('style', t.getAttribute('style'));
+        if (!v) sp.dataset.vide = '1';
+        sp.style.whiteSpace = 'pre-wrap';
+        sp.textContent = v;
+        t.replaceWith(sp);
+    });
+    c.querySelectorAll('tr.mf-retiree').forEach(tr => tr.remove());
+    if (document.getElementById('mfMasquerVides').checked) {
+        // sections entières (ligne de titre sur fond coloré + lignes suivantes) sans aucune case remplie
+        c.querySelectorAll('table').forEach(t => {
+            if (t.closest('.mf-identite') || t.closest('.mf-entete')) return;
+            const sections = [];
+            let courante = [];
+            [...t.rows].forEach(r => {
+                const titre = !r.querySelector('.mf-valeur') && [...r.cells].some(td => (td.getAttribute('style') || '').includes('background'));
+                if (titre && courante.length) { sections.push(courante); courante = []; }
+                courante.push(r);
+            });
+            if (courante.length) sections.push(courante);
+            if (sections.length < 2) return;
+            sections.forEach(sec => {
+                const champs = sec.flatMap(r => [...r.querySelectorAll('.mf-valeur')]);
+                if (champs.length && champs.every(x => x.dataset.vide)) sec.forEach(r => r.remove());
+            });
+        });
+        [...c.querySelectorAll('tr')].reverse().forEach(tr => {
+            if (tr.closest('.mf-identite') || tr.closest('.mf-entete')) return;
+            const champs = tr.querySelectorAll('.mf-valeur');
+            if (champs.length && [...champs].every(x => x.dataset.vide)) tr.remove();
+        });
+        c.querySelectorAll('table').forEach(t => { if (!t.querySelector('tr')) t.remove(); });
+    }
+    return c.outerHTML;
+}
+
 function chargerModeleDansEditeur() {
     const modeleId = document.getElementById('resultatModeleSelect').value;
-    if (!modeleId || !quillEditeurResultat) return;
+    if (!modeleId) { basculerFormulaire(false); return; }
+    if (!quillEditeurResultat) return;
     quillEditeurResultat.setText('Chargement du modèle...');
     // ⭐ Fonctionne aussi pour un modèle Word/Excel jamais retapé — converti
     // à la volée (voir api_convertir_modele_html, app.py) — patron : "je
@@ -157,6 +302,12 @@ function chargerModeleDansEditeur() {
         // correspond plus au modèle sélectionné (sélection changée entre
         // temps) — même raison que ouvrirModeleDansEditeur (modeles_resultats.html).
         if (document.getElementById('resultatModeleSelect').value !== modeleId) return;
+        if (data.success && data.formulaire) {
+            quillEditeurResultat.setText('');
+            afficherFormulaire(data.contenu_html);
+            return;
+        }
+        basculerFormulaire(false);
         if (data.success) {
             // ⭐ PAS quill.root.innerHTML = ... : voir le commentaire
             // équivalent dans modeles_resultats.html (Quill annule toute
@@ -190,12 +341,13 @@ function ouvrirModalResultat(demandeId, patientNom, acteNom, typePrestation) {
         : 'Le Radiologue <span class="text-danger">*</span>';
     choisirModeResultat('fichier');
     if (quillEditeurResultat) quillEditeurResultat.setText('');
+    basculerFormulaire(false);
 
     const selectModele = document.getElementById('resultatModeleSelect');
     selectModele.innerHTML = '<option value="">-- Partir d\'une page vierge --</option>';
     fetch(`/api/modeles-resultats?type_prestation=${typePrestation}`).then(r => r.json()).then(lignes => {
         lignes.forEach(m => {
-            const label = m.a_contenu_html ? m.nom : `${m.nom} (Word/Excel — converti à l'ouverture)`;
+            const label = m.formulaire ? `${m.nom} — formulaire` : (m.a_contenu_html ? m.nom : `${m.nom} (Word/Excel — converti à l'ouverture)`);
             selectModele.innerHTML += `<option value="${m.id}">${label}</option>`;
         });
     });
@@ -259,6 +411,9 @@ async function enregistrerResultat() {
         const fichier = document.getElementById('resultatFichier').files[0];
         if (!fichier) { await afficherMessage('Choisissez le fichier du résultat.'); return; }
         fd.append('fichier', fichier);
+    } else if (formulaireActif) {
+        fd.append('contenu_html', figerFormulaire());
+        fd.append('modele_utilise_id', document.getElementById('resultatModeleSelect').value);
     } else {
         const contenu = quillEditeurResultat ? quillEditeurResultat.root.innerHTML : '';
         if (!quillEditeurResultat || quillEditeurResultat.getText().trim().length === 0) {

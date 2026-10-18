@@ -34,6 +34,7 @@ from services.part_medecin_service import (charger_taux_part_medecin, creer_lign
                                            montant_net_periode, point_prestations, rsps_a_verser, enregistrer_versement_rsps)
 from services.service_acte_service import charger_services, deviner_service_acte, creer_lignes_service, generer_rapport_recettes_service
 from services.service_acte_service import TYPES_SERVICE, TYPES_SANS_HOSPITALISATION
+from services.modele_formulaire import est_formulaire, docx_a_des_controles, docx_vers_formulaire
 from services.facturation_amu_service import generer_lignes_facture_amu_cnss, charger_classification_amu_cnss, generer_lignes_facture_amu
 from utils.categories_amu_cnss import CATEGORIES_AMU_CNSS, CATEGORIES_AMU_CNSS_DICT
 from utils.categories_amu_inam import CATEGORIES_AMU_INAM, CATEGORIES_AMU_INAM_PLATES, CATEGORIES_AMU_INAM_DICT, REGIMES_AMU_INAM
@@ -4056,9 +4057,9 @@ def api_add_patient():
                 date_naissance, type_assurance, taux_prise_charge, numero_assure,
                 assurance2_nom, taux_assurance2, numero_assure2, societe_assurance2,
                 personne_a_prevenir_nom, personne_a_prevenir_telephone, personne_a_prevenir_relation,
-                numero_local, email, created_at
+                numero_local, email, sexe, created_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             RETURNING id
         """, (
             structure_id,
@@ -4078,7 +4079,8 @@ def api_add_patient():
             data.get('personne_a_prevenir_telephone'),
             data.get('personne_a_prevenir_relation'),
             numero_local,
-            (data.get('email') or '').strip() or None
+            (data.get('email') or '').strip() or None,
+            _sexe_patient(data.get('sexe')),
         ))
 
         if result and len(result) > 0:
@@ -4132,6 +4134,12 @@ def api_rejeter_preinscription(preinscription_id):
     return jsonify({'success': True})
 
 
+def _sexe_patient(v):
+    """⭐ 2026-10-18 : 'F' / 'M' ou None."""
+    v = (v or '').strip().upper()[:1]
+    return v if v in ('F', 'M') else None
+
+
 @app.route('/api/patients/<int:id>', methods=['GET'])
 @login_required
 def api_get_patient(id):
@@ -4172,6 +4180,7 @@ def api_get_patient(id):
                 'adresse': row.get('adresse', ''),
                 'date_naissance': date_naissance.strftime('%Y-%m-%d') if date_naissance else '',
                 'age': calculer_age(date_naissance) if date_naissance else None,
+                'sexe': row.get('sexe') or '',
                 'type_assurance': row.get('type_assurance', 'non_assure'),
                 'taux_prise_charge': row.get('taux_prise_charge', 0),
                 'numero_assure': row.get('numero_assure', ''),
@@ -10290,7 +10299,8 @@ def api_update_patient(patient_id):
                 date_naissance = %s,
                 type_assurance = %s, taux_prise_charge = %s, numero_assure = %s,
                 assurance2_nom = %s, taux_assurance2 = %s, numero_assure2 = %s, societe_assurance2 = %s,
-                personne_a_prevenir_nom = %s, personne_a_prevenir_telephone = %s, personne_a_prevenir_relation = %s
+                personne_a_prevenir_nom = %s, personne_a_prevenir_telephone = %s, personne_a_prevenir_relation = %s,
+                sexe = CASE WHEN %s THEN %s ELSE sexe END
             WHERE id = %s AND structure_id = %s
         """, (
             chiffrer(data.get('nom')),
@@ -10307,7 +10317,8 @@ def api_update_patient(patient_id):
             data.get('societe_assurance2'),
             data.get('personne_a_prevenir_nom'),
             data.get('personne_a_prevenir_telephone'),
-            data.get('personne_a_prevenir_relation'),
+            data.get('personne_a_prevenir_relation'),
+            'sexe' in data, _sexe_patient(data.get('sexe')),
             patient_id,
             structure_id
         ))
@@ -14859,6 +14870,7 @@ def api_lister_modeles_resultats():
     return jsonify([{
         'id': l.id, 'nom': l.nom, 'type_prestation': l.type_prestation,
         'fichier_nom': l.fichier_nom, 'a_contenu_html': bool(l.contenu_html),
+        'formulaire': est_formulaire(l.contenu_html),   # ⭐ 2026-10-18 : formulaire importé de Word
         'created_at': l.created_at.strftime('%d/%m/%Y') if l.created_at else '',
         'source_app': l.source_app,  # ⭐ 'gestion_patients' si synchronisé depuis là-bas, sinon None (natif)
     } for l in lignes])
@@ -14950,10 +14962,13 @@ def api_convertir_modele_html(modele_id):
     if not modele:
         return jsonify({'success': False, 'error': 'Introuvable'}), 404
     if modele.contenu_html:
-        return jsonify({'success': True, 'contenu_html': modele.contenu_html})
+        return jsonify({'success': True, 'contenu_html': modele.contenu_html,
+                        'formulaire': est_formulaire(modele.contenu_html)})
     if not modele.fichier_data:
         return jsonify({'success': False, 'error': 'Aucun fichier à convertir'}), 400
     try:
+        if (modele.fichier_nom or '').lower().endswith('.docx') and docx_a_des_controles(modele.fichier_data):
+            return jsonify({'success': True, 'contenu_html': docx_vers_formulaire(modele.fichier_data), 'formulaire': True})
         html, erreur = _convertir_fichier_en_html(modele.fichier_data, modele.fichier_nom, modele.fichier_mime)
         if erreur:
             return jsonify({'success': False, 'error': erreur}), 400
@@ -15010,11 +15025,16 @@ def api_creer_modele_resultat():
         if type_prestation not in ('analyse', 'examen'):
             return jsonify({'success': False, 'error': "type_prestation doit être 'analyse' ou 'examen'"}), 400
 
+        donnees = fichier.read() if fichier else None
+        # ⭐ 2026-10-18 : un Word avec listes déroulantes / zones de saisie devient un formulaire
+        if donnees and not contenu_html and (fichier.filename or '').lower().endswith('.docx') \
+                and docx_a_des_controles(donnees):
+            contenu_html = docx_vers_formulaire(donnees)
         modele = ModeleResultat(
             structure_id=structure_id, type_prestation=type_prestation, nom=nom,
             fichier_nom=fichier.filename if fichier else None,
             fichier_mime=fichier.mimetype if fichier else None,
-            fichier_data=fichier.read() if fichier else None,
+            fichier_data=donnees,
             contenu_html=contenu_html or None,
             created_by=session.get('user_name', 'System'),
         )
@@ -15341,6 +15361,51 @@ def _pousser_modele_resultat_gestion_patients(modele_id):
         pousser_modele_en_fond(modele_id)
     except Exception as e:
         print(f"⚠️ Push modèle résultat gestion_patients échoué (rattrapage automatique par le scheduler) : {e}")
+
+
+@app.route('/api/resultats-analyses/<int:demande_id>/identite', methods=['GET'])
+@login_required
+def api_identite_resultat(demande_id):
+    """⭐ 2026-10-18 : de quoi remplir le cadre d'identification d'un modèle formulaire (nom, prénom,
+    sexe, âge, téléphone, date du compte rendu et du prélèvement)."""
+    from crypto_helper import dechiffrer_patients_orm
+    structure_id = session.get('structure_id')
+    demande = DemandeExamen.query.filter_by(id=demande_id, structure_id=structure_id).first()
+    if not demande:
+        return jsonify({'success': False, 'error': 'Demande introuvable'}), 404
+    res = {'nom': demande.patient_nom or '', 'prenom': '', 'sexe': '', 'age': '', 'telephone': '',
+           'date': datetime.now().strftime('%d/%m/%y'),
+           'date_prelevement': demande.created_at.strftime('%d/%m/%y') if demande.created_at else ''}
+    p = Patient.query.get(demande.patient_id) if demande.patient_id else None
+    if p and str(p.structure_id) == str(structure_id):
+        dechiffrer_patients_orm([p])
+        res.update(nom=(p.nom or '').upper(), prenom=p.prenom or '', telephone=p.telephone or '',
+                   sexe={'F': 'Féminin', 'M': 'Masculin'}.get(getattr(p, 'sexe', None) or '', ''))
+        if p.date_naissance:
+            jours = (date.today() - p.date_naissance).days
+            ans = date.today().year - p.date_naissance.year - (
+                (date.today().month, date.today().day) < (p.date_naissance.month, p.date_naissance.day))
+            if ans >= 1:
+                res['age'] = f"{ans} an{'s' if ans > 1 else ''}"
+            elif jours >= 30:
+                res['age'] = f"{jours // 30} mois"
+            elif jours >= 0:
+                res['age'] = f"{jours} jour{'s' if jours > 1 else ''}"
+    return jsonify({'success': True, **res})
+
+
+@app.route('/modeles-resultats/<int:modele_id>/apercu')
+@login_required
+def page_apercu_modele_resultat(modele_id):
+    """⭐ 2026-10-18 : aperçu d'un modèle formulaire (lecture seule)."""
+    modele = ModeleResultat.query.filter_by(id=modele_id, structure_id=session.get('structure_id')).first()
+    if not modele or not modele.contenu_html:
+        return "Modèle introuvable", 404
+    from markupsafe import escape as _esc
+    return (f'<!doctype html><html><head><meta charset="utf-8"><title>{_esc(modele.nom)}</title>'
+            '<style>body{background:#eef0f3;margin:0;padding:20px;font-family:Arial}'
+            '.page{background:#fff;max-width:820px;margin:auto;padding:24px;box-shadow:0 1px 4px #0003}</style></head>'
+            f'<body><div class="page">{modele.contenu_html}</div></body></html>')
 
 
 @app.route('/api/resultats-analyses/<int:demande_id>', methods=['POST'])

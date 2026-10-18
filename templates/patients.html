@@ -451,6 +451,14 @@
                     </div>
                     
                     <div class="mb-3">
+                        <label class="form-label">Sexe</label>
+                        <select class="form-select" id="sexe">
+                            <option value="">— Non renseigné —</option>
+                            <option value="F">Féminin</option>
+                            <option value="M">Masculin</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label">Date de naissance <span class="text-muted">(optionnel)</span></label>
                         <input type="date" class="form-control" id="date_naissance" onchange="updateAgeFromDate()">
                         <small class="text-muted">Laissez vide si non renseignée</small>
@@ -645,6 +653,14 @@
                         </div>
                     </div>
                     
+                    <div class="mb-3">
+                        <label class="form-label">Sexe</label>
+                        <select class="form-select" id="editSexe">
+                            <option value="">— Non renseigné —</option>
+                            <option value="F">Féminin</option>
+                            <option value="M">Masculin</option>
+                        </select>
+                    </div>
                     <div class="mb-3">
                         <label class="form-label">Date de naissance <span class="text-muted">(optionnel)</span></label>
                         <input type="date" class="form-control" id="editDateNaissance" onchange="updateEditAge()">
@@ -1422,6 +1438,7 @@ function afficherDetailsPatient(patient) {
                     <tr><td><strong>Nom complet</strong></td><td>${patientNom} ${patientPrenom}</td></tr>
                     <tr><td><strong>Téléphone</strong></td><td>${patientTelephone}</td></tr>
                     <tr><td><strong>Adresse</strong></td><td>${patientAdresse}</td></tr>
+                    <tr><td><strong>Sexe</strong></td><td>${patient.sexe === 'F' ? 'Féminin' : (patient.sexe === 'M' ? 'Masculin' : '-')}</td></tr>
                     <tr><td><strong>Date de naissance</strong></td><td>${patientDateNaissance}</td></tr>
                     <tr><td><strong>Âge</strong></td><td>${patientAge} ans</td></tr>
                     <tr><td><strong><i class="fas fa-calendar-plus text-primary"></i> Date d'enregistrement</strong></td><td><span class="badge bg-info">${dateEnregistrement}</span></td></tr>
@@ -1955,6 +1972,7 @@ async function savePatient() {
         prenom: document.getElementById('prenom').value.trim(),
         telephone: document.getElementById('telephone').value.trim(),
         adresse: document.getElementById('adresse').value.trim(),
+        sexe: document.getElementById('sexe').value,
         date_naissance: dateNaissance || null,
         type_assurance: typeAssurance,
         taux_prise_charge: parseFloat(document.getElementById('taux_prise_charge').value) || 0,
@@ -2095,6 +2113,7 @@ async function editPatient(id) {
             
             const dateNaissance = patient.date_naissance || '';
             document.getElementById('editDateNaissance').value = dateNaissance;
+            document.getElementById('editSexe').value = patient.sexe || '';
             document.getElementById('editAge').value = patient.age || calculerAge(dateNaissance);
             
             document.getElementById('editTaux').value = patient.taux_prise_charge || 0;
@@ -2182,6 +2201,7 @@ async function saveEditPatient() {
         telephone: document.getElementById('editTelephone').value.trim(),
         adresse: document.getElementById('editAdresse').value.trim(),
         date_naissance: document.getElementById('editDateNaissance').value || null,
+        sexe: document.getElementById('editSexe').value,
         type_assurance: typeAssurance,
         taux_prise_charge: parseFloat(document.getElementById('editTaux').value) || 0,
         numero_assure: document.getElementById('editNumeroAssure').value.trim() || null,

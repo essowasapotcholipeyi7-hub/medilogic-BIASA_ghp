@@ -215,10 +215,11 @@ function chargerModeles() {
             ? '<div class="list-group list-group-flush">' + liste.map(m => `
                 <div class="list-group-item d-flex justify-content-between align-items-center">
                     <div>
-                        <div class="fw-bold">${m.nom} ${m.a_contenu_html ? '<span class="badge bg-info">En ligne</span>' : '<span class="badge bg-secondary">Fichier</span>'} ${m.source_app === 'gestion_patients' ? '<span class="badge bg-primary" title="Reçu automatiquement de gestion_patients"><i class="fas fa-sync-alt me-1"></i>Synchronisé depuis gestion_patients</span>' : ''}</div>
-                        <div class="text-muted small">${m.a_contenu_html ? 'Prêt à charger dans l\'éditeur' : m.fichier_nom} — ${m.created_at}</div>
+                        <div class="fw-bold">${m.nom} ${m.formulaire ? '<span class="badge bg-success" title="Importé de Word : listes déroulantes et cases à remplir gardées">Formulaire</span>' : (m.a_contenu_html ? '<span class="badge bg-info">En ligne</span>' : '<span class="badge bg-secondary">Fichier</span>')} ${m.source_app === 'gestion_patients' ? '<span class="badge bg-primary" title="Reçu automatiquement de gestion_patients"><i class="fas fa-sync-alt me-1"></i>Synchronisé depuis gestion_patients</span>' : ''}</div>
+                        <div class="text-muted small">${m.formulaire ? 'Formulaire à remplir à la saisie du résultat' : (m.a_contenu_html ? 'Prêt à charger dans l\'éditeur' : m.fichier_nom)} — ${m.created_at}</div>
                     </div>
                     <div>
+                        ${m.formulaire ? `<a href="/modeles-resultats/${m.id}/apercu" target="_blank" class="btn btn-sm btn-outline-success" title="Aperçu"><i class="fas fa-eye"></i></a>` : ''}
                         ${m.a_contenu_html ? '' : `
                             <button class="btn btn-sm btn-outline-success" onclick='ouvrirModeleDansEditeur(${m.id}, ${JSON.stringify(m.nom)}, ${JSON.stringify(m.type_prestation)})' title="Ouvrir dans l'éditeur"><i class="fas fa-keyboard"></i></button>
                             <a href="/api/modeles-resultats/${m.id}/fichier" target="_blank" class="btn btn-sm btn-outline-primary" title="Télécharger"><i class="fas fa-download"></i></a>

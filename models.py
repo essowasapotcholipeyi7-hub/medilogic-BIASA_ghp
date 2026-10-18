@@ -72,6 +72,7 @@ class Patient(db.Model):
     nom = db.Column(db.Text, nullable=False)
     prenom = db.Column(db.Text, nullable=False)
     date_naissance = db.Column(db.Date)
+    sexe = db.Column(db.String(1))   # ⭐ 2026-10-18 : 'F' / 'M' (vide = non renseigné)
     telephone = db.Column(db.Text)
     adresse = db.Column(db.Text)
     

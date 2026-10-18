@@ -39,7 +39,10 @@
                      resultat_imprimer.html pour la raison détaillée (le
                      document importé a déjà son propre en-tête, le répéter
                      poussait tout le contenu réel sur une deuxième page). -->
-                {% if not resultat.fichier_data %}
+                {# ⭐ 2026-10-18 : un résultat saisi sur un modèle formulaire porte l'en-tête et le cadre
+                   d'identification de la structure — pas de deuxième en-tête #}
+                {% set _formulaire = resultat.contenu_html and 'mf-entete' in resultat.contenu_html %}
+                {% if not resultat.fichier_data and not _formulaire %}
                 <div class="row" style="background: linear-gradient(135deg, #1d6fa5 0%, #0f4c75 100%); color: white; margin: -20px -20px 20px -20px; padding: 18px; border-radius: 10px 10px 0 0;">
                     <div class="col-8">
                         <div class="d-flex align-items-center gap-3">
@@ -63,10 +66,12 @@ Tél: {{ structure.telephone or "" }} | Email: {{ structure.email or "" }}</p>
                 {% endif %}
 
                 <!-- PATIENT -->
+                {% if not _formulaire %}
                 <div style="font-size: 13px; margin-bottom: 14px; padding: 8px 12px; background: #f8f9fa; border-radius: 6px;">
                     <strong>Patient :</strong> <span class="notranslate">{{ demande.patient_nom }}</span><br>
                     <strong>Acte :</strong> {{ demande.acte_nom }}
                 </div>
+                {% endif %}
 
                 <!-- CONTENU DU RÉSULTAT -->
                 {% if resultat.contenu_html %}
