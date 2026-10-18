@@ -451,20 +451,20 @@
                     </div>
                     
                     <div class="mb-3">
-                        <label class="form-label">Sexe</label>
-                        <select class="form-select" id="sexe">
+                        <label class="form-label">Sexe <span class="text-danger">*</span></label>
+                        <select class="form-select" id="sexe" required>
                             <option value="">— Non renseigné —</option>
                             <option value="F">Féminin</option>
                             <option value="M">Masculin</option>
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Date de naissance <span class="text-muted">(optionnel)</span></label>
+                        <label class="form-label">Date de naissance <span class="text-danger">*</span> <span class="text-muted">(ou l'âge ci-dessous)</span></label>
                         <input type="date" class="form-control" id="date_naissance" onchange="updateAgeFromDate()">
-                        <small class="text-muted">Laissez vide si non renseignée</small>
+                        <small class="text-muted">Si la date n'est pas connue, saisissez l'âge</small>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Âge <span class="text-muted">(optionnel - si date non renseignée)</span></label>
+                        <label class="form-label">Âge <span class="text-danger">*</span> <span class="text-muted">(si la date de naissance n'est pas connue)</span></label>
                         <input type="number" class="form-control" id="age" min="0" max="120" onchange="updateDateFromAge()">
                         <small class="text-muted">Saisir l'âge si la date de naissance n'est pas connue</small>
                     </div>
@@ -654,20 +654,20 @@
                     </div>
                     
                     <div class="mb-3">
-                        <label class="form-label">Sexe</label>
-                        <select class="form-select" id="editSexe">
+                        <label class="form-label">Sexe <span class="text-danger">*</span></label>
+                        <select class="form-select" id="editSexe" required>
                             <option value="">— Non renseigné —</option>
                             <option value="F">Féminin</option>
                             <option value="M">Masculin</option>
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Date de naissance <span class="text-muted">(optionnel)</span></label>
+                        <label class="form-label">Date de naissance <span class="text-danger">*</span> <span class="text-muted">(ou l'âge ci-dessous)</span></label>
                         <input type="date" class="form-control" id="editDateNaissance" onchange="updateEditAge()">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Âge</label>
-                        <input type="number" class="form-control" id="editAge" readonly>
+                        <label class="form-label">Âge <span class="text-danger">*</span> <span class="text-muted">(si la date de naissance n'est pas connue)</span></label>
+                        <input type="number" class="form-control" id="editAge" min="0" max="130" onchange="updateEditDateFromAge()">
                     </div>
                     
                     <!-- Assurance principale -->
@@ -1182,6 +1182,13 @@ function calculerAge(dateNaissance) {
         age--;
     }
     return age;
+}
+
+// ⭐ 2026-10-18 : en modification, l'âge saisi donne une date de naissance au 1er janvier
+function updateEditDateFromAge() {
+    const age = document.getElementById('editAge').value;
+    if (age === '' || parseInt(age) < 0) return;
+    document.getElementById('editDateNaissance').value = `${new Date().getFullYear() - parseInt(age)}-01-01`;
 }
 
 function updateAgeFromDate() {
@@ -1940,7 +1947,7 @@ async function savePatient() {
     let dateNaissance = document.getElementById('date_naissance').value;
     let age = document.getElementById('age').value;
     
-    if (!dateNaissance && age && age > 0) {
+    if (!dateNaissance && age !== '' && parseInt(age) >= 0) {
         const today = new Date();
         const year = today.getFullYear() - parseInt(age);
         dateNaissance = `${year}-01-01`;
@@ -1990,6 +1997,17 @@ async function savePatient() {
 
     if (!patient.nom || !patient.telephone) {
         await afficherMessage('Veuillez remplir les champs obligatoires (Nom et Téléphone)');
+        return;
+    }
+    // ⭐ 2026-10-18 : sexe et âge obligatoires
+    if (!patient.sexe) {
+        await afficherMessage('Le sexe du patient est obligatoire.');
+        document.getElementById('sexe').focus();
+        return;
+    }
+    if (!patient.date_naissance) {
+        await afficherMessage("L'âge (ou la date de naissance) du patient est obligatoire.");
+        document.getElementById('age').focus();
         return;
     }
 
@@ -2216,6 +2234,17 @@ async function saveEditPatient() {
     
     if (!patient.nom || !patient.telephone) {
         await afficherMessage('Veuillez remplir les champs obligatoires');
+        return;
+    }
+    // ⭐ 2026-10-18 : sexe et âge obligatoires (un dossier ancien sans sexe ni âge doit être complété)
+    if (!patient.sexe) {
+        await afficherMessage('Le sexe du patient est obligatoire.');
+        document.getElementById('editSexe').focus();
+        return;
+    }
+    if (!patient.date_naissance) {
+        await afficherMessage("L'âge (ou la date de naissance) du patient est obligatoire.");
+        document.getElementById('editAge').focus();
         return;
     }
 

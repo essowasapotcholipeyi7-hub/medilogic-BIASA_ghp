@@ -4039,6 +4039,9 @@ def api_add_patient():
         type_assurance = data.get('type_assurance', 'non_assure')
         if type_assurance and type_assurance != 'non_assure' and not (data.get('numero_assure') or '').strip():
             return jsonify({'success': False, 'error': "Le numéro d'assuré est obligatoire pour l'assurance sélectionnée."}), 400
+        erreur = _erreur_age_sexe(data)
+        if erreur:
+            return jsonify({'success': False, 'error': erreur}), 400
 
         # 🔥 Ajouter les colonnes de la personne à prévenir
         # ⭐ created_at fixé explicitement à NOW() — ne pas compter sur un
@@ -4138,6 +4141,22 @@ def _sexe_patient(v):
     """⭐ 2026-10-18 : 'F' / 'M' ou None."""
     v = (v or '').strip().upper()[:1]
     return v if v in ('F', 'M') else None
+
+
+def _erreur_age_sexe(data):
+    """⭐ 2026-10-18 (patron : « rends âge et sexe obligatoires ») : message d'erreur, ou None."""
+    if not _sexe_patient(data.get('sexe')):
+        return 'Le sexe du patient est obligatoire.'
+    dn = (data.get('date_naissance') or '').strip() if isinstance(data.get('date_naissance'), str) else data.get('date_naissance')
+    if not dn:
+        return "L'âge (ou la date de naissance) du patient est obligatoire."
+    try:
+        d = datetime.strptime(str(dn)[:10], '%Y-%m-%d').date()
+    except ValueError:
+        return 'Date de naissance invalide.'
+    if d > date.today() or d.year < date.today().year - 130:
+        return 'Date de naissance invalide.'
+    return None
 
 
 @app.route('/api/patients/<int:id>', methods=['GET'])
@@ -10292,6 +10311,9 @@ def api_update_patient(patient_id):
         if type_assurance and type_assurance != 'non_assure' and not (data.get('numero_assure') or '').strip():
             return jsonify({'success': False, 'error': "Le numéro d'assuré est obligatoire pour l'assurance sélectionnée."}), 400
 
+        erreur = _erreur_age_sexe(data)
+        if erreur:
+            return jsonify({'success': False, 'error': erreur}), 400
         # 🔥 Ajouter les colonnes de la personne à prévenir
         db.execute_query("""
             UPDATE patients
