@@ -1143,19 +1143,61 @@
         /* ============================================
            LOADER - CONSERVÉ
            ============================================ */
+        /* ⭐ 2026-10-18 (patron : « plus présentable ») : voile CLAIR et carte blanche au lieu du voile noir */
         .loader-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.6);
-            backdrop-filter: blur(4px);
+            inset: 0;
+            background: rgba(246, 249, 251, 0.55);
+            backdrop-filter: blur(2px);
             z-index: 9999;
             display: none;
             align-items: center;
             justify-content: center;
+            animation: chargementApparition .18s ease-out;
         }
+        .loader-carte {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 12px 40px rgba(10, 61, 92, .18), 0 2px 6px rgba(10, 61, 92, .08);
+            padding: 22px 30px 18px;
+            min-width: 210px;
+            text-align: center;
+        }
+        [data-bs-theme="dark"] .loader-overlay { background: rgba(12, 17, 22, 0.45); }
+        [data-bs-theme="dark"] .loader-carte { background: #1f2a33; box-shadow: 0 12px 40px rgba(0,0,0,.45); }
+        [data-bs-theme="dark"] .loader-text { color: #e6edf2; }
+
+        /* ⭐ Changement de page : barre fine en haut, page jamais assombrie */
+        #barreChargement {
+            position: fixed; top: 0; left: 0; height: 3px; width: 0;
+            background: linear-gradient(90deg, var(--th-primaire, #0E9D67), var(--th-primaire-fonce, #0A6E48));
+            box-shadow: 0 0 10px var(--th-primaire, #0E9D67), 0 0 4px var(--th-primaire, #0E9D67);
+            z-index: 10000; opacity: 0; pointer-events: none;
+            transition: width .25s ease, opacity .35s ease;
+        }
+        #barreChargement.actif { opacity: 1; animation: chargementBarre 8s cubic-bezier(.08, .7, .2, 1) forwards; }
+        #barreChargement.fini { width: 100% !important; opacity: 0; animation: none; transition: width .2s ease, opacity .4s ease .2s; }
+        #carteChargement {
+            position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 20px);
+            background: #fff; color: #0A3D5C; border-radius: 999px; padding: 9px 18px 9px 14px;
+            box-shadow: 0 8px 28px rgba(10, 61, 92, .2); font-size: 13.5px; font-weight: 500;
+            display: flex; align-items: center; gap: 10px; z-index: 10000;
+            opacity: 0; pointer-events: none; transition: opacity .25s ease, transform .25s ease;
+        }
+        #carteChargement.visible { opacity: 1; transform: translate(-50%, 0); }
+        [data-bs-theme="dark"] #carteChargement { background: #1f2a33; color: #e6edf2; }
+        .points-chargement { display: inline-flex; gap: 4px; }
+        .points-chargement i {
+            width: 7px; height: 7px; border-radius: 50%; background: var(--th-primaire, #0E9D67);
+            animation: chargementPoint 1s ease-in-out infinite;
+        }
+        .points-chargement i:nth-child(2) { animation-delay: .15s; }
+        .points-chargement i:nth-child(3) { animation-delay: .3s; }
+        body.navigation-en-cours .main-content { opacity: .75; transition: opacity .3s ease .3s; }
+        body.navigation-en-cours { cursor: progress; }
+        @keyframes chargementBarre { 0% { width: 0; } 20% { width: 45%; } 60% { width: 75%; } 100% { width: 92%; } }
+        @keyframes chargementPoint { 0%, 80%, 100% { transform: scale(.55); opacity: .45; } 40% { transform: scale(1); opacity: 1; } }
+        @keyframes chargementApparition { from { opacity: 0; } to { opacity: 1; } }
 
         /* ===== BARRE DE LIENS DU DOMAINE (voir utils/navigation.py) ===== */
         .nav-domaine {
@@ -1192,17 +1234,18 @@
         .nav-domaine a.nav-domaine-accueil { margin-left: auto; border-style: dashed; color: #51636D; }
         
         .loader {
-            width: 60px;
-            height: 60px;
-            border: 4px solid rgba(255,255,255,0.3);
-            border-top: 4px solid #0E9D67;
+            width: 44px;
+            height: 44px;
+            margin: 0 auto;
+            border: 4px solid rgba(14, 157, 103, 0.15);
+            border-top-color: var(--th-primaire, #0E9D67);
             border-radius: 50%;
-            animation: spin 1s linear infinite;
+            animation: spin .8s linear infinite;
         }
-        
+
         .loader-text {
-            margin-top: 15px;
-            color: white;
+            margin-top: 12px;
+            color: #0A3D5C;
             font-size: 14px;
             font-weight: 500;
             text-align: center;
@@ -3386,7 +3429,7 @@ function showLoader(message) {
         loader = document.createElement('div');
         loader.id = 'loaderOverlay';
         loader.className = 'loader-overlay';
-        loader.innerHTML = '<div class="text-center"><div class="loader"></div><div class="loader-text">' + message + '</div></div>';
+        loader.innerHTML = '<div class="loader-carte"><div class="loader"></div><div class="loader-text"></div></div>';
         document.body.appendChild(loader);
     }
     loader.style.display = 'flex';
@@ -3399,9 +3442,46 @@ function hideLoader() {
     if (loader) loader.style.display = 'none';
 }
     
+// ⭐ 2026-10-18 : changement de page = barre fine en haut + petite carte si ça dure (plus de voile noir)
+let _minuterieCarteChargement = null, _minuterieFinChargement = null;
+function demarrerNavigation() {
+    let barre = document.getElementById('barreChargement');
+    if (!barre) {
+        barre = document.createElement('div');
+        barre.id = 'barreChargement';
+        document.body.appendChild(barre);
+        const carte = document.createElement('div');
+        carte.id = 'carteChargement';
+        carte.innerHTML = '<span class="points-chargement"><i></i><i></i><i></i></span><span>Chargement…</span>';
+        document.body.appendChild(carte);
+    }
+    if (barre.classList.contains('actif')) return;
+    barre.classList.remove('fini');
+    void barre.offsetWidth;   // relance l'animation
+    barre.classList.add('actif');
+    document.body.classList.add('navigation-en-cours');
+    clearTimeout(_minuterieCarteChargement);
+    clearTimeout(_minuterieFinChargement);
+    _minuterieCarteChargement = setTimeout(() => document.getElementById('carteChargement').classList.add('visible'), 700);
+    // la page ne change pas (téléchargement d'un fichier, navigation annulée) : on s'arrête seul
+    _minuterieFinChargement = setTimeout(terminerNavigation, 15000);
+}
+function terminerNavigation() {
+    clearTimeout(_minuterieCarteChargement);
+    clearTimeout(_minuterieFinChargement);
+    const barre = document.getElementById('barreChargement');
+    if (barre && barre.classList.contains('actif')) {
+        barre.classList.remove('actif');
+        barre.classList.add('fini');
+    }
+    const carte = document.getElementById('carteChargement');
+    if (carte) carte.classList.remove('visible');
+    document.body.classList.remove('navigation-en-cours');
+}
 window.addEventListener('beforeunload', function() {
-    showLoader();
+    demarrerNavigation();
 });
+window.addEventListener('pageshow', terminerNavigation);
     
 document.addEventListener('click', function(e) {
     const link = e.target.closest('a');
@@ -3412,9 +3492,12 @@ document.addEventListener('click', function(e) {
     // donc bloqué pour toujours, aucune navigation ne survenant jamais
     // pour le masquer (ex: export TXT en comptabilité — "la page continue
     // de tourner sans arrêt" même après le téléchargement du fichier).
+    // ⭐ 2026-10-18 : rien pour un Ctrl/Cmd/Maj+clic ou clic du milieu (nouvel onglet) ni pour un lien
+    // déjà pris en charge par la page (preventDefault)
+    if (e.defaultPrevented || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
     if (link && link.href && !link.target && !link.hasAttribute('download') && link.hostname === window.location.hostname) {
         if (!link.href.includes('javascript:') && !link.href.includes('#')) {
-            showLoader('Navigation en cours...');
+            demarrerNavigation();
         }
     }
 });
