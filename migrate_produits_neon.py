@@ -11,6 +11,10 @@ Voir services/feuilles_neon.py.
         après la mise en ligne : reporte dans Neon les mouvements de stock que l'ancienne version a encore
         écrits chez Google entre la copie et la mise en ligne (stock Google maintenant - stock de la copie)
 
+    --famille=actes                             étape 3 : feuilles d'actes au lieu des produits
+                                                (une seule famille à la fois : ne jamais recopier les
+                                                produits par-dessus les ventes faites dans Neon)
+
 Google Sheets n'est jamais modifié."""
 import json
 import sys
@@ -39,17 +43,31 @@ def creer_tables():
                END IF;
            END $$""",
         "CREATE INDEX IF NOT EXISTS ix_feuilles_neon_lignes_id ON feuilles_neon_lignes (feuille, (trim(valeurs->>0)))",
+        # numéro de version de chaque feuille (copies en mémoire, voir services/feuilles_neon.py)
+        "ALTER TABLE feuilles_neon ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 0",
     ):
         db.session.execute(db.text(sql))
     db.session.commit()
     print("OK : tables des feuilles Neon")
 
 
+def _famille():
+    f = next((a.split('=', 1)[1] for a in sys.argv if a.startswith('--famille=')), 'produits')
+    if f not in ('produits', 'actes'):
+        raise SystemExit("--famille=produits ou --famille=actes")
+    return f
+
+
+def _de_la_famille(titre):
+    import re
+    return est_feuille_neon(titre) and re.fullmatch(rf'struct_-?\d+_{_famille()}', titre) is not None
+
+
 def lire_google():
-    """{titre: lignes} pour toutes les feuilles concernées, lues directement chez Google."""
+    """{titre: lignes} pour les feuilles de la famille choisie, lues directement chez Google."""
     from sheets_helper import sheets_helper
     google = getattr(sheets_helper.spreadsheet, '_google', sheets_helper.spreadsheet)
-    titres = [w.title for w in google.worksheets() if est_feuille_neon(w.title)]
+    titres = [w.title for w in google.worksheets() if _de_la_famille(w.title)]
     plages = google.values_batch_get([f"'{t}'" for t in titres])['valueRanges']
     return {t: p.get('values', []) for t, p in zip(titres, plages)}
 
@@ -59,7 +77,7 @@ def _option(nom):
 
 
 def copier(forcer=False):
-    deja = executer("SELECT count(*) AS n FROM feuilles_neon_lignes")[0]['n']
+    deja = executer("SELECT count(*) AS n FROM feuilles_neon_lignes WHERE feuille LIKE %s", (f"%\\_{_famille()}",))[0]['n']
     if deja and not forcer:
         print(f"Neon a déjà {deja} ligne(s) de feuilles : rien copié (--forcer pour recopier, --comparer pour voir les écarts).")
         return
@@ -74,9 +92,10 @@ def copier(forcer=False):
             executer_lot("INSERT INTO feuilles_neon_lignes (feuille, rang, valeurs) VALUES %s",
                          [(titre, rang, json.dumps([str(c) for c in ligne], ensure_ascii=False))
                           for rang, ligne in enumerate(lignes, start=1)], modele="(%s, %s, %s::jsonb)")
+        executer("UPDATE feuilles_neon SET version = version + 1 WHERE feuille = %s", (titre,), lire=False)
         total += max(len(lignes) - 1, 0)
         print(f"  {titre} : {max(len(lignes) - 1, 0)} produit(s)")
-    print(f"OK : {total} produit(s) copiés dans Neon")
+    print(f"OK : {total} ligne(s) de {_famille()} copiées dans Neon")
 
 
 def comparer():
@@ -103,6 +122,12 @@ def _stock(ligne):
 
 
 def rattraper(fichier):
+    if _famille() != 'produits':
+        raise SystemExit("--rattraper ne concerne que les produits (stock)")
+    _rattraper_produits(fichier)
+
+
+def _rattraper_produits(fichier):
     """Stock Google maintenant - stock Google au moment de la copie = ce que l'ancienne version a vendu ou
     reçu entre-temps -> reporté dans Neon. Les autres changements (prix, nouveaux produits) sont signalés."""
     from services.feuilles_neon import ajuster_stock

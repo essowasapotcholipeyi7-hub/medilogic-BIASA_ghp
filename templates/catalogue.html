@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}Catalogue{% endblock %}
+
+{% block content %}
+{# ⭐ 2026-10-18 (patron) : le catalogue (actes, produits) est dans la base Neon ; on le travaille dans
+   Excel par export / import avec aperçu. #}
+<style>
+    .cat-carte { border-radius: 12px; }
+    .cat-sensible { background: #fff7e0; }
+    .cat-table td, .cat-table th { font-size: 13px; vertical-align: middle; }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h4 class="mb-1"><i class="fas fa-book-medical me-2"></i>Catalogue des actes et des produits</h4>
+        <div class="text-muted small">
+            Le catalogue n'est plus dans Google Sheets : il est dans la base du logiciel. Pour le retravailler dans un tableur,
+            exportez-le en Excel, modifiez le fichier, puis importez-le : vous verrez les changements avant de les appliquer.
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    {% for genre, libelle, icone in [('actes', 'Actes', 'fa-stethoscope'), ('produits', 'Produits (pharmacie)', 'fa-pills')] %}
+    <div class="col-md-6">
+        <div class="card cat-carte h-100">
+            <div class="card-body">
+                <h5><i class="fas {{ icone }} me-2"></i>{{ libelle }}</h5>
+                <div class="text-muted small mb-3">{{ comptes[genre] }} ligne(s) dans le catalogue</div>
+                <div class="d-flex gap-2 flex-wrap">
+                    <a class="btn btn-outline-success" href="{{ url_for('catalogue_export', genre=genre) }}"><i class="fas fa-file-excel me-1"></i>Exporter en Excel</a>
+                    <label class="btn btn-primary mb-0">
+                        <i class="fas fa-file-import me-1"></i>Importer un fichier Excel…
+                        <input type="file" accept=".xlsx" hidden onchange="analyserImport('{{ genre }}', this)">
+                    </label>
+                </div>
+                <div class="form-text mt-2">
+                    {% if genre == 'produits' %}Le stock n'est pas modifié par un import (entrées et inventaire le gardent tracé).{% endif %}
+                    Une ligne absente du fichier n'est jamais supprimée.
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="card cat-carte" id="catApercu" style="display:none">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span><i class="fas fa-eye me-1"></i>Aperçu de l'import — <span id="catApercuTitre"></span></span>
+        <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-light" onclick="annulerImport()">Annuler</button>
+            <button class="btn btn-sm btn-success" id="catAppliquer" onclick="appliquerImport()"><i class="fas fa-check me-1"></i>Appliquer ces changements</button>
+        </div>
+    </div>
+    <div class="card-body" id="catApercuCorps"></div>
+</div>
+
+<script>
+let importCourant = null;   // {genre, fichier}
+
+function esc(t) { const d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
+
+async function envoyer(url, genre, fichier) {
+    const fd = new FormData();
+    fd.append('genre', genre);
+    fd.append('fichier', fichier);
+    try {
+        const r = await fetch(url, { method: 'POST', body: fd });
+        const d = await r.json();
+        if (!d.success) { await afficherMessage(d.error || 'Erreur', {type: 'danger'}); return null; }
+        return d;
+    } catch (e) { await afficherMessage('Erreur réseau', {type: 'danger'}); return null; }
+}
+
+async function analyserImport(genre, champ) {
+    const fichier = champ.files[0];
+    champ.value = '';
+    if (!fichier) return;
+    showLoader('Lecture du fichier…');
+    const d = await envoyer('/api/catalogue/import/analyser', genre, fichier);
+    hideLoader();
+    if (!d) return;
+    importCourant = {genre, fichier};
+    const a = d.apercu;
+    document.getElementById('catApercuTitre').textContent = (genre === 'actes' ? 'Actes' : 'Produits') + ' — ' + fichier.name;
+    const sensibles = a.modifications.filter(m => m.sensible).length;
+    let h = `<div class="d-flex gap-2 flex-wrap mb-3">
+        <span class="badge bg-primary fs-6">${a.modifications.length} modification(s)</span>
+        <span class="badge bg-success fs-6">${a.nouveaux.length} nouvelle(s) ligne(s)</span>
+        <span class="badge bg-secondary fs-6">${a.absents} ligne(s) du catalogue absentes du fichier — laissées telles quelles</span>
+    </div>`;
+    if (a.erreurs.length) h += `<div class="alert alert-warning small">${a.erreurs.map(esc).join('<br>')}</div>`;
+    if (a.ignorees.length) h += `<div class="alert alert-light border small">Colonnes du fichier inconnues du catalogue, ignorées : ${a.ignorees.map(esc).join(', ')}</div>`;
+    if (sensibles) h += `<div class="alert alert-warning small"><i class="fas fa-exclamation-triangle me-1"></i>${sensibles} changement(s) touchent le PBR, la prise en charge ou le statut (surlignés) : vérifiez-les.</div>`;
+    if (a.modifications.length) {
+        h += `<h6>Modifications</h6><div class="table-responsive" style="max-height:45vh"><table class="table table-sm cat-table"><thead class="table-light"><tr><th>ID</th><th>Nom</th><th>Colonne</th><th>Avant</th><th>Après</th></tr></thead><tbody>` +
+            a.modifications.map(m => `<tr class="${m.sensible ? 'cat-sensible' : ''}"><td>${esc(m.id)}</td><td>${esc(m.nom)}</td><td>${esc(m.colonne)}</td><td class="text-muted">${esc(m.avant)}</td><td><strong>${esc(m.apres)}</strong></td></tr>`).join('') +
+            `</tbody></table></div>`;
+    }
+    if (a.nouveaux.length) {
+        h += `<h6 class="mt-3">Nouvelles lignes</h6><div class="table-responsive" style="max-height:30vh"><table class="table table-sm cat-table"><thead class="table-light"><tr><th>ID</th><th>Nom</th></tr></thead><tbody>` +
+            a.nouveaux.map(n => `<tr><td>${esc(n.id || '(nouveau)')}</td><td>${esc(n.nom)}</td></tr>`).join('') + `</tbody></table></div>`;
+    }
+    if (!a.modifications.length && !a.nouveaux.length) h += '<p class="text-muted mb-0">Aucun changement : le fichier correspond au catalogue.</p>';
+    document.getElementById('catApercuCorps').innerHTML = h;
+    document.getElementById('catAppliquer').disabled = !a.modifications.length && !a.nouveaux.length;
+    document.getElementById('catApercu').style.display = '';
+    document.getElementById('catApercu').scrollIntoView({behavior: 'smooth'});
+}
+
+function annulerImport() {
+    importCourant = null;
+    document.getElementById('catApercu').style.display = 'none';
+}
+
+async function appliquerImport() {
+    if (!importCourant) return;
+    if (!await demanderConfirmation('Appliquer ces changements au catalogue ?', {texteOk: 'Oui, appliquer', texteAnnuler: 'Non'})) return;
+    showLoader('Mise à jour du catalogue…');
+    const d = await envoyer('/api/catalogue/import/appliquer', importCourant.genre, importCourant.fichier);
+    hideLoader();
+    if (!d) return;
+    await afficherMessage(`Catalogue mis à jour : ${d.resultat.modifications} modification(s), ${d.resultat.ajoutes.length} ligne(s) ajoutée(s).`, {type: 'success'});
+    window.location.reload();
+}
+</script>
+{% endblock %}

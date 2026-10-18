@@ -16,8 +16,17 @@ import re
 
 from services.comptes_service import executer
 
-# feuilles servies par Neon (étape 2 : produits)
-FEUILLES_NEON = (re.compile(r'^struct_-?\d+_produits$'),)
+# feuilles servies par Neon (étape 2 : produits ; étape 3 : actes)
+FEUILLES_NEON = (re.compile(r'^struct_-?\d+_produits$'), re.compile(r'^struct_-?\d+_actes$'))
+
+# ⭐ Copie en mémoire par feuille, valable tant que son numéro de version (feuilles_neon.version, augmenté à
+# chaque écriture, dans la même transaction) n'a pas changé : une lecture ne coûte qu'une toute petite requête,
+# et une écriture faite par l'autre processus du serveur est vue aussitôt.
+import threading
+_copies = {}
+_verrou_copies = threading.Lock()
+_MAJ_VERSION = "UPDATE feuilles_neon SET version = version + 1 WHERE feuille = %s"
+
 COLONNE_STOCK = 6   # F
 
 
@@ -74,6 +83,18 @@ class FeuilleNeon:
 
     # ---------------------------------------------------------- lecture
     def _lignes(self):
+        v = executer("SELECT version FROM feuilles_neon WHERE feuille = %s", (self.title,))
+        version = v[0]['version'] if v else None
+        copie = _copies.get(self.title)
+        if version is not None and copie and copie[0] == version:
+            return [list(r) for r in copie[1]]
+        grille = self._lire_grille()
+        if version is not None:
+            with _verrou_copies:
+                _copies[self.title] = (version, grille)
+        return [list(r) for r in grille]
+
+    def _lire_grille(self):
         lignes = executer("SELECT rang, valeurs FROM feuilles_neon_lignes WHERE feuille = %s ORDER BY rang", (self.title,))
         grille, attendu = [], 1
         for l in lignes:
@@ -157,8 +178,9 @@ class FeuilleNeon:
     def _poser_ligne(self, rang, ligne):
         import json
         executer("""INSERT INTO feuilles_neon_lignes (feuille, rang, valeurs) VALUES (%s, %s, %s::jsonb)
-                    ON CONFLICT (feuille, rang) DO UPDATE SET valeurs = EXCLUDED.valeurs""",
-                 (self.title, rang, json.dumps(ligne, ensure_ascii=False)), lire=False)
+                    ON CONFLICT (feuille, rang) DO UPDATE SET valeurs = EXCLUDED.valeurs;
+                    """ + _MAJ_VERSION,
+                 (self.title, rang, json.dumps(ligne, ensure_ascii=False), self.title), lire=False)
 
     def update_cell(self, row, col, value):
         self._ecrire_cellules({(row, col): _texte_cellule(value)})
@@ -208,24 +230,26 @@ class FeuilleNeon:
         # décalage en deux temps dans UNE transaction (numéros négatifs provisoires : pas de collision de clé)
         executer("""UPDATE feuilles_neon_lignes SET rang = -(rang + 1) WHERE feuille = %s AND rang >= %s;
                     UPDATE feuilles_neon_lignes SET rang = -rang WHERE feuille = %s AND rang < 0;
-                    INSERT INTO feuilles_neon_lignes (feuille, rang, valeurs) VALUES (%s, %s, %s::jsonb)""",
+                    INSERT INTO feuilles_neon_lignes (feuille, rang, valeurs) VALUES (%s, %s, %s::jsonb);
+                    """ + _MAJ_VERSION,
                  (self.title, index, self.title, self.title, index,
-                  json.dumps([_texte_cellule(v) for v in valeurs], ensure_ascii=False)), lire=False)
+                  json.dumps([_texte_cellule(v) for v in valeurs], ensure_ascii=False), self.title), lire=False)
         return {}
 
     def delete_rows(self, debut, fin=None):
         fin = fin or debut
         executer("""DELETE FROM feuilles_neon_lignes WHERE feuille = %s AND rang BETWEEN %s AND %s;
                     UPDATE feuilles_neon_lignes SET rang = -(rang - %s) WHERE feuille = %s AND rang > %s;
-                    UPDATE feuilles_neon_lignes SET rang = -rang WHERE feuille = %s AND rang < 0""",
-                 (self.title, debut, fin, fin - debut + 1, self.title, fin, self.title), lire=False)
+                    UPDATE feuilles_neon_lignes SET rang = -rang WHERE feuille = %s AND rang < 0;
+                    """ + _MAJ_VERSION,
+                 (self.title, debut, fin, fin - debut + 1, self.title, fin, self.title, self.title), lire=False)
         return {}
 
     def delete_row(self, index):
         return self.delete_rows(index)
 
     def clear(self):
-        executer("DELETE FROM feuilles_neon_lignes WHERE feuille = %s", (self.title,), lire=False)
+        executer("DELETE FROM feuilles_neon_lignes WHERE feuille = %s; " + _MAJ_VERSION, (self.title, self.title), lire=False)
 
     def __repr__(self):
         return f"<FeuilleNeon {self.title!r}>"
@@ -270,7 +294,8 @@ def ajuster_stock(titre, produit_id, delta, colonne=COLONNE_STOCK):
     Renvoie (ancien, nouveau, numéro de ligne) ou None si le produit est introuvable."""
     idx = colonne - 1
     lignes = executer(f"""
-        WITH cible AS (
+        WITH version AS (UPDATE feuilles_neon SET version = version + 1 WHERE feuille = %s RETURNING 1),
+        cible AS (
             SELECT rang, valeurs,
                    COALESCE(NULLIF(regexp_replace(replace(COALESCE(valeurs->>{idx}, ''), ',', '.'), '[^0-9.\\-]', '', 'g'), '')::numeric, 0) AS ancien
             FROM feuilles_neon_lignes
@@ -288,7 +313,7 @@ def ajuster_stock(titre, produit_id, delta, colonne=COLONNE_STOCK):
         FROM cible c
         WHERE l.feuille = %s AND l.rang = c.rang
         RETURNING c.ancien, l.valeurs->>{idx} AS nouveau, l.rang
-    """, (titre, str(produit_id).strip(), delta, titre))
+    """, (titre, titre, str(produit_id).strip(), delta, titre))
     if not lignes:
         return None
     l = lignes[0]

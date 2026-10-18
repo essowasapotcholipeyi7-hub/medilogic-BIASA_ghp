@@ -16332,7 +16332,90 @@ def _verifier_session_portail():
 def api_sante():
     """⭐ 2026-10-18 : état minimal, public — quelles données sont servies par Neon (bascule Google
     Sheets -> Neon : savoir quand la nouvelle version est en ligne). Aucune donnée de structure."""
-    return jsonify({'ok': True, 'comptes_neon': True, 'produits_neon': True})
+    return jsonify({'ok': True, 'comptes_neon': True, 'produits_neon': True, 'actes_neon': True})
+
+
+# ============================================================
+# ⭐ CATALOGUE (patron, 2026-10-18, étape 3 de l'abandon de Google Sheets) : actes et produits dans Neon,
+# retravaillés dans Excel par export / import avec aperçu — voir services/catalogue_excel.py.
+# ============================================================
+def _peut_gerer_catalogue():
+    return bool(session.get('is_admin')) or session.get('role') in ('admin', 'gestionnaire')
+
+
+@app.route('/catalogue')
+@login_required
+def page_catalogue():
+    if not _peut_gerer_catalogue():
+        flash('Accès non autorisé pour votre rôle.', 'danger')
+        return redirect(url_for('dashboard'))
+    from services.feuilles_neon import FeuilleNeon
+    structure_id = session.get('structure_id')
+    comptes = {}
+    for genre in ('actes', 'produits'):
+        try:
+            comptes[genre] = sum(1 for l in FeuilleNeon(f"struct_{structure_id}_{genre}").get_all_values()[1:] if l and str(l[0]).strip())
+        except Exception:
+            comptes[genre] = 0
+    return render_template('catalogue.html', comptes=comptes)
+
+
+@app.route('/catalogue/export/<genre>')
+@login_required
+def catalogue_export(genre):
+    if not _peut_gerer_catalogue() or genre not in ('actes', 'produits'):
+        flash('Accès non autorisé.', 'danger')
+        return redirect(url_for('dashboard'))
+    from services.catalogue_excel import exporter
+    structure_id = session.get('structure_id')
+    contenu = exporter(structure_id, genre)
+    nom = f"catalogue_{genre}_structure_{structure_id}_{datetime.now().strftime('%Y-%m-%d')}.xlsx"
+    return Response(contenu, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    headers={'Content-Disposition': f'attachment; filename="{nom}"'})
+
+
+def _fichier_import_catalogue():
+    genre = request.form.get('genre')
+    fichier = request.files.get('fichier')
+    if genre not in ('actes', 'produits'):
+        raise ValueError('Catalogue inconnu')
+    if not fichier:
+        raise ValueError('Choisissez un fichier Excel.')
+    contenu = fichier.read()
+    if len(contenu) > 10 * 1024 * 1024:
+        raise ValueError('Fichier trop gros (10 Mo au plus).')
+    return genre, contenu
+
+
+@app.route('/api/catalogue/import/analyser', methods=['POST'])
+@login_required
+def api_catalogue_import_analyser():
+    if not _peut_gerer_catalogue():
+        return jsonify({'success': False, 'error': 'Accès non autorisé pour votre rôle.'}), 403
+    from services.catalogue_excel import analyser
+    try:
+        genre, contenu = _fichier_import_catalogue()
+        apercu = analyser(session.get('structure_id'), genre, contenu)
+        apercu.pop('entetes', None)
+        return jsonify({'success': True, 'apercu': apercu})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/catalogue/import/appliquer', methods=['POST'])
+@login_required
+def api_catalogue_import_appliquer():
+    if not _peut_gerer_catalogue():
+        return jsonify({'success': False, 'error': 'Accès non autorisé pour votre rôle.'}), 403
+    from services.catalogue_excel import appliquer
+    try:
+        genre, contenu = _fichier_import_catalogue()
+        resultat = appliquer(session.get('structure_id'), genre, contenu)
+        sheets_helper.clear_prix_cache()
+        print(f"📥 Catalogue {genre} importé par {session.get('user_name')} : {resultat['modifications']} modif., {len(resultat['ajoutes'])} ajout(s)")
+        return jsonify({'success': True, 'resultat': resultat})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
 
 
 @app.route('/portail-manifest.json')
