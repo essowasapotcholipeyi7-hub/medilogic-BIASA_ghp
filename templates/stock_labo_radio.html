@@ -102,6 +102,7 @@
                 </div>
                 <div id="artBlocExamen" class="border rounded p-2 mt-3 bg-light">
                     <div class="fw-semibold small mb-1">Type d'examen réalisé avec cet article (facultatif ici)</div>
+                    <input type="search" class="form-control form-control-sm mb-1 recherche-acte" id="artActeRecherche" data-select="artActe" placeholder="Rechercher un examen (nom ou code, ex. glycémie, R823, thorax)…" autocomplete="off">
                     <select class="form-select form-select-sm mb-2" id="artActe"><option value="">— Choisir un examen —</option></select>
                     <div class="row g-2 align-items-end">
                         <div class="col-6">
@@ -141,7 +142,10 @@
                 <div class="border rounded p-2 bg-light">
                     <div class="fw-semibold small mb-1">Ajouter un examen</div>
                     <div class="row g-2 align-items-end">
-                        <div class="col-md-6"><select class="form-select form-select-sm" id="usActe"><option value="">— Choisir un examen —</option></select></div>
+                        <div class="col-md-6">
+                            <input type="search" class="form-control form-control-sm mb-1 recherche-acte" id="usActeRecherche" data-select="usActe" placeholder="Rechercher un examen (nom ou code)…" autocomplete="off">
+                            <select class="form-select form-select-sm" id="usActe"><option value="">— Choisir un examen —</option></select>
+                        </div>
                         <div class="col-md-2"><label class="form-label small mb-0">Qté / examen</label><input type="number" step="any" min="0" class="form-control form-control-sm" id="usQpe" oninput="calculerExamens('us')"></div>
                         <div class="col-md-2"><label class="form-label small mb-0">Examens possibles</label><input type="number" step="1" min="0" class="form-control form-control-sm" id="usNb" oninput="calculerQpe('us')"></div>
                         <div class="col-md-2"><button class="btn btn-sm btn-primary w-100" onclick="ajouterUsage()"><i class="fas fa-plus"></i> Ajouter</button></div>
@@ -238,6 +242,47 @@ async function chargerActes() {
     document.getElementById('usActe').innerHTML = opts;
 }
 
+// ⭐ 2026-10-18 (patron : « il faut une barre de recherche sinon il y a une longue liste à parcourir »)
+function _sansAccentsStk(t) { return (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+function filtrerActes(champ) {
+    const sel = document.getElementById(champ.dataset.select);
+    const mots = _sansAccentsStk(champ.value).split(/\s+/).filter(Boolean);
+    let visibles = 0, premier = null;
+    [...sel.options].forEach(o => {
+        if (!o.value) { o.hidden = mots.length > 0; return; }
+        const ok = mots.every(m => _sansAccentsStk(o.textContent).includes(m));
+        o.hidden = !ok;
+        if (ok) { visibles++; if (!premier) premier = o; }
+    });
+    // liste dépliée pendant la recherche, refermée sinon
+    sel.size = mots.length ? Math.min(Math.max(visibles, 2), 8) : 1;
+    if (mots.length && sel.selectedOptions[0] && sel.selectedOptions[0].hidden) sel.value = premier ? premier.value : '';
+    champ.classList.toggle('is-invalid', mots.length > 0 && !visibles);
+}
+document.addEventListener('input', e => { if (e.target.classList && e.target.classList.contains('recherche-acte')) filtrerActes(e.target); });
+document.addEventListener('keydown', e => {
+    if (!e.target.classList || !e.target.classList.contains('recherche-acte')) return;
+    const sel = document.getElementById(e.target.dataset.select);
+    if (e.key === 'Enter') {            // Entrée : premier examen trouvé
+        e.preventDefault();
+        const o = [...sel.options].find(x => x.value && !x.hidden);
+        if (o) { sel.value = o.value; choisirActe(sel); }
+    } else if (e.key === 'ArrowDown') { e.preventDefault(); sel.focus(); }
+});
+function choisirActe(sel) {
+    const champ = document.querySelector(`.recherche-acte[data-select="${sel.id}"]`);
+    if (champ && sel.value) { champ.value = sel.value; champ.classList.remove('is-invalid'); }
+    [...sel.options].forEach(o => o.hidden = false);
+    sel.size = 1;
+}
+document.addEventListener('change', e => { if (e.target.id === 'artActe' || e.target.id === 'usActe') choisirActe(e.target); });
+document.addEventListener('click', e => {
+    if ((e.target.parentElement || {}).id === 'artActe' || (e.target.parentElement || {}).id === 'usActe') choisirActe(e.target.parentElement);
+});
+function viderRechercheActes() {
+    document.querySelectorAll('.recherche-acte').forEach(c => { c.value = ''; c.classList.remove('is-invalid'); filtrerActes(c); });
+}
+
 function majUnite() {
     const cat = document.getElementById('artCategorie').value;
     const u = document.getElementById('artUnite');
@@ -286,6 +331,7 @@ function ouvrirArticle(id) {
     document.getElementById('artBlocActif').style.display = a ? '' : 'none';
     document.getElementById('artActif').checked = a ? a.actif : true;
     ['artActe', 'artQpe', 'artNb'].forEach(i => document.getElementById(i).value = '');
+    viderRechercheActes();
     if (!a) majUnite();
     new bootstrap.Modal(document.getElementById('modalArticle')).show();
 }
@@ -343,6 +389,7 @@ function rendreUsages() {
 function ouvrirUsages(id) {
     articleCourant = ARTICLES.find(x => x.id === id);
     ['usActe', 'usQpe', 'usNb'].forEach(i => document.getElementById(i).value = '');
+    viderRechercheActes();
     rendreUsages();
     new bootstrap.Modal(document.getElementById('modalUsages')).show();
 }
@@ -360,6 +407,7 @@ async function ajouterUsage() {
     if (!(parseFloat(qpe) > 0)) { await afficherMessage("Indiquez la quantité par examen (ou le nombre d'examens possibles)."); return; }
     if (await appel(`/api/stock-labo-radio/${articleCourant.id}/usages`, {acte_nom: acte, quantite_par_examen: qpe})) {
         ['usActe', 'usQpe', 'usNb'].forEach(i => document.getElementById(i).value = '');
+    viderRechercheActes();
         rafraichirCourant();
     }
 }
