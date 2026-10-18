@@ -20,6 +20,12 @@ def _feuille_comptes(sheet_name):
     return feuille_comptes(sheet_name)
 
 
+def _feuille_neon(sheet_name):
+    """⭐ 2026-10-18 : feuille servie par Neon (produits) — services/feuilles_neon.py."""
+    from services.feuilles_neon import est_feuille_neon
+    return est_feuille_neon(sheet_name)
+
+
 def normaliser_nom_article(nom):
     """Normalise un nom de médicament/acte pour un matching robuste entre
     gestion_patients et le catalogue GHP (Sheets) — patron : "pourquoi
@@ -118,6 +124,9 @@ class SheetsHelper:
                 creds = ServiceAccountCredentials.from_json_keyfile_dict(credentials_info, self.scope)
                 self.client = gspread.authorize(creds)
                 self.spreadsheet = self.client.open_by_key(Config.SPREADSHEET_ID)
+                # ⭐ 2026-10-18 : les feuilles de produits sont servies par Neon (services/feuilles_neon.py)
+                from services.feuilles_neon import ClasseurNeon
+                self.spreadsheet = ClasseurNeon(self.spreadsheet)
                 print("✅ Connexion à Google Sheets réussie !")
                 self.init_structures_sheet()
             else:
@@ -390,6 +399,8 @@ class SheetsHelper:
         rester compatible avec clear_cache(sheet_name) (qui vide par
         préfixe) sans collisionner avec le cache dict-based de
         get_all_records() sur ce même sheet_name."""
+        if _feuille_neon(sheet_name):   # ⭐ produits : dans Neon, pas de copie en mémoire
+            return self.spreadsheet.worksheet(sheet_name).get_all_values()
         cache_key = f"{sheet_name}::rawvalues"
         if not force_refresh and cache_key in self._cache:
             cached_data, timestamp = self._cache[cache_key]
@@ -407,6 +418,12 @@ class SheetsHelper:
         if _feuille_comptes(sheet_name):   # ⭐ comptes : dans Neon, plus dans Google Sheets
             from services import comptes_service
             return comptes_service.lister(sheet_name)
+        if _feuille_neon(sheet_name):   # ⭐ produits : dans Neon (rapide, toujours à jour : pas de copie en mémoire)
+            try:
+                return self._reparer_entete_id(sheet_name, self.spreadsheet.worksheet(sheet_name).get_all_records())
+            except Exception as e:
+                print(f"⚠️ Feuille {sheet_name} non trouvée: {e}")
+                return []
         
         # Vérifier le cache
         if not force_refresh and sheet_name in self._cache:
@@ -702,6 +719,8 @@ class SheetsHelper:
         maintenant = time.time()
         a_lire = []
         for nom in dict.fromkeys(noms_feuilles):
+            if _feuille_neon(nom):   # ⭐ servie par Neon : rien à préchauffer
+                continue
             en_cache = self._cache.get(nom)
             if not en_cache or not self._encore_valide(nom, en_cache[1]):
                 a_lire.append(nom)

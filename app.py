@@ -10324,6 +10324,31 @@ def _decrementer_stocks_produits(sheet_name, lignes, structure_id, vente_id, use
     if not ordre:
         return []
 
+    # ⭐ 2026-10-18 : produits dans Neon -> une requête par produit, atomique (deux ventes simultanées
+    # du même produit ne peuvent plus lire le même stock)
+    from services.feuilles_neon import est_feuille_neon, ajuster_stock
+    if est_feuille_neon(sheet_name):
+        echecs = []
+        for pid in ordre:
+            try:
+                r = ajuster_stock(sheet_name, pid, -quantites[pid])
+            except Exception as e:
+                r = None
+                echecs.append(f"échec mise à jour stock pour {noms[pid]} (ID {pid}): {e}")
+                continue
+            if r is None:
+                msg = f"produit ID {pid} ({noms[pid]}) introuvable dans le stock"
+                print(f"   ❌ {msg}")
+                echecs.append(msg)
+                continue
+            avant, apres, _ = r
+            if avant - quantites[pid] < 0:
+                print(f"   ⚠️ Stock négatif! {noms[pid]}: {avant} - {quantites[pid]} → 0")
+            print(f"   ✅ Stock mis à jour pour {noms[pid]}: {avant} → {apres}")
+            _log_mouvement_stock(structure_id, pid, noms[pid], 'vente', -quantites[pid], apres,
+                                  reference_type='vente', reference_id=vente_id, user_nom=user_nom)
+        return echecs
+
     for pid in sorted(ordre):
         try:
             db.session.execute(
@@ -11201,12 +11226,15 @@ def api_approvisionner_produit(id):
         
         row_num = cell.row
         current_row = worksheet.row_values(row_num)
-        
-        # 🔥 Stock est en colonne F (index 5) car E=prix_achat
-        stock_actuel = _lire_quantite_stock(current_row[5] if len(current_row) > 5 else '')
-        nouveau_stock = stock_actuel + quantite
-        
-        worksheet.update_cell(row_num, 6, nouveau_stock)  # Colonne F = index 6 (1-based)
+
+        from services.feuilles_neon import est_feuille_neon, ajuster_stock
+        if est_feuille_neon(sheet_name):   # ⭐ 2026-10-18 : entrée de stock en une requête (atomique)
+            nouveau_stock = ajuster_stock(sheet_name, id, quantite)[1]
+        else:
+            # 🔥 Stock est en colonne F (index 5) car E=prix_achat
+            stock_actuel = _lire_quantite_stock(current_row[5] if len(current_row) > 5 else '')
+            nouveau_stock = stock_actuel + quantite
+            worksheet.update_cell(row_num, 6, nouveau_stock)  # Colonne F = index 6 (1-based)
         sheets_helper.clear_cache(sheet_name)
         nom_produit = current_row[1] if len(current_row) > 1 else ''
         _log_mouvement_stock(structure_id, id, nom_produit, 'approvisionnement',
@@ -11979,12 +12007,13 @@ def api_get_stock_produit(id):
         row_num = cell.row
         current_row = worksheet.row_values(row_num)
         
-        # Colonnes: A=ID, B=nom, C=prix_vente, D=quantite_stock, E=seuil_alerte, F=unite, G=structure_id
+        # ⭐ 2026-10-18 : colonnes réelles A=ID, B=nom, C=prix_vente, D=pbr, E=prix_achat,
+        # F=quantite_stock, G=seuil_alerte (lisait D/E : le PBR et le prix d'achat)
         produit = {
             'id': int(current_row[0]) if len(current_row) > 0 else None,
             'nom': current_row[1] if len(current_row) > 1 else '',
-            'quantite_stock': int(current_row[3]) if len(current_row) > 3 else 0,
-            'seuil_alerte': int(current_row[4]) if len(current_row) > 4 else 10
+            'quantite_stock': _lire_quantite_stock(current_row[5] if len(current_row) > 5 else ''),
+            'seuil_alerte': _lire_quantite_stock(current_row[6]) if len(current_row) > 6 and str(current_row[6]).strip() else 10
         }
         
         return jsonify({'success': True, 'stock': produit})
@@ -16269,6 +16298,13 @@ def _verifier_session_portail():
         return None
 
 
+@app.route('/api/sante')
+def api_sante():
+    """⭐ 2026-10-18 : état minimal, public — quelles données sont servies par Neon (bascule Google
+    Sheets -> Neon : savoir quand la nouvelle version est en ligne). Aucune donnée de structure."""
+    return jsonify({'ok': True, 'comptes_neon': True, 'produits_neon': True})
+
+
 @app.route('/portail-manifest.json')
 def portail_manifest():
     from flask import send_from_directory
@@ -17974,10 +18010,14 @@ def _executer_annulation_vente(vente_id, motif, structure_id, user_id, user_name
                             # (index 3, qui est le PBR) : une annulation
                             # écrasait le PBR avec un nombre-de-stock et ne
                             # touchait jamais le vrai stock — bug corrigé.
-                            stock_actuel = _lire_quantite_stock(current_row[5] if len(current_row) > 5 else '')
-                            nouveau_stock = stock_actuel + quantite
-                            worksheet.update_cell(row_num, 6, nouveau_stock)  # Colonne F = index 6 (1-based)
-                            print(f"📦 Restocké dans Sheets: {produit.get('nom')} +{quantite}")
+                            from services.feuilles_neon import est_feuille_neon, ajuster_stock
+                            if est_feuille_neon(sheet_name):   # ⭐ 2026-10-18 : en une requête (atomique)
+                                nouveau_stock = ajuster_stock(sheet_name, produit_id, quantite)[1]
+                            else:
+                                stock_actuel = _lire_quantite_stock(current_row[5] if len(current_row) > 5 else '')
+                                nouveau_stock = stock_actuel + quantite
+                                worksheet.update_cell(row_num, 6, nouveau_stock)  # Colonne F = index 6 (1-based)
+                            print(f"📦 Restocké : {produit.get('nom')} +{quantite}")
                             _log_mouvement_stock(structure_id, produit_id, produit.get('nom', ''),
                                                   'annulation', quantite, nouveau_stock,
                                                   reference_type='vente', reference_id=vente_id,

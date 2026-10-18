@@ -30,6 +30,9 @@ _RE_USERS = re.compile(r'^struct_(-?\d+)_users$')
 
 _pool = None
 _verrou_pool = threading.Lock()
+_MAX_CONNEXIONS = 8
+# au-delà de 8 requêtes simultanées, on ATTEND une connexion libre (le pool psycopg2 refuserait)
+_places = threading.BoundedSemaphore(_MAX_CONNEXIONS)
 
 
 def _obtenir_pool():
@@ -39,13 +42,18 @@ def _obtenir_pool():
             if _pool is None:
                 from psycopg2.pool import ThreadedConnectionPool
                 from config import Config
-                _pool = ThreadedConnectionPool(1, 8, Config.DATABASE_URL)
+                _pool = ThreadedConnectionPool(1, _MAX_CONNEXIONS, Config.DATABASE_URL)
     return _pool
 
 
 def executer(sql, params=None, lire=True):
     """Exécute une requête et valide ; une connexion coupée par Neon (inactivité) est remplacée et la
     requête rejouée une fois. Les erreurs remontent (jamais avalées)."""
+    with _places:
+        return _executer(sql, params, lire)
+
+
+def _executer(sql, params, lire):
     import psycopg2
     import psycopg2.extras
     pool = _obtenir_pool()
@@ -72,6 +80,23 @@ def executer(sql, params=None, lire=True):
             finally:
                 pool.putconn(conn)
             raise
+
+
+def executer_lot(sql, lignes, modele=None):
+    """INSERT de nombreuses lignes en un aller-retour (psycopg2 execute_values)."""
+    import psycopg2.extras
+    with _places:
+        pool = _obtenir_pool()
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_values(cur, sql, lignes, template=modele, page_size=500)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            pool.putconn(conn)
 
 
 # ------------------------------------------------------------------ feuilles
