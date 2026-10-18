@@ -10317,7 +10317,7 @@ def api_update_patient(patient_id):
             data.get('societe_assurance2'),
             data.get('personne_a_prevenir_nom'),
             data.get('personne_a_prevenir_telephone'),
-            data.get('personne_a_prevenir_relation'),
+            data.get('personne_a_prevenir_relation'),
             'sexe' in data, _sexe_patient(data.get('sexe')),
             patient_id,
             structure_id
