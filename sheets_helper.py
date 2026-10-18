@@ -97,6 +97,7 @@ class SheetsHelper:
         # gardée 5 minutes ; vidée dès que l'appli la modifie (clear_cache).
         self._durees_cache = {'structures': 300}
         self._onglets = {}
+        self._marques_lues = {}
         self._batch_operations = []
         self._batch_timer = None
         self.enabled = True
@@ -386,11 +387,12 @@ class SheetsHelper:
         cache_key = f"{sheet_name}::rawvalues"
         if not force_refresh and cache_key in self._cache:
             cached_data, timestamp = self._cache[cache_key]
-            if time.time() - timestamp < self._cache_duration:
+            if self._encore_valide(sheet_name, timestamp):
                 return cached_data
+        debut = time.time()
         worksheet = self.spreadsheet.worksheet(sheet_name)
         all_values = worksheet.get_all_values()
-        self._cache[cache_key] = (all_values, time.time())
+        self._cache[cache_key] = (all_values, debut)
         return all_values
 
     def get_all_records(self, base_name, use_prefix=True, force_refresh=False):
@@ -400,10 +402,11 @@ class SheetsHelper:
         # Vérifier le cache
         if not force_refresh and sheet_name in self._cache:
             cached_data, timestamp = self._cache[sheet_name]
-            if time.time() - timestamp < self._durees_cache.get(sheet_name, self._cache_duration):
+            if self._encore_valide(sheet_name, timestamp):
                 return cached_data
-        
+
         # Sinon, aller chercher dans Google Sheets
+        debut = time.time()
         try:
             try:
                 data = self._onglet(sheet_name).get_all_records()
@@ -412,7 +415,7 @@ class SheetsHelper:
                 data = self._onglet(sheet_name).get_all_records()
             data = self._reparer_entete_id(sheet_name, data)
             # Mettre en cache
-            self._cache[sheet_name] = (data, time.time())
+            self._cache[sheet_name] = (data, debut)
             return data
         except Exception as e:
             print(f"⚠️ Feuille {sheet_name} non trouvée: {e}")
@@ -442,7 +445,7 @@ class SheetsHelper:
         cache_key = f"{sheet_name}_headers"
         if not force_refresh and cache_key in self._cache:
             cached_data, timestamp = self._cache[cache_key]
-            if time.time() - timestamp < self._cache_duration:
+            if self._encore_valide(sheet_name, timestamp):
                 return cached_data
         
         try:
@@ -640,6 +643,46 @@ class SheetsHelper:
     # ============================================
     # MÉTHODES DE MANIPULATION DES DONNÉES
     # ============================================
+    # ⭐ 2026-10-18 (patron : « pourquoi ça ne charge pas vite ») : le catalogue n'était gardé que
+    # 10 s -> presque chaque page relisait Google Sheets (1 à 6 s). Durées par feuille ; une écriture
+    # vide la copie dans TOUS les processus du serveur (gunicorn en a 2) grâce à une marque sur disque.
+    _DOSSIER_MARQUES = os.path.join(__import__('tempfile').gettempdir(), 'medilogic_feuilles_modifiees')
+    DUREES_PAR_SUFFIXE = (('_actes', 300), ('_users', 300), ('_produits', 120))
+
+    def _duree(self, sheet_name):
+        if sheet_name in self._durees_cache:
+            return self._durees_cache[sheet_name]
+        for suffixe, duree in self.DUREES_PAR_SUFFIXE:
+            if sheet_name.endswith(suffixe):
+                return duree
+        return self._cache_duration
+
+    def _chemin_marque(self, sheet_name):
+        return os.path.join(self._DOSSIER_MARQUES, re.sub(r'[^\w.-]', '_', sheet_name or '__toutes__'))
+
+    def _marquer_modifiee(self, sheet_name):
+        try:
+            os.makedirs(self._DOSSIER_MARQUES, exist_ok=True)
+            chemin = self._chemin_marque(sheet_name)
+            with open(chemin, 'a'):
+                pass
+            os.utime(chemin, None)
+        except Exception as e:
+            print(f"⚠️ Marque de modification de {sheet_name} : {e}")
+
+    def _modifiee_depuis(self, sheet_name, instant):
+        """Une écriture (dans ce processus ou l'autre) a-t-elle eu lieu après `instant` ?"""
+        for nom in (sheet_name, None):
+            try:
+                if os.stat(self._chemin_marque(nom)).st_mtime >= instant:
+                    return True
+            except OSError:
+                pass
+        return False
+
+    def _encore_valide(self, sheet_name, instant):
+        return time.time() - instant < self._duree(sheet_name) and not self._modifiee_depuis(sheet_name, instant)
+
     def prechauffer(self, noms_feuilles):
         """⭐ 2026-10-14 (patron : « certains onglets prennent du temps pour s'afficher ») :
         Proformas et Prescriptions reçues lisaient deux feuilles l'une APRÈS l'autre
@@ -651,7 +694,7 @@ class SheetsHelper:
         a_lire = []
         for nom in dict.fromkeys(noms_feuilles):
             en_cache = self._cache.get(nom)
-            if not en_cache or maintenant - en_cache[1] >= self._durees_cache.get(nom, self._cache_duration):
+            if not en_cache or not self._encore_valide(nom, en_cache[1]):
                 a_lire.append(nom)
         if len(a_lire) < 2:
             return
@@ -669,7 +712,9 @@ class SheetsHelper:
         return self._onglets[sheet_name]
 
     def clear_cache(self, sheet_name=None):
-        """Vide le cache (toutes ou une feuille spécifique)"""
+        """Vide le cache (toutes ou une feuille spécifique) — dans ce processus et, par la marque sur
+        disque, dans l'autre processus du serveur."""
+        self._marquer_modifiee(sheet_name)
         if sheet_name:
             # Supprimer les clés qui commencent par sheet_name
             keys_to_delete = [k for k in self._cache.keys() if k.startswith(sheet_name)]
@@ -918,3 +963,38 @@ class SheetsHelper:
 
 # Instance globale
 sheets_helper = SheetsHelper()
+
+# ⭐ 2026-10-18 : toute écriture dans une feuille (update, update_cell, append_row, delete_rows...)
+# vide aussitôt sa copie en mémoire — beaucoup d'écritures du code n'appelaient pas clear_cache(), ce
+# que le cache de 10 s masquait. Branché une fois, sur les méthodes d'écriture de gspread.
+def _brancher_invalidation_ecritures():
+    try:
+        from gspread.worksheet import Worksheet
+    except Exception:
+        return
+    import functools
+
+    def envelopper(nom):
+        origine = getattr(Worksheet, nom, None)
+        if origine is None or getattr(origine, '_invalide_cache', False):
+            return
+
+        @functools.wraps(origine)
+        def methode(self, *args, **kwargs):
+            try:
+                return origine(self, *args, **kwargs)
+            finally:
+                try:
+                    sheets_helper.clear_cache(self.title)
+                except Exception:
+                    pass
+        methode._invalide_cache = True
+        setattr(Worksheet, nom, methode)
+
+    for nom in ('update', 'update_cell', 'update_cells', 'update_acell', 'batch_update', 'append_row',
+                'append_rows', 'insert_row', 'insert_rows', 'delete_row', 'delete_rows', 'clear',
+                'batch_clear', 'update_title'):
+        envelopper(nom)
+
+
+_brancher_invalidation_ecritures()
