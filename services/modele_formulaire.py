@@ -511,3 +511,77 @@ def docx_vers_formulaire(data):
     # paragraphes vides en série (espacements Word) : un seul
     contenu = re.sub(r'(?:<p style="margin:0">&nbsp;</p>){2,}', '<p style="margin:0">&nbsp;</p>', contenu)
     return f'<div class="{MARQUEUR}" data-champs="{conv.n}">{STYLE}{_en_tete(z, racine)}{contenu}</div>'
+
+
+# ------------------------------------------------------------ modèle proposé pour un acte
+_MOTS_VIDES = {'de', 'du', 'des', 'la', 'le', 'les', 'et', 'ou', 'un', 'une', 'en', 'au', 'aux', 'par', 'sur', 'avec',
+               'test', 'tests', 'dosage', 'isole', 'rapide', 'rapides', 'valides', 'recherche', 'examen', 'model', 'modele',
+               'serologie', 'taux', 'bilan', 'fractions', 'total', 'totale', 'anticorps', 'bandelettes', 'complete', 'anti',
+               'sang', 'sanguin', 'urinaire', 'urinaires', 'directe', 'temps'}
+
+
+def _norm(t):
+    import unicodedata
+    t = unicodedata.normalize('NFKD', t or '')
+    return ''.join(c for c in t if not unicodedata.combining(c)).lower()
+
+
+def _mots(texte, paires=False):
+    mots = set()
+    brut = re.findall(r'[a-z0-9]+', _norm(texte))
+    if paires:   # « Ag HBs » -> « aghbs »
+        mots.update(a + b for a, b in zip(brut, brut[1:]) if len(a + b) >= 4 and not (a + b).isdigit())
+    for m in brut:
+        if m in _MOTS_VIDES or m.isdigit():
+            continue
+        if len(m) >= 3 or (len(m) == 2 and m.isalpha()):
+            mots.add(m)
+    return mots
+
+
+def _texte_html(html, listes=False):
+    """Texte d'un modèle, sans l'en-tête ni le cadre d'identification ; listes=True : seulement les
+    choix des listes déroulantes (paramètres d'hémostase, normes...), listes=False : le reste."""
+    html = re.sub(r'<style.*?</style>|<table class="mf-(?:entete|identite)".*?</table>', ' ', html or '', flags=re.S)
+    choix = re.findall(r'<option>(.*?)</option>', html, flags=re.S)
+    if listes:
+        return ' '.join(choix)
+    html = re.sub(r'<select.*?</select>', ' ', html, flags=re.S)
+    return re.sub(r'<[^>]+>|&[a-z]+;', ' ', html)
+
+
+def mots_modele(nom, html):
+    """Mots d'un modèle (nom, texte, choix des listes) — calculés une fois, gardés en cache par app.py."""
+    return (_mots(nom), _mots(_texte_html(html)), _mots(_texte_html(html, listes=True)))
+
+
+def proposer_modele(acte_nom, modeles):
+    """Modèle formulaire le plus probable pour un acte, d'après son nom et son contenu — None si rien
+    de net. `modeles` : [(id, nom, contenu_html)] ou [(id, mots_modele(...))]. Le code de l'acte (R831...)
+    est ignoré."""
+    acte = re.sub(r'^[A-Z]{1,3}\d{2,4}\s*', '', (acte_nom or '').strip())
+    mots_acte = _mots(acte, paires=True)
+    if not mots_acte:
+        return None
+
+    def present(mot, mots):
+        # « creatinine » trouve « creatininemie », « bhcg » contient « hcg »
+        return any(m == mot or (len(mot) >= 5 and m.startswith(mot[:max(5, len(mot) - 2)]))
+                   or (len(mot) >= 3 and len(m) >= 4 and mot in m) for m in mots)
+
+    def abrege(mot, mots):
+        # nom de modèle abrégé : « toxo » pour « toxoplasmose », « copro » pour « coproculture »
+        return any(len(m) >= 4 and mot.startswith(m) for m in mots)
+
+    notes = []
+    for m in modeles:
+        mid, (mots_nom, mots_contenu, mots_listes) = (m[0], m[1]) if len(m) == 2 else (m[0], mots_modele(m[1], m[2]))
+        note = sum(3 if present(m, mots_nom) else (2 if abrege(m, mots_nom) else 0) for m in mots_acte)             + sum(1 if present(m, mots_contenu) else (0.5 if present(m, mots_listes) else 0) for m in mots_acte)
+        if note:
+            notes.append((note, -len(mots_contenu | mots_listes), mid))
+    if not notes:
+        return None
+    notes.sort(reverse=True)
+    if len(notes) > 1 and notes[0][0] == notes[1][0] and notes[0][1] == notes[1][1]:
+        return None
+    return notes[0][2]

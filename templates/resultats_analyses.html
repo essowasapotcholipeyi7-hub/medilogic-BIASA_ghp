@@ -111,6 +111,7 @@
                         <select class="form-select form-select-sm" id="resultatModeleSelect" onchange="chargerModeleDansEditeur()">
                             <option value="">-- Partir d'une page vierge --</option>
                         </select>
+                        <div class="form-text text-success" id="modeleProposeInfo"></div>
                     </div>
                     <div id="blocQuillResultat">
                         <label class="form-label mb-1">Contenu du résultat</label>
@@ -177,6 +178,7 @@ function afficherFormulaire(html) {
     // identité du patient (nom, prénom, sexe, âge, téléphone, dates)
     fetch('/api/resultats-analyses/' + demandeChoisie + '/identite').then(r => r.json()).then(d => {
         if (!d.success) return;
+        choisirNormes(zone, d.sexe_code || '', d.age_jours);
         zone.querySelectorAll('[data-id]').forEach(el => {
             const v = d[el.dataset.id];
             if (!v) return;
@@ -244,7 +246,7 @@ function figerFormulaire() {
         sp.className = 'mf-valeur';
         if (s.dataset.id) sp.dataset.id = s.dataset.id;
         if (s.getAttribute('style')) sp.setAttribute('style', s.getAttribute('style'));
-        if (!v || (s.dataset.defaut && o && o.defaultSelected)) sp.dataset.vide = '1';
+        if (!v || (s.dataset.defaut && o && o.defaultSelected) || listesSrc[i].dataset.auto) sp.dataset.vide = '1';
         sp.textContent = v;
         s.replaceWith(sp);
     });
@@ -288,7 +290,66 @@ function figerFormulaire() {
     return c.outerHTML;
 }
 
+// ⭐ 2026-10-18 : modèle proposé pour l'acte (dernier utilisé pour cet acte, sinon d'après les noms)
+function proposerModele(demandeId) {
+    document.getElementById('modeleProposeInfo').textContent = '';
+    fetch('/api/resultats-analyses/' + demandeId + '/modele-propose').then(r => r.json()).then(d => {
+        if (!d.success || !d.modele_id || demandeChoisie !== demandeId) return;
+        const sel = document.getElementById('resultatModeleSelect');
+        if (sel.value || ![...sel.options].some(o => o.value == d.modele_id)) return;
+        choisirModeResultat('editeur');
+        sel.value = String(d.modele_id);
+        chargerModeleDansEditeur();
+        document.getElementById('modeleProposeInfo').innerHTML = '<i class="fas fa-magic me-1"></i>Modèle proposé '
+            + (d.raison === 'memoire' ? '(utilisé la dernière fois pour cet acte)' : "(d'après le nom de l'acte)")
+            + ' — changez-le si besoin.';
+    });
+}
+
+// ⭐ 2026-10-18 : norme choisie d'après le sexe et l'âge du patient
+function _trancheAgeJours(t) {
+    const u = x => /^an/.test(x) ? 365 : /^mois/.test(x) ? 30 : /^sem/.test(x) ? 7 : 1;
+    const m = t.match(/(\d+)\s*(jours?|jrs?|j|semaines?|mois|ans?)?\s*(?:–|-|à|a)\s*(\d+)\s*(jours?|jrs?|j|semaines?|mois|ans?)\b/);
+    if (m) return [parseInt(m[1]) * u(m[2] || m[4]), (parseInt(m[3]) + 1) * u(m[4]) - 1];
+    if (/nouveau.?ne/.test(t)) return [0, 28];
+    if (/1ere\s*semaine/.test(t)) return [0, 7];
+    if (/1ere\s*annee/.test(t)) return [0, 365];
+    return null;
+}
+
+function choisirNormes(zone, sexe, ageJours) {
+    const adulte = ageJours != null && ageJours >= 15 * 365, enfant = ageJours != null && ageJours < 15 * 365;
+    zone.querySelectorAll('select.mf-liste:not([data-id])').forEach(sel => {
+        if (sel.value !== '') return;
+        const options = [...sel.options].filter(o => o.value !== '' && o.value !== '__autre__');
+        const infos = options.map(o => {
+            const t = _sansAccents(o.textContent);
+            const enceinte = /enceinte/.test(t);
+            return { o, tranche: _trancheAgeJours(t), homme: /homme|masculin/.test(t),
+                     femme: !enceinte && (/femme|feminin/.test(t) || (o.textContent.includes('♀') && !/homme/.test(t))),
+                     enfant: /enfant/.test(t), adulte: /adulte/.test(t), enceinte };
+        });
+        const normes = infos.filter(i => i.tranche || i.homme || i.femme || i.enfant || i.adulte);
+        if (normes.length < 2) return;   // ce n'est pas une liste de normes
+        let choix = [];
+        if (ageJours != null) choix = normes.filter(i => i.tranche && ageJours >= i.tranche[0] && ageJours <= i.tranche[1]);
+        if (!choix.length && adulte && sexe) choix = normes.filter(i => !i.tranche && (sexe === 'M' ? i.homme : i.femme));
+        if (!choix.length && adulte) choix = normes.filter(i => i.adulte && !i.tranche);
+        if (!choix.length && enfant) choix = normes.filter(i => i.enfant && !i.tranche);
+        if (!choix.length && ageJours == null && sexe && !normes.some(i => i.enfant || i.tranche))
+            choix = normes.filter(i => sexe === 'M' ? i.homme : i.femme);
+        if (choix.length === 1) {
+            sel.value = choix[0].o.value;
+            sel.dataset.auto = '1';   // choisi par le logiciel : ne suffit pas à garder la ligne
+        }
+    });
+}
+document.addEventListener('change', e => {
+    if (e.target.matches && e.target.matches('#zoneFormulaire select.mf-liste')) delete e.target.dataset.auto;
+}, true);
+
 function chargerModeleDansEditeur() {
+    document.getElementById('modeleProposeInfo').textContent = '';
     const modeleId = document.getElementById('resultatModeleSelect').value;
     if (!modeleId) { basculerFormulaire(false); return; }
     if (!quillEditeurResultat) return;
@@ -350,6 +411,7 @@ function ouvrirModalResultat(demandeId, patientNom, acteNom, typePrestation) {
             const label = m.formulaire ? `${m.nom} — formulaire` : (m.a_contenu_html ? m.nom : `${m.nom} (Word/Excel — converti à l'ouverture)`);
             selectModele.innerHTML += `<option value="${m.id}">${label}</option>`;
         });
+        if (lignes.length) proposerModele(demandeId);
     });
 
     const select = document.getElementById('resultatSignatureSelect');
@@ -420,6 +482,8 @@ async function enregistrerResultat() {
             await afficherMessage('Rédigez le contenu du résultat.'); return;
         }
         fd.append('contenu_html', contenu);
+        const modeleUtilise = document.getElementById('resultatModeleSelect').value;
+        if (modeleUtilise) fd.append('modele_utilise_id', modeleUtilise);
     }
 
     if (val === '__autre__') {

@@ -81,3 +81,18 @@ def test_echappement():
                                       + '<w:p>' + _liste(['&lt;b&gt;', 'ok']) + '</w:p>'))
     assert '<script>' not in html and '&lt;script&gt;' in html
     assert '<option>&lt;b&gt;</option>' in html
+
+
+def test_proposition_de_modele():
+    from services.modele_formulaire import proposer_modele, mots_modele
+    biochimie = '<div class="modele-formulaire"><p>BIOCHIMIE</p><p>Glycémie</p><p>Créatininémie</p><p>Urémie</p></div>'
+    hemostase = ('<div class="modele-formulaire"><p>HEMOSTASE</p><select class="mf-liste"><option>TS</option>'
+                 '<option>Temps de céphaline activée (TCA)</option></select></div>')
+    crp = '<div class="modele-formulaire"><p>RECHERCHE DE PROTEINE C REACTIVE (CRP)</p></div>'
+    modeles = [(1, 'BIOCHIMIE', biochimie), (2, 'HEMOSTASE', hemostase), (3, 'CRP', crp)]
+    assert proposer_modele('R832 Uree glycemie creatininemie', modeles) == 1
+    assert proposer_modele('R704 TS + TCA', modeles) == 2
+    assert proposer_modele('B123 CRP', modeles) == 3
+    assert proposer_modele('R409 Serologie anti-streptococcique (ASLO)', modeles) is None
+    # même résultat avec les mots déjà calculés (cache d'app.py)
+    assert proposer_modele('R704 TS + TCA', [(i, mots_modele(n, h)) for i, n, h in modeles]) == 2

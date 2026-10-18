@@ -34,7 +34,7 @@ from services.part_medecin_service import (charger_taux_part_medecin, creer_lign
                                            montant_net_periode, point_prestations, rsps_a_verser, enregistrer_versement_rsps)
 from services.service_acte_service import charger_services, deviner_service_acte, creer_lignes_service, generer_rapport_recettes_service
 from services.service_acte_service import TYPES_SERVICE, TYPES_SANS_HOSPITALISATION
-from services.modele_formulaire import est_formulaire, docx_a_des_controles, docx_vers_formulaire
+from services.modele_formulaire import est_formulaire, docx_a_des_controles, docx_vers_formulaire, proposer_modele, mots_modele
 from services.facturation_amu_service import generer_lignes_facture_amu_cnss, charger_classification_amu_cnss, generer_lignes_facture_amu
 from utils.categories_amu_cnss import CATEGORIES_AMU_CNSS, CATEGORIES_AMU_CNSS_DICT
 from utils.categories_amu_inam import CATEGORIES_AMU_INAM, CATEGORIES_AMU_INAM_PLATES, CATEGORIES_AMU_INAM_DICT, REGIMES_AMU_INAM
@@ -14884,15 +14884,20 @@ def page_modeles_resultats():
 @login_required
 def api_lister_modeles_resultats():
     structure_id = session.get('structure_id')
-    q = ModeleResultat.query.filter_by(structure_id=structure_id)
+    # ⭐ 2026-10-18 : colonnes utiles seulement — avec les 44 modèles Word d'un labo, charger les
+    # fichiers et tout le contenu à chaque ouverture de la saisie devenait lent
+    debut = db.func.substr(ModeleResultat.contenu_html, 1, 300).label('debut')
+    q = db.session.query(ModeleResultat.id, ModeleResultat.nom, ModeleResultat.type_prestation,
+                         ModeleResultat.fichier_nom, ModeleResultat.created_at, ModeleResultat.source_app, debut)\
+        .filter(ModeleResultat.structure_id == structure_id)
     type_prestation = request.args.get('type_prestation')
     if type_prestation:
-        q = q.filter_by(type_prestation=type_prestation)
+        q = q.filter(ModeleResultat.type_prestation == type_prestation)
     lignes = q.order_by(ModeleResultat.type_prestation, ModeleResultat.nom).all()
     return jsonify([{
         'id': l.id, 'nom': l.nom, 'type_prestation': l.type_prestation,
-        'fichier_nom': l.fichier_nom, 'a_contenu_html': bool(l.contenu_html),
-        'formulaire': est_formulaire(l.contenu_html),   # ⭐ 2026-10-18 : formulaire importé de Word
+        'fichier_nom': l.fichier_nom, 'a_contenu_html': bool(l.debut),
+        'formulaire': est_formulaire(l.debut),   # ⭐ 2026-10-18 : formulaire importé de Word
         'created_at': l.created_at.strftime('%d/%m/%Y') if l.created_at else '',
         'source_app': l.source_app,  # ⭐ 'gestion_patients' si synchronisé depuis là-bas, sinon None (natif)
     } for l in lignes])
@@ -15395,7 +15400,8 @@ def api_identite_resultat(demande_id):
     demande = DemandeExamen.query.filter_by(id=demande_id, structure_id=structure_id).first()
     if not demande:
         return jsonify({'success': False, 'error': 'Demande introuvable'}), 404
-    res = {'nom': demande.patient_nom or '', 'prenom': '', 'sexe': '', 'age': '', 'telephone': '',
+    res = {'nom': demande.patient_nom or '', 'prenom': '', 'sexe': '', 'sexe_code': '', 'age_jours': None,
+           'age': '', 'telephone': '',
            'date': datetime.now().strftime('%d/%m/%y'),
            'date_prelevement': demande.created_at.strftime('%d/%m/%y') if demande.created_at else ''}
     p = Patient.query.get(demande.patient_id) if demande.patient_id else None
@@ -15403,8 +15409,10 @@ def api_identite_resultat(demande_id):
         dechiffrer_patients_orm([p])
         res.update(nom=(p.nom or '').upper(), prenom=p.prenom or '', telephone=p.telephone or '',
                    sexe={'F': 'Féminin', 'M': 'Masculin'}.get(getattr(p, 'sexe', None) or '', ''))
+        res['sexe_code'] = getattr(p, 'sexe', None) or ''
         if p.date_naissance:
             jours = (date.today() - p.date_naissance).days
+            res['age_jours'] = max(jours, 0)
             ans = date.today().year - p.date_naissance.year - (
                 (date.today().month, date.today().day) < (p.date_naissance.month, p.date_naissance.day))
             if ans >= 1:
@@ -15414,6 +15422,44 @@ def api_identite_resultat(demande_id):
             elif jours >= 0:
                 res['age'] = f"{jours} jour{'s' if jours > 1 else ''}"
     return jsonify({'success': True, **res})
+
+
+_CACHE_MOTS_MODELES = {}   # (id, nom, longueur du contenu) -> mots du modèle
+
+
+@app.route('/api/resultats-analyses/<int:demande_id>/modele-propose', methods=['GET'])
+@login_required
+def api_modele_propose_resultat(demande_id):
+    """⭐ 2026-10-18 : modèle à ouvrir pour cet acte — celui utilisé la dernière fois pour le même acte,
+    sinon le plus probable d'après le nom et le contenu des modèles formulaires."""
+    from sqlalchemy import text as _text
+    structure_id = session.get('structure_id')
+    demande = DemandeExamen.query.filter_by(id=demande_id, structure_id=structure_id).first()
+    if not demande:
+        return jsonify({'success': False, 'error': 'Demande introuvable'}), 404
+    lignes = db.session.query(ModeleResultat.id, ModeleResultat.nom, db.func.length(ModeleResultat.contenu_html),
+                              db.func.substr(ModeleResultat.contenu_html, 1, 300))\
+        .filter(ModeleResultat.structure_id == structure_id, ModeleResultat.type_prestation == demande.type_prestation).all()
+    modeles = {mid: nom for mid, nom, _, _ in lignes}
+    for (mid,) in db.session.execute(_text("""
+            SELECT r.modele_utilise_id FROM resultats_examens r JOIN demandes_examens d ON d.id = r.demande_id
+            WHERE r.structure_id = :s AND d.acte_nom = :a AND r.modele_utilise_id IS NOT NULL
+            ORDER BY r.id DESC LIMIT 5"""), {'s': structure_id, 'a': demande.acte_nom}).fetchall():
+        if mid in modeles:
+            return jsonify({'success': True, 'modele_id': mid, 'nom': modeles[mid], 'raison': 'memoire'})
+    candidats = []
+    for mid, nom, longueur, debut in lignes:
+        if not est_formulaire(debut):
+            continue
+        cle = (mid, nom, longueur)
+        if cle not in _CACHE_MOTS_MODELES:
+            html = db.session.query(ModeleResultat.contenu_html).filter(ModeleResultat.id == mid).scalar()
+            _CACHE_MOTS_MODELES[cle] = mots_modele(nom, html)
+        candidats.append((mid, _CACHE_MOTS_MODELES[cle]))
+    mid = proposer_modele(demande.acte_nom, candidats)
+    if mid:
+        return jsonify({'success': True, 'modele_id': mid, 'nom': modeles[mid], 'raison': 'nom'})
+    return jsonify({'success': True, 'modele_id': None})
 
 
 @app.route('/modeles-resultats/<int:modele_id>/apercu')
