@@ -59,6 +59,11 @@ def _executer(sql, params, lire):
     pool = _obtenir_pool()
     for essai in (1, 2):
         conn = pool.getconn()
+        # ⭐ 2026-10-18 : un seul aller-retour par requête (sans « autocommit », psycopg2 en faisait trois :
+        # début de transaction, requête, validation — 0,4 s au lieu de 0,1 s depuis loin). Une requête qui
+        # contient plusieurs instructions reste exécutée d'un bloc (une seule transaction implicite).
+        if not conn.autocommit:
+            conn.autocommit = True
         try:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(sql, params)
@@ -88,6 +93,7 @@ def executer_lot(sql, lignes, modele=None):
     with _places:
         pool = _obtenir_pool()
         conn = pool.getconn()
+        conn.autocommit = False   # plusieurs envois : une vraie transaction (tout ou rien)
         try:
             with conn.cursor() as cur:
                 psycopg2.extras.execute_values(cur, sql, lignes, template=modele, page_size=500)
@@ -96,6 +102,7 @@ def executer_lot(sql, lignes, modele=None):
             conn.rollback()
             raise
         finally:
+            conn.autocommit = True
             pool.putconn(conn)
 
 

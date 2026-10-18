@@ -255,17 +255,32 @@ class FeuilleNeon:
         return f"<FeuilleNeon {self.title!r}>"
 
 
+_existantes = set()   # feuilles dont l'existence est déjà vérifiée (une feuille n'est jamais supprimée)
+
+
 def feuille_existe(titre):
-    return bool(executer("SELECT 1 FROM feuilles_neon WHERE feuille = %s", (titre,)))
+    if titre in _existantes:
+        return True
+    if executer("SELECT 1 FROM feuilles_neon WHERE feuille = %s", (titre,)):
+        _existantes.add(titre)
+        return True
+    return False
 
 
 def creer_feuille(titre):
     executer("INSERT INTO feuilles_neon (feuille) VALUES (%s) ON CONFLICT DO NOTHING", (titre,), lire=False)
+    _existantes.add(titre)
     return FeuilleNeon(titre)
 
 
+class GoogleIndisponible(Exception):
+    pass
+
+
 class ClasseurNeon:
-    """Enveloppe le classeur Google : les feuilles FEUILLES_NEON sont servies par Neon, le reste par Google."""
+    """Enveloppe le classeur Google : les feuilles FEUILLES_NEON sont servies par Neon, le reste par Google.
+    `classeur_google` peut être None (Google absent) : les feuilles Neon marchent quand même, une autre
+    feuille est simplement introuvable (get_all_records la lit alors vide, comme une feuille absente)."""
 
     def __init__(self, classeur_google):
         self._google = classeur_google
@@ -276,14 +291,27 @@ class ClasseurNeon:
                 import gspread
                 raise gspread.exceptions.WorksheetNotFound(titre)
             return FeuilleNeon(titre)
+        if self._google is None:
+            import gspread
+            raise gspread.exceptions.WorksheetNotFound(titre)
         return self._google.worksheet(titre)
 
     def add_worksheet(self, title, rows=1000, cols=26, *args, **kwargs):
         if est_feuille_neon(title):
             return creer_feuille(title)
+        if self._google is None:
+            raise GoogleIndisponible(f"Google Sheets absent : feuille « {title} » non créée")
         return self._google.add_worksheet(title=title, rows=rows, cols=cols, *args, **kwargs)
 
+    def worksheets(self):
+        neon = [FeuilleNeon(l['feuille']) for l in executer("SELECT feuille FROM feuilles_neon ORDER BY feuille")]
+        if self._google is None:
+            return neon
+        return neon + [w for w in self._google.worksheets() if not est_feuille_neon(w.title)]
+
     def __getattr__(self, nom):
+        if nom.startswith('__') or self.__dict__.get('_google') is None:
+            raise GoogleIndisponible(f"Google Sheets absent ({nom})")
         return getattr(self._google, nom)
 
 

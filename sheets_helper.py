@@ -117,23 +117,27 @@ class SheetsHelper:
 
 
         
-        try:
-            if Config.SPREADSHEET_ID:
-                # Récupère les credentials (variable env ou fichier)
+        # ⭐ 2026-10-18 : comptes, actes et produits sont dans Neon. Google Sheets n'est plus nécessaire :
+        # s'il est absent (fichier supprimé, clé manquante, GOOGLE_SHEETS=off), le logiciel démarre quand
+        # même (avant : l'erreur était relancée et empêchait tout le logiciel de démarrer).
+        from services.feuilles_neon import ClasseurNeon
+        google = None
+        self.google_actif = False
+        if os.environ.get('GOOGLE_SHEETS', '').strip().lower() in ('off', '0', 'non', 'false'):
+            print("ℹ️ Google Sheets désactivé (GOOGLE_SHEETS=off) : tout est servi par Neon")
+        else:
+            try:
+                if not Config.SPREADSHEET_ID:
+                    raise Exception("SPREADSHEET_ID manquant")
                 credentials_info = get_credentials_info()
                 creds = ServiceAccountCredentials.from_json_keyfile_dict(credentials_info, self.scope)
                 self.client = gspread.authorize(creds)
-                self.spreadsheet = self.client.open_by_key(Config.SPREADSHEET_ID)
-                # ⭐ 2026-10-18 : les feuilles de produits sont servies par Neon (services/feuilles_neon.py)
-                from services.feuilles_neon import ClasseurNeon
-                self.spreadsheet = ClasseurNeon(self.spreadsheet)
+                google = self.client.open_by_key(Config.SPREADSHEET_ID)
+                self.google_actif = True
                 print("✅ Connexion à Google Sheets réussie !")
-                self.init_structures_sheet()
-            else:
-                raise Exception("SPREADSHEET_ID manquant")
-        except Exception as e:
-            print(f"⚠️ Erreur: {e}")
-            raise e
+            except Exception as e:
+                print(f"ℹ️ Google Sheets indisponible ({e}) : tout est servi par Neon")
+        self.spreadsheet = ClasseurNeon(google)
 
     @property
     def structure_id(self):
@@ -991,7 +995,9 @@ class SheetsHelper:
         }
         
         for sheet_name, headers in sheets_config.items():
-            if sheet_name == 'users':   # ⭐ 2026-10-18 : comptes du personnel dans Neon
+            # ⭐ 2026-10-18 : seuls les actes et les produits servent encore (dans Neon) ; comptes du personnel
+            # dans Neon ; les autres feuilles (patients, ventes, factures...) ne sont plus utilisées
+            if sheet_name not in ('actes', 'produits'):
                 continue
             full_name = self.get_sheet_name(sheet_name)
             self.get_or_create_worksheet(full_name, headers)
