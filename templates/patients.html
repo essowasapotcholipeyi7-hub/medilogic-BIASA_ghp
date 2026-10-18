@@ -1627,7 +1627,9 @@ function genererCodePortailPatient() {
 }
 
 async function regenererCodePortailPatient() {
-    if (!await demanderConfirmation("Régénérer le code ? L'ancien code ne fonctionnera plus.")) return;
+    if (!await demanderConfirmation("Régénérer le code ?\n\nL'ancien code ne fonctionnera plus : le patient sera déconnecté du portail, " +
+            "son code rapide et son empreinte / Face ID enregistrés seront effacés. Il devra se reconnecter avec le nouveau code.",
+            {type: 'warning', texteOk: 'Oui, régénérer', texteAnnuler: 'Non'})) return;
     fetch(`/api/patients/${detailPatientId}/regenerer-code-portail`, { method: 'POST' })
         .then(r => r.json())
         .then(async d => { if (d.success) afficherCodePortailPatient(d.code_acces); else await afficherMessage('Erreur : ' + (d.error || 'inconnue'), {type: 'danger'}); });

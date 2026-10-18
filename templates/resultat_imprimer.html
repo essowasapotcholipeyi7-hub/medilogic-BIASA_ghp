@@ -243,21 +243,28 @@ let emailPatientActuel = {{ (patient_email or '') | tojson }};
 // second code séparé. Voir api_pdf_protege_resultat (app.py).
 const patientNomResultat = {{ demande.patient_nom | tojson }};
 
-function voirCodePortailResultat() {
-    fetch('/api/patients/{{ demande.patient_id }}/code-portail').then(r => r.json()).then(async data => {
-        const code = data.code_acces || '(non généré — se génère automatiquement au premier envoi/téléchargement)';
-        const regen = await demanderConfirmation(
-            "Code d'accès de " + patientNomResultat + ": " + code + "" +
-            "Vérifiez d'abord l'identité du patient avant de le communiquer par téléphone. " +
-            "Ce code ouvre à la fois le portail patient ET le PDF protégé.\n\n" +
-            "OK pour régénérer un nouveau code (l'ancien ne fonctionnera plus, y compris pour ouvrir un PDF déjà téléchargé) — Annuler pour garder celui-ci."
-        );
-        if (regen) {
-            fetch('/api/patients/{{ demande.patient_id }}/regenerer-code-portail', { method: 'POST' })
-                .then(r => r.json())
-                .then(async d => { if (d.success) await afficherMessage('Nouveau code : ' + d.code_acces); });
-        }
-    });
+// ⭐ 2026-10-18 : « Fermer » par défaut (Entrée) ; régénération sur bouton explicite, confirmée
+async function voirCodePortailResultat() {
+    let data;
+    try { data = await (await fetch('/api/patients/{{ demande.patient_id }}/code-portail')).json(); }
+    catch (e) { await afficherMessage('Erreur réseau', {type: 'danger'}); return; }
+    const code = data.code_acces;
+    const garder = await demanderConfirmation(
+        (code ? "Code d'accès de " + patientNomResultat + " :\n\n      " + code + "\n\n"
+              : patientNomResultat + " n'a pas encore de code (il se crée au premier envoi ou téléchargement).\n\n") +
+        "Vérifiez d'abord l'identité du patient avant de le communiquer par téléphone. " +
+        "Ce code ouvre à la fois le portail patient ET le PDF protégé.",
+        {titre: "Code d'accès", type: 'info', texteOk: 'Fermer', texteAnnuler: code ? 'Régénérer un nouveau code…' : 'Générer un code'});
+    if (garder) return;
+    if (code && !await demanderConfirmation(
+            "Régénérer le code ?\n\nL'ancien code ne fonctionnera plus, y compris pour ouvrir un PDF déjà téléchargé. " +
+            "Le patient sera déconnecté du portail ; son code rapide et son empreinte / Face ID seront effacés.",
+            {type: 'warning', texteOk: 'Oui, régénérer', texteAnnuler: 'Non'})) return;
+    try {
+        const d = await (await fetch('/api/patients/{{ demande.patient_id }}/' + (code ? 'regenerer-code-portail' : 'generer-code-portail'), { method: 'POST' })).json();
+        if (d.success) await afficherMessage((code ? 'Nouveau code : ' : 'Code : ') + d.code_acces, {type: 'success'});
+        else await afficherMessage('Erreur : ' + (d.error || 'inconnue'), {type: 'danger'});
+    } catch (e) { await afficherMessage('Erreur réseau', {type: 'danger'}); }
 }
 
 async function envoyerParEmail(viaServeur) {

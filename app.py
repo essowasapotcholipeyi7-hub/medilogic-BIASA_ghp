@@ -16229,6 +16229,8 @@ def api_generer_code_portail(patient_id):
     donner à l'avance (avant même qu'un résultat ne soit disponible)."""
     try:
         structure_id = session.get('structure_id')
+        if not Patient.query.filter_by(id=patient_id, structure_id=structure_id).first():
+            return jsonify({'success': False, 'error': 'Patient introuvable'}), 404
         acces = obtenir_ou_creer_code_acces(structure_id, patient_id, session.get('user_name', 'System'))
         return jsonify({'success': True, 'code_acces': acces.code_acces})
     except Exception as e:
@@ -16242,6 +16244,8 @@ def api_regenerer_code_portail(patient_id):
     partagé : on l'invalide et on en émet un autre."""
     try:
         structure_id = session.get('structure_id')
+        if not Patient.query.filter_by(id=patient_id, structure_id=structure_id).first():
+            return jsonify({'success': False, 'error': 'Patient introuvable'}), 404
         acces = regenerer_code_acces(structure_id, patient_id, session.get('user_name', 'System'))
         return jsonify({'success': True, 'code_acces': acces.code_acces})
     except Exception as e:
@@ -16437,6 +16441,29 @@ def page_ticket_accueil_patient(structure_id, preinscription_id):
 # technique manquante jusqu'ici pour que Chrome/Android propose
 # l'installation du raccourci — patron : "ça ne s'installe pas sur
 # certains téléphones").
+@app.before_request
+def _verifier_session_portail():
+    """⭐ 2026-10-18 : une session du portail patient ouverte avec un code depuis régénéré est fermée
+    (la régénération remplace la ligne d'accès, donc son id). Une session ouverte avant ce contrôle
+    (sans id d'accès) est rattachée à l'accès actuel du patient."""
+    if not request.path.startswith(('/portail-patient', '/api/portail-patient')) or not session.get('portail_patient_id'):
+        return None
+    try:
+        acces = AccesPortailPatient.query.filter_by(structure_id=session.get('portail_structure_id'),
+                                                    patient_id=session.get('portail_patient_id')).first()
+        if acces and session.get('portail_acces_id') in (None, acces.id):
+            session['portail_acces_id'] = acces.id
+            return None
+        for cle in ('portail_patient_id', 'portail_structure_id', 'portail_acces_id'):
+            session.pop(cle, None)
+        if request.path.startswith('/api/'):
+            return jsonify({'success': False, 'error': 'Votre code a été changé : reconnectez-vous avec le nouveau code.'}), 401
+        return redirect(url_for('page_portail_patient'))
+    except Exception as e:
+        print(f"⚠️ Vérification de la session du portail impossible : {e}")
+        return None
+
+
 @app.route('/portail-manifest.json')
 def portail_manifest():
     from flask import send_from_directory
@@ -16513,6 +16540,7 @@ def api_verifier_portail_patient():
         # connecté à son propre dossier tant qu'il ne ferme pas l'onglet.
         session['portail_patient_id'] = acces.patient_id
         session['portail_structure_id'] = acces.structure_id
+        session['portail_acces_id'] = acces.id   # ⭐ 2026-10-18 : fermée si le code est régénéré
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -16547,6 +16575,7 @@ def api_connexion_pin_portail_patient():
             if ligne['pin_hash'] == pin_hash:
                 session['portail_patient_id'] = ligne['patient_id']
                 session['portail_structure_id'] = ligne['structure_id']
+                session['portail_acces_id'] = ligne['id']
                 return jsonify({'success': True})
         return jsonify({'success': False, 'error': 'Téléphone ou code incorrect'}), 401
     except Exception as e:
@@ -16674,8 +16703,13 @@ def api_portail_webauthn_login_verifier():
     if identifiant.type_compte != 'patient':
         return jsonify({'success': False, 'error': 'Cet appareil est enregistré pour un autre usage.'}), 403
 
+    acces = AccesPortailPatient.query.filter_by(structure_id=identifiant.structure_id,
+                                                patient_id=identifiant.utilisateur_id).first()
+    if not acces:
+        return jsonify({'success': False, 'error': "Accès au portail désactivé — demandez un nouveau code à la clinique."}), 403
     session['portail_patient_id'] = identifiant.utilisateur_id
     session['portail_structure_id'] = identifiant.structure_id
+    session['portail_acces_id'] = acces.id
     return jsonify({'success': True})
 
 

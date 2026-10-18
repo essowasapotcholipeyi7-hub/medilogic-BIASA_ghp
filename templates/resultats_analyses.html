@@ -563,20 +563,31 @@ function filtrerResultats() {
     }
 }
 
-function afficherCodePortail(patientId, patientNom) {
-    fetch('/api/patients/' + patientId + '/code-portail').then(r => r.json()).then(async data => {
-        const code = data.code_acces || '(non généré)';
-        const regen = await demanderConfirmation(
-            `Code d'accès portail de ${patientNom} : ${code}\n\n` +
-            `À transmettre au patient avec son numéro de téléphone (portail : /portail-patient).\n\n` +
-            `OK pour régénérer un nouveau code (l'ancien ne fonctionnera plus) — Annuler pour garder celui-ci.`
-        );
-        if (regen) {
-            fetch('/api/patients/' + patientId + '/regenerer-code-portail', { method: 'POST' })
-                .then(r => r.json())
-                .then(async d => { if (d.success) await afficherMessage('Nouveau code : ' + d.code_acces); });
-        }
-    });
+// ⭐ 2026-10-18 : « Fermer » par défaut (Entrée) — la régénération demande un clic explicite puis une
+// confirmation (avant : « Oui » ou Entrée régénéraient le code alors qu'on voulait juste le voir)
+async function afficherCodePortail(patientId, patientNom) {
+    let data;
+    try { data = await (await fetch('/api/patients/' + patientId + '/code-portail')).json(); }
+    catch (e) { await afficherMessage('Erreur réseau', {type: 'danger'}); return; }
+    const code = data.code_acces;
+    const garder = await demanderConfirmation(
+        (code ? `Code d'accès de ${patientNom} :\n\n      ${code}\n\n` : `${patientNom} n'a pas encore de code d'accès.\n\n`) +
+        `À transmettre au patient avec son numéro de téléphone (portail : /portail-patient).`,
+        {titre: "Code d'accès au portail", type: 'info', texteOk: 'Fermer', texteAnnuler: code ? 'Régénérer un nouveau code…' : 'Générer un code'});
+    if (garder) return;
+    await regenererCodePortail(patientId, !!code);
+}
+
+async function regenererCodePortail(patientId, existant) {
+    if (existant && !await demanderConfirmation(
+            "Régénérer le code ?\n\nL'ancien code ne fonctionnera plus : le patient sera déconnecté du portail, " +
+            "son code rapide et son empreinte / Face ID enregistrés seront effacés. Il devra se reconnecter avec le nouveau code.",
+            {type: 'warning', texteOk: 'Oui, régénérer', texteAnnuler: 'Non'})) return;
+    try {
+        const d = await (await fetch('/api/patients/' + patientId + (existant ? '/regenerer-code-portail' : '/generer-code-portail'), { method: 'POST' })).json();
+        if (d.success) await afficherMessage((existant ? 'Nouveau code : ' : 'Code : ') + d.code_acces, {type: 'success'});
+        else await afficherMessage('Erreur : ' + (d.error || 'inconnue'), {type: 'danger'});
+    } catch (e) { await afficherMessage('Erreur réseau', {type: 'danger'}); }
 }
 
 chargerResultats();

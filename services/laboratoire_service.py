@@ -154,23 +154,40 @@ def obtenir_ou_creer_code_acces(structure_id, patient_id, user_name):
     if existant:
         return existant
 
-    for _ in range(10):  # évite en théorie une collision, jamais vue en pratique sur 8 caractères
-        code = ''.join(secrets.choice(_ALPHABET_CODE) for _ in range(8))
-        if not AccesPortailPatient.query.filter_by(code_acces=code).first():
-            break
-
-    acces = AccesPortailPatient(structure_id=structure_id, patient_id=patient_id, code_acces=code, created_by=user_name)
+    acces = AccesPortailPatient(structure_id=structure_id, patient_id=patient_id, code_acces=_nouveau_code(),
+                                created_by=user_name)
     db.session.add(acces)
     db.session.commit()
     return acces
 
 
+def _nouveau_code():
+    for _ in range(10):  # évite en théorie une collision, jamais vue en pratique sur 8 caractères
+        code = ''.join(secrets.choice(_ALPHABET_CODE) for _ in range(8))
+        if not AccesPortailPatient.query.filter_by(code_acces=code).first():
+            return code
+    return code
+
+
 def regenerer_code_acces(structure_id, patient_id, user_name):
     """Invalide le code existant et en émet un nouveau — pour un patient
-    qui l'a perdu ou en cas de doute sur sa confidentialité."""
-    AccesPortailPatient.query.filter_by(structure_id=structure_id, patient_id=patient_id).delete()
+    qui l'a perdu ou en cas de doute sur sa confidentialité.
+    ⭐ 2026-10-18 (patron : « anomalie dans la régénération ») : l'ancien accès est VRAIMENT coupé, en
+    une seule fois — le code rapide (PIN, dans la même ligne) disparaît avec elle, l'empreinte / Face ID
+    enregistrés sur le portail sont désactivés, et les sessions ouvertes avec l'ancien code se ferment
+    (elles gardent l'id de l'accès, qui change : voir _verifier_session_portail, app.py)."""
+    from datetime import datetime
+    from models import IdentifiantWebauthn
+    for ancien in AccesPortailPatient.query.filter_by(structure_id=structure_id, patient_id=patient_id).all():
+        db.session.delete(ancien)
+    IdentifiantWebauthn.query.filter_by(structure_id=structure_id, utilisateur_id=patient_id, type_compte='patient',
+                                        actif=True).update({'actif': False, 'date_revocation': datetime.utcnow()})
+    db.session.flush()
+    acces = AccesPortailPatient(structure_id=structure_id, patient_id=patient_id, code_acces=_nouveau_code(),
+                                created_by=user_name)
+    db.session.add(acces)
     db.session.commit()
-    return obtenir_ou_creer_code_acces(structure_id, patient_id, user_name)
+    return acces
 
 
 def demandes_ristourne_en_attente(structure_id, prescripteur_id):
