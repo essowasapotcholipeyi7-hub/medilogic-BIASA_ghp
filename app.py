@@ -34,6 +34,7 @@ from services.part_medecin_service import (charger_taux_part_medecin, creer_lign
                                            montant_net_periode, point_prestations, rsps_a_verser, enregistrer_versement_rsps)
 from services.service_acte_service import charger_services, deviner_service_acte, creer_lignes_service, generer_rapport_recettes_service
 from services.service_acte_service import TYPES_SERVICE, TYPES_SANS_HOSPITALISATION
+from models import ConsommableLabo, UsageConsommable, MouvementConsommable
 from services.modele_formulaire import est_formulaire, docx_a_des_controles, docx_vers_formulaire, proposer_modele, mots_modele
 from services.facturation_amu_service import generer_lignes_facture_amu_cnss, charger_classification_amu_cnss, generer_lignes_facture_amu
 from utils.categories_amu_cnss import CATEGORIES_AMU_CNSS, CATEGORIES_AMU_CNSS_DICT
@@ -14674,9 +14675,348 @@ def api_changer_statut_demande_examen(demande_id):
         if demande.type_prestation == 'examen' and role == 'laborantin':
             return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
 
+        ancien_statut = demande.statut
         demande.statut = nouveau_statut
+        # ⭐ 2026-10-18 : stock labo / radio (réactifs, tubes, films) déduit ou remis
+        from services.consommables_service import apres_changement_statut
+        apres_changement_statut(demande, ancien_statut, session.get('user_name'))
         db.session.commit()
         return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================
+# ⭐ STOCK DU LABORATOIRE ET DE LA RADIOLOGIE (patron, 2026-10-18) — films, tubes, réactifs : combien
+# d'examens on peut encore faire, alerte avant la fin, inventaire du mois. Voir
+# services/consommables_service.py.
+# ============================================================
+def _filieres_stock():
+    """Filières dont l'utilisateur gère le stock : le laborantin le labo, le radiologue la radio,
+    l'administrateur / gestionnaire / médecin les deux."""
+    role = session.get('role')
+    tout = bool(session.get('is_admin')) or role in ('admin', 'gestionnaire')
+    res = []
+    if tout or role == 'laborantin' or a_acces('demandes_laboratoire'):
+        res.append('analyse')
+    if tout or role == 'radiologue' or a_acces('demandes_radiologie'):
+        res.append('examen')
+    return res
+
+
+def _article_stock(article_id):
+    c = ConsommableLabo.query.filter_by(id=article_id, structure_id=session.get('structure_id')).first()
+    if not c or c.filiere not in _filieres_stock():
+        return None
+    return c
+
+
+def _article_json(c, usages):
+    from services.consommables_service import CATEGORIES, niveau, examens_possibles, nombre
+    return {
+        'id': c.id, 'filiere': c.filiere, 'categorie': c.categorie,
+        'categorie_libelle': CATEGORIES.get(c.filiere, {}).get(c.categorie, c.categorie),
+        'nom': c.nom, 'type_article': c.type_article or '', 'unite': c.unite or '',
+        'quantite': nombre(c.quantite), 'seuil': nombre(c.seuil_alerte) if c.seuil_alerte is not None else None,
+        'actif': bool(c.actif), 'niveau': niveau(c) if c.actif else 'ok',
+        'usages': [{'id': u.id, 'acte_nom': u.acte_nom, 'quantite_par_examen': nombre(u.quantite_par_examen),
+                    'examens_possibles': examens_possibles(c.quantite, u.quantite_par_examen)} for u in usages],
+    }
+
+
+@app.route('/stock-labo-radio')
+@login_required
+def page_stock_labo_radio():
+    from services.consommables_service import CATEGORIES, UNITES_PAR_DEFAUT
+    filieres = _filieres_stock()
+    if not filieres:
+        flash('Accès non autorisé pour votre rôle.', 'danger')
+        return redirect(url_for('dashboard'))
+    filiere = request.args.get('filiere')
+    if filiere not in filieres:
+        filiere = filieres[0]
+    return render_template('stock_labo_radio.html', filiere=filiere, filieres=filieres,
+                           categories=CATEGORIES[filiere], unites=UNITES_PAR_DEFAUT)
+
+
+@app.route('/api/stock-labo-radio', methods=['GET'])
+@login_required
+def api_stock_labo_radio():
+    filiere = request.args.get('filiere')
+    if filiere not in _filieres_stock():
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    structure_id = session.get('structure_id')
+    articles = ConsommableLabo.query.filter_by(structure_id=structure_id, filiere=filiere)\
+        .order_by(ConsommableLabo.actif.desc(), ConsommableLabo.categorie, ConsommableLabo.nom).all()
+    usages = {}
+    for u in UsageConsommable.query.filter(UsageConsommable.structure_id == structure_id,
+                                           UsageConsommable.consommable_id.in_([a.id for a in articles] or [0]))\
+            .order_by(UsageConsommable.acte_nom).all():
+        usages.setdefault(u.consommable_id, []).append(u)
+    return jsonify({'success': True, 'articles': [_article_json(a, usages.get(a.id, [])) for a in articles]})
+
+
+@app.route('/api/stock-labo-radio/alertes', methods=['GET'])
+@login_required
+def api_stock_labo_radio_alertes():
+    from services.consommables_service import alertes, nombre
+    filiere = request.args.get('filiere')
+    if filiere not in _filieres_stock():
+        return jsonify({'success': True, 'alertes': []})
+    return jsonify({'success': True, 'alertes': [
+        {'nom': c.nom, 'quantite': nombre(c.quantite), 'unite': c.unite or ''}
+        for c in alertes(session.get('structure_id'), filiere)]})
+
+
+@app.route('/api/stock-labo-radio/actes', methods=['GET'])
+@login_required
+def api_stock_labo_radio_actes():
+    """Actes du catalogue de cette filière (codes R = laboratoire, Q = imagerie, ou classés à la main)."""
+    filiere = request.args.get('filiere')
+    if filiere not in _filieres_stock():
+        return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+    structure_id = session.get('structure_id')
+    classification = charger_classification_actes(structure_id)
+    noms = set()
+    try:
+        for r in sheets_helper.get_all_records('actes') or []:
+            nom = str(r.get('nom') or '').strip()
+            if nom and determiner_type_prestation(nom, classification) == filiere:
+                noms.add(nom)
+    except Exception as e:
+        print(f"⚠️ Catalogue des actes illisible pour le stock labo/radio : {e}")
+    noms.update(n for (n,) in db.session.query(UsageConsommable.acte_nom).join(
+        ConsommableLabo, ConsommableLabo.id == UsageConsommable.consommable_id).filter(
+        ConsommableLabo.structure_id == structure_id, ConsommableLabo.filiere == filiere).all())
+    noms.update(n for (n,) in db.session.query(DemandeExamen.acte_nom).filter(
+        DemandeExamen.structure_id == structure_id, DemandeExamen.type_prestation == filiere).distinct().all() if n)
+    return jsonify({'success': True, 'actes': sorted(noms, key=lambda n: n.lower())})
+
+
+def _qpe_depuis(data, stock):
+    """Quantité par examen : donnée, ou déduite d'un nombre d'examens possibles (stock / nombre)."""
+    from services.consommables_service import _d
+    if data.get('nb_examens') not in (None, ''):
+        n = int(float(data.get('nb_examens')))
+        if n <= 0 or _d(stock) <= 0:
+            return None
+        from decimal import Decimal as _D, ROUND_DOWN
+        return (_d(stock) / n).quantize(_D('0.0001'), rounding=ROUND_DOWN)   # vers le bas : jamais un examen de moins
+    q = _d(data.get('quantite_par_examen'))
+    return q if q > 0 else None
+
+
+@app.route('/api/stock-labo-radio', methods=['POST'])
+@login_required
+def api_creer_article_stock():
+    from services.consommables_service import CATEGORIES, seuil_par_defaut, mouvement, _d
+    try:
+        data = request.json or {}
+        filiere = data.get('filiere')
+        if filiere not in _filieres_stock():
+            return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+        categorie = data.get('categorie')
+        if categorie not in CATEGORIES[filiere]:
+            return jsonify({'success': False, 'error': 'Catégorie inconnue'}), 400
+        nom = (data.get('nom') or '').strip()
+        if not nom:
+            return jsonify({'success': False, 'error': "Nom de l'article requis"}), 400
+        if data.get('quantite') in (None, '') or _d(data.get('quantite')) < 0:
+            return jsonify({'success': False, 'error': 'Quantité disponible requise'}), 400
+        quantite = _d(data.get('quantite'))
+        seuil = _d(data.get('seuil_alerte')) if data.get('seuil_alerte') not in (None, '') else seuil_par_defaut(quantite)
+        structure_id = session.get('structure_id')
+        c = ConsommableLabo(structure_id=structure_id, filiere=filiere, categorie=categorie, nom=nom[:200],
+                            type_article=(data.get('type_article') or '').strip()[:200] or None,
+                            unite=(data.get('unite') or '').strip()[:40] or None, quantite=0, seuil_alerte=seuil,
+                            actif=True, created_by=session.get('user_name'))
+        db.session.add(c)
+        db.session.flush()
+        if quantite > 0:
+            mouvement(c, 'entree', quantite, session.get('user_name'), commentaire='Stock de départ')
+        acte = (data.get('acte_nom') or '').strip()
+        if acte:
+            qpe = _qpe_depuis(data, quantite)
+            if not qpe:
+                db.session.rollback()
+                return jsonify({'success': False, 'error': "Quantité par examen invalide"}), 400
+            db.session.add(UsageConsommable(structure_id=structure_id, consommable_id=c.id, acte_nom=acte[:255],
+                                            quantite_par_examen=qpe))
+        db.session.commit()
+        return jsonify({'success': True, 'id': c.id})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/stock-labo-radio/<int:article_id>', methods=['POST'])
+@login_required
+def api_modifier_article_stock(article_id):
+    from services.consommables_service import CATEGORIES, _d
+    try:
+        c = _article_stock(article_id)
+        if not c:
+            return jsonify({'success': False, 'error': 'Article introuvable'}), 404
+        data = request.json or {}
+        if 'nom' in data:
+            nom = (data.get('nom') or '').strip()
+            if not nom:
+                return jsonify({'success': False, 'error': "Nom de l'article requis"}), 400
+            c.nom = nom[:200]
+        if data.get('categorie') in CATEGORIES[c.filiere]:
+            c.categorie = data['categorie']
+        if 'type_article' in data:
+            c.type_article = (data.get('type_article') or '').strip()[:200] or None
+        if 'unite' in data:
+            c.unite = (data.get('unite') or '').strip()[:40] or None
+        if 'seuil_alerte' in data:
+            c.seuil_alerte = _d(data['seuil_alerte']) if data['seuil_alerte'] not in (None, '') else None
+        if 'actif' in data:
+            c.actif = bool(data['actif'])
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/stock-labo-radio/<int:article_id>/approvisionner', methods=['POST'])
+@login_required
+def api_approvisionner_article_stock(article_id):
+    from services.consommables_service import mouvement, _d, nombre
+    try:
+        c = _article_stock(article_id)
+        if not c:
+            return jsonify({'success': False, 'error': 'Article introuvable'}), 404
+        data = request.json or {}
+        q = _d(data.get('quantite'))
+        if q <= 0:
+            return jsonify({'success': False, 'error': 'Quantité invalide'}), 400
+        mouvement(c, 'entree', q, session.get('user_name'), commentaire=data.get('commentaire'))
+        db.session.commit()
+        return jsonify({'success': True, 'quantite': nombre(c.quantite)})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/stock-labo-radio/<int:article_id>/usages', methods=['POST'])
+@login_required
+def api_ajouter_usage_stock(article_id):
+    try:
+        c = _article_stock(article_id)
+        if not c:
+            return jsonify({'success': False, 'error': 'Article introuvable'}), 404
+        data = request.json or {}
+        acte = (data.get('acte_nom') or '').strip()
+        if not acte:
+            return jsonify({'success': False, 'error': 'Examen requis'}), 400
+        qpe = _qpe_depuis(data, c.quantite)
+        if not qpe:
+            return jsonify({'success': False, 'error': 'Quantité par examen invalide'}), 400
+        u = UsageConsommable.query.filter_by(consommable_id=c.id, acte_nom=acte).first()
+        if u:
+            u.quantite_par_examen = qpe
+        else:
+            db.session.add(UsageConsommable(structure_id=c.structure_id, consommable_id=c.id, acte_nom=acte[:255],
+                                            quantite_par_examen=qpe))
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/stock-labo-radio/usages/<int:usage_id>', methods=['POST', 'DELETE'])
+@login_required
+def api_modifier_usage_stock(usage_id):
+    try:
+        u = UsageConsommable.query.filter_by(id=usage_id, structure_id=session.get('structure_id')).first()
+        c = _article_stock(u.consommable_id) if u else None
+        if not u or not c:
+            return jsonify({'success': False, 'error': 'Introuvable'}), 404
+        if request.method == 'DELETE':
+            db.session.delete(u)
+        else:
+            qpe = _qpe_depuis(request.json or {}, c.quantite)
+            if not qpe:
+                return jsonify({'success': False, 'error': "Quantité par examen ou nombre d'examens invalide"}), 400
+            u.quantite_par_examen = qpe
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/stock-labo-radio/<int:article_id>/mouvements', methods=['GET'])
+@login_required
+def api_mouvements_article_stock(article_id):
+    from services.consommables_service import TYPES_MOUVEMENT, nombre
+    c = _article_stock(article_id)
+    if not c:
+        return jsonify({'success': False, 'error': 'Article introuvable'}), 404
+    lignes = db.session.query(MouvementConsommable, DemandeExamen.patient_nom).outerjoin(
+        DemandeExamen, DemandeExamen.id == MouvementConsommable.demande_id).filter(
+        MouvementConsommable.consommable_id == c.id).order_by(MouvementConsommable.date.desc(), MouvementConsommable.id.desc()).limit(300).all()
+    return jsonify({'success': True, 'mouvements': [{
+        'date': m.date.strftime('%d/%m/%Y %H:%M') if m.date else '', 'type': m.type_mouvement,
+        'libelle': TYPES_MOUVEMENT.get(m.type_mouvement, m.type_mouvement), 'quantite': nombre(m.quantite),
+        'stock_apres': nombre(m.stock_apres) if m.stock_apres is not None else None,
+        'acte_nom': m.acte_nom or '', 'patient': patient or '', 'commentaire': m.commentaire or '', 'auteur': m.auteur or '',
+    } for m, patient in lignes]})
+
+
+@app.route('/stock-labo-radio/inventaire')
+@login_required
+def page_inventaire_labo_radio():
+    from services.consommables_service import rapport_periode, CATEGORIES
+    filieres = _filieres_stock()
+    if not filieres:
+        flash('Accès non autorisé pour votre rôle.', 'danger')
+        return redirect(url_for('dashboard'))
+    filiere = request.args.get('filiere')
+    if filiere not in filieres:
+        filiere = filieres[0]
+    mois = request.args.get('mois') or datetime.now().strftime('%Y-%m')
+    try:
+        debut = datetime.strptime(mois + '-01', '%Y-%m-%d')
+    except ValueError:
+        debut = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        mois = debut.strftime('%Y-%m')
+    fin = debut.replace(year=debut.year + 1, month=1) if debut.month == 12 else debut.replace(month=debut.month + 1)
+    mois_fr = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
+    return render_template('inventaire_labo_radio.html', filiere=filiere, mois=mois,
+                           libelle_mois=f"{mois_fr[debut.month - 1]} {debut.year}",
+                           lignes=rapport_periode(session.get('structure_id'), filiere, debut, fin),
+                           categories=CATEGORIES[filiere], structure_nom=session.get('structure_nom') or '',
+                           maintenant=datetime.now().strftime('%d/%m/%Y %H:%M'))
+
+
+@app.route('/api/stock-labo-radio/inventaire', methods=['POST'])
+@login_required
+def api_inventaire_labo_radio():
+    """Comptage physique : l'écart avec le stock du logiciel est enregistré et le stock corrigé."""
+    from services.consommables_service import mouvement, _d
+    try:
+        data = request.json or {}
+        if data.get('filiere') not in _filieres_stock():
+            return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
+        ecarts = 0
+        for ligne in data.get('comptes') or []:
+            c = _article_stock(int(ligne.get('id') or 0))
+            if not c or c.filiere != data.get('filiere') or ligne.get('quantite_comptee') in (None, ''):
+                continue
+            compte = _d(ligne.get('quantite_comptee'))
+            if compte < 0:
+                return jsonify({'success': False, 'error': f"Quantité comptée invalide pour {c.nom}"}), 400
+            ecart = compte - _d(c.quantite)
+            if ecart != 0:
+                mouvement(c, 'inventaire', ecart, session.get('user_name'), commentaire=f"Inventaire : compté {compte}")
+                ecarts += 1
+        db.session.commit()
+        return jsonify({'success': True, 'ecarts': ecarts})
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -26243,8 +26583,13 @@ def api_sync_resultat_examen_externe():
             )
             db.session.add(demande)
             db.session.flush()
+            from services.consommables_service import apres_changement_statut
+            apres_changement_statut(demande, None, auteur_nom)   # ⭐ 2026-10-18 : stock labo / radio
         elif demande.statut != 'realisee':
+            ancien_statut = demande.statut
             demande.statut = 'realisee'
+            from services.consommables_service import apres_changement_statut
+            apres_changement_statut(demande, ancien_statut, auteur_nom)
 
         resultat = ResultatExamen.query.filter_by(
             structure_id=structure_id, source_app=source_app,

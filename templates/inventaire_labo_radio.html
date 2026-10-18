@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block title %}Inventaire {{ 'laboratoire' if filiere == 'analyse' else 'radiologie' }} — {{ libelle_mois }}{% endblock %}
+
+{% block content %}
+{# ⭐ 2026-10-18 (patron) : « à la fin du mois, faire l'inventaire de combien il reste pour pouvoir
+   faire l'approvisionnement... imprimer ». #}
+<style>
+    @media print {
+        .no-print, nav, .navbar, .sidebar, #sidebar, .mega-menu, header, footer { display: none !important; }
+        .card { border: 0 !important; box-shadow: none !important; }
+        .inv-compte { border: 0; background: transparent; padding: 0; width: 70px; }
+        body { background: #fff !important; }
+    }
+    .inv-table td, .inv-table th { font-size: 13px; vertical-align: middle; }
+    .inv-epuise td { background: #fdecea !important; }
+    .inv-alerte td { background: #fff7e0 !important; }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2 no-print">
+    <a href="{{ url_for('page_stock_labo_radio', filiere=filiere) }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i>Stock</a>
+    <form method="GET" class="d-flex gap-2 align-items-center">
+        <input type="hidden" name="filiere" value="{{ filiere }}">
+        <label class="small text-muted">Mois</label>
+        <input type="month" name="mois" class="form-control form-control-sm" value="{{ mois }}" onchange="this.form.submit()">
+    </form>
+    <div class="d-flex gap-2">
+        <button class="btn btn-primary btn-sm" onclick="validerInventaire()"><i class="fas fa-check me-1"></i>Enregistrer le comptage</button>
+        <button class="btn btn-dark btn-sm" onclick="window.print()"><i class="fas fa-print me-1"></i>Imprimer</button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start mb-3">
+            <div>
+                <h5 class="mb-0">{{ structure_nom }}</h5>
+                <div class="fw-bold">Inventaire {{ 'du laboratoire (réactifs, tubes)' if filiere == 'analyse' else 'de la radiologie (films)' }}</div>
+                <div class="text-muted small">{{ libelle_mois }} — imprimé le {{ maintenant }}</div>
+            </div>
+            <div class="text-end small">
+                <span class="badge bg-danger">{{ lignes|selectattr('niveau', 'equalto', 'epuise')|list|length }} épuisé(s)</span>
+                <span class="badge bg-warning text-dark">{{ lignes|selectattr('niveau', 'equalto', 'alerte')|list|length }} bientôt fini(s)</span>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-bordered inv-table mb-2">
+                <thead class="table-light">
+                    <tr>
+                        <th>Article</th>
+                        <th class="text-end">Stock au début</th>
+                        <th class="text-end">Entrées</th>
+                        <th class="text-end">Utilisé (examens)</th>
+                        <th class="text-end">Écarts</th>
+                        <th class="text-end">Stock à la fin</th>
+                        <th class="text-end">Stock actuel</th>
+                        <th class="text-center">Quantité comptée</th>
+                        <th class="text-end">À commander</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for l in lignes %}
+                    <tr class="{{ 'inv-' ~ l.niveau if l.actif and l.niveau != 'ok' else '' }}">
+                        <td>
+                            <strong>{{ l.nom }}</strong>{% if not l.actif %} <span class="badge bg-secondary">désactivé</span>{% endif %}
+                            <div class="small text-muted">{{ categories.get(l.categorie, l.categorie) }}{% if l.type_article %} — {{ l.type_article }}{% endif %} ({{ l.unite }})</div>
+                        </td>
+                        <td class="text-end">{{ l.stock_debut }}</td>
+                        <td class="text-end">{{ l.entrees or '' }}</td>
+                        <td class="text-end">{{ l.consommation or '' }}{% if l.nb_examens %}<div class="small text-muted">{{ l.nb_examens }} examen(s)</div>{% endif %}</td>
+                        <td class="text-end">{{ l.ecarts or '' }}</td>
+                        <td class="text-end"><strong>{{ l.stock_fin }}</strong></td>
+                        <td class="text-end">{{ l.stock_actuel }}{% if l.seuil is not none %}<div class="small text-muted">alerte à {{ l.seuil }}</div>{% endif %}</td>
+                        <td class="text-center">
+                            <input type="number" step="any" min="0" class="form-control form-control-sm inv-compte mx-auto" style="max-width:100px"
+                                   data-id="{{ l.id }}" data-actuel="{{ l.stock_actuel }}" placeholder="—">
+                        </td>
+                        <td class="text-end">{% if l.a_commander %}<strong class="text-danger">{{ l.a_commander }}</strong>{% endif %}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="9" class="text-center text-muted py-4">Aucun article en stock.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="small text-muted">
+            « Utilisé » : quantité déduite par les examens réalisés pendant le mois (examens annulés remis).
+            « À commander » : de quoi couvrir au moins la consommation du mois (ou le seuil d'alerte) au-delà du stock restant.
+            Saisissez la quantité réellement comptée puis « Enregistrer le comptage » : l'écart est enregistré et le stock corrigé.
+        </div>
+        <div class="d-flex justify-content-between mt-5 small">
+            <div>Fait par : ______________________</div>
+            <div>Vérifié par : ______________________</div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function validerInventaire() {
+    const comptes = [...document.querySelectorAll('.inv-compte')].filter(i => i.value !== '')
+        .map(i => ({id: parseInt(i.dataset.id), quantite_comptee: i.value}));
+    if (!comptes.length) { await afficherMessage('Saisissez au moins une quantité comptée.'); return; }
+    const ecarts = comptes.filter(c => Math.abs(parseFloat(c.quantite_comptee) - parseFloat(document.querySelector(`.inv-compte[data-id="${c.id}"]`).dataset.actuel)) > 1e-9).length;
+    if (!await demanderConfirmation(`Enregistrer le comptage de ${comptes.length} article(s) ? ${ecarts} écart(s) seront enregistrés et le stock corrigé.`)) return;
+    try {
+        const r = await fetch('/api/stock-labo-radio/inventaire', { method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({filiere: {{ filiere|tojson }}, comptes}) });
+        const d = await r.json();
+        if (!d.success) { await afficherMessage(d.error || 'Erreur', {type: 'danger'}); return; }
+        await afficherMessage(`Comptage enregistré : ${d.ecarts} écart(s) corrigé(s).`, {type: 'success'});
+        window.location.reload();
+    } catch (e) { await afficherMessage('Erreur réseau', {type: 'danger'}); }
+}
+</script>
+{% endblock %}

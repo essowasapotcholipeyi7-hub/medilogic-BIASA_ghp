@@ -18,11 +18,19 @@
             {% endif %}
         </div>
     </div>
-    <div class="form-check form-switch">
-        <input class="form-check-input" type="checkbox" id="toggleRealisees" onchange="chargerDemandes()">
-        <label class="form-check-label" for="toggleRealisees">Afficher aussi les demandes réalisées</label>
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+        <a href="{{ url_for('page_stock_labo_radio', filiere=filiere) }}" class="btn btn-outline-dark btn-sm">
+            <i class="fas fa-boxes me-1"></i>{{ 'Réactifs et tubes' if filiere == 'analyse' else 'Films' }}
+            <span class="badge bg-danger ms-1" id="badgeAlertesStock" style="display:none"></span>
+        </a>
+        <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="toggleRealisees" onchange="chargerDemandes()">
+            <label class="form-check-label" for="toggleRealisees">Afficher aussi les demandes réalisées</label>
+        </div>
     </div>
 </div>
+<!-- ⭐ 2026-10-18 : stock bientôt fini -->
+<div id="alertesStock"></div>
 
 <div class="card">
     <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
@@ -60,6 +68,15 @@
 
 <script>
 const FILIERE = "{{ filiere }}";
+fetch('/api/stock-labo-radio/alertes?filiere=' + FILIERE).then(r => r.json()).then(d => {
+    const a = (d && d.alertes) || [];
+    if (!a.length) return;
+    const b = document.getElementById('badgeAlertesStock');
+    b.textContent = a.length; b.style.display = '';
+    const t = document.createElement('div'); t.textContent = a.map(x => `${x.nom} (reste ${x.quantite} ${x.unite})`).join(' · ');
+    document.getElementById('alertesStock').innerHTML = `<div class="alert alert-warning py-2"><i class="fas fa-exclamation-triangle me-1"></i>
+        <strong>Stock bientôt fini :</strong> ${t.innerHTML} — <a href="{{ url_for('page_stock_labo_radio', filiere=filiere) }}">réapprovisionner</a></div>`;
+}).catch(() => {});
 
 function badgePaiement(statut, motif) {
     if (statut === 'paye') return '<span class="badge bg-success">Payé</span>';

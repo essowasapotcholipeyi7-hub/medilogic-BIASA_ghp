@@ -2698,6 +2698,11 @@ async function appliquerPropositionTheme() {
                     <i class="fas fa-x-ray"></i> Radiologie
                 </a>
                 {% endif %}
+                {% if session.role in ['laborantin', 'radiologue', 'admin', 'gestionnaire'] or session.is_admin or a_acces('demandes_laboratoire') or a_acces('demandes_radiologie') %}
+                <a class="menu-item" href="{{ url_for('page_stock_labo_radio') }}">
+                    <i class="fas fa-boxes"></i> Stock &amp; inventaire
+                </a>
+                {% endif %}
                 {% if session.role in ['admin', 'medecin', 'laborantin', 'radiologue', 'secretaire'] %}
                 <a class="menu-item" href="{{ url_for('page_resultats_analyses') }}">
                     Résultats d'analyses

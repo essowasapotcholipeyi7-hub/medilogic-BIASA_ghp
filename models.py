@@ -3746,6 +3746,49 @@ class LieuResidenceMemorise(db.Model):
 # sur le disque du serveur : l'appli tourne sur Render, dont le disque
 # n'est pas garanti persister entre redéploiements — un fichier local
 # aurait pu disparaître silencieusement au prochain déploiement.
+# ⭐ 2026-10-18 (patron) : stock du laboratoire (réactifs, tubes) et de la radiologie (films) — voir
+# services/consommables_service.py
+class ConsommableLabo(db.Model):
+    __tablename__ = 'consommables_labo'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    filiere = db.Column(db.String(10), nullable=False)        # 'analyse' (labo) | 'examen' (radio)
+    categorie = db.Column(db.String(20), nullable=False)      # film | tube | reactif | autre
+    nom = db.Column(db.String(200), nullable=False)
+    type_article = db.Column(db.String(200))                  # type de film / de réactif / de tube
+    unite = db.Column(db.String(40))
+    quantite = db.Column(db.Numeric, nullable=False, default=0)
+    seuil_alerte = db.Column(db.Numeric)
+    actif = db.Column(db.Boolean, nullable=False, default=True)
+    created_by = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class UsageConsommable(db.Model):
+    """Un type d'examen (acte du catalogue) réalisé avec cet article, et la quantité qu'il en utilise."""
+    __tablename__ = 'usages_consommables'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    consommable_id = db.Column(db.Integer, nullable=False)
+    acte_nom = db.Column(db.String(255), nullable=False)
+    quantite_par_examen = db.Column(db.Numeric, nullable=False)
+
+
+class MouvementConsommable(db.Model):
+    __tablename__ = 'mouvements_consommables'
+    id = db.Column(db.Integer, primary_key=True)
+    structure_id = db.Column(db.Integer, nullable=False)
+    consommable_id = db.Column(db.Integer, nullable=False)
+    date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    type_mouvement = db.Column(db.String(20), nullable=False)  # entree | sortie | retour | inventaire | correction
+    quantite = db.Column(db.Numeric, nullable=False)           # signée
+    stock_apres = db.Column(db.Numeric)
+    demande_id = db.Column(db.Integer)
+    acte_nom = db.Column(db.String(255))
+    commentaire = db.Column(db.String(300))
+    auteur = db.Column(db.String(255))
+
+
 class ModeleResultat(db.Model):
     __tablename__ = 'modeles_resultats'
     id = db.Column(db.Integer, primary_key=True)

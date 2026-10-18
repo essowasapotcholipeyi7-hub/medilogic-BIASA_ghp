@@ -1,0 +1,396 @@
+{% extends "base.html" %}
+
+{% block title %}Stock {{ 'du laboratoire' if filiere == 'analyse' else 'de la radiologie' }}{% endblock %}
+
+{% block content %}
+{# ⭐ 2026-10-18 (patron) : stock des films (radiologie), des tubes et réactifs (laboratoire) — combien
+   d'examens on peut encore faire, alerte avant la fin, inventaire du mois. #}
+<style>
+    .stk-niveau-epuise > td { background: #fdecea !important; }
+    .stk-niveau-alerte > td { background: #fff7e0 !important; }
+    .stk-usage { font-size: 12.5px; white-space: nowrap; }
+    .stk-usage input { width: 70px; display: inline-block; padding: 0 4px; height: 24px; font-size: 12.5px; }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h4 class="mb-1">
+            {% if filiere == 'analyse' %}<i class="fas fa-flask me-2"></i>Stock du laboratoire{% else %}<i class="fas fa-x-ray me-2"></i>Stock de la radiologie{% endif %}
+        </h4>
+        <div class="text-muted small">
+            {% if filiere == 'analyse' %}Réactifs et tubes{% else %}Films{% endif %} : quantité disponible, examens encore possibles.
+            Le stock baisse tout seul quand un examen est marqué « réalisé » ; il est remis si l'examen est annulé.
+        </div>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        {% if filieres|length > 1 %}
+        <div class="btn-group btn-group-sm">
+            <a href="{{ url_for('page_stock_labo_radio', filiere='analyse') }}" class="btn btn-outline-primary {{ 'active' if filiere == 'analyse' }}"><i class="fas fa-flask me-1"></i>Laboratoire</a>
+            <a href="{{ url_for('page_stock_labo_radio', filiere='examen') }}" class="btn btn-outline-primary {{ 'active' if filiere == 'examen' }}"><i class="fas fa-x-ray me-1"></i>Radiologie</a>
+        </div>
+        {% endif %}
+        <a href="{{ url_for('page_inventaire_labo_radio', filiere=filiere) }}" class="btn btn-outline-dark btn-sm"><i class="fas fa-clipboard-list me-1"></i>Inventaire du mois</a>
+        <button class="btn btn-dark btn-sm" onclick="ouvrirArticle()"><i class="fas fa-plus me-1"></i>Nouvel article</button>
+    </div>
+</div>
+
+<div id="stkAlertes"></div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Article</th>
+                        <th class="text-end">Disponible</th>
+                        <th>Examens possibles</th>
+                        <th class="text-center">État</th>
+                        <th class="text-end"></th>
+                    </tr>
+                </thead>
+                <tbody id="stkCorps"><tr><td colspan="5" class="text-center text-muted py-4">Chargement…</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Nouvel article / modification -->
+<div class="modal fade" id="modalArticle" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="artTitre">Nouvel article</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="artId">
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label small mb-1">Catégorie</label>
+                        <select class="form-select" id="artCategorie" onchange="majUnite()">
+                            {% for cle, libelle in categories.items() %}<option value="{{ cle }}">{{ libelle }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small mb-1">Unité</label>
+                        <input class="form-control" id="artUnite" placeholder="film(s), tube(s), ml, test(s)…">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small mb-1">Nom</label>
+                        <input class="form-control" id="artNom" placeholder="{{ 'ex. Réactif Glycémie, Tube EDTA' if filiere == 'analyse' else 'ex. Film 35x43' }}">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small mb-1">Type {{ 'de réactif / de tube' if filiere == 'analyse' else 'de film' }}</label>
+                        <input class="form-control" id="artType" placeholder="{{ 'ex. GOD-PAP, EDTA violet, sec rouge' if filiere == 'analyse' else 'ex. 35x43, 24x30, film sec' }}">
+                    </div>
+                    <div class="col-6" id="artBlocQuantite">
+                        <label class="form-label small mb-1">Quantité disponible <span class="text-danger">*</span></label>
+                        <input type="number" step="any" min="0" class="form-control" id="artQuantite" oninput="majSeuilParDefaut(); calculerExamens('art')">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small mb-1">Alerte quand il reste</label>
+                        <input type="number" step="any" min="0" class="form-control" id="artSeuil" oninput="this.dataset.manuel = '1'">
+                        <div class="form-text">Par défaut 20 % de la quantité</div>
+                    </div>
+                    <div class="col-12" id="artBlocActif">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="artActif">
+                            <label class="form-check-label small" for="artActif">Article utilisé (décochez s'il n'est plus utilisé : il ne baisse plus et ne donne plus d'alerte)</label>
+                        </div>
+                    </div>
+                </div>
+                <div id="artBlocExamen" class="border rounded p-2 mt-3 bg-light">
+                    <div class="fw-semibold small mb-1">Type d'examen réalisé avec cet article (facultatif ici)</div>
+                    <select class="form-select form-select-sm mb-2" id="artActe"><option value="">— Choisir un examen —</option></select>
+                    <div class="row g-2 align-items-end">
+                        <div class="col-6">
+                            <label class="form-label small mb-1">Quantité par examen</label>
+                            <input type="number" step="any" min="0" class="form-control form-control-sm" id="artQpe" oninput="calculerExamens('art')">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small mb-1">Nombre d'examens possibles</label>
+                            <input type="number" step="1" min="0" class="form-control form-control-sm" id="artNb" oninput="calculerQpe('art')">
+                        </div>
+                    </div>
+                    <div class="form-text">Calculé avec la quantité disponible ; vous pouvez corriger le nombre d'examens, la quantité par examen suit.</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="enregistrerArticle()"><i class="fas fa-check me-1"></i>Enregistrer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Types d'examens d'un article -->
+<div class="modal fade" id="modalUsages" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Examens réalisés avec <span id="usNom"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="small text-muted mb-2">Disponible : <strong id="usStock"></strong></div>
+                <table class="table table-sm align-middle">
+                    <thead class="table-light"><tr><th>Examen</th><th style="width:150px">Quantité par examen</th><th style="width:150px">Examens possibles</th><th></th></tr></thead>
+                    <tbody id="usCorps"></tbody>
+                </table>
+                <div class="border rounded p-2 bg-light">
+                    <div class="fw-semibold small mb-1">Ajouter un examen</div>
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-6"><select class="form-select form-select-sm" id="usActe"><option value="">— Choisir un examen —</option></select></div>
+                        <div class="col-md-2"><label class="form-label small mb-0">Qté / examen</label><input type="number" step="any" min="0" class="form-control form-control-sm" id="usQpe" oninput="calculerExamens('us')"></div>
+                        <div class="col-md-2"><label class="form-label small mb-0">Examens possibles</label><input type="number" step="1" min="0" class="form-control form-control-sm" id="usNb" oninput="calculerQpe('us')"></div>
+                        <div class="col-md-2"><button class="btn btn-sm btn-primary w-100" onclick="ajouterUsage()"><i class="fas fa-plus"></i> Ajouter</button></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Historique -->
+<div class="modal fade" id="modalHistorique" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Mouvements — <span id="hiNom"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light"><tr><th>Date</th><th>Mouvement</th><th class="text-end">Quantité</th><th class="text-end">Stock après</th><th>Détail</th></tr></thead>
+                    <tbody id="hiCorps"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const FILIERE_STOCK = {{ filiere|tojson }};
+const UNITES = {{ unites|tojson }};
+let ARTICLES = [];
+let ACTES = [];
+let articleCourant = null;
+
+function esc(t) { const d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
+function nb(v) { return (v == null || v === '') ? '' : Number(v).toLocaleString('fr-FR', {maximumFractionDigits: 3}); }
+
+async function appel(url, corps, methode) {
+    try {
+        const r = await fetch(url, corps === undefined && !methode ? {} : { method: methode || 'POST', headers: {'Content-Type': 'application/json'}, body: corps === undefined ? undefined : JSON.stringify(corps) });
+        const d = await r.json();
+        if (d && d.success === false) { await afficherMessage(d.error || 'Erreur', {type: 'danger'}); return null; }
+        return d;
+    } catch (e) { await afficherMessage('Erreur réseau', {type: 'danger'}); return null; }
+}
+
+function badgeNiveau(n) {
+    if (n === 'epuise') return '<span class="badge bg-danger">Épuisé</span>';
+    if (n === 'alerte') return '<span class="badge bg-warning text-dark"><i class="fas fa-exclamation-triangle me-1"></i>Bientôt fini</span>';
+    return '<span class="badge bg-success">OK</span>';
+}
+
+async function charger() {
+    const d = await appel('/api/stock-labo-radio?filiere=' + FILIERE_STOCK);
+    if (!d) return;
+    ARTICLES = d.articles;
+    const alertes = ARTICLES.filter(a => a.actif && a.niveau !== 'ok');
+    document.getElementById('stkAlertes').innerHTML = alertes.length ? `
+        <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle me-1"></i><strong>À réapprovisionner :</strong>
+            ${alertes.map(a => `${esc(a.nom)} (reste ${nb(a.quantite)} ${esc(a.unite)})`).join(' · ')}
+        </div>` : '';
+    const corps = document.getElementById('stkCorps');
+    if (!ARTICLES.length) {
+        corps.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-4">Aucun article. Cliquez « Nouvel article » pour enregistrer ${FILIERE_STOCK === 'analyse' ? 'un réactif ou des tubes' : 'un film'}.</td></tr>`;
+        return;
+    }
+    corps.innerHTML = ARTICLES.map(a => `
+        <tr class="${a.actif ? 'stk-niveau-' + a.niveau : 'text-muted'}">
+            <td>
+                <div class="fw-semibold">${esc(a.nom)} ${a.actif ? '' : '<span class="badge bg-secondary">Désactivé</span>'}</div>
+                <div class="small text-muted">${esc(a.categorie_libelle)}${a.type_article ? ' — ' + esc(a.type_article) : ''}</div>
+            </td>
+            <td class="text-end text-nowrap"><strong>${nb(a.quantite)}</strong> ${esc(a.unite)}
+                ${a.seuil != null ? `<div class="small text-muted">alerte à ${nb(a.seuil)}</div>` : ''}</td>
+            <td>${a.usages.length ? a.usages.map(u => `<div class="stk-usage">${esc(u.acte_nom)} : <strong>${u.examens_possibles ?? '—'}</strong> <span class="text-muted">(${nb(u.quantite_par_examen)} ${esc(a.unite)} / examen)</span></div>`).join('')
+                : '<span class="small text-muted">Aucun examen lié</span>'}</td>
+            <td class="text-center">${badgeNiveau(a.niveau)}</td>
+            <td class="text-end text-nowrap">
+                <button class="btn btn-sm btn-success" onclick="approvisionner(${a.id})" title="Approvisionner"><i class="fas fa-plus"></i> Entrée</button>
+                <button class="btn btn-sm btn-outline-primary" onclick="ouvrirUsages(${a.id})" title="Examens réalisés avec cet article"><i class="fas fa-link"></i></button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="ouvrirArticle(${a.id})" title="Modifier"><i class="fas fa-pen"></i></button>
+                <button class="btn btn-sm btn-outline-dark" onclick="historique(${a.id})" title="Mouvements"><i class="fas fa-history"></i></button>
+            </td>
+        </tr>`).join('');
+}
+
+async function chargerActes() {
+    const d = await appel('/api/stock-labo-radio/actes?filiere=' + FILIERE_STOCK);
+    ACTES = d ? d.actes : [];
+    const opts = '<option value="">— Choisir un examen —</option>' + ACTES.map(a => `<option>${esc(a)}</option>`).join('');
+    document.getElementById('artActe').innerHTML = opts;
+    document.getElementById('usActe').innerHTML = opts;
+}
+
+function majUnite() {
+    const cat = document.getElementById('artCategorie').value;
+    const u = document.getElementById('artUnite');
+    if (!u.dataset.manuel) u.value = UNITES[cat] || '';
+    // film et tube : 1 par examen par défaut
+    const qpe = document.getElementById('artQpe');
+    if (!qpe.value && (cat === 'film' || cat === 'tube')) { qpe.value = 1; calculerExamens('art'); }
+}
+document.addEventListener('input', e => { if (e.target.id === 'artUnite') e.target.dataset.manuel = '1'; });
+
+function majSeuilParDefaut() {
+    const s = document.getElementById('artSeuil');
+    if (s.dataset.manuel) return;
+    const q = parseFloat(document.getElementById('artQuantite').value);
+    s.value = q > 0 ? Math.ceil(q * 0.2) : '';
+}
+
+function stockPour(prefixe) {
+    if (prefixe === 'art') return parseFloat(document.getElementById('artQuantite').value) || 0;
+    return articleCourant ? Number(articleCourant.quantite) : 0;
+}
+function calculerExamens(prefixe) {
+    const qpe = parseFloat(document.getElementById(prefixe + 'Qpe').value);
+    document.getElementById(prefixe + 'Nb').value = qpe > 0 ? Math.floor(stockPour(prefixe) / qpe + 1e-9) : '';
+}
+function calculerQpe(prefixe) {
+    const n = parseInt(document.getElementById(prefixe + 'Nb').value);
+    const s = stockPour(prefixe);
+    if (n > 0 && s > 0) document.getElementById(prefixe + 'Qpe').value = Math.floor(s / n * 10000) / 10000;   // vers le bas
+}
+
+function ouvrirArticle(id) {
+    const a = id ? ARTICLES.find(x => x.id === id) : null;
+    document.getElementById('artTitre').textContent = a ? 'Modifier l\'article' : 'Nouvel article';
+    document.getElementById('artId').value = a ? a.id : '';
+    document.getElementById('artCategorie').value = a ? a.categorie : document.getElementById('artCategorie').options[0].value;
+    document.getElementById('artNom').value = a ? a.nom : '';
+    document.getElementById('artType').value = a ? a.type_article : '';
+    const u = document.getElementById('artUnite'); u.value = a ? a.unite : ''; delete u.dataset.manuel;
+    const q = document.getElementById('artQuantite'); q.value = a ? a.quantite : '';
+    const s = document.getElementById('artSeuil'); s.value = a && a.seuil != null ? a.seuil : ''; delete s.dataset.manuel;
+    if (a) s.dataset.manuel = '1';
+    // la quantité d'un article existant change par « Entrée » ou par l'inventaire (mouvements tracés)
+    document.getElementById('artBlocQuantite').style.display = a ? 'none' : '';
+    document.getElementById('artBlocExamen').style.display = a ? 'none' : '';
+    document.getElementById('artBlocActif').style.display = a ? '' : 'none';
+    document.getElementById('artActif').checked = a ? a.actif : true;
+    ['artActe', 'artQpe', 'artNb'].forEach(i => document.getElementById(i).value = '');
+    if (!a) majUnite();
+    new bootstrap.Modal(document.getElementById('modalArticle')).show();
+}
+
+async function enregistrerArticle() {
+    const id = document.getElementById('artId').value;
+    const corps = {
+        filiere: FILIERE_STOCK,
+        categorie: document.getElementById('artCategorie').value,
+        nom: document.getElementById('artNom').value.trim(),
+        type_article: document.getElementById('artType').value.trim(),
+        unite: document.getElementById('artUnite').value.trim(),
+        seuil_alerte: document.getElementById('artSeuil').value,
+    };
+    if (!corps.nom) { await afficherMessage("Indiquez le nom de l'article."); return; }
+    if (id) corps.actif = document.getElementById('artActif').checked;
+    if (!id) {
+        corps.quantite = document.getElementById('artQuantite').value;
+        if (corps.quantite === '') { await afficherMessage('Indiquez la quantité disponible.'); return; }
+        corps.acte_nom = document.getElementById('artActe').value;
+        corps.quantite_par_examen = document.getElementById('artQpe').value;
+        if (corps.acte_nom && !(parseFloat(corps.quantite_par_examen) > 0)) { await afficherMessage("Indiquez la quantité par examen (ou le nombre d'examens possibles)."); return; }
+    }
+    const d = await appel(id ? '/api/stock-labo-radio/' + id : '/api/stock-labo-radio', corps);
+    if (!d) return;
+    bootstrap.Modal.getInstance(document.getElementById('modalArticle')).hide();
+    charger();
+}
+
+async function approvisionner(id) {
+    const a = ARTICLES.find(x => x.id === id);
+    const v = await demanderSaisie(`Quantité reçue pour « ${a.nom} » (en ${a.unite || 'unités'}) — stock actuel : ${nb(a.quantite)}`, '');
+    if (v === null || v === '') return;
+    const q = parseFloat(String(v).replace(',', '.'));
+    if (!(q > 0)) { await afficherMessage('Quantité invalide.'); return; }
+    if (await appel(`/api/stock-labo-radio/${id}/approvisionner`, {quantite: q})) charger();
+}
+
+function rendreUsages() {
+    const a = articleCourant;
+    document.getElementById('usNom').textContent = a.nom;
+    document.getElementById('usStock').textContent = nb(a.quantite) + ' ' + a.unite;
+    document.getElementById('usCorps').innerHTML = a.usages.length ? a.usages.map(u => `
+        <tr>
+            <td class="small">${esc(u.acte_nom)}</td>
+            <td><input type="number" step="any" min="0" class="form-control form-control-sm" value="${u.quantite_par_examen}" onchange="modifierUsage(${u.id}, {quantite_par_examen: this.value})"></td>
+            <td><input type="number" step="1" min="1" class="form-control form-control-sm" value="${u.examens_possibles ?? ''}" onchange="modifierUsage(${u.id}, {nb_examens: this.value})" title="Corrigez le nombre d'examens : la quantité par examen sera recalculée"></td>
+            <td class="text-end"><button class="btn btn-sm btn-outline-danger" onclick="supprimerUsage(${u.id})"><i class="fas fa-times"></i></button></td>
+        </tr>`).join('') : '<tr><td colspan="4" class="text-muted small">Aucun examen lié à cet article.</td></tr>';
+    if (!document.getElementById('usQpe').value && (a.categorie === 'film' || a.categorie === 'tube')) {
+        document.getElementById('usQpe').value = 1; calculerExamens('us');
+    }
+}
+
+function ouvrirUsages(id) {
+    articleCourant = ARTICLES.find(x => x.id === id);
+    ['usActe', 'usQpe', 'usNb'].forEach(i => document.getElementById(i).value = '');
+    rendreUsages();
+    new bootstrap.Modal(document.getElementById('modalUsages')).show();
+}
+
+async function rafraichirCourant() {
+    await charger();
+    articleCourant = ARTICLES.find(x => x.id === articleCourant.id);
+    rendreUsages();
+}
+
+async function ajouterUsage() {
+    const acte = document.getElementById('usActe').value;
+    const qpe = document.getElementById('usQpe').value;
+    if (!acte) { await afficherMessage('Choisissez un examen.'); return; }
+    if (!(parseFloat(qpe) > 0)) { await afficherMessage("Indiquez la quantité par examen (ou le nombre d'examens possibles)."); return; }
+    if (await appel(`/api/stock-labo-radio/${articleCourant.id}/usages`, {acte_nom: acte, quantite_par_examen: qpe})) {
+        ['usActe', 'usQpe', 'usNb'].forEach(i => document.getElementById(i).value = '');
+        rafraichirCourant();
+    }
+}
+
+async function modifierUsage(uid, champs) {
+    if (await appel(`/api/stock-labo-radio/usages/${uid}`, champs)) rafraichirCourant();
+}
+
+async function supprimerUsage(uid) {
+    if (!await demanderConfirmation('Retirer cet examen de cet article ? Il ne fera plus baisser ce stock.')) return;
+    if (await appel(`/api/stock-labo-radio/usages/${uid}`, undefined, 'DELETE')) rafraichirCourant();
+}
+
+async function historique(id) {
+    const a = ARTICLES.find(x => x.id === id);
+    document.getElementById('hiNom').textContent = a.nom;
+    document.getElementById('hiCorps').innerHTML = '<tr><td colspan="5" class="text-muted">Chargement…</td></tr>';
+    new bootstrap.Modal(document.getElementById('modalHistorique')).show();
+    const d = await appel(`/api/stock-labo-radio/${id}/mouvements`);
+    if (!d) return;
+    document.getElementById('hiCorps').innerHTML = d.mouvements.length ? d.mouvements.map(m => `
+        <tr>
+            <td class="small text-nowrap">${esc(m.date)}</td>
+            <td class="small">${esc(m.libelle)}</td>
+            <td class="text-end ${m.quantite < 0 ? 'text-danger' : 'text-success'}">${m.quantite > 0 ? '+' : ''}${nb(m.quantite)}</td>
+            <td class="text-end">${nb(m.stock_apres)}</td>
+            <td class="small text-muted">${esc([m.acte_nom, m.patient, m.commentaire, m.auteur].filter(Boolean).join(' — '))}</td>
+        </tr>`).join('') : '<tr><td colspan="5" class="text-muted small">Aucun mouvement.</td></tr>';
+}
+
+chargerActes();
+charger();
+</script>
+{% endblock %}
