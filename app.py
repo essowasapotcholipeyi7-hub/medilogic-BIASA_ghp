@@ -15548,7 +15548,26 @@ def page_resultats_analyses():
     if role == 'secretaire' and not session.get('deonto_resultats_ok'):
         return render_template('resultats_deontologie.html')
 
-    return render_template('resultats_analyses.html')
+    # ⭐ 2026-10-18 (patron) : prescripteur choisi à côté de celui qui signe — médecins de la
+    # structure (les prescripteurs propres à un modèle Word s'y ajoutent à l'ouverture du modèle)
+    prescripteurs = []
+    try:
+        for m in Medecin.query.filter_by(structure_id=session.get('structure_id')).order_by(Medecin.nom).all():
+            if getattr(m, 'actif', True) is False:
+                continue
+            titre = (getattr(m, 'titre', None) or 'Dr').strip()
+            nom = ' '.join(x for x in (m.nom or '', getattr(m, 'prenom', '') or '') if x).strip()
+            if titre and not nom.lower().startswith(titre.lower()):   # « Dr GASTON » déjà titré : pas « Dr Dr »
+                nom = f'{titre} {nom}'
+            if nom and nom not in prescripteurs:
+                prescripteurs.append(nom)
+        for p in PrescripteurExterne.query.filter_by(structure_id=session.get('structure_id')).order_by(PrescripteurExterne.nom).all():
+            if p.actif is not False and p.nom and p.nom.strip() not in prescripteurs:
+                prescripteurs.append(p.nom.strip())
+    except Exception as e:
+        db.session.rollback()
+        print(f"⚠️ Prescripteurs (résultats) : {e}")
+    return render_template('resultats_analyses.html', prescripteurs=prescripteurs)
 
 
 @app.route('/api/resultats-analyses/accepter-deontologie', methods=['POST'])
@@ -15687,12 +15706,14 @@ def api_modele_propose_resultat(demande_id):
                               db.func.substr(ModeleResultat.contenu_html, 1, 300))\
         .filter(ModeleResultat.structure_id == structure_id, ModeleResultat.type_prestation == demande.type_prestation).all()
     modeles = {mid: nom for mid, nom, _, _ in lignes}
+    memoire = None
     for (mid,) in db.session.execute(_text("""
             SELECT r.modele_utilise_id FROM resultats_examens r JOIN demandes_examens d ON d.id = r.demande_id
             WHERE r.structure_id = :s AND d.acte_nom = :a AND r.modele_utilise_id IS NOT NULL
             ORDER BY r.id DESC LIMIT 5"""), {'s': structure_id, 'a': demande.acte_nom}).fetchall():
         if mid in modeles:
-            return jsonify({'success': True, 'modele_id': mid, 'nom': modeles[mid], 'raison': 'memoire'})
+            memoire = mid
+            break
     candidats = []
     for mid, nom, longueur, debut in lignes:
         if not est_formulaire(debut):
@@ -15703,6 +15724,15 @@ def api_modele_propose_resultat(demande_id):
             _CACHE_MOTS_MODELES[cle] = mots_modele(nom, html)
         candidats.append((mid, _CACHE_MOTS_MODELES[cle]))
     mid = proposer_modele(demande.acte_nom, candidats)
+    # ⭐ 2026-10-18 (patron : « quand on prend NFS, c'est NFS qui doit venir ») : le modèle utilisé
+    # la dernière fois ne l'emporte plus sur un modèle qui correspond NETTEMENT mieux à l'acte (avant :
+    # « NORMES NFS », compte rendu mélangé, revenait toujours pour une NFS).
+    if memoire and mid and mid != memoire:
+        duel = [c for c in candidats if c[0] in (mid, memoire)]
+        if len(duel) == 2 and proposer_modele(demande.acte_nom, duel) == mid:
+            return jsonify({'success': True, 'modele_id': mid, 'nom': modeles[mid], 'raison': 'nom'})
+    if memoire:
+        return jsonify({'success': True, 'modele_id': memoire, 'nom': modeles[memoire], 'raison': 'memoire'})
     if mid:
         return jsonify({'success': True, 'modele_id': mid, 'nom': modeles[mid], 'raison': 'nom'})
     return jsonify({'success': True, 'modele_id': None})

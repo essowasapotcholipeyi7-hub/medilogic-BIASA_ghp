@@ -5,6 +5,13 @@
 {% block extra_css %}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.snow.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.min.js"></script>
+<style>
+/* ⭐ 2026-10-18 : une liste vide (field-sizing:content) tombait à ~5 px de haut — invisible, impossible à
+   choisir. Vaut aussi pour les modèles déjà enregistrés avec l'ancienne mise en forme. */
+#zoneFormulaire .modele-formulaire select.mf-liste,
+#zoneFormulaire .modele-formulaire input.mf-combo { min-height: 1.8em; min-width: 7em; }
+#zoneFormulaire .modele-formulaire .mf-texte { min-height: 1.2em; min-width: 5em; }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -63,7 +70,8 @@
                 <div class="mb-2 p-2 border rounded bg-light">
                     <strong id="resultatPatientActe"></strong>
                 </div>
-                <div class="mb-2">
+                <div class="row g-2 mb-2">
+                <div class="col-md-6">
                     <label class="form-label mb-1" id="labelInterprete">Biologiste <span class="text-danger">*</span></label>
                     <select class="form-select" id="resultatSignatureSelect" onchange="changerSignatureSelectionnee()">
                         <option value="">-- Sélectionner --</option>
@@ -76,6 +84,18 @@
                     <small class="text-muted d-block mt-1">
                         Personne pas dans la liste ? <a href="{{ url_for('page_signatures_intervenants') }}" target="_blank">Enregistrez sa signature ici</a>.
                     </small>
+                </div>
+                <!-- ⭐ 2026-10-18 (patron) : prescripteur choisi au même niveau que celui qui signe ;
+                     il remplit la case « Prescripteur » du compte rendu (modèle formulaire). -->
+                <div class="col-md-6">
+                    <label class="form-label mb-1" for="resultatPrescripteurSelect">Prescripteur</label>
+                    <select class="form-select" id="resultatPrescripteurSelect" onchange="changerPrescripteur()">
+                        <option value="">-- Sélectionner --</option>
+                        {% for p in prescripteurs or [] %}<option>{{ p }}</option>{% endfor %}
+                        <option value="__autre__">Autre (saisie libre)</option>
+                    </select>
+                    <input type="text" class="form-control mt-2" id="resultatPrescripteurLibre" placeholder="Nom du prescripteur" style="display:none;" oninput="appliquerPrescripteur()">
+                </div>
                 </div>
                 <!-- ⭐ Deux façons de saisir — patron : "est-ce possible que
                      les modèles... qu'on puisse directement les ouvrir dans
@@ -175,6 +195,8 @@ function afficherFormulaire(html) {
     const zone = document.getElementById('zoneFormulaire');
     zone.innerHTML = html;
     basculerFormulaire(true);
+    fusionnerPrescripteursModele(zone);
+    if (prescripteurChoisi()) appliquerPrescripteur();
     // identité du patient (nom, prénom, sexe, âge, téléphone, dates)
     fetch('/api/resultats-analyses/' + demandeChoisie + '/identite').then(r => r.json()).then(d => {
         if (!d.success) return;
@@ -246,9 +268,32 @@ function figerFormulaire() {
         sp.className = 'mf-valeur';
         if (s.dataset.id) sp.dataset.id = s.dataset.id;
         if (s.getAttribute('style')) sp.setAttribute('style', s.getAttribute('style'));
-        if (!v || (s.dataset.defaut && o && o.defaultSelected) || listesSrc[i].dataset.auto) sp.dataset.vide = '1';
+        // data-garder (liste des normes de la NFS) : jamais « vide », la ligne d'en-tête reste imprimée
+        if (!s.dataset.garder && (!v || (s.dataset.defaut && o && o.defaultSelected) || listesSrc[i].dataset.auto)) sp.dataset.vide = '1';
         sp.textContent = v;
         s.replaceWith(sp);
+    });
+    // ⭐ cases à taper avec choix (« liste modifiable » Word) : la valeur tapée ou choisie
+    const combosSrc = src.querySelectorAll('input.mf-combo');
+    c.querySelectorAll('input.mf-combo').forEach((inp, i) => {
+        const source = combosSrc[i];
+        const v = (source.value || '').replace(/\s+$/, '');
+        const sp = document.createElement('span');
+        sp.className = 'mf-valeur';
+        if (inp.getAttribute('style')) sp.setAttribute('style', inp.getAttribute('style'));
+        if (!v.trim() || (source.dataset.defaut && source.value === source.defaultValue)) sp.dataset.vide = '1';
+        sp.style.whiteSpace = 'pre-wrap';
+        sp.textContent = v;
+        inp.replaceWith(sp);
+    });
+    c.querySelectorAll('datalist').forEach(d => d.remove());
+    // nombres calculés (formule leucocytaire de la NFS)
+    c.querySelectorAll('.mf-calcul').forEach(t => {
+        const sp = document.createElement('span');
+        sp.className = 'mf-valeur';
+        if (!t.textContent.trim()) sp.dataset.vide = '1';
+        sp.textContent = t.textContent.trim();
+        t.replaceWith(sp);
     });
     c.querySelectorAll('.mf-texte').forEach(t => {
         const v = t.innerText.trim();
@@ -338,15 +383,106 @@ function choisirNormes(zone, sexe, ageJours) {
         if (!choix.length && enfant) choix = normes.filter(i => i.enfant && !i.tranche);
         if (!choix.length && ageJours == null && sexe && !normes.some(i => i.enfant || i.tranche))
             choix = normes.filter(i => sexe === 'M' ? i.homme : i.femme);
+        // ⭐ 2026-10-18 : plus âgé que la dernière tranche d'âge de la liste (ex. NFS : « 7 – 10 ans »,
+        // patient de 12 ans) -> normes du sexe (Homme / Femme)
+        const finTranches = Math.max(-1, ...normes.filter(i => i.tranche).map(i => i.tranche[1]));
+        if (!choix.length && ageJours != null && finTranches >= 0 && ageJours > finTranches && sexe)
+            choix = normes.filter(i => !i.tranche && (sexe === 'M' ? i.homme : i.femme));
         if (choix.length === 1) {
             sel.value = choix[0].o.value;
             sel.dataset.auto = '1';   // choisi par le logiciel : ne suffit pas à garder la ligne
+            appliquerNormesColonne(sel);
         }
     });
 }
 document.addEventListener('change', e => {
     if (e.target.matches && e.target.matches('#zoneFormulaire select.mf-liste')) delete e.target.dataset.auto;
+    if (e.target.matches && e.target.matches('#zoneFormulaire select.mf-normes')) appliquerNormesColonne(e.target);
 }, true);
+
+// ⭐ 2026-10-18 — NFS : la liste « Normes » (jeux de normes du Word par âge / sexe) remplit la
+// colonne NORMES ligne par ligne (<span class="mf-norme" data-i="...">).
+function appliquerNormesColonne(sel) {
+    if (!sel.dataset.normes) return;
+    let jeux = {};
+    try { jeux = JSON.parse(sel.dataset.normes); } catch (e) { return; }
+    const valeurs = jeux[sel.selectedOptions[0] ? sel.selectedOptions[0].textContent.trim() : ''] || [];
+    const racine = sel.closest('.modele-formulaire') || document;
+    racine.querySelectorAll('.mf-norme[data-i]').forEach(sp => { sp.textContent = valeurs[parseInt(sp.dataset.i, 10)] || ''; });
+}
+
+// ⭐ 2026-10-18 — NFS : nombre absolu de chaque leucocyte = leucocytes x % / 100 (calcul du Word)
+function _nombreSaisi(t) {
+    const v = parseFloat(String(t || '').replace(/\s| | /g, '').replace(',', '.'));
+    return isNaN(v) ? null : v;
+}
+function calculerFormuleNfs(zone) {
+    const gbEl = zone.querySelector('[data-nfs="gb"]');
+    const gb = gbEl ? _nombreSaisi(gbEl.value !== undefined ? gbEl.value : gbEl.textContent) : null;
+    zone.querySelectorAll('[data-nfs="pct"]').forEach(p => {
+        const tr = p.closest('tr');
+        const abs = tr && tr.querySelector('[data-nfs="abs"]');
+        if (!abs) return;
+        const pct = _nombreSaisi(p.value !== undefined ? p.value : p.textContent);
+        abs.textContent = (gb != null && pct != null) ? Math.round(gb * pct / 100).toLocaleString('fr-FR') : '';
+    });
+}
+document.addEventListener('input', e => {
+    const zone = document.getElementById('zoneFormulaire');
+    if (zone && zone.contains(e.target) && e.target.closest && e.target.closest('[data-nfs]')) calculerFormuleNfs(zone);
+});
+
+// ⭐ 2026-10-18 — prescripteur choisi dans la fenêtre (à côté de celui qui signe) -> case
+// « Prescripteur » du compte rendu ; les prescripteurs du modèle Word s'ajoutent à la liste.
+function prescripteurChoisi() {
+    const sel = document.getElementById('resultatPrescripteurSelect');
+    if (sel.value === '__autre__') return document.getElementById('resultatPrescripteurLibre').value.trim();
+    return sel.value;
+}
+function changerPrescripteur() {
+    const autre = document.getElementById('resultatPrescripteurSelect').value === '__autre__';
+    document.getElementById('resultatPrescripteurLibre').style.display = autre ? 'block' : 'none';
+    if (autre) document.getElementById('resultatPrescripteurLibre').focus();
+    appliquerPrescripteur();
+}
+function appliquerPrescripteur() {
+    const v = prescripteurChoisi();
+    document.querySelectorAll('#zoneFormulaire [data-id="prescripteur"]').forEach(el => {
+        if (el.tagName === 'SELECT') {
+            if (!v) { el.value = ''; return; }
+            let o = [...el.options].find(o => _sansAccents(o.textContent) === _sansAccents(v));
+            if (!o) {
+                o = document.createElement('option');
+                o.textContent = v;
+                el.insertBefore(o, el.querySelector('option[value="__autre__"]'));
+            }
+            el.value = o.value;
+        } else {
+            el.textContent = v;
+        }
+    });
+}
+function fusionnerPrescripteursModele(zone) {
+    const sel = document.getElementById('resultatPrescripteurSelect');
+    const existants = new Set([...sel.options].map(o => _sansAccents(o.textContent)));
+    const autre = sel.querySelector('option[value="__autre__"]');
+    zone.querySelectorAll('select[data-id="prescripteur"] option').forEach(o => {
+        const t = o.textContent.trim();
+        if (!t || o.value === '' || o.value === '__autre__' || existants.has(_sansAccents(t))) return;
+        existants.add(_sansAccents(t));
+        const n = document.createElement('option');
+        n.textContent = t;
+        sel.insertBefore(n, autre);
+    });
+}
+// choisi directement dans le compte rendu : la liste de la fenêtre suit
+document.addEventListener('change', e => {
+    if (!e.target.matches || !e.target.matches('#zoneFormulaire select[data-id="prescripteur"]')) return;
+    const v = e.target.selectedOptions[0] && e.target.value !== '__autre__' ? e.target.selectedOptions[0].textContent.trim() : '';
+    const sel = document.getElementById('resultatPrescripteurSelect');
+    const o = [...sel.options].find(o => _sansAccents(o.textContent) === _sansAccents(v));
+    if (o) { sel.value = o.value; document.getElementById('resultatPrescripteurLibre').style.display = 'none'; }
+});
 
 function chargerModeleDansEditeur() {
     document.getElementById('modeleProposeInfo').textContent = '';
@@ -395,6 +531,9 @@ function ouvrirModalResultat(demandeId, patientNom, acteNom, typePrestation) {
     document.getElementById('resultatPatientActe').textContent = patientNom + ' — ' + acteNom;
     document.getElementById('resultatNomInterprete').value = '';
     document.getElementById('resultatNomInterprete').style.display = 'none';
+    document.getElementById('resultatPrescripteurSelect').value = '';
+    document.getElementById('resultatPrescripteurLibre').value = '';
+    document.getElementById('resultatPrescripteurLibre').style.display = 'none';
     document.getElementById('apercuSignatureResultatZone').style.display = 'none';
     document.getElementById('resultatFichier').value = '';
     document.getElementById('labelInterprete').innerHTML = typePrestation === 'analyse'

@@ -174,8 +174,11 @@ class _Convertisseur:
         liste = None
         if pr is not None:
             liste = pr.find(W + 'dropDownList')
-            if liste is None:
-                liste = pr.find(W + 'comboBox')
+            if liste is None and pr.find(W + 'comboBox') is not None:
+                # ⭐ 2026-10-18 (patron : « on n'arrive pas à saisir ») : une « liste modifiable » Word
+                # (comboBox) se TAPE — on peut aussi y choisir un élément. Rendue en <select>, elle
+                # empêchait d'écrire le résultat (ex. NFS : cases sans aucun choix).
+                return self.combo(pr.find(W + 'comboBox'), texte, style)
         if liste is not None:
             options, vus = [], set()
             for it in liste.findall(W + 'listItem'):
@@ -202,6 +205,29 @@ class _Convertisseur:
         # zone de texte (texte simple, texte enrichi, date)
         return (f'<span class="mf-champ mf-texte" data-mf="{self.n}" contenteditable="true"'
                 + (f' style="{style}"' if style else '') + f'>{escape(texte.strip())}</span>')
+
+    def combo(self, liste, texte, style):
+        """« Liste modifiable » Word : case à taper, avec les choix du Word proposés (datalist) ;
+        sans aucun choix, simple zone de texte."""
+        options, vus = [], set()
+        for it in liste.findall(W + 'listItem'):
+            t = it.get(W + 'displayText')
+            if t is None:
+                t = it.get(W + 'value') or ''
+            t = t.replace('\xa0', ' ').rstrip()
+            if not t.strip() or t.strip().lower().startswith(PLACEHOLDERS) or t in vus:
+                continue
+            vus.add(t)
+            options.append(t)   # espace / virgule de tête gardés : « , à monocytose » se colle au mot d'avant
+        courant = texte.strip()
+        if not options:
+            return (f'<span class="mf-champ mf-texte" data-mf="{self.n}" contenteditable="true"'
+                    + (f' style="{style}"' if style else '') + f'>{escape(courant)}</span>')
+        liste_id = f'mfl-{self.n}'
+        return (f'<input type="text" class="mf-champ mf-combo" data-mf="{self.n}" list="{liste_id}" autocomplete="off"'
+                + (f' value="{escape(courant)}" data-defaut="1"' if courant else '')
+                + (f' style="{style}"' if style else '') + '>'
+                + f'<datalist id="{liste_id}">' + ''.join(f'<option>{escape(o)}</option>' for o in options) + '</datalist>')
 
     def _est_champ(self, sdt):
         """Un contrôle « feuille » (liste / zone) — un contrôle qui en contient d'autres est un simple
@@ -494,9 +520,11 @@ STYLE = """<style>
 .modele-formulaire .mf-entete td{padding:2px 4px}
 .modele-formulaire .mf-identite{width:100%;border-collapse:collapse;border:2px solid #333;border-left:12px solid #666;margin:4px 0 12px}
 .modele-formulaire .mf-identite td{padding:3px 8px;border-bottom:1px solid #bbb}
-.modele-formulaire .mf-liste{field-sizing:content;min-width:2.5em;max-width:100%;font:inherit;border:1px dashed #0d6efd;background:#eef5ff;padding:0 2px}
-.modele-formulaire .mf-texte{display:inline-block;min-width:4em;border-bottom:1px dashed #0d6efd;background:#eef5ff;padding:0 3px;outline:none}
-.modele-formulaire .mf-texte:focus,.modele-formulaire .mf-liste:focus{background:#fff8d6}
+.modele-formulaire .mf-liste{field-sizing:content;min-width:7em;min-height:1.8em;max-width:100%;font:inherit;border:1px solid #0d6efd;border-radius:3px;background:#eef5ff;padding:1px 2px;cursor:pointer}
+.modele-formulaire .mf-combo{field-sizing:content;min-width:7em;min-height:1.8em;max-width:100%;font:inherit;border:1px solid #0d6efd;border-radius:3px;background:#eef5ff;padding:1px 4px}
+.modele-formulaire .mf-texte{display:inline-block;min-width:5em;min-height:1.2em;border-bottom:1px solid #0d6efd;background:#eef5ff;padding:0 3px;outline:none;cursor:text}
+.modele-formulaire .mf-texte:focus,.modele-formulaire .mf-liste:focus,.modele-formulaire .mf-combo:focus{background:#fff8d6}
+.modele-formulaire .mf-norme{white-space:nowrap}
 .modele-formulaire tr.mf-retiree{opacity:.3;text-decoration:line-through}
 </style>"""
 
@@ -511,6 +539,120 @@ def docx_vers_formulaire(data):
     # paragraphes vides en série (espacements Word) : un seul
     contenu = re.sub(r'(?:<p style="margin:0">&nbsp;</p>){2,}', '<p style="margin:0">&nbsp;</p>', contenu)
     return f'<div class="{MARQUEUR}" data-champs="{conv.n}">{STYLE}{_en_tete(z, racine)}{contenu}</div>'
+
+
+def _norm_txt(t):
+    import unicodedata
+    t = unicodedata.normalize('NFKD', t or '')
+    return ''.join(c for c in t if not unicodedata.combining(c)).lower()
+
+
+def _libelle_norme(tete):
+    """« NORME 16jr – 2 mois » -> « 16 jours – 2 mois », « NORME HOMME » -> « Homme »."""
+    t = re.sub(r'^\s*NORMES?\s*', '', tete, flags=re.I).strip(' :').strip()
+    t = re.sub(r'(\d+)\s*(?:jr|j)\b', r'\1 jours', t)
+    return t[:1].upper() + t[1:].lower() if t.isupper() else t
+
+
+def nfs_depuis_docx(data):
+    """⭐ 2026-10-18 (patron : « quand on prend NFS pour remplir, c'est NFS qui doit venir ») : fiche
+    NFS (hémogramme) tirée du Word « NORMES NFS » du labo, où la NFS n'est qu'une partie d'un compte
+    rendu mélangé (GE, selles, CRP, VS, biochimie...). On garde : en-tête, cadre d'identification,
+    paramètres avec leurs unités (cases à taper), une liste « Normes » avec les jeux de normes du Word
+    par âge et par sexe (choisie toute seule selon le patient, elle remplit la colonne NORMES ligne
+    par ligne) et l'interprétation (choix du Word). Lève ValueError si le Word n'a pas cette partie."""
+    import json
+    z = zipfile.ZipFile(BytesIO(data))
+    racine = ET.fromstring(z.read('word/document.xml'))
+    body = racine.find(W + 'body')
+    conv = _Convertisseur()
+
+    identite = ''
+    for tbl in body.iter(W + 'tbl'):
+        toutes = conv.lignes(tbl)
+        for i, tr in enumerate(toutes[:8]):
+            if 'prescripteur' in _texte_brut(tr).lower():
+                identite = conv.cadre_identite(toutes[:i + 1])
+                break
+        if identite:
+            break
+
+    candidats = [t for t in body.iter(W + 'tbl')
+                 if 'hematocrite' in _norm_txt(_texte_brut(t)) and 'biochimie' not in _norm_txt(_texte_brut(t))]
+    if not candidats:
+        raise ValueError("Pas de tableau NFS (hématocrite) dans ce Word")
+    tbl = min(candidats, key=lambda t: len(_texte_brut(t)))
+    lignes = conv.lignes(tbl)
+
+    # jeux de normes : la liste de la colonne NORMES (1re ligne, cellule fusionnée vers le bas)
+    jeux = {}
+    for sdt in lignes[0].iter(W + 'sdt'):
+        pr = sdt.find(W + 'sdtPr')
+        l = None if pr is None else (pr.find(W + 'comboBox') if pr.find(W + 'comboBox') is not None else pr.find(W + 'dropDownList'))
+        if l is None:
+            continue
+        for it in l.findall(W + 'listItem'):
+            brut = (it.get(W + 'displayText') or it.get(W + 'value') or '').replace('\xa0', ' ')
+            m = re.match(r'\s*(NORMES?\s.*?)(?::\s*|\s{2,})(.*)$', brut, flags=re.I)
+            if not m:
+                continue
+            valeurs = [v.strip() for v in re.split(r'\s{2,}', m.group(2).strip()) if v.strip()]
+            if len(valeurs) != 12:      # ex. « ♀ / ♀enceinte » (deux normes dans une case) : déjà en Femme / Femme enceinte
+                continue
+            jeux[_libelle_norme(m.group(1))] = [re.sub(r'\s*[-–]\s*', ' – ', v) for v in valeurs]
+    if not jeux:
+        raise ValueError("Pas de normes NFS lisibles dans ce Word")
+
+    # paramètres : libellé | résultat + unité | % | norme
+    lignes_html, i_norme, interpretation = [], 0, ''
+    for tr in lignes[1:]:
+        cellules = conv.cellules(tr)
+        if not cellules:
+            continue
+        sous = cellules[0][0].find('.//' + W + 'tbl')
+        if sous is not None:                       # dernière ligne : interprétation
+            interpretation = conv.tableau(sous)
+            continue
+        libelle = _texte_brut(cellules[0][0]).strip().rstrip(':').strip()
+        if not libelle:
+            continue
+        resultat = conv.blocs(cellules[1][0], cellules[1][1]) if len(cellules) > 1 else ''
+        pourcent = conv.blocs(cellules[2][0], cellules[2][1]) if len(cellules) > 2 else ''
+        texte_norme = _texte_brut(cellules[3][0]).strip() if len(cellules) > 3 else ''
+        if texte_norme:                            # norme écrite dans le Word (plaquettes)
+            norme = escape(texte_norme)
+        elif i_norme < 12:
+            norme = f'<span class="mf-norme" data-i="{i_norme}"></span>'
+            i_norme += 1
+        else:
+            norme = ''
+        libelle = libelle.replace('Polynuclaires', 'Polynucléaires')
+        # formule leucocytaire : le Word CALCULE le nombre absolu (leucocytes x % / 100) — même calcul
+        # à la saisie (templates/resultats_analyses.html, calculerFormuleNfs)
+        if 'mf-champ' in pourcent and 'mf-champ' not in resultat:
+            resultat = '<span class="mf-calcul" data-nfs="abs"></span> /µL'
+            pourcent = pourcent.replace('class="mf-champ', 'data-nfs="pct" class="mf-champ', 1)
+        elif 'leucocyte' in _norm_txt(libelle):
+            resultat = resultat.replace('class="mf-champ', 'data-nfs="gb" class="mf-champ', 1)
+        lignes_html.append(f'<tr><td style="font-weight:bold">{escape(libelle)}</td><td>{resultat}</td>'
+                           f'<td>{pourcent}</td><td style="text-align:center">{norme}</td></tr>')
+
+    conv.n += 1
+    options = ''.join(f'<option>{escape(n)}</option>' for n in jeux)
+    selecteur = (f'<select class="mf-champ mf-liste mf-normes" data-mf="{conv.n}" data-garder="1" '
+                 f'data-normes="{escape(json.dumps(jeux, ensure_ascii=False), quote=True)}">'
+                 f'<option value=""></option>{options}</select>')
+    entete = ('<tr><td style="background:#D9D9D9;font-weight:bold;text-align:center;width:34%">PARAMÈTRES</td>'
+              '<td colspan="2" style="background:#D9D9D9;font-weight:bold;text-align:center">RÉSULTATS</td>'
+              f'<td style="background:#D9D9D9;font-weight:bold;text-align:center">NORMES {selecteur}</td></tr>')
+    titre = ('<p style="margin:6px 0 0;text-align:center;font-weight:bold;font-size:13pt;text-decoration:underline">NFS (Hémogramme)</p>'
+             '<p style="margin:0 0 4px;text-align:center;font-style:italic">Méthode par cytométrie en flux et impédance.</p>')
+    tableau = f'<table class="mf-table mf-bordure">{entete}{"".join(lignes_html)}</table>'
+    if interpretation:
+        interpretation = ('<p style="margin:8px 0 2px;font-weight:bold;text-decoration:underline">INTERPRÉTATION :</p>'
+                          + interpretation.replace('INTERPRETATION', '', 1))
+    return (f'<div class="{MARQUEUR}" data-champs="{conv.n}">{STYLE}{_en_tete(z, racine)}{identite}'
+            f'{titre}{tableau}{interpretation}</div>')
 
 
 # ------------------------------------------------------------ modèle proposé pour un acte
