@@ -1619,8 +1619,9 @@ def get_soldes_caisses(structure_id, date_debut=None, date_fin=None):
 
     tresorerie = 0.0
     detail_tresorerie = []
+    soldes = CompteComptable.soldes([c.id for c in comptes_tresorerie], date_fin=date_fin)   # ⭐ une requête
     for c in comptes_tresorerie:
-        solde = _to_float(c.get_solde(date_fin=date_fin))
+        solde = _to_float(soldes.get(c.id, 0))
         tresorerie += solde
         detail_tresorerie.append({'numero': c.numero, 'nom': c.nom, 'solde': solde})
 
@@ -1631,8 +1632,9 @@ def get_soldes_caisses(structure_id, date_debut=None, date_fin=None):
 
     chiffre_affaires = 0.0
     detail_ca = []
+    soldes_ca = CompteComptable.soldes([c.id for c in comptes_ca], date_debut, date_fin)   # ⭐ une requête
     for c in comptes_ca:
-        solde = _to_float(c.get_solde(date_debut, date_fin))  # crédit - débit inversé pour un compte de produit
+        solde = _to_float(soldes_ca.get(c.id, 0))  # crédit - débit inversé pour un compte de produit
         montant = -solde  # get_solde() = débit - crédit ; un produit est normalement créditeur
         if montant > 0:
             chiffre_affaires += montant

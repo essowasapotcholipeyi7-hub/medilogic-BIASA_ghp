@@ -136,31 +136,25 @@ class JournalService:
             date_fin = date_fin + timedelta(days=1)
             query = query.filter(JournalMouvement.date_mouvement < date_fin)
         
+        # ⭐ 2026-10-18 : nombre et montant de TOUTES les catégories en une requête (avant : deux par catégorie)
+        par_categorie = {
+            categorie: (nombre, montant) for categorie, nombre, montant in query.with_entities(
+                JournalMouvement.categorie, db.func.count(JournalMouvement.id),
+                db.func.coalesce(db.func.sum(JournalMouvement.montant), 0)
+            ).group_by(JournalMouvement.categorie).all()
+        }
         results = []
         for cat in cls.CATEGORIES:
             if cat['id'] == 'toutes':
                 continue
-            
-            cat_query = query.filter_by(categorie=cat['id'])
-            total = cat_query.count()
-            montant = db.session.query(
-                db.func.coalesce(db.func.sum(JournalMouvement.montant), 0)
-            ).filter(
-                JournalMouvement.structure_id == structure_id,
-                JournalMouvement.categorie == cat['id']
-            )
-            if date_debut:
-                montant = montant.filter(JournalMouvement.date_mouvement >= date_debut)
-            if date_fin:
-                montant = montant.filter(JournalMouvement.date_mouvement < date_fin)
-            
+            nombre, montant = par_categorie.get(cat['id'], (0, 0))
             results.append({
                 'categorie': cat['id'],
                 'nom': cat['nom'],
-                'total': total,
-                'montant': float(montant.scalar() or 0)
+                'total': nombre,
+                'montant': float(montant or 0)
             })
-        
+
         return results
     
     # ============================================================

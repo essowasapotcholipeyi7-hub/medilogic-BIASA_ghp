@@ -2,6 +2,7 @@
 from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for, flash, Response
 from datetime import datetime, date, time, timedelta
 from sqlalchemy import or_, and_, extract, func
+from sqlalchemy.orm import joinedload, contains_eager
 import base64
 import json
 import traceback
@@ -341,9 +342,12 @@ def api_employes(structure_id):
     if sexe:
         query = query.filter_by(sexe=sexe)
     
-    employes = query.all()
+    # ⭐ 2026-10-18 : services et soldes de congés de TOUS les employés en quelques requêtes (avant : 5 à 6
+    # par employé)
+    employes = query.options(joinedload(Employe.service)).all()
     annee_actuelle = datetime.now().year
-    
+    Employe.precharger_soldes(employes, annee_actuelle)
+
     result = []
     for e in employes:
         # ⭐ Calcul du solde avec 30 jours
@@ -1226,8 +1230,10 @@ def api_conges(structure_id):
     if type_conge:
         query = query.filter(Conge.type_conge == type_conge)
     
-    conges = query.order_by(Conge.created_at.desc()).all()
+    # ⭐ 2026-10-18 : employés et soldes chargés pour toute la liste (avant : 5 à 6 requêtes PAR congé)
+    conges = query.options(contains_eager(Conge.employe)).order_by(Conge.created_at.desc()).all()
     annee_actuelle = datetime.now().year
+    Employe.precharger_soldes([c.employe for c in conges], annee_actuelle)
     
     result = []
     for c in conges:
@@ -2666,10 +2672,11 @@ def api_supprimer_service(structure_id, id):
 def api_dashboard_stats(structure_id):
     """API: Statistiques du dashboard"""
     try:
-        # Mettre à jour les statuts
+        # Mettre à jour les statuts (⭐ 2026-10-18 : congés approuvés de tous lus en une requête)
         employes = Employe.query.filter_by(structure_id=structure_id).all()
+        conges_approuves = Employe.conges_approuves_du_jour(employes)
         for employe in employes:
-            employe.mettre_a_jour_statut()
+            employe.mettre_a_jour_statut(conges_approuves.get(employe.id, []))
         db.session.commit()
         
         # Statistiques
@@ -2982,11 +2989,13 @@ def _maj_infos_bulletin(employe, data):
             setattr(employe, champ, (str(data.get(champ) or '').strip()[:longueur]) or None)
 
 
-def _rubrique_dict(r):
+def _rubrique_dict(r, nb_employes=None):
+    if nb_employes is None:
+        nb_employes = RubriqueEmploye.query.filter_by(rubrique_id=r.id, actif=True).count()
     return {'id': r.id, 'code': r.code, 'libelle': r.libelle, 'sens': r.sens, 'mode': r.mode,
             'taux_defaut': float(r.taux_defaut or 0), 'montant_defaut': float(r.montant_defaut or 0),
             'soumis_cnss': bool(r.soumis_cnss), 'soumis_irpp': bool(r.soumis_irpp), 'actif': bool(r.actif),
-            'nb_employes': RubriqueEmploye.query.filter_by(rubrique_id=r.id, actif=True).count()}
+            'nb_employes': nb_employes}
 
 
 def _enregistrer_rubriques_employe(structure_id, employe, elements):
@@ -3026,7 +3035,11 @@ def api_rubriques_paie(structure_id):
     assurer_rubriques(structure_id)
     rubriques = RubriquePaie.query.filter_by(structure_id=structure_id).all()
     rubriques.sort(key=lambda r: cle_tri_code(r.code))
-    return jsonify({'success': True, 'rubriques': [_rubrique_dict(r) for r in rubriques]})
+    # ⭐ 2026-10-18 : nombre d'employés de chaque rubrique en une requête (avant : une par rubrique)
+    ids = [r.id for r in rubriques]
+    nb = dict(db.session.query(RubriqueEmploye.rubrique_id, func.count(RubriqueEmploye.id)).filter(
+        RubriqueEmploye.rubrique_id.in_(ids), RubriqueEmploye.actif == True).group_by(RubriqueEmploye.rubrique_id).all()) if ids else {}
+    return jsonify({'success': True, 'rubriques': [_rubrique_dict(r, nb.get(r.id, 0)) for r in rubriques]})
 
 
 @rh_bp.route('/api/rubriques-paie', methods=['POST'])
@@ -3489,9 +3502,12 @@ def api_declarations_summary(structure_id):
     annee = request.args.get('annee', datetime.now().year, type=int)
     mois = request.args.get('mois', datetime.now().month, type=int)
 
+    # ⭐ 2026-10-18 : bulletins du mois (et leurs employés) lus UNE fois pour les cinq déclarations
+    paies = Paie.query.options(joinedload(Paie.employe)).filter_by(structure_id=structure_id, annee=annee, mois=mois) \
+        .filter(Paie.statut.in_(['valide', 'payee'])).all()
     result = {}
     for type_decl in TYPES_DECLARATION:
-        d = generer_declaration(structure_id, annee, mois, type_decl)
+        d = generer_declaration(structure_id, annee, mois, type_decl, paies=paies)
         result[type_decl] = {
             'label': d['label'], 'organisme': d['organisme'],
             'nb_employes': d['nb_employes'],

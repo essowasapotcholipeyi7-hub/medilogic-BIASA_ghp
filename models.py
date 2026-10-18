@@ -490,6 +490,43 @@ class Employe(db.Model):
         ).scalar() or 0
         return total_acquis - conges_pris
     
+    @classmethod
+    def precharger_soldes(cls, employes, annee):
+        """⭐ 2026-10-18 : pour une LISTE d'employés, les sommes dont get_solde_detail() a besoin, pour tous
+        en 3 requêtes (avant : 4 à 5 requêtes PAR employé). Le calcul reste dans get_solde_detail()."""
+        employes = [e for e in employes if e is not None and e.id]
+        ids = list({e.id for e in employes})
+        if not ids:
+            return
+        types_non_deductibles = [t for t, deductible in TYPES_CONGE_DEDUCTIBLES.items() if not deductible]
+        conges = dict(db.session.query(Conge.employe_id, db.func.sum(Conge.nombre_jours)).filter(
+            Conge.employe_id.in_(ids),
+            Conge.annee_utilisation == annee,
+            ~Conge.type_conge.in_(types_non_deductibles),
+            Conge.statut.in_(['en_attente', 'approuve', 'termine'])
+        ).group_by(Conge.employe_id).all())
+        permissions = {eid: (imp, anc) for eid, imp, anc in db.session.query(
+            Permission.employe_id,
+            db.func.sum(db.case((Permission.deduction == 'conge', Permission.nombre_jours), else_=0)),
+            db.func.sum(db.case((Permission.nature.is_(None), Permission.nombre_jours), else_=0)),
+        ).filter(
+            Permission.employe_id.in_(ids),
+            db.extract('year', Permission.date_debut) == annee,
+            Permission.statut.in_(['en_attente', 'approuve']),
+        ).group_by(Permission.employe_id).all()}
+        parametrages = {}
+        try:
+            parametrages = {p.structure_id: p for p in ParametragePaie.query.filter(
+                ParametragePaie.structure_id.in_(list({e.structure_id for e in employes}))).all()}
+        except Exception:
+            pass
+        for e in employes:
+            imp, anc = permissions.get(e.id, (0, 0))
+            deja = getattr(e, '_soldes_precharges', None) or {}
+            deja[annee] = {'conges': conges.get(e.id) or 0, 'perm_imputees': imp or 0, 'perm_anciennes': anc or 0,
+                           'parametrage': parametrages.get(e.structure_id)}
+            e._soldes_precharges = deja
+
     def get_solde_detail(self, annee):
         """⭐ Source UNIQUE de calcul du solde de congés (jours acquis moins
         congés déductibles + permissions prises sur l'année). Tout le reste
@@ -509,12 +546,16 @@ class Employe(db.Model):
           des 30 jours de congé annuel payé.
         """
         types_non_deductibles = [t for t, deductible in TYPES_CONGE_DEDUCTIBLES.items() if not deductible]
-        conges_pris = db.session.query(db.func.sum(Conge.nombre_jours)).filter(
-            Conge.employe_id == self.id,
-            Conge.annee_utilisation == annee,
-            ~Conge.type_conge.in_(types_non_deductibles),
-            Conge.statut.in_(['en_attente', 'approuve', 'termine'])
-        ).scalar() or 0
+        pre = (getattr(self, '_soldes_precharges', None) or {}).get(annee)   # ⭐ voir precharger_soldes()
+        if pre is not None:
+            conges_pris = pre['conges']
+        else:
+            conges_pris = db.session.query(db.func.sum(Conge.nombre_jours)).filter(
+                Conge.employe_id == self.id,
+                Conge.annee_utilisation == annee,
+                ~Conge.type_conge.in_(types_non_deductibles),
+                Conge.statut.in_(['en_attente', 'approuve', 'termine'])
+            ).scalar() or 0
 
         # ⭐ Patron : "qu'on décide s'il faut enlever les jours de
         # permission dans les congés ou pas" — configurable par structure
@@ -523,7 +564,8 @@ class Employe(db.Model):
         # bascule pas ce réglage lui-même.
         deduire_permissions = True
         try:
-            parametrage = ParametragePaie.query.filter_by(structure_id=self.structure_id).first()
+            parametrage = pre['parametrage'] if pre is not None else \
+                ParametragePaie.query.filter_by(structure_id=self.structure_id).first()
             if parametrage is not None:
                 deduire_permissions = bool(parametrage.deduire_permissions_des_conges)
         except Exception:
@@ -539,14 +581,18 @@ class Employe(db.Model):
             db.extract('year', Permission.date_debut) == annee,
             Permission.statut.in_(['en_attente', 'approuve']),
         ]
-        permissions_imputees = db.session.query(db.func.sum(Permission.nombre_jours)).filter(
-            *filtre_annee, Permission.deduction == 'conge'
-        ).scalar() or 0
-        permissions_anciennes = 0
-        if deduire_permissions:
-            permissions_anciennes = db.session.query(db.func.sum(Permission.nombre_jours)).filter(
-                *filtre_annee, Permission.nature.is_(None)
+        if pre is not None:
+            permissions_imputees = pre['perm_imputees']
+            permissions_anciennes = pre['perm_anciennes'] if deduire_permissions else 0
+        else:
+            permissions_imputees = db.session.query(db.func.sum(Permission.nombre_jours)).filter(
+                *filtre_annee, Permission.deduction == 'conge'
             ).scalar() or 0
+            permissions_anciennes = 0
+            if deduire_permissions:
+                permissions_anciennes = db.session.query(db.func.sum(Permission.nombre_jours)).filter(
+                    *filtre_annee, Permission.nature.is_(None)
+                ).scalar() or 0
         permissions_pris = float(permissions_imputees) + float(permissions_anciennes)
         # ⭐ + congés déjà pris avant le logiciel (reprise de l'historique)
         reprise_conges = self.reprise_pour(annee, 'reprise_conges_jours')
@@ -636,7 +682,19 @@ class Employe(db.Model):
         return self.verifier_conges_disponibles(jours_demandes, annee_demande)
 
  
-    def mettre_a_jour_statut(self):
+    @staticmethod
+    def conges_approuves_du_jour(employes):
+        """⭐ 2026-10-18 : {employe_id: [congés approuvés commencés]} pour une liste — ce que
+        mettre_a_jour_statut() lit, en une requête pour tous."""
+        ids = [e.id for e in employes if e is not None and e.id]
+        resultat = {i: [] for i in ids}
+        if ids:
+            for c in Conge.query.filter(Conge.employe_id.in_(ids), Conge.statut == 'approuve',
+                                        Conge.date_debut <= date.today()).all():
+                resultat.setdefault(c.employe_id, []).append(c)
+        return resultat
+
+    def mettre_a_jour_statut(self, conges_approuves=None):
         """Statut selon les congés APPROUVÉS : 'En conge' du début du congé à la
         veille de la reprise, sinon 'Actif'. ⭐ Un employé parti (statut
         'Inactif' ou date de départ passée) le reste — avant, le tableau de
@@ -648,8 +706,9 @@ class Employe(db.Model):
         if self.statut == 'Inactif' or (self.date_depart and self.date_depart < today):
             nouveau = 'Inactif'
         else:
-            conges = Conge.query.filter(Conge.employe_id == self.id, Conge.statut == 'approuve',
-                                        Conge.date_debut <= today).all()
+            conges = conges_approuves if conges_approuves is not None else \
+                Conge.query.filter(Conge.employe_id == self.id, Conge.statut == 'approuve',
+                                   Conge.date_debut <= today).all()
             nouveau = 'En conge' if any(absent_ce_jour(today, c.date_debut, c.date_fin, c.date_reprise)
                                         for c in conges) else 'Actif'
         if self.statut != nouveau:
@@ -1028,6 +1087,22 @@ class CompteComptable(db.Model):
     enfants = db.relationship('CompteComptable', backref='parent', remote_side=[id])
     lignes = db.relationship('LigneEcriture', backref='compte', lazy=True)
     
+    @staticmethod
+    def soldes(compte_ids, date_debut=None, date_fin=None):
+        """⭐ 2026-10-18 : {compte_id: solde} pour PLUSIEURS comptes en une requête — même calcul que
+        get_solde() (débit - crédit, écritures validées, mêmes bornes) ; à utiliser pour toute liste."""
+        ids = list({i for i in compte_ids if i})
+        if not ids:
+            return {}
+        q = db.session.query(LigneEcriture.compte_id, db.func.sum(LigneEcriture.debit - LigneEcriture.credit)) \
+            .join(EcritureComptable, EcritureComptable.id == LigneEcriture.ecriture_id) \
+            .filter(LigneEcriture.compte_id.in_(ids), EcritureComptable.statut == 'valide')
+        if date_debut:
+            q = q.filter(EcritureComptable.date_ecriture >= date_debut)
+        if date_fin:
+            q = q.filter(EcritureComptable.date_ecriture <= date_fin)
+        return {cid: (s or 0) for cid, s in q.group_by(LigneEcriture.compte_id).all()}
+
     def get_solde(self, date_debut=None, date_fin=None):
         """⭐ Ne compte que les écritures VALIDÉES (statut='valide') — corrigé
         car c'était le seul endroit du module comptable à ne pas filtrer le

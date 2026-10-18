@@ -246,6 +246,7 @@ def api_comptes():
         actif=True
     ).order_by(CompteComptable.numero).all()
     
+    soldes = CompteComptable.soldes([c.id for c in comptes])   # ⭐ 2026-10-18 : une requête (avant : 2 par compte)
     result = []
     for c in comptes:
         result.append({
@@ -256,7 +257,7 @@ def api_comptes():
             'classe': c.classe,
             'niveau': c.niveau,
             'parent_id': c.parent_id,
-            'solde': float(c.get_solde()) if c.get_solde() else 0
+            'solde': float(soldes[c.id]) if soldes.get(c.id) else 0
         })
     
     if search:
@@ -469,7 +470,9 @@ def api_ecritures():
     
     total = query.count()
     
-    ecritures = query.order_by(
+    # ⭐ 2026-10-18 : lignes et comptes de la page chargés ensemble (avant : requêtes par écriture et par ligne)
+    from sqlalchemy.orm import selectinload, joinedload
+    ecritures = query.options(selectinload(EcritureComptable.lignes).joinedload(LigneEcriture.compte)).order_by(
         EcritureComptable.date_ecriture.desc(),
         EcritureComptable.id.desc()
     ).offset((page-1)*per_page).limit(per_page).all()
@@ -2498,9 +2501,10 @@ def api_rapprochement_comptes():
         CompteComptable.actif == True,
     ).order_by(CompteComptable.numero).all()
 
+    soldes = CompteComptable.soldes([c.id for c in comptes])   # ⭐ 2026-10-18 : une requête pour tous
     return jsonify([{
         'id': c.id, 'numero': c.numero, 'nom': c.nom,
-        'solde_comptable': float(c.get_solde() or 0),
+        'solde_comptable': float(soldes.get(c.id) or 0),
     } for c in comptes])
 
 
@@ -2514,11 +2518,16 @@ def api_get_releves():
     if compte_id_filtre:
         query = query.filter_by(compte_id=compte_id_filtre)
 
-    releves = query.order_by(ReleveBancaire.date_releve.desc()).all()
+    # ⭐ 2026-10-18 : lignes des relevés et comptes chargés ensemble (avant : requêtes par relevé)
+    from sqlalchemy.orm import selectinload
+    releves = query.options(selectinload(ReleveBancaire.lignes)).order_by(ReleveBancaire.date_releve.desc()).all()
+    ids_comptes = list({r.compte_id for r in releves if r.compte_id})
+    comptes_releves = {c.id: c for c in CompteComptable.query.filter(CompteComptable.id.in_(ids_comptes)).all()} \
+        if ids_comptes else {}
 
     result = []
     for r in releves:
-        compte = r.compte_id and CompteComptable.query.get(r.compte_id)
+        compte = r.compte_id and comptes_releves.get(r.compte_id)
         result.append({
             'id': r.id,
             'date_releve': r.date_releve.strftime('%Y-%m-%d') if r.date_releve else '',

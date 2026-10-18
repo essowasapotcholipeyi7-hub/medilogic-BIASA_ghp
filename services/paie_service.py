@@ -672,15 +672,16 @@ def date_limite_declaration(annee, mois):
     return _date(annee, mois + 1, 15)
 
 
-def generer_declaration(structure_id, annee, mois, type_declaration):
+def generer_declaration(structure_id, annee, mois, type_declaration, paies=None):
     """Agrège les bulletins de paie du mois pour un type de déclaration
     donné (irpp, cnss, crt, amu-cnss, amu-inam). Retourne un dict prêt à
     afficher/imprimer : lignes par employé + totaux."""
     if type_declaration not in TYPES_DECLARATION:
         return None
 
-    paies = Paie.query.filter_by(structure_id=structure_id, annee=annee, mois=mois) \
-        .filter(Paie.statut.in_(['valide', 'payee'])).all()
+    if paies is None:   # ⭐ 2026-10-18 : l'appelant peut les fournir (plusieurs déclarations du même mois)
+        paies = Paie.query.filter_by(structure_id=structure_id, annee=annee, mois=mois) \
+            .filter(Paie.statut.in_(['valide', 'payee'])).all()
 
     lignes = []
     total_salarial = 0.0

@@ -2370,25 +2370,6 @@ def _maj_derniere_connexion_en_fond(feuille, id_ligne, nb_colonnes, index_colonn
     threading.Thread(target=tache, daemon=True).start()
 
 
-def _lire_feuilles_utilisateurs_groupees(feuilles):
-    """⭐ Toutes les feuilles struct_N_users en UN SEUL appel Google Sheets
-    (0,5 s mesuré) au lieu d'un appel par feuille (11 feuilles = 5 s mesurées
-    le 2026-10-10, et de plus en plus lent à chaque nouvelle structure). Renvoie
-    {titre: valeurs} ; {} si l'appel groupé échoue (la connexion relit alors
-    feuille par feuille, comme avant)."""
-    if not feuilles:
-        return {}
-    try:
-        reponse = sheets_helper.spreadsheet.values_batch_get([f"'{f.title}'" for f in feuilles])
-        plages = reponse.get('valueRanges', [])
-        if len(plages) != len(feuilles):
-            return {}
-        return {f.title: plage.get('values', []) for f, plage in zip(feuilles, plages)}
-    except Exception as e:
-        print(f"⚠️ Lecture groupée des feuilles utilisateurs impossible ({e}) : lecture feuille par feuille")
-        return {}
-
-
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if 'user_id' in session:
@@ -3570,31 +3551,6 @@ def dashboard():
                          ca_today=ca_today,
                          recentes=recentes)
 
-@app.route('/debug_pharma')
-@login_required
-def debug_pharma():
-    structure_id = session.get('structure_id')
-    
-    ventes_pharma = sheets_helper.get_all_records('ventes_pharma')
-    
-    result = {
-        'structure_id': structure_id,
-        'total_ventes_pharma': len(ventes_pharma),
-        'ventes': []
-    }
-    
-    for v in ventes_pharma:
-        result['ventes'].append({
-            'id': v.get('ID'),
-            'structure_id': v.get('structure_id'),
-            'date': v.get('date'),
-            'net_a_payer': v.get('net_a_payer'),
-            'type_date': type(v.get('date')).__name__,
-            'type_net': type(v.get('net_a_payer')).__name__
-        })
-    
-    return jsonify(result)
-
 # MODIFIER la route des patients pour utiliser le bon format
 @app.route('/patients')
 @login_required
@@ -4457,28 +4413,6 @@ def api_patients_stats():
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
-
-
-# ROUTE de vérification (pour debug)
-@app.route('/check_sheets')
-@login_required
-def check_sheets():
-    """Vérifier les feuilles de la structure"""
-    try:
-        patients = sheets_helper.get_all_records('patients')
-        actes = sheets_helper.get_all_records('actes')
-        produits = sheets_helper.get_all_records('produits')
-        
-        return jsonify({
-            'structure_prefix': sheets_helper.structure_prefix,
-            'structure_id': session.get('structure_id'),
-            'patients_count': len(patients),
-            'actes_count': len(actes),
-            'produits_count': len(produits),
-            'patients': patients[:5]  # 5 premiers patients
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)})
 
 
 def _contexte_vente_actes(structure_id):
@@ -7465,41 +7399,6 @@ def api_revoquer_habilitation(habilitation_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/debug_ventes')
-@login_required
-def debug_ventes():
-    structure_id = session.get('structure_id')
-    
-    ventes_actes = sheets_helper.get_all_records('ventes_actes')
-    ventes_pharma = sheets_helper.get_all_records('ventes_pharma')
-    
-    result = {
-        'structure_id': structure_id,
-        'ventes_actes': [],
-        'ventes_pharma': []
-    }
-    
-    for v in ventes_actes:
-        if str(v.get('structure_id')) == str(structure_id):
-            result['ventes_actes'].append({
-                'ID': v.get('ID'),
-                'patient_nom': v.get('patient_nom'),
-                'date': v.get('date'),
-                'total': v.get('total')
-            })
-    
-    for v in ventes_pharma:
-        if str(v.get('structure_id')) == str(structure_id):
-            result['ventes_pharma'].append({
-                'ID': v.get('ID'),
-                'patient_nom': v.get('patient_nom'),
-                'date': v.get('date'),
-                'total': v.get('total')
-            })
-    
-    return jsonify(result)
-
-
 # ============================================================
 # ROUTES POUR LES MEDECINS (NOUVELLES)
 # ============================================================
@@ -7929,117 +7828,51 @@ def get_medecins():
     """Recupere la liste des medecins avec leurs statistiques"""
     structure_id = session.get('structure_id')
     
-    # Recuperer les medecins depuis Neon
+    # ⭐ 2026-10-18 : médecins ET leurs statistiques de consultations terminées en UNE requête (avant :
+    # 1 + 4 par médecin). Mêmes règles : COALESCE(date_rendez_vous, date_rdv), statut 'termine'.
+    now = datetime.now()
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+    week_end = week_start + timedelta(days=6)
     medecins = db.execute_query("""
-        SELECT id, nom, prenom, titre, specialite, qualification,
-               telephone, email, honoraire_consultation, actif, code_prescripteur, nif
-        FROM medecins
-        WHERE structure_id = %s
-        ORDER BY nom
-    """, (structure_id,))
+        SELECT m.id, m.nom, m.prenom, m.titre, m.specialite, m.qualification,
+               m.telephone, m.email, m.honoraire_consultation, m.actif, m.code_prescripteur, m.nif,
+               COUNT(r.id) AS nb_total,
+               COUNT(r.id) FILTER (WHERE EXTRACT(YEAR FROM COALESCE(r.date_rendez_vous, r.date_rdv)) = %s
+                                     AND EXTRACT(MONTH FROM COALESCE(r.date_rendez_vous, r.date_rdv)) = %s) AS nb_mois,
+               COUNT(r.id) FILTER (WHERE COALESCE(r.date_rendez_vous, r.date_rdv) >= %s
+                                     AND COALESCE(r.date_rendez_vous, r.date_rdv) <= %s) AS nb_semaine,
+               MAX(COALESCE(r.date_rendez_vous, r.date_rdv)) AS derniere
+        FROM medecins m
+        LEFT JOIN rendez_vous r ON r.medecin_id = m.id AND r.statut = 'termine'
+        WHERE m.structure_id = %s
+        GROUP BY m.id
+        ORDER BY m.nom
+    """, (now.year, now.month, week_start, week_end, structure_id))
 
     result = []
-    for m in medecins:
-        if isinstance(m, dict):
-            med_id = m.get('id')
-            nom = m.get('nom')
-            prenom = m.get('prenom')
-            titre = m.get('titre', 'Dr')
-            specialite = m.get('specialite')
-            qualification = m.get('qualification')
-            telephone = m.get('telephone')
-            email = m.get('email')
-            honoraire = m.get('honoraire_consultation', 0)
-            actif = m.get('actif', True)
-            code_prescripteur = m.get('code_prescripteur')
-            nif = m.get('nif')
-        else:
-            nif = m[11] if len(m) > 11 else None
-            med_id = m[0]
-            nom = m[1]
-            prenom = m[2]
-            titre = m[3] if len(m) > 3 else 'Dr'
-            specialite = m[4] if len(m) > 4 else ''
-            qualification = m[5] if len(m) > 5 else ''
-            telephone = m[6] if len(m) > 6 else ''
-            email = m[7] if len(m) > 7 else ''
-            honoraire = m[8] if len(m) > 8 else 0
-            actif = m[9] if len(m) > 9 else True
-            code_prescripteur = m[10] if len(m) > 10 else None
-        
-        # ⭐ FIX (2 bugs corrigés ici) :
-        # 1) `db.execute_query` retourne toujours des dicts (RealDictCursor) —
-        #    faire `resultat[0][0]` levait `KeyError: 0` a chaque appel, ce
-        #    qui faisait planter la liste ENTIERE des medecins (500) des
-        #    qu'une structure avait au moins un medecin.
-        # 2) COALESCE(date_rendez_vous, date_rdv) — la table a deux paires de
-        #    colonnes date/heure selon le flux de creation du RDV ; se fier
-        #    uniquement a date_rdv (souvent vide) faisait ressortir 0
-        #    consultation partout meme une fois le crash corrige.
-        def _scalar(rows, cle='total'):
-            if not rows:
-                return 0
-            r0 = rows[0]
-            if isinstance(r0, dict):
-                return r0.get(cle) or next(iter(r0.values()), 0) or 0
-            return r0[0] if len(r0) > 0 else 0
-
-        # Compter les consultations terminees
-        nb_total = db.execute_query("""
-            SELECT COUNT(*) as total FROM rendez_vous
-            WHERE medecin_id = %s AND statut = 'termine'
-        """, (med_id,))
-        nb_total = _scalar(nb_total)
-
-        # Ce mois
-        now = datetime.now()
-        nb_mois = db.execute_query("""
-            SELECT COUNT(*) as total FROM rendez_vous
-            WHERE medecin_id = %s AND statut = 'termine'
-            AND EXTRACT(YEAR FROM COALESCE(date_rendez_vous, date_rdv)) = %s
-            AND EXTRACT(MONTH FROM COALESCE(date_rendez_vous, date_rdv)) = %s
-        """, (med_id, now.year, now.month))
-        nb_mois = _scalar(nb_mois)
-
-        # Cette semaine
-        today = date.today()
-        week_start = today - timedelta(days=today.weekday())
-        week_end = week_start + timedelta(days=6)
-        nb_semaine = db.execute_query("""
-            SELECT COUNT(*) as total FROM rendez_vous
-            WHERE medecin_id = %s AND statut = 'termine'
-            AND COALESCE(date_rendez_vous, date_rdv) >= %s AND COALESCE(date_rendez_vous, date_rdv) <= %s
-        """, (med_id, week_start, week_end))
-        nb_semaine = _scalar(nb_semaine)
-
-        # Derniere consultation
-        dernier = db.execute_query("""
-            SELECT COALESCE(date_rendez_vous, date_rdv) as derniere FROM rendez_vous
-            WHERE medecin_id = %s AND statut = 'termine'
-            ORDER BY COALESCE(date_rendez_vous, date_rdv) DESC, COALESCE(heure_rendez_vous, TO_CHAR(heure_rdv, 'HH24:MI')) DESC LIMIT 1
-        """, (med_id,))
-        derniere_val = _scalar(dernier, cle='derniere')
-        derniere_date = derniere_val.isoformat() if derniere_val and hasattr(derniere_val, 'isoformat') else None
-        
+    for m in medecins or []:
+        honoraire = m.get('honoraire_consultation', 0)
+        derniere_val = m.get('derniere')
         result.append({
-            'id': med_id,
-            'nom': nom,
-            'prenom': prenom,
-            'titre': titre,
-            'specialite': specialite,
-            'qualification': qualification or specialite,
-            'telephone': telephone,
-            'email': email,
+            'id': m.get('id'),
+            'nom': m.get('nom'),
+            'prenom': m.get('prenom'),
+            'titre': m.get('titre', 'Dr'),
+            'specialite': m.get('specialite'),
+            'qualification': m.get('qualification') or m.get('specialite'),
+            'telephone': m.get('telephone'),
+            'email': m.get('email'),
             'honoraire_consultation': float(honoraire) if honoraire else 0,
-            'actif': actif,
-            'code_prescripteur': code_prescripteur,
-            'nif': nif,
-            'nb_consultations': nb_total,
-            'consultations_mois': nb_mois,
-            'consultations_semaine': nb_semaine,
-            'derniere_consultation': derniere_date
+            'actif': m.get('actif', True),
+            'code_prescripteur': m.get('code_prescripteur'),
+            'nif': m.get('nif'),
+            'nb_consultations': int(m.get('nb_total') or 0),
+            'consultations_mois': int(m.get('nb_mois') or 0),
+            'consultations_semaine': int(m.get('nb_semaine') or 0),
+            'derniere_consultation': derniere_val.isoformat() if derniere_val and hasattr(derniere_val, 'isoformat') else None
         })
-    
+
     return jsonify(result)
 
 
@@ -8321,6 +8154,10 @@ def rendez_vous():
             date_debut = today
             date_fin = today
     
+    # ⭐ 2026-10-18 : médecins de la structure chargés UNE fois — le service de chaque rendez-vous
+    # (spécialité de son médecin) ne relit plus la base rendez-vous par rendez-vous
+    tous_medecins = Medecin.query.filter_by(structure_id=structure_id).all()
+
     # Récupérer les rendez-vous
     rendez_vous, total = RendezVousService.get_rendez_vous_liste(
         structure_id=structure_id,
@@ -8349,7 +8186,7 @@ def rendez_vous():
         .order_by(RendezVous.demande_le.asc().nullsfirst()).all()
 
     # Récupérer les médecins et patients
-    medecins = Medecin.query.filter_by(structure_id=structure_id, actif=True).all()
+    medecins = [m for m in tous_medecins if m.actif]
     patients = dechiffrer_patients_orm(Patient.query.filter_by(structure_id=structure_id).all())
     patients.sort(key=lambda p: ((p.nom or '').lower(), (p.prenom or '').lower()))
 
@@ -9493,13 +9330,7 @@ def mes_rendez_vous():
     patient = Patient.query.filter_by(id=patient_id, structure_id=structure_id).first()
     
     if not patient:
-        # Fallback: depuis Google Sheets
-        try:
-            patients = sheets_helper.get_all_records('patients')
-            patient_info = next((p for p in patients if str(p.get('ID')) == str(patient_id)), {})
-        except Exception as e:
-            print(f"Erreur récupération patient: {e}")
-            patient_info = {}
+        patient_info = {}   # ⭐ 2026-10-18 : plus de repli sur Google Sheets (abandonné, tout est dans Neon)
     else:
         dechiffrer_patients_orm([patient])
         patient_info = {
@@ -9539,25 +9370,8 @@ def mes_rendez_vous():
             'notes': rdv.notes or ''
         })
     
-    # Si aucun rendez-vous en PostgreSQL, essayer Google Sheets
-    if not mes_rendez_vous:
-        try:
-            rendez_vous_sheets = sheets_helper.get_all_records('rendez_vous')
-            for r in rendez_vous_sheets:
-                if str(r.get('patient_id')) == str(patient_id) and str(r.get('structure_id')) == str(structure_id):
-                    mes_rendez_vous.append({
-                        'id': r.get('ID'),
-                        'date_rendez_vous': r.get('date_rendez_vous', ''),
-                        'heure_rendez_vous': r.get('heure_rendez_vous', ''),
-                        'motif': r.get('motif', ''),
-                        'statut': r.get('statut', 'programme'),
-                        'medecin_nom': r.get('medecin_nom', ''),
-                        'notes': r.get('notes', '')
-                    })
-            mes_rendez_vous.sort(key=lambda x: x.get('date_rendez_vous', ''), reverse=True)
-        except Exception as e:
-            print(f"Erreur récupération rendez-vous Sheets: {e}")
-    
+    # ⭐ 2026-10-18 : plus de repli sur Google Sheets (abandonné, tout est dans Neon)
+
     return render_template(
         'mes_rendez_vous.html',
         patient_info=patient_info,
@@ -15642,17 +15456,27 @@ def api_lister_resultats_analyses():
         q = q.filter(DemandeExamen.type_prestation == 'examen')
     demandes = q.order_by(DemandeExamen.created_at.desc()).all()
 
+    # ⭐ 2026-10-18 : dernier résultat de CHAQUE demande en une requête (avant : une par demande), sans
+    # charger les fichiers joints (images, PDF) juste pour savoir s'il y en a un
+    derniers = {}
+    if demandes:
+        for l in db.session.execute(db.text("""
+                SELECT DISTINCT ON (demande_id) demande_id, id, nom_interprete, fichier_nom, created_at,
+                       (fichier_data IS NOT NULL AND length(fichier_data) > 0) AS a_fichier
+                FROM resultats_examens WHERE demande_id = ANY(:ids)
+                ORDER BY demande_id, id DESC"""), {'ids': [d.id for d in demandes]}).mappings():
+            derniers[l['demande_id']] = l
     resultat = []
     for d in demandes:
-        r = ResultatExamen.query.filter_by(demande_id=d.id).order_by(ResultatExamen.id.desc()).first()
+        r = derniers.get(d.id)
         resultat.append({
             'demande_id': d.id, 'patient_id': d.patient_id, 'patient_nom': d.patient_nom,
             'type_prestation': d.type_prestation, 'acte_nom': d.acte_nom,
-            'resultat_id': r.id if r else None,
-            'nom_interprete': r.nom_interprete if r else None,
-            'fichier_nom': r.fichier_nom if r else None,
-            'a_fichier': bool(r.fichier_data) if r else False,
-            'date_resultat': r.created_at.strftime('%d/%m/%Y %H:%M') if r and r.created_at else None,
+            'resultat_id': r['id'] if r else None,
+            'nom_interprete': r['nom_interprete'] if r else None,
+            'fichier_nom': r['fichier_nom'] if r else None,
+            'a_fichier': bool(r['a_fichier']) if r else False,
+            'date_resultat': r['created_at'].strftime('%d/%m/%Y %H:%M') if r and r['created_at'] else None,
         })
     return jsonify(resultat)
 
@@ -21821,26 +21645,34 @@ def page_hospitalisation_configuration():
         .filter(db.or_(ServiceHospitalisation.hospitalisation.is_(None), ServiceHospitalisation.hospitalisation.is_(True)))\
         .order_by(ServiceHospitalisation.nom).all()
 
-    chambres_par_service = {}
+    # ⭐ 2026-10-18 : chambres, lits et occupants en 3 requêtes (avant : une par service, par chambre et
+    # deux par lit occupé)
+    service_ids = [s.id for s in services]
+    chambres_par_service = {sid: [] for sid in service_ids}
     lits_par_chambre = {}
-    for service in services:
-        chambres = ChambreHospitalisation.query.filter_by(structure_id=structure_id, service_id=service.id)\
-            .order_by(ChambreHospitalisation.nom).all()
-        chambres_par_service[service.id] = chambres
-        for chambre in chambres:
-            lits = LitHospitalisation.query.filter_by(structure_id=structure_id, chambre_id=chambre.id)\
-                .order_by(LitHospitalisation.nom).all()
-            # ⭐ Qui occupe ce lit, pour l'afficher directement (patient +
-            # numéro de séjour) plutôt qu'un simple badge "Occupé" muet.
-            for lit in lits:
-                lit.occupant = None
-                if lit.statut == 'occupe':
-                    lit.occupant = Hospitalisation.query.filter_by(
-                        structure_id=structure_id, lit_id=lit.id, statut='en_cours'
-                    ).first() or Hospitalisation.query.filter_by(
-                        structure_id=structure_id, lit_id=lit.id
-                    ).order_by(Hospitalisation.created_at.desc()).first()
-            lits_par_chambre[chambre.id] = lits
+    chambres = ChambreHospitalisation.query.filter(
+        ChambreHospitalisation.structure_id == structure_id, ChambreHospitalisation.service_id.in_(service_ids)
+    ).order_by(ChambreHospitalisation.nom).all() if service_ids else []
+    for chambre in chambres:
+        chambres_par_service[chambre.service_id].append(chambre)
+        lits_par_chambre[chambre.id] = []
+    lits = LitHospitalisation.query.filter(
+        LitHospitalisation.structure_id == structure_id, LitHospitalisation.chambre_id.in_(list(lits_par_chambre))
+    ).order_by(LitHospitalisation.nom).all() if lits_par_chambre else []
+    # ⭐ Qui occupe ce lit, pour l'afficher directement (patient + numéro de séjour) plutôt qu'un simple
+    # badge "Occupé" muet : le séjour en cours, sinon le plus récent.
+    occupes = [lit.id for lit in lits if lit.statut == 'occupe']
+    occupants = {}
+    if occupes:
+        for h in Hospitalisation.query.filter(Hospitalisation.structure_id == structure_id,
+                                              Hospitalisation.lit_id.in_(occupes)) \
+                .order_by(Hospitalisation.created_at.desc()).all():
+            actuel = occupants.get(h.lit_id)
+            if actuel is None or (actuel.statut != 'en_cours' and h.statut == 'en_cours'):
+                occupants[h.lit_id] = h
+    for lit in lits:
+        lit.occupant = occupants.get(lit.id) if lit.statut == 'occupe' else None
+        lits_par_chambre[lit.chambre_id].append(lit)
 
     return render_template('hospitalisation_configuration.html', services=services,
                             chambres_par_service=chambres_par_service, lits_par_chambre=lits_par_chambre)
