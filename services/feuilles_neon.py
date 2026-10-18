@@ -83,8 +83,7 @@ class FeuilleNeon:
 
     # ---------------------------------------------------------- lecture
     def _lignes(self):
-        v = executer("SELECT version FROM feuilles_neon WHERE feuille = %s", (self.title,))
-        version = v[0]['version'] if v else None
+        version = _version(self.title)
         copie = _copies.get(self.title)
         if version is not None and copie and copie[0] == version:
             return [list(r) for r in copie[1]]
@@ -181,6 +180,7 @@ class FeuilleNeon:
                     ON CONFLICT (feuille, rang) DO UPDATE SET valeurs = EXCLUDED.valeurs;
                     """ + _MAJ_VERSION,
                  (self.title, rang, json.dumps(ligne, ensure_ascii=False), self.title), lire=False)
+        _oublier_version(self.title)
 
     def update_cell(self, row, col, value):
         self._ecrire_cellules({(row, col): _texte_cellule(value)})
@@ -234,6 +234,7 @@ class FeuilleNeon:
                     """ + _MAJ_VERSION,
                  (self.title, index, self.title, self.title, index,
                   json.dumps([_texte_cellule(v) for v in valeurs], ensure_ascii=False), self.title), lire=False)
+        _oublier_version(self.title)
         return {}
 
     def delete_rows(self, debut, fin=None):
@@ -243,6 +244,7 @@ class FeuilleNeon:
                     UPDATE feuilles_neon_lignes SET rang = -rang WHERE feuille = %s AND rang < 0;
                     """ + _MAJ_VERSION,
                  (self.title, debut, fin, fin - debut + 1, self.title, fin, self.title, self.title), lire=False)
+        _oublier_version(self.title)
         return {}
 
     def delete_row(self, index):
@@ -250,9 +252,54 @@ class FeuilleNeon:
 
     def clear(self):
         executer("DELETE FROM feuilles_neon_lignes WHERE feuille = %s; " + _MAJ_VERSION, (self.title, self.title), lire=False)
+        _oublier_version(self.title)
 
     def __repr__(self):
         return f"<FeuilleNeon {self.title!r}>"
+
+
+# ⭐ Version de chaque feuille vérifiée UNE fois par page vue (mémo de la requête Flask), oubliée dès que la
+# page écrit dans la feuille ; plusieurs feuilles en une requête (prechauffer_versions).
+def _memo_requete():
+    try:
+        from flask import g, has_request_context
+        if has_request_context():
+            if not hasattr(g, '_versions_neon'):
+                g._versions_neon = {}
+            return g._versions_neon
+    except Exception:
+        pass
+    return None
+
+
+def _version(titre):
+    memo = _memo_requete()
+    if memo is not None and titre in memo:
+        return memo[titre]
+    v = executer("SELECT version FROM feuilles_neon WHERE feuille = %s", (titre,))
+    version = v[0]['version'] if v else None
+    if memo is not None:
+        memo[titre] = version
+    return version
+
+
+def _oublier_version(titre):
+    memo = _memo_requete()
+    if memo is not None:
+        memo.pop(titre, None)
+
+
+def prechauffer_versions(titres):
+    """Versions de plusieurs feuilles en une seule requête (pour la page en cours)."""
+    memo = _memo_requete()
+    if memo is None:
+        return
+    manquantes = [t for t in dict.fromkeys(titres) if t not in memo]
+    if not manquantes:
+        return
+    for l in executer("SELECT feuille, version FROM feuilles_neon WHERE feuille = ANY(%s)", (manquantes,)):
+        memo[l['feuille']] = l['version']
+        _existantes.add(l['feuille'])
 
 
 _existantes = set()   # feuilles dont l'existence est déjà vérifiée (une feuille n'est jamais supprimée)
@@ -342,6 +389,7 @@ def ajuster_stock(titre, produit_id, delta, colonne=COLONNE_STOCK):
         WHERE l.feuille = %s AND l.rang = c.rang
         RETURNING c.ancien, l.valeurs->>{idx} AS nouveau, l.rang
     """, (titre, titre, str(produit_id).strip(), delta, titre))
+    _oublier_version(titre)
     if not lignes:
         return None
     l = lignes[0]

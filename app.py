@@ -9610,6 +9610,30 @@ def deriver_acronyme_structure(nom):
     return acronyme or (nom or 'SI')[:3].upper()
 
 
+def _entete_page():
+    """⭐ 2026-10-18 (« oui regroupe ») : ce que CHAQUE page affiche dans ses menus — acronyme,
+    préinscriptions en attente — en UNE requête par page (avant : deux)."""
+    from flask import g
+    structure_id = session.get('structure_id')
+    if getattr(g, '_entete_page', None) is None or g._entete_page.get('structure_id') != structure_id:
+        entete = {'structure_id': structure_id, 'acronyme': None, 'preinscriptions': 0}
+        if structure_id:
+            try:
+                l = db.session.execute(db.text("""
+                    SELECT p.acronyme,
+                           (SELECT COUNT(*) FROM preinscriptions_patients
+                             WHERE structure_id = :s AND statut = 'en_attente') AS preinscriptions
+                    FROM (SELECT 1) un
+                    LEFT JOIN parametrage_affichage_structure p ON p.structure_id = :s
+                """), {'s': structure_id}).mappings().first()
+                entete.update(acronyme=l['acronyme'], preinscriptions=int(l['preinscriptions'] or 0))
+            except Exception as e:
+                db.session.rollback()
+                print(f"⚠️ En-tête de page : {e}")
+        g._entete_page = entete
+    return g._entete_page
+
+
 @app.context_processor
 def injecter_acronyme_structure():
     """Rend `structure_acronyme` disponible dans TOUS les templates (base.html
@@ -9618,13 +9642,7 @@ def injecter_acronyme_structure():
     structure_id = session.get('structure_id')
     if not structure_id:
         return {}
-    acronyme = None
-    try:
-        param = ParametrageAffichageStructure.query.filter_by(structure_id=structure_id).first()
-        if param and param.acronyme:
-            acronyme = param.acronyme
-    except Exception:
-        acronyme = None
+    acronyme = _entete_page()['acronyme']   # ⭐ 2026-10-18 : lu avec le reste de l'en-tête (une requête)
     if not acronyme:
         acronyme = deriver_acronyme_structure(session.get('structure_nom', ''))
     return {'structure_acronyme': acronyme}
@@ -9713,11 +9731,7 @@ def injecter_preinscriptions_count():
     structure_id = session.get('structure_id')
     if not structure_id:
         return {'preinscriptions_en_attente_count': 0}
-    try:
-        count = PreinscriptionPatient.query.filter_by(structure_id=structure_id, statut='en_attente').count()
-    except Exception:
-        count = 0
-    return {'preinscriptions_en_attente_count': count}
+    return {'preinscriptions_en_attente_count': _entete_page()['preinscriptions']}   # ⭐ 2026-10-18 : même requête que l'en-tête
 
 
 @app.context_processor

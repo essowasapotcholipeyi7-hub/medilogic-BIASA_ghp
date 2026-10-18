@@ -722,8 +722,15 @@ class SheetsHelper:
         `noms_feuilles` : noms complets (préfixe struct_N_ déjà appliqué)."""
         maintenant = time.time()
         a_lire = []
+        neon = [n for n in dict.fromkeys(noms_feuilles) if _feuille_neon(n)]
+        if neon:   # ⭐ servies par Neon : leurs versions en une seule requête
+            from services.feuilles_neon import prechauffer_versions
+            try:
+                prechauffer_versions(neon)
+            except Exception as e:
+                print(f"⚠️ Versions des feuilles {neon} : {e}")
         for nom in dict.fromkeys(noms_feuilles):
-            if _feuille_neon(nom):   # ⭐ servie par Neon : rien à préchauffer
+            if _feuille_neon(nom):
                 continue
             en_cache = self._cache.get(nom)
             if not en_cache or not self._encore_valide(nom, en_cache[1]):

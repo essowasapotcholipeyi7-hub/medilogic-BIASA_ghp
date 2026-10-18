@@ -250,11 +250,22 @@ def charger_prix_non_assure(structure_id, type_article='acte'):
     'produit', voir PrixNonAssureActe, models.py) — vide tant que rien n'est
     renseigné : les patients non assurés paient alors le prix de base
     (cas 1, "ou prix AMU si non défini")."""
-    return {
-        l.nom_acte: float(l.prix)
-        for l in PrixNonAssureActe.query.filter_by(structure_id=structure_id, type=type_article).all()
-        if l.prix is not None
-    }
+    # ⭐ 2026-10-18 : actes ET produits lus en une requête, gardés pour la page en cours (beaucoup de pages
+    # demandent les deux)
+    try:
+        from flask import g, has_request_context
+        memo = g.setdefault('_prix_non_assure', {}) if has_request_context() else None
+    except Exception:
+        memo = None
+    if memo is not None and structure_id in memo:
+        return dict(memo[structure_id].get(type_article, {}))
+    par_type = {}
+    for l in PrixNonAssureActe.query.filter_by(structure_id=structure_id).all():
+        if l.prix is not None:
+            par_type.setdefault(l.type, {})[l.nom_acte] = float(l.prix)
+    if memo is not None:
+        memo[structure_id] = par_type
+    return dict(par_type.get(type_article, {}))
 
 
 def enregistrer_prix_non_assure(structure_id, nom_acte, prix, ancien_nom=None, user_nom=None, type_article='acte'):
@@ -267,6 +278,12 @@ def enregistrer_prix_non_assure(structure_id, nom_acte, prix, ancien_nom=None, u
     nom_acte = (nom_acte or '').strip()
     if not nom_acte:
         return
+    try:   # mémo de la page en cours (charger_prix_non_assure) : à relire après ce changement
+        from flask import g, has_request_context
+        if has_request_context():
+            g.pop('_prix_non_assure', None)
+    except Exception:
+        pass
     cles = [nom_acte] + ([ancien_nom.strip()] if ancien_nom and ancien_nom.strip() != nom_acte else [])
     lignes = PrixNonAssureActe.query.filter(
         PrixNonAssureActe.structure_id == structure_id, PrixNonAssureActe.type == type_article,
