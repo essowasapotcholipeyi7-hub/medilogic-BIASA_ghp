@@ -25,8 +25,8 @@ from services import theme_service
 from utils.modules_structure import MODULES_STRUCTURE
 from utils.onglets_recherchables import onglets_recherchables
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
-from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure
-from services.tarification_service import repartir_ligne, repartir_panier, appliquer_code_amu_unique, objets_doublons_amu
+from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure, charger_prix_non_assure_nuit, listes_tarifs, charger_listes, pas_arrondi_structure
+from services.tarification_service import repartir_ligne, repartir_panier, appliquer_code_amu_unique, objets_doublons_amu, arrondir_part_patient
 from services.laboratoire_service import charger_classification_actes, determiner_type_prestation, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
 from services.part_medecin_service import (charger_taux_part_medecin, creer_lignes_part_medecin, prestations_en_attente,
                                            calculer_periode_part_medecin, charger_toujours_demander_medecin,
@@ -4448,8 +4448,8 @@ def _contexte_vente_actes(structure_id):
              WHERE j.structure_id = :s AND j.date = :jour) AS medecins_jour,
           (SELECT coalesce(json_agg(json_build_object('id', id, 'titre', titre, 'prenom', prenom, 'nom', nom, 'sp', specialite) ORDER BY nom, id), '[]'::json)
              FROM medecins WHERE structure_id = :s AND actif = true) AS medecins,
-          (SELECT coalesce(json_agg(json_build_object('n', nom_acte, 'p', prix) ORDER BY id), '[]'::json)
-             FROM prix_non_assure_actes WHERE structure_id = :s AND type = 'acte' AND prix IS NOT NULL) AS prix_non_assure
+          (SELECT coalesce(json_agg(json_build_object('n', p.nom_acte, 'p', p.prix, 'nu', to_jsonb(p)->'prix_nuit') ORDER BY p.id), '[]'::json)
+             FROM prix_non_assure_actes p WHERE p.structure_id = :s AND p.type = 'acte' AND p.prix IS NOT NULL) AS prix_non_assure
     """), {'s': structure_id, 'jour': moment.date()}).mappings().one()
 
     def nom_complet(m):   # même calcul que Medecin.get_nom_complet()
@@ -4482,6 +4482,8 @@ def _contexte_vente_actes(structure_id):
         'medecins_du_jour': medecins_jour,
         'medecins_liste': [{'id': m['id'], 'nom_complet': nom_complet(m), 'specialite': m.get('sp') or ''} for m in ligne['medecins']],
         'prix_non_assure': {r['n']: float(r['p']) for r in ligne['prix_non_assure']},
+        # ⭐ 2026-10-19 : prix non assuré de nuit (colonne prix_nuit, lue si elle existe)
+        'prix_non_assure_nuit': {r['n']: float(r['nu']) for r in ligne['prix_non_assure'] if r.get('nu') not in (None, 0)},
     }
 
 
@@ -4731,6 +4733,11 @@ def actes_vente():
                           # ⭐ Prix non assuré par acte (patron, 2026-10-04) — miroir JS
                           # de services/tarification_service.py dans le panier.
                           prix_non_assure_par_acte=ctx['prix_non_assure'],
+                          prix_non_assure_nuit_par_acte=ctx.get('prix_non_assure_nuit', {}),
+                          # ⭐ Listes de prix choisies à la vente (Clinique Valeo : SMA, Expatriés) et
+                          # arrondi de la part patient — voir services/hospitalisation_service.py
+                          listes_tarifs=listes_tarifs(structure_id),
+                          pas_arrondi=pas_arrondi_structure(structure_id),
                           articles_auto=articles_auto,
                           patientTaux=patient_taux,
                           vente_attente=vente_attente,
@@ -5921,6 +5928,8 @@ def recu(vente_id, type):
         applique_pbr_cac_recu = v.get('applique_pbr_cac', True)
         pbr_cac_variante_recu = v.get('pbr_cac_variante') or 'defaut'
         pbr_cac_par_acte_recu = charger_pbr_complementaires(structure_id, assurance2_nom) if (assurance2_nom and applique_pbr_cac_recu) else {}
+        # ⭐ 2026-10-19 : lignes vendues avec une liste de prix (Valeo : Expatriés, SMA) -> PBR de la liste
+        listes_recu = charger_listes(structure_id, {it.get('liste_tarif') for it in tous_articles if isinstance(it, dict)})
 
         # 🔥 Traiter les articles
         sous_total_amu = 0
@@ -5970,11 +5979,12 @@ def recu(vente_id, type):
                 'prise_en_charge_amu': prise_amu, 'prise_en_charge_cac': prise_cac,
                 'pbr_variante': item.get('pbr_variante'),  # variante PBR choisie ligne par ligne à la vente
                 'pbr_prive_modifie': item.get('pbr_prive_modifie'),  # PBR privé saisi à la main à la vente
+                'liste_tarif': item.get('liste_tarif'), 'nuit': item.get('nuit'),
             }, {
                 'amu': bool(est_assure and assurance_principale_active), 'taux_amu': taux_assurance,
                 'privee': taux_assurance2 > 0, 'taux_privee': taux_assurance2,
                 'pbr_prive_par_acte': pbr_cac_par_acte_recu, 'variante': pbr_cac_variante_recu,
-                'appliquer_tarif_prive': False,
+                'appliquer_tarif_prive': False, 'listes': listes_recu,
             })
             if prise_amu and pbr_article > 0:
                 sous_total_amu += total_article
@@ -6064,6 +6074,16 @@ def recu(vente_id, type):
         net_a_payer = sous_total - prise_en_charge - prise_en_charge2 - aide_hospitaliere_calculee
         if net_a_payer < 0:
             net_a_payer = 0
+        # ⭐ 2026-10-19 : part patient arrondie comme à la vente (pas enregistré dans ventes.assurances)
+        assurances_recu = v.get('assurances') or {}
+        if isinstance(assurances_recu, str):
+            try:
+                assurances_recu = json.loads(assurances_recu)
+            except ValueError:
+                assurances_recu = {}
+        pas_arrondi_recu = ((assurances_recu or {}).get('arrondi') or {}).get('pas')
+        if pas_arrondi_recu:
+            net_a_payer = arrondir_part_patient(net_a_payer, pas_arrondi_recu)
         
         print(f"📊 Sous-total: {sous_total}, AMU: {prise_en_charge}, CAC: {prise_en_charge2}, Aide recalculée: {aide_hospitaliere_calculee}, Net: {net_a_payer}")
         
@@ -12458,10 +12478,35 @@ def api_add_acte_vente():
             'variante': data.get('pbr_cac_variante') or 'defaut',
             'taux_aide': taux_aide, 'type_aide': type_aide,
         }
+        # ⭐ Liste de prix choisie à la vente (patron, 2026-10-19, Clinique Valeo : « liste SMA et liste des
+        # expatriés ») : chaque ligne prend le tarif de la liste (SMA : la variante 20 % / 25 % choisie sur
+        # la ligne). Liste « remise » (SMA) : le patient paie le tarif, aucune part privée ; liste
+        # Expatriés : la part de l'assurance du patient (taux de sa carte) se calcule sur ce tarif.
+        groupe_liste = None
+        if data.get('liste_tarif'):
+            groupe_liste = next((g for g in listes_tarifs(structure_id) if g['groupe'] == data.get('liste_tarif')), None)
+        if groupe_liste:
+            cles_liste = [v['cle'] for v in groupe_liste['variantes']]
+            for acte in actes_data:
+                if acte.get('liste_tarif') not in cles_liste:
+                    acte['liste_tarif'] = groupe_liste['defaut']
+            contexte_tarif['listes'] = charger_listes(structure_id, cles_liste)
+            contexte_tarif['privee'] = True
+            contexte_tarif['taux_privee'] = taux_assurance2 if (assurance2_active_vente and not groupe_liste['remise']) else 0
+        else:
+            for acte in actes_data:
+                acte.pop('liste_tarif', None)
+        # ⭐ Arrondi de la part patient (réglé pour la structure, appliqué par défaut, bouton pour l'enlever)
+        pas_arrondi_vente = pas_arrondi_structure(structure_id) if data.get('arrondi_actif', True) else 0
+        contexte_tarif['arrondi'] = pas_arrondi_vente
         prix_non_assure_par_acte = charger_prix_non_assure(structure_id)
+        prix_non_assure_nuit_vente = charger_prix_non_assure_nuit(structure_id)
         for acte in actes_data:
+            acte['nuit'] = bool(acte.get('nuit'))
             if acte.get('prix_non_assure') is None:
                 acte['prix_non_assure'] = prix_non_assure_par_acte.get(acte.get('nom'))
+            if acte['nuit'] and acte.get('prix_non_assure_nuit') is None:
+                acte['prix_non_assure_nuit'] = prix_non_assure_nuit_vente.get(acte.get('nom'))
         calcul = repartir_panier(actes_data, contexte_tarif)
         for acte, ligne in zip(actes_data, calcul['lignes']):
             acte['prix_base'] = float(acte.get('prix') or 0)
@@ -12501,6 +12546,10 @@ def api_add_acte_vente():
                 'taux_original': taux_original
             } if assurance2_nom and taux_assurance2 > 0 else None
         }
+        if groupe_liste:
+            assurances_data['liste_tarif'] = groupe_liste['groupe']
+        if pas_arrondi_vente:
+            assurances_data['arrondi'] = {'pas': pas_arrondi_vente, 'ecart': round(calcul.get('arrondi', 0), 2)}
         
         print(f"📊 Assurances: {assurances_data}")
         print(f"💰 Montant donné: {montant_donne} FCFA, Rendu: {rendu} FCFA")
@@ -13401,17 +13450,9 @@ def api_lister_pbr_complementaires():
     compagnie = request.args.get('compagnie', '').strip()
     q = PbrComplementaire.query.filter_by(structure_id=structure_id)
     if compagnie:
-        lignes = q.filter_by(compagnie=compagnie).all()
-        # ⭐ pbr_1 None = pas de PBR pour ce couple (tarif privé seul) ;
-        # tarif_prive None = prix de base — voir services/tarification_service.py.
-        return jsonify({
-            l.nom_acte: {
-                'pbr_1': float(l.pbr_1) if l.pbr_1 is not None else None,
-                'pbr_2': float(l.pbr_2) if l.pbr_2 is not None else None,
-                'tarif_prive': float(l.tarif_prive) if l.tarif_prive is not None else None,
-            }
-            for l in lignes
-        })
+        # ⭐ pbr_1 None = pas de PBR pour ce couple (tarif privé seul) ; tarif_prive None = prix de base ;
+        # tarif_nuit / pbr_nuit (2026-10-19) : nuit, dimanche, férié — voir services/tarification_service.py.
+        return jsonify(charger_pbr_complementaires(structure_id, compagnie))
     lignes = q.order_by(PbrComplementaire.compagnie, PbrComplementaire.nom_acte).all()
     return jsonify([{
         'id': l.id, 'type': l.type, 'nom_acte': l.nom_acte, 'compagnie': l.compagnie,

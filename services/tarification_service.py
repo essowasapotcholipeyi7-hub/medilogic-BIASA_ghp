@@ -121,11 +121,14 @@ def _nombre(valeur, defaut=0.0):
         return defaut
 
 
-def pbr_prive_valeur(entree, variante='defaut'):
+def pbr_prive_valeur(entree, variante='defaut', nuit=False):
     """PBR privé applicable (pbr_1 habituel / pbr_2 alternatif) ou None si
-    l'entrée n'a pas de PBR (tarif privé seul, "présence ou non d'un PBR")."""
+    l'entrée n'a pas de PBR (tarif privé seul, "présence ou non d'un PBR").
+    `nuit` : ligne vendue la nuit / un dimanche / un férié — PBR de nuit s'il existe."""
     if not entree:
         return None
+    if nuit and _nombre(entree.get('pbr_nuit')) > 0 and variante != 'alternatif':
+        return _nombre(entree.get('pbr_nuit'))
     if variante == 'alternatif' and entree.get('pbr_2') is not None:
         return _nombre(entree.get('pbr_2'))
     pbr_1 = entree.get('pbr_1')
@@ -142,6 +145,33 @@ def _pris(valeur):
     return valeur if isinstance(valeur, bool) else str(valeur).strip().upper() != 'FALSE'
 
 
+def entree_privee(article, contexte):
+    """Tarif / PBR privé de CETTE ligne. ⭐ Listes de prix (Clinique Valeo, patron 2026-10-19 :
+    « liste SMA et liste des expatriés ») : une ligne qui porte `liste_tarif` (ex. 'Liste SMA 20 %')
+    prend le tarif de cette liste ; sinon le tarif de la compagnie complémentaire du patient."""
+    nom = article.get('nom')
+    cle = article.get('liste_tarif')
+    if cle and contexte.get('listes'):
+        return (contexte['listes'].get(cle) or {}).get(nom)
+    return (contexte.get('pbr_prive_par_acte') or {}).get(nom)
+
+
+def _tarif_entree(entree, article):
+    """Tarif privé de l'entrée — celui de nuit pour une ligne vendue la nuit, s'il existe."""
+    if article.get('nuit') and _nombre(entree.get('tarif_nuit')) > 0:
+        return _nombre(entree.get('tarif_nuit'))
+    return _nombre(entree.get('tarif_prive'))
+
+
+def arrondir_part_patient(montant, pas):
+    """Part patient arrondie au multiple de `pas` le plus proche (moitié vers le haut) — patron
+    2026-10-19, d'après les listes de la Clinique Valeo : 3 696 -> 3 700, 9 044 -> 9 050, 4 757 -> 4 750."""
+    pas = _nombre(pas)
+    if pas <= 0 or montant <= 0:
+        return montant
+    return float(int(montant / pas + 0.5 + 1e-9) * pas)
+
+
 def tarif_unitaire(article, contexte):
     """(tarif, source) — source : 'prive' | 'non_assure' | 'base'."""
     prix = _nombre(article.get('prix'))
@@ -152,11 +182,15 @@ def tarif_unitaire(article, contexte):
     # ⭐ 2026-10-15 : seules les assurances qui prennent ENCORE cet article comptent
     amu_ligne = bool(contexte.get('amu')) and _pris(article.get('prise_en_charge_amu'))
     privee_ligne = bool(contexte.get('privee')) and _pris(article.get('prise_en_charge_cac'))
-    entree = contexte.get('pbr_prive_par_acte', {}).get(article.get('nom')) if privee_ligne else None
-    if entree and contexte.get('appliquer_tarif_prive', True) and _nombre(entree.get('tarif_prive')) > 0:
-        return _nombre(entree.get('tarif_prive')), 'prive'
-    if not amu_ligne and not privee_ligne and _nombre(article.get('prix_non_assure')) > 0:
-        return _nombre(article.get('prix_non_assure')), 'non_assure'
+    entree = entree_privee(article, contexte) if privee_ligne else None
+    if entree and contexte.get('appliquer_tarif_prive', True) and _tarif_entree(entree, article) > 0:
+        return _tarif_entree(entree, article), 'prive'
+    if not amu_ligne and not privee_ligne:
+        # ⭐ prix non assuré de nuit (nuit / dimanche / férié) s'il existe
+        if article.get('nuit') and _nombre(article.get('prix_non_assure_nuit')) > 0:
+            return _nombre(article.get('prix_non_assure_nuit')), 'non_assure'
+        if _nombre(article.get('prix_non_assure')) > 0:
+            return _nombre(article.get('prix_non_assure')), 'non_assure'
     return prix, 'base'
 
 
@@ -195,7 +229,7 @@ def repartir_ligne(article, contexte):
     taux_privee = _nombre(contexte.get('taux_privee'))
     if contexte.get('privee') and prise_cac and taux_privee > 0:
         reste = max(total - part_amu, 0.0)
-        entree = contexte.get('pbr_prive_par_acte', {}).get(article.get('nom'))
+        entree = entree_privee(article, contexte)
         # ⭐ Variante choisie LIGNE PAR LIGNE dans le panier (patron, 2026-10-04 :
         # le choix habituel/alternatif ne doit pas s'imposer à tout le panier),
         # sinon la variante globale du contexte.
@@ -208,7 +242,7 @@ def repartir_ligne(article, contexte):
         if pbr_manuel > 0:
             pbr_prive = pbr_manuel
         else:
-            pbr_prive = pbr_prive_valeur(entree, variante) if contexte.get('applique_pbr_prive', True) else None
+            pbr_prive = pbr_prive_valeur(entree, variante, bool(article.get('nuit'))) if contexte.get('applique_pbr_prive', True) else None
         if pbr_prive is not None:
             # Part privée = taux x PBR privé (pas réduite par l'AMU), la PART
             # restant plafonnée à ce qui reste après l'AMU (patient >= 0)
@@ -247,8 +281,13 @@ def repartir_panier(articles, contexte):
         else:
             aide = reste * min(valeur_aide, 100) / 100
     net = max(reste - aide, 0.0)
+    # ⭐ Arrondi de la part patient (patron, 2026-10-19 : appliqué par défaut là où la structure l'a
+    # réglé, bouton pour l'enlever) — les parts des assurances ne bougent pas ; l'écart (+/- moitié du
+    # pas) est comptabilisé à part (services/comptabilite_service.py).
+    net_arrondi = arrondir_part_patient(net, contexte.get('arrondi')) if contexte.get('arrondi') else net
     return {
         'lignes': lignes, 'sous_total': sous_total, 'base_remboursement': base_amu,
         'part_amu': part_amu, 'part_privee': part_privee,
-        'reste_apres_assurances': reste, 'aide_hospitaliere': aide, 'net_a_payer': net,
+        'reste_apres_assurances': reste, 'aide_hospitaliere': aide, 'net_a_payer': net_arrondi,
+        'arrondi': net_arrondi - net,
     }

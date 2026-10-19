@@ -230,19 +230,83 @@ def charger_pbr_complementaires(structure_id, compagnie):
     AMU, non plafonné), donc zéro régression tant que rien n'est saisi."""
     if not compagnie:
         return {}
-    lignes = PbrComplementaire.query.filter_by(
-        structure_id=structure_id, compagnie=compagnie
-    ).all()
-    return {
-        l.nom_acte: {
-            # ⭐ pbr_1 None = pas de PBR pour ce couple (tarif privé seul) ;
-            # tarif_prive None = prix de base — voir services/tarification_service.py.
-            'pbr_1': float(l.pbr_1) if l.pbr_1 is not None else None,
-            'pbr_2': float(l.pbr_2) if l.pbr_2 is not None else None,
-            'tarif_prive': float(l.tarif_prive) if l.tarif_prive is not None else None,
+    return _lire_tarifs_compagnies(structure_id, [compagnie]).get(compagnie, {})
+
+
+def _f(v):
+    return float(v) if v is not None else None
+
+
+def _lire_tarifs_compagnies(structure_id, compagnies):
+    """{compagnie: {nom_acte: {pbr_1, pbr_2, tarif_prive, tarif_nuit, pbr_nuit}}} en UNE requête.
+    to_jsonb : les colonnes de nuit (tarif_nuit / pbr_nuit, 2026-10-19) sont lues si la table les a,
+    absentes sinon — le code marche avant comme après la migration."""
+    from models import db
+    from sqlalchemy import text
+    resultat = {c: {} for c in compagnies}
+    lignes = db.session.execute(text(
+        "SELECT to_jsonb(p) AS j FROM pbr_complementaires p WHERE structure_id = :s AND compagnie = ANY(:c)"),
+        {'s': structure_id, 'c': list(compagnies)}).fetchall()
+    for (j,) in lignes:
+        # ⭐ pbr_1 None = pas de PBR pour ce couple (tarif privé seul) ;
+        # tarif_prive None = prix de base — voir services/tarification_service.py.
+        resultat.setdefault(j['compagnie'], {})[j['nom_acte']] = {
+            'pbr_1': _f(j.get('pbr_1')), 'pbr_2': _f(j.get('pbr_2')), 'tarif_prive': _f(j.get('tarif_prive')),
+            'tarif_nuit': _f(j.get('tarif_nuit')), 'pbr_nuit': _f(j.get('pbr_nuit')),
         }
-        for l in lignes
-    }
+    return resultat
+
+
+# ⭐ Listes de prix (patron, 2026-10-19, Clinique Valeo) : des « compagnies » dont le nom commence par
+# « Liste » (ex. « Liste Expatriés », « Liste SMA 25 % », « Liste SMA 20 % ») portent un tarif par acte
+# choisi À LA VENTE pour un patient donné, au lieu du tarif de sa compagnie. Une liste en plusieurs
+# pourcentages (SMA : réduction de 20 % ou 25 %) est une liste « remise » : le patient paie le tarif ;
+# pour la biologie le pourcentage doit être choisi à chaque ligne, ailleurs le plus grand s'applique.
+PREFIXE_LISTE = 'Liste '
+_RE_LISTE = re.compile(r'^(Liste .+?)(?:\s+(\d+(?:[.,]\d+)?)\s*%)?\s*$')
+
+
+def listes_tarifs(structure_id):
+    """[{groupe, libelle, remise, variantes: [{cle, pct}], defaut}] — vide pour une structure sans liste."""
+    from models import db
+    from sqlalchemy import text
+    noms = [r[0] for r in db.session.execute(text(
+        "SELECT DISTINCT compagnie FROM pbr_complementaires WHERE structure_id = :s AND compagnie LIKE 'Liste %'"),
+        {'s': structure_id}).fetchall()]
+    groupes = {}
+    for nom in sorted(noms):
+        m = _RE_LISTE.match(nom)
+        if not m:
+            continue
+        g = groupes.setdefault(m.group(1), {'groupe': m.group(1), 'libelle': m.group(1)[len(PREFIXE_LISTE):], 'variantes': []})
+        g['variantes'].append({'cle': nom, 'pct': float(m.group(2).replace(',', '.')) if m.group(2) else None})
+    resultat = []
+    for g in groupes.values():
+        g['variantes'].sort(key=lambda v: -(v['pct'] or 0))
+        g['remise'] = all(v['pct'] is not None for v in g['variantes'])
+        g['defaut'] = g['variantes'][0]['cle']
+        resultat.append(g)
+    return resultat
+
+
+def charger_listes(structure_id, cles):
+    """{cle_liste: {nom_acte: {...}}} pour les listes demandées (seulement des noms « Liste … »)."""
+    cles = [c for c in (cles or []) if c and str(c).startswith(PREFIXE_LISTE)]
+    return _lire_tarifs_compagnies(structure_id, cles) if cles else {}
+
+
+def pas_arrondi_structure(structure_id):
+    """Pas d'arrondi de la part patient réglé pour la structure (ex. 50 FCFA), 0 = pas d'arrondi.
+    Table parametrage_tarification (migrate_tarifs_listes_nuit.py) ; absente = 0."""
+    from models import db
+    from sqlalchemy import text
+    try:
+        with db.session.begin_nested():
+            r = db.session.execute(text("SELECT arrondi_pas FROM parametrage_tarification WHERE structure_id = :s"),
+                                   {'s': structure_id}).fetchone()
+        return float(r[0]) if r and r[0] else 0.0
+    except Exception:
+        return 0.0
 
 
 def charger_prix_non_assure(structure_id, type_article='acte'):
@@ -259,13 +323,36 @@ def charger_prix_non_assure(structure_id, type_article='acte'):
         memo = None
     if memo is not None and structure_id in memo:
         return dict(memo[structure_id].get(type_article, {}))
-    par_type = {}
-    for l in PrixNonAssureActe.query.filter_by(structure_id=structure_id).all():
-        if l.prix is not None:
-            par_type.setdefault(l.type, {})[l.nom_acte] = float(l.prix)
+    par_type = _lire_prix_non_assure(structure_id)
     if memo is not None:
         memo[structure_id] = par_type
     return dict(par_type.get(type_article, {}))
+
+
+def _lire_prix_non_assure(structure_id):
+    """{type: {nom: prix}, 'nuit:<type>': {nom: prix de nuit}} — to_jsonb : prix_nuit lu s'il existe."""
+    from models import db
+    from sqlalchemy import text
+    par_type = {}
+    for (j,) in db.session.execute(text("SELECT to_jsonb(p) AS j FROM prix_non_assure_actes p WHERE structure_id = :s"),
+                                   {'s': structure_id}).fetchall():
+        if j.get('prix') is not None:
+            par_type.setdefault(j.get('type') or 'acte', {})[j['nom_acte']] = float(j['prix'])
+        if j.get('prix_nuit') is not None and float(j['prix_nuit']) > 0:
+            par_type.setdefault('nuit:' + (j.get('type') or 'acte'), {})[j['nom_acte']] = float(j['prix_nuit'])
+    return par_type
+
+
+def charger_prix_non_assure_nuit(structure_id, type_article='acte'):
+    """{nom: prix non assuré de NUIT} (nuit / dimanche / férié) — vide si rien n'est renseigné."""
+    charger_prix_non_assure(structure_id, type_article)   # remplit le mémo de la page
+    try:
+        from flask import g, has_request_context
+        if has_request_context() and structure_id in g.get('_prix_non_assure', {}):
+            return dict(g._prix_non_assure[structure_id].get('nuit:' + type_article, {}))
+    except Exception:
+        pass
+    return dict(_lire_prix_non_assure(structure_id).get('nuit:' + type_article, {}))
 
 
 def enregistrer_prix_non_assure(structure_id, nom_acte, prix, ancien_nom=None, user_nom=None, type_article='acte'):

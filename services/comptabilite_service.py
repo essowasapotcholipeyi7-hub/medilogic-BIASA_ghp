@@ -1,4 +1,5 @@
 # services/comptabilite_service.py
+import json
 # ============================================================
 # MOTEUR DE GÉNÉRATION AUTOMATIQUE DES ÉCRITURES COMPTABLES
 # ============================================================
@@ -626,6 +627,22 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
                             'libelle': f"Aide hospitalière accordée — {vente.patient_nom}",
                             'debit': aide_hospitaliere})
             total_debit += aide_hospitaliere
+
+        # ⭐ 2026-10-19 : part patient arrondie vers le BAS (ex. 3 724 -> 3 700) : l'écart est une petite
+        # remise (même compte que l'aide) — sans cette ligne l'écriture serait déséquilibrée et rejetée.
+        # Arrondi vers le haut : l'écart est crédité en « autres prestations » par l'ajustement plus bas.
+        assurances_vente = getattr(vente, 'assurances', None) or {}
+        if isinstance(assurances_vente, str):
+            try:
+                assurances_vente = json.loads(assurances_vente)
+            except ValueError:
+                assurances_vente = {}
+        ecart_arrondi = _to_float(((assurances_vente or {}).get('arrondi') or {}).get('ecart'))
+        if ecart_arrondi < -0.005:
+            lignes.append({'numero_compte': COMPTE_CREANCE_ABANDONNEE,
+                            'libelle': f"Arrondi de la part patient — {vente.patient_nom}",
+                            'debit': round(-ecart_arrondi, 2)})
+            total_debit += round(-ecart_arrondi, 2)
 
         if total_debit <= 0.5:
             return None  # rien à comptabiliser (ex: vente à 0)

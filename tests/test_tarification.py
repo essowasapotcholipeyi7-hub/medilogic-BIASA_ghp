@@ -295,3 +295,53 @@ def test_regle_rejouable_quand_on_retire_le_premier_acte():
     reste = articles[1:]                       # le premier acte est retiré de la proforma
     appliquer_code_amu_unique(reste)
     assert reste[0]['prise_en_charge_amu'] is True and 'amu_doublon' not in reste[0]
+
+
+# ---------------------------------------------------------------- Clinique Valeo (patron, 2026-10-19)
+@pytest.mark.parametrize("brut, attendu", [
+    (3696, 3700), (9044, 9050), (4757, 4750), (10635, 10650), (2928, 2950), (1725, 1750), (1464, 1450), (0, 0), (25, 50),
+])
+def test_arrondi_part_patient_aux_50(brut, attendu):
+    from services.tarification_service import arrondir_part_patient
+    assert arrondir_part_patient(brut, 50) == attendu
+    assert arrondir_part_patient(brut, 0) == brut
+
+
+def test_panier_arrondi_par_defaut_parts_assurance_inchangees():
+    # Radio du doigt (jour) : prix clinique AMU 9 000, PBR 6 630, AMU 80 % -> patient 3 696 -> 3 700
+    articles = [{'nom': 'Q100 Examen radiologique du doigt', 'prix': 9000, 'pbr': 6630, 'quantite': 1}]
+    r = repartir_panier(articles, {'amu': True, 'taux_amu': 80, 'arrondi': 50})
+    assert round(r['part_amu']) == 5304
+    assert r['net_a_payer'] == 3700 and round(r['arrondi']) == 4
+    r = repartir_panier([dict(articles[0])], {'amu': True, 'taux_amu': 80})
+    assert round(r['net_a_payer']) == 3696 and r['arrondi'] == 0
+
+
+def test_liste_sma_choisie_par_ligne_patient_paie_le_tarif():
+    listes = {'Liste SMA 25 %': {'R607 NFS': {'tarif_prive': 3750}, 'Q100 Doigt': {'tarif_prive': 5250}},
+              'Liste SMA 20 %': {'R607 NFS': {'tarif_prive': 4000}}}
+    articles = [{'nom': 'R607 NFS', 'prix': 6000, 'pbr': 3850, 'quantite': 1, 'liste_tarif': 'Liste SMA 20 %'},
+                {'nom': 'Q100 Doigt', 'prix': 9000, 'pbr': 6630, 'quantite': 1, 'liste_tarif': 'Liste SMA 25 %'}]
+    r = repartir_panier(articles, {'privee': True, 'taux_privee': 0, 'listes': listes})
+    assert [l['tarif_unitaire'] for l in r['lignes']] == [4000, 5250]
+    assert r['part_privee'] == 0 and r['net_a_payer'] == 9250
+
+
+def test_liste_expatries_avec_assurance_du_patient():
+    # Expatrié assuré 80 % : tarif 14 400, PBR 12 960 -> assurance 10 368, patient 4 032 (fichier Valeo)
+    listes = {'Liste Expatriés': {'Q100 Doigt': {'tarif_prive': 14400, 'pbr_1': 12960}}}
+    a = {'nom': 'Q100 Doigt', 'prix': 9000, 'pbr': 6630, 'quantite': 1, 'liste_tarif': 'Liste Expatriés'}
+    r = repartir_ligne(a, {'privee': True, 'taux_privee': 80, 'listes': listes, 'pbr_prive_par_acte': {}})
+    assert (r['tarif_unitaire'], round(r['part_privee']), round(r['part_patient'])) == (14400, 10368, 4032)
+
+
+def test_tarifs_de_nuit_compagnie_et_non_assure():
+    entree = {'tarif_prive': 12000, 'pbr_1': 10800, 'tarif_nuit': 14000, 'pbr_nuit': 10800}
+    a = {'nom': 'Q100 Doigt', 'prix': 11500, 'pbr': 6630, 'quantite': 1, 'nuit': True}
+    r = repartir_ligne(a, ctx(privee=True, taux_privee=80, nom='Q100 Doigt', **{'pbr_prive_par_acte': {'Q100 Doigt': entree}}))
+    assert (r['tarif_unitaire'], round(r['part_privee']), round(r['part_patient'])) == (14000, 8640, 5360)
+    jour = dict(a, nuit=False)
+    assert repartir_ligne(jour, ctx(privee=True, taux_privee=80, **{'pbr_prive_par_acte': {'Q100 Doigt': entree}}))['tarif_unitaire'] == 12000
+    na = {'nom': 'Q100 Doigt', 'prix': 11500, 'pbr': 6630, 'quantite': 1, 'nuit': True, 'prix_non_assure': 7000, 'prix_non_assure_nuit': 9500}
+    assert repartir_ligne(na, ctx())['tarif_unitaire'] == 9500
+    assert repartir_ligne(dict(na, nuit=False), ctx())['tarif_unitaire'] == 7000
