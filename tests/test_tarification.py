@@ -345,3 +345,16 @@ def test_tarifs_de_nuit_compagnie_et_non_assure():
     na = {'nom': 'Q100 Doigt', 'prix': 11500, 'pbr': 6630, 'quantite': 1, 'nuit': True, 'prix_non_assure': 7000, 'prix_non_assure_nuit': 9500}
     assert repartir_ligne(na, ctx())['tarif_unitaire'] == 9500
     assert repartir_ligne(dict(na, nuit=False), ctx())['tarif_unitaire'] == 7000
+
+
+def test_ligne_absente_de_la_liste_suit_l_assurance_reelle():
+    # liste SMA choisie pour un non-assuré : un médicament absent de la liste reste au prix non assuré
+    listes = {'Liste SMA 25 %': {'Q100 Doigt': {'tarif_prive': 5250}}}
+    ctx_liste = {'privee': True, 'taux_privee': 0, 'listes': listes, 'privee_patient': False}
+    medoc = {'nom': 'Paracetamol', 'prix': 1000, 'pbr': 0, 'quantite': 1, 'prix_non_assure': 1200, 'liste_tarif': 'Liste SMA 25 %'}
+    assert repartir_ligne(medoc, ctx_liste)['tarif_unitaire'] == 1200
+    # expatrié assuré SUNU : un acte absent de la liste prend le tarif SUNU et la part SUNU
+    ctx_exp = {'privee': True, 'taux_privee': 80, 'privee_patient': True, 'listes': {'Liste Expatriés': {}},
+               'pbr_prive_par_acte': {'Acte X': {'tarif_prive': 10000, 'pbr_1': None}}}
+    r = repartir_ligne({'nom': 'Acte X', 'prix': 8000, 'pbr': 0, 'quantite': 1, 'liste_tarif': 'Liste Expatriés'}, ctx_exp)
+    assert (r['tarif_unitaire'], round(r['part_privee'])) == (10000, 8000)

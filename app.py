@@ -12491,6 +12491,7 @@ def api_add_acte_vente():
                 if acte.get('liste_tarif') not in cles_liste:
                     acte['liste_tarif'] = groupe_liste['defaut']
             contexte_tarif['listes'] = charger_listes(structure_id, cles_liste)
+            contexte_tarif['privee_patient'] = assurance2_active_vente   # lignes absentes de la liste
             contexte_tarif['privee'] = True
             contexte_tarif['taux_privee'] = taux_assurance2 if (assurance2_active_vente and not groupe_liste['remise']) else 0
         else:

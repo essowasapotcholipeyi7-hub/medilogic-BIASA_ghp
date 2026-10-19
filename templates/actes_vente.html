@@ -4,6 +4,7 @@
 
 {% block content %}
 <script src="{{ url_for('static', filename='js/doublons_amu.js') }}"></script>
+<script src="{{ url_for('static', filename='js/listes_tarifs.js') }}"></script>
 
 <!-- Info patient sélectionné -->
 <style>
@@ -733,43 +734,27 @@ const PRIX_NON_ASSURE_PAR_ACTE = {{ prix_non_assure_par_acte|tojson|safe }};
 // ⭐ 2026-10-19 : prix non assuré de nuit (nuit / dimanche / férié)
 const PRIX_NON_ASSURE_NUIT_PAR_ACTE = {{ (prix_non_assure_nuit_par_acte or {})|tojson|safe }};
 
-// ⭐ Listes de prix (patron, 2026-10-19, Clinique Valeo) — miroir de services/hospitalisation_service.py
-// listes_tarifs() : par défaut la grande liste (tarif selon l'assurance du patient) ; une liste choisie
-// remplace ce tarif pour toute la vente. Liste « remise » en plusieurs pourcentages (SMA 20 % / 25 %) :
-// pour la biologie le pourcentage DOIT être choisi sur la ligne, pour le reste le plus grand s'applique ;
-// le patient paie le tarif. Liste Expatriés : l'assurance du patient (taux de sa carte) paie sa part.
-const LISTES_TARIFS = {{ (listes_tarifs or [])|tojson|safe }};
-const PAS_ARRONDI = {{ (pas_arrondi or 0)|tojson }};
-let listeTarifActive = null;
-let LISTES_MAPS = {};
-function groupeListeActif() { return LISTES_TARIFS.find(g => g.groupe === listeTarifActive) || null; }
-function estBiologieActes(item) { return (item.type_prestation || TYPE_PRESTATION_PAR_ACTE[item.nom]) === 'analyse'; }
-function listeAPlusieursTaux(g) { return !!(g && g.remise && g.variantes.length > 1); }
-function cleListeParDefaut(item, g) { return (listeAPlusieursTaux(g) && estBiologieActes(item)) ? null : g.defaut; }
+// ⭐ Listes de prix (patron, 2026-10-19, Clinique Valeo) et arrondi de la part patient :
+// static/js/listes_tarifs.js (commun à la vente d'actes, aux proformas et à l'hospitalisation).
+initListesTarifs({{ (listes_tarifs or [])|tojson|safe }}, {{ (pas_arrondi or 0)|tojson }});
 function entreePriveeActes(item, ctx) {
-    if (ctx && ctx.liste) return (LISTES_MAPS[item.liste_tarif || ctx.liste.defaut] || {})[item.nom];
+    if (ctx && ctx.liste) {
+        const e = entreeListe(item, ctx.liste);
+        if (e || !ctx.priveePatient) return e;
+    }
     return pbrCacMapActes[item.nom];
 }
-function tarifEntreeActes(entree, item) {
-    if (item.nuit && parseFloat(entree.tarif_nuit) > 0) return parseFloat(entree.tarif_nuit);
-    return parseFloat(entree.tarif_prive) || 0;
+// ⭐ ligne absente de la liste choisie : elle suit l'assurance réelle du patient (miroir de privee_ligne)
+function priveeLigneActes(item, ctx) {
+    if (item.prise_en_charge_cac === false) return false;
+    if (ctx.liste) return !!entreeListe(item, ctx.liste) || !!ctx.priveePatient;
+    return !!ctx.privee;
 }
+function tarifEntreeActes(entree, item) { return tarifEntreeListe(entree, item); }
 async function changerListeTarif(groupe) {
-    listeTarifActive = groupe || null;
-    const g = groupeListeActif();
-    if (g) {
-        await Promise.all(g.variantes.filter(v => !LISTES_MAPS[v.cle]).map(v =>
-            fetch('/api/pbr-complementaires?compagnie=' + encodeURIComponent(v.cle))
-                .then(r => r.json()).then(m => { LISTES_MAPS[v.cle] = m || {}; }).catch(() => { LISTES_MAPS[v.cle] = {}; })));
-    }
-    panier.forEach(item => { item.liste_tarif = g ? cleListeParDefaut(item, g) : null; });
+    const g = await choisirListeTarif(groupe, panier);
     const info = document.getElementById('infoListeTarif');
-    if (info) {
-        info.innerHTML = !g ? ''
-            : g.remise ? `<span class="text-warning"><i class="fas fa-percent"></i> Réduction : le patient paie le tarif ${g.libelle}.`
-                + (listeAPlusieursTaux(g) ? ` Biologie : choisir le taux sur chaque ligne.` : '') + '</span>'
-            : `<span class="text-info"><i class="fas fa-globe"></i> Tarif ${g.libelle} ; l'assurance du patient paie selon le taux de sa carte (sinon le patient paie tout).</span>`;
-    }
+    if (info) info.innerHTML = texteInfoListe(g);
     afficherPanier();
 }
 function resetListeTarif() {
@@ -780,21 +765,8 @@ function resetListeTarif() {
     if (info) info.innerHTML = '';
 }
 function changerVarianteListeLigne(index, cle) { panier[index].liste_tarif = cle || null; afficherPanier(); }
-function lignesListeSansTaux() { return groupeListeActif() ? panier.filter(i => !i.liste_tarif).length : 0; }
-function selectVarianteListe(item, index, g) {
-    const options = g.variantes.map(v => `<option value="${v.cle}"${item.liste_tarif === v.cle ? ' selected' : ''}>Réduction ${v.pct} %</option>`).join('');
-    return `<select class="form-select form-select-sm mt-1 ${item.liste_tarif ? '' : 'border-danger text-danger'}" style="width: 150px; margin: 0 auto;"`
-        + ` onchange="changerVarianteListeLigne(${index}, this.value)"><option value="">— taux ${g.libelle} ? —</option>${options}</select>`;
-}
-// ⭐ Part patient arrondie (miroir de tarification_service.arrondir_part_patient) : 3 696 -> 3 700
-function arrondirPartPatientActes(montant, pas) {
-    if (!(pas > 0) || montant <= 0) return montant;
-    return Math.floor(montant / pas + 0.5 + 1e-9) * pas;
-}
-function arrondiActifActes() {
-    const t = document.getElementById('toggleArrondiPatient');
-    return PAS_ARRONDI > 0 && (!t || t.checked);
-}
+function arrondirPartPatientActes(montant, pas) { return arrondirPartPatient(montant, pas); }
+function arrondiActifActes() { return arrondiActif('toggleArrondiPatient'); }
 
 // ============================================
 // ⭐ TARIFICATION — miroir JS de services/tarification_service.py (patron,
@@ -828,6 +800,7 @@ function contexteTarificationActes() {
     return {
         estAssure: estAssure, amu: amu, tauxAMU: tauxAMU,
         privee: liste ? true : privee,
+        priveePatient: privee,
         tauxPrivee: liste ? ((privee && !liste.remise) ? tauxPrivee : 0) : tauxPrivee,
         liste: liste,
         appliquePbrPrive: toggle ? toggle.checked : true,
@@ -842,7 +815,7 @@ function tarifUnitaireActes(item, ctx) {
     // catalogue) ne compte plus pour cet article — AMU seule -> prix de base ; aucune -> prix non assuré.
     // ⭐ amu_doublon (même code AMU qu'une ligne au-dessus) : l'AMU ne prend pas cette ligne
     const amuLigne = ctx.amu && item.prise_en_charge_amu !== false && !item.amu_doublon;
-    const priveeLigne = ctx.privee && item.prise_en_charge_cac !== false;
+    const priveeLigne = priveeLigneActes(item, ctx);
     const entree = priveeLigne ? entreePriveeActes(item, ctx) : undefined;
     if (entree && tarifEntreeActes(entree, item) > 0) return { tarif: tarifEntreeActes(entree, item), source: 'prive' };
     // ⭐ prix non assuré de nuit (nuit / dimanche / férié) s'il existe
@@ -872,7 +845,7 @@ function repartirLigneActes(item, ctx) {
     }
 
     let basePrivee = 0, partPrivee = 0;
-    if (ctx.privee && priseCAC && ctx.tauxPrivee > 0) {
+    if (priveeLigneActes(item, ctx) && priseCAC && ctx.tauxPrivee > 0) {
         const reste = Math.max(total - partAMU, 0);
         // Variante choisie LIGNE PAR LIGNE (sélecteur dans le panier), sinon celle du panier
         const varianteLigne = item.pbr_variante || ctx.variante;
@@ -1714,7 +1687,7 @@ function ajouterActeAuPanier(acteId, acteNom, actePrix, actePBR, quantite,
             service_id: serviceId || null,
             // ⭐ 2026-10-19 : vendue la nuit / un dimanche / un férié -> tarifs de nuit de la liste appliquée
             nuit: !!TARIF_NUIT_ACTIF,
-            liste_tarif: groupeListeActif() ? cleListeParDefaut({nom: acteNom}, groupeListeActif()) : null,
+            liste_tarif: groupeListeActif() ? cleListeParDefaut({nom: acteNom, nuit: !!TARIF_NUIT_ACTIF}, groupeListeActif()) : null,
         });
     }
 
@@ -1929,7 +1902,7 @@ function afficherPanier() {
                 '<option value="alternatif"' + (varianteActive === 'alternatif' ? ' selected' : '') + '>PBR alternatif (' + Math.round(entreePbr.pbr_2).toLocaleString('fr-FR') + ' F)</option>' +
                 '</select>';
         }
-        if (ctxPanier.liste && listeAPlusieursTaux(ctxPanier.liste) && estBiologieActes(item)) selectVariante += selectVarianteListe(item, index, ctxPanier.liste);
+        if (ctxPanier.liste && ligneDoitChoisirTaux(item, ctxPanier.liste)) selectVariante += selectVarianteListe(item, index, ctxPanier.liste, 'changerVarianteListeLigne');
         if (item.nuit && TARIF_NUIT_ACTIF) libelleTarif += '<div class="small text-muted">🌙 nuit / férié</div>';
         cellPrix.innerHTML = '<input type="number" class="form-control form-control-sm" value="' + Math.round(ligne.tarif) + '" style="width: 100px; text-align: center;" onchange="modifierPrix(' + index + ', this.value)">' + libelleTarif + selectVariante;
 
@@ -2590,7 +2563,7 @@ async function finaliserVente() {
     }
 
     // ⭐ Liste « remise » en plusieurs taux (SMA) : le taux est obligatoire sur chaque analyse
-    if (lignesListeSansTaux() > 0) {
+    if (lignesListeSansTaux(panier) > 0) {
         await afficherMessage(`Choisissez le taux de réduction ${groupeListeActif().libelle} sur chaque analyse de biologie (ligne en rouge dans le panier).`);
         return;
     }

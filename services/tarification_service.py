@@ -152,8 +152,24 @@ def entree_privee(article, contexte):
     nom = article.get('nom')
     cle = article.get('liste_tarif')
     if cle and contexte.get('listes'):
-        return (contexte['listes'].get(cle) or {}).get(nom)
+        entree = (contexte['listes'].get(cle) or {}).get(nom)
+        if entree is not None or not contexte.get('privee_patient'):
+            return entree
     return (contexte.get('pbr_prive_par_acte') or {}).get(nom)
+
+
+def privee_ligne(article, contexte):
+    """L'assurance privée (ou la liste choisie) prend-elle cette ligne ? Une ligne absente de la liste
+    choisie (médicament, acte sans tarif dans la liste) suit l'assurance RÉELLE du patient : sans
+    assurance privée, elle est au prix non assuré comme pour tout patient non assuré."""
+    if not _pris(article.get('prise_en_charge_cac')):
+        return False
+    cle = article.get('liste_tarif')
+    if cle and contexte.get('listes'):
+        if ((contexte['listes'].get(cle) or {}).get(article.get('nom'))) is not None:
+            return True
+        return bool(contexte.get('privee_patient'))
+    return bool(contexte.get('privee'))
 
 
 def _tarif_entree(entree, article):
@@ -181,11 +197,11 @@ def tarif_unitaire(article, contexte):
         return prix, 'base'
     # ⭐ 2026-10-15 : seules les assurances qui prennent ENCORE cet article comptent
     amu_ligne = bool(contexte.get('amu')) and _pris(article.get('prise_en_charge_amu'))
-    privee_ligne = bool(contexte.get('privee')) and _pris(article.get('prise_en_charge_cac'))
-    entree = entree_privee(article, contexte) if privee_ligne else None
+    prend_privee = privee_ligne(article, contexte)
+    entree = entree_privee(article, contexte) if prend_privee else None
     if entree and contexte.get('appliquer_tarif_prive', True) and _tarif_entree(entree, article) > 0:
         return _tarif_entree(entree, article), 'prive'
-    if not amu_ligne and not privee_ligne:
+    if not amu_ligne and not prend_privee:
         # ⭐ prix non assuré de nuit (nuit / dimanche / férié) s'il existe
         if article.get('nuit') and _nombre(article.get('prix_non_assure_nuit')) > 0:
             return _nombre(article.get('prix_non_assure_nuit')), 'non_assure'
@@ -227,7 +243,7 @@ def repartir_ligne(article, contexte):
     part_privee = 0.0
     base_privee = 0.0
     taux_privee = _nombre(contexte.get('taux_privee'))
-    if contexte.get('privee') and prise_cac and taux_privee > 0:
+    if privee_ligne(article, contexte) and prise_cac and taux_privee > 0:
         reste = max(total - part_amu, 0.0)
         entree = entree_privee(article, contexte)
         # ⭐ Variante choisie LIGNE PAR LIGNE dans le panier (patron, 2026-10-04 :
