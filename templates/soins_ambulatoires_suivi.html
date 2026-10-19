@@ -169,6 +169,8 @@
 </div>
 {% endif %}
 
+{% include 'partials/liste_tarif_sejour.html' %}
+
 {% if repartition and (repartition.est_assure_amu or repartition.a_cac) %}
 {% set nb_cartes = (1 if repartition.est_assure_amu else 0) + (1 if repartition.a_cac else 0) + 1 %}
 {% set col_class = 'col-md-4' if nb_cartes == 3 else 'col-md-6' %}
@@ -372,7 +374,7 @@
                         <td>{% if l.type == 'acte' %}<span class="badge bg-primary">Acte</span>{% else %}<span class="badge bg-success">Médicament</span>{% endif %}</td>
                         <td>{{ l.nom }}{% if l.note %}<br><small class="text-muted">{{ l.note }}</small>{% endif %}</td>
                         <td class="text-end">{{ l.quantite }}</td>
-                        <td class="text-end">{{ '{:,}'.format(l.prix|round(0)|int).replace(',', ' ') }}</td>
+                        <td class="text-end">{{ '{:,}'.format((l.tarif_applique if l.tarif_applique is defined else l.prix)|round(0)|int).replace(',', ' ') }}</td>
                         <td class="text-end">{{ '{:,}'.format(l.total|round(0)|int).replace(',', ' ') }}</td>
                         <td>
                             {# ⭐ Patron (2026-10-09) : tant que la ligne est en cours, un clic dit que l'assurance ne prend pas / reprend cette ligne #}

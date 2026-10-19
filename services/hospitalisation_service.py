@@ -322,6 +322,80 @@ def appliquer_liste_tarif(structure_id, groupe_nom, articles, contexte, taux_com
     return groupe
 
 
+def type_sejour(sejour):
+    """'hospitalisation' | 'ambulatoire' (épisode de soins ambulatoires)."""
+    return 'hospitalisation' if sejour.__class__.__name__ == 'Hospitalisation' else 'ambulatoire'
+
+
+def liste_choisie_sejour(structure_id, type_s, sejour_id):
+    """(liste, {id_ligne: variante}) choisis pour ce séjour (table listes_tarif_sejour,
+    migrate_tarifs_listes_nuit.py) ; rien de choisi / table absente -> (None, {})."""
+    from models import db
+    from sqlalchemy import text
+    try:
+        with db.session.begin_nested():
+            r = db.session.execute(text(
+                "SELECT liste_tarif, variantes FROM listes_tarif_sejour WHERE structure_id = :s AND type_sejour = :t AND sejour_id = :i"),
+                {'s': structure_id, 't': type_s, 'i': sejour_id}).fetchone()
+        if r and r[0]:
+            return r[0], dict(r[1] or {})
+    except Exception:
+        pass
+    return None, {}
+
+
+def contexte_tarif_sejour(sejour, pbr_cac_par_acte=None, variante='defaut'):
+    """⭐ 2026-10-19 (patron : « corrige aussi pour l'hospitalisation ») : un séjour (hospitalisation ou
+    soins ambulatoires) suit la grande liste comme la vente d'actes — tarif de la compagnie privée du
+    patient, prix non assuré pour un non assuré — et la liste choisie pour ce séjour (Valeo : SMA,
+    Expatriés). Avant, tout était facturé au prix clinique AMU. Gardé sur le séjour pour la page."""
+    cle_memo = (variante, id(pbr_cac_par_acte))
+    memo = getattr(sejour, '_tarif_sejour', None)
+    if memo and memo[0] == cle_memo:
+        return memo[1]
+    sid = sejour.structure_id
+    taux2 = float(sejour.taux_assurance2_effectif or 0)
+    privee = bool(sejour.a_cac and taux2 > 0)
+    contexte = {'amu': bool(sejour.est_assure_amu), 'taux_amu': sejour.taux_assurance_effectif,
+                'privee': privee, 'taux_privee': taux2, 'pbr_prive_par_acte': pbr_cac_par_acte or {},
+                'variante': variante or 'defaut'}
+    nom_liste, variantes = liste_choisie_sejour(sid, type_sejour(sejour), sejour.id)
+    groupe = appliquer_liste_tarif(sid, nom_liste, [], contexte, taux2, privee) if nom_liste else None
+    info = {'contexte': contexte, 'groupe': groupe, 'variantes': variantes,
+            'na': {'acte': charger_prix_non_assure(sid, 'acte'), 'produit': charger_prix_non_assure(sid, 'produit')}}
+    try:
+        sejour._tarif_sejour = (cle_memo, info)
+    except AttributeError:
+        pass
+    return info
+
+
+def article_tarif_soin(soin, info, pbr, prise_amu):
+    """Ligne pour repartir_ligne() : soin du séjour + prix non assuré + variante de la liste choisie."""
+    type_art = 'produit' if getattr(soin, 'type', '') == 'medicament' else 'acte'
+    article = {'nom': soin.nom, 'prix': float(soin.prix or 0), 'pbr': pbr, 'quantite': int(soin.quantite or 0),
+               'prise_en_charge_amu': prise_amu, 'prise_en_charge_cac': bool(soin.prise_en_charge_cac),
+               'prix_non_assure': info['na'][type_art].get(soin.nom)}
+    if info['groupe']:
+        article['liste_tarif'] = info['variantes'].get(str(getattr(soin, 'id', ''))) or info['groupe']['defaut']
+    return article
+
+
+def soins_a_taux_liste(soins, info):
+    """Lignes dont le prix change selon le taux de la liste « remise » choisie (SMA 20 / 25 % : la biologie)
+    — le taux y est obligatoire. [(soin, variante choisie ou None)]."""
+    g = info['groupe']
+    if not g or not g['remise'] or len(g['variantes']) < 2:
+        return []
+    listes = info['contexte'].get('listes', {})
+    resultat = []
+    for soin in soins:
+        prix = {((listes.get(v['cle']) or {}).get(soin.nom) or {}).get('tarif_prive') for v in g['variantes']}
+        if len(prix) > 1:
+            resultat.append((soin, info['variantes'].get(str(getattr(soin, 'id', '')))))
+    return resultat
+
+
 def pas_arrondi_structure(structure_id):
     """Pas d'arrondi de la part patient réglé pour la structure (ex. 50 FCFA), 0 = pas d'arrondi.
     Table parametrage_tarification (migrate_tarifs_listes_nuit.py) ; absente = 0."""
@@ -448,32 +522,23 @@ def calculer_repartition_assurance(soins, hospit, pbr_cac_par_acte=None, pbr_cac
     (api_facturer_hospitalisation, app.py) — un seul endroit pour ce
     calcul, réutilisé aussi pour l'aperçu "en cours" affiché pendant le
     séjour, pour que les deux restent toujours cohérents."""
-    pbr_cac_par_acte = pbr_cac_par_acte or {}
     est_assure = hospit.est_assure_amu
-    taux_assurance = hospit.taux_assurance_effectif
     a_cac = hospit.a_cac
-    taux_assurance2 = hospit.taux_assurance2_effectif
 
-    # ⭐ Règles centralisées (patron, 2026-10-04) : voir
-    # services/tarification_service.py. Ici le prix de chaque soin est celui
-    # déjà enregistré au séjour (jamais remplacé par un tarif privé après
-    # coup : appliquer_tarif_prive=False), seules les parts AMU / privée /
-    # patient en découlent.
-    contexte = {
-        'amu': bool(est_assure), 'taux_amu': taux_assurance,
-        'privee': bool(a_cac), 'taux_privee': taux_assurance2,
-        'pbr_prive_par_acte': pbr_cac_par_acte, 'variante': pbr_cac_variante,
-        'appliquer_tarif_prive': False,
-    }
+    # ⭐ Règles centralisées (patron, 2026-10-04) : voir services/tarification_service.py.
+    # ⭐ 2026-10-19 : grande liste (tarif de la compagnie / prix non assuré) et liste choisie pour le
+    # séjour — voir contexte_tarif_sejour ; le tarif appliqué est posé sur chaque ligne (tarif_applique).
+    info = contexte_tarif_sejour(hospit, pbr_cac_par_acte, pbr_cac_variante)
+    contexte = info['contexte']
     sous_total = part_amu = part_cac = 0.0
     doublons_amu = objets_doublons_amu(soins)   # un seul acte par code AMU
     for s in soins:
-        ligne = repartir_ligne({
-            'nom': s.nom, 'prix': float(s.prix or 0), 'pbr': float(s.pbr or 0),
-            'quantite': int(s.quantite or 0),
-            'prise_en_charge_amu': bool(s.prise_en_charge_amu) and id(s) not in doublons_amu,
-            'prise_en_charge_cac': bool(s.prise_en_charge_cac),
-        }, contexte)
+        ligne = repartir_ligne(article_tarif_soin(
+            s, info, float(s.pbr or 0), bool(s.prise_en_charge_amu) and id(s) not in doublons_amu), contexte)
+        try:
+            s.tarif_applique = ligne['tarif_unitaire']
+        except AttributeError:
+            pass
         sous_total += ligne['total']
         part_amu += ligne['part_amu']
         part_cac += ligne['part_privee']

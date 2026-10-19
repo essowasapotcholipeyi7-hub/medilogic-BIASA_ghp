@@ -25,7 +25,7 @@ from services import theme_service
 from utils.modules_structure import MODULES_STRUCTURE
 from utils.onglets_recherchables import onglets_recherchables
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
-from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure, charger_prix_non_assure_nuit, listes_tarifs, charger_listes, pas_arrondi_structure, appliquer_liste_tarif
+from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure, charger_prix_non_assure_nuit, listes_tarifs, charger_listes, pas_arrondi_structure, appliquer_liste_tarif, contexte_tarif_sejour, article_tarif_soin, soins_a_taux_liste, type_sejour
 from services.tarification_service import repartir_ligne, repartir_panier, appliquer_code_amu_unique, objets_doublons_amu, arrondir_part_patient
 from services.laboratoire_service import charger_classification_actes, determiner_type_prestation, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
 from services.part_medecin_service import (charger_taux_part_medecin, creer_lignes_part_medecin, prestations_en_attente,
@@ -20468,6 +20468,35 @@ def proformas():
                          pas_arrondi=pas_arrondi_structure(structure_id))
 
 
+@app.route('/api/sejour/<string:type_s>/<int:sejour_id>/liste-tarif', methods=['POST'])
+@login_required
+def api_liste_tarif_sejour(type_s, sejour_id):
+    """⭐ 2026-10-19 (Clinique Valeo) : liste de prix d'un séjour (hospitalisation / soins ambulatoires)
+    — vide = grande liste — et, pour une liste « remise » (SMA), le taux choisi par ligne."""
+    structure_id = session.get('structure_id')
+    if type_s not in ('hospitalisation', 'ambulatoire'):
+        return jsonify({'success': False, 'error': 'Type de séjour inconnu'}), 400
+    modele = Hospitalisation if type_s == 'hospitalisation' else SoinsAmbulatoires
+    sejour = modele.query.filter_by(id=sejour_id, structure_id=structure_id).first()
+    if not sejour:
+        return jsonify({'success': False, 'error': 'Séjour introuvable'}), 404
+    data = request.json or {}
+    liste = (data.get('liste_tarif') or '').strip() or None
+    if liste and not any(g['groupe'] == liste for g in listes_tarifs(structure_id)):
+        return jsonify({'success': False, 'error': 'Liste inconnue'}), 400
+    variantes = {str(k): v for k, v in (data.get('variantes') or {}).items() if v}
+    db.session.execute(db.text("""
+        INSERT INTO listes_tarif_sejour (structure_id, type_sejour, sejour_id, liste_tarif, variantes, updated_at)
+        VALUES (:s, :t, :i, :l, CAST(:v AS jsonb), NOW())
+        ON CONFLICT (type_sejour, sejour_id) DO UPDATE SET liste_tarif = EXCLUDED.liste_tarif,
+            variantes = EXCLUDED.variantes, updated_at = NOW()"""),
+        {'s': structure_id, 't': type_s, 'i': sejour_id, 'l': liste, 'v': json.dumps(variantes if liste else {})})
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+
+
 @app.route('/api/proformas', methods=['POST'])
 @login_required
 def api_creer_proforma():
@@ -20999,7 +21028,7 @@ def proforma_print(proforma_id):
         print(f"   ⚠️ Taux modifié: {taux_assurance2}% (original: {taux_original}%)")
     
     # ⭐ 2026-10-19 : part patient arrondie comme à l'enregistrement (pas gardé dans proformas.assurances)
-    assurances_print = proforma.get('assurances') or {}
+    assurances_print = proforma.get('assurances_data') or proforma.get('assurances') or {}
     if isinstance(assurances_print, str):
         try:
             assurances_print = json.loads(assurances_print)
@@ -22185,6 +22214,10 @@ def page_hospitalisation_suivi(hospit_id):
     # parts par ligne redonne exactement le même total que l'agrégat.
     for s in soins:
         s.part_patient_ligne = calculer_repartition_assurance([s], hospit, pbr_cac_par_acte, hospit.pbr_cac_variante)['part_patient']
+    # ⭐ 2026-10-19 : solde au tarif appliqué (grande liste / liste du séjour) ; liste du séjour et taux à choisir
+    solde_en_cours = sum(float(getattr(s, 'tarif_applique', s.prix) or 0) * int(s.quantite or 0) for s in soins if s.statut == 'en_cours')
+    info_tarif_sejour = contexte_tarif_sejour(hospit, pbr_cac_par_acte, hospit.pbr_cac_variante)
+    soins_taux_liste = soins_a_taux_liste(soins_en_cours, info_tarif_sejour)
 
     # ⭐ Part CAC pour CHAQUE variante (habituel/alternatif), indépendamment
     # de celle actuellement sélectionnée — affichée directement dans le
@@ -22217,6 +22250,8 @@ def page_hospitalisation_suivi(hospit_id):
     services_liste = charger_services(structure_id)
 
     return render_template('hospitalisation_suivi.html', hospit=hospit, soins=soins, solde_en_cours=solde_en_cours,
+                            listes_tarifs=listes_tarifs(structure_id), groupe_liste_sejour=info_tarif_sejour['groupe'],
+                            soins_taux_liste=soins_taux_liste, type_sejour_liste='hospitalisation', id_sejour_liste=hospit.id,
                             patient_a_amu=patient_a_amu, patient_a_cac=patient_a_cac, patient_amu_ep=patient_amu_ep,
                             ep_liee=ep_liee, ep_date_ecart=ep_date_ecart,
                             repartition=repartition, ligne_chambre_projetee=ligne_chambre_projetee,
@@ -22770,12 +22805,16 @@ def api_facturer_hospitalisation(hospit_id):
         articles = []
 
         doublons_amu = objets_doublons_amu(soins)   # un seul acte par code AMU
+        # ⭐ 2026-10-19 : grande liste (tarif de la compagnie / prix non assuré) et liste choisie pour ce
+        # séjour (Valeo : SMA, Expatriés) — voir contexte_tarif_sejour ; taux SMA obligatoire en biologie
+        info_tarif = contexte_tarif_sejour(hospit, pbr_cac_par_acte, hospit.pbr_cac_variante)
+        sans_taux = [x.nom for x, v in soins_a_taux_liste(soins, info_tarif) if not v]
+        if sans_taux:
+            return jsonify({'success': False, 'error': f"Choisissez le taux de réduction {info_tarif['groupe']['libelle']} pour : "
+                            + ', '.join(sans_taux)}), 400
         for s in soins:
-            prix = float(s.prix or 0)
-            pbr = float(s.pbr or prix)
+            pbr = float(s.pbr or s.prix or 0)
             quantite = int(s.quantite or 0)
-            total = prix * quantite
-            sous_total += total
 
             prise_amu = bool(s.prise_en_charge_amu) and id(s) not in doublons_amu
             prise_cac = bool(s.prise_en_charge_cac)
@@ -22784,15 +22823,11 @@ def api_facturer_hospitalisation(hospit_id):
             # ⭐ Règles centralisées (services/tarification_service.py, patron
             # 2026-10-04) — prix = celui enregistré au séjour, jamais
             # remplacé ; base_cac_articles cumule directement la PART privée.
-            ligne_hospit = repartir_ligne({
-                'nom': s.nom, 'prix': prix, 'pbr': pbr, 'quantite': quantite,
-                'prise_en_charge_amu': prise_amu, 'prise_en_charge_cac': prise_cac,
-            }, {
-                'amu': bool(est_assure), 'taux_amu': taux_assurance,
-                'privee': bool(assurance2_active and taux_assurance2 > 0), 'taux_privee': taux_assurance2,
-                'pbr_prive_par_acte': pbr_cac_par_acte, 'variante': hospit.pbr_cac_variante,
-                'appliquer_tarif_prive': False,
-            })
+            article_tarif = article_tarif_soin(s, info_tarif, pbr, prise_amu)
+            ligne_hospit = repartir_ligne(article_tarif, info_tarif['contexte'])
+            prix = ligne_hospit['tarif_unitaire']
+            total = ligne_hospit['total']
+            sous_total += total
             if est_assure and prise_amu and pbr > 0:
                 sous_total_amu += total
                 pbr_total_amu += min(prix, pbr) * quantite
@@ -22802,6 +22837,9 @@ def api_facturer_hospitalisation(hospit_id):
             articles.append({
                 'id': s.reference_id, 'nom': s.nom, 'prix': prix, 'prix_unitaire': prix, 'pbr': pbr,
                 'quantite': quantite, 'total': total,
+                # ⭐ 2026-10-19 : tarif appliqué (grande liste / liste du séjour) et de quoi le retrouver
+                'prix_base': float(s.prix or 0), 'source_tarif': ligne_hospit['source_tarif'],
+                'prix_non_assure': article_tarif.get('prix_non_assure'), 'liste_tarif': article_tarif.get('liste_tarif'),
                 'prise_en_charge_amu': prise_amu, 'prise_en_charge_cac': prise_cac,
                 'type': 'produit' if s.type == 'medicament' else 'acte',
                 'date_prestation': s.date_prestation.isoformat() if s.date_prestation else None,
@@ -22827,6 +22865,12 @@ def api_facturer_hospitalisation(hospit_id):
         net_a_payer = sous_total - prise_en_charge - prise_en_charge2
         if net_a_payer < 0:
             net_a_payer = 0
+        # ⭐ 2026-10-19 : part patient arrondie (réglage de la structure)
+        pas_arrondi_sejour = pas_arrondi_structure(structure_id)
+        ecart_arrondi_sejour = 0
+        if pas_arrondi_sejour:
+            net_arrondi = arrondir_part_patient(net_a_payer, pas_arrondi_sejour)
+            ecart_arrondi_sejour, net_a_payer = net_arrondi - net_a_payer, net_arrondi
 
         types_presents = set(a['type'] for a in articles)
         type_proforma = 'mixte' if len(types_presents) > 1 else ('pharmacie' if 'produit' in types_presents else 'actes')
@@ -22844,6 +22888,10 @@ def api_facturer_hospitalisation(hospit_id):
                                 'montant_prise_en_charge': prise_en_charge2, 'active': assurance2_active}
                               if assurance2_active else None,
         }
+        if info_tarif['groupe']:
+            assurances_data['liste_tarif'] = info_tarif['groupe']['groupe']
+        if pas_arrondi_sejour:
+            assurances_data['arrondi'] = {'pas': pas_arrondi_sejour, 'ecart': round(ecart_arrondi_sejour, 2)}
 
         result = db.execute_query("""
             INSERT INTO proformas (
@@ -23076,6 +23124,10 @@ def page_soins_ambulatoires_suivi(episode_id):
     # patient... pour chaque ligne comme par assurance qu'on a ajouté".
     for l in lignes:
         l.part_patient_ligne = calculer_repartition_assurance([l], episode, pbr_cac_par_acte, episode.pbr_cac_variante)['part_patient']
+    # ⭐ 2026-10-19 : solde au tarif appliqué (grande liste / liste du séjour) ; liste du séjour et taux à choisir
+    solde_en_cours = sum(float(getattr(l, 'tarif_applique', l.prix) or 0) * int(l.quantite or 0) for l in lignes if l.statut == 'en_cours')
+    info_tarif_sejour = contexte_tarif_sejour(episode, pbr_cac_par_acte, episode.pbr_cac_variante)
+    soins_taux_liste = soins_a_taux_liste(lignes_en_cours, info_tarif_sejour)
 
     montant_pbr_defaut = montant_pbr_alternatif = None
     if lignes_en_cours and pbr_cac_par_acte:
@@ -23099,6 +23151,8 @@ def page_soins_ambulatoires_suivi(episode_id):
     services_liste = charger_services(structure_id)
 
     return render_template('soins_ambulatoires_suivi.html', episode=episode, lignes=lignes, solde_en_cours=solde_en_cours,
+                            listes_tarifs=listes_tarifs(structure_id), groupe_liste_sejour=info_tarif_sejour['groupe'],
+                            soins_taux_liste=soins_taux_liste, type_sejour_liste='ambulatoire', id_sejour_liste=episode.id,
                             patient_a_amu=patient_a_amu, patient_a_cac=patient_a_cac,
                             repartition=repartition, montant_pbr_defaut=montant_pbr_defaut,
                             montant_pbr_alternatif=montant_pbr_alternatif, taux_tva=taux_tva,
@@ -23401,12 +23455,16 @@ def api_facturer_soins_ambulatoires(episode_id):
         articles = []
 
         doublons_amu = objets_doublons_amu(lignes)   # un seul acte par code AMU
+        # ⭐ 2026-10-19 : grande liste (tarif de la compagnie / prix non assuré) et liste choisie pour ce
+        # séjour (Valeo : SMA, Expatriés) — voir contexte_tarif_sejour ; taux SMA obligatoire en biologie
+        info_tarif = contexte_tarif_sejour(episode, pbr_cac_par_acte, episode.pbr_cac_variante)
+        sans_taux = [x.nom for x, v in soins_a_taux_liste(lignes, info_tarif) if not v]
+        if sans_taux:
+            return jsonify({'success': False, 'error': f"Choisissez le taux de réduction {info_tarif['groupe']['libelle']} pour : "
+                            + ', '.join(sans_taux)}), 400
         for l in lignes:
-            prix = float(l.prix or 0)
-            pbr = float(l.pbr or prix)
+            pbr = float(l.pbr or l.prix or 0)
             quantite = int(l.quantite or 0)
-            total = prix * quantite
-            sous_total += total
 
             prise_amu = bool(l.prise_en_charge_amu) and id(l) not in doublons_amu
             prise_cac = bool(l.prise_en_charge_cac)
@@ -23415,15 +23473,11 @@ def api_facturer_soins_ambulatoires(episode_id):
             # ⭐ Règles centralisées (services/tarification_service.py, patron
             # 2026-10-04) — prix = celui enregistré à l'épisode, jamais
             # remplacé ; base_cac_articles cumule directement la PART privée.
-            ligne_amb = repartir_ligne({
-                'nom': l.nom, 'prix': prix, 'pbr': pbr, 'quantite': quantite,
-                'prise_en_charge_amu': prise_amu, 'prise_en_charge_cac': prise_cac,
-            }, {
-                'amu': bool(est_assure), 'taux_amu': taux_assurance,
-                'privee': bool(assurance2_active and taux_assurance2 > 0), 'taux_privee': taux_assurance2,
-                'pbr_prive_par_acte': pbr_cac_par_acte, 'variante': episode.pbr_cac_variante,
-                'appliquer_tarif_prive': False,
-            })
+            article_tarif = article_tarif_soin(l, info_tarif, pbr, prise_amu)
+            ligne_amb = repartir_ligne(article_tarif, info_tarif['contexte'])
+            prix = ligne_amb['tarif_unitaire']
+            total = ligne_amb['total']
+            sous_total += total
             if est_assure and prise_amu and pbr > 0:
                 sous_total_amu += total
                 pbr_total_amu += min(prix, pbr) * quantite
@@ -23433,6 +23487,9 @@ def api_facturer_soins_ambulatoires(episode_id):
             articles.append({
                 'id': l.reference_id, 'nom': l.nom, 'prix': prix, 'prix_unitaire': prix, 'pbr': pbr,
                 'quantite': quantite, 'total': total,
+                # ⭐ 2026-10-19 : tarif appliqué (grande liste / liste du séjour) et de quoi le retrouver
+                'prix_base': float(l.prix or 0), 'source_tarif': ligne_amb['source_tarif'],
+                'prix_non_assure': article_tarif.get('prix_non_assure'), 'liste_tarif': article_tarif.get('liste_tarif'),
                 'prise_en_charge_amu': prise_amu, 'prise_en_charge_cac': prise_cac,
                 'type': 'produit' if l.type == 'medicament' else 'acte',
                 'date_prestation': l.date_prestation.isoformat() if l.date_prestation else None,
@@ -23455,6 +23512,12 @@ def api_facturer_soins_ambulatoires(episode_id):
         net_a_payer = sous_total - prise_en_charge - prise_en_charge2
         if net_a_payer < 0:
             net_a_payer = 0
+        # ⭐ 2026-10-19 : part patient arrondie (réglage de la structure)
+        pas_arrondi_sejour = pas_arrondi_structure(structure_id)
+        ecart_arrondi_sejour = 0
+        if pas_arrondi_sejour:
+            net_arrondi = arrondir_part_patient(net_a_payer, pas_arrondi_sejour)
+            ecart_arrondi_sejour, net_a_payer = net_arrondi - net_a_payer, net_arrondi
 
         types_presents = set(a['type'] for a in articles)
         type_proforma = 'mixte' if len(types_presents) > 1 else ('pharmacie' if 'produit' in types_presents else 'actes')
@@ -23472,6 +23535,10 @@ def api_facturer_soins_ambulatoires(episode_id):
                                 'montant_prise_en_charge': prise_en_charge2, 'active': assurance2_active}
                               if assurance2_active else None,
         }
+        if info_tarif['groupe']:
+            assurances_data['liste_tarif'] = info_tarif['groupe']['groupe']
+        if pas_arrondi_sejour:
+            assurances_data['arrondi'] = {'pas': pas_arrondi_sejour, 'ecart': round(ecart_arrondi_sejour, 2)}
 
         avance_recue = float(episode.predepot_montant or 0)
 

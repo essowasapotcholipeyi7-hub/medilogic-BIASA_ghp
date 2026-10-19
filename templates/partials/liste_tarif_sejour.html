@@ -1,0 +1,53 @@
+{# ⭐ 2026-10-19 (Clinique Valeo) : liste de prix d'un séjour — par défaut la grande liste (tarif selon
+   l'assurance du patient) ; SMA / Expatriés pour les rares patients concernés. Liste « remise » (SMA) :
+   taux obligatoire sur chaque analyse dont le prix change selon le taux. Variables : listes_tarifs,
+   groupe_liste_sejour, soins_taux_liste, type_sejour_liste, id_sejour_liste. #}
+{% if listes_tarifs %}
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <div class="row g-2 align-items-start">
+            <div class="col-md-5">
+                <label class="form-label mb-1" for="listeTarifSejour"><i class="fas fa-tags"></i> Tarif appliqué</label>
+                <select class="form-select" id="listeTarifSejour" onchange="enregistrerListeTarifSejour()">
+                    <option value="">Grande liste (selon l'assurance du patient)</option>
+                    {% for g in listes_tarifs %}
+                    <option value="{{ g.groupe }}" {% if groupe_liste_sejour and groupe_liste_sejour.groupe == g.groupe %}selected{% endif %}>Liste {{ g.libelle }}{% if g.remise %} (réduction {% for v in g.variantes %}{{ v.pct|int }} %{% if not loop.last %} ou {% endif %}{% endfor %}){% endif %}</option>
+                    {% endfor %}
+                </select>
+                {% if groupe_liste_sejour %}
+                <div class="form-text">{% if groupe_liste_sejour.remise %}Réduction : le patient paie le tarif {{ groupe_liste_sejour.libelle }}.{% else %}Tarif {{ groupe_liste_sejour.libelle }} ; l'assurance du patient paie selon le taux de sa carte.{% endif %}</div>
+                {% endif %}
+            </div>
+            {% if soins_taux_liste %}
+            <div class="col-md-7">
+                <div class="small fw-bold mb-1">Taux de réduction {{ groupe_liste_sejour.libelle }} par analyse (obligatoire pour facturer)</div>
+                {% for soin, choisi in soins_taux_liste %}
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="small flex-grow-1">{{ soin.nom }}</span>
+                    <select class="form-select form-select-sm variante-liste-sejour {% if not choisi %}border-danger text-danger{% endif %}" style="width: 150px;"
+                            data-ligne="{{ soin.id }}" onchange="enregistrerListeTarifSejour()">
+                        <option value="">— taux ? —</option>
+                        {% for v in groupe_liste_sejour.variantes %}
+                        <option value="{{ v.cle }}" {% if choisi == v.cle %}selected{% endif %}>Réduction {{ v.pct|int }} %</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+<script>
+async function enregistrerListeTarifSejour() {
+    const variantes = {};
+    document.querySelectorAll('.variante-liste-sejour').forEach(sel => { if (sel.value) variantes[sel.dataset.ligne] = sel.value; });
+    const reponse = await fetch('/api/sejour/{{ type_sejour_liste }}/{{ id_sejour_liste }}/liste-tarif', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({liste_tarif: document.getElementById('listeTarifSejour').value, variantes: variantes})
+    }).then(r => r.json()).catch(() => ({success: false, error: 'Erreur réseau'}));
+    if (reponse.success) location.reload();
+    else await afficherMessage(reponse.error || 'Erreur', {type: 'danger'});
+}
+</script>
+{% endif %}

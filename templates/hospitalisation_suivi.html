@@ -224,6 +224,8 @@
 </div>
 {% endif %}
 
+{% include 'partials/liste_tarif_sejour.html' %}
+
 {% if repartition and (repartition.est_assure_amu or repartition.a_cac) %}
 {% set nb_cartes = (1 if repartition.est_assure_amu else 0) + (1 if repartition.a_cac else 0) + 1 %}
 {% set col_class = 'col-md-4' if nb_cartes == 3 else 'col-md-6' %}
@@ -541,7 +543,7 @@
                         <td>{% if s.type == 'acte' %}<span class="badge bg-primary">Acte</span>{% else %}<span class="badge bg-success">Médicament</span>{% endif %}</td>
                         <td>{{ s.nom }}{% if s.note %}<br><small class="text-muted">{{ s.note }}</small>{% endif %}</td>
                         <td class="text-end">{{ s.quantite }}</td>
-                        <td class="text-end">{{ '{:,}'.format(s.prix|round(0)|int).replace(',', ' ') }}</td>
+                        <td class="text-end">{{ '{:,}'.format((s.tarif_applique if s.tarif_applique is defined else s.prix)|round(0)|int).replace(',', ' ') }}</td>
                         <td class="text-end">{{ '{:,}'.format(s.total|round(0)|int).replace(',', ' ') }}</td>
                         <td>
                             {# Le patient doit RÉELLEMENT avoir l'assurance — pas juste que la ligne y soit éligible dans le catalogue #}

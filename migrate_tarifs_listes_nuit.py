@@ -3,7 +3,8 @@
   - pbr_complementaires.tarif_nuit / pbr_nuit : tarif et PBR de nuit (nuit, dimanche, férié) d'une
     compagnie ou d'une liste (« Liste Expatriés », « Liste SMA 25 % »…) ;
   - prix_non_assure_actes.prix_nuit : prix non assuré de nuit ;
-  - parametrage_tarification : pas d'arrondi de la part patient par structure (0 = pas d'arrondi).
+  - parametrage_tarification : pas d'arrondi de la part patient par structure (0 = pas d'arrondi) ;
+  - listes_tarif_sejour : liste de prix choisie pour un séjour (hospitalisation / soins ambulatoires).
 Le code lit ces colonnes avec to_jsonb (services/hospitalisation_service.py) : il marche avant comme
 après cette migration. Idempotente.
 
@@ -24,6 +25,17 @@ def migrer(structure_id=None, pas=None):
                            structure_id INTEGER NOT NULL UNIQUE,
                            arrondi_pas NUMERIC NOT NULL DEFAULT 0,
                            updated_at TIMESTAMP DEFAULT NOW()
+                       )""",
+                    # liste de prix choisie pour un séjour (hospitalisation / soins ambulatoires) et taux par ligne
+                    """CREATE TABLE IF NOT EXISTS listes_tarif_sejour (
+                           id SERIAL PRIMARY KEY,
+                           structure_id INTEGER NOT NULL,
+                           type_sejour VARCHAR(20) NOT NULL,
+                           sejour_id INTEGER NOT NULL,
+                           liste_tarif VARCHAR(150),
+                           variantes JSONB NOT NULL DEFAULT '{}'::jsonb,
+                           updated_at TIMESTAMP DEFAULT NOW(),
+                           UNIQUE (type_sejour, sejour_id)
                        )"""):
             db.session.execute(db.text(sql))
         if structure_id is not None:
@@ -32,7 +44,7 @@ def migrer(structure_id=None, pas=None):
                    ON CONFLICT (structure_id) DO UPDATE SET arrondi_pas = EXCLUDED.arrondi_pas, updated_at = NOW()"""),
                 {'s': int(structure_id), 'p': float(pas or 0)})
         db.session.commit()
-        print("OK : tarif_nuit / pbr_nuit, prix_nuit, parametrage_tarification"
+        print("OK : tarif_nuit / pbr_nuit, prix_nuit, parametrage_tarification, listes_tarif_sejour"
               + (f" ; structure {structure_id} : arrondi {pas} F" if structure_id is not None else ""))
 
 
