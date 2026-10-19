@@ -20998,7 +20998,17 @@ def proforma_print(proforma_id):
     if taux_modifie:
         print(f"   ⚠️ Taux modifié: {taux_assurance2}% (original: {taux_original}%)")
     
+    # ⭐ 2026-10-19 : part patient arrondie comme à l'enregistrement (pas gardé dans proformas.assurances)
+    assurances_print = proforma.get('assurances') or {}
+    if isinstance(assurances_print, str):
+        try:
+            assurances_print = json.loads(assurances_print)
+        except ValueError:
+            assurances_print = {}
+    pas_arrondi_print = float(((assurances_print or {}).get('arrondi') or {}).get('pas') or 0)
+
     return render_template('proformas/proforma_print.html', vente_facturee=vente_facturee, 
+                         pas_arrondi=pas_arrondi_print,
                          proforma=proforma,
                          structure=structure_info,  # ⭐ Adresse formatée
                          logo_url=logo_url,

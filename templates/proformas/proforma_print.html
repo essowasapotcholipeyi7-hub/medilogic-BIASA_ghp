@@ -793,6 +793,8 @@
 
                     {% set net_a_payer = (sous_total|default(proforma.sous_total)) - prise_en_charge - (prise_en_charge2|default(0)) - aide_hospitaliere %}
                     {% if net_a_payer < 0 %}{% set net_a_payer = 0 %}{% endif %}
+                    {# ⭐ 2026-10-19 : part patient arrondie comme à l'enregistrement (3 696 -> 3 700) #}
+                    {% if pas_arrondi and net_a_payer > 0 %}{% set net_a_payer = ((net_a_payer / pas_arrondi + 0.5000001)|int) * pas_arrondi %}{% endif %}
                     <div class="ligne total">
                         <span>Net à payer</span>
                         <span>{{ net_a_payer|round(0)|int }} FCFA</span>
