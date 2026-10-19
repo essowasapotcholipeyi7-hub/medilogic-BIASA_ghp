@@ -45,6 +45,18 @@
                 </select>
             </div>
             <div class="mb-3">
+                <label class="form-label">Type de prestataire (hospitalisation)</label>
+                <select class="form-select" name="type_prestataire">
+                    <option value="" {% if not parametrage.type_prestataire %}selected{% endif %}>-- Choisir --</option>
+                    {% for cle, libelle, niveau in types_prestataire %}
+                    <option value="{{ cle }}" {% if parametrage.type_prestataire == cle %}selected{% endif %}>{{ libelle }} (niveau {{ niveau }})</option>
+                    {% endfor %}
+                </select>
+                <div class="form-text">Tarifs AMU des chambres (P160) : niveau 3 = CHU, clinique privée ; niveau 2 = CHR,
+                    hôpital de district, cabinet privé. Le niveau ci-dessus suit ce choix. Seule la première semaine se
+                    choisit : 8e-14e jour et 15 jours et plus sont calculés automatiquement.</div>
+            </div>
+            <div class="mb-3">
                 <label class="form-label">Nom de la banque</label>
                 <input type="text" class="form-control" name="nom_banque" value="{{ parametrage.nom_banque or '' }}">
             </div>

@@ -3243,6 +3243,9 @@ class ParametrageAmuCnss(db.Model):
     code_prestataire = db.Column(db.String(50))
     statut_structure = db.Column(db.String(20))  # 'public' | 'prive' | 'confessionnel'
     niveau_soins = db.Column(db.String(5))  # '1' | '2' | '3'
+    # ⭐ 2026-10-19 : chu | clinique_privee | chr | hopital_district | cabinet_prive — précise la grille
+    # d'hospitalisation AMU (utils/grille_amu_hospitalisation.py, TYPES_PRESTATAIRE)
+    type_prestataire = db.Column(db.String(30))
     nom_banque = db.Column(db.String(150))
     numero_compte = db.Column(db.String(50))
     # ⭐ Sigle de la clinique — utilisé dans le numéro de facture recap AMU

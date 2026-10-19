@@ -22273,9 +22273,10 @@ def page_hospitalisation_suivi(hospit_id):
         # correspondance de salle connue (voir CorrespondanceSalleAmu), le
         # PBR par palier vient de la grille au lieu d'être deviné par nom —
         # voir construire_lignes_chambre()/utils/grille_amu_hospitalisation.py.
-        niveau_soins_hospit = ParametrageAmuCnss.get_ou_creer(structure_id).niveau_soins
+        param_amu = ParametrageAmuCnss.get_ou_creer(structure_id)
         for l in construire_lignes_chambre(acte_choisi, hospit.nombre_jours, hospit.date_entree, tous_les_actes, hospit.est_assure_amu,
-                                            niveau_soins=niveau_soins_hospit, categorie_salle=hospit.chambre_categorie_amu):
+                                            niveau_soins=param_amu.niveau_soins, categorie_salle=hospit.chambre_categorie_amu,
+                                            type_prestataire=param_amu.type_prestataire):
             lignes_chambre_projetees.append(SimpleNamespace(
                 nom=l['nom'], prix=l['prix'], pbr=l['pbr'], quantite=l['quantite'],
                 prise_en_charge_amu=hospit.chambre_prise_en_charge_amu,
@@ -22797,9 +22798,10 @@ def api_sortie_hospitalisation(hospit_id):
             if categorie_salle:
                 hospit.chambre_categorie_amu = categorie_salle
                 CorrespondanceSalleAmu.memoriser(structure_id, chambre.get('nom'), categorie_salle)
-            niveau_soins_hospit = ParametrageAmuCnss.get_ou_creer(structure_id).niveau_soins
+            param_amu = ParametrageAmuCnss.get_ou_creer(structure_id)
             for l in construire_lignes_chambre(acte_choisi, nb_jours, hospit.date_entree, tous_les_actes, patient_assure,
-                                                niveau_soins=niveau_soins_hospit,
+                                                niveau_soins=param_amu.niveau_soins,
+                                                type_prestataire=param_amu.type_prestataire,
                                                 categorie_salle=categorie_salle or hospit.chambre_categorie_amu):
                 soin = SoinHospitalisation(
                     hospitalisation_id=hospit_id, structure_id=structure_id, type='acte',
@@ -24410,6 +24412,12 @@ def page_parametrage_amu_cnss():
         _oublier_statut(structure_id)   # ⭐ K233 : le nouveau statut s'applique tout de suite
         niveau_soins = request.form.get('niveau_soins', '')
         parametrage.niveau_soins = niveau_soins if niveau_soins in ('1', '2', '3') else None
+        # ⭐ 2026-10-19 : type de prestataire (grille d'hospitalisation AMU) — impose le niveau qui va avec
+        from utils.grille_amu_hospitalisation import NIVEAU_PAR_TYPE
+        type_prestataire = request.form.get('type_prestataire', '')
+        parametrage.type_prestataire = type_prestataire if type_prestataire in NIVEAU_PAR_TYPE else None
+        if parametrage.type_prestataire:
+            parametrage.niveau_soins = NIVEAU_PAR_TYPE[parametrage.type_prestataire]
         parametrage.nom_banque = request.form.get('nom_banque', '').strip()
         parametrage.numero_compte = request.form.get('numero_compte', '').strip()
         # ⭐ Sigle utilisé dans le numéro de facture recap AMU (CNSS/TNS/
@@ -24424,7 +24432,9 @@ def page_parametrage_amu_cnss():
         flash('Paramètres AMU-CNSS enregistrés', 'success')
         return redirect(url_for('page_parametrage_amu_cnss'))
 
-    return render_template('assurance_parametrage_amu_cnss.html', parametrage=parametrage, now_year=date.today().year)
+    from utils.grille_amu_hospitalisation import TYPES_PRESTATAIRE
+    return render_template('assurance_parametrage_amu_cnss.html', parametrage=parametrage, now_year=date.today().year,
+                           types_prestataire=TYPES_PRESTATAIRE)
 
 
 # ============================================================

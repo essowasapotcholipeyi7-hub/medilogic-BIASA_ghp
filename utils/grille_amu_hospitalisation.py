@@ -16,12 +16,10 @@
 # n'ont AUCUN effet sur le montant dans le fichier source (toujours le même
 # montant dans chaque groupe) — une seule catégorie "cabine" suffit donc.
 #
-# ⭐ Remarque sur une incohérence du fichier source : "Salle commune 7 à 9
-# lits / 15 jours et plus / niveau 2" affiche 625 pour CHR mais 375 pour
-# Hôpital de district (seule valeur qui casse la progression régulière
-# observée partout ailleurs ~2500/1625/875 proportionnellement) — retenu
-# ici : 625 (cohérent avec le reste de la grille). À corriger si le patron
-# confirme que 375 est la bonne valeur.
+# ⭐ "Salle commune 7 à 9 lits / 15 jours et plus" : 625 pour le CHR mais
+# 375 pour l'hôpital de district — confirmé exact par le patron
+# (2026-10-19) : voir EXCEPTIONS_TYPE_PRESTATAIRE (type de prestataire
+# réglé dans Paramètres AMU).
 #
 # "Salle commune 10 à 12 lits" n'existe que pour le niveau 3 dans le
 # fichier source (aucune ligne niveau 2) — absente ici au niveau 2.
@@ -90,6 +88,41 @@ GRILLE_AMU_HOSPITALISATION = {
         'reanimation': {1: 2500, 2: 1625, 3: 875},
     },
 }
+
+
+# ⭐ 2026-10-19 : type de prestataire (Paramètres AMU) -> niveau de la grille. Pas de niveau 1 : les unités
+# de soins périphériques n'hospitalisent pas.
+TYPES_PRESTATAIRE = [
+    ('chu', 'CHU', '3'),
+    ('clinique_privee', 'Clinique privée', '3'),
+    ('chr', 'CHR', '2'),
+    ('hopital_district', 'Hôpital de district (CHP)', '2'),
+    ('cabinet_prive', 'Cabinet privé', '2'),
+]
+NIVEAU_PAR_TYPE = {cle: niveau for cle, _, niveau in TYPES_PRESTATAIRE}
+
+# Seuls écarts du fichier officiel entre prestataires d'un même niveau.
+EXCEPTIONS_TYPE_PRESTATAIRE = {
+    'hopital_district': {'salle_commune_7_9': {3: 375}},
+}
+
+
+def pbr_amu_chambre(niveau, categorie_salle, palier, type_prestataire=None, prix_clinique=None):
+    """⭐ 2026-10-19 (patron) : PBR AMU d'un palier de chambre = tarif de la grille (niveau, et type de
+    prestataire pour ses exceptions), RAMENÉ AU PRIX CLINIQUE quand celui-ci est plus bas (« si le prix de
+    la clinique, par exemple 4 000, est inférieur à 5 000, on ramène 5 000 à 4 000 »). None si la grille
+    n'a pas cette salle à ce niveau."""
+    niveau = str(niveau or NIVEAU_PAR_TYPE.get(type_prestataire) or '')
+    pbr = (EXCEPTIONS_TYPE_PRESTATAIRE.get(type_prestataire) or {}).get(categorie_salle, {}).get(palier)
+    if pbr is None:
+        pbr = pbr_officiel_p160(niveau, categorie_salle, palier)
+    if pbr is None:
+        return None
+    try:
+        prix = float(prix_clinique or 0)
+    except (TypeError, ValueError):
+        prix = 0
+    return min(pbr, prix) if prix > 0 else pbr
 
 
 def deviner_niveau(categorie_salle, pbr_premiere_semaine):

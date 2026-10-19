@@ -19,8 +19,8 @@ from datetime import timedelta
 # module) — utilisé uniquement par charger_pbr_complementaires() ci-dessous.
 from models import PbrComplementaire, PrixNonAssureActe
 from services.tarification_service import repartir_ligne, pbr_prive_valeur, objets_doublons_amu
-from utils.grille_amu_hospitalisation import (pbr_officiel_p160, JOURS_MAX_SANS_PALIER, deduire_categorie_salle,
-                                               deviner_niveau)
+from utils.grille_amu_hospitalisation import (pbr_amu_chambre, JOURS_MAX_SANS_PALIER, deduire_categorie_salle,
+                                               deviner_niveau, NIVEAU_PAR_TYPE)
 
 # Suffixe (normalisé) -> palier 1/2/3. Plusieurs variantes tolérées
 # (accents/orthographe observés dans le catalogue réel).
@@ -123,7 +123,8 @@ def repartir_jours(nb_jours):
     return [(palier, jours) for palier, jours in tranches if jours > 0]
 
 
-def _lignes_palier_depuis_grille(acte_choisi, nb_jours, date_entree, niveau_soins, categorie_salle):
+def _lignes_palier_depuis_grille(acte_choisi, nb_jours, date_entree, niveau_soins, categorie_salle,
+                                 type_prestataire=None):
     """Construit les lignes par palier à partir de la grille officielle AMU
     (utils/grille_amu_hospitalisation.py) au lieu de deviner par le nom dans
     le catalogue Sheets de la structure — prix clinique CONSTANT sur les 3
@@ -133,21 +134,13 @@ def _lignes_palier_depuis_grille(acte_choisi, nb_jours, date_entree, niveau_soin
     salle_commune_10_12 au niveau 2) — l'appelant se replie alors sur
     l'ancien mécanisme (détection par nom)."""
     prix = float(acte_choisi.get('prix') or 0)
-    # ⭐ 2026-10-19 (patron) : la première semaine garde le PBR de l'acte choisi (celui du catalogue, comme
-    # pour un séjour de 7 jours ou moins — pas de saut de montant entre 7 et 8 jours) ; 8e-14e jour et
-    # 15 jours et plus viennent de la grille officielle.
-    try:
-        pbr_premiere_semaine = float(acte_choisi.get('pbr') or 0)
-    except (TypeError, ValueError):
-        pbr_premiere_semaine = 0
     lignes = []
     curseur = date_entree
     for palier, jours in repartir_jours(nb_jours):
-        pbr = pbr_officiel_p160(niveau_soins, categorie_salle, palier)
+        # ⭐ 2026-10-19 (patron) : prix AMU de la grille, ramené au prix clinique s'il est plus bas
+        pbr = pbr_amu_chambre(niveau_soins, categorie_salle, palier, type_prestataire, prix)
         if pbr is None:
             return None
-        if palier == 1 and pbr_premiere_semaine > 0:
-            pbr = pbr_premiere_semaine
         lignes.append({
             'nom': acte_choisi.get('nom'),
             'reference_id': acte_choisi.get('id') or acte_choisi.get('ID'),
@@ -162,7 +155,7 @@ def _lignes_palier_depuis_grille(acte_choisi, nb_jours, date_entree, niveau_soin
 
 
 def construire_lignes_chambre(acte_choisi, nb_jours, date_entree, tous_les_actes, patient_assure,
-                               niveau_soins=None, categorie_salle=None):
+                               niveau_soins=None, categorie_salle=None, type_prestataire=None):
     """Construit les lignes SoinHospitalisation (sous forme de dicts prêts
     à insérer) pour un acte "chambre" avec `nb_jours` jours facturés.
 
@@ -179,18 +172,21 @@ def construire_lignes_chambre(acte_choisi, nb_jours, date_entree, tous_les_actes
     (date_prestation -> date_fin_prestation)."""
     lignes_grille = None
     groupe = None
-    if patient_assure and nb_jours > JOURS_MAX_SANS_PALIER:
+    # ⭐ 2026-10-19 (patron) : patient assuré -> PBR depuis la grille AMU (ramené au prix clinique) QUELLE
+    # QUE SOIT la durée — un séjour de 7 jours ou moins aussi (une seule ligne, palier 1).
+    if patient_assure and nb_jours > 0:
         # ⭐ 2026-10-19 : catégorie non renseignée -> déduite du nom de la chambre (sinon une seule ligne au
         # PBR plein, refusée ensuite à la conversion en vente) ; niveau d'après la structure ou, à défaut,
         # d'après le tarif « Première semaine » de l'acte (patron : plus rien à choisir à la main pour que
         # les 8e-14e jours et 15 jours et plus soient calculés)
         categorie_salle = categorie_salle or deduire_categorie_salle(acte_choisi.get('nom'))
-        niveau_soins = niveau_soins or (deviner_niveau(categorie_salle, acte_choisi.get('pbr')) if categorie_salle else None)
+        niveau_soins = niveau_soins or NIVEAU_PAR_TYPE.get(type_prestataire) or (
+            deviner_niveau(categorie_salle, acte_choisi.get('pbr')) if categorie_salle else None)
         if niveau_soins and categorie_salle:
             lignes_grille = _lignes_palier_depuis_grille(
-                acte_choisi, nb_jours, date_entree, niveau_soins, categorie_salle
+                acte_choisi, nb_jours, date_entree, niveau_soins, categorie_salle, type_prestataire
             )
-        if lignes_grille is None:
+        if lignes_grille is None and nb_jours > JOURS_MAX_SANS_PALIER:
             groupe = detecter_groupe_palier(acte_choisi.get('nom'), tous_les_actes)
 
     if lignes_grille is not None:

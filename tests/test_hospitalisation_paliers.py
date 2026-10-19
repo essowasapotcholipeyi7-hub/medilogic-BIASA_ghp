@@ -67,7 +67,7 @@ def test_niveau_2_salle_commune():
 
 
 def test_niveau_non_regle_devine_par_le_tarif():
-    acte = {'id': 'C', 'nom': 'P160 Hospi Reanimation Premiere Semaine', 'prix': 3000, 'pbr': 3125}
+    acte = {'id': 'C', 'nom': 'P160 Hospi Reanimation Premiere Semaine', 'prix': 3500, 'pbr': 3125}
     lignes = construire_lignes_chambre(acte, 15, date(2026, 10, 1), [], True)
     assert [(l['quantite'], l['pbr']) for l in lignes] == [(7, 3125), (7, 2125), (1, 1000)]
 
@@ -77,8 +77,8 @@ def test_patient_non_assure_une_ligne_au_prix_clinique():
     assert len(lignes) == 1 and lignes[0]['quantite'] == 20 and lignes[0]['prix'] == 7000
 
 
-def test_premiere_semaine_au_pbr_du_catalogue():
-    """Pas de saut entre 7 et 8 jours : la 1re semaine garde le PBR de l'acte, la suite vient de la grille."""
+def test_prix_clinique_plus_bas_que_la_grille():
+    """Règle du patron : PBR AMU ramené au prix clinique quand celui-ci est plus bas (4 000 < 5 000)."""
     acte = {'id': 'D', 'nom': 'P160 Hospitalisation chambre ventilée à 2lits', 'prix': 4000, 'pbr': 4000}
     sept = construire_lignes_chambre(acte, 7, date(2026, 10, 1), [], True, niveau_soins='3')
     huit = construire_lignes_chambre(acte, 8, date(2026, 10, 1), [], True, niveau_soins='3')
@@ -89,3 +89,23 @@ def test_premiere_semaine_au_pbr_du_catalogue():
 def test_faute_chamvre_toleree():
     assert deduire_categorie_salle("P160 Hospitalisation Chamvre ventilee a  2lits") == 'cabine'
     assert deduire_categorie_salle("P160 Hospitalisation Chamvre ventilee a  3lits") == 'salle_commune_3_6'
+
+
+def test_prix_clinique_plafonne_chaque_semaine():
+    acte = {'id': 'E', 'nom': 'P160 Hospi Cabine ventillee avec 2 lits Premiere Semaine', 'prix': 2000, 'pbr': 5000}
+    lignes = construire_lignes_chambre(acte, 16, date(2026, 10, 1), [], True, niveau_soins='3')
+    assert [(l['quantite'], l['pbr']) for l in lignes] == [(7, 2000), (7, 2000), (2, 1625)]
+
+
+def test_sept_jours_pbr_du_catalogue_trop_haut_ramene_a_la_grille():
+    acte = {'id': 'F', 'nom': 'P160 Hospi Cabine Climatisee avec 2 lits Premiere Semaine', 'prix': 7000, 'pbr': 7000}
+    lignes = construire_lignes_chambre(acte, 5, date(2026, 10, 1), [], True, niveau_soins='3')
+    assert [(l['quantite'], l['pbr']) for l in lignes] == [(5, 5000)]
+
+
+def test_hopital_de_district_375_chr_625():
+    acte = {'id': 'G', 'nom': 'P160 Hospi Salle commune 7 à 9 lits Premiere Semaine', 'prix': 3000, 'pbr': 1875}
+    district = construire_lignes_chambre(acte, 16, date(2026, 10, 1), [], True, type_prestataire='hopital_district')
+    chr_ = construire_lignes_chambre(acte, 16, date(2026, 10, 1), [], True, type_prestataire='chr')
+    assert [(l['quantite'], l['pbr']) for l in district] == [(7, 1875), (7, 1250), (2, 375)]
+    assert [(l['quantite'], l['pbr']) for l in chr_] == [(7, 1875), (7, 1250), (2, 625)]
