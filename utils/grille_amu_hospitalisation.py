@@ -131,6 +131,39 @@ def erreur_p160_quantite_hors_hospitalisation(nom, quantite, prise_en_charge_amu
     )
 
 
+def deduire_categorie_salle(nom):
+    """⭐ 2026-10-19 : catégorie AMU d'un tarif de chambre déduite de son NOM quand elle n'a pas été
+    renseignée (séjour du 19/10 bloqué à la conversion : « Cabine ventilée avec 2 lits » sur 18 jours,
+    sans catégorie, donc sans dégressivité par palier). None si le nom ne dit rien de sûr.
+      observation / mise en observation -> 'observation' ; réanimation -> 'reanimation' ;
+      cabine, chambre individuelle, 1 ou 2 lits -> 'cabine' ; 3 à 6 lits -> salle commune 3-6 ;
+      7 à 9 -> 7-9 ; 10 à 12 -> 10-12."""
+    import re
+    import unicodedata
+    t = unicodedata.normalize('NFD', str(nom or '')).encode('ascii', 'ignore').decode().lower()
+    if not t:
+        return None
+    if 'observation' in t or re.search(r'meo', t):
+        return 'observation'
+    if 'reanimation' in t:
+        return 'reanimation'
+    m = re.search(r'(\d+)\s*(?:a|-|à)\s*(\d+)\s*lits?', t) or re.search(r'(\d+)\s*lits?', t)
+    nb = int(m.group(m.lastindex)) if m else None
+    if nb is not None:
+        if nb <= 2:
+            return 'cabine'
+        if nb <= 6:
+            return 'salle_commune_3_6'
+        if nb <= 9:
+            return 'salle_commune_7_9'
+        return 'salle_commune_10_12'
+    if 'salle commune' in t:
+        return None   # nombre de lits inconnu
+    if 'cabine' in t or 'individuelle' in t or 'vip' in t or 'chambre' in t:
+        return 'cabine'
+    return None
+
+
 def pbr_officiel_p160(niveau, categorie_salle, palier):
     """Base de remboursement officielle AMU pour un palier (1/2/3) d'une
     catégorie de salle, au niveau de soins donné. None si niveau/catégorie

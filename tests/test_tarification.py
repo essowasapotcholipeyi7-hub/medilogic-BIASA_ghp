@@ -388,3 +388,17 @@ def test_sma_patient_amu_l_amu_paie_puis_reduction_sur_le_reste():
     # patient non AMU : tarif SMA de la liste, sans réduction en plus
     r = repartir_panier([{'nom': 'Q100', 'prix': 9000, 'pbr': 6630, 'quantite': 1, 'liste_tarif': 'Liste SMA 25 %'}], dict(ctx_sma, amu=False))
     assert (r['lignes'][0]['tarif_unitaire'], r['reduction_liste'], r['net_a_payer']) == (5250, 0, 5250)
+
+
+def test_categorie_chambre_deduite_du_nom_et_paliers():
+    # séjour du 19/10 : « Cabine ventilée avec 2 lits » 18 jours sans catégorie AMU -> paliers de la grille
+    from datetime import date
+    from utils.grille_amu_hospitalisation import deduire_categorie_salle
+    from services.hospitalisation_service import construire_lignes_chambre
+    assert deduire_categorie_salle('P160 Hospitalisation Cabine ventillee avec 2 lits') == 'cabine'
+    assert deduire_categorie_salle('P160 Hospitalisation Salle commune 3 a 6 lits') == 'salle_commune_3_6'
+    assert deduire_categorie_salle('P160 Reanimation') == 'reanimation'
+    assert deduire_categorie_salle('P160 Hospitalisation Salle commune') is None
+    lignes = construire_lignes_chambre({'nom': 'P160 Hospitalisation Cabine ventillee avec 2 lits', 'prix': 7000, 'pbr': 5000},
+                                       18, date(2026, 10, 1), [], True, niveau_soins='3')
+    assert [(l['quantite'], l['pbr']) for l in lignes] == [(7, 5000), (7, 3375), (4, 1625)]

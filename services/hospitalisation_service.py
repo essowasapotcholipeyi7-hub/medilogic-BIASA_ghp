@@ -19,7 +19,7 @@ from datetime import timedelta
 # module) — utilisé uniquement par charger_pbr_complementaires() ci-dessous.
 from models import PbrComplementaire, PrixNonAssureActe
 from services.tarification_service import repartir_ligne, pbr_prive_valeur, objets_doublons_amu
-from utils.grille_amu_hospitalisation import pbr_officiel_p160, JOURS_MAX_SANS_PALIER
+from utils.grille_amu_hospitalisation import pbr_officiel_p160, JOURS_MAX_SANS_PALIER, deduire_categorie_salle
 
 # Suffixe (normalisé) -> palier 1/2/3. Plusieurs variantes tolérées
 # (accents/orthographe observés dans le catalogue réel).
@@ -157,6 +157,10 @@ def construire_lignes_chambre(acte_choisi, nb_jours, date_entree, tous_les_actes
     lignes_grille = None
     groupe = None
     if patient_assure and nb_jours > JOURS_MAX_SANS_PALIER:
+        # ⭐ 2026-10-19 : catégorie non renseignée -> déduite du nom de la chambre (sinon une seule ligne au
+        # PBR plein, refusée ensuite à la conversion en vente)
+        if niveau_soins and not categorie_salle:
+            categorie_salle = deduire_categorie_salle(acte_choisi.get('nom'))
         if niveau_soins and categorie_salle:
             lignes_grille = _lignes_palier_depuis_grille(
                 acte_choisi, nb_jours, date_entree, niveau_soins, categorie_salle
