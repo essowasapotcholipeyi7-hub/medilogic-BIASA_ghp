@@ -290,6 +290,75 @@
     </div>
 </div>
 
+{% if hospit.statut != 'en_cours' and patient_amu_ep and a_acces('entente_prealable') %}
+<!-- ⭐ Entente Préalable définitive (patron, 2026-10-19) : après la clôture,
+     tout se fait d'ici — imprimer la demande définitive, le billet, et les
+     envoyer ensemble à l'AMU (le billet s'ouvre et prépare l'envoi). -->
+{% macro actions_ep_definitive() %}
+    {% if ep_liee and ep_liee.definitive_le %}
+    <a class="btn btn-sm btn-primary" href="{{ url_for('page_amu_ep_imprimer', demande_id=ep_liee.id) }}" target="_blank">
+        <i class="fas fa-print me-1"></i> Imprimer l'EP définitive
+    </a>
+    <a class="btn btn-sm btn-outline-dark" href="{{ url_for('hospitalisation_billet', hospit_id=hospit.id) }}" target="_blank">
+        <i class="fas fa-file-medical me-1"></i> Billet d'hospitalisation
+    </a>
+    <a class="btn btn-sm btn-success" href="{{ url_for('hospitalisation_billet', hospit_id=hospit.id, envoyer=1) }}" target="_blank">
+        <i class="fab fa-whatsapp me-1"></i> Envoyer à l'AMU-{{ 'INAM' if ep_liee.type_amu == 'amu_inam' else 'CNSS' }} (EP + billet)
+    </a>
+    {% elif ep_definitive_possible %}
+    <button type="button" class="btn btn-sm btn-primary" onclick="faireEpDefinitive({{ ep_liee.id }})">
+        <i class="fas fa-flag-checkered me-1"></i> Faire la demande définitive (sortie le {{ hospit.date_sortie.strftime('%d/%m/%Y') if hospit.date_sortie else '—' }})
+    </button>
+    {% elif ep_liee and ep_liee.statut == 'approuvee' and ep_liee.inclure_hospitalisation %}
+    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('page_amu_ep_imprimer', demande_id=ep_liee.id) }}" target="_blank" onclick="setTimeout(() => location.reload(), 4000)">
+        <i class="fas fa-print me-1"></i> Imprimer le pré-accord
+    </a>
+    <span class="small text-muted">puis la demande définitive se fera ici.</span>
+    {% elif ep_liee and ep_liee.statut == 'en_attente' %}
+    <a class="btn btn-sm btn-outline-warning" href="{{ url_for('page_amu_entente_prealable', retour=request.path) }}" target="_blank">
+        <i class="fas fa-file-medical me-1"></i> Voir l'Entente Préalable
+    </a>
+    <span class="small text-muted">en attente de l'approbation du médecin.</span>
+    {% else %}
+    <a class="btn btn-sm btn-warning" href="{{ url_for('page_amu_entente_prealable', patient_id=hospit.patient_id, hospit=1, hospitalisation_id=hospit.id, retour=request.path) }}" target="_blank">
+        <i class="fas fa-file-medical me-1"></i> {{ 'Refaire' if ep_liee else 'Faire' }} la demande d'Entente Préalable
+    </a>
+    {% endif %}
+{% endmacro %}
+<div class="card mb-3 border-{{ 'success' if ep_liee and ep_liee.definitive_le else 'warning' }}" id="carteEpDefinitive">
+    <div class="card-body d-flex flex-wrap gap-2 align-items-center">
+        <strong class="me-2"><i class="fas fa-file-medical me-1"></i> Entente Préalable d'hospitalisation</strong>
+        {% if ep_liee and ep_liee.definitive_le %}
+        <span class="badge bg-dark">Définitive</span>
+        <span class="small text-muted me-2">faite le {{ ep_liee.definitive_le.strftime('%d/%m/%Y') }} — {{ ep_liee.hospit_duree_sejour }}</span>
+        {% elif ep_liee %}
+        <span class="badge bg-secondary me-2">{{ {'en_attente': 'En attente', 'approuvee': 'Pré-accord approuvé', 'refusee': 'Refusée'}.get(ep_liee.statut, ep_liee.statut) }}</span>
+        {% else %}
+        <span class="badge bg-danger me-2">Aucune demande</span>
+        {% endif %}
+        {{ actions_ep_definitive() }}
+    </div>
+</div>
+{% if ep_liee and ep_liee.definitive_le %}
+<div class="modal fade" id="modalEpDefinitive" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-flag-checkered me-2"></i>Demande définitive faite</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">Durée réelle du séjour : <strong>{{ ep_liee.hospit_duree_sejour }}</strong>.</p>
+                <p class="small text-muted">Pour l'AMU il faut envoyer <strong>la demande définitive</strong> et <strong>le billet d'hospitalisation</strong> :
+                    « Envoyer » prépare les deux fichiers PDF et les partage ensemble.</p>
+                <div class="d-flex flex-column gap-2">{{ actions_ep_definitive() }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endif %}
+
 {% if hospit.statut == 'en_cours' %}
 <!-- Modal Clôture du séjour — date de sortie + chambre facturée en une seule étape -->
 <div class="modal fade" id="modalCloture" tabindex="-1">
@@ -365,6 +434,33 @@
                             <i class="fas fa-exclamation-circle"></i>
                             La date d'admission de l'EP ({{ ep_liee.hospit_date_admission.strftime('%d/%m/%Y') }}) ne correspond pas à la date d'entrée de ce séjour ({{ hospit.date_entree.strftime('%d/%m/%Y') }}) — vérifiez et ajustez si besoin.
                         </div>
+                        {% endif %}
+                        <!-- ⭐ Patron (2026-10-19) : à la clôture, la demande définitive se
+                             fait en même temps, avec la date de sortie saisie ici
+                             (api_sortie_hospitalisation, ep_definitive). -->
+                        {% if ep_definitive_possible %}
+                        <div class="form-check mt-2 p-2 ps-4 border rounded bg-white">
+                            <input class="form-check-input" type="checkbox" id="epDefinitive" checked>
+                            <label class="form-check-label" for="epDefinitive">
+                                <strong>Faire la demande définitive d'EP</strong> avec cette date de sortie
+                                (<span id="epDefinitiveNuitees">—</span>) — vous pourrez ensuite l'imprimer
+                                et l'envoyer à l'AMU avec le billet d'hospitalisation.
+                            </label>
+                        </div>
+                        {% elif ep_liee.definitive_le %}
+                        <div class="small mt-1"><span class="badge bg-dark">Définitive</span> faite le {{ ep_liee.definitive_le.strftime('%d/%m/%Y') }} ({{ ep_liee.hospit_duree_sejour }}).</div>
+                        <!-- Date de sortie changée depuis : on propose de recalculer la demande définitive -->
+                        <div id="blocEpMaj" class="form-check mt-2 p-2 ps-4 border border-danger rounded bg-white" style="display:none;">
+                            <input class="form-check-input" type="checkbox" id="epDefinitive">
+                            <label class="form-check-label" for="epDefinitive">
+                                Cette date de sortie donne <strong id="epDefinitiveNuitees">—</strong> au lieu de {{ ep_liee.hospit_duree_sejour }} :
+                                <strong>recalculer la demande définitive</strong> (à réimprimer et renvoyer).
+                            </label>
+                        </div>
+                        {% elif ep_liee.statut == 'approuvee' and ep_liee.inclure_hospitalisation %}
+                        <div class="small mt-1"><i class="fas fa-info-circle"></i> Le pré-accord n'a pas encore été imprimé : imprimez-le d'abord, la demande définitive se fera ensuite depuis la page du séjour.</div>
+                        {% elif ep_liee.statut == 'en_attente' %}
+                        <div class="small mt-1"><i class="fas fa-info-circle"></i> En attente de l'approbation du médecin : la demande définitive se fera ensuite depuis la page du séjour.</div>
                         {% endif %}
                         {% if ep_liee.statut == 'refusee' %}
                         <!-- ⭐ Trouvé en revue de code : une fois liée, même refusée,
@@ -584,6 +680,9 @@
 
 <script>
 const HOSPIT_ID = {{ hospit.id }};
+const EP_DEJA_DEFINITIVE = {{ 'true' if ep_liee and ep_liee.definitive_le else 'false' }};
+const EP_NUITEES_DEFINITIVE = {{ (ep_liee.hospit_duree_sejour.split(' ')[0]|int(-1)) if ep_liee and ep_liee.definitive_le and ep_liee.hospit_duree_sejour else -1 }};
+const HOSPIT_DATE_ENTREE = {{ hospit.date_entree.strftime("%Y-%m-%d")|tojson if hospit.date_entree else "null" }};
 // Lue depuis l'attribut "min" du champ Date (déjà rendu plus bas, sans
 // souci) plutôt que réémise directement ici — plus simple et évite de
 // dupliquer le formatage de date.
@@ -1149,9 +1248,11 @@ async function cloturerSejour() {
         return;
     }
 
+    const epDefinitive = document.getElementById('epDefinitive');
     const payload = {
         date_sortie: dateSortie,
         ep_confirme: epCheckbox ? epCheckbox.checked : false,
+        ep_definitive: !!(epDefinitive && epDefinitive.checked),
     };
     if (chambreChoisie) {
         payload.chambre = {
@@ -1175,13 +1276,58 @@ async function cloturerSejour() {
             return;
         }
         if (data.success) {
-            window.location.reload();
+            const ep = data.ep_definitive;
+            if (ep && !ep.success) {
+                await afficherMessage("Séjour clôturé, mais la demande définitive d'EP n'a pas été faite : " + ep.error, {type: 'warning'});
+            }
+            ouvrirApresRechargement((ep && ep.success) || (EP_DEJA_DEFINITIVE && !ep));
         } else {
             await afficherMessage('Erreur : ' + (data.error || 'inconnue'), {type: 'danger'});
         }
     })
     .catch(async e => await afficherMessage('Erreur : ' + e, {type: 'danger'}));
 }
+
+// ⭐ Nuitées de la demande définitive, recalculées à chaque changement de la date de sortie
+function majNuiteesEpDefinitive() {
+    const el = document.getElementById('epDefinitiveNuitees');
+    if (!el) return;
+    const sortie = document.getElementById('dateSortieInput').value;
+    const nb = sortie ? Math.round((new Date(sortie) - new Date(HOSPIT_DATE_ENTREE)) / 86400000) : null;
+    el.textContent = nb === null ? '—' : Math.max(nb, 0) + ' nuitée(s)';
+    const blocMaj = document.getElementById('blocEpMaj');
+    if (blocMaj) {
+        const differente = nb !== null && Math.max(nb, 0) !== EP_NUITEES_DEFINITIVE;
+        blocMaj.style.display = differente ? '' : 'none';
+        document.getElementById('epDefinitive').checked = differente;
+    }
+}
+document.getElementById('dateSortieInput')?.addEventListener('input', majNuiteesEpDefinitive);
+majNuiteesEpDefinitive();
+
+// Après la demande définitive, la page se recharge et ouvre la fenêtre
+// « Imprimer / Billet / Envoyer » (voir #modalEpDefinitive).
+function ouvrirApresRechargement(epDefinitive) {
+    const url = new URL(window.location.href);
+    if (epDefinitive) url.searchParams.set('ep_definitive', '1'); else url.searchParams.delete('ep_definitive');
+    window.location.replace(url.toString());
+}
+async function faireEpDefinitive(epId) {
+    const r = await fetch(`/api/amu/entente-prealable/${epId}/definitive`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+    });
+    const d = await r.json();
+    if (d.success) ouvrirApresRechargement(true);
+    else await afficherMessage(d.error || 'Erreur', {type: 'danger'});
+}
+(function () {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('ep_definitive') !== '1') return;
+    url.searchParams.delete('ep_definitive');
+    history.replaceState(null, '', url.toString());
+    const m = document.getElementById('modalEpDefinitive');
+    if (m) new bootstrap.Modal(m).show();
+})();
 
 async function facturerSejour() {
     if (!await demanderConfirmation('Facturer ce séjour ? Une proforma sera créée avec tous les soins en cours — vous pourrez encore ajuster quantités/prix avant la conversion finale en vente.')) return;

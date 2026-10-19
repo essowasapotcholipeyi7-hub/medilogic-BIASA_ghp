@@ -1703,10 +1703,9 @@ def api_amu_ep_definitive(demande_id):
         return jsonify({'success': False, 'error': 'Accès non autorisé'}), 403
     structure_id = session.get('structure_id')
     demande = DemandeEntentePrealable.query.filter_by(id=demande_id, structure_id=structure_id).first_or_404()
-    if demande.statut != 'approuvee' or not demande.inclure_hospitalisation:
-        return jsonify({'success': False, 'error': "Seule une Entente Préalable d'hospitalisation déjà approuvée peut avoir une demande définitive"}), 400
-    if not demande.imprime_le:
-        return jsonify({'success': False, 'error': "Imprimez d'abord le pré-accord avant de faire la demande définitive"}), 400
+    erreur = _erreur_ep_definitive(demande)
+    if erreur:
+        return jsonify({'success': False, 'error': erreur}), 400
 
     hospit = Hospitalisation.query.filter_by(
         id=demande.hospitalisation_id, structure_id=structure_id
@@ -1725,11 +1724,31 @@ def api_amu_ep_definitive(demande_id):
         if hospit and not hospit.date_sortie:
             hospit.date_sortie = date_sortie
 
-    nb_nuitees = max((date_sortie - date_entree_ref).days, 0) if date_entree_ref else 0
-    demande.hospit_duree_sejour = f"{nb_nuitees} nuitée(s)"
-    demande.definitive_le = datetime.utcnow()
+    nb_nuitees = _marquer_ep_definitive(demande, date_entree_ref, date_sortie)
     db.session.commit()
     return jsonify({'success': True, 'nombre_nuitees': nb_nuitees})
+
+
+def _erreur_ep_definitive(demande, mise_a_jour=False):
+    """Pourquoi cette EP ne peut pas (encore) passer en demande définitive —
+    None si elle le peut. Partagé par la page EP et la clôture du séjour
+    (mise_a_jour : la clôture peut recalculer une demande définitive déjà
+    faite quand la date de sortie a changé)."""
+    if demande.statut != 'approuvee' or not demande.inclure_hospitalisation:
+        return "Seule une Entente Préalable d'hospitalisation déjà approuvée peut avoir une demande définitive"
+    if not demande.imprime_le:
+        return "Imprimez d'abord le pré-accord avant de faire la demande définitive"
+    if demande.definitive_le and not mise_a_jour:
+        return 'La demande définitive a déjà été faite'
+    return None
+
+
+def _marquer_ep_definitive(demande, date_entree, date_sortie):
+    """Durée réelle (nuitées entrée -> sortie) + date de la demande définitive."""
+    nb_nuitees = max((date_sortie - date_entree).days, 0) if date_entree else 0
+    demande.hospit_duree_sejour = f"{nb_nuitees} nuitée(s)"
+    demande.definitive_le = datetime.utcnow()
+    return nb_nuitees
 
 
 # ============================================================
@@ -22340,6 +22359,7 @@ def page_hospitalisation_suivi(hospit_id):
                             soins_taux_liste=soins_taux_liste, type_sejour_liste='hospitalisation', id_sejour_liste=hospit.id,
                             patient_a_amu=patient_a_amu, patient_a_cac=patient_a_cac, patient_amu_ep=patient_amu_ep,
                             ep_liee=ep_liee, ep_date_ecart=ep_date_ecart,
+                            ep_definitive_possible=bool(ep_liee and not _erreur_ep_definitive(ep_liee)),
                             repartition=repartition, ligne_chambre_projetee=ligne_chambre_projetee,
                             montant_pbr_defaut=montant_pbr_defaut, montant_pbr_alternatif=montant_pbr_alternatif,
                             taux_tva=taux_tva,
@@ -22825,8 +22845,30 @@ def api_sortie_hospitalisation(hospit_id):
         hospit.date_sortie = date_sortie
         if hospit.statut == 'en_cours':
             hospit.statut = 'sortie'
+
+        # ⭐ Patron (2026-10-19) : "au moment de la clôture [...] pour faire une
+        # demande d'entente préalable définitive, on a juste besoin de mettre la
+        # date de clôture" — la case de la fenêtre de clôture fait la demande
+        # définitive de l'EP liée à ce séjour avec cette date de sortie, dans le
+        # même enregistrement. Si elle n'est pas possible (pré-accord non imprimé,
+        # pas encore approuvé...), la clôture se fait quand même et la raison est
+        # renvoyée : la demande se refera depuis la page du séjour.
+        ep_definitive = None
+        if data.get('ep_definitive'):
+            ep = DemandeEntentePrealable.query.filter_by(
+                hospitalisation_id=hospit.id, structure_id=structure_id
+            ).order_by(DemandeEntentePrealable.created_at.desc()).first()
+            erreur_ep = ("Vous n'avez pas accès aux Ententes Préalables" if not a_acces('entente_prealable')
+                         else "Aucune Entente Préalable n'est liée à ce séjour" if not ep
+                         else _erreur_ep_definitive(ep, mise_a_jour=True))
+            if erreur_ep:
+                ep_definitive = {'success': False, 'error': erreur_ep}
+            else:
+                ep_definitive = {'success': True, 'id': ep.id,
+                                 'nombre_nuitees': _marquer_ep_definitive(ep, hospit.date_entree, date_sortie)}
         db.session.commit()
-        return jsonify({'success': True, 'nombre_jours': hospit.nombre_jours, 'lignes_chambre': lignes_chambre_creees})
+        return jsonify({'success': True, 'nombre_jours': hospit.nombre_jours, 'lignes_chambre': lignes_chambre_creees,
+                        'ep_definitive': ep_definitive})
     except Exception as e:
         db.session.rollback()
         print(f"❌ Erreur clôture hospitalisation: {e}")
@@ -23054,7 +23096,8 @@ def hospitalisation_billet(hospit_id):
                             structure_nom=structure_info.get('nom', 'SSoftOneV10'),
                             structure_adresse=structure_info.get('adresse', ''),
                             structure_telephone=structure_info.get('telephone', ''),
-                            ep_liee=ep_liee)
+                            ep_liee=ep_liee, whatsapp_depot=_numeros_whatsapp_depot(structure_id),
+                            envoyer_ep=request.args.get('envoyer') == '1')
 
 
 @app.route('/hospitalisation/<int:hospit_id>/releve')
