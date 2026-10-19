@@ -1585,14 +1585,18 @@ def nom_fichier_pdf_amu(prefixe, demande, patient):
     "ça écrit seulement entente préalable sans le nom du patient") :
     EP_AMU-CNSS_DUPONT_Afi_2026-10-06.pdf — sans accents ni caractères
     interdits dans un nom de fichier."""
-    import re as _re
-    import unicodedata as _ud
     libelle = {'amu_cnss': 'AMU-CNSS', 'amu_inam': 'AMU-INAM', 'amu_tns': 'AMU-TNS'}.get(demande.type_amu, 'AMU')
-    nom = f"{patient.nom or ''} {patient.prenom or ''}".strip() or f"patient{demande.patient_id}"
-    nom = _ud.normalize('NFKD', nom).encode('ascii', 'ignore').decode()
-    nom = _re.sub(r'[^A-Za-z0-9]+', '_', nom).strip('_')
+    nom = _nom_pour_fichier(f"{patient.nom or ''} {patient.prenom or ''}") or f"patient{demande.patient_id}"
     jour = (demande.date_prescription or date.today()).strftime('%Y-%m-%d')
     return f"{prefixe}_{libelle}_{nom}_{jour}.pdf"
+
+
+def _nom_pour_fichier(texte):
+    """Texte utilisable dans un nom de fichier : sans accents ni caractères interdits."""
+    import re as _re
+    import unicodedata as _ud
+    texte = _ud.normalize('NFKD', (texte or '').strip()).encode('ascii', 'ignore').decode()
+    return _re.sub(r'[^A-Za-z0-9]+', '_', texte).strip('_')
 
 
 def signature_prescripteur_pour(structure_id, medecin_id):
@@ -1679,7 +1683,7 @@ def page_amu_ep_imprimer(demande_id):
     demande.imprime_le = datetime.utcnow()
     db.session.commit()
     return Response(pdf_bytes, mimetype='application/pdf', headers={
-        'Content-Disposition': f'inline; filename="{nom_fichier_pdf_amu("EP", demande, patient)}"'
+        'Content-Disposition': f'inline; filename="{nom_fichier_pdf_amu("EP_definitive" if demande.definitive_le else "EP", demande, patient)}"'
     })
 
 
@@ -23100,7 +23104,11 @@ def hospitalisation_billet(hospit_id):
                             structure_adresse=structure_info.get('adresse', ''),
                             structure_telephone=structure_info.get('telephone', ''),
                             ep_liee=ep_liee, whatsapp_depot=_numeros_whatsapp_depot(structure_id),
-                            envoyer_ep=request.args.get('envoyer') == '1')
+                            envoyer_ep=request.args.get('envoyer') == '1',
+                            # ⭐ Patron (2026-10-19) : "les pdf doivent se télécharger avec le nom du patient"
+                            nom_fichier_billet='Billet_hospitalisation_{}_{}.pdf'.format(
+                                _nom_pour_fichier(hospit.patient_nom) or f'patient{hospit.patient_id}',
+                                hospit.date_entree.strftime('%Y-%m-%d') if hospit.date_entree else hospit.id))
 
 
 @app.route('/hospitalisation/<int:hospit_id>/releve')

@@ -8,6 +8,7 @@
     <!-- html2pdf pour l'export PDF — même pattern que recu_abonnement.html / recu_installation.html -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script src="{{ url_for('static', filename='js/fenetre_app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/envoi_amu.js') }}"></script>
 
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -130,12 +131,6 @@
         .btn-pdf { background: #dc3545; }
         .btn-back { background: #6c757d; }
         .btn-envoi { background: #0E9D67; }
-        /* Envoi EP + billet à l'AMU (patron, 2026-10-19) */
-        #panneauEnvoi { display: none; max-width: 700px; margin: 14px auto 0; background: #fff; border: 2px solid #0E9D67;
-                        border-radius: 10px; padding: 14px 18px; font-size: 13px; color: #1a1a2e; text-align: left; }
-        #panneauEnvoi .etat { margin-bottom: 8px; }
-        #panneauEnvoi .erreur { color: #b02a37; }
-        #panneauEnvoi .aide { color: #555; font-size: 12px; margin-top: 6px; }
 
         @media print {
             body { background: white; padding: 0; }
@@ -238,30 +233,13 @@
         <button class="btn-back" onclick="window.close()"><i class="fas fa-times"></i> Fermer</button>
     </div>
 
-    {% if ep_liee and ep_liee.statut == 'approuvee' %}
-    <!-- ⭐ Patron (2026-10-19) : "pour envoyer à la CNSS, on a besoin d'envoyer
-         cette demande et le billet d'hospitalisation" — les deux PDF sont
-         préparés ici puis partagés ensemble (WhatsApp...) ; sinon téléchargés,
-         et la conversation WhatsApp de dépôt s'ouvre avec le message prêt. -->
-    <div id="panneauEnvoi" class="no-print">
-        <div class="etat" id="envoiEtat"></div>
-        <div id="envoiActions" style="display:none;">
-            <button class="btn-envoi" id="btnPartager" onclick="partagerEnvoiAmu()" style="display:none;">
-                <i class="fas fa-share-alt"></i> Partager les 2 PDF (WhatsApp…)
-            </button>
-            <button class="btn-print" onclick="telechargerEtOuvrirWhatsApp()">
-                <i class="fas fa-download"></i> Télécharger les 2 PDF et ouvrir WhatsApp
-            </button>
-        </div>
-        <div class="aide" id="envoiAide"></div>
-    </div>
-    {% endif %}
 
     <script>
+    const NOM_FICHIER_BILLET = {{ nom_fichier_billet|tojson }};
     function optionsPdfBillet() {
         return {
             margin: [0.4, 0.4, 0.4, 0.4],
-            filename: 'billet_hospitalisation_{{ hospit.numero_local or hospit.id }}.pdf',
+            filename: NOM_FICHIER_BILLET,
             image: { type: 'jpeg', quality: 0.98 },
             html2canvas: { scale: 2, useCORS: true, logging: false },
             jsPDF: { unit: 'in', format: 'a5', orientation: 'portrait' },
@@ -274,86 +252,31 @@
 
     {% if ep_liee and ep_liee.statut == 'approuvee' %}
     // ===================== ENVOI EP + BILLET À L'AMU =====================
+    // ⭐ Patron (2026-10-19) : "pour envoyer à la CNSS, on a besoin d'envoyer
+    // cette demande et le billet d'hospitalisation" — fenêtre commune
+    // static/js/envoi_amu.js (partager, ou télécharger + WhatsApp).
     const ENVOI_EP = {{ {
         'url_ep': url_for('page_amu_ep_imprimer', demande_id=ep_liee.id),
         'assureur': 'INAM' if ep_liee.type_amu == 'amu_inam' else 'CNSS',
         'numero': whatsapp_depot.get(ep_liee.type_amu) or '',
         'definitive': ep_liee.definitive_le is not none,
-        'nom_ep': ('EP_definitive_' if ep_liee.definitive_le else 'EP_') ~ 'hospitalisation_' ~ (hospit.numero_local or hospit.id) ~ '.pdf',
-        'nom_billet': 'billet_hospitalisation_' ~ (hospit.numero_local or hospit.id) ~ '.pdf',
         'patient': hospit.patient_nom or '',
         'structure': structure_nom,
     }|tojson }};
-    const MESSAGE_ENVOI = `Bonjour, veuillez trouver ci-joint la demande d'Entente Préalable ${ENVOI_EP.definitive ? 'définitive ' : ''}d'hospitalisation AMU-${ENVOI_EP.assureur} de ${ENVOI_EP.patient} (${ENVOI_EP.structure}) et son billet d'hospitalisation. Merci.`;
-    let fichiersEnvoi = null;
-
-    function etatEnvoi(texte, erreur) {
-        const el = document.getElementById('envoiEtat');
-        el.textContent = texte;
-        el.className = 'etat' + (erreur ? ' erreur' : '');
-    }
-    function numeroWhatsApp() {
-        let chiffres = (ENVOI_EP.numero || '').replace(/\D/g, '');
-        if (chiffres.length === 8) chiffres = '228' + chiffres;   // numéro togolais sans indicatif
-        return chiffres;
-    }
-    async function preparerEnvoiAmu() {
-        const panneau = document.getElementById('panneauEnvoi');
-        panneau.style.display = 'block';
-        panneau.scrollIntoView({behavior: 'smooth', block: 'nearest'});
-        document.getElementById('envoiActions').style.display = 'none';
-        etatEnvoi("Préparation des deux PDF (demande d'Entente Préalable + billet)…");
-        try {
-            const [epBlob, billetBlob] = await Promise.all([
-                fetch(ENVOI_EP.url_ep, {credentials: 'same-origin'}).then(r => {
-                    if (!r.ok || !(r.headers.get('content-type') || '').includes('pdf')) throw new Error("la demande d'Entente Préalable n'a pas pu être générée");
-                    return r.blob();
-                }),
-                html2pdf().set(optionsPdfBillet()).from(document.getElementById('billetContenu')).outputPdf('blob'),
-            ]);
-            fichiersEnvoi = [
-                new File([epBlob], ENVOI_EP.nom_ep, {type: 'application/pdf'}),
-                new File([billetBlob], ENVOI_EP.nom_billet, {type: 'application/pdf'}),
-            ];
-        } catch (e) {
-            etatEnvoi('Préparation impossible : ' + (e.message || e), true);
-            return;
-        }
-        const partageOk = !!(navigator.canShare && navigator.canShare({files: fichiersEnvoi}));
-        document.getElementById('btnPartager').style.display = partageOk ? '' : 'none';
-        document.getElementById('envoiActions').style.display = 'block';
-        etatEnvoi('✔ Les 2 PDF sont prêts : ' + ENVOI_EP.nom_ep + ' et ' + ENVOI_EP.nom_billet + '.');
-        document.getElementById('envoiAide').textContent = ENVOI_EP.numero
-            ? `Numéro WhatsApp de dépôt AMU-${ENVOI_EP.assureur} : ${ENVOI_EP.numero}` + (partageOk ? ' — « Partager » : choisissez WhatsApp puis cette conversation.' : ' — joignez les 2 fichiers téléchargés dans la conversation qui s\'ouvre.')
-            : `Numéro WhatsApp de dépôt AMU-${ENVOI_EP.assureur} non renseigné (page Entente Préalable, encadré « Dépôt par WhatsApp »).`;
-    }
-    async function partagerEnvoiAmu() {
-        if (!fichiersEnvoi) return;
-        try {
-            await navigator.share({files: fichiersEnvoi, text: MESSAGE_ENVOI});
-            etatEnvoi('✔ Fichiers partagés.');
-        } catch (e) {
-            if (e.name !== 'AbortError') etatEnvoi('Partage impossible ici : utilisez « Télécharger les 2 PDF et ouvrir WhatsApp ».', true);
-        }
-    }
-    function telechargerEtOuvrirWhatsApp() {
-        if (!fichiersEnvoi) return;
-        fichiersEnvoi.forEach(f => {
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(f);
-            a.download = f.name;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    function preparerEnvoiAmu() {
+        EnvoiAmu.ouvrir({
+            titre: `Envoi à l'AMU-${ENVOI_EP.assureur} : EP + billet`,
+            assureur: ENVOI_EP.assureur,
+            numero: ENVOI_EP.numero,
+            message: `Bonjour, veuillez trouver ci-joint la demande d'Entente Préalable ${ENVOI_EP.definitive ? 'définitive ' : ''}d'hospitalisation AMU-${ENVOI_EP.assureur} de ${ENVOI_EP.patient} (${ENVOI_EP.structure}) et son billet d'hospitalisation. Merci.`,
+            fichiers: [
+                {libelle: ENVOI_EP.definitive ? "Demande définitive d'Entente Préalable" : "Demande d'Entente Préalable",
+                 obtenir: () => EnvoiAmu.depuisUrl(ENVOI_EP.url_ep, 'EP_hospitalisation.pdf')},
+                {libelle: "Billet d'hospitalisation",
+                 obtenir: async () => ({nom: NOM_FICHIER_BILLET,
+                                        blob: await html2pdf().set(optionsPdfBillet()).from(document.getElementById('billetContenu')).outputPdf('blob')})},
+            ],
         });
-        const numero = numeroWhatsApp();
-        if (numero) {
-            window.open(`https://wa.me/${numero}?text=${encodeURIComponent(MESSAGE_ENVOI)}`, '_blank');
-            etatEnvoi('✔ 2 PDF téléchargés : joignez-les dans la conversation WhatsApp qui vient de s\'ouvrir.');
-        } else {
-            etatEnvoi('✔ 2 PDF téléchargés. Numéro WhatsApp de dépôt non renseigné : envoyez-les à l\'AMU-' + ENVOI_EP.assureur + '.');
-        }
     }
     {% if envoyer_ep %}window.addEventListener('load', preparerEnvoiAmu);{% endif %}
     {% endif %}
