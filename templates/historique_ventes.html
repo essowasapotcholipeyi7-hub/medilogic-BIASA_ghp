@@ -2,6 +2,29 @@
 
 {% block title %}Historique des ventes{% endblock %}
 
+{% block extra_css %}
+<style>
+    /* Choix de la période : encadré bien visible (patron, 2026-10-19) */
+    .zone-periode {
+        border: 2px solid var(--bs-primary, #0d6efd);
+        border-radius: 8px;
+        padding: 12px 14px;
+        background: rgba(13, 110, 253, 0.05);
+    }
+    .zone-periode .form-select,
+    .zone-periode .form-control,
+    .zone-periode .btn { font-size: 1rem; }
+    /* Les dates réellement couvertes, écrites en clair */
+    .resume-periode {
+        font-size: 1.05rem;
+        font-weight: 600;
+        color: #0a3d91;
+    }
+    [data-bs-theme="dark"] .zone-periode { background: rgba(110, 168, 254, 0.08); }
+    [data-bs-theme="dark"] .resume-periode { color: #9ec5fe; }
+</style>
+{% endblock %}
+
 {% block content %}
         <!-- STATISTIQUES -->
         <div class="card mb-0">
@@ -12,33 +35,36 @@
                 </button>
             </div>
             <div class="card-body">
-                <div class="row mb-3">
-                    <div class="col-md-8">
-                        <div class="btn-group btn-group-sm flex-wrap" role="group">
-                            <button class="btn btn-outline-primary" onclick="changerPeriodeStats('aujourdhui')">Aujourd'hui</button>
-                            <button class="btn btn-outline-primary" onclick="changerPeriodeStats('semaine')">Semaine</button>
-                            <button class="btn btn-outline-primary" onclick="changerPeriodeStats('mois')">Mois</button>
-                            <button class="btn btn-outline-primary" onclick="changerPeriodeStats('annee')">Année</button>
-                            <button class="btn btn-outline-primary" onclick="changerPeriodeStats('tous')">Toutes</button>
-                            <button class="btn btn-outline-primary" onclick="changerPeriodeStats('personnalise')">Perso</button>
+                <!-- ⭐ Patron (2026-10-19) : choix de période plus lisible — boutons
+                     plus grands, période active en plein, et les vraies dates
+                     couvertes écrites en clair juste en dessous. -->
+                <div class="zone-periode mb-3">
+                    <div class="fw-bold mb-2"><i class="fas fa-calendar-alt"></i> Période des statistiques</div>
+                    <div class="d-flex flex-wrap gap-2" role="group">
+                        <button class="btn btn-outline-primary btn-periode-stats" data-periode="aujourdhui" onclick="changerPeriodeStats('aujourdhui')">Aujourd'hui</button>
+                        <button class="btn btn-outline-primary btn-periode-stats" data-periode="semaine" onclick="changerPeriodeStats('semaine')">Cette semaine</button>
+                        <button class="btn btn-outline-primary btn-periode-stats" data-periode="mois" onclick="changerPeriodeStats('mois')">Ce mois</button>
+                        <button class="btn btn-outline-primary btn-periode-stats" data-periode="annee" onclick="changerPeriodeStats('annee')">Cette année</button>
+                        <button class="btn btn-primary btn-periode-stats" data-periode="tous" onclick="changerPeriodeStats('tous')">Toutes les dates</button>
+                        <button class="btn btn-outline-primary btn-periode-stats" data-periode="personnalise" onclick="changerPeriodeStats('personnalise')">Dates personnalisées</button>
+                    </div>
+
+                    <div id="statsDateRange" style="display: none;" class="row g-2 mt-2">
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold mb-1">Du</label>
+                            <input type="date" id="statsDateDebut" class="form-control">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold mb-1">Au</label>
+                            <input type="date" id="statsDateFin" class="form-control">
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <button class="btn btn-primary" onclick="appliquerStatsPersonnalise()">Appliquer</button>
                         </div>
                     </div>
-                    <div class="col-md-4 text-end">
-                        <span id="periodeStatsLabel" class="badge bg-info">Toutes les ventes</span>
-                    </div>
-                </div>
-                
-                <div id="statsDateRange" style="display: none;" class="row mb-3">
-                    <div class="col-md-5">
-                        <label class="form-label">Date début</label>
-                        <input type="date" id="statsDateDebut" class="form-control form-control-sm">
-                    </div>
-                    <div class="col-md-5">
-                        <label class="form-label">Date fin</label>
-                        <input type="date" id="statsDateFin" class="form-control form-control-sm">
-                    </div>
-                    <div class="col-md-2 d-flex align-items-end">
-                        <button class="btn btn-primary btn-sm" onclick="appliquerStatsPersonnalise()">Appliquer</button>
+
+                    <div class="resume-periode mt-2">
+                        <i class="fas fa-arrow-right"></i> <span id="periodeStatsLabel">Toutes les dates</span>
                     </div>
                 </div>
                 
@@ -122,34 +148,45 @@
                 </button>
             </div>
             <div class="card-body" id="filtresContainer">
+                <!-- ⭐ Patron (2026-10-19) : la période, c'est ce qui décide de ce que
+                     couvre l'état imprimé — bloc à part, en grand, avec les vraies
+                     dates écrites en clair en dessous (reprises sur l'impression). -->
+                <div class="zone-periode mb-3">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold mb-1" for="periodeFiltre"><i class="fas fa-calendar-alt"></i> Période de la liste et de l'impression</label>
+                            <select id="periodeFiltre" class="form-select" onchange="changerPeriodeFiltre()">
+                                <option value="tous">Toutes les dates</option>
+                                <option value="aujourdhui">Aujourd'hui</option>
+                                <option value="semaine">Cette semaine</option>
+                                <option value="mois">Ce mois</option>
+                                <option value="annee">Cette année</option>
+                                <option value="personnalise">Dates personnalisées</option>
+                            </select>
+                        </div>
+                        {# ⭐ 2026-10-17 (patron) : heures en plus des dates, pour une prise de service
+                           (ex. du 17/10 à 16:00 au 18/10 à 09:00) #}
+                        <div class="col-md-4" id="dateDebutGroup" style="display: none;">
+                            <label class="form-label fw-bold mb-1">Du (date et heure)</label>
+                            <div class="d-flex gap-2">
+                                <input type="date" id="filtreDateDebut" class="form-control" onchange="filtrerHistorique()">
+                                <input type="time" id="filtreHeureDebut" class="form-control" style="max-width:120px;" value="00:00" onchange="filtrerHistorique()">
+                            </div>
+                        </div>
+                        <div class="col-md-4" id="dateFinGroup" style="display: none;">
+                            <label class="form-label fw-bold mb-1">Au (date et heure)</label>
+                            <div class="d-flex gap-2">
+                                <input type="date" id="filtreDateFin" class="form-control" onchange="filtrerHistorique()">
+                                <input type="time" id="filtreHeureFin" class="form-control" style="max-width:120px;" value="23:59" onchange="filtrerHistorique()">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="resume-periode mt-2">
+                        <i class="fas fa-arrow-right"></i> <span id="resumePeriodeFiltre">Toutes les dates</span>
+                    </div>
+                </div>
+
                 <div class="row g-2">
-                    <div class="col-md-2">
-                        <label class="form-label small">Période</label>
-                        <select id="periodeFiltre" class="form-control form-control-sm" onchange="changerPeriodeFiltre()">
-                            <option value="tous">Toutes</option>
-                            <option value="aujourdhui">Aujourd'hui</option>
-                            <option value="semaine">Semaine</option>
-                            <option value="mois">Mois</option>
-                            <option value="annee">Année</option>
-                            <option value="personnalise">Personnalisée</option>
-                        </select>
-                    </div>
-                    {# ⭐ 2026-10-17 (patron) : heures en plus des dates, pour une prise de service
-                       (ex. du 17/10 à 16:00 au 18/10 à 09:00) #}
-                    <div class="col-md-3" id="dateDebutGroup" style="display: none;">
-                        <label class="form-label small">Début (date et heure)</label>
-                        <div class="d-flex gap-1">
-                            <input type="date" id="filtreDateDebut" class="form-control form-control-sm" onchange="filtrerHistorique()">
-                            <input type="time" id="filtreHeureDebut" class="form-control form-control-sm" style="max-width:100px;" value="00:00" onchange="filtrerHistorique()">
-                        </div>
-                    </div>
-                    <div class="col-md-3" id="dateFinGroup" style="display: none;">
-                        <label class="form-label small">Fin (date et heure)</label>
-                        <div class="d-flex gap-1">
-                            <input type="date" id="filtreDateFin" class="form-control form-control-sm" onchange="filtrerHistorique()">
-                            <input type="time" id="filtreHeureFin" class="form-control form-control-sm" style="max-width:100px;" value="23:59" onchange="filtrerHistorique()">
-                        </div>
-                    </div>
                     <div class="col-md-2">
                         <label class="form-label small">Type</label>
                         <!-- ⭐ Cases à cocher (patron, 2026-10-05) : le pharmacien ou la
@@ -606,6 +643,99 @@ function trierVentesFiltrees(cle) {
     }
 }
 
+// ⭐ Patron (2026-10-19) : sur l'impression, "Période : Toutes" ne disait pas
+// de quand à quand allait l'état. Ces fonctions donnent toujours les vraies
+// dates couvertes, quelle que soit la période choisie.
+function fmtDateFR(d) {
+    return ('0' + d.getDate()).slice(-2) + '/' + ('0' + (d.getMonth() + 1)).slice(-2) + '/' + d.getFullYear();
+}
+
+// Bornes d'une période prédéfinie (même calcul que dansPeriodeChoisie et
+// changerPeriodeStats). null pour 'tous' et 'personnalise'.
+function bornesPeriode(periode) {
+    var aujourdhui = new Date();
+    aujourdhui.setHours(0, 0, 0, 0);
+    var debut = new Date(aujourdhui);
+    var fin = new Date(aujourdhui);
+    if (periode === 'semaine') {
+        debut.setDate(debut.getDate() - debut.getDay());
+        fin.setDate(fin.getDate() + (6 - fin.getDay()));
+    } else if (periode === 'mois') {
+        debut = new Date(aujourdhui.getFullYear(), aujourdhui.getMonth(), 1);
+        fin = new Date(aujourdhui.getFullYear(), aujourdhui.getMonth() + 1, 0);
+    } else if (periode === 'annee') {
+        debut = new Date(aujourdhui.getFullYear(), 0, 1);
+        fin = new Date(aujourdhui.getFullYear(), 11, 31);
+    } else if (periode !== 'aujourdhui') {
+        return null;
+    }
+    fin.setHours(23, 59, 59);
+    return { debut: debut, fin: fin };
+}
+
+// Première et dernière date d'une liste de dates (texte) — null si aucune.
+function etendueDates(dates) {
+    var min = null, max = null;
+    dates.forEach(function(t) {
+        var d = t ? new Date(t) : null;
+        if (!d || isNaN(d.getTime())) return;
+        if (!min || d < min) min = d;
+        if (!max || d > max) max = d;
+    });
+    return min ? { debut: min, fin: max } : null;
+}
+
+// "du 01/10/2026 au 19/10/2026" (ou "le 19/10/2026" sur un seul jour). La
+// fin n'est jamais affichée après aujourd'hui : un mois ou une année en
+// cours ne couvre en réalité que jusqu'à aujourd'hui.
+function texteDuAu(debut, fin) {
+    var maintenant = new Date();
+    if (fin > maintenant) fin = maintenant;
+    var a = fmtDateFR(debut), b = fmtDateFR(fin);
+    return a === b ? 'le ' + a : 'du ' + a + ' au ' + b;
+}
+
+var NOMS_PERIODES = {
+    tous: 'Toutes les dates', aujourdhui: "Aujourd'hui", semaine: 'Cette semaine',
+    mois: 'Ce mois', annee: 'Cette année', personnalise: 'Dates personnalisées'
+};
+
+// Libellé complet de la période des filtres de la liste, avec les dates.
+// Pour "Toutes", les dates sont celles de la première et de la dernière
+// opération réellement présentes (ventes et règlements affichés).
+function libellePeriodeFiltre() {
+    var periode = document.getElementById('periodeFiltre').value;
+    var nom = NOMS_PERIODES[periode] || periode;
+    var datesAffichees = (ventesFiltrees || []).map(function(v) { return v.date_vente; })
+        .concat((reglementsFiltres || []).map(function(r) { return r.date_paiement; }));
+
+    if (periode === 'personnalise') {
+        var dDeb = document.getElementById('filtreDateDebut').value;
+        var dFin = document.getElementById('filtreDateFin').value;
+        var hDeb = document.getElementById('filtreHeureDebut').value || '00:00';
+        var hFin = document.getElementById('filtreHeureFin').value || '23:59';
+        var etendue = etendueDates(datesAffichees);
+        // Borne laissée vide = pas de limite : on montre la vraie date atteinte.
+        var txtDeb = dDeb ? dDeb.split('-').reverse().join('/') + ' à ' + hDeb
+                          : (etendue ? fmtDateFR(etendue.debut) + ' (première opération)' : 'le début');
+        var txtFin = dFin ? dFin.split('-').reverse().join('/') + ' à ' + hFin
+                          : (etendue ? fmtDateFR(etendue.fin) + ' (dernière opération)' : "aujourd'hui");
+        return 'du ' + txtDeb + ' au ' + txtFin;
+    }
+    var bornes = bornesPeriode(periode);
+    if (bornes) return nom + ' : ' + texteDuAu(bornes.debut, bornes.fin);
+    var etendueTous = etendueDates(datesAffichees);
+    return etendueTous
+        ? nom + ' : ' + texteDuAu(etendueTous.debut, etendueTous.fin) + ' (première et dernière opération)'
+        : nom;
+}
+
+// Rappel visible, sous le choix de période, de ce que la liste couvre.
+function majResumePeriode() {
+    var el = document.getElementById('resumePeriodeFiltre');
+    if (el) el.textContent = libellePeriodeFiltre();
+}
+
 // Date (vente ou règlement) dans la période choisie : dates personnalisées
 // puis période prédéfinie (aujourd'hui, semaine, mois, année). Une date
 // absente n'exclut rien.
@@ -714,9 +844,10 @@ function filtrerHistorique() {
         reglementsFiltres = [];
         afficherReglements();
         updatePagination();
+        majResumePeriode();
         return;
     }
-    
+
     // Récupérer les filtres
     var periode = document.getElementById('periodeFiltre').value;
     var typesCoches = typesVenteCoches();
@@ -733,6 +864,10 @@ function filtrerHistorique() {
     var heureFin = (document.getElementById('filtreHeureFin') || {}).value || '23:59';
     if (dateDebut && heureDebut !== '00:00') dateDebut += 'T' + heureDebut;
     if (dateFin && heureFin !== '23:59') dateFin += 'T' + heureFin;
+    // ⭐ Les dates personnalisées ne comptent qu'en mode "Dates personnalisées" :
+    // repassé sur "Toutes" ou "Ce mois", les champs (masqués) gardaient leurs
+    // valeurs et filtraient encore la liste en cachette.
+    if (periode !== 'personnalise') { dateDebut = ''; dateFin = ''; }
     var filtreStatutPaiement = document.getElementById('filtreStatutPaiement').value;
     // 🔥 NOUVEAU FILTRE AIDE
     var filtreAide = document.getElementById('filtreAide').value;
@@ -829,6 +964,7 @@ function filtrerHistorique() {
     trierVentesFiltrees(triEtat);
 
     document.getElementById('resultCount').innerText = ventesFiltrees.length;
+    majResumePeriode();
     currentPage = 1;
     updatePagination();
     afficherPageVentes(1);
@@ -1107,54 +1243,49 @@ function reimprimerDepuisDetail() {
 // ============================================
 // STATISTIQUES
 // ============================================
+// Libellé de la période des statistiques, avec ses vraies dates — repris tel
+// quel sur l'impression des stats (patron, 2026-10-19).
+var libellePeriodeStats = 'Toutes les dates';
+
+function afficherPeriodeStats(libelle) {
+    libellePeriodeStats = libelle;
+    document.getElementById('periodeStatsLabel').innerText = libelle;
+}
+
 function changerPeriodeStats(periode) {
     periodeStatsCourante = periode;
     var statsDateRange = document.getElementById('statsDateRange');
-    
+
+    // Bouton de la période choisie en plein, les autres en contour : on voit
+    // d'un coup d'œil laquelle est active.
+    document.querySelectorAll('.btn-periode-stats').forEach(function(b) {
+        var actif = b.getAttribute('data-periode') === periode;
+        b.classList.toggle('btn-primary', actif);
+        b.classList.toggle('btn-outline-primary', !actif);
+    });
+
     if (periode === 'personnalise') {
         statsDateRange.style.display = 'flex';
         return;
     } else {
         statsDateRange.style.display = 'none';
     }
-    
+
     var debut, fin;
-    var aujourdhui = new Date();
-    aujourdhui.setHours(0, 0, 0, 0);
-    
-    switch(periode) {
-        case 'aujourdhui':
-            debut = new Date(aujourdhui);
-            fin = new Date(aujourdhui);
-            fin.setHours(23, 59, 59);
-            document.getElementById('periodeStatsLabel').innerText = "Aujourd'hui";
-            break;
-        case 'semaine':
-            debut = new Date(aujourdhui);
-            debut.setDate(debut.getDate() - debut.getDay());
-            fin = new Date(aujourdhui);
-            fin.setDate(fin.getDate() + (6 - fin.getDay()));
-            fin.setHours(23, 59, 59);
-            document.getElementById('periodeStatsLabel').innerText = 'Cette semaine';
-            break;
-        case 'mois':
-            debut = new Date(aujourdhui.getFullYear(), aujourdhui.getMonth(), 1);
-            fin = new Date(aujourdhui.getFullYear(), aujourdhui.getMonth() + 1, 0);
-            fin.setHours(23, 59, 59);
-            document.getElementById('periodeStatsLabel').innerText = 'Ce mois';
-            break;
-        case 'annee':
-            debut = new Date(aujourdhui.getFullYear(), 0, 1);
-            fin = new Date(aujourdhui.getFullYear(), 11, 31);
-            fin.setHours(23, 59, 59);
-            document.getElementById('periodeStatsLabel').innerText = 'Cette année';
-            break;
-        default:
-            debut = new Date(0);
-            fin = new Date();
-            document.getElementById('periodeStatsLabel').innerText = 'Toutes les ventes';
+    var bornes = bornesPeriode(periode);
+    if (bornes) {
+        debut = bornes.debut;
+        fin = bornes.fin;
+        afficherPeriodeStats(NOMS_PERIODES[periode] + ' : ' + texteDuAu(debut, fin));
+    } else {
+        debut = new Date(0);
+        fin = new Date();
+        var etendue = etendueDates((toutesLesVentes || []).map(function(v) { return v.date_vente; }));
+        afficherPeriodeStats(etendue
+            ? 'Toutes les dates : ' + texteDuAu(etendue.debut, etendue.fin) + ' (première et dernière vente)'
+            : 'Toutes les dates');
     }
-    
+
     calculerStats(debut, fin);
 }
 
@@ -1292,7 +1423,7 @@ async function appliquerStatsPersonnalise() {
     var fin = new Date(dateFin);
     fin.setHours(23, 59, 59);
     
-    document.getElementById('periodeStatsLabel').innerText = dateDebut + ' au ' + dateFin;
+    afficherPeriodeStats('Dates personnalisées : du ' + fmtDateFR(debut) + ' au ' + fmtDateFR(fin));
     calculerStats(debut, fin);
 }
 
@@ -1491,6 +1622,8 @@ function styleImpressionNB() {
     return 'body{font-family:Arial,Helvetica,sans-serif;padding:20px;font-size:14px;color:#000;background:#fff;}' +
         'h2{text-align:center;color:#000;margin-top:0;font-size:20px;}' +
         '.header{text-align:center;margin-bottom:12px;color:#000;font-size:13px;}' +
+        // Période couverte par l'état : bien en évidence, avec les vraies dates
+        '.periode-etat{text-align:center;font-size:15px;font-weight:bold;border:1px solid #000;padding:6px 10px;margin:0 auto 12px;max-width:760px;}' +
         'table{width:100%;border-collapse:collapse;font-size:13px;}' +
         'thead{display:table-header-group;}' +
         'tr{page-break-inside:avoid;}' +
@@ -1560,19 +1693,12 @@ async function imprimerHistorique() {
     var selSociete = document.getElementById('filtreSociete');
     var selTri = document.getElementById('triEtat');
     var mentions = [];
-    // Période choisie (Aujourd'hui, Mois, dates personnalisées...) — rappelée
-    // sur l'état, puisque le récapitulatif des assurances en dépend.
-    var selPeriode = document.getElementById('periodeFiltre');
-    var libellePeriode = selPeriode.options[selPeriode.selectedIndex].text;
-    if (selPeriode.value === 'personnalise') {
-        var dDeb = document.getElementById('filtreDateDebut').value;
-        var dFin = document.getElementById('filtreDateFin').value;
-        var hDeb = document.getElementById('filtreHeureDebut').value || '00:00';
-        var hFin = document.getElementById('filtreHeureFin').value || '23:59';
-        var fmt = function(d) { return d ? d.split('-').reverse().join('/') : '…'; };
-        libellePeriode = 'du ' + fmt(dDeb) + ' à ' + hDeb + ' au ' + fmt(dFin) + ' à ' + hFin;
-    }
-    mentions.push('Période : ' + libellePeriode);
+    // Période choisie — rappelée sur l'état AVEC ses vraies dates (patron,
+    // 2026-10-19 : "Période : Toutes" ne disait pas de quand à quand).
+    var libellePeriodeComplet = libellePeriodeFiltre();
+    html += '<div class="periode-etat">Période : ' + escFR(libellePeriodeComplet) + '</div>';
+    // Version courte pour les titres de section plus bas (dates gardées).
+    var libellePeriode = libellePeriodeComplet.replace(/ \(première et dernière opération\)$/, '');
     var typesImpr = typesVenteCoches();
     if (ventesMasquees) {
         mentions.push('Types : Règlements de créances uniquement');
@@ -1927,7 +2053,7 @@ function imprimerStats() {
     var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Statistiques</title>';
     html += '<style>' + styleImpressionNB() + '.stat{display:inline-block;padding:10px;margin:5px;border:1px solid #000;border-radius:5px;min-width:110px;text-align:center;font-size:14px;}h3{margin:4px 0 0;font-size:20px;}h4{font-size:16px;margin:16px 0 6px;}</style>';
     html += '</head><body><h2>STATISTIQUES</h2>';
-    html += '<div>' + document.getElementById('periodeStatsLabel').innerText + '</div>';
+    html += '<div class="periode-etat">Période : ' + escFR(libellePeriodeStats) + '</div>';
     html += '<div>';
     // L'admin voit "Créances" et "CA total" à la place de "Actes" et
     // "Pharmacie" (voir la condition sur les cartes plus haut) : on n'imprime que les
@@ -1969,8 +2095,9 @@ async function imprimerAides() {
     html += '<span class="title">Aides hospitalières</span>';
     html += '<button class="btn-close" onclick="window.close()"><i class="fas fa-times"></i> Fermer</button>';
     html += '</div>';
-    
+
     html += '<div class="header">Généré le ' + new Date().toLocaleString('fr-FR') + '</div>';
+    html += '<div class="periode-etat">Période : ' + escFR(libellePeriodeFiltre()) + '</div>';
     
     var totalAides = aides.length;
     var totalMontantAide = aides.reduce(function(sum, v) {
