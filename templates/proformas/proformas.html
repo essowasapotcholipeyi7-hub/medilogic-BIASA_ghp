@@ -411,6 +411,11 @@
                                             <th id="sousTotalDisplay" class="text-end">0 FCFA</th>
                                             <th></th>
                                         </tr>
+                                        <tr id="remiseListeProformaRow" style="display:none;">
+                                            <th colspan="4" class="text-end text-warning" id="remiseListeProformaLabel">Réduction :</th>
+                                            <th id="remiseListeProformaDisplay" class="text-end text-warning">0 FCFA</th>
+                                            <th></th>
+                                        </tr>
                                         <tr>
                                             <th colspan="4" class="text-end text-success">Prise en charge principale :</th>
                                             <th id="priseEnChargeDisplay" class="text-end text-success">0 FCFA</th>
@@ -672,6 +677,12 @@ async function changerListeTarifProforma(groupe) {
     const info = document.getElementById('infoListeTarifProforma');
     if (info) info.innerHTML = texteInfoListe(g);
     afficherPanier();
+}
+// ⭐ 2026-10-19 (patron) : liste « remise » (SMA) — prix clinique (prix non assuré) d'où part la réduction
+function prixReferenceProforma(item, ctx, l) {
+    if (!(ctx.liste && ctx.liste.remise) || l.source !== 'prive') return 0;
+    const ref = parseFloat((PRIX_NA_PROFORMA[item.type === 'produit' ? 'produit' : 'acte'] || {})[item.nom]) || parseFloat(item.prix) || 0;
+    return ref > l.tarif ? ref : 0;
 }
 function changerVarianteListeProforma(index, cle) { panierArticles[index].liste_tarif = cle || null; afficherPanier(); }
 function resetListeTarifProforma() {
@@ -1708,7 +1719,9 @@ function afficherPanier() {
         item.total = l.total;
         sousTotal += item.total;
         const partAMULigne = l.partAMU, partCACLigne = l.partPrivee, partPatientLigne = l.partPatient;
-        const libelleTarif = l.source === 'prive' ? 'tarif ' + (ctxTarif.liste ? 'liste ' + ctxTarif.liste.libelle : (assurance2Nom || 'privé'))
+        const refLigne = prixReferenceProforma(item, ctxTarif, l);
+        const libelleTarif = refLigne ? 'réduction ' + ctxTarif.liste.libelle + ' ' + (((ctxTarif.liste.variantes.find(v => v.cle === (item.liste_tarif || ctxTarif.liste.defaut)) || {}).pct) || '') + ' % : − ' + Math.round(refLigne - l.tarif).toLocaleString('fr-FR') + ' F'
+            : l.source === 'prive' ? 'tarif ' + (ctxTarif.liste ? 'liste ' + ctxTarif.liste.libelle : (assurance2Nom || 'privé'))
             : (l.source === 'non_assure' ? 'prix non assuré' : (item.prix_modifie ? 'prix saisi' : ''));
 
         const row = tbody.insertRow();
@@ -1728,7 +1741,7 @@ function afficherPanier() {
                 </div>
             </td>
             <td>
-                <input type="number" class="form-control form-control-sm" value="${l.tarif}"
+                <input type="number" class="form-control form-control-sm" value="${refLigne || l.tarif}"
                        style="width:100px;" onchange="modifierPrixPanier(${index}, this.value)">
                 ${libelleTarif ? '<div class="small text-muted">' + libelleTarif + '</div>' : ''}
                 ${ctxTarif.liste && ligneDoitChoisirTaux(item, ctxTarif.liste) ? selectVarianteListe(item, index, ctxTarif.liste, 'changerVarianteListeProforma') : ''}
@@ -1736,7 +1749,7 @@ function afficherPanier() {
             <td class="text-center">${partAMULigne > 0 ? '<span class="badge bg-success">' + Math.round(partAMULigne).toLocaleString('fr-FR') + ' F</span>' : '<span class="text-muted">-</span>'}</td>
             <td class="text-center">${partCACLigne > 0 ? '<span class="badge bg-info">' + Math.round(partCACLigne).toLocaleString('fr-FR') + ' F</span>' : '<span class="text-muted">-</span>'}</td>
             <td class="text-center"><span class="badge bg-warning text-dark">${Math.round(partPatientLigne).toLocaleString('fr-FR')} F</span></td>
-            <td class="text-end fw-bold">${Math.round(item.total).toLocaleString('fr-FR')} FCFA</td>
+            <td class="text-end fw-bold">${Math.round(refLigne ? refLigne * (parseFloat(item.quantite) || 0) : item.total).toLocaleString('fr-FR')} FCFA</td>
             <td>
                 <button class="btn btn-sm btn-danger" onclick="supprimerArticlePanier(${index})">
                     <i class="fas fa-times"></i>
@@ -1791,11 +1804,13 @@ function calculerTotal() {
     // ⭐ 2026-10-15 : lignes calculées comme au serveur (repartirLigneProforma)
     chargerPbrCacProforma();
     const ctxTotal = contexteTarifProforma();
-    let sousTotal = 0, partAMUTotal = 0, partPriveeTotal = 0;
+    let sousTotal = 0, partAMUTotal = 0, partPriveeTotal = 0, remiseListe = 0;
     if (window.marquerDoublonsAMU) marquerDoublonsAMU(panierArticles);   // un seul acte par code AMU
     for (const item of panierArticles) {
         const l = repartirLigneProforma(item, ctxTotal);
         sousTotal += l.total;
+        const ref = prixReferenceProforma(item, ctxTotal, l);
+        if (ref) remiseListe += (ref - l.tarif) * (parseFloat(item.quantite) || 0);
         partAMUTotal += l.partAMU;
         partPriveeTotal += l.partPrivee;
     }
@@ -1861,7 +1876,13 @@ function calculerTotal() {
     }
 
     // 🔥 6. Mise à jour de l'affichage
-    document.getElementById('sousTotalDisplay').textContent = Math.round(sousTotal).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('sousTotalDisplay').textContent = Math.round(sousTotal + remiseListe).toLocaleString('fr-FR') + ' FCFA';
+    const remiseListeProformaRow = document.getElementById('remiseListeProformaRow');
+    if (remiseListeProformaRow) {
+        remiseListeProformaRow.style.display = remiseListe > 0 ? '' : 'none';
+        document.getElementById('remiseListeProformaLabel').textContent = 'Réduction ' + (ctxTotal.liste ? ctxTotal.liste.libelle : '') + ' :';
+        document.getElementById('remiseListeProformaDisplay').textContent = '− ' + Math.round(remiseListe).toLocaleString('fr-FR') + ' FCFA';
+    }
     document.getElementById('priseEnChargeDisplay').textContent = Math.round(priseEnChargeAMU).toLocaleString('fr-FR') + ' FCFA';
     document.getElementById('netAPayerDisplay').textContent = Math.round(netAPayer).toLocaleString('fr-FR') + ' FCFA';
 

@@ -5944,6 +5944,7 @@ def recu(vente_id, type):
         # celui réellement calculé et déjà enregistré au moment de la
         # vente (qui, lui, applique bien 90% au P160 uniquement).
         prise_en_charge_par_article = 0
+        remise_liste_total = 0.0
 
         for item in tous_articles:
             # Déterminer le prix
@@ -6014,12 +6015,14 @@ def recu(vente_id, type):
                 except ValueError:
                     date_aff = None
 
+            # ⭐ 2026-10-19 : ligne SMA -> prix clinique affiché, la réduction est totalisée plus bas
+            remise_liste_total += float(item.get('remise_liste') or 0)
             articles.append({
                 'nom': item.get('nom', 'Article'),
                 'quantite': quantite,
-                'prix_unitaire': prix_unitaire,
+                'prix_unitaire': float(item.get('prix_reference') or prix_unitaire),
                 'pbr': pbr_article,
-                'total': total_article,
+                'total': float(item.get('prix_reference') or prix_unitaire) * quantite,
                 'prise_en_charge_amu': prise_amu,
                 'prise_en_charge_cac': prise_cac,
                 'type': type_article,
@@ -6124,7 +6127,15 @@ def recu(vente_id, type):
             classification_map.setdefault(row.nom_acte, row.categorie)
         cumul_categories = cumuler_articles_par_categorie(articles, classification_map)
 
+    assurances_vente_recu = v.get('assurances') or {}
+    if isinstance(assurances_vente_recu, str):
+        try:
+            assurances_vente_recu = json.loads(assurances_vente_recu)
+        except ValueError:
+            assurances_vente_recu = {}
+    libelle_remise_liste = str((assurances_vente_recu or {}).get('liste_tarif') or '').replace('Liste ', '', 1)
     return render_template('recu_client.html',
+                         remise_liste_total=locals().get('remise_liste_total', 0), libelle_remise_liste=libelle_remise_liste,
                          a_dates_prestation=a_dates_prestation,
                          vente_id=vente_id,
                          numero_local_vente=numero_local_vente,
@@ -12509,11 +12520,18 @@ def api_add_acte_vente():
             if acte['nuit'] and acte.get('prix_non_assure_nuit') is None:
                 acte['prix_non_assure_nuit'] = prix_non_assure_nuit_vente.get(acte.get('nom'))
         calcul = repartir_panier(actes_data, contexte_tarif)
+        cles_remise_vente = {v['cle'] for v in groupe_liste['variantes']} if (groupe_liste and groupe_liste['remise']) else set()
         for acte, ligne in zip(actes_data, calcul['lignes']):
             acte['prix_base'] = float(acte.get('prix') or 0)
             acte['prix'] = ligne['tarif_unitaire']
             acte['source_tarif'] = ligne['source_tarif']
             acte['total'] = ligne['total']
+            # ⭐ 2026-10-19 (patron) : SMA = réduction sur le prix clinique (prix non assuré) — gardés pour le reçu
+            if acte.get('liste_tarif') in cles_remise_vente and ligne['source_tarif'] == 'prive':
+                reference = float((acte.get('prix_non_assure_nuit') if acte.get('nuit') else 0) or acte.get('prix_non_assure') or acte['prix_base'] or 0)
+                if reference > ligne['tarif_unitaire']:
+                    acte['prix_reference'] = reference
+                    acte['remise_liste'] = (reference - ligne['tarif_unitaire']) * ligne['quantite']
         ecarts = {
             'sous_total': (float(data.get('sous_total') or 0), calcul['sous_total']),
             'prise_en_charge': (prise_en_charge, calcul['part_amu']),

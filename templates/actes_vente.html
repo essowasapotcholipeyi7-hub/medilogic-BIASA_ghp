@@ -329,6 +329,11 @@
                                 <th id="sousTotal" class="text-end">0 FCFA</th>
                                 <th></th>
                             </tr>
+                            <tr id="remiseListeRow" style="display:none;">
+                                <th colspan="6" class="text-end text-warning" id="remiseListeLabel">Réduction :</th>
+                                <th id="remiseListe" class="text-end text-warning">0 FCFA</th>
+                                <th></th>
+                            </tr>
                             <tr>
                                 <th colspan="6" class="text-end text-primary">Base remboursement (PBR) :</th>
                                 <th id="baseRemboursement" class="text-end text-primary">0 FCFA</th>
@@ -766,6 +771,16 @@ function resetListeTarif() {
 }
 function changerVarianteListeLigne(index, cle) { panier[index].liste_tarif = cle || null; afficherPanier(); }
 function arrondirPartPatientActes(montant, pas) { return arrondirPartPatient(montant, pas); }
+// ⭐ prix clinique d'où part la réduction d'une liste « remise » (SMA = prix social, c.-à-d. prix non assuré)
+function prixReferenceListeActes(item, ctx) {
+    if (!(ctx && ctx.liste && ctx.liste.remise)) return 0;
+    const nuit = item.nuit ? (parseFloat(PRIX_NON_ASSURE_NUIT_PAR_ACTE[item.nom]) || 0) : 0;
+    return nuit || parseFloat(PRIX_NON_ASSURE_PAR_ACTE[item.nom]) || parseFloat(item.prix) || 0;
+}
+function pctListeLigne(item, g) {
+    const v = g.variantes.find(x => x.cle === (item.liste_tarif || g.defaut));
+    return v && v.pct ? v.pct : '';
+}
 function arrondiActifActes() { return arrondiActif('toggleArrondiPatient'); }
 
 // ============================================
@@ -863,7 +878,12 @@ function repartirLigneActes(item, ctx) {
         }
     }
     const partPatient = Math.max(total - partAMU - partPrivee, 0);
+    // ⭐ 2026-10-19 (patron) : liste « remise » (SMA) — on montre le prix clinique (prix non assuré,
+    // celui dont la réduction SMA est calculée) et la réduction, le patient paie le tarif réduit
+    const ref = (t.source === 'prive') ? prixReferenceListeActes(item, ctx) : 0;
+    const reference = ref > tarif ? ref : 0;
     return { tarif: tarif, source: t.source, quantite: quantite, total: total,
+             reference: reference, remise: reference ? (reference - tarif) * quantite : 0,
              baseAMU: baseAMU, partAMU: partAMU, basePrivee: basePrivee, partPrivee: partPrivee, partPatient: partPatient };
 }
 
@@ -871,6 +891,7 @@ function repartirPanierActes(ctx) {
     ctx = ctx || contexteTarificationActes();
     const lignes = panier.map(item => repartirLigneActes(item, ctx));
     const sousTotal = lignes.reduce((s, l) => s + l.total, 0);
+    const remiseListe = lignes.reduce((s, l) => s + (l.remise || 0), 0);
     const baseRemboursement = lignes.reduce((s, l) => s + l.baseAMU, 0);
     const partAMU = lignes.reduce((s, l) => s + l.partAMU, 0);
     const partPrivee = lignes.reduce((s, l) => s + l.partPrivee, 0);
@@ -888,7 +909,8 @@ function repartirPanierActes(ctx) {
     const net = arrondiActifActes() ? arrondirPartPatientActes(netBrut, PAS_ARRONDI) : netBrut;
     return { ctx: ctx, lignes: lignes, sousTotal: sousTotal, baseRemboursement: baseRemboursement,
              partAMU: partAMU, partPrivee: partPrivee, resteApresAssurances: reste,
-             typeAide: typeAide, tauxAide: tauxAide, aideHospitaliere: aide, netAPayer: net, arrondi: net - netBrut };
+             typeAide: typeAide, tauxAide: tauxAide, aideHospitaliere: aide, netAPayer: net, arrondi: net - netBrut,
+             remiseListe: remiseListe };
 }
 let tauxTempValeur = 0;
 let assurance2Active = false;
@@ -1887,7 +1909,8 @@ function afficherPanier() {
         let cellPrix = row.insertCell(2);
         cellPrix.className = 'text-center';
         let libelleTarif = '';
-        if (ligne.source === 'prive') libelleTarif = '<div class="small text-info">Tarif ' + (ctxPanier.liste ? 'liste ' + ctxPanier.liste.libelle : (patientAssurance2 || 'privé')) + '</div>';
+        if (ligne.source === 'prive' && ligne.reference) libelleTarif = '<div class="small text-warning">Réduction ' + ctxPanier.liste.libelle + ' ' + pctListeLigne(item, ctxPanier.liste) + ' % : − ' + Math.round(ligne.reference - ligne.tarif).toLocaleString('fr-FR') + ' F</div>';
+        else if (ligne.source === 'prive') libelleTarif = '<div class="small text-info">Tarif ' + (ctxPanier.liste ? 'liste ' + ctxPanier.liste.libelle : (patientAssurance2 || 'privé')) + '</div>';
         else if (ligne.source === 'non_assure') libelleTarif = '<div class="small text-secondary">Tarif non assuré</div>';
         else if (item.prix_modifie) libelleTarif = '<div class="small text-warning">Prix modifié</div>';
         // ⭐ Variante PBR ligne par ligne (patron : le choix habituel/alternatif
@@ -1904,7 +1927,7 @@ function afficherPanier() {
         }
         if (ctxPanier.liste && ligneDoitChoisirTaux(item, ctxPanier.liste)) selectVariante += selectVarianteListe(item, index, ctxPanier.liste, 'changerVarianteListeLigne');
         if (item.nuit && TARIF_NUIT_ACTIF) libelleTarif += '<div class="small text-muted">🌙 nuit / férié</div>';
-        cellPrix.innerHTML = '<input type="number" class="form-control form-control-sm" value="' + Math.round(ligne.tarif) + '" style="width: 100px; text-align: center;" onchange="modifierPrix(' + index + ', this.value)">' + libelleTarif + selectVariante;
+        cellPrix.innerHTML = '<input type="number" class="form-control form-control-sm" value="' + Math.round(ligne.reference || ligne.tarif) + '" style="width: 100px; text-align: center;" onchange="modifierPrix(' + index + ', this.value)">' + libelleTarif + selectVariante;
 
         // ⭐ La base de remboursement (PBR) n'a de sens que pour un patient
         // assuré AMU — l'afficher pour un patient non assuré laissait croire
@@ -1945,7 +1968,7 @@ function afficherPanier() {
 
         let cellTotal = row.insertCell(8);
         cellTotal.className = 'text-end';
-        cellTotal.innerHTML = Math.round(item.total).toLocaleString('fr-FR') + ' FCFA';
+        cellTotal.innerHTML = Math.round(ligne.reference ? ligne.reference * ligne.quantite : item.total).toLocaleString('fr-FR') + ' FCFA';
 
         let cellAction = row.insertCell(9);
         cellAction.className = 'text-center';
@@ -2026,8 +2049,14 @@ function calculerTotal() {
     const netAPayer = calc.netAPayer;
 
     // 🔥🔥🔥 MISE À JOUR DE L'AFFICHAGE 🔥🔥🔥
-    document.getElementById('sousTotal').innerHTML = Math.round(sousTotal).toLocaleString('fr-FR') + ' FCFA';
+    document.getElementById('sousTotal').innerHTML = Math.round(sousTotal + (calc.remiseListe || 0)).toLocaleString('fr-FR') + ' FCFA';
     afficherDecompositionTva(sousTotal);
+    const remiseListeRow = document.getElementById('remiseListeRow');
+    if (remiseListeRow) {
+        remiseListeRow.style.display = calc.remiseListe > 0 ? 'table-row' : 'none';
+        document.getElementById('remiseListeLabel').textContent = 'Réduction ' + (calc.ctx.liste ? calc.ctx.liste.libelle : '') + ' :';
+        document.getElementById('remiseListe').innerHTML = '− ' + Math.round(calc.remiseListe || 0).toLocaleString('fr-FR') + ' FCFA';
+    }
     document.getElementById('baseRemboursement').innerHTML = Math.round(baseRemboursement).toLocaleString('fr-FR') + ' FCFA';
     document.getElementById('priseEnCharge').innerHTML = Math.round(priseEnChargeAMU).toLocaleString('fr-FR') + ' FCFA';
     

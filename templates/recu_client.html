@@ -523,8 +523,15 @@
     {% else %}
     <div style="display:flex; justify-content:space-between;">
         <span>Sous-total clinique :</span>
-        <span><strong>{{ sous_total|default(0)|round(0)|int }} FCFA</strong></span>
+        <span><strong>{{ (sous_total|default(0) + remise_liste_total|default(0))|round(0)|int }} FCFA</strong></span>
     </div>
+    {% if remise_liste_total and remise_liste_total > 0 %}
+    {# ⭐ 2026-10-19 : réduction SMA sur le prix clinique #}
+    <div style="display:flex; justify-content:space-between; color:#856404;">
+        <span>Réduction {{ libelle_remise_liste }} :</span>
+        <span>- {{ remise_liste_total|round(0)|int }} FCFA</span>
+    </div>
+    {% endif %}
     {% endif %}
 
     {% if type_assurance in ['AMU-CNSS', 'AMU-INAM', 'AMU-TNS'] and base_remboursement and base_remboursement > 0 %}
