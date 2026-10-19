@@ -36,6 +36,9 @@ _SUFFIXES_PALIER = {
     '15e jours et plus': 3,
 }
 
+# Libellé de chaque palier sur les lignes d'un séjour qui en traverse plusieurs.
+LIBELLES_PALIER = {1: 'Premiere Semaine', 2: '8e jour au 14e jour', 3: '15 jours et plus'}
+
 # Ordre du plus long au plus court, pour ne jamais couper un suffixe plus
 # court qui serait contenu dans un plus long.
 _SUFFIXES_TRIES = sorted(_SUFFIXES_PALIER.keys(), key=len, reverse=True)
@@ -134,15 +137,19 @@ def _lignes_palier_depuis_grille(acte_choisi, nb_jours, date_entree, niveau_soin
     salle_commune_10_12 au niveau 2) — l'appelant se replie alors sur
     l'ancien mécanisme (détection par nom)."""
     prix = float(acte_choisi.get('prix') or 0)
+    tranches = repartir_jours(nb_jours)
+    # ⭐ 2026-10-19 : séjour sur plusieurs paliers -> chaque ligne porte SA période (bordereau AMU), comme
+    # quand le catalogue avait ses 3 lignes ; un seul palier -> nom de l'acte inchangé
+    base = nom_sans_palier(acte_choisi.get('nom'))
     lignes = []
     curseur = date_entree
-    for palier, jours in repartir_jours(nb_jours):
+    for palier, jours in tranches:
         # ⭐ 2026-10-19 (patron) : prix AMU de la grille, ramené au prix clinique s'il est plus bas
         pbr = pbr_amu_chambre(niveau_soins, categorie_salle, palier, type_prestataire, prix)
         if pbr is None:
             return None
         lignes.append({
-            'nom': acte_choisi.get('nom'),
+            'nom': f"{base} {LIBELLES_PALIER[palier]}" if len(tranches) > 1 else acte_choisi.get('nom'),
             'reference_id': acte_choisi.get('id') or acte_choisi.get('ID'),
             'prix': prix,
             'pbr': float(pbr),

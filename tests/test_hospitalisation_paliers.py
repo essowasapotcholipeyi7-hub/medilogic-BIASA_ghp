@@ -109,3 +109,18 @@ def test_hopital_de_district_375_chr_625():
     chr_ = construire_lignes_chambre(acte, 16, date(2026, 10, 1), [], True, type_prestataire='chr')
     assert [(l['quantite'], l['pbr']) for l in district] == [(7, 1875), (7, 1250), (2, 375)]
     assert [(l['quantite'], l['pbr']) for l in chr_] == [(7, 1875), (7, 1250), (2, 625)]
+
+
+def test_libelle_de_chaque_periode():
+    lignes = construire_lignes_chambre(CABINE_CHU, 16, date(2026, 10, 1), [], True, niveau_soins='3')
+    assert [l['nom'] for l in lignes] == [
+        'P160 Hospi Cabine climatisee avec 1 lit Premiere Semaine',
+        'P160 Hospi Cabine climatisee avec 1 lit 8e jour au 14e jour',
+        'P160 Hospi Cabine climatisee avec 1 lit 15 jours et plus',
+    ]
+    court = construire_lignes_chambre(CABINE_CHU, 5, date(2026, 10, 1), [], True, niveau_soins='3')
+    assert [l['nom'] for l in court] == ['P160 Hospi Cabine climatisee avec 1 lit Premiere Semaine']
+    sans_suffixe = {'id': 'H', 'nom': 'P160 Hospitalisation Cabine ventillee avec 2 lits', 'prix': 7000, 'pbr': 5000}
+    noms = [l['nom'] for l in construire_lignes_chambre(sans_suffixe, 9, date(2026, 10, 1), [], True, niveau_soins='3')]
+    assert noms == ['P160 Hospitalisation Cabine ventillee avec 2 lits Premiere Semaine',
+                    'P160 Hospitalisation Cabine ventillee avec 2 lits 8e jour au 14e jour']
