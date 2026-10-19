@@ -105,6 +105,18 @@
             </div>
         </div>
 
+        {# ⭐ 2026-10-19 : séjour en cours — chambre comptée jusqu'à la date du relevé, à titre indicatif #}
+        {% if estimation_au %}
+        <div style="background:#fff8e1; border:1px solid #ffd54f; color:#6d4c00; padding:6px 10px; margin-bottom:10px; font-size:12px;">
+            Séjour en cours : la chambre est comptée jusqu'au {{ estimation_au.strftime('%d/%m/%Y') }} (date de ce relevé), à titre indicatif.
+            Le montant définitif sera calculé à la clôture du séjour.
+        </div>
+        {% elif chambre_non_definie %}
+        <div style="background:#fff8e1; border:1px solid #ffd54f; color:#6d4c00; padding:6px 10px; margin-bottom:10px; font-size:12px;">
+            Séjour en cours : aucun tarif de chambre n'est encore choisi, la chambre n'est pas comptée dans ce relevé.
+        </div>
+        {% endif %}
+
         {% for j in jours %}
         <div class="jour-bloc">
             <div class="jour-titre">{{ j.date.strftime('%d/%m/%Y') }}</div>
@@ -126,6 +138,7 @@
                         </td>
                         <td>
                             {{ l.nom|sans_code }}
+                            {% if l.estimation is defined and l.estimation %}<small style="color:#b26a00;"> — estimation au {{ estimation_au.strftime('%d/%m/%Y') }}</small>{% endif %}
                             {% if l.date_fin_prestation %}
                                 <br><small style="color:#888;">période du {{ l.date_prestation.strftime('%d/%m') }} au {{ l.date_fin_prestation.strftime('%d/%m/%Y') }}</small>
                             {% endif %}

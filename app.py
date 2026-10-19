@@ -23079,6 +23079,28 @@ def hospitalisation_releve(hospit_id):
         q = q.filter_by(type='medicament')
     soins = q.order_by(SoinHospitalisation.date_prestation).all()
 
+    # ⭐ 2026-10-19 (patron) : séjour pas encore clôturé — la chambre est déjà comptée, jusqu'à la date du
+    # relevé (« juste pour avoir une idée du prix »), découpée par période comme à la clôture.
+    estimation_au = None
+    chambre_non_definie = False
+    if type_filtre != 'medicaments' and hospit.statut == 'en_cours':
+        if hospit.chambre_prix and hospit.nombre_jours > 0:
+            estimation_au = date.today()
+            param_amu = ParametrageAmuCnss.get_ou_creer(structure_id)
+            acte_choisi = {'id': hospit.chambre_acte_id, 'nom': hospit.chambre_acte_nom, 'prix': float(hospit.chambre_prix or 0),
+                           'pbr': float(hospit.chambre_pbr or hospit.chambre_prix or 0)}
+            for l in construire_lignes_chambre(acte_choisi, hospit.nombre_jours, hospit.date_entree,
+                                                sheets_helper.get_all_records('actes', use_prefix=True), hospit.est_assure_amu,
+                                                niveau_soins=param_amu.niveau_soins, categorie_salle=hospit.chambre_categorie_amu,
+                                                type_prestataire=param_amu.type_prestataire):
+                soins.append(SimpleNamespace(
+                    id=None, type='acte', nom=l['nom'], prix=l['prix'], pbr=l['pbr'], quantite=l['quantite'],
+                    date_prestation=l['date_prestation'], date_fin_prestation=l.get('date_fin_prestation'),
+                    prise_en_charge_amu=hospit.chambre_prise_en_charge_amu, prise_en_charge_cac=hospit.chambre_prise_en_charge_cac,
+                    statut='estimation', estimation=True))
+        else:
+            chambre_non_definie = True
+
     # ⭐ Répartition part AMU / part CAC / part patient — sur EXACTEMENT les
     # lignes affichées dans ce relevé (respecte le filtre actes/médicaments/
     # global et le toggle d'assurance de ce séjour). Absente jusqu'ici : le
@@ -23101,6 +23123,7 @@ def hospitalisation_releve(hospit_id):
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
 
     return render_template('hospitalisation_releve.html', hospit=hospit, jours=jours, total_general=total_general,
+                            estimation_au=estimation_au, chambre_non_definie=chambre_non_definie,
                             type_filtre=type_filtre, structure_nom=structure_info.get('nom', 'SSoftOneV10'),
                             repartition=repartition)
 
