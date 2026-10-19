@@ -41,7 +41,7 @@ from services.facturation_amu_service import generer_lignes_facture_amu_cnss, ch
 from utils.categories_amu_cnss import CATEGORIES_AMU_CNSS, CATEGORIES_AMU_CNSS_DICT
 from utils.categories_amu_inam import CATEGORIES_AMU_INAM, CATEGORIES_AMU_INAM_PLATES, CATEGORIES_AMU_INAM_DICT, REGIMES_AMU_INAM
 from utils.nombres_lettres import montant_en_lettres_fcfa
-from utils.grille_amu_hospitalisation import acte_virtuel_o101, CATEGORIES_SALLE_AMU, erreur_duree_observation, erreur_p160_quantite_hors_hospitalisation
+from utils.grille_amu_hospitalisation import acte_virtuel_o101, CATEGORIES_SALLE_AMU, erreur_duree_observation, erreur_p160_quantite_hors_hospitalisation, deduire_categorie_salle
 
 # ⭐ Numéro WhatsApp de l'éditeur (Togo, +228) pour l'envoi du reçu
 # d'abonnement — voir admin_finances.html.
@@ -17817,6 +17817,12 @@ def api_get_actes():
         # écrit dans les Sheets.
         actes_struct.append(dict(acte_virtuel_o101(), structure_id=structure_id))
 
+        # ⭐ 2026-10-19 (patron) : les lignes « 8e jour au 14e jour » / « 15 jours et plus » des actes P160 ne
+        # sont plus proposées — seule la première semaine se choisit, la suite est calculée automatiquement
+        # (services/hospitalisation_service.py). Elles restent visibles dans la gestion du catalogue.
+        from services.hospitalisation_service import est_ligne_semaine_suivante
+        actes_struct = [a for a in actes_struct if not est_ligne_semaine_suivante(a.get('nom') or a.get('NOM'))]
+
         # Filtrer par recherche
         if search:
             search_lower = search.lower()
@@ -17922,7 +17928,9 @@ def api_get_actes():
                         classification_service.get(str(acte_nom).strip())
                         or (deviner_service_acte(str(acte_nom).strip(), services_liste) or {}).get('id')
                     ) if parametrage_service.choix_service_actif else None,
-                    'categorie_salle_connue': categories_salle_connues.get(str(acte_nom).strip()),
+                    # ⭐ 2026-10-19 : à défaut d'une catégorie déjà mémorisée, reconnue d'après le nom
+                    'categorie_salle_connue': categories_salle_connues.get(str(acte_nom).strip())
+                                              or (deduire_categorie_salle(str(acte_nom).strip()) if 'P160' in str(acte_nom) else None),
                     'prix_non_assure': prix_non_assure_par_acte.get(str(acte_nom).strip()),
                 })
         

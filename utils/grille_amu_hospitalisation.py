@@ -92,6 +92,20 @@ GRILLE_AMU_HOSPITALISATION = {
 }
 
 
+def deviner_niveau(categorie_salle, pbr_premiere_semaine):
+    """Niveau ('3' CHU/clinique privée, '2' CHR/district/cabinet privé) dont le tarif « Première semaine »
+    de cette salle vaut `pbr_premiere_semaine` — secours quand le niveau de la structure n'est pas réglé
+    (Paramètres AMU)."""
+    try:
+        pbr = float(pbr_premiere_semaine or 0)
+    except (TypeError, ValueError):
+        return None
+    for niveau, salles in GRILLE_AMU_HOSPITALISATION.items():
+        if (salles.get(categorie_salle) or {}).get(1) == pbr:
+            return niveau
+    return None
+
+
 def erreur_duree_observation(categorie_salle, nb_jours):
     """None si `categorie_salle`/`nb_jours` ne posent pas de problème,
     sinon le message d'erreur à renvoyer — une "mise en observation" ne

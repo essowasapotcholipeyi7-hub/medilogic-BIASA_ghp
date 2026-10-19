@@ -19,7 +19,8 @@ from datetime import timedelta
 # module) — utilisé uniquement par charger_pbr_complementaires() ci-dessous.
 from models import PbrComplementaire, PrixNonAssureActe
 from services.tarification_service import repartir_ligne, pbr_prive_valeur, objets_doublons_amu
-from utils.grille_amu_hospitalisation import pbr_officiel_p160, JOURS_MAX_SANS_PALIER, deduire_categorie_salle
+from utils.grille_amu_hospitalisation import (pbr_officiel_p160, JOURS_MAX_SANS_PALIER, deduire_categorie_salle,
+                                               deviner_niveau)
 
 # Suffixe (normalisé) -> palier 1/2/3. Plusieurs variantes tolérées
 # (accents/orthographe observés dans le catalogue réel).
@@ -27,8 +28,12 @@ _SUFFIXES_PALIER = {
     'premiere semaine': 1,
     '1ere semaine': 1,
     '8e jour au 14e jour': 2,
+    '8e-14e jour': 2,
+    '8e au 14e jour': 2,
     '15 jours et plus': 3,
     '15 jour et plus': 3,
+    '15e jour et plus': 3,
+    '15e jours et plus': 3,
 }
 
 # Ordre du plus long au plus court, pour ne jamais couper un suffixe plus
@@ -81,6 +86,15 @@ def detecter_groupe_palier(nom_acte, tous_les_actes):
     return groupe
 
 
+def est_ligne_semaine_suivante(nom):
+    """⭐ 2026-10-19 (patron) : ligne « 8e jour au 14e jour » / « 15 jours et plus » d'un acte P160. Le
+    catalogue n'en a plus besoin (calculées automatiquement depuis la première semaine) : elles ne sont
+    plus proposées dans les listes de choix d'actes."""
+    if not nom or 'p160' not in str(nom).lower():
+        return False
+    return _decouper_suffixe(_normaliser(nom))[1] in (2, 3)
+
+
 def nom_sans_palier(nom):
     """Retire un suffixe de palier hebdomadaire (ex. "Premiere Semaine") du
     nom d'un acte chambre — utilisé quand aucune répartition par palier ne
@@ -119,12 +133,21 @@ def _lignes_palier_depuis_grille(acte_choisi, nb_jours, date_entree, niveau_soin
     salle_commune_10_12 au niveau 2) — l'appelant se replie alors sur
     l'ancien mécanisme (détection par nom)."""
     prix = float(acte_choisi.get('prix') or 0)
+    # ⭐ 2026-10-19 (patron) : la première semaine garde le PBR de l'acte choisi (celui du catalogue, comme
+    # pour un séjour de 7 jours ou moins — pas de saut de montant entre 7 et 8 jours) ; 8e-14e jour et
+    # 15 jours et plus viennent de la grille officielle.
+    try:
+        pbr_premiere_semaine = float(acte_choisi.get('pbr') or 0)
+    except (TypeError, ValueError):
+        pbr_premiere_semaine = 0
     lignes = []
     curseur = date_entree
     for palier, jours in repartir_jours(nb_jours):
         pbr = pbr_officiel_p160(niveau_soins, categorie_salle, palier)
         if pbr is None:
             return None
+        if palier == 1 and pbr_premiere_semaine > 0:
+            pbr = pbr_premiere_semaine
         lignes.append({
             'nom': acte_choisi.get('nom'),
             'reference_id': acte_choisi.get('id') or acte_choisi.get('ID'),
@@ -158,9 +181,11 @@ def construire_lignes_chambre(acte_choisi, nb_jours, date_entree, tous_les_actes
     groupe = None
     if patient_assure and nb_jours > JOURS_MAX_SANS_PALIER:
         # ⭐ 2026-10-19 : catégorie non renseignée -> déduite du nom de la chambre (sinon une seule ligne au
-        # PBR plein, refusée ensuite à la conversion en vente)
-        if niveau_soins and not categorie_salle:
-            categorie_salle = deduire_categorie_salle(acte_choisi.get('nom'))
+        # PBR plein, refusée ensuite à la conversion en vente) ; niveau d'après la structure ou, à défaut,
+        # d'après le tarif « Première semaine » de l'acte (patron : plus rien à choisir à la main pour que
+        # les 8e-14e jours et 15 jours et plus soient calculés)
+        categorie_salle = categorie_salle or deduire_categorie_salle(acte_choisi.get('nom'))
+        niveau_soins = niveau_soins or (deviner_niveau(categorie_salle, acte_choisi.get('pbr')) if categorie_salle else None)
         if niveau_soins and categorie_salle:
             lignes_grille = _lignes_palier_depuis_grille(
                 acte_choisi, nb_jours, date_entree, niveau_soins, categorie_salle
