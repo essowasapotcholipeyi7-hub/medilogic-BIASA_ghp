@@ -295,6 +295,33 @@ def charger_listes(structure_id, cles):
     return _lire_tarifs_compagnies(structure_id, cles) if cles else {}
 
 
+def appliquer_liste_tarif(structure_id, groupe_nom, articles, contexte, taux_complementaire, privee_patient):
+    """Pose la liste choisie (ex. « Liste SMA ») sur les lignes et sur le contexte de tarification ;
+    renvoie le groupe, ou None (grande liste). Sans `groupe_nom`, le groupe est retrouvé d'après les
+    lignes (proforma déjà enregistrée). Liste « remise » (SMA) : aucune part privée ; sinon la part de
+    l'assurance du patient (taux de sa carte) se calcule sur le tarif de la liste."""
+    groupes = listes_tarifs(structure_id) if (groupe_nom or any(a.get('liste_tarif') for a in articles)) else []
+    groupe = None
+    if groupe_nom:
+        groupe = next((g for g in groupes if g['groupe'] == groupe_nom), None)
+    else:
+        cles_lignes = {a.get('liste_tarif') for a in articles if a.get('liste_tarif')}
+        groupe = next((g for g in groupes if cles_lignes & {v['cle'] for v in g['variantes']}), None)
+    if not groupe:
+        for a in articles:
+            a.pop('liste_tarif', None)
+        return None
+    cles = [v['cle'] for v in groupe['variantes']]
+    for a in articles:
+        if a.get('liste_tarif') not in cles:
+            a['liste_tarif'] = groupe['defaut']
+    contexte['listes'] = charger_listes(structure_id, cles)
+    contexte['privee_patient'] = bool(privee_patient)
+    contexte['privee'] = True
+    contexte['taux_privee'] = taux_complementaire if (privee_patient and not groupe['remise']) else 0
+    return groupe
+
+
 def pas_arrondi_structure(structure_id):
     """Pas d'arrondi de la part patient réglé pour la structure (ex. 50 FCFA), 0 = pas d'arrondi.
     Table parametrage_tarification (migrate_tarifs_listes_nuit.py) ; absente = 0."""

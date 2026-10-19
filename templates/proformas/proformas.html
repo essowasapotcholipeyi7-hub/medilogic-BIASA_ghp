@@ -4,6 +4,7 @@
 
 {% block content %}
 <script src="{{ url_for('static', filename='js/doublons_amu.js') }}"></script>
+<script src="{{ url_for('static', filename='js/listes_tarifs.js') }}"></script>
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5>Factures Proforma</h5>
@@ -336,6 +337,32 @@
                                     </button>
                                 </div>
                             </div>
+                            {% if listes_tarifs or pas_arrondi %}
+                            <!-- ⭐ Patron (2026-10-19, Clinique Valeo) : par défaut la grande liste ; SMA et Expatriés
+                                 se choisissent ici ; arrondi de la part patient appliqué par défaut. -->
+                            <div class="row mt-2 g-2 align-items-end">
+                                {% if listes_tarifs %}
+                                <div class="col-md-6">
+                                    <label class="form-label mb-1" for="listeTarifProforma"><i class="fas fa-tags"></i> Tarif appliqué</label>
+                                    <select class="form-select" id="listeTarifProforma" onchange="changerListeTarifProforma(this.value)">
+                                        <option value="">Grande liste (selon l'assurance du patient)</option>
+                                        {% for g in listes_tarifs %}
+                                        <option value="{{ g.groupe }}">Liste {{ g.libelle }}{% if g.remise %} (réduction {% for v in g.variantes %}{{ v.pct|int }} %{% if not loop.last %} ou {% endif %}{% endfor %}){% endif %}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <div class="form-text" id="infoListeTarifProforma"></div>
+                                </div>
+                                {% endif %}
+                                {% if pas_arrondi %}
+                                <div class="col-md-6">
+                                    <div class="form-check form-switch mb-2">
+                                        <input class="form-check-input" type="checkbox" id="toggleArrondiProforma" checked onchange="afficherPanier()">
+                                        <label class="form-check-label" for="toggleArrondiProforma">Arrondir la part du patient ({{ pas_arrondi|int }} F)</label>
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                            {% endif %}
 
                             <!-- ⭐ Scan code-barres (douchette USB/Bluetooth, ou caméra via une
                                  app de scan qui "tape" le code ici) — voir
@@ -397,6 +424,11 @@
                                         <tr id="aideProformaRow" style="display:none;">
                                             <th colspan="4" class="text-end" style="color:#ffc107;">Aide hospitalière :</th>
                                             <th id="aideProformaDisplay" class="text-end" style="color:#ffc107;">0 FCFA</th>
+                                            <th></th>
+                                        </tr>
+                                        <tr id="arrondiProformaRow" style="display:none;">
+                                            <th colspan="4" class="text-end text-muted">Arrondi de la part patient :</th>
+                                            <th id="arrondiProformaDisplay" class="text-end text-muted">0 FCFA</th>
                                             <th></th>
                                         </tr>
                                         <tr class="table-warning">
@@ -633,6 +665,22 @@ let panierArticles = [];
 const PRIX_NA_PROFORMA = {acte: {{ (prix_non_assure_actes or {})|tojson|safe }}, produit: {{ (prix_non_assure_produits or {})|tojson|safe }}};
 let pbrCacMapProforma = {};
 let pbrCacMapProformaPour = null;
+// ⭐ Listes de prix (Valeo) et arrondi : static/js/listes_tarifs.js
+initListesTarifs({{ (listes_tarifs or [])|tojson|safe }}, {{ (pas_arrondi or 0)|tojson }});
+async function changerListeTarifProforma(groupe) {
+    const g = await choisirListeTarif(groupe, panierArticles);
+    const info = document.getElementById('infoListeTarifProforma');
+    if (info) info.innerHTML = texteInfoListe(g);
+    afficherPanier();
+}
+function changerVarianteListeProforma(index, cle) { panierArticles[index].liste_tarif = cle || null; afficherPanier(); }
+function resetListeTarifProforma() {
+    listeTarifActive = null;
+    const sel = document.getElementById('listeTarifProforma');
+    if (sel) sel.value = '';
+    const info = document.getElementById('infoListeTarifProforma');
+    if (info) info.innerHTML = '';
+}
 function chargerPbrCacProforma() {
     const nom = (assurance2Active && assurance2Nom && assurance2Nom !== 'Aucune') ? assurance2Nom : '';
     if (nom === pbrCacMapProformaPour) return;
@@ -648,8 +696,11 @@ function contexteTarifProforma() {
     const estAssure = typeA && typeA !== '' && typeA !== 'Non assuré';
     const tauxAMU = estAssure ? (parseFloat(document.getElementById('tauxAssurance').value) || 0) : 0;
     const taux2 = assurance2Active ? (parseFloat(document.getElementById('assurance2TauxApplique').value) || 0) : 0;
-    return {amu: tauxAMU > 0, tauxAMU: tauxAMU,
-            privee: !!(assurance2Active && assurance2Nom && assurance2Nom !== 'Aucune' && taux2 > 0), tauxPrivee: taux2};
+    const privee = !!(assurance2Active && assurance2Nom && assurance2Nom !== 'Aucune' && taux2 > 0);
+    // ⭐ liste choisie (Valeo) : son tarif s'applique ; liste « remise » (SMA) : aucune part privée
+    const liste = groupeListeActif();
+    return {amu: tauxAMU > 0, tauxAMU: tauxAMU, privee: liste ? true : privee, priveePatient: privee, liste: liste,
+            tauxPrivee: liste ? ((privee && !liste.remise) ? taux2 : 0) : taux2};
 }
 function tauxAMUArticleProforma(nom, taux) {
     if (nom && nom.includes('O101')) return 100;
@@ -666,10 +717,13 @@ function repartirLigneProforma(item, ctx, carte) {
     // ⭐ amu_doublon : même code AMU qu'une ligne au-dessus, l'AMU n'en prend qu'un par vente
     // (static/js/doublons_amu.js — même règle que tarification_service.appliquer_code_amu_unique)
     const amuLigne = ctx.amu && item.prise_en_charge_amu !== false && !item.amu_doublon;
-    const priveeLigne = ctx.privee && item.prise_en_charge_cac !== false;
+    // ⭐ liste choisie : la ligne prend le tarif de la liste ; absente de la liste, elle suit l'assurance réelle
+    const entreeL = ctx.liste ? entreeListe(item, ctx.liste) : undefined;
+    const priveeLigne = item.prise_en_charge_cac !== false && (ctx.liste ? (!!entreeL || !!ctx.priveePatient) : ctx.privee);
+    const entreeLigne = ctx.liste ? (entreeL || (ctx.priveePatient ? carte[item.nom] : undefined)) : carte[item.nom];
     let tarif = parseFloat(item.prix) || 0, source = 'base';
     if (!item.prix_modifie) {
-        const entree = priveeLigne ? carte[item.nom] : undefined;
+        const entree = priveeLigne ? entreeLigne : undefined;
         const na = parseFloat((PRIX_NA_PROFORMA[item.type === 'produit' ? 'produit' : 'acte'] || {})[item.nom]) || 0;
         if (entree && entree.tarif_prive) { tarif = parseFloat(entree.tarif_prive); source = 'prive'; }
         else if (!amuLigne && !priveeLigne && na > 0) { tarif = na; source = 'non_assure'; }
@@ -681,7 +735,7 @@ function repartirLigneProforma(item, ctx, carte) {
     let partPrivee = 0;
     if (priveeLigne && ctx.tauxPrivee > 0) {
         const reste = Math.max(total - partAMU, 0);
-        const e = carte[item.nom];
+        const e = entreeLigne;
         const pbrPrive = (e && e.pbr_1 !== null && e.pbr_1 !== undefined && e.pbr_1 > 0) ? e.pbr_1 : null;
         partPrivee = pbrPrive !== null ? Math.min(pbrPrive * q * ctx.tauxPrivee / 100, reste) : reste * ctx.tauxPrivee / 100;
     }
@@ -1510,10 +1564,11 @@ function ajouterAuPanierComplet(nom, type, prix, pbr, qte, priseEnChargeAMU, pri
             quantite: qte,
             total: prix * qte,
             prise_en_charge_amu: priseEnChargeAMU !== false,
-            prise_en_charge_cac: priseEnChargeCAC !== false
+            prise_en_charge_cac: priseEnChargeCAC !== false,
+            liste_tarif: groupeListeActif() ? cleListeParDefaut({nom: nom}, groupeListeActif()) : null
         });
     }
-    
+
     afficherPanier();
 }
 function ajouterAuPanier(nom, type, prix, qte) {
@@ -1573,6 +1628,7 @@ async function viderPanier() {
     if (panierArticles.length === 0) return;
     if (!await demanderConfirmation('Vider le panier ?')) return;
     panierArticles = [];
+    resetListeTarifProforma();
     afficherPanier();
 }
 
@@ -1652,7 +1708,7 @@ function afficherPanier() {
         item.total = l.total;
         sousTotal += item.total;
         const partAMULigne = l.partAMU, partCACLigne = l.partPrivee, partPatientLigne = l.partPatient;
-        const libelleTarif = l.source === 'prive' ? 'tarif ' + (assurance2Nom || 'privé')
+        const libelleTarif = l.source === 'prive' ? 'tarif ' + (ctxTarif.liste ? 'liste ' + ctxTarif.liste.libelle : (assurance2Nom || 'privé'))
             : (l.source === 'non_assure' ? 'prix non assuré' : (item.prix_modifie ? 'prix saisi' : ''));
 
         const row = tbody.insertRow();
@@ -1675,6 +1731,7 @@ function afficherPanier() {
                 <input type="number" class="form-control form-control-sm" value="${l.tarif}"
                        style="width:100px;" onchange="modifierPrixPanier(${index}, this.value)">
                 ${libelleTarif ? '<div class="small text-muted">' + libelleTarif + '</div>' : ''}
+                ${ctxTarif.liste && ligneDoitChoisirTaux(item, ctxTarif.liste) ? selectVarianteListe(item, index, ctxTarif.liste, 'changerVarianteListeProforma') : ''}
             </td>
             <td class="text-center">${partAMULigne > 0 ? '<span class="badge bg-success">' + Math.round(partAMULigne).toLocaleString('fr-FR') + ' F</span>' : '<span class="text-muted">-</span>'}</td>
             <td class="text-center">${partCACLigne > 0 ? '<span class="badge bg-info">' + Math.round(partCACLigne).toLocaleString('fr-FR') + ' F</span>' : '<span class="text-muted">-</span>'}</td>
@@ -1793,6 +1850,15 @@ function calculerTotal() {
         if (netAPayer < 0) netAPayer = 0;
     }
     window._proformaAide = { tauxAide: tauxAideProforma, aideHospitaliere: aideHospitaliereProforma, typeAide: typeAideProforma };
+    // ⭐ 2026-10-19 : part patient arrondie (réglage de la structure, appliqué par défaut)
+    const netAvantArrondi = netAPayer;
+    if (arrondiActif('toggleArrondiProforma')) netAPayer = arrondirPartPatient(netAPayer, PAS_ARRONDI);
+    const arrondiProformaRow = document.getElementById('arrondiProformaRow');
+    if (arrondiProformaRow) {
+        const ecart = Math.round(netAPayer - netAvantArrondi);
+        arrondiProformaRow.style.display = ecart ? '' : 'none';
+        document.getElementById('arrondiProformaDisplay').textContent = (ecart > 0 ? '+ ' : '- ') + Math.abs(ecart).toLocaleString('fr-FR') + ' FCFA';
+    }
 
     // 🔥 6. Mise à jour de l'affichage
     document.getElementById('sousTotalDisplay').textContent = Math.round(sousTotal).toLocaleString('fr-FR') + ' FCFA';
@@ -1833,6 +1899,10 @@ async function sauvegarderProforma() {
         await afficherMessage('Veuillez sélectionner un patient');
         return;
     }
+    if (lignesListeSansTaux(panierArticles) > 0) {
+        await afficherMessage(`Choisissez le taux de réduction ${groupeListeActif().libelle} sur chaque analyse de biologie (ligne en rouge dans le panier).`);
+        return;
+    }
     
     // 🔥 CORRECTION: Envoyer les articles avec les vraies valeurs
     const articles = panierArticles.map(item => ({
@@ -1847,7 +1917,8 @@ async function sauvegarderProforma() {
         prise_en_charge_cac: item.prise_en_charge_cac !== false,
         commentaire_amu: item.commentaire_amu || '',
         commentaire_cac: item.commentaire_cac || '',
-        prix_modifie: !!item.prix_modifie   // ⭐ 2026-10-15 : sinon le serveur remplaçait le prix saisi
+        prix_modifie: !!item.prix_modifie,   // ⭐ 2026-10-15 : sinon le serveur remplaçait le prix saisi
+        liste_tarif: groupeListeActif() ? (item.liste_tarif || null) : null
     }));
     
     let tauxComplementaire = 0;
@@ -1924,7 +1995,10 @@ async function sauvegarderProforma() {
         taux_aide: (window._proformaAide || {}).tauxAide || 0,
         aide_hospitaliere: (window._proformaAide || {}).aideHospitaliere || 0,
         type_aide: (window._proformaAide || {}).typeAide || 'pourcentage',
-        assurance_principale_active: document.getElementById('toggleAssurancePrincipaleActiveProforma').checked
+        assurance_principale_active: document.getElementById('toggleAssurancePrincipaleActiveProforma').checked,
+        // ⭐ 2026-10-19 : liste de prix choisie (Valeo) et arrondi de la part patient
+        liste_tarif: listeTarifActive,
+        arrondi_actif: arrondiActif('toggleArrondiProforma')
     };
     
     console.log('📦 Données proforma:', data);
@@ -2161,6 +2235,8 @@ async function convertirEnVente(proformaId) {
                 source_tarif: a.source_tarif || null,
                 prix_base: a.prix_base,
                 prix_non_assure: a.prix_non_assure,
+                liste_tarif: a.liste_tarif || null,   // ⭐ 2026-10-19 : tarif d'une liste (Valeo)
+                nuit: !!a.nuit,
                 _prix_proforma: a.prix || a.prix_unitaire || 0
             })) : [];
             
@@ -2182,6 +2258,9 @@ function afficherModalConversion(data) {
     // (mettreAJourTotauxConversion() ci-dessous), donc un second appel une
     // fois la map reçue pour refléter le plafond dès que possible.
     pbrCacConversionMap = {};
+    // ⭐ 2026-10-19 : lignes tarifées avec une liste (Valeo) -> PBR de la liste
+    const groupeConv = groupeListeDesLignes(data.articles || []);
+    if (groupeConv) chargerCartesListe(groupeConv).then(() => mettreAJourTotauxConversion());
     if (data.assurance2_nom) {
         fetch('/api/pbr-complementaires?compagnie=' + encodeURIComponent(data.assurance2_nom))
             .then(r => r.json())
@@ -2683,6 +2762,10 @@ function calculePriseEnCharge2Conversion() {
 // est aussi pris en charge par l'AMU, sinon sur le prix total.
 function partCACArticleConversion(item, taux2) {
     if (item.prise_en_charge_cac === false || taux2 <= 0) return 0;
+    // ⭐ 2026-10-19 : ligne d'une liste « remise » (SMA) : aucune part privée ; liste Expatriés : PBR de la liste
+    const groupeLigne = item.liste_tarif ? LISTES_TARIFS.find(g => g.variantes.some(v => v.cle === item.liste_tarif)) : null;
+    if (groupeLigne && groupeLigne.remise) return 0;
+    const carteLigne = (item.liste_tarif && (LISTES_MAPS[item.liste_tarif] || {})[item.nom]) ? LISTES_MAPS[item.liste_tarif] : pbrCacConversionMap;
     const tauxAMU = tauxAssurancePrincipaleConversionActuel();
     const prix = item.prix || 0;
     const quantite = item.quantite || 1;
@@ -2706,9 +2789,9 @@ function partCACArticleConversion(item, taux2) {
     // pbrCacVarianteValeur().
     const toggleApplique = document.getElementById('convertAppliquePbrCac');
     const appliquePbrCac = toggleApplique ? toggleApplique.checked : true;
-    if (appliquePbrCac && pbrCacConversionMap[item.nom] !== undefined) {
+    if (appliquePbrCac && carteLigne[item.nom] !== undefined && pbrCacVarianteValeur(carteLigne[item.nom], 'defaut') > 0) {
         const variante = document.getElementById('convertPbrCacVariante')?.value || 'defaut';
-        baseCAC = Math.min(baseCAC, pbrCacVarianteValeur(pbrCacConversionMap[item.nom], variante) * quantite);
+        baseCAC = Math.min(baseCAC, pbrCacVarianteValeur(carteLigne[item.nom], variante) * quantite);
     }
     return (baseCAC * taux2) / 100;
 }
@@ -2743,7 +2826,7 @@ function calculeNetAPayerConversion() {
     let net = sousTotal - priseEnCharge - priseEnCharge2;
     if (net < 0) net = 0;
     net -= calculeAideHospitaliereConversion();
-    return net < 0 ? 0 : net;
+    return arrondirPartPatient(net < 0 ? 0 : net, PAS_ARRONDI);   // ⭐ 2026-10-19 : comme au serveur
 }
 
 // ⭐ Désactive/réactive l'assurance principale au moment de la conversion
@@ -2952,6 +3035,7 @@ function rafraichirCouverturesConversion() {
 function prixLigneConversion(item, c) {
     const base = item._prix_proforma !== undefined ? item._prix_proforma : item.prix;
     if (item.prix_modifie || item.source_tarif !== 'prive') return item.prix;
+    if (item.liste_tarif) return base;   // ⭐ tarif d'une liste (Valeo) : choisi sur la proforma, gardé
     if (c.cac && item.prise_en_charge_cac !== false) return base;
     const amuLigne = c.amu && item.prise_en_charge_amu !== false;
     const na = parseFloat(item.prix_non_assure) || 0;
@@ -3263,7 +3347,9 @@ async function finaliserConversionVente() {
         // ces deux champs ici, la vente créée n'aurait jamais de médecin
         // attaché, donc jamais de part médecin générée (patron, 2026-09-30).
         medecin_id: item.medecin_id || null,
-        medecin_nom: item.medecin_nom || null
+        medecin_nom: item.medecin_nom || null,
+        liste_tarif: item.liste_tarif || null,   // ⭐ 2026-10-19 : tarif d'une liste (Valeo)
+        nuit: !!item.nuit
     }));
     
     // 🔥 Calculer les totaux avec les bonnes valeurs
@@ -3698,7 +3784,16 @@ function contexteTarifModif() {
     const actif2 = document.getElementById('modifToggleAssurance2').checked;
     const nom2 = (document.getElementById('modifAssurance2Nom').value || '').trim();
     const taux2 = actif2 ? (parseFloat(document.getElementById('modifAssurance2Taux').value) || 0) : 0;
-    return {amu: tauxAMU > 0, tauxAMU: tauxAMU, privee: !!(actif2 && nom2 && nom2 !== 'Aucune' && taux2 > 0), tauxPrivee: taux2, nom2: nom2};
+    const privee = !!(actif2 && nom2 && nom2 !== 'Aucune' && taux2 > 0);
+    // ⭐ 2026-10-19 : proforma faite avec une liste de prix (Valeo) — retrouvée d'après ses lignes
+    const liste = groupeListeDesLignes(window.modifArticles || []);
+    if (liste && liste.variantes.some(v => !LISTES_MAPS[v.cle])) chargerCartesListe(liste).then(() => calculerTotalModif());
+    return {amu: tauxAMU > 0, tauxAMU: tauxAMU, privee: liste ? true : privee, priveePatient: privee, liste: liste,
+            tauxPrivee: liste ? ((privee && !liste.remise) ? taux2 : 0) : taux2, nom2: nom2};
+}
+function groupeListeDesLignes(lignes) {
+    const cles = new Set((lignes || []).map(a => a.liste_tarif).filter(Boolean));
+    return cles.size ? (LISTES_TARIFS.find(g => g.variantes.some(v => cles.has(v.cle))) || null) : null;
 }
 function afficherArticlesModif(lignes) {
     const tbody = document.getElementById('modifPanierBody');
@@ -3759,6 +3854,7 @@ function calculerTotalModif() {
 
     let netAPayer = netAvantAide - aideHospitaliere;
     if (netAPayer < 0) netAPayer = 0;
+    netAPayer = arrondirPartPatient(netAPayer, PAS_ARRONDI);   // ⭐ 2026-10-19 : comme au serveur
 
     document.getElementById('modifSousTotal').textContent = Math.round(sousTotal).toLocaleString('fr-FR') + ' FCFA';
     document.getElementById('modifPriseEnCharge').textContent = Math.round(priseEnCharge).toLocaleString('fr-FR') + ' FCFA';

@@ -25,7 +25,7 @@ from services import theme_service
 from utils.modules_structure import MODULES_STRUCTURE
 from utils.onglets_recherchables import onglets_recherchables
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
-from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure, charger_prix_non_assure_nuit, listes_tarifs, charger_listes, pas_arrondi_structure
+from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure, charger_prix_non_assure_nuit, listes_tarifs, charger_listes, pas_arrondi_structure, appliquer_liste_tarif
 from services.tarification_service import repartir_ligne, repartir_panier, appliquer_code_amu_unique, objets_doublons_amu, arrondir_part_patient
 from services.laboratoire_service import charger_classification_actes, determiner_type_prestation, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
 from services.part_medecin_service import (charger_taux_part_medecin, creer_lignes_part_medecin, prestations_en_attente,
@@ -20462,7 +20462,10 @@ def proformas():
                          produits=produits_filtres,
                          # ⭐ 2026-10-15 : l'écran calcule comme le serveur (prix non assuré)
                          prix_non_assure_actes=charger_prix_non_assure(structure_id, 'acte'),
-                         prix_non_assure_produits=charger_prix_non_assure(structure_id, 'produit'))
+                         prix_non_assure_produits=charger_prix_non_assure(structure_id, 'produit'),
+                         # ⭐ 2026-10-19 : listes de prix (Valeo : SMA, Expatriés) et arrondi de la part patient
+                         listes_tarifs=listes_tarifs(structure_id),
+                         pas_arrondi=pas_arrondi_structure(structure_id))
 
 
 @app.route('/api/proformas', methods=['POST'])
@@ -20548,6 +20551,9 @@ def api_creer_proforma():
             'pbr_prive_par_acte': charger_pbr_complementaires(structure_id, assurance2_nom_pour_pbr) if (data.get('assurance2_active', False) and assurance2_nom_pour_pbr) else {},
             'applique_pbr_prive': bool(applique_pbr_cac), 'variante': pbr_cac_variante,
         }
+        # ⭐ 2026-10-19 : liste de prix choisie (Clinique Valeo : SMA, Expatriés) — voir appliquer_liste_tarif
+        groupe_liste_proforma = appliquer_liste_tarif(structure_id, data.get('liste_tarif'), articles, contexte_proforma,
+                                                      taux2_lignes, taux2_lignes > 0)
         appliquer_code_amu_unique(articles)   # un seul acte par code AMU (enregistré tel quel)
         # ⭐ 2026-10-15 : prix non assuré de CHAQUE ligne selon son type (acte / produit) — avant,
         # seulement pour une proforma de type « actes », alors que l'écran envoie toujours « mixte »
@@ -20567,6 +20573,7 @@ def api_creer_proforma():
                 'pbr_variante': article.get('pbr_variante'), 'pbr_prive_modifie': article.get('pbr_prive_modifie'),
                 'prise_en_charge_amu': article.get('prise_en_charge_amu', True),
                 'prise_en_charge_cac': article.get('prise_en_charge_cac', True),
+                'liste_tarif': article.get('liste_tarif'),
             }, contexte_proforma)
             total = ligne['total']
             article['total'] = total
@@ -20652,6 +20659,12 @@ def api_creer_proforma():
             net_a_payer -= aide_hospitaliere
             if net_a_payer < 0:
                 net_a_payer = 0
+        # ⭐ 2026-10-19 : part patient arrondie (réglage de la structure, appliqué par défaut)
+        pas_arrondi_proforma = pas_arrondi_structure(structure_id) if data.get('arrondi_actif', True) else 0
+        ecart_arrondi_proforma = 0
+        if pas_arrondi_proforma:
+            net_arrondi = arrondir_part_patient(net_a_payer, pas_arrondi_proforma)
+            ecart_arrondi_proforma, net_a_payer = net_arrondi - net_a_payer, net_arrondi
 
         print(f"📊 Sous-total clinique: {sous_total} FCFA")
         print(f"📊 Base remboursement (PBR): {base_remboursement} FCFA")
@@ -20689,6 +20702,10 @@ def api_creer_proforma():
                 'taux_original': taux_original
             } if assurance2_active and assurance2_nom else None
         }
+        if groupe_liste_proforma:
+            assurances_data['liste_tarif'] = groupe_liste_proforma['groupe']
+        if pas_arrondi_proforma:
+            assurances_data['arrondi'] = {'pas': pas_arrondi_proforma, 'ecart': round(ecart_arrondi_proforma, 2)}
         
         # Insérer la proforma
         # ⭐ created_at fixé explicitement à NOW() et statut à 'en_attente' —
@@ -21151,6 +21168,13 @@ def api_convertir_proforma():
         pbr_cac_par_acte = charger_pbr_complementaires(structure_id, assurance2_nom) if (assurance2_nom and applique_pbr_cac) else {}
 
         appliquer_code_amu_unique(articles)   # un seul acte par code AMU
+        # ⭐ 2026-10-19 : lignes tarifées avec une liste de prix (Valeo) : PBR de la liste ; liste « remise »
+        # (SMA) : aucune part privée sur ces lignes (le patient a payé le tarif réduit)
+        groupes_conv = listes_tarifs(structure_id) if any(a.get('liste_tarif') for a in articles) else []
+        cles_remise_conv = {v['cle'] for g in groupes_conv if g['remise'] for v in g['variantes']}
+        listes_conv = charger_listes(structure_id, {a.get('liste_tarif') for a in articles if a.get('liste_tarif')})
+        groupe_liste_conv = next((g['groupe'] for g in groupes_conv
+                                  if {a.get('liste_tarif') for a in articles} & {v['cle'] for v in g['variantes']}), None)
         articles_transformes = []
         for a in articles:
             prix = float(a.get('prix', a.get('prix_unitaire', 0)))
@@ -21160,7 +21184,8 @@ def api_convertir_proforma():
             # s'applique plus (décochée sur la ligne ou pour la vente) -> comme sans elle :
             # AMU encore active sur la ligne -> prix de base ; aucune -> prix non assuré.
             # Même règle que services/tarification_service.tarif_unitaire et proformas.html.
-            if a.get('source_tarif') == 'prive':
+            # ⭐ 2026-10-19 : tarif d'une liste (Valeo : SMA, Expatriés) choisie sur la proforma : gardé
+            if a.get('source_tarif') == 'prive' and not a.get('liste_tarif'):
                 from services.tarification_service import _pris
                 privee_ligne = bool(assurance2_active and float(taux_assurance2 or 0) > 0) and _pris(a.get('prise_en_charge_cac'))
                 if not privee_ligne:
@@ -21208,6 +21233,8 @@ def api_convertir_proforma():
                 # la commission (voir creer_lignes_part_medecin plus bas).
                 'medecin_id': a.get('medecin_id'),
                 'medecin_nom': a.get('medecin_nom'),
+                'liste_tarif': a.get('liste_tarif'),
+                'nuit': a.get('nuit'),
             }
 
             # 🔥 AMU — ET seulement si le patient a réellement une
@@ -21227,12 +21254,14 @@ def api_convertir_proforma():
             taux2_conv = float(taux_assurance2 or 0) if assurance2_active else 0
             ligne_conv = repartir_ligne({
                 'nom': a.get('nom'), 'prix': prix, 'pbr': pbr, 'quantite': quantite,
-                'prise_en_charge_amu': prise_amu, 'prise_en_charge_cac': prise_cac,
+                'prise_en_charge_amu': prise_amu,
+                'prise_en_charge_cac': prise_cac and a.get('liste_tarif') not in cles_remise_conv,
+                'liste_tarif': a.get('liste_tarif'), 'nuit': a.get('nuit'),
             }, {
                 'amu': bool(est_assure and taux_assurance > 0), 'taux_amu': taux_assurance,
                 'privee': taux2_conv > 0, 'taux_privee': taux2_conv,
                 'pbr_prive_par_acte': pbr_cac_par_acte, 'variante': pbr_cac_variante,
-                'appliquer_tarif_prive': False,
+                'appliquer_tarif_prive': False, 'listes': listes_conv, 'privee_patient': taux2_conv > 0,
             })
             if prise_amu and pbr > 0 and est_assure:
                 sous_total_amu += total
@@ -21302,6 +21331,12 @@ def api_convertir_proforma():
 
         if net_a_payer < 0:
             net_a_payer = 0
+        # ⭐ 2026-10-19 : part patient arrondie (réglage de la structure, appliqué par défaut)
+        pas_arrondi_conv = pas_arrondi_structure(structure_id) if data.get('arrondi_actif', True) else 0
+        ecart_arrondi_conv = 0
+        if pas_arrondi_conv:
+            net_arrondi = arrondir_part_patient(net_a_payer, pas_arrondi_conv)
+            ecart_arrondi_conv, net_a_payer = net_arrondi - net_a_payer, net_arrondi
 
         print(f"📊 Conversion proforma #{proforma_id}")
         print(f"   Sous-total: {sous_total} FCFA")
@@ -21335,6 +21370,10 @@ def api_convertir_proforma():
                 'montant_prise_en_charge': prise_en_charge2
             } if assurance2_nom and taux_assurance2 > 0 else None
         }
+        if groupe_liste_conv:
+            assurances_data['liste_tarif'] = groupe_liste_conv
+        if pas_arrondi_conv:
+            assurances_data['arrondi'] = {'pas': pas_arrondi_conv, 'ecart': round(ecart_arrondi_conv, 2)}
 
         # 🔥 Récupérer les données de paiement
         montant_donne = float(data.get('montant_donne') or 0)
@@ -23597,6 +23636,8 @@ def _calculer_montants_proforma(structure_id, data, articles, applique_pbr_cac=T
         'pbr_prive_par_acte': charger_pbr_complementaires(structure_id, assurance2_nom) if (assurance2_active and assurance2_nom) else {},
         'applique_pbr_prive': bool(applique_pbr_cac), 'variante': pbr_cac_variante or 'defaut',
     }
+    # ⭐ 2026-10-19 : liste de prix (Valeo) — choisie à l'écran, sinon retrouvée d'après les lignes
+    appliquer_liste_tarif(structure_id, data.get('liste_tarif'), articles, contexte, taux_assurance2, taux_assurance2 > 0)
     cartes_na = {'acte': charger_prix_non_assure(structure_id, 'acte'),
                  'produit': charger_prix_non_assure(structure_id, 'produit')}
     sous_total = sous_total_amu = pbr_total_amu = part_amu = part_privee = 0.0
@@ -23611,6 +23652,7 @@ def _calculer_montants_proforma(structure_id, data, articles, applique_pbr_cac=T
             'prix_non_assure': article.get('prix_non_assure'), 'prix_modifie': article.get('prix_modifie'),
             'pbr_variante': article.get('pbr_variante'), 'pbr_prive_modifie': article.get('pbr_prive_modifie'),
             'prise_en_charge_amu': article['prise_en_charge_amu'], 'prise_en_charge_cac': article['prise_en_charge_cac'],
+            'liste_tarif': article.get('liste_tarif'),
         }, contexte)
         article['prix_base'] = prix
         article['prix'] = article['prix_unitaire'] = ligne['tarif_unitaire']
@@ -23638,6 +23680,9 @@ def _calculer_montants_proforma(structure_id, data, articles, applique_pbr_cac=T
     if taux_aide > 0 and net_a_payer > 0:
         aide = min(taux_aide, net_a_payer) if type_aide == 'montant' else net_a_payer * taux_aide / 100
         net_a_payer = max(net_a_payer - aide, 0.0)
+    # ⭐ 2026-10-19 : part patient arrondie (réglage de la structure, appliqué par défaut)
+    if data.get('arrondi_actif', True):
+        net_a_payer = arrondir_part_patient(net_a_payer, pas_arrondi_structure(structure_id))
     return {
         'articles': articles, 'sous_total': sous_total, 'prise_en_charge': prise_en_charge,
         'prise_en_charge2': prise_en_charge2, 'base_remboursement': min(sous_total_amu, pbr_total_amu) if est_assure else 0.0,
