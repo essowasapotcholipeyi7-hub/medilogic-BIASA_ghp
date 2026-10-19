@@ -15625,7 +15625,9 @@ def api_identite_resultat(demande_id):
     if not demande:
         return jsonify({'success': False, 'error': 'Demande introuvable'}), 404
     res = {'nom': demande.patient_nom or '', 'prenom': '', 'sexe': '', 'sexe_code': '', 'age_jours': None,
-           'age': '', 'telephone': '',
+           'age': '', 'telephone': '', 'patient': demande.patient_nom or '',
+           # ⭐ 2026-10-19 : comptes rendus de radiologie (« Baguida, le 19/10/2026 »)
+           'date_complete': datetime.now().strftime('%d/%m/%Y'),
            'date': datetime.now().strftime('%d/%m/%y'),
            'date_prelevement': demande.created_at.strftime('%d/%m/%y') if demande.created_at else ''}
     # ⭐ 2026-10-18 (patron : « ça doit commencer par 1 ») : N° du compte rendu propre à la structure et à
@@ -15637,6 +15639,7 @@ def api_identite_resultat(demande_id):
     p = Patient.query.get(demande.patient_id) if demande.patient_id else None
     if p and str(p.structure_id) == str(structure_id):
         dechiffrer_patients_orm([p])
+        res['patient'] = f"{(p.nom or '').upper()} {p.prenom or ''}".strip() or res['patient']
         res.update(nom=(p.nom or '').upper(), prenom=p.prenom or '', telephone=p.telephone or '',
                    sexe={'F': 'Féminin', 'M': 'Masculin'}.get(getattr(p, 'sexe', None) or '', ''))
         res['sexe_code'] = getattr(p, 'sexe', None) or ''

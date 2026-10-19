@@ -128,6 +128,8 @@
                 <div id="zoneModeEditeur" style="display:none;">
                     <div class="mb-2">
                         <label class="form-label mb-1">Charger un modèle (facultatif)</label>
+                        <input type="search" class="form-control form-control-sm mb-1" id="resultatModeleRecherche"
+                               placeholder="Rechercher un modèle (ex. thorax, genou, cervical...)" oninput="filtrerModeles(this.value)">
                         <select class="form-select form-select-sm" id="resultatModeleSelect" onchange="chargerModeleDansEditeur()">
                             <option value="">-- Partir d'une page vierge --</option>
                         </select>
@@ -216,6 +218,11 @@ function afficherFormulaire(html) {
                 sel.classList.add('mf-a-completer');
                 sel.title = "Sexe absent de la fiche du patient : choisissez-le ici (et complétez la fiche patient)";
             }
+        });
+        // ⭐ 2026-10-19 : compte rendu en texte libre (radiologie) — sexe absent de la fiche : case signalée
+        if (!d.sexe) zone.querySelectorAll('span[data-id="sexe"]').forEach(sp => {
+            sp.classList.add('mf-a-completer');
+            sp.title = "Sexe absent de la fiche du patient : saisissez-le ici (et complétez la fiche patient)";
         });
         zone.querySelectorAll('[data-id]').forEach(el => {
             const v = d[el.dataset.id];
@@ -322,6 +329,7 @@ function figerFormulaire() {
         sp.textContent = v;
         t.replaceWith(sp);
     });
+    c.querySelectorAll('.mf-libre').forEach(d => { d.removeAttribute('contenteditable'); d.removeAttribute('spellcheck'); d.classList.remove('mf-libre'); });
     c.querySelectorAll('tr.mf-retiree').forEach(tr => tr.remove());
     if (document.getElementById('mfMasquerVides').checked) {
         // cadre d'identification : une case vide disparaît avec son intitulé (ex. pas d'hypothèse)
@@ -354,6 +362,21 @@ function figerFormulaire() {
         c.querySelectorAll('table').forEach(t => { if (!t.querySelector('tr')) t.remove(); });
     }
     return c.outerHTML;
+}
+
+// ⭐ 2026-10-19 : recherche dans la liste des modèles (sans accents, plusieurs mots) — la liste s'ouvre en
+// grand et ne montre que les modèles qui correspondent ; un clic charge le modèle
+function filtrerModeles(q) {
+    const sel = document.getElementById('resultatModeleSelect');
+    const termes = _sansAccents(q).split(/\s+/).filter(Boolean);
+    let visibles = 0;
+    [...sel.options].forEach(o => {
+        if (!o.value) { o.hidden = termes.length > 0; return; }
+        const ok = termes.every(t => _sansAccents(o.textContent).includes(t));
+        o.hidden = !ok;
+        if (ok) visibles++;
+    });
+    sel.size = termes.length ? Math.min(10, Math.max(2, visibles)) : 0;
 }
 
 // ⭐ 2026-10-18 : modèle proposé pour l'acte (dernier utilisé pour cet acte, sinon d'après les noms)

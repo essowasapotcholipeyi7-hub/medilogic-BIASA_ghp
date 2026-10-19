@@ -547,6 +547,8 @@ STYLE = """<style>
 .modele-formulaire .mf-a-completer{outline:2px solid #fd7e14}
 .modele-formulaire .mf-combo::placeholder{color:#8aa;font-style:italic;font-size:9pt}
 .modele-formulaire tr.mf-retiree{opacity:.3;text-decoration:line-through}
+.modele-formulaire .mf-libre{outline:1px dashed #9ec5fe;outline-offset:3px;border-radius:3px;cursor:text}
+.modele-formulaire .mf-libre:focus{outline:2px solid #0d6efd;background:#fffef5}
 </style>"""
 
 
@@ -571,6 +573,8 @@ def adapter_entete(html, structure, type_prestation='analyse'):
     logo_url)."""
     if not est_formulaire(html):
         return html
+    if 'mf-entete-fixe' in html[:20000]:
+        return html   # ⭐ 2026-10-19 : en-tête du Word gardé tel quel (voulu par la structure, ex. radiologie Valeo)
     structure = structure or {}
     nom = (structure.get('nom') or '').strip()
     email = (structure.get('email') or '').strip().lower()
@@ -721,7 +725,14 @@ def nfs_depuis_docx(data):
 _MOTS_VIDES = {'de', 'du', 'des', 'la', 'le', 'les', 'et', 'ou', 'un', 'une', 'en', 'au', 'aux', 'par', 'sur', 'avec',
                'test', 'tests', 'dosage', 'isole', 'rapide', 'rapides', 'valides', 'recherche', 'examen', 'model', 'modele',
                'serologie', 'taux', 'bilan', 'fractions', 'total', 'totale', 'anticorps', 'bandelettes', 'complete', 'anti',
-               'sang', 'sanguin', 'urinaire', 'urinaires', 'directe', 'temps'}
+               'sang', 'sanguin', 'urinaire', 'urinaires', 'directe', 'temps',
+               # ⭐ 2026-10-19 : radiologie (Valeo) — mots présents dans presque tous les actes et comptes rendus
+               'radiologique', 'radiologiques', 'radiographie', 'radiographique', 'incidence', 'incidences',
+               'minimum', 'deux', 'trois', 'face', 'profil', 'standard', 'sans', 'preparation', 'element',
+               'quel', 'que', 'soit', 'nombre', 'plus', 'inferieur', 'egal', 'incluant', 'davantage'}
+# acte -> mot du modèle (ex. « Examen radiologique des poumons et du cœur » -> modèle Thorax)
+_SYNONYMES = {'poumon': 'thorax', 'poumons': 'thorax', 'coeur': 'thorax', 'pulmonaire': 'thorax',
+              'hanche': 'bassin', 'salpingograhie': 'hysterosalpingographie', 'salpingographie': 'hysterosalpingographie'}
 
 
 def _norm(t):
@@ -734,7 +745,8 @@ def _mots(texte, paires=False):
     mots = set()
     brut = re.findall(r'[a-z0-9]+', _norm(texte))
     if paires:   # « Ag HBs » -> « aghbs »
-        mots.update(a + b for a, b in zip(brut, brut[1:]) if len(a + b) >= 4 and not (a + b).isdigit())
+        mots.update(a + b for a, b in zip(brut, brut[1:]) if len(a + b) >= 4 and not (a + b).isdigit()
+                    and a not in _MOTS_VIDES and b not in _MOTS_VIDES)
     for m in brut:
         if m in _MOTS_VIDES or m.isdigit():
             continue
@@ -746,7 +758,7 @@ def _mots(texte, paires=False):
 def _texte_html(html, listes=False):
     """Texte d'un modèle, sans l'en-tête ni le cadre d'identification ; listes=True : seulement les
     choix des listes déroulantes (paramètres d'hémostase, normes...), listes=False : le reste."""
-    html = re.sub(r'<style.*?</style>|<table class="mf-(?:entete|identite)".*?</table>', ' ', html or '', flags=re.S)
+    html = re.sub(r'<style.*?</style>|<table class="mf-(?:entete|identite)[^"]*".*?</table>', ' ', html or '', flags=re.S)
     choix = re.findall(r'<option>(.*?)</option>', html, flags=re.S)
     if listes:
         return ' '.join(choix)
@@ -765,6 +777,7 @@ def proposer_modele(acte_nom, modeles):
     est ignoré."""
     acte = re.sub(r'^[A-Z]{1,3}\d{2,4}\s*', '', (acte_nom or '').strip())
     mots_acte = _mots(acte, paires=True)
+    mots_acte |= {_SYNONYMES[m] for m in mots_acte if m in _SYNONYMES}
     if not mots_acte:
         return None
 
@@ -782,10 +795,156 @@ def proposer_modele(acte_nom, modeles):
         mid, (mots_nom, mots_contenu, mots_listes) = (m[0], m[1]) if len(m) == 2 else (m[0], mots_modele(m[1], m[2]))
         note = sum(3 if present(m, mots_nom) else (2 if abrege(m, mots_nom) else 0) for m in mots_acte)             + sum(1 if present(m, mots_contenu) else (0.5 if present(m, mots_listes) else 0) for m in mots_acte)
         if note:
-            notes.append((note, -len(mots_contenu | mots_listes), mid))
+            # ⭐ 2026-10-19 : à égalité, la version « normale » d'un examen (radiologie : Genou - normal avant
+            # Genou - traumatique), puis le modèle le plus court
+            notes.append((note, int(bool(mots_nom & {'normal', 'normale'})), -len(mots_contenu | mots_listes), mid))
     if not notes:
         return None
     notes.sort(reverse=True)
-    if len(notes) > 1 and notes[0][0] == notes[1][0] and notes[0][1] == notes[1][1]:
+    if len(notes) > 1 and notes[0][:3] == notes[1][:3]:
         return None
-    return notes[0][2]
+    return notes[0][3]
+
+
+# ============================================================
+# ⭐ 2026-10-19 (patron, Clinique Valeo — modèles de comptes rendus de RADIOLOGIE) : comptes rendus en
+# texte libre (pas de listes Word). Le cadre d'identité (date, patient, sexe, âge, n° de dossier,
+# prescripteur) devient des cases remplies par le logiciel ; le texte, du titre de l'examen à la
+# conclusion, reste modifiable ; l'en-tête du Word est reproduit tel quel (ligne par ligne, logo à gauche).
+# Les valeurs d'identité restées dans le Word (vrais patients) sont effacées, y compris dans la copie
+# du Word gardée avec le modèle.
+# ============================================================
+_ETIQUETTES_IDENTITE = [
+    ('date_complete', re.compile(r'^\s*[^\W\d][\w\'\- ]*,\s*le(?=\s|\d|$)\s*', re.I)),   # « Baguida, le11 09 2025 » aussi
+    ('patient', re.compile(r'^\s*patient\s*\(?\s*e?\s*\)?\s*:\s*', re.I)),
+    ('sexe', re.compile(r'^\s*sexe\s*:\s*', re.I)),
+    ('age', re.compile(r'^\s*[aâ]ge\s*:\s*', re.I)),
+    ('dossier', re.compile(r'^\s*num[ée]ro\s+de\s+dossier\s*:\s*', re.I)),
+    ('prescripteur', re.compile(r'^\s*prescripteur\s*:\s*', re.I)),
+]
+_MARQUE = '⟦{}⟧'
+
+
+def _vider_identite_xml(xml, avec_marques):
+    """document.xml (texte) : dans les paragraphes d'identité (avant « INDICATION »), garde l'intitulé et
+    efface la valeur — remplacée par une marque ⟦clé⟧ si `avec_marques`. Édition au niveau du texte XML :
+    rien d'autre n'est touché (le Word reste ouvrable)."""
+    from html import unescape
+    from xml.sax.saxutils import escape as xml_escape
+    sortie, pos, vus = [], 0, set()
+    for mp in re.finditer(r'<w:p[ >].*?</w:p>', xml, re.S):
+        p = mp.group(0)
+        runs = list(re.finditer(r'(<w:t(?:\s[^>]*)?>)(.*?)(</w:t>)', p, re.S))
+        textes = [unescape(m.group(2)) for m in runs]
+        complet = ''.join(textes)
+        if re.search(r'indication', complet, re.I):
+            break
+        cle = next((c for c, motif in _ETIQUETTES_IDENTITE if c not in vus and motif.match(complet)), None)
+        if not cle:
+            continue
+        vus.add(cle)
+        fin = dict(_ETIQUETTES_IDENTITE)[cle].match(complet).end()
+        nouveaux, consomme, marque_mise = [], 0, False
+        for t in textes:
+            garde = t[:max(0, fin - consomme)]
+            consomme += len(t)
+            if not marque_mise and consomme >= fin:
+                garde += _MARQUE.format(cle) if avec_marques else ''
+                marque_mise = True
+            nouveaux.append(garde)
+        for m, t in reversed(list(zip(runs, nouveaux))):
+            ouv = m.group(1) if 'xml:space' in m.group(1) else m.group(1).replace('<w:t', '<w:t xml:space="preserve"', 1)
+            p = p[:m.start()] + ouv + xml_escape(t) + m.group(3) + p[m.end():]
+        sortie.append(xml[pos:mp.start()] + p)
+        pos = mp.end()
+    sortie.append(xml[pos:])
+    return ''.join(sortie)
+
+
+def _docx_remplace(data, nom, contenu):
+    z = zipfile.ZipFile(BytesIO(data))
+    out = BytesIO()
+    with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as zo:
+        for item in z.infolist():
+            zo.writestr(item, contenu if item.filename == nom else z.read(item.filename))
+    return out.getvalue()
+
+
+def _entete_fixe(z, racine):
+    """En-tête du Word reproduit ligne par ligne (gras, taille), logo à gauche, filet dessous."""
+    import base64
+    MCNS = '{http://schemas.openxmlformats.org/markup-compatibility/2006}'
+    try:
+        rels_doc = {r.get('Id'): r.get('Target') for r in ET.fromstring(z.read('word/_rels/document.xml.rels'))}
+    except Exception:
+        return ''
+    meilleur = None
+    for ref in racine.findall('.//' + W + 'headerReference'):
+        cible = rels_doc.get(ref.get(REL + 'id'))
+        try:
+            h = ET.fromstring(z.read('word/' + cible))
+        except Exception:
+            continue
+        if meilleur is None or len(_texte_brut(h)) > len(_texte_brut(meilleur[1])):
+            meilleur = (cible, h)
+    if not meilleur:
+        return ''
+    cible, h = meilleur
+    logo = ''
+    blip = h.find('.//{http://schemas.openxmlformats.org/drawingml/2006/main}blip')
+    if blip is not None:
+        try:
+            rels_h = {r.get('Id'): r.get('Target')
+                      for r in ET.fromstring(z.read('word/_rels/' + cible.split('/')[-1] + '.rels'))}
+            chemin = 'word/' + rels_h[blip.get(REL + 'embed')]
+            mime = 'image/png' if chemin.lower().endswith('.png') else 'image/jpeg'
+            logo = f'<img src="data:{mime};base64,{base64.b64encode(z.read(chemin)).decode()}" alt="" style="max-height:95px;max-width:100%">'
+        except Exception:
+            logo = ''
+    for fb in h.iter(MCNS + 'Fallback'):   # zones de texte : la version de secours répète le texte
+        fb.clear()
+    lignes, vues = [], set()
+    for p in h.iter(W + 'p'):
+        if p.find('.//' + W + 'p') is not None:
+            continue
+        texte = ''.join(t.text or '' for t in p.iter(W + 't')).strip()
+        if not texte or texte in vues:
+            continue
+        vues.add(texte)
+        rpr = next((r.find(W + 'rPr') for r in p.iter(W + 'r') if r.find(W + 'rPr') is not None), None)
+        gras = rpr is not None and _actif(rpr, 'b')
+        sz = _val(rpr, 'sz') if rpr is not None else None
+        taille = f'font-size:{int(sz) / 2:g}pt;' if sz and str(sz).isdigit() else ''
+        lignes.append(f'<div style="{taille}{"font-weight:bold;" if gras else ""}">{escape(texte)}</div>')
+    if not (logo or lignes):
+        return ''
+    return ('<table class="mf-entete mf-entete-fixe"><tr>'
+            f'<td style="width:30%;vertical-align:middle">{logo}</td>'
+            f'<td style="text-align:center;vertical-align:middle">{"".join(lignes)}</td>'
+            '</tr></table><div style="border-top:1.5px solid #000;margin:2px 0 10px"></div>')
+
+
+def docx_compte_rendu_libre(data):
+    """Word de compte rendu en texte libre -> (HTML du modèle, copie du Word sans identité de patient)."""
+    z = zipfile.ZipFile(BytesIO(data))
+    xml = z.read('word/document.xml').decode('utf-8')
+    propre = _docx_remplace(data, 'word/document.xml', _vider_identite_xml(xml, False).encode('utf-8'))
+    marque = _docx_remplace(data, 'word/document.xml', _vider_identite_xml(xml, True).encode('utf-8'))
+    html = docx_vers_formulaire(marque)
+    for cle, _ in _ETIQUETTES_IDENTITE:
+        html = html.replace(_MARQUE.format(cle),
+                            f'<span class="mf-champ mf-texte" data-id="{cle}" contenteditable="true"></span>', 1)
+    zm = zipfile.ZipFile(BytesIO(marque))
+    entete = _entete_fixe(zm, ET.fromstring(zm.read('word/document.xml')))
+    m = re.search(r'<table class="mf-entete">.*?</table>', html, flags=re.S)
+    if entete:
+        html = html.replace(m.group(0), entete, 1) if m else html.replace('</style>', '</style>' + entete, 1)
+    # texte modifiable : du titre de l'examen (après le prescripteur) jusqu'avant « Bien confraternellement »
+    i = html.find('data-id="prescripteur"')
+    debut = html.find('</p>', i) + 4 if i >= 0 else html.find('<p', max(0, html.lower().find('indication') - 300))
+    j = html.lower().find('confraternellement')
+    fin = html.rfind('<p', 0, j) if j >= 0 else html.rfind('</div>')
+    if 0 < debut < fin:
+        html = (html[:debut] + '<div class="mf-libre" contenteditable="true" spellcheck="true">'
+                + html[debut:fin] + '</div>' + html[fin:])
+    return html, propre
