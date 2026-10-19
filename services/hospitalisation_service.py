@@ -289,6 +289,11 @@ def listes_tarifs(structure_id):
     return resultat
 
 
+def remise_pct_listes(structure_id):
+    """{cle: pourcentage} des listes « remise » de la structure (SMA : {'Liste SMA 25 %': 25, ...})."""
+    return {v['cle']: v['pct'] for g in listes_tarifs(structure_id) if g['remise'] for v in g['variantes'] if v['pct']}
+
+
 def charger_listes(structure_id, cles):
     """{cle_liste: {nom_acte: {...}}} pour les listes demandées (seulement des noms « Liste … »)."""
     cles = [c for c in (cles or []) if c and str(c).startswith(PREFIXE_LISTE)]
@@ -322,6 +327,7 @@ def appliquer_liste_tarif(structure_id, groupe_nom, articles, contexte, taux_com
     # ligne absente de la liste reste couverte par l'assurance réelle du patient
     contexte['taux_privee'] = taux_complementaire if privee_patient else 0
     contexte['listes_remise'] = set(cles) if groupe['remise'] else set()
+    contexte['remise_pct'] = {v['cle']: v['pct'] for v in groupe['variantes'] if v['pct']} if groupe['remise'] else {}
     return groupe
 
 
@@ -551,7 +557,7 @@ def calculer_repartition_assurance(soins, hospit, pbr_cac_par_acte=None, pbr_cac
     # séjour — voir contexte_tarif_sejour ; le tarif appliqué est posé sur chaque ligne (tarif_applique).
     info = contexte_tarif_sejour(hospit, pbr_cac_par_acte, pbr_cac_variante)
     contexte = info['contexte']
-    sous_total = part_amu = part_cac = 0.0
+    sous_total = part_amu = part_cac = reduction_liste = 0.0
     doublons_amu = objets_doublons_amu(soins)   # un seul acte par code AMU
     for s in soins:
         ligne = repartir_ligne(article_tarif_soin(
@@ -572,13 +578,22 @@ def calculer_repartition_assurance(soins, hospit, pbr_cac_par_acte=None, pbr_cac
         sous_total += ligne['total']
         part_amu += ligne['part_amu']
         part_cac += ligne['part_privee']
-    part_patient = max(sous_total - part_amu - part_cac, 0.0)
+        reduction_liste += ligne['reduction_liste']
+        try:
+            s.reduction_liste = ligne['reduction_liste']
+            if ligne['reduction_liste'] and info['groupe']:   # SMA après l'AMU : taux affiché sur la ligne
+                cle = info['variantes'].get(str(getattr(s, 'id', ''))) or info['groupe']['defaut']
+                s.pct_liste = next((v['pct'] for v in info['groupe']['variantes'] if v['cle'] == cle), None)
+        except AttributeError:
+            pass
+    part_patient = max(sous_total - part_amu - part_cac - reduction_liste, 0.0)   # SMA après l'AMU
 
     return {
         'sous_total': sous_total,
         'part_amu': part_amu,
         'part_cac': part_cac,
         'part_patient': part_patient,
+        'reduction_liste': reduction_liste,
         'est_assure_amu': est_assure,
         'a_cac': a_cac,
     }

@@ -733,7 +733,9 @@ function repartirLigneProforma(item, ctx, carte) {
     const priveeLigne = item.prise_en_charge_cac !== false && (ctx.liste ? (!!entreeL || !!ctx.priveePatient) : ctx.privee);
     const entreeLigne = ctx.liste ? (entreeL || (ctx.priveePatient ? carte[item.nom] : undefined)) : carte[item.nom];
     let tarif = parseFloat(item.prix) || 0, source = 'base';
-    if (!item.prix_modifie) {
+    // ⭐ SMA + AMU (patron 2026-10-19) : prix clinique, la réduction SMA se calcule après l'AMU
+    const smaApresAMU = amuLigne && ctx.liste && pctRemiseListe(item, ctx.liste) > 0;
+    if (!item.prix_modifie && !smaApresAMU) {
         const entree = priveeLigne ? entreeLigne : undefined;
         const na = parseFloat((PRIX_NA_PROFORMA[item.type === 'produit' ? 'produit' : 'acte'] || {})[item.nom]) || 0;
         if (entree && entree.tarif_prive) { tarif = parseFloat(entree.tarif_prive); source = 'prive'; }
@@ -750,8 +752,9 @@ function repartirLigneProforma(item, ctx, carte) {
         const pbrPrive = (e && e.pbr_1 !== null && e.pbr_1 !== undefined && e.pbr_1 > 0) ? e.pbr_1 : null;
         partPrivee = pbrPrive !== null ? Math.min(pbrPrive * q * ctx.tauxPrivee / 100, reste) : reste * ctx.tauxPrivee / 100;
     }
-    return {tarif: tarif, source: source, total: total, partAMU: partAMU, partPrivee: partPrivee,
-            partPatient: Math.max(total - partAMU - partPrivee, 0)};
+    const reductionListe = (source === 'base' && ctx.liste) ? reductionApresAMU(item, ctx.liste, amuLigne, total, partAMU, partPrivee) : 0;
+    return {tarif: tarif, source: source, total: total, partAMU: partAMU, partPrivee: partPrivee, reductionListe: reductionListe,
+            partPatient: Math.max(total - partAMU - partPrivee - reductionListe, 0)};
 }
 let patientsList = [];
 let actesList = [];
@@ -1720,7 +1723,8 @@ function afficherPanier() {
         sousTotal += item.total;
         const partAMULigne = l.partAMU, partCACLigne = l.partPrivee, partPatientLigne = l.partPatient;
         const refLigne = prixReferenceProforma(item, ctxTarif, l);
-        const libelleTarif = refLigne ? 'réduction ' + ctxTarif.liste.libelle + ' ' + (((ctxTarif.liste.variantes.find(v => v.cle === (item.liste_tarif || ctxTarif.liste.defaut)) || {}).pct) || '') + ' % : − ' + Math.round(refLigne - l.tarif).toLocaleString('fr-FR') + ' F'
+        const libelleTarif = l.reductionListe > 0 ? 'réduction ' + ctxTarif.liste.libelle + ' ' + pctRemiseListe(item, ctxTarif.liste) + ' % après AMU : − ' + Math.round(l.reductionListe).toLocaleString('fr-FR') + ' F'
+            : refLigne ? 'réduction ' + ctxTarif.liste.libelle + ' ' + (((ctxTarif.liste.variantes.find(v => v.cle === (item.liste_tarif || ctxTarif.liste.defaut)) || {}).pct) || '') + ' % : − ' + Math.round(refLigne - l.tarif).toLocaleString('fr-FR') + ' F'
             : l.source === 'prive' ? 'tarif ' + (ctxTarif.liste ? 'liste ' + ctxTarif.liste.libelle : (assurance2Nom || 'privé'))
             : (l.source === 'non_assure' ? 'prix non assuré' : (item.prix_modifie ? 'prix saisi' : ''));
 
@@ -1804,7 +1808,7 @@ function calculerTotal() {
     // ⭐ 2026-10-15 : lignes calculées comme au serveur (repartirLigneProforma)
     chargerPbrCacProforma();
     const ctxTotal = contexteTarifProforma();
-    let sousTotal = 0, partAMUTotal = 0, partPriveeTotal = 0, remiseListe = 0;
+    let sousTotal = 0, partAMUTotal = 0, partPriveeTotal = 0, remiseListe = 0, reductionListe = 0;
     if (window.marquerDoublonsAMU) marquerDoublonsAMU(panierArticles);   // un seul acte par code AMU
     for (const item of panierArticles) {
         const l = repartirLigneProforma(item, ctxTotal);
@@ -1813,6 +1817,7 @@ function calculerTotal() {
         if (ref) remiseListe += (ref - l.tarif) * (parseFloat(item.quantite) || 0);
         partAMUTotal += l.partAMU;
         partPriveeTotal += l.partPrivee;
+        reductionListe += l.reductionListe || 0;   // SMA après l'AMU
     }
 
     // 🔥 2-3. AMU
@@ -1843,7 +1848,7 @@ function calculerTotal() {
     }
     
     // 🔥 5. Net à payer
-    let netAPayer = sousTotal - priseEnChargeAMU - priseEnChargeCAC;
+    let netAPayer = sousTotal - priseEnChargeAMU - priseEnChargeCAC - reductionListe;
     if (netAPayer < 0) netAPayer = 0;
 
     // ⭐ 5bis. Aide hospitalière (% plafonné à 100, ou montant direct FCFA) —
@@ -1879,9 +1884,9 @@ function calculerTotal() {
     document.getElementById('sousTotalDisplay').textContent = Math.round(sousTotal + remiseListe).toLocaleString('fr-FR') + ' FCFA';
     const remiseListeProformaRow = document.getElementById('remiseListeProformaRow');
     if (remiseListeProformaRow) {
-        remiseListeProformaRow.style.display = remiseListe > 0 ? '' : 'none';
+        remiseListeProformaRow.style.display = (remiseListe + reductionListe) > 0 ? '' : 'none';
         document.getElementById('remiseListeProformaLabel').textContent = 'Réduction ' + (ctxTotal.liste ? ctxTotal.liste.libelle : '') + ' :';
-        document.getElementById('remiseListeProformaDisplay').textContent = '− ' + Math.round(remiseListe).toLocaleString('fr-FR') + ' FCFA';
+        document.getElementById('remiseListeProformaDisplay').textContent = '− ' + Math.round(remiseListe + reductionListe).toLocaleString('fr-FR') + ' FCFA';
     }
     document.getElementById('priseEnChargeDisplay').textContent = Math.round(priseEnChargeAMU).toLocaleString('fr-FR') + ' FCFA';
     document.getElementById('netAPayerDisplay').textContent = Math.round(netAPayer).toLocaleString('fr-FR') + ' FCFA';
@@ -2257,6 +2262,7 @@ async function convertirEnVente(proformaId) {
                 prix_base: a.prix_base,
                 prix_non_assure: a.prix_non_assure,
                 liste_tarif: a.liste_tarif || null,   // ⭐ 2026-10-19 : tarif d'une liste (Valeo)
+                reduction_liste: parseFloat(a.reduction_liste) || 0,   // SMA après l'AMU (calculée par le serveur)
                 nuit: !!a.nuit,
                 _prix_proforma: a.prix || a.prix_unitaire || 0
             })) : [];
@@ -2847,6 +2853,7 @@ function calculeNetAPayerConversion() {
     const priseEnCharge2 = calculePriseEnCharge2Conversion();
     let net = sousTotal - priseEnCharge - priseEnCharge2;
     if (net < 0) net = 0;
+    net -= panierConversion.reduce((t, i) => t + (parseFloat(i.reduction_liste) || 0), 0);   // SMA après l'AMU
     net -= calculeAideHospitaliereConversion();
     net = net < 0 ? 0 : net;
     return window.conversionArrondie ? arrondirPartPatient(net, PAS_ARRONDI) : net;   // ⭐ 2026-10-19 : comme au serveur
@@ -3850,7 +3857,8 @@ function calculerTotalModif() {
     const lignes = articles.map(item => repartirLigneProforma(item, ctxModif, pbrCacMapModif));
     afficherArticlesModif(lignes);
     let sousTotal = 0, priseEnCharge = 0, priseEnCharge2 = 0;
-    lignes.forEach(l => { sousTotal += l.total; priseEnCharge += l.partAMU; priseEnCharge2 += l.partPrivee; });
+    let reductionModif = 0;   // SMA après l'AMU
+    lignes.forEach(l => { sousTotal += l.total; priseEnCharge += l.partAMU; priseEnCharge2 += l.partPrivee; reductionModif += l.reductionListe || 0; });
 
     const assurance2Active = document.getElementById('modifToggleAssurance2').checked;
     const tauxComplementaire = ctxModif.tauxPrivee;
@@ -3858,7 +3866,7 @@ function calculerTotalModif() {
     // ⭐ Aide hospitalière (remise) — % (plafonné à 100) ou montant direct
     // FCFA, même mécanisme que sur la création/conversion de proforma ;
     // absente jusqu'ici du calcul de modification.
-    let netAvantAide = sousTotal - priseEnCharge - priseEnCharge2;
+    let netAvantAide = sousTotal - priseEnCharge - priseEnCharge2 - reductionModif;
     if (netAvantAide < 0) netAvantAide = 0;
 
     const typeAide = document.getElementById('modifTypeAide').value;

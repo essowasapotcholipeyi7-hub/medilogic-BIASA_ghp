@@ -52,6 +52,18 @@ async function choisirListeTarif(groupe, lignes) {
 // ⭐ ligne tarifée par une liste « remise » (SMA) : aucune part d'assurance privée ; une ligne absente
 // de la liste suit l'assurance réelle du patient (miroir de tarification_service.ligne_remise)
 function ligneRemiseListe(item, g) { return !!(g && g.remise && entreeListe(item, g)); }
+// pourcentage de réduction de la liste « remise » de cette ligne (SMA : 20 / 25), 0 sinon
+function pctRemiseListe(item, g) {
+    if (!ligneRemiseListe(item, g)) return 0;
+    const v = g.variantes.find(x => x.cle === (item.liste_tarif || g.defaut));
+    return v && v.pct ? parseFloat(v.pct) : 0;
+}
+// ⭐ SMA pour un patient AMU (patron 2026-10-19) : l'AMU paie sa part sur le prix clinique, la réduction
+// SMA s'applique sur ce qui reste (miroir de tarification_service.repartir_ligne)
+function reductionApresAMU(item, g, amuLigne, total, partAMU, partPrivee) {
+    const pct = amuLigne ? pctRemiseListe(item, g) : 0;
+    return pct > 0 ? Math.max(total - partAMU - partPrivee, 0) * pct / 100 : 0;
+}
 function lignesListeSansTaux(lignes) { return groupeListeActif() ? (lignes || []).filter(i => !i.liste_tarif).length : 0; }
 function texteInfoListe(g) {
     if (!g) return '';

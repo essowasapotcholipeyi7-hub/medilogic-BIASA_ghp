@@ -417,16 +417,14 @@ def calculer_montants_vente(vente):
     
     # ⭐ Part CAC = Reste × Taux CAC
     part_cac = reste_apres_amu * taux_cac if taux_cac > 0 else 0
-    # ⭐ 2026-10-19 : vente tarifée avec une liste de prix (Valeo : SMA = aucune part privée sur ses lignes,
-    # Expatriés = PBR de la liste) : la part complémentaire est celle calculée et enregistrée à la vente
-    assurances_vente = getattr(vente, 'assurances', None) or {}
-    if isinstance(assurances_vente, str):
-        try:
-            assurances_vente = json.loads(assurances_vente)
-        except ValueError:
-            assurances_vente = {}
-    if (assurances_vente or {}).get('liste_tarif'):
-        part_cac = float(getattr(vente, 'prise_en_charge2', 0) or 0)
+    # ⭐ 2026-10-19 (patron : « ça doit calculer en tenant compte du PBR toujours, sinon le prix sera faux ;
+    # les assurances paient en fonction de leur PBR ») : la part complémentaire est celle calculée et
+    # enregistrée à la vente (services/tarification_service : tarif de la compagnie, son PBR, lignes
+    # décochées, listes SMA / Expatriés) — la même que facturée à l'assurance (generer_factures_assurance).
+    # Le calcul « reste après AMU x taux » ci-dessus ne sert plus que si la vente n'a rien enregistré.
+    part_cac_enregistree = getattr(vente, 'prise_en_charge2', None)
+    if taux_cac > 0 and part_cac_enregistree is not None:
+        part_cac = float(part_cac_enregistree or 0)
     
     # ⭐ Reste patient = Reste - Part CAC
     reste_patient = reste_apres_amu - part_cac

@@ -181,6 +181,13 @@ def ligne_remise(article, contexte):
                 and ((contexte.get('listes') or {}).get(cle) or {}).get(article.get('nom')) is not None)
 
 
+def pct_remise_ligne(article, contexte):
+    """Pourcentage de réduction de la liste « remise » de cette ligne (SMA : 20 ou 25), 0 sinon."""
+    if not ligne_remise(article, contexte):
+        return 0.0
+    return _nombre((contexte.get('remise_pct') or {}).get(article.get('liste_tarif')))
+
+
 def _tarif_entree(entree, article):
     """Tarif privé de l'entrée — celui de nuit pour une ligne vendue la nuit, s'il existe."""
     if article.get('nuit') and _nombre(entree.get('tarif_nuit')) > 0:
@@ -206,6 +213,10 @@ def tarif_unitaire(article, contexte):
         return prix, 'base'
     # ⭐ 2026-10-15 : seules les assurances qui prennent ENCORE cet article comptent
     amu_ligne = bool(contexte.get('amu')) and _pris(article.get('prise_en_charge_amu'))
+    # ⭐ 2026-10-19 (patron) : SMA pour un patient AMU — « l'AMU paie sa part et la SMA s'applique sur le
+    # reste » : la ligne reste au prix clinique, la réduction se calcule après l'AMU (repartir_ligne)
+    if amu_ligne and pct_remise_ligne(article, contexte) > 0:
+        return prix, 'base'
     prend_privee = privee_ligne(article, contexte)
     entree = entree_privee(article, contexte) if prend_privee else None
     if entree and contexte.get('appliquer_tarif_prive', True) and _tarif_entree(entree, article) > 0:
@@ -277,12 +288,17 @@ def repartir_ligne(article, contexte):
             base_privee = reste
             part_privee = base_privee * taux_privee / 100
 
-    part_patient = max(total - part_amu - part_privee, 0.0)
+    # ⭐ SMA + AMU : réduction de la liste (20 / 25 %) sur ce qui reste au patient après l'AMU (et la
+    # part privée, nulle sur une ligne SMA) — l'hôpital la consent, elle est comptabilisée en remise
+    reduction = 0.0
+    if contexte.get('amu') and prise_amu and source == 'base' and pct_remise_ligne(article, contexte) > 0:
+        reduction = max(total - part_amu - part_privee, 0.0) * pct_remise_ligne(article, contexte) / 100
+    part_patient = max(total - part_amu - part_privee - reduction, 0.0)
     return {
         'tarif_unitaire': tarif, 'source_tarif': source, 'quantite': quantite, 'total': total,
         'base_amu': base_amu, 'part_amu': part_amu,
         'base_privee': base_privee, 'part_privee': part_privee,
-        'part_patient': part_patient,
+        'reduction_liste': reduction, 'part_patient': part_patient,
     }
 
 
@@ -295,7 +311,8 @@ def repartir_panier(articles, contexte):
     base_amu = sum(l['base_amu'] for l in lignes)
     part_amu = sum(l['part_amu'] for l in lignes)
     part_privee = sum(l['part_privee'] for l in lignes)
-    reste = max(sous_total - part_amu - part_privee, 0.0)
+    reduction_liste = sum(l['reduction_liste'] for l in lignes)   # SMA après l'AMU
+    reste = max(sous_total - part_amu - part_privee - reduction_liste, 0.0)
 
     type_aide = contexte.get('type_aide') or 'pourcentage'
     valeur_aide = _nombre(contexte.get('taux_aide'))
@@ -314,5 +331,6 @@ def repartir_panier(articles, contexte):
         'lignes': lignes, 'sous_total': sous_total, 'base_remboursement': base_amu,
         'part_amu': part_amu, 'part_privee': part_privee,
         'reste_apres_assurances': reste, 'aide_hospitaliere': aide, 'net_a_payer': net_arrondi,
+        'reduction_liste': reduction_liste,
         'arrondi': net_arrondi - net,
     }

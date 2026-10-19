@@ -369,3 +369,22 @@ def test_sma_avec_assurance_reelle_ligne_hors_liste_couverte():
     r = repartir_panier([{'nom': 'Q100', 'prix': 9000, 'pbr': 6630, 'quantite': 1, 'liste_tarif': 'Liste SMA 25 %'},
                          {'nom': 'Medoc', 'prix': 800, 'pbr': 0, 'quantite': 1, 'liste_tarif': 'Liste SMA 25 %'}], ctx_sma)
     assert [(l['tarif_unitaire'], round(l['part_privee'])) for l in r['lignes']] == [(5250, 0), (1000, 800)]
+
+
+def test_sma_patient_amu_l_amu_paie_puis_reduction_sur_le_reste():
+    # patron 19/10 : « AMU paie sa part et SMA s'applique sur le reste ». Radio du doigt 9 000 (PBR 6 630),
+    # AMU 80 % -> 5 304 ; reste 3 696 ; SMA 25 % -> 924 ; patient 2 772 -> 2 750 arrondi
+    listes = {'Liste SMA 25 %': {'Q100': {'tarif_prive': 5250}}}
+    ctx_sma = {'amu': True, 'taux_amu': 80, 'privee': True, 'taux_privee': 0, 'listes': listes,
+               'listes_remise': {'Liste SMA 25 %'}, 'remise_pct': {'Liste SMA 25 %': 25}, 'arrondi': 50}
+    r = repartir_panier([{'nom': 'Q100', 'prix': 9000, 'pbr': 6630, 'quantite': 1, 'liste_tarif': 'Liste SMA 25 %'}], ctx_sma)
+    l = r['lignes'][0]
+    assert (l['tarif_unitaire'], round(l['part_amu']), round(l['reduction_liste']), round(l['part_patient'])) == (9000, 5304, 924, 2772)
+    assert r['net_a_payer'] == 2750
+    # AMU à 100 % (enfant 0-5 ans) : le patient ne paie rien
+    r = repartir_panier([{'nom': 'S102 Consultation enfant', 'prix': 6000, 'pbr': 6000, 'quantite': 1, 'liste_tarif': 'Liste SMA 25 %'}],
+                        dict(ctx_sma, listes={'Liste SMA 25 %': {'S102 Consultation enfant': {'tarif_prive': 4500}}}))
+    assert r['net_a_payer'] == 0
+    # patient non AMU : tarif SMA de la liste, sans réduction en plus
+    r = repartir_panier([{'nom': 'Q100', 'prix': 9000, 'pbr': 6630, 'quantite': 1, 'liste_tarif': 'Liste SMA 25 %'}], dict(ctx_sma, amu=False))
+    assert (r['lignes'][0]['tarif_unitaire'], r['reduction_liste'], r['net_a_payer']) == (5250, 0, 5250)

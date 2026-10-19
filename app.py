@@ -25,7 +25,7 @@ from services import theme_service
 from utils.modules_structure import MODULES_STRUCTURE
 from utils.onglets_recherchables import onglets_recherchables
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
-from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure, charger_prix_non_assure_nuit, listes_tarifs, charger_listes, pas_arrondi_structure, appliquer_liste_tarif, lignes_sans_taux_liste, contexte_tarif_sejour, article_tarif_soin, soins_a_taux_liste, type_sejour
+from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure, charger_prix_non_assure_nuit, listes_tarifs, charger_listes, remise_pct_listes, pas_arrondi_structure, appliquer_liste_tarif, lignes_sans_taux_liste, contexte_tarif_sejour, article_tarif_soin, soins_a_taux_liste, type_sejour
 from services.tarification_service import repartir_ligne, repartir_panier, appliquer_code_amu_unique, objets_doublons_amu, arrondir_part_patient, ligne_remise
 from services.laboratoire_service import charger_classification_actes, determiner_type_prestation, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
 from services.part_medecin_service import (charger_taux_part_medecin, creer_lignes_part_medecin, prestations_en_attente,
@@ -5948,6 +5948,7 @@ def recu(vente_id, type):
         # vente (qui, lui, applique bien 90% au P160 uniquement).
         prise_en_charge_par_article = 0
         remise_liste_total = 0.0
+        reduction_recu = 0.0   # SMA après l'AMU
 
         for item in tous_articles:
             # Déterminer le prix
@@ -5992,6 +5993,7 @@ def recu(vente_id, type):
                 'appliquer_tarif_prive': False, 'listes': listes_recu,
                 # SMA : aucune part privée sur les lignes de la liste ; ligne absente de la liste -> assurance réelle
                 'listes_remise': cles_remise_recu, 'privee_patient': taux_assurance2 > 0,
+                'remise_pct': remise_pct_listes(structure_id) if cles_remise_recu else {},
             })
             if prise_amu and pbr_article > 0:
                 sous_total_amu += total_article
@@ -6000,6 +6002,8 @@ def recu(vente_id, type):
             # ⭐ baseCAC cumule désormais directement la PART privée de chaque
             # article (taux déjà appliqué, PBR privé plafonné au reste après AMU).
             baseCAC += ligne_recu['part_privee']
+            reduction_recu += ligne_recu['reduction_liste']
+            remise_liste_total += ligne_recu['reduction_liste']
 
             # ⭐ Date(s) de prestation (hospitalisation) — reformatées en
             # jj/mm ici, côté serveur, plutôt que dans le template : ce sont
@@ -6054,13 +6058,13 @@ def recu(vente_id, type):
         
         if taux_aide > 0:
             if est_assure and assurance_principale_active:
-                base_aide = sous_total - prise_en_charge - prise_en_charge2
+                base_aide = sous_total - prise_en_charge - prise_en_charge2 - reduction_recu
                 print(f"📊 Cas 1 - Patient assuré, base aide = reste après AMU+CAC: {base_aide}")
             elif assurance2_appliquee and not est_assure:
-                base_aide = sous_total - prise_en_charge2
+                base_aide = sous_total - prise_en_charge2 - reduction_recu
                 print(f"📊 Cas 2 - Patient non assuré avec CAC, base aide = reste après CAC: {base_aide}")
             else:
-                base_aide = sous_total
+                base_aide = sous_total - reduction_recu
                 print(f"📊 Cas 3 - Patient non assuré sans CAC, base aide = sous-total: {base_aide}")
             
             if base_aide > 0 and taux_aide > 0:
@@ -6080,7 +6084,7 @@ def recu(vente_id, type):
                     print(f"📊 Aide hospitalière recalculée: {aide_hospitaliere_calculee} FCFA (taux {taux_aide}%)")
         
         # 🔥🔥🔥 CALCUL DU NET AVEC AIDE HOSPITALIÈRE RECALCULÉE 🔥🔥🔥
-        net_a_payer = sous_total - prise_en_charge - prise_en_charge2 - aide_hospitaliere_calculee
+        net_a_payer = sous_total - prise_en_charge - prise_en_charge2 - reduction_recu - aide_hospitaliere_calculee
         if net_a_payer < 0:
             net_a_payer = 0
         # ⭐ 2026-10-19 : part patient arrondie comme à la vente (pas enregistré dans ventes.assurances)
@@ -12537,6 +12541,8 @@ def api_add_acte_vente():
             acte['prix'] = ligne['tarif_unitaire']
             acte['source_tarif'] = ligne['source_tarif']
             acte['total'] = ligne['total']
+            if ligne.get('reduction_liste'):
+                acte['reduction_liste'] = ligne['reduction_liste']   # SMA après l'AMU (comptabilisée en remise)
             # ⭐ 2026-10-19 (patron) : SMA = réduction sur le prix clinique (prix non assuré) — gardés pour le reçu
             if acte.get('liste_tarif') in cles_remise_vente and ligne['source_tarif'] == 'prive':
                 reference = float((acte.get('prix_non_assure_nuit') if acte.get('nuit') else 0) or acte.get('prix_non_assure') or acte['prix_base'] or 0)
@@ -20628,6 +20634,7 @@ def api_creer_proforma():
         # ⭐ 2026-10-15 : prix non assuré de CHAQUE ligne selon son type (acte / produit) — avant,
         # seulement pour une proforma de type « actes », alors que l'écran envoie toujours « mixte »
         # (un non-assuré ne voyait donc jamais son prix non assuré sur la proforma).
+        reduction_liste_proforma = 0.0   # SMA après l'AMU
         prix_non_assure_proforma = {'acte': charger_prix_non_assure(structure_id, 'acte'),
                                     'produit': charger_prix_non_assure(structure_id, 'produit')}
         for article in articles:
@@ -20657,6 +20664,9 @@ def api_creer_proforma():
                 pbr_total_amu += min(ligne['tarif_unitaire'], pbr) * quantite
             prise_en_charge_par_article += ligne['part_amu']
             base_cac_articles += ligne['part_privee']
+            reduction_liste_proforma += ligne['reduction_liste']
+            if ligne['reduction_liste']:
+                article['reduction_liste'] = ligne['reduction_liste']
         
         # 🔥 Vérifier si tous les articles sont non pris en charge
         tout_non_pris = all(
@@ -20706,7 +20716,7 @@ def api_creer_proforma():
             prise_en_charge2 = 0
             print("📊 Tout non pris en charge → patient paye la totalité")
         else:
-            net_a_payer = sous_total - prise_en_charge - prise_en_charge2
+            net_a_payer = sous_total - prise_en_charge - prise_en_charge2 - reduction_liste_proforma
             if net_a_payer < 0:
                 net_a_payer = 0
 
@@ -21253,6 +21263,8 @@ def api_convertir_proforma():
         groupes_conv = listes_tarifs(structure_id) if any(a.get('liste_tarif') for a in articles) else []
         cles_remise_conv = {v['cle'] for g in groupes_conv if g['remise'] for v in g['variantes']}
         listes_conv = charger_listes(structure_id, {a.get('liste_tarif') for a in articles if a.get('liste_tarif')})
+        remise_pct_conv = remise_pct_listes(structure_id) if cles_remise_conv else {}
+        reduction_conv = 0.0   # SMA après l'AMU
         groupe_liste_conv = next((g['groupe'] for g in groupes_conv
                                   if {a.get('liste_tarif') for a in articles} & {v['cle'] for v in g['variantes']}), None)
         articles_transformes = []
@@ -21348,7 +21360,7 @@ def api_convertir_proforma():
                 'privee': taux2_conv > 0, 'taux_privee': taux2_conv,
                 'pbr_prive_par_acte': pbr_cac_par_acte, 'variante': pbr_cac_variante,
                 'appliquer_tarif_prive': False, 'listes': listes_conv, 'privee_patient': taux2_conv > 0,
-                'listes_remise': cles_remise_conv,
+                'listes_remise': cles_remise_conv, 'remise_pct': remise_pct_conv,
             })
             if prise_amu and pbr > 0 and est_assure:
                 sous_total_amu += total
@@ -21357,6 +21369,9 @@ def api_convertir_proforma():
                 montant_non_amu += total
             prise_en_charge_par_article += ligne_conv['part_amu']
             base_cac += ligne_conv['part_privee']
+            reduction_conv += ligne_conv['reduction_liste']
+            if ligne_conv['reduction_liste']:
+                article['reduction_liste'] = ligne_conv['reduction_liste']
 
             articles_transformes.append(article)
         
@@ -21391,7 +21406,7 @@ def api_convertir_proforma():
             prise_en_charge2 = base_cac  # part privée déjà calculée article par article (voir boucle ci-dessus)
 
         # 🔥 Net à payer
-        net_a_payer = sous_total - prise_en_charge - prise_en_charge2
+        net_a_payer = sous_total - prise_en_charge - prise_en_charge2 - reduction_conv
 
         # 🔥🔥🔥 AIDE HOSPITALIÈRE 🔥🔥🔥
         # ⭐ Jusqu'ici totalement ignorée à la conversion : taux_aide et
@@ -22858,6 +22873,7 @@ def api_facturer_hospitalisation(hospit_id):
         doublons_amu = objets_doublons_amu(soins)   # un seul acte par code AMU
         # ⭐ 2026-10-19 : grande liste (tarif de la compagnie / prix non assuré) et liste choisie pour ce
         # séjour (Valeo : SMA, Expatriés) — voir contexte_tarif_sejour ; taux SMA obligatoire en biologie
+        reduction_sejour = 0.0   # SMA après l'AMU
         info_tarif = contexte_tarif_sejour(hospit, pbr_cac_par_acte, hospit.pbr_cac_variante)
         sans_taux = [x.nom for x, v in soins_a_taux_liste(soins, info_tarif) if not v]
         if sans_taux:
@@ -22884,12 +22900,14 @@ def api_facturer_hospitalisation(hospit_id):
                 pbr_total_amu += min(prix, pbr) * quantite
             prise_en_charge_par_article += ligne_hospit['part_amu']
             base_cac_articles += ligne_hospit['part_privee']
+            reduction_sejour += ligne_hospit['reduction_liste']
 
             articles.append({
                 'id': s.reference_id, 'nom': s.nom, 'prix': prix, 'prix_unitaire': prix, 'pbr': pbr,
                 'quantite': quantite, 'total': total,
                 # ⭐ 2026-10-19 : tarif appliqué (grande liste / liste du séjour) et de quoi le retrouver
-                'prix_base': float(s.prix or 0), 'source_tarif': ligne_hospit['source_tarif'],
+                'reduction_liste': ligne_hospit['reduction_liste'] or None,
+                'prix_base':  float(s.prix or 0), 'source_tarif': ligne_hospit['source_tarif'],
                 'prix_non_assure': article_tarif.get('prix_non_assure'), 'liste_tarif': article_tarif.get('liste_tarif'),
                 'prise_en_charge_amu': prise_amu, 'prise_en_charge_cac': prise_cac,
                 'type': 'produit' if s.type == 'medicament' else 'acte',
@@ -22913,7 +22931,7 @@ def api_facturer_hospitalisation(hospit_id):
         if assurance2_active and taux_assurance2 > 0 and base_cac_articles > 0:
             prise_en_charge2 = base_cac_articles  # part privée déjà calculée article par article (voir boucle ci-dessus)
 
-        net_a_payer = sous_total - prise_en_charge - prise_en_charge2
+        net_a_payer = sous_total - prise_en_charge - prise_en_charge2 - reduction_sejour
         if net_a_payer < 0:
             net_a_payer = 0
         # ⭐ 2026-10-19 : part patient arrondie (réglage de la structure)
@@ -23512,6 +23530,7 @@ def api_facturer_soins_ambulatoires(episode_id):
         doublons_amu = objets_doublons_amu(lignes)   # un seul acte par code AMU
         # ⭐ 2026-10-19 : grande liste (tarif de la compagnie / prix non assuré) et liste choisie pour ce
         # séjour (Valeo : SMA, Expatriés) — voir contexte_tarif_sejour ; taux SMA obligatoire en biologie
+        reduction_sejour = 0.0   # SMA après l'AMU
         info_tarif = contexte_tarif_sejour(episode, pbr_cac_par_acte, episode.pbr_cac_variante)
         sans_taux = [x.nom for x, v in soins_a_taux_liste(lignes, info_tarif) if not v]
         if sans_taux:
@@ -23538,12 +23557,14 @@ def api_facturer_soins_ambulatoires(episode_id):
                 pbr_total_amu += min(prix, pbr) * quantite
             prise_en_charge_par_article += ligne_amb['part_amu']
             base_cac_articles += ligne_amb['part_privee']
+            reduction_sejour += ligne_amb['reduction_liste']
 
             articles.append({
                 'id': l.reference_id, 'nom': l.nom, 'prix': prix, 'prix_unitaire': prix, 'pbr': pbr,
                 'quantite': quantite, 'total': total,
                 # ⭐ 2026-10-19 : tarif appliqué (grande liste / liste du séjour) et de quoi le retrouver
-                'prix_base': float(l.prix or 0), 'source_tarif': ligne_amb['source_tarif'],
+                'reduction_liste': ligne_amb['reduction_liste'] or None,
+                'prix_base':  float(l.prix or 0), 'source_tarif': ligne_amb['source_tarif'],
                 'prix_non_assure': article_tarif.get('prix_non_assure'), 'liste_tarif': article_tarif.get('liste_tarif'),
                 'prise_en_charge_amu': prise_amu, 'prise_en_charge_cac': prise_cac,
                 'type': 'produit' if l.type == 'medicament' else 'acte',
@@ -23564,7 +23585,7 @@ def api_facturer_soins_ambulatoires(episode_id):
         if assurance2_active and taux_assurance2 > 0 and base_cac_articles > 0:
             prise_en_charge2 = base_cac_articles  # part privée déjà calculée article par article (voir boucle ci-dessus)
 
-        net_a_payer = sous_total - prise_en_charge - prise_en_charge2
+        net_a_payer = sous_total - prise_en_charge - prise_en_charge2 - reduction_sejour
         if net_a_payer < 0:
             net_a_payer = 0
         # ⭐ 2026-10-19 : part patient arrondie (réglage de la structure)
@@ -23786,7 +23807,7 @@ def _calculer_montants_proforma(structure_id, data, articles, applique_pbr_cac=T
     appliquer_liste_tarif(structure_id, data.get('liste_tarif'), articles, contexte, taux_assurance2, taux_assurance2 > 0)
     cartes_na = {'acte': charger_prix_non_assure(structure_id, 'acte'),
                  'produit': charger_prix_non_assure(structure_id, 'produit')}
-    sous_total = sous_total_amu = pbr_total_amu = part_amu = part_privee = 0.0
+    sous_total = sous_total_amu = pbr_total_amu = part_amu = part_privee = reduction_modif = 0.0
     for article in articles:
         prix = float(article.get('prix', article.get('prix_unitaire', 0)) or 0)
         pbr = float(article.get('pbr', 0) or 0)
@@ -23811,11 +23832,16 @@ def _calculer_montants_proforma(structure_id, data, articles, applique_pbr_cac=T
             pbr_total_amu += min(ligne['tarif_unitaire'], pbr) * quantite
         part_amu += ligne['part_amu']
         part_privee += ligne['part_privee']
+        reduction_modif += ligne['reduction_liste']
+        if ligne['reduction_liste']:
+            article['reduction_liste'] = ligne['reduction_liste']
+        else:
+            article.pop('reduction_liste', None)
     prise_en_charge = part_amu if (est_assure and taux_assurance > 0 and min(sous_total_amu, pbr_total_amu) > 0) else 0.0
     prise_en_charge2 = part_privee if (assurance2_active and taux_assurance2 > 0) else 0.0
     if articles and all(not a['prise_en_charge_amu'] and not a['prise_en_charge_cac'] for a in articles):
         prise_en_charge = prise_en_charge2 = 0.0
-    net_a_payer = max(sous_total - prise_en_charge - prise_en_charge2, 0.0)
+    net_a_payer = max(sous_total - prise_en_charge - prise_en_charge2 - reduction_modif, 0.0)
     type_aide = data.get('type_aide', 'pourcentage')
     if type_aide not in ('pourcentage', 'montant'):
         type_aide = 'pourcentage'

@@ -644,6 +644,16 @@ def generer_ecriture_vente(vente, user_nom='SYSTEME'):
                             'debit': round(-ecart_arrondi, 2)})
             total_debit += round(-ecart_arrondi, 2)
 
+        # ⭐ 2026-10-19 : SMA pour un patient AMU — réduction de l'hôpital sur le reste après l'AMU (la ligne
+        # est créditée au prix clinique) : remise accordée, comme l'aide hospitalière
+        reduction_liste = sum(_to_float(i.get('reduction_liste')) for i in list(vente.actes or []) + list(vente.produits or [])
+                              if isinstance(i, dict))
+        if reduction_liste > 0.005:
+            lignes.append({'numero_compte': COMPTE_CREANCE_ABANDONNEE,
+                            'libelle': f"Réduction SMA accordée — {vente.patient_nom}",
+                            'debit': round(reduction_liste, 2)})
+            total_debit += round(reduction_liste, 2)
+
         if total_debit <= 0.5:
             return None  # rien à comptabiliser (ex: vente à 0)
 
