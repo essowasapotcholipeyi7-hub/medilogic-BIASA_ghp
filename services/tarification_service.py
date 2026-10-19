@@ -172,6 +172,15 @@ def privee_ligne(article, contexte):
     return bool(contexte.get('privee'))
 
 
+def ligne_remise(article, contexte):
+    """Ligne tarifée par une liste « remise » (SMA : réduction de l'hôpital) : le patient paie le tarif
+    réduit, AUCUNE part d'assurance privée (patron 2026-10-19). Une ligne absente de cette liste n'en
+    est pas une : elle suit l'assurance réelle du patient, avec son taux."""
+    cle = article.get('liste_tarif')
+    return bool(cle and cle in (contexte.get('listes_remise') or ())
+                and ((contexte.get('listes') or {}).get(cle) or {}).get(article.get('nom')) is not None)
+
+
 def _tarif_entree(entree, article):
     """Tarif privé de l'entrée — celui de nuit pour une ligne vendue la nuit, s'il existe."""
     if article.get('nuit') and _nombre(entree.get('tarif_nuit')) > 0:
@@ -243,7 +252,7 @@ def repartir_ligne(article, contexte):
     part_privee = 0.0
     base_privee = 0.0
     taux_privee = _nombre(contexte.get('taux_privee'))
-    if privee_ligne(article, contexte) and prise_cac and taux_privee > 0:
+    if privee_ligne(article, contexte) and prise_cac and taux_privee > 0 and not ligne_remise(article, contexte):
         reste = max(total - part_amu, 0.0)
         entree = entree_privee(article, contexte)
         # ⭐ Variante choisie LIGNE PAR LIGNE dans le panier (patron, 2026-10-04 :

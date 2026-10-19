@@ -515,6 +515,9 @@
                     </div>
                     {% endif %}
                     
+                    {% if ecart_arrondi and (ecart_arrondi|round(0)|int) != 0 %}
+                    <div style="color:#6c757d;">Arrondi : {{ '+' if ecart_arrondi > 0 else '-' }} {{ ecart_arrondi|abs|round(0)|int }} FCFA</div>
+                    {% endif %}
                     <div style="font-weight:bold; font-size:1.1em; margin-top:5px; padding-top:5px; border-top:2px solid #ddd;">
                         <strong>NET PAYÉ:</strong> <span class="montant-net-a-payer" style="color:#dc3545;">{{ net_a_payer|default(0)|round(0)|int }} FCFA</span>
                     </div>

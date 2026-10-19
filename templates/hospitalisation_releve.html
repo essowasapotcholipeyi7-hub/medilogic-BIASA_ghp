@@ -131,8 +131,9 @@
                             {% endif %}
                         </td>
                         <td class="num">{{ l.quantite }}</td>
-                        <td class="num">{{ '{:,}'.format(l.prix|round(0)|int).replace(',', ' ') }}</td>
-                        <td class="num">{{ '{:,}'.format(l.total|round(0)|int).replace(',', ' ') }}</td>
+                        {% set prix_ligne = l.tarif_applique if l.tarif_applique is defined else l.prix %}
+                        <td class="num">{{ '{:,}'.format(prix_ligne|round(0)|int).replace(',', ' ') }}</td>
+                        <td class="num">{{ '{:,}'.format((prix_ligne * (l.quantite or 0))|round(0)|int).replace(',', ' ') }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

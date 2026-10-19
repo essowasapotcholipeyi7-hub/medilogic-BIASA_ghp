@@ -49,6 +49,9 @@ async function choisirListeTarif(groupe, lignes) {
     (lignes || []).forEach(item => { item.liste_tarif = g ? cleListeParDefaut(item, g) : null; });
     return g;
 }
+// ⭐ ligne tarifée par une liste « remise » (SMA) : aucune part d'assurance privée ; une ligne absente
+// de la liste suit l'assurance réelle du patient (miroir de tarification_service.ligne_remise)
+function ligneRemiseListe(item, g) { return !!(g && g.remise && entreeListe(item, g)); }
 function lignesListeSansTaux(lignes) { return groupeListeActif() ? (lignes || []).filter(i => !i.liste_tarif).length : 0; }
 function texteInfoListe(g) {
     if (!g) return '';

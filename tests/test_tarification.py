@@ -358,3 +358,14 @@ def test_ligne_absente_de_la_liste_suit_l_assurance_reelle():
                'pbr_prive_par_acte': {'Acte X': {'tarif_prive': 10000, 'pbr_1': None}}}
     r = repartir_ligne({'nom': 'Acte X', 'prix': 8000, 'pbr': 0, 'quantite': 1, 'liste_tarif': 'Liste Expatriés'}, ctx_exp)
     assert (r['tarif_unitaire'], round(r['part_privee'])) == (10000, 8000)
+
+
+def test_sma_avec_assurance_reelle_ligne_hors_liste_couverte():
+    # SMA choisie pour un patient assuré SUNU 80 % : la radio de la liste SMA n'a aucune part privée,
+    # le médicament absent de la liste prend le tarif SUNU et SUNU en paie 80 %
+    listes = {'Liste SMA 25 %': {'Q100': {'tarif_prive': 5250}}}
+    ctx_sma = {'privee': True, 'taux_privee': 80, 'privee_patient': True, 'listes': listes,
+               'listes_remise': {'Liste SMA 25 %'}, 'pbr_prive_par_acte': {'Medoc': {'tarif_prive': 1000, 'pbr_1': None}}}
+    r = repartir_panier([{'nom': 'Q100', 'prix': 9000, 'pbr': 6630, 'quantite': 1, 'liste_tarif': 'Liste SMA 25 %'},
+                         {'nom': 'Medoc', 'prix': 800, 'pbr': 0, 'quantite': 1, 'liste_tarif': 'Liste SMA 25 %'}], ctx_sma)
+    assert [(l['tarif_unitaire'], round(l['part_privee'])) for l in r['lignes']] == [(5250, 0), (1000, 800)]

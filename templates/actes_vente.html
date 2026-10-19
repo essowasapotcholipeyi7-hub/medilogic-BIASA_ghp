@@ -816,7 +816,7 @@ function contexteTarificationActes() {
         estAssure: estAssure, amu: amu, tauxAMU: tauxAMU,
         privee: liste ? true : privee,
         priveePatient: privee,
-        tauxPrivee: liste ? ((privee && !liste.remise) ? tauxPrivee : 0) : tauxPrivee,
+        tauxPrivee: liste ? (privee ? tauxPrivee : 0) : tauxPrivee,
         liste: liste,
         appliquePbrPrive: toggle ? toggle.checked : true,
         variante: document.getElementById('selectPbrCacVarianteActes')?.value || 'defaut',
@@ -860,7 +860,7 @@ function repartirLigneActes(item, ctx) {
     }
 
     let basePrivee = 0, partPrivee = 0;
-    if (priveeLigneActes(item, ctx) && priseCAC && ctx.tauxPrivee > 0) {
+    if (priveeLigneActes(item, ctx) && priseCAC && ctx.tauxPrivee > 0 && !ligneRemiseListe(item, ctx.liste)) {
         const reste = Math.max(total - partAMU, 0);
         // Variante choisie LIGNE PAR LIGNE (sélecteur dans le panier), sinon celle du panier
         const varianteLigne = item.pbr_variante || ctx.variante;
@@ -1779,7 +1779,7 @@ function celluleCouvertureActes(item, index, ctx) {
         // ⭐ même code AMU qu'une ligne au-dessus : l'AMU n'en prend qu'un par vente
         html += '<span class="badge bg-secondary" title="L\'AMU ne prend en charge qu\'un seul acte ' + (window.codeActeAMU ? codeActeAMU(item.nom) : '') + ' par vente : celui-ci reste au patient ou à son assurance complémentaire.">AMU : ' + (window.codeActeAMU ? codeActeAMU(item.nom) : '') + ' déjà compté</span><br>';
     } else if (ctx.amu) html += boutonCouverture(item, index, 'amu', 'AMU') + '<br>';
-    if (ctx.privee && !(ctx.liste && !(ctx.tauxPrivee > 0))) html += boutonCouverture(item, index, 'cac', patientAssurance2 || 'Privée');
+    if (ctx.privee && !(ctx.liste && (!(ctx.tauxPrivee > 0) || ligneRemiseListe(item, ctx.liste)))) html += boutonCouverture(item, index, 'cac', patientAssurance2 || 'Privée');
     if (!html) html = (item.prise_en_charge_amu === false || item.prise_en_charge_cac === false) ? '<span class="text-muted small">non pris en charge</span>' : '<span class="text-muted small">—</span>';
     return html;
 }
@@ -1796,7 +1796,7 @@ function modifierPbrPrive(index, valeur) {
 function champPbrPriveActes(item, index, ctx) {
     if (!ctx.privee || item.prise_en_charge_cac === false) return '';
     // ⭐ liste « remise » (SMA) ou liste sans assurance du patient : pas de part privée, pas de PBR à saisir
-    if (ctx.liste && !(ctx.tauxPrivee > 0)) return '';
+    if (ctx.liste && (!(ctx.tauxPrivee > 0) || ligneRemiseListe(item, ctx.liste))) return '';
     const entree = entreePriveeActes(item, ctx);
     const enregistre = pbrCacVarianteValeurActes(entree, item.pbr_variante || ctx.variante, item.nuit);
     const nomAssurance = patientAssurance2 || 'privée';
@@ -3045,6 +3045,9 @@ async function soumettreVenteEnAttente() {
             // sans ce champ, une vente finalisée depuis "ventes en attente"
             // perdrait le service choisi à l'admission.
             service_id: item.service_id || null,
+            // ⭐ 2026-10-19 : nuit / férié et liste de prix (Valeo) — sinon perdus à la mise en attente
+            nuit: !!item.nuit,
+            liste_tarif: groupeListeActif() ? (item.liste_tarif || null) : null,
         };
     });
 
@@ -3129,7 +3132,23 @@ if (VENTE_ATTENTE) {
         medecin_id: a.medecin_id || null,
         medecin_nom: a.medecin_nom || null,
         service_id: a.service_id || null,
+        nuit: !!a.nuit,                     // ⭐ 2026-10-19 : tarifs de nuit gardés
+        liste_tarif: a.liste_tarif || null, // ⭐ liste de prix (Valeo) et taux SMA choisis à l'admission
     }));
+    // liste de prix de la vente en attente : retrouvée d'après ses lignes, sans changer les taux choisis
+    const clesListeAttente = new Set(panier.map(i => i.liste_tarif).filter(Boolean));
+    const groupeAttente = LISTES_TARIFS.find(g => g.variantes.some(v => clesListeAttente.has(v.cle)));
+    if (groupeAttente) {
+        listeTarifActive = groupeAttente.groupe;
+        document.addEventListener('DOMContentLoaded', async () => {
+            const sel = document.getElementById('listeTarifVente');
+            if (sel) sel.value = groupeAttente.groupe;
+            const info = document.getElementById('infoListeTarif');
+            if (info) info.innerHTML = texteInfoListe(groupeAttente);
+            await chargerCartesListe(groupeAttente);
+            afficherPanier();
+        });
+    }
     // ⭐ Pas de resoumission possible d'une vente déjà en cours de
     // finalisation — seul "Finaliser la vente" a un sens ici.
     const btnVenteAttente = document.getElementById('venteAttenteBtn');

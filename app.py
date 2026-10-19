@@ -25,8 +25,8 @@ from services import theme_service
 from utils.modules_structure import MODULES_STRUCTURE
 from utils.onglets_recherchables import onglets_recherchables
 from services.abonnement_service import MOTIF_ABONNEMENT, statut_abonnement, onglet_cache
-from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure, charger_prix_non_assure_nuit, listes_tarifs, charger_listes, pas_arrondi_structure, appliquer_liste_tarif, contexte_tarif_sejour, article_tarif_soin, soins_a_taux_liste, type_sejour
-from services.tarification_service import repartir_ligne, repartir_panier, appliquer_code_amu_unique, objets_doublons_amu, arrondir_part_patient
+from services.hospitalisation_service import detecter_groupe_palier, construire_lignes_chambre, calculer_repartition_assurance, charger_pbr_complementaires, pbr_cac_variante_valeur, charger_prix_non_assure, enregistrer_prix_non_assure, charger_prix_non_assure_nuit, listes_tarifs, charger_listes, pas_arrondi_structure, appliquer_liste_tarif, lignes_sans_taux_liste, contexte_tarif_sejour, article_tarif_soin, soins_a_taux_liste, type_sejour
+from services.tarification_service import repartir_ligne, repartir_panier, appliquer_code_amu_unique, objets_doublons_amu, arrondir_part_patient, ligne_remise
 from services.laboratoire_service import charger_classification_actes, determiner_type_prestation, statut_paiement_depuis_montants, creer_demandes_pour_vente, obtenir_ou_creer_code_acces, regenerer_code_acces, demandes_ristourne_en_attente, calculer_ristourne, relier_demandes_existantes, delier_demandes_ouvertes, TITRES_LABORATOIRE
 from services.part_medecin_service import (charger_taux_part_medecin, creer_lignes_part_medecin, prestations_en_attente,
                                            calculer_periode_part_medecin, charger_toujours_demander_medecin,
@@ -5930,6 +5930,9 @@ def recu(vente_id, type):
         pbr_cac_par_acte_recu = charger_pbr_complementaires(structure_id, assurance2_nom) if (assurance2_nom and applique_pbr_cac_recu) else {}
         # ⭐ 2026-10-19 : lignes vendues avec une liste de prix (Valeo : Expatriés, SMA) -> PBR de la liste
         listes_recu = charger_listes(structure_id, {it.get('liste_tarif') for it in tous_articles if isinstance(it, dict)})
+        # liste « remise » (SMA) : jamais de part d'assurance sur ces lignes (comme à la vente)
+        cles_remise_recu = ({v['cle'] for g in listes_tarifs(structure_id) if g['remise'] for v in g['variantes']}
+                            if listes_recu else set())
 
         # 🔥 Traiter les articles
         sous_total_amu = 0
@@ -5977,7 +5980,8 @@ def recu(vente_id, type):
             # dans la vente (tarif déjà appliqué), jamais remplacé ici.
             ligne_recu = repartir_ligne({
                 'nom': item.get('nom'), 'prix': prix_unitaire, 'pbr': pbr_article, 'quantite': quantite,
-                'prise_en_charge_amu': prise_amu, 'prise_en_charge_cac': prise_cac,
+                'prise_en_charge_amu': prise_amu,
+                'prise_en_charge_cac': prise_cac,
                 'pbr_variante': item.get('pbr_variante'),  # variante PBR choisie ligne par ligne à la vente
                 'pbr_prive_modifie': item.get('pbr_prive_modifie'),  # PBR privé saisi à la main à la vente
                 'liste_tarif': item.get('liste_tarif'), 'nuit': item.get('nuit'),
@@ -5986,6 +5990,8 @@ def recu(vente_id, type):
                 'privee': taux_assurance2 > 0, 'taux_privee': taux_assurance2,
                 'pbr_prive_par_acte': pbr_cac_par_acte_recu, 'variante': pbr_cac_variante_recu,
                 'appliquer_tarif_prive': False, 'listes': listes_recu,
+                # SMA : aucune part privée sur les lignes de la liste ; ligne absente de la liste -> assurance réelle
+                'listes_remise': cles_remise_recu, 'privee_patient': taux_assurance2 > 0,
             })
             if prise_amu and pbr_article > 0:
                 sous_total_amu += total_article
@@ -6086,7 +6092,9 @@ def recu(vente_id, type):
                 assurances_recu = {}
         pas_arrondi_recu = ((assurances_recu or {}).get('arrondi') or {}).get('pas')
         if pas_arrondi_recu:
+            net_avant_arrondi = net_a_payer
             net_a_payer = arrondir_part_patient(net_a_payer, pas_arrondi_recu)
+            ecart_arrondi_recu = net_a_payer - net_avant_arrondi
         
         print(f"📊 Sous-total: {sous_total}, AMU: {prise_en_charge}, CAC: {prise_en_charge2}, Aide recalculée: {aide_hospitaliere_calculee}, Net: {net_a_payer}")
         
@@ -6136,6 +6144,7 @@ def recu(vente_id, type):
     libelle_remise_liste = str((assurances_vente_recu or {}).get('liste_tarif') or '').replace('Liste ', '', 1)
     return render_template('recu_client.html',
                          remise_liste_total=locals().get('remise_liste_total', 0), libelle_remise_liste=libelle_remise_liste,
+                         ecart_arrondi=locals().get('ecart_arrondi_recu', 0),
                          a_dates_prestation=a_dates_prestation,
                          vente_id=vente_id,
                          numero_local_vente=numero_local_vente,
@@ -6372,7 +6381,16 @@ def recu_structure(vente_id, type):
             classification_map.setdefault(row.nom_acte, row.categorie)
         cumul_categories = cumuler_articles_par_categorie(articles, classification_map)
 
+    # ⭐ 2026-10-19 : écart d'arrondi de la part patient, enregistré avec la vente
+    assurances_struct = (v.get('assurances') if 'v' in locals() and v else None) or {}
+    if isinstance(assurances_struct, str):
+        try:
+            assurances_struct = json.loads(assurances_struct)
+        except ValueError:
+            assurances_struct = {}
+    ecart_arrondi_struct = float(((assurances_struct or {}).get('arrondi') or {}).get('ecart') or 0)
     return render_template('recu_structure.html',
+                         ecart_arrondi=ecart_arrondi_struct,
                          vente_id=vente_id,
                          numero_local_vente=numero_local_vente,
                          type_vente=type_bd,
@@ -12493,19 +12511,12 @@ def api_add_acte_vente():
         # expatriés ») : chaque ligne prend le tarif de la liste (SMA : la variante 20 % / 25 % choisie sur
         # la ligne). Liste « remise » (SMA) : le patient paie le tarif, aucune part privée ; liste
         # Expatriés : la part de l'assurance du patient (taux de sa carte) se calcule sur ce tarif.
-        groupe_liste = None
-        if data.get('liste_tarif'):
-            groupe_liste = next((g for g in listes_tarifs(structure_id) if g['groupe'] == data.get('liste_tarif')), None)
-        if groupe_liste:
-            cles_liste = [v['cle'] for v in groupe_liste['variantes']]
-            for acte in actes_data:
-                if acte.get('liste_tarif') not in cles_liste:
-                    acte['liste_tarif'] = groupe_liste['defaut']
-            contexte_tarif['listes'] = charger_listes(structure_id, cles_liste)
-            contexte_tarif['privee_patient'] = assurance2_active_vente   # lignes absentes de la liste
-            contexte_tarif['privee'] = True
-            contexte_tarif['taux_privee'] = taux_assurance2 if (assurance2_active_vente and not groupe_liste['remise']) else 0
-        else:
+        sans_taux_liste = lignes_sans_taux_liste(structure_id, actes_data, data.get('liste_tarif'))
+        if sans_taux_liste:
+            return jsonify({'success': False, 'error': "Choisissez le taux de réduction pour : " + ', '.join(sans_taux_liste)}), 400
+        groupe_liste = appliquer_liste_tarif(structure_id, data.get('liste_tarif'), actes_data, contexte_tarif,
+                                             taux_assurance2, assurance2_active_vente) if data.get('liste_tarif') else None
+        if not groupe_liste:
             for acte in actes_data:
                 acte.pop('liste_tarif', None)
         # ⭐ Arrondi de la part patient (réglé pour la structure, appliqué par défaut, bouton pour l'enlever)
@@ -12522,7 +12533,7 @@ def api_add_acte_vente():
         calcul = repartir_panier(actes_data, contexte_tarif)
         cles_remise_vente = {v['cle'] for v in groupe_liste['variantes']} if (groupe_liste and groupe_liste['remise']) else set()
         for acte, ligne in zip(actes_data, calcul['lignes']):
-            acte['prix_base'] = float(acte.get('prix') or 0)
+            acte['prix_base'] = float(acte.get('prix_base') or acte.get('prix') or 0)   # prix catalogue envoyé par l'écran
             acte['prix'] = ligne['tarif_unitaire']
             acte['source_tarif'] = ligne['source_tarif']
             acte['total'] = ligne['total']
@@ -20498,18 +20509,27 @@ def api_liste_tarif_sejour(type_s, sejour_id):
     sejour = modele.query.filter_by(id=sejour_id, structure_id=structure_id).first()
     if not sejour:
         return jsonify({'success': False, 'error': 'Séjour introuvable'}), 404
+    if (sejour.statut or '') in ('facturee', 'facture', 'cloture', 'cloturee'):
+        return jsonify({'success': False, 'error': 'Séjour déjà facturé : la liste ne peut plus changer'}), 400
     data = request.json or {}
     liste = (data.get('liste_tarif') or '').strip() or None
-    if liste and not any(g['groupe'] == liste for g in listes_tarifs(structure_id)):
+    groupe = next((g for g in listes_tarifs(structure_id) if g['groupe'] == liste), None) if liste else None
+    if liste and not groupe:
         return jsonify({'success': False, 'error': 'Liste inconnue'}), 400
-    variantes = {str(k): v for k, v in (data.get('variantes') or {}).items() if v}
-    db.session.execute(db.text("""
+    # seuls les taux de LA liste choisie (un changement de liste efface les anciens taux)
+    cles = {v['cle'] for v in groupe['variantes']} if groupe else set()
+    variantes = {str(k): v for k, v in (data.get('variantes') or {}).items() if v in cles}
+    try:
+        db.session.execute(db.text("""
         INSERT INTO listes_tarif_sejour (structure_id, type_sejour, sejour_id, liste_tarif, variantes, updated_at)
         VALUES (:s, :t, :i, :l, CAST(:v AS jsonb), NOW())
         ON CONFLICT (type_sejour, sejour_id) DO UPDATE SET liste_tarif = EXCLUDED.liste_tarif,
             variantes = EXCLUDED.variantes, updated_at = NOW()"""),
         {'s': structure_id, 't': type_s, 'i': sejour_id, 'l': liste, 'v': json.dumps(variantes if liste else {})})
-    db.session.commit()
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': f"Enregistrement impossible : {e}"}), 500
     return jsonify({'success': True})
 
 
@@ -20599,6 +20619,9 @@ def api_creer_proforma():
             'applique_pbr_prive': bool(applique_pbr_cac), 'variante': pbr_cac_variante,
         }
         # ⭐ 2026-10-19 : liste de prix choisie (Clinique Valeo : SMA, Expatriés) — voir appliquer_liste_tarif
+        sans_taux_liste = lignes_sans_taux_liste(structure_id, articles, data.get('liste_tarif'))
+        if sans_taux_liste:
+            return jsonify({'success': False, 'error': "Choisissez le taux de réduction pour : " + ', '.join(sans_taux_liste)}), 400
         groupe_liste_proforma = appliquer_liste_tarif(structure_id, data.get('liste_tarif'), articles, contexte_proforma,
                                                       taux2_lignes, taux2_lignes > 0)
         appliquer_code_amu_unique(articles)   # un seul acte par code AMU (enregistré tel quel)
@@ -21293,6 +21316,12 @@ def api_convertir_proforma():
                 'liste_tarif': a.get('liste_tarif'),
                 'nuit': a.get('nuit'),
             }
+            # ⭐ 2026-10-19 : ligne SMA -> prix clinique et réduction gardés pour le reçu
+            if ligne_remise(a, {'listes': listes_conv, 'listes_remise': cles_remise_conv}) and a.get('source_tarif') == 'prive':
+                reference = float(a.get('prix_non_assure') or a.get('prix_base') or 0)
+                if reference > prix:
+                    article['prix_reference'] = reference
+                    article['remise_liste'] = (reference - prix) * quantite
 
             # 🔥 AMU — ET seulement si le patient a réellement une
             # assurance AMU active sur cette proforma (est_assure). Sans ce
@@ -21312,13 +21341,14 @@ def api_convertir_proforma():
             ligne_conv = repartir_ligne({
                 'nom': a.get('nom'), 'prix': prix, 'pbr': pbr, 'quantite': quantite,
                 'prise_en_charge_amu': prise_amu,
-                'prise_en_charge_cac': prise_cac and a.get('liste_tarif') not in cles_remise_conv,
+                'prise_en_charge_cac': prise_cac,
                 'liste_tarif': a.get('liste_tarif'), 'nuit': a.get('nuit'),
             }, {
                 'amu': bool(est_assure and taux_assurance > 0), 'taux_amu': taux_assurance,
                 'privee': taux2_conv > 0, 'taux_privee': taux2_conv,
                 'pbr_prive_par_acte': pbr_cac_par_acte, 'variante': pbr_cac_variante,
                 'appliquer_tarif_prive': False, 'listes': listes_conv, 'privee_patient': taux2_conv > 0,
+                'listes_remise': cles_remise_conv,
             })
             if prise_amu and pbr > 0 and est_assure:
                 sous_total_amu += total
@@ -21389,7 +21419,8 @@ def api_convertir_proforma():
         if net_a_payer < 0:
             net_a_payer = 0
         # ⭐ 2026-10-19 : part patient arrondie (réglage de la structure, appliqué par défaut)
-        pas_arrondi_conv = pas_arrondi_structure(structure_id) if data.get('arrondi_actif', True) else 0
+        # l'arrondi suit la proforma (création, hospitalisation, soins ambulatoires : assurances_data.arrondi)
+        pas_arrondi_conv = pas_arrondi_structure(structure_id) if data.get('arrondi_actif', _proforma_arrondie(proforma)) else 0
         ecart_arrondi_conv = 0
         if pas_arrondi_conv:
             net_arrondi = arrondir_part_patient(net_a_payer, pas_arrondi_conv)
@@ -22233,7 +22264,9 @@ def page_hospitalisation_suivi(hospit_id):
     for s in soins:
         s.part_patient_ligne = calculer_repartition_assurance([s], hospit, pbr_cac_par_acte, hospit.pbr_cac_variante)['part_patient']
     # ⭐ 2026-10-19 : solde au tarif appliqué (grande liste / liste du séjour) ; liste du séjour et taux à choisir
-    solde_en_cours = sum(float(getattr(s, 'tarif_applique', s.prix) or 0) * int(s.quantite or 0) for s in soins if s.statut == 'en_cours')
+    solde_en_cours = (sum(float(getattr(s, 'tarif_applique', s.prix) or 0) * int(s.quantite or 0) for s in soins if s.statut == 'en_cours')
+                      # chambre prévue (pas encore enregistrée en soin), au tarif appliqué
+                      + sum(float(getattr(l, 'tarif_applique', l.prix) or 0) * int(l.quantite or 0) for l in lignes_chambre_projetees))
     info_tarif_sejour = contexte_tarif_sejour(hospit, pbr_cac_par_acte, hospit.pbr_cac_variante)
     soins_taux_liste = soins_a_taux_liste(soins_en_cours, info_tarif_sejour)
 
@@ -23007,19 +23040,23 @@ def hospitalisation_releve(hospit_id):
         q = q.filter_by(type='medicament')
     soins = q.order_by(SoinHospitalisation.date_prestation).all()
 
-    groupes = {}
-    for s in soins:
-        groupes.setdefault(s.date_prestation, []).append(s)
-    jours = [{'date': d, 'lignes': groupes[d], 'total': sum(l.total for l in groupes[d])} for d in sorted(groupes.keys())]
-    total_general = sum(j['total'] for j in jours)
-
     # ⭐ Répartition part AMU / part CAC / part patient — sur EXACTEMENT les
     # lignes affichées dans ce relevé (respecte le filtre actes/médicaments/
     # global et le toggle d'assurance de ce séjour). Absente jusqu'ici : le
     # relevé affichait le montant "prix × quantité" brut comme si le
     # patient payait tout cash, même quand il est assuré (signalé).
+    # ⭐ 2026-10-19 : calculée AVANT les totaux — elle pose sur chaque ligne le tarif appliqué (grande liste /
+    # liste du séjour), que le relevé affiche et totalise comme la facture.
     pbr_cac_par_acte = charger_pbr_complementaires(structure_id, hospit.assurance2_nom) if (hospit.a_cac and hospit.applique_pbr_cac) else {}
     repartition = calculer_repartition_assurance(soins, hospit, pbr_cac_par_acte, hospit.pbr_cac_variante) if soins else None
+
+    groupes = {}
+    for s in soins:
+        groupes.setdefault(s.date_prestation, []).append(s)
+    jours = [{'date': d, 'lignes': groupes[d],
+              'total': sum(float(getattr(l, 'tarif_applique', l.prix) or 0) * int(l.quantite or 0) for l in groupes[d])}
+             for d in sorted(groupes.keys())]
+    total_general = sum(j['total'] for j in jours)
 
     structures = sheets_helper.get_all_records('structures', use_prefix=False)
     structure_info = next((s for s in structures if str(s.get('ID')) == str(structure_id)), {})
@@ -23618,14 +23655,17 @@ def soins_ambulatoires_releve(episode_id):
         q = q.filter_by(type='medicament')
     lignes = q.order_by(LigneSoinAmbulatoire.date_prestation).all()
 
+    # ⭐ 2026-10-19 : répartition calculée AVANT les totaux (tarif appliqué posé sur chaque ligne)
+    pbr_cac_par_acte = charger_pbr_complementaires(structure_id, episode.assurance2_nom) if (episode.a_cac and episode.applique_pbr_cac) else {}
+    repartition = calculer_repartition_assurance(lignes, episode, pbr_cac_par_acte, episode.pbr_cac_variante) if lignes else None
+
     groupes = {}
     for l in lignes:
         groupes.setdefault(l.date_prestation, []).append(l)
-    jours = [{'date': d, 'lignes': groupes[d], 'total': sum(x.total for x in groupes[d])} for d in sorted(groupes.keys())]
+    jours = [{'date': d, 'lignes': groupes[d],
+              'total': sum(float(getattr(x, 'tarif_applique', x.prix) or 0) * int(x.quantite or 0) for x in groupes[d])}
+             for d in sorted(groupes.keys())]
     total_general = sum(j['total'] for j in jours)
-
-    pbr_cac_par_acte = charger_pbr_complementaires(structure_id, episode.assurance2_nom) if (episode.a_cac and episode.applique_pbr_cac) else {}
-    repartition = calculer_repartition_assurance(lignes, episode, pbr_cac_par_acte, episode.pbr_cac_variante) if lignes else None
 
     predepot = float(episode.predepot_montant or 0)
     reste_du_apres_predepot = None
@@ -23703,6 +23743,17 @@ def api_get_proforma(proforma_id):
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+
+def _proforma_arrondie(proforma):
+    """La proforma a-t-elle été enregistrée avec la part patient arrondie ? (assurances_data.arrondi)"""
+    a = proforma.get('assurances_data') or {}
+    if isinstance(a, str):
+        try:
+            a = json.loads(a)
+        except ValueError:
+            a = {}
+    return bool((a or {}).get('arrondi'))
 
 
 def _calculer_montants_proforma(structure_id, data, articles, applique_pbr_cac=True, pbr_cac_variante='defaut'):
@@ -23801,7 +23852,7 @@ def api_update_proforma(proforma_id):
         
         # Vérifier que la proforma existe
         check = db.execute_query("""
-            SELECT id, statut, applique_pbr_cac, pbr_cac_variante FROM proformas
+            SELECT id, statut, applique_pbr_cac, pbr_cac_variante, assurances_data FROM proformas
             WHERE id = %s AND structure_id = %s
         """, (proforma_id, structure_id))
         
@@ -23820,6 +23871,9 @@ def api_update_proforma(proforma_id):
         numero_assure = data.get('numero_assure', '')
         assurance2_active = data.get('assurance2_active', False)
         assurance2_nom = data.get('assurance2_nom', '')
+        # ⭐ 2026-10-19 : l'arrondi suit le choix fait à la création (gardé dans assurances_data)
+        if 'arrondi_actif' not in data:
+            data['arrondi_actif'] = _proforma_arrondie(check[0])
         calc = _calculer_montants_proforma(
             structure_id, data, articles,
             applique_pbr_cac=check[0].get('applique_pbr_cac') is not False,

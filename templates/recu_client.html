@@ -520,6 +520,12 @@
         <span>Sous-total TTC :</span>
         <span><strong>{{ sous_total|default(0)|round(0)|int }} FCFA</strong></span>
     </div>
+    {% if remise_liste_total and remise_liste_total > 0 %}
+    <div style="display:flex; justify-content:space-between; color:#856404; font-size:0.9em;">
+        <span>dont réduction {{ libelle_remise_liste }} déjà déduite :</span>
+        <span>{{ remise_liste_total|round(0)|int }} FCFA</span>
+    </div>
+    {% endif %}
     {% else %}
     <div style="display:flex; justify-content:space-between;">
         <span>Sous-total clinique :</span>
@@ -576,6 +582,14 @@
     </div>
     {% endif %}
     
+    {# ⭐ 2026-10-19 : part patient arrondie (ex. 3 696 -> 3 700) #}
+    {% if ecart_arrondi and (ecart_arrondi|round(0)|int) != 0 %}
+    <div style="display:flex; justify-content:space-between; color:#6c757d;">
+        <span>Arrondi :</span>
+        <span>{{ '+' if ecart_arrondi > 0 else '-' }} {{ ecart_arrondi|abs|round(0)|int }} FCFA</span>
+    </div>
+    {% endif %}
+
     <!-- NET À PAYER -->
     <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:6px; padding-top:6px; border-top:2px solid #ddd;">
         <span>NET À PAYER :</span>

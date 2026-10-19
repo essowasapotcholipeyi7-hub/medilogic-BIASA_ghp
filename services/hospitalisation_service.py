@@ -318,7 +318,10 @@ def appliquer_liste_tarif(structure_id, groupe_nom, articles, contexte, taux_com
     contexte['listes'] = charger_listes(structure_id, cles)
     contexte['privee_patient'] = bool(privee_patient)
     contexte['privee'] = True
-    contexte['taux_privee'] = taux_complementaire if (privee_patient and not groupe['remise']) else 0
+    # taux réel du patient : une ligne de la liste « remise » n'a pas de part privée (ligne_remise), une
+    # ligne absente de la liste reste couverte par l'assurance réelle du patient
+    contexte['taux_privee'] = taux_complementaire if privee_patient else 0
+    contexte['listes_remise'] = set(cles) if groupe['remise'] else set()
     return groupe
 
 
@@ -394,6 +397,24 @@ def soins_a_taux_liste(soins, info):
         if len(prix) > 1:
             resultat.append((soin, info['variantes'].get(str(getattr(soin, 'id', '')))))
     return resultat
+
+
+def lignes_sans_taux_liste(structure_id, articles, groupe_nom):
+    """Noms des lignes d'une liste « remise » en plusieurs taux (SMA 20 / 25 %) dont le prix change selon le
+    taux et dont le taux n'a pas été choisi — le serveur refuse la vente (l'écran le demande déjà)."""
+    groupe = next((g for g in listes_tarifs(structure_id) if g['groupe'] == groupe_nom), None) if groupe_nom else None
+    if not groupe or not groupe['remise'] or len(groupe['variantes']) < 2:
+        return []
+    cles = [v['cle'] for v in groupe['variantes']]
+    listes = charger_listes(structure_id, cles)
+    manquants = []
+    for a in articles:
+        if a.get('liste_tarif') in cles:
+            continue
+        prix = {((listes.get(c) or {}).get(a.get('nom')) or {}).get('tarif_prive') for c in cles}
+        if len(prix) > 1:
+            manquants.append(a.get('nom'))
+    return manquants
 
 
 def pas_arrondi_structure(structure_id):
@@ -537,6 +558,15 @@ def calculer_repartition_assurance(soins, hospit, pbr_cac_par_acte=None, pbr_cac
             s, info, float(s.pbr or 0), bool(s.prise_en_charge_amu) and id(s) not in doublons_amu), contexte)
         try:
             s.tarif_applique = ligne['tarif_unitaire']
+            # ⭐ liste « remise » (SMA) : prix clinique (prix non assuré) d'où part la réduction, pour l'affichage
+            g = info['groupe']
+            if g and g['remise'] and ligne['source_tarif'] == 'prive':
+                type_art = 'produit' if getattr(s, 'type', '') == 'medicament' else 'acte'
+                reference = float(info['na'][type_art].get(s.nom) or s.prix or 0)
+                if reference > ligne['tarif_unitaire']:
+                    cle = info['variantes'].get(str(getattr(s, 'id', ''))) or g['defaut']
+                    s.prix_reference_liste = reference
+                    s.pct_liste = next((v['pct'] for v in g['variantes'] if v['cle'] == cle), None)
         except AttributeError:
             pass
         sous_total += ligne['total']

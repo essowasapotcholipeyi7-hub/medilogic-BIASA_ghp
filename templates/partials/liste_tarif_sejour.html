@@ -8,7 +8,7 @@
         <div class="row g-2 align-items-start">
             <div class="col-md-5">
                 <label class="form-label mb-1" for="listeTarifSejour"><i class="fas fa-tags"></i> Tarif appliqué</label>
-                <select class="form-select" id="listeTarifSejour" onchange="enregistrerListeTarifSejour()">
+                <select class="form-select" id="listeTarifSejour" onchange="enregistrerListeTarifSejour(true)">
                     <option value="">Grande liste (selon l'assurance du patient)</option>
                     {% for g in listes_tarifs %}
                     <option value="{{ g.groupe }}" {% if groupe_liste_sejour and groupe_liste_sejour.groupe == g.groupe %}selected{% endif %}>Liste {{ g.libelle }}{% if g.remise %} (réduction {% for v in g.variantes %}{{ v.pct|int }} %{% if not loop.last %} ou {% endif %}{% endfor %}){% endif %}</option>
@@ -39,9 +39,10 @@
     </div>
 </div>
 <script>
-async function enregistrerListeTarifSejour() {
+async function enregistrerListeTarifSejour(changementListe) {
     const variantes = {};
-    document.querySelectorAll('.variante-liste-sejour').forEach(sel => { if (sel.value) variantes[sel.dataset.ligne] = sel.value; });
+    // nouvelle liste : les taux de l'ancienne ne valent plus
+    if (!changementListe) document.querySelectorAll('.variante-liste-sejour').forEach(sel => { if (sel.value) variantes[sel.dataset.ligne] = sel.value; });
     const reponse = await fetch('/api/sejour/{{ type_sejour_liste }}/{{ id_sejour_liste }}/liste-tarif', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({liste_tarif: document.getElementById('listeTarifSejour').value, variantes: variantes})
